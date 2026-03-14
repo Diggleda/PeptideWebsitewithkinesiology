@@ -1149,7 +1149,87 @@ const resolveOrderItemsSubtotal = (order: any): number => {
   if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) {
     return Math.max(0, direct);
   }
+  const totalFallback = coerceNumber(
+    order?.grandTotal ??
+      order?.grand_total ??
+      order?.total,
+  );
+  if (typeof totalFallback === "number" && Number.isFinite(totalFallback) && totalFallback > 0) {
+    return Math.max(0, totalFallback);
+  }
   return 0;
+};
+
+const resolveOrderSalesSubtotal = (order: any): number => {
+  if (!order) return 0;
+  const lineItems = Array.isArray(order?.lineItems)
+    ? order.lineItems
+    : Array.isArray(order?.items)
+      ? toOrderLineItems(order.items)
+      : [];
+
+  const fromLines = Array.isArray(lineItems)
+    ? lineItems.reduce((sum: number, line: any) => {
+        const qty = coerceNumber(line?.quantity) ?? 0;
+        if (qty <= 0) return sum;
+        const lineTotal = coerceNumber(line?.total);
+        if (typeof lineTotal === "number" && Number.isFinite(lineTotal) && lineTotal > 0) {
+          return sum + lineTotal;
+        }
+        const unitPrice = coerceNumber(line?.price);
+        if (typeof unitPrice === "number" && Number.isFinite(unitPrice) && unitPrice > 0) {
+          return sum + unitPrice * qty;
+        }
+        return sum;
+      }, 0)
+    : 0;
+
+  if (fromLines > 0) {
+    return Math.max(0, fromLines);
+  }
+
+  const direct = coerceNumber(
+    order?.itemsSubtotal ??
+      order?.items_subtotal ??
+      order?.itemsTotal ??
+      order?.items_total ??
+      order?.subtotal,
+  );
+  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) {
+    return Math.max(0, direct);
+  }
+
+  return 0;
+};
+
+const resolveOrderSalesPricingMode = (order: any): "wholesale" | "retail" => {
+  const pricingModeRaw =
+    (order as any)?.pricing_mode ??
+    (order as any)?.orders?.pricing_mode ??
+    order?.pricingMode ??
+    (order as any)?.pricing ??
+    (order as any)?.priceType ??
+    (order as any)?.orders?.pricingMode ??
+    (order as any)?.orders?.pricing ??
+    (order as any)?.orders?.priceType ??
+    null;
+  const pricingMode = String(pricingModeRaw || "").toLowerCase().trim();
+  return pricingMode === "wholesale" ? "wholesale" : "retail";
+};
+
+const normalizeLeadTypeValue = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const isHouseLeadTypeValue = (value: unknown) => {
+  const normalized = normalizeLeadTypeValue(value);
+  return (
+    normalized === "house" ||
+    normalized === "contact_form" ||
+    normalized === "house_contact"
+  );
 };
 
 const normalizeStringField = (value: unknown) => {
@@ -1306,6 +1386,39 @@ const formatOrderPlacedAtForLocalDisplay = (order: any): string | null => {
     timeZoneName: "short",
   });
 };
+
+const resolveOrderShippedAt = (order: any): string | null => {
+  if (!order || typeof order !== "object") return null;
+  const candidates = [
+    (order as any)?.shipped_at,
+    (order as any)?.shippedAt,
+    (order as any)?.orders?.shipped_at,
+    (order as any)?.orders?.shippedAt,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeTimestampCandidate(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+const formatOrderShippedAtForLocalDisplay = (order: any): string | null => {
+  const raw = resolveOrderShippedAt(order);
+  if (!raw) return null;
+  const parsed = parseBackendTimestamp(raw);
+  if (!parsed) return raw;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+};
+
+const hasOrderShippedAt = (order: any): boolean =>
+  Boolean(resolveOrderShippedAt(order));
 
 const resolveOrderAsDelegateLabel = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
@@ -8015,7 +8128,7 @@ function MainApp() {
       if (!shouldCountRevenueForStatus((order as any)?.status)) {
         return sum;
       }
-      return sum + resolveOrderItemsSubtotal(order as any);
+      return sum + resolveOrderSalesSubtotal(order as any);
     }, 0);
 
   const getOrderIdentityKey = (order: any): string => {
@@ -8457,7 +8570,7 @@ function MainApp() {
               if (!shouldCountRevenueForStatus(order.status)) {
                 return sum;
               }
-              return sum + resolveOrderItemsSubtotal(order);
+              return sum + resolveOrderSalesSubtotal(order);
             }, 0);
             const orderQuantity = doctorOrders.filter((order) =>
               shouldCountRevenueForStatus(order.status),
@@ -8569,7 +8682,7 @@ function MainApp() {
               if (!shouldCountRevenueForStatus(order.status)) {
                 return sum;
               }
-              return sum + resolveOrderItemsSubtotal(order);
+              return sum + resolveOrderSalesSubtotal(order);
             }, 0);
             const refreshedOrderQuantity = refreshedDoctorOrders.filter((order) =>
               shouldCountRevenueForStatus(order.status),
@@ -11207,6 +11320,10 @@ function MainApp() {
       return typeof error?.message === "string" ? error.message : fallback;
     };
 
+    const LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS = 30_000;
+    const LIVE_PRESENCE_MIN_LOOP_MS = 10_000;
+    const LIVE_PRESENCE_FALLBACK_INTERVAL_MS = 15_000;
+
 		  useEffect(() => {
 		    const userRole = user?.role || null;
 		    const isSalesLeadRole = isSalesLead(userRole);
@@ -11269,7 +11386,7 @@ function MainApp() {
 	      void fetchOnce();
 	      intervalId = window.setInterval(() => {
 	        void fetchOnce();
-	      }, 5000);
+	      }, LIVE_PRESENCE_FALLBACK_INTERVAL_MS);
 	    };
 
 		    const controller = new AbortController();
@@ -11289,20 +11406,20 @@ function MainApp() {
 			          const payload = (isSalesLeadRole
                   ? ((await settingsAPI.getLiveUsersLongPoll(
                     liveClientsEtagRef.current,
-                    25000,
+                    LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS,
                     controller.signal,
                   )) as any)
                   : ((await settingsAPI.getLiveClientsLongPoll(
                     null,
                     liveClientsEtagRef.current,
-                    25000,
+                    LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS,
                     controller.signal,
                   )) as any));
 			          if (cancelled) break;
 			          const elapsedMs = Date.now() - requestStartedAt;
 			          // If the server can't hold the request open (or concurrency is exceeded),
 			          // the endpoint may return immediately and this loop can hammer the backend.
-			          const minLoopMs = 1000;
+			          const minLoopMs = LIVE_PRESENCE_MIN_LOOP_MS;
 			          if (elapsedMs < minLoopMs) {
 			            // eslint-disable-next-line no-await-in-loop
 			            await sleep(minLoopMs - elapsedMs);
@@ -11398,7 +11515,7 @@ function MainApp() {
 	      void fetchOnce();
 	      intervalId = window.setInterval(() => {
 	        void fetchOnce();
-	      }, 5000);
+	      }, LIVE_PRESENCE_FALLBACK_INTERVAL_MS);
 	    };
 
 		    const controller = new AbortController();
@@ -11417,12 +11534,12 @@ function MainApp() {
 		          const requestStartedAt = Date.now();
 		          const payload = (await settingsAPI.getLiveUsersLongPoll(
 		            adminLiveUsersEtagRef.current,
-		            25000,
+		            LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS,
 		            controller.signal,
 		          )) as any;
 		          if (cancelled) break;
 		          const elapsedMs = Date.now() - requestStartedAt;
-		          const minLoopMs = 1000;
+		          const minLoopMs = LIVE_PRESENCE_MIN_LOOP_MS;
 		          if (elapsedMs < minLoopMs) {
 		            // eslint-disable-next-line no-await-in-loop
 		            await sleep(minLoopMs - elapsedMs);
@@ -14194,8 +14311,8 @@ function MainApp() {
     return adminRows.length === 1 ? adminRows[0] : null;
   }, [adminCommissionRows, user?.email, user?.id, user?.name, user?.role, user?.salesRepId]);
 
-  const salesTrackingSummary = useMemo(() => {
-    if (scopedSalesTrackingOrders.length === 0 && !currentAdminCommissionRow) {
+	  const salesTrackingSummary = useMemo(() => {
+    if (scopedSalesTrackingOrders.length === 0) {
       return null;
     }
     const activeOrders = scopedSalesTrackingOrders.filter((order) => {
@@ -14204,11 +14321,6 @@ function MainApp() {
     const isHouseAttributedOrder = (order: AccountOrderSummary) => {
       const orderAny = order as any;
       const normalizeId = (value: unknown) => String(value ?? "").trim().toLowerCase();
-      const normalizeLeadType = (value: unknown) =>
-        String(value || "")
-          .trim()
-          .toLowerCase()
-          .replace(/[\s-]+/g, "_");
       const ownerCandidates = [
         orderAny?.doctorSalesRepId,
         orderAny?.doctor_sales_rep_id,
@@ -14231,33 +14343,36 @@ function MainApp() {
           "",
       ).trim();
       const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
-      const doctorLeadType = normalizeLeadType(
+      const doctorLeadType = normalizeLeadTypeValue(
         doctorInfo?.leadType || orderAny?.leadType || orderAny?.lead_type,
       );
-      if (
-        doctorLeadType === "house" ||
-        doctorLeadType === "contact_form" ||
-        doctorLeadType === "house_contact"
-      ) {
+      if (isHouseLeadTypeValue(doctorLeadType)) {
         return true;
       }
       const doctorOwnerId = normalizeId(doctorInfo?.salesRepId);
       return doctorOwnerId === "__house__" || doctorOwnerId === "house";
     };
 
-    const totals = activeOrders.reduce(
+    const totalsFromAllOrders = activeOrders.reduce(
+      (acc, order) => {
+        const pricingMode = resolveOrderSalesPricingMode(order);
+        const amount = resolveOrderSalesSubtotal(order);
+        if (pricingMode === "wholesale") {
+          acc.wholesale += amount;
+        } else {
+          acc.retail += amount;
+        }
+        return acc;
+      },
+      { wholesale: 0, retail: 0 },
+    );
+    const nonHouseTotals = activeOrders.reduce(
       (acc, order) => {
         if (isAdmin(user?.role) && isHouseAttributedOrder(order)) {
           return acc;
         }
-        const pricingModeRaw =
-          order?.pricingMode ||
-          (order as any)?.pricing_mode ||
-          (order as any)?.pricing ||
-          (order as any)?.priceType ||
-          null;
-        const pricingMode = String(pricingModeRaw || "").toLowerCase().trim();
-        const amount = resolveOrderItemsSubtotal(order);
+        const pricingMode = resolveOrderSalesPricingMode(order);
+        const amount = resolveOrderSalesSubtotal(order);
         if (pricingMode === "wholesale") {
           acc.wholesale += amount;
         } else if (pricingMode === "retail") {
@@ -14269,40 +14384,13 @@ function MainApp() {
       },
       { wholesale: 0, retail: 0 },
     );
-    if (isAdmin(user?.role) && currentAdminCommissionRow) {
-      const regularWholesaleRevenue = Number((currentAdminCommissionRow as any)?.wholesaleBase || 0);
-      const regularRetailRevenue = Number((currentAdminCommissionRow as any)?.retailBase || 0);
-      const houseWholesaleRevenue = Number((currentAdminCommissionRow as any)?.houseWholesaleBase || 0);
-      const houseRetailRevenue = Number((currentAdminCommissionRow as any)?.houseRetailBase || 0);
-      const regularWholesaleOrders = Number((currentAdminCommissionRow as any)?.wholesaleOrders || 0);
-      const regularRetailOrders = Number((currentAdminCommissionRow as any)?.retailOrders || 0);
-      const houseWholesaleOrders = Number((currentAdminCommissionRow as any)?.houseWholesaleOrders || 0);
-      const houseRetailOrders = Number((currentAdminCommissionRow as any)?.houseRetailOrders || 0);
-      return {
-        totalOrders:
-          regularWholesaleOrders +
-          regularRetailOrders +
-          houseWholesaleOrders +
-          houseRetailOrders,
-        wholesaleRevenue: regularWholesaleRevenue + houseWholesaleRevenue,
-        retailRevenue: regularRetailRevenue + houseRetailRevenue,
-        latestOrder: activeOrders[0] || scopedSalesTrackingOrders[0] || null,
-      };
-    }
-    const adminHouseWholesaleRevenue = isAdmin(user?.role)
-      ? Number((currentAdminCommissionRow as any)?.houseWholesaleBase || 0)
-      : 0;
-    const adminHouseRetailRevenue = isAdmin(user?.role)
-      ? Number((currentAdminCommissionRow as any)?.houseRetailBase || 0)
-      : 0;
     return {
       totalOrders: activeOrders.length,
-      wholesaleRevenue: totals.wholesale + adminHouseWholesaleRevenue,
-      retailRevenue: totals.retail + adminHouseRetailRevenue,
+      wholesaleRevenue: isAdmin(user?.role) ? totalsFromAllOrders.wholesale : nonHouseTotals.wholesale,
+      retailRevenue: isAdmin(user?.role) ? totalsFromAllOrders.retail : nonHouseTotals.retail,
       latestOrder: activeOrders[0] || scopedSalesTrackingOrders[0],
     };
 	  }, [
-      currentAdminCommissionRow,
       resolveOrderDoctorIdForBucket,
       scopedSalesTrackingOrders,
       salesTrackingDoctors,
@@ -14371,6 +14459,7 @@ function MainApp() {
       }
     >();
 	    for (const order of scopedSalesTrackingOrders) {
+      const orderAny = order as any;
       const doctorId =
         resolveOrderDoctorIdForBucket(order) || order.userId || `anon:${order.id}`;
       const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
@@ -14384,7 +14473,7 @@ function MainApp() {
         doctorInfo?.profileImageUrl ||
         (order as any).doctorProfileImageUrl ||
         null;
-      const leadType = doctorInfo?.leadType || null;
+      const leadType = doctorInfo?.leadType || orderAny?.leadType || orderAny?.lead_type || null;
       const leadTypeSource = doctorInfo?.leadTypeSource || null;
       const leadTypeLockedAt = doctorInfo?.leadTypeLockedAt || null;
       const doctorAddress = (() => {
@@ -14477,17 +14566,11 @@ function MainApp() {
 	      if (ownerSalesRepEmail && !bucket.ownerSalesRepEmail) {
 	        bucket.ownerSalesRepEmail = String(ownerSalesRepEmail);
 	      }
-	      bucket.orders.push(order);
-	      const status = order.status;
+      bucket.orders.push(order);
+      const status = order.status;
       if (shouldCountRevenueForStatus(status)) {
-        const amount = resolveOrderItemsSubtotal(order);
-        const pricingModeRaw =
-          order?.pricingMode ||
-          (order as any)?.pricing_mode ||
-          (order as any)?.pricing ||
-          (order as any)?.priceType ||
-          null;
-        const pricingMode = String(pricingModeRaw || "").toLowerCase().trim();
+        const amount = resolveOrderSalesSubtotal(order);
+        const pricingMode = resolveOrderSalesPricingMode(order);
         bucket.total += amount;
         if (pricingMode === "wholesale") {
           bucket.salesWholesaleRevenue = Number(bucket.salesWholesaleRevenue || 0) + amount;
@@ -20841,7 +20924,7 @@ function MainApp() {
 	                  )}
 
 	                {adminDashboardTab === "structure" && (
-	                  <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4">
+	                  <section className="w-full min-w-0">
 	                    <div className="flex items-start gap-3">
 	                      <div className="min-w-0 flex-1 pr-2">
 	                        <h4 className="text-lg font-semibold text-slate-900">
@@ -20863,51 +20946,52 @@ function MainApp() {
 	                        {adminHandDeliveryLoading ? "Refreshing…" : "Refresh"}
 	                      </Button>
 	                    </div>
+                      <div className="py-2">
+                        <div className="lead-panel-divider" />
+                      </div>
 
 	                    {adminHandDeliveryError && (
-	                      <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
+	                      <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
 	                        {adminHandDeliveryError}
 	                      </div>
 	                    )}
 
 	                    {adminHandDeliveryLoading ? (
-	                      <div className="mt-3 px-4 py-3 text-sm text-slate-500">
+	                      <div className="px-4 py-3 text-sm text-slate-500">
 	                        Loading users…
 	                      </div>
 	                    ) : adminHandDeliveryUsers.length === 0 ? (
-	                      <div className="mt-3 px-4 py-3 text-sm text-slate-500">
+	                      <div className="px-4 py-3 text-sm text-slate-500">
 	                        No sales reps, sales leads, or admins found.
 	                      </div>
 	                    ) : (
-	                      <div className="mt-3 sales-rep-table-wrapper admin-dashboard-list">
-	                        <div className="flex w-full min-w-0 flex-col gap-2">
-	                          {adminHandDeliveryUsers.map((entry) => {
-	                            const saving = Boolean(adminHandDeliverySavingByUserId[entry.userId]);
-	                            return (
-	                              <label
-	                                key={entry.userId}
-	                                className="inline-flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 text-sm text-slate-800"
-	                              >
-	                                <span className="truncate">{entry.name}</span>
-	                                <input
-	                                  type="checkbox"
-	                                  className="brand-checkbox"
-	                                  checked={entry.isLocal}
-	                                  disabled={saving}
-	                                  onChange={(event) =>
-	                                    void handleAdminHandDeliveryToggle(
-	                                      entry,
-	                                      event.target.checked,
-	                                    )
-	                                  }
-	                                />
-	                              </label>
-	                            );
-	                          })}
-	                        </div>
+	                      <div className="flex w-full min-w-0 flex-col gap-2">
+	                        {adminHandDeliveryUsers.map((entry) => {
+	                          const saving = Boolean(adminHandDeliverySavingByUserId[entry.userId]);
+	                          return (
+	                            <label
+	                              key={entry.userId}
+	                              className="inline-flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 text-sm text-slate-800"
+	                            >
+	                              <span className="truncate">{entry.name}</span>
+	                              <input
+	                                type="checkbox"
+	                                className="brand-checkbox"
+	                                checked={entry.isLocal}
+	                                disabled={saving}
+	                                onChange={(event) =>
+	                                  void handleAdminHandDeliveryToggle(
+	                                    entry,
+	                                    event.target.checked,
+	                                  )
+	                                }
+	                              />
+	                            </label>
+	                          );
+	                        })}
 	                      </div>
 	                    )}
-	                  </div>
+	                  </section>
 	                )}
 
 	                {adminDashboardTab === "here_now" && (
@@ -22826,29 +22910,9 @@ function MainApp() {
                   salesTrackingOrdersByDoctor.length > 0 &&
 	                  salesTrackingOrdersByDoctor.map((bucket) => {
 	                    const isCollapsed = collapsedSalesDoctorIds.has(bucket.doctorId);
-                      const normalizedLeadType = String(bucket.leadType || "")
-                        .trim()
-                        .toLowerCase();
-                      const isHouseRow =
-                        normalizedLeadType === "contact_form" ||
-                        normalizedLeadType === "house" ||
-                        normalizedLeadType === "house_contact";
-                      const houseWholesaleForRow =
-                        isHouseRow && isAdmin(user?.role)
-                          ? Number((currentAdminCommissionRow as any)?.houseWholesaleBase || 0)
-                          : 0;
-                      const houseRetailForRow =
-                        isHouseRow && isAdmin(user?.role)
-                          ? Number((currentAdminCommissionRow as any)?.houseRetailBase || 0)
-                          : 0;
-                      const wholesaleForRow =
-                        isHouseRow && isAdmin(user?.role)
-                          ? houseWholesaleForRow
-                          : Number((bucket as any).salesWholesaleRevenue || 0);
-                      const retailForRow =
-                        isHouseRow && isAdmin(user?.role)
-                          ? houseRetailForRow
-                          : Number((bucket as any).salesRetailRevenue || 0);
+                      const isHouseRow = isHouseLeadTypeValue(bucket.leadType);
+                      const wholesaleForRow = Number((bucket as any).salesWholesaleRevenue || 0);
+                      const retailForRow = Number((bucket as any).salesRetailRevenue || 0);
 	                    return (
 	                      <section key={bucket.doctorId} className="lead-panel">
 	                        <div
@@ -22939,19 +23003,18 @@ function MainApp() {
                                     )}
                                   </div>
                                   <div className="text-left">
-		                                    <p className="lead-list-name whitespace-nowrap flex items-center gap-1">
+		                                    <p className="lead-list-name whitespace-nowrap flex items-center gap-2">
 		                                      <NotebookPen
 		                                        className="h-4 w-4 text-slate-400"
 		                                        aria-hidden="true"
 		                                      />
 		                                      <span>{bucket.doctorName}</span>
+                                      {isHouseRow && (
+                                        <span className="lead-source-pill lead-source-pill--contact">
+                                          House
+                                        </span>
+                                      )}
 		                                    </p>
-                                    {String(bucket.leadType || "").toLowerCase() ===
-                                      "contact_form" && (
-                                      <span className="lead-source-pill lead-source-pill--contact mt-1">
-                                        House / Contact Form
-                                      </span>
-                                    )}
                                     {bucket.doctorEmail && (
                                       <p className="lead-list-detail whitespace-nowrap">
                                         {bucket.doctorEmail}
@@ -22987,13 +23050,17 @@ function MainApp() {
                           {bucket.orders.map((order) => {
                             const placedDate =
                               formatOrderPlacedAtForLocalDisplay(order as any);
-                            const isShipped =
+                            const shippedDate =
+                              formatOrderShippedAtForLocalDisplay(order as any);
+                            const isStatusShipped =
                               ((order as any)?.shippingEstimate?.status ||
                                 (order as any)?.shipping?.status ||
                                 order.status ||
                                 "")
                                 .toString()
                                 .toLowerCase() === "shipped";
+                            const isShipped =
+                              hasOrderShippedAt(order) || isStatusShipped;
                             const arrivalDate = isShipped
                               ? order?.shippingEstimate?.estimatedArrivalDate ||
                                 (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
@@ -23011,10 +23078,12 @@ function MainApp() {
                               ? `Order placed ${placedDate}`
                               : "Order placed Unknown date";
                             const arrivalLabel = isSalesOrderHandDelivered(order as any)
-                              ? "Hand Delivered"
-	                              : arrivalDate
-	                                ? `Expected delivery ${formatDate(arrivalDate as string)}`
-	                                : "Expected delivery unavailable";
+                              ? "Hand delivery"
+	                              : isShipped && shippedDate
+	                                ? `Shipped ${shippedDate}`
+	                                : arrivalDate
+	                                  ? `Expected delivery ${formatDate(arrivalDate as string)}`
+	                                  : "Expected delivery unavailable";
 	                            const statusLabel = describeSalesOrderStatus(order as any);
                               const delegateOrderLabel =
                                 normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
@@ -23046,7 +23115,7 @@ function MainApp() {
                                     ) : (
                                       <div className="flex items-center gap-3 justify-end">
                                         <div className="lead-updated">
-                                          {formatCurrency(order.total)}
+                                          {formatCurrency(resolveOrderSalesSubtotal(order))}
                                         </div>
                                         <span className="sales-tracking-row-status">
                                           {statusLabel}
@@ -27410,15 +27479,7 @@ function MainApp() {
                                     ? commissionOrders.reduce(
                                         (acc: { wholesale: number; retail: number }, order: any) => {
                                           const amount = resolveOrderItemsSubtotal(order);
-                                          const pricingModeRaw =
-                                            order?.pricingMode ||
-                                            (order as any)?.pricing_mode ||
-                                            (order as any)?.pricing ||
-                                            (order as any)?.priceType ||
-                                            null;
-                                          const pricingMode = String(pricingModeRaw || "")
-                                            .toLowerCase()
-                                            .trim();
+                                          const pricingMode = resolveOrderSalesPricingMode(order);
                                           if (pricingMode === "wholesale") {
                                             acc.wholesale += amount;
                                           } else if (pricingMode === "retail") {
@@ -27513,15 +27574,7 @@ function MainApp() {
 			                                    order: any,
 			                                  ) => {
                                     const amount = resolveOrderItemsSubtotal(order);
-			                                    const pricingModeRaw =
-			                                      order?.pricingMode ||
-			                                      (order as any)?.pricing_mode ||
-			                                      (order as any)?.pricing ||
-			                                      (order as any)?.priceType ||
-			                                      null;
-			                                    const pricingMode = String(pricingModeRaw || "")
-			                                      .toLowerCase()
-			                                      .trim();
+			                                    const pricingMode = resolveOrderSalesPricingMode(order);
 			                                    if (pricingMode === "wholesale") {
 			                                      acc.wholesale += amount;
 			                                    } else if (pricingMode === "retail") {
@@ -28742,6 +28795,8 @@ function MainApp() {
 
                 const placedDate =
                   formatOrderPlacedAtForLocalDisplay(salesOrderDetail as any);
+                const shippedDate =
+                  formatOrderShippedAtForLocalDisplay(salesOrderDetail as any);
                 const normalizedStatus = String(
                   (shipping as any)?.status || salesOrderDetail.status || "",
                 )
@@ -28753,11 +28808,16 @@ function MainApp() {
                   (salesOrderDetail as any).expected_shipment_window ||
                   null;
                 const isShippedDetail =
-                  normalizedStatus === "shipped";
+                  hasOrderShippedAt(salesOrderDetail) || normalizedStatus === "shipped";
                 const expectedDelivery =
                   isShippedDetail && shipping?.estimatedArrivalDate
                     ? formatDate(shipping.estimatedArrivalDate)
                     : null;
+                const deliverySummaryLabel = isSalesOrderHandDelivered(salesOrderDetail as any)
+                  ? "Hand delivery"
+                  : isShippedDetail && shippedDate
+                    ? `Shipped ${shippedDate}`
+                    : expectedDelivery;
 
                 const formatShippingCode = (value?: string | null) => {
                   if (!value) return null;
@@ -28842,13 +28902,13 @@ function MainApp() {
                               </span>
                             ) : null}
                           </div>
-	                      </div>
+                      </div>
                       <div>
                         <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
-                          Expected delivery
+                          Delivery
                         </p>
                         <p className="font-semibold text-slate-900">
-                          {renderOrderDetailValue(expectedDelivery, { widthClass: "w-24" })}
+                          {renderOrderDetailValue(deliverySummaryLabel, { widthClass: "w-28" })}
                         </p>
                       </div>
                     </div>

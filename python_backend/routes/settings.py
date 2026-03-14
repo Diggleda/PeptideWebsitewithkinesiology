@@ -584,7 +584,6 @@ def _compute_live_users_payload() -> dict:
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": normalize_user_role(user.get("role")),
-                "profileImageUrl": user.get("profileImageUrl") or None,
                 **snapshot,
             }
         )
@@ -605,7 +604,6 @@ def _compute_live_users_payload() -> dict:
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
             "lastLoginAt": entry.get("lastLoginAt") or None,
-            "profileImageUrl": entry.get("profileImageUrl") or None,
         }
         for entry in entries
     ]

@@ -804,7 +804,6 @@ const buildLiveUsersPayload = () => {
       name: user.name || null,
       email: user.email || null,
       role: normalizeUserRole(user.role),
-      profileImageUrl: user.profileImageUrl || null,
       ...snapshot,
     };
   });
@@ -832,7 +831,6 @@ const buildLiveUsersPayload = () => {
         lastInteractionAt: null,
         idleMinutes: null,
         onlineMinutes: null,
-        profileImageUrl: null,
       }));
     if (extras.length > 0) {
       liveUsers = [...liveUsers, ...extras];
@@ -848,7 +846,6 @@ const buildLiveUsersPayload = () => {
   return {
     generatedAt: new Date().toISOString(),
     users: liveUsers,
-    liveUsers,
     total: liveUsers.length,
   };
 };
