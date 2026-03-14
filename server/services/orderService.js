@@ -101,6 +101,32 @@ const normalizeRole = (role) => (role || '')
 
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
 
+const fetchHouseLeadUsersFromSql = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return [];
+  }
+  try {
+    const rows = await mysqlClient.fetchAll(
+      `
+        SELECT
+          id,
+          name,
+          email,
+          phone,
+          profile_image_url,
+          sales_rep_id,
+          lead_type
+        FROM users
+        WHERE LOWER(TRIM(COALESCE(lead_type, ''))) = 'house'
+      `,
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    logger.warn({ err: error }, 'Sales rep order fetch: unable to load house users from MySQL');
+    return [];
+  }
+};
+
 const fetchSalesRepEmailsFromTable = async (repIds) => {
   const ids = Array.from(new Set((repIds || []).map(normalizeId).filter(Boolean)));
   const lookup = new Map();
@@ -2274,6 +2300,60 @@ const getOrdersForSalesRep = async (
     }),
   );
 
+  if (includeAllDoctors && allowedRepIds.size === 0 && mysqlClient.isEnabled()) {
+    try {
+      const houseUsers = await fetchHouseLeadUsersFromSql();
+      houseUsers.forEach((row) => {
+        const doctorId = normalizeId(row?.id);
+        if (!doctorId) return;
+        const repId = normalizeId(row?.sales_rep_id);
+        const rep = repId ? repDirectory.get(repId) : null;
+        const nextDoctor = {
+          id: doctorId,
+          name: row?.name || row?.email || getDoctorFallbackName(doctorId),
+          email: row?.email || null,
+          profileImageUrl: row?.profile_image_url || null,
+          phone: row?.phone || null,
+          leadType: 'house',
+          leadTypeSource: 'users.lead_type',
+          leadTypeLockedAt: null,
+          salesRepId: repId || null,
+          salesRepName: rep?.name || null,
+          salesRepEmail: rep?.email || null,
+        };
+
+        const existing = doctorLookup.get(doctorId);
+        doctorLookup.set(
+          doctorId,
+          existing
+            ? {
+                ...existing,
+                ...nextDoctor,
+                id: doctorId,
+                name: existing.name || nextDoctor.name,
+                email: existing.email || nextDoctor.email,
+                profileImageUrl: existing.profileImageUrl || nextDoctor.profileImageUrl,
+              }
+            : nextDoctor,
+        );
+
+        if (!doctors.some((doctor) => normalizeId(doctor?.id) === doctorId)) {
+          doctors.push({
+            id: doctorId,
+            name: nextDoctor.name,
+            email: nextDoctor.email,
+            profileImageUrl: nextDoctor.profileImageUrl,
+            salesRepId: nextDoctor.salesRepId,
+            phone: nextDoctor.phone,
+            leadType: nextDoctor.leadType,
+          });
+        }
+      });
+    } catch (error) {
+      logger.warn({ err: error }, 'Sales rep order fetch: unable to merge house users');
+    }
+  }
+
   // Ensure prospects (e.g., referred doctors) show up in sales rep orders even if the doctor
   // user record hasn't been assigned a `salesRepId` yet. This removes the "delay" where orders
   // exist but the doctor doesn't show in "Your Sales" until a separate assignment sync happens.
@@ -2323,7 +2403,12 @@ const getOrdersForSalesRep = async (
   }
 
   const contactLeadByEmail = new Map();
-  if (mysqlClient.isEnabled()) {
+  const shouldInferContactLeadsFromProspects = !(
+    includeAllDoctors
+    && allowedRepIds.size === 0
+    && mysqlClient.isEnabled()
+  );
+  if (mysqlClient.isEnabled() && shouldInferContactLeadsFromProspects) {
     try {
       const prospects = await salesProspectRepository.getAll();
       const list = Array.isArray(prospects) ? prospects : [];

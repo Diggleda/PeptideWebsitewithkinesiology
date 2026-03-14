@@ -6712,7 +6712,7 @@ export function Header({
           ? patientLinksPanel
           : researchPanel;
 
-  const researchOverlayStyle: React.CSSProperties =
+  const researchOverlayStyle: CSSProperties =
     researchOverlayRect && !researchOverlayExpanded
       ? {
           top: researchOverlayRect.top,

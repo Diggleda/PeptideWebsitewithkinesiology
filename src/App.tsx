@@ -9,6 +9,7 @@ import {
   ReactNode,
   Fragment,
   forwardRef,
+  type CSSProperties,
 } from "react";
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
@@ -6555,6 +6556,7 @@ function MainApp() {
 		    phone?: string | null;
 		    address?: string | null;
 		    addressOrigin?: "prospect" | "user" | "order" | "unknown" | null;
+        leadTypeLabel?: string | null;
 		    lastOrderDate?: string | null;
 		    avgOrderValue?: number | null;
 		    role: string;
@@ -8264,6 +8266,10 @@ function MainApp() {
 	          null,
 	        address,
 	        addressOrigin,
+          leadTypeLabel:
+            typeof (bucket as any)?.leadTypeLabel === "string"
+              ? (bucket as any).leadTypeLabel
+              : null,
 	        lastOrderDate,
 	        avgOrderValue,
 	        role: normalizedRole,
@@ -12343,6 +12349,14 @@ function MainApp() {
     return id.startsWith("manual:");
   }, []);
 
+  const formatProspectLeadType = useCallback(
+    (kind: "referral" | "contact_form", record: ReferralRecord) => {
+      if (kind === "contact_form") return "House / Contact Form";
+      return isManualEntry(record) ? "Manual" : "Referral";
+    },
+    [isManualEntry],
+  );
+
   const isLeadStatus = useCallback((status?: string | null) => {
     const normalized = (status || "").toLowerCase();
     if (!normalized) {
@@ -13211,10 +13225,9 @@ function MainApp() {
 
 	  const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
 	    const role = userRole;
-	    const canViewAllSalesOrders = isAdmin(role) || isSalesLead(role);
-	    const scope: "mine" | "all" = canViewAllSalesOrders ? "all" : "mine";
+	    const scope: "mine" | "all" = "mine";
 	    const salesRepId = userSalesRepId || userId;
-	    const salesRepIdParam = canViewAllSalesOrders && scope === "all" ? null : salesRepId;
+	    const salesRepIdParam = salesRepId;
 	    const useLocalOnlySalesTracking = true;
 	    const currentUserId = userId != null ? String(userId).trim() : "";
 	    const currentUserEmail =
@@ -20164,7 +20177,7 @@ function MainApp() {
 		                              style: {
 		                                backgroundColor: "rgb(61,43,233)",
 		                                color: "#ffffff",
-		                              } as React.CSSProperties,
+		                              } as CSSProperties,
 		                            };
 		                          }
 		                          if (role === "sales_rep" || role === "test_rep" || role === "salesrep" || role === "rep") {
@@ -20173,7 +20186,7 @@ function MainApp() {
 		                              style: {
 		                                backgroundColor: "rgb(129,221,228)",
 		                                color: "#ffffff",
-		                              } as React.CSSProperties,
+		                              } as CSSProperties,
 		                            };
 		                          }
 		                          if (role === "sales_lead" || role === "saleslead" || role === "sales-lead") {
@@ -20182,7 +20195,7 @@ function MainApp() {
 		                              style: {
 		                                backgroundColor: "rgb(129,221,228)",
 		                                color: "#ffffff",
-		                              } as React.CSSProperties,
+		                              } as CSSProperties,
 		                            };
 		                          }
 		                          if (role === "doctor") {
@@ -20191,7 +20204,7 @@ function MainApp() {
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
-		                              } as React.CSSProperties,
+		                              } as CSSProperties,
 		                            };
 		                          }
 		                          if (role === "test_doctor") {
@@ -20200,7 +20213,7 @@ function MainApp() {
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
-		                              } as React.CSSProperties,
+		                              } as CSSProperties,
 		                            };
 		                          }
 		                          return null;
@@ -21095,7 +21108,7 @@ function MainApp() {
 		                                    style: {
 		                                      backgroundColor: "rgb(61,43,233)",
 		                                      color: "#ffffff",
-		                                    } as React.CSSProperties,
+		                                    } as CSSProperties,
 		                                  };
 		                                }
 				                                if (role === "sales_rep" || role === "test_rep" || role === "salesrep" || role === "rep") {
@@ -21104,7 +21117,7 @@ function MainApp() {
 				                                    style: {
 				                                      backgroundColor: "rgb(129,221,228)",
 				                                      color: "#ffffff",
-				                                    } as React.CSSProperties,
+				                                    } as CSSProperties,
 				                                  };
 				                                }
 				                                if (role === "sales_lead" || role === "saleslead" || role === "sales-lead") {
@@ -21113,7 +21126,7 @@ function MainApp() {
 				                                    style: {
 				                                      backgroundColor: "rgb(129,221,228)",
 				                                      color: "#ffffff",
-				                                    } as React.CSSProperties,
+				                                    } as CSSProperties,
 				                                  };
 				                                }
 				                                if (role === "doctor") {
@@ -21122,7 +21135,7 @@ function MainApp() {
 				                                    style: {
 				                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
-			                                    } as React.CSSProperties,
+			                                    } as CSSProperties,
 			                                  };
 			                                }
 			                                if (role === "test_doctor") {
@@ -21131,7 +21144,7 @@ function MainApp() {
 			                                    style: {
 			                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
-			                                    } as React.CSSProperties,
+			                                    } as CSSProperties,
 			                                  };
 			                                }
 		                                return null;
@@ -22983,8 +22996,8 @@ function MainApp() {
             </div>
             )}
             {isDoctorReferralsManualSectionActive && (
-            <div className="space-y-4">
-                <section className="lead-panel sales-rep-leads-card sales-rep-combined-card">
+            <div className="space-y-4 w-full min-w-0">
+                <section className="lead-panel sales-rep-leads-card sales-rep-combined-card active-prospects-panel w-full min-w-0">
                   <div className="lead-panel-header">
                     <div className="w-full">
                       <div className="lead-panel-filter-row">
@@ -23079,18 +23092,7 @@ function MainApp() {
                               : referralCreditAmount;
                           const isManualLead =
                             kind === "referral" && isManualEntry(record);
-                          const sourceClass =
-                            kind === "contact_form"
-                              ? "lead-source-pill--contact"
-                              : isManualLead
-                                ? "lead-source-pill--manual"
-                                : "lead-source-pill--referral";
-	                          const sourceLabel =
-	                            kind === "contact_form"
-	                              ? "House / Contact Form"
-	                              : isManualLead
-	                                ? "Manual"
-	                                : "Referral";
+                          const leadTypeLabel = formatProspectLeadType(kind, record as ReferralRecord);
 	                          const hasContactAccount =
 	                            typeof record.referredContactHasAccount === "boolean"
 	                              ? record.referredContactHasAccount
@@ -23170,21 +23172,6 @@ function MainApp() {
 			                                return null;
 			                            }
 			                          })();
-	                              const stageInstructionKey =
-	                                shouldShowAccountCreatedForVerified
-	                                  ? "account_created"
-	                                  : selectedStatusValue;
-	                              const stageInstructions: Record<string, string> = {
-	                                pending: "Move to Contacted when ready to reach out.",
-	                                contacted:
-	                                  "Reach out to them, verify their practice, ensure they have an NPI number, and note down any other personal and practice details. Collect their reseller permit if available for their tax exemption. When verified, advance their status.",
-	                                verified:
-	                                  "Now that they are qualified, help them create an account by sharing your referral code. You can see when they have created an account with the label in this container.",
-                                account_created:
-                                  "Now that their account is created, walk them through the platform. Ensure to promote their educational and research excellence and our support for them. You can preemptively move them to the Converted status for your convenience if you wish. It will note when they make their first purchase automatically.",
-                              };
-                              const stageInstruction =
-                                stageInstructions[stageInstructionKey] || "";
 			                          const backwardStatuses = (() => {
 			                            const order = [
 			                              "pending",
@@ -23252,6 +23239,77 @@ function MainApp() {
 	                                record.referredContactName ||
 	                                record.referredContactEmail ||
 	                                "—";
+                            const openProspectDetail = () => {
+                              const doctorId =
+                                (record as any).referredContactAccountId ||
+                                (record as any).referredContactId ||
+                                (record as any).userId ||
+                                (record as any).doctorId ||
+                                record.id;
+                              const doctorEmail =
+                                record.referredContactEmail ||
+                                (leadAccountProfile?.email ?? null) ||
+                                null;
+                              const prospectAddress = (() => {
+                                const addr = record as any;
+                                const parts = [
+                                  addr?.officeAddressLine1,
+                                  addr?.officeAddressLine2,
+                                  [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
+                                    .filter(Boolean)
+                                    .join(", "),
+                                  addr?.officeCountry,
+                                ].filter(
+                                  (p) => typeof p === "string" && p.trim().length > 0,
+                                );
+                                return parts.length > 0 ? parts.join("\n") : null;
+                              })();
+                              const accountAddress = (() => {
+                                const addr = leadAccountProfile as any;
+                                const parts = [
+                                  addr?.officeAddressLine1,
+                                  addr?.officeAddressLine2,
+                                  [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
+                                    .filter(Boolean)
+                                    .join(", "),
+                                  addr?.officeCountry,
+                                ].filter(
+                                  (p) => typeof p === "string" && p.trim().length > 0,
+                                );
+                                return parts.length > 0 ? parts.join("\n") : null;
+                              })();
+                              const doctorAddress = prospectAddress || accountAddress || null;
+                              const addressOrigin =
+                                prospectAddress ? "prospect" : accountAddress ? "user" : null;
+                              const ownerSalesRepId =
+                                (record as any).ownerSalesRepId ||
+                                (record as any).owner_sales_rep_id ||
+                                (record as any).salesRepId ||
+                                (record as any).sales_rep_id ||
+                                (record as any).assignedSalesRepId ||
+                                (record as any).assigned_sales_rep_id ||
+                                (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : null) ||
+                                null;
+                              openSalesDoctorDetail(
+                                {
+                                  doctorId: String(doctorId || record.id),
+                                  referralId: kind === "referral" ? String(record.id) : null,
+                                  doctorName: leadDisplayName,
+                                  doctorEmail,
+                                  doctorAvatar: hasContactAccount
+                                    ? leadAccountProfile?.profileImageUrl ?? null
+                                    : null,
+                                  doctorPhone: record.referredContactPhone || null,
+                                  doctorAddress,
+                                  addressOrigin,
+                                  leadTypeLabel,
+                                  ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
+                                  orders: [],
+                                  total: 0,
+                                },
+                                "doctor",
+                              );
+                            };
 	                          return (
 	                            <li
 	                              key={record.id}
@@ -23259,185 +23317,43 @@ function MainApp() {
 	                            >
 	                              <div className="lead-list-meta">
 	                                <div className="lead-list-name min-w-0">
-	                                  <button
-	                                    type="button"
-	                                    className="inline-flex items-start gap-1 min-w-0 text-left"
-		                                    onClick={() => {
-		                                      const doctorId =
-		                                        (record as any).referredContactAccountId ||
-		                                        (record as any).referredContactId ||
-		                                        (record as any).userId ||
-		                                        (record as any).doctorId ||
-		                                        record.id;
-		                                      const doctorEmail =
-		                                        record.referredContactEmail ||
-		                                        (leadAccountProfile?.email ?? null) ||
-		                                        null;
-		                                      const prospectAddress = (() => {
-		                                        const addr = record as any;
-		                                        const parts = [
-		                                          addr?.officeAddressLine1,
-		                                          addr?.officeAddressLine2,
-		                                          [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
-		                                            .filter(Boolean)
-		                                            .join(", "),
-		                                          addr?.officeCountry,
-		                                        ].filter(
-		                                          (p) => typeof p === "string" && p.trim().length > 0,
-		                                        );
-		                                        return parts.length > 0 ? parts.join("\n") : null;
-		                                      })();
-		                                      const accountAddress = (() => {
-		                                        const addr = leadAccountProfile as any;
-		                                        const parts = [
-		                                          addr?.officeAddressLine1,
-		                                          addr?.officeAddressLine2,
-		                                          [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
-		                                            .filter(Boolean)
-		                                            .join(", "),
-		                                          addr?.officeCountry,
-		                                        ].filter(
-		                                          (p) => typeof p === "string" && p.trim().length > 0,
-		                                        );
-		                                        return parts.length > 0 ? parts.join("\n") : null;
-		                                      })();
-		                                      const doctorAddress = prospectAddress || accountAddress || null;
-		                                      const addressOrigin =
-		                                        prospectAddress ? "prospect" : accountAddress ? "user" : null;
-		                                      const ownerSalesRepId =
-		                                        (record as any).ownerSalesRepId ||
-		                                        (record as any).owner_sales_rep_id ||
-		                                        (record as any).salesRepId ||
-	                                        (record as any).sales_rep_id ||
-	                                        (record as any).assignedSalesRepId ||
-	                                        (record as any).assigned_sales_rep_id ||
-	                                        (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : null) ||
-	                                        null;
-		                                      openSalesDoctorDetail(
-		                                        {
-		                                          doctorId: String(doctorId || record.id),
-		                                          referralId: kind === "referral" ? String(record.id) : null,
-		                                          doctorName: leadDisplayName,
-		                                          doctorEmail,
-		                                          doctorAvatar:
-		                                            leadAccountProfile?.profileImageUrl ?? null,
-		                                          doctorPhone: record.referredContactPhone || null,
-		                                          doctorAddress,
-		                                          addressOrigin,
-		                                          ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
-		                                          orders: [],
-		                                          total: 0,
-		                                        },
-		                                        "doctor",
-		                                      );
-		                                    }}
-		                                    onKeyDown={(e) => {
-		                                      if (e.key === "Enter" || e.key === " ") {
-		                                        e.preventDefault();
-		                                        const doctorId =
-		                                          (record as any).referredContactAccountId ||
-		                                          (record as any).referredContactId ||
-		                                          (record as any).userId ||
-		                                          (record as any).doctorId ||
-		                                          record.id;
-		                                        const doctorEmail =
-		                                          record.referredContactEmail ||
-		                                          (leadAccountProfile?.email ?? null) ||
-		                                          null;
-		                                        const prospectAddress = (() => {
-		                                          const addr = record as any;
-		                                          const parts = [
-		                                            addr?.officeAddressLine1,
-		                                            addr?.officeAddressLine2,
-		                                            [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
-		                                              .filter(Boolean)
-		                                              .join(", "),
-		                                            addr?.officeCountry,
-		                                          ].filter(
-		                                            (p) => typeof p === "string" && p.trim().length > 0,
-		                                          );
-		                                          return parts.length > 0 ? parts.join("\n") : null;
-		                                        })();
-		                                        const accountAddress = (() => {
-		                                          const addr = leadAccountProfile as any;
-		                                          const parts = [
-		                                            addr?.officeAddressLine1,
-		                                            addr?.officeAddressLine2,
-		                                            [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
-		                                              .filter(Boolean)
-		                                              .join(", "),
-		                                            addr?.officeCountry,
-		                                          ].filter(
-		                                            (p) => typeof p === "string" && p.trim().length > 0,
-		                                          );
-		                                          return parts.length > 0 ? parts.join("\n") : null;
-		                                        })();
-		                                        const doctorAddress = prospectAddress || accountAddress || null;
-		                                        const addressOrigin =
-		                                          prospectAddress ? "prospect" : accountAddress ? "user" : null;
-		                                        const ownerSalesRepId =
-		                                          (record as any).ownerSalesRepId ||
-		                                          (record as any).owner_sales_rep_id ||
-		                                          (record as any).salesRepId ||
-	                                          (record as any).sales_rep_id ||
-	                                          (record as any).assignedSalesRepId ||
-	                                          (record as any).assigned_sales_rep_id ||
-	                                          (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : null) ||
-	                                          null;
-		                                        openSalesDoctorDetail(
-		                                          {
-		                                            doctorId: String(doctorId || record.id),
-		                                            referralId: kind === "referral" ? String(record.id) : null,
-		                                            doctorName: leadDisplayName,
-		                                            doctorEmail,
-		                                            doctorAvatar:
-		                                              leadAccountProfile?.profileImageUrl ?? null,
-		                                            doctorPhone: record.referredContactPhone || null,
-		                                            doctorAddress,
-		                                            addressOrigin,
-		                                            ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
-		                                            orders: [],
-		                                            total: 0,
-		                                          },
-		                                          "doctor",
-		                                        );
-		                                      }
-		                                    }}
-	                                    aria-label={`View ${leadDisplayName} details`}
-	                                    style={{
-	                                      background: "transparent",
-	                                      border: "none",
-	                                      padding: 0,
-	                                    }}
-	                                  >
-                                    <span className="flex items-center gap-1.5 min-w-0 text-left">
+                                  <div className="flex items-start gap-2 min-w-0 text-left">
+                                    {hasContactAccount && leadAccountProfile?.profileImageUrl ? (
                                       <div
                                         className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
                                         style={{ width: 28, height: 28, minWidth: 28 }}
                                       >
-                                        {leadAccountProfile?.profileImageUrl ? (
-                                          <img
-                                            src={leadAccountProfile.profileImageUrl}
-                                            alt={leadDisplayName}
-                                            className="h-full w-full object-cover"
-                                            loading="lazy"
-                                            decoding="async"
-                                          />
-                                        ) : (
-                                          <span className="text-[11px] font-semibold text-slate-600">
-                                            {getInitials(leadDisplayName)}
-                                          </span>
-                                        )}
+                                        <img
+                                          src={leadAccountProfile.profileImageUrl}
+                                          alt={leadDisplayName}
+                                          className="h-full w-full object-cover"
+                                          loading="lazy"
+                                          decoding="async"
+                                        />
                                       </div>
-                                      <NotebookPen
-                                        className="h-4 w-4 text-slate-400 shrink-0 lead-list-name-icon"
-                                        aria-hidden="true"
-                                      />
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="min-w-0 text-left text-[rgb(26,85,173)] hover:underline"
+                                      onClick={openProspectDetail}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                          e.preventDefault();
+                                          openProspectDetail();
+                                        }
+                                      }}
+                                      aria-label={`View ${leadDisplayName} details`}
+                                      style={{
+                                        background: "transparent",
+                                        border: "none",
+                                        padding: 0,
+                                      }}
+                                    >
                                       <span className="lead-list-name-text min-w-0 flex-1 break-words justify-start text-left leading-snug mt-[1px] self-start w-full">
                                         {leadDisplayName}
                                       </span>
-                                    </span>
-                                  </button>
+                                    </button>
+                                  </div>
 	                                </div>
 	                                {record.referredContactEmail && (
 	                                  <div className="lead-list-detail">
@@ -23454,18 +23370,6 @@ function MainApp() {
                                     {record.referredContactPhone}
                                   </div>
                                 )}
-                                <span
-                                  className={`lead-source-pill ${sourceClass}`}
-                                >
-                                  {sourceLabel}
-                                </span>
-                                <span
-                                  className={`account-status-pill ${hasContactAccount ? "account-status-pill--active" : ""}`}
-                                >
-                                  {hasContactAccount
-                                    ? "Account Created"
-                                    : "No Account Yet"}
-                                </span>
                               </div>
 				                              <div className="active-prospect-status">
 				                                <select
@@ -23520,11 +23424,6 @@ function MainApp() {
 				                                </select>
 				                              </div>
 				                              <div className="active-prospect-right">
-	                                {stageInstruction ? (
-	                                  <div className="prospect-permit-instructions mt-2 text-xs leading-snug text-slate-500">
-	                                    {stageInstruction}
-	                                  </div>
-	                                ) : null}
 	                                {isVerified && (
 	                                  <div className="mt-1 text-xs text-slate-700 text-center">
 	                                    {typeof (user as any)?.referralCode === "string" &&
@@ -23740,7 +23639,7 @@ function MainApp() {
                     </div>
                   )}
                 </section>
-                <section className="lead-panel sales-rep-leads-card sales-rep-combined-card">
+                <section className="lead-panel sales-rep-leads-card sales-rep-combined-card referrals-panel w-full min-w-0">
 	                  <div className="lead-panel-header">
 	                    <div className="w-full">
 	                      <div className="lead-panel-filter-row">
@@ -23765,7 +23664,7 @@ function MainApp() {
                           </Button>
 	                      </div>
 	                      <p className="text-sm text-slate-500 referrals-subtitle">
-	                        Qualify new referrals and update their status.
+	                        Physicians referred to you by your existing clients.
 	                      </p>
 	                    </div>
                   </div>
@@ -23778,7 +23677,8 @@ function MainApp() {
                     ) : filteredSalesRepReferrals.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
                         You have no referrals yet. Encourage doctors to grow the
-                        network.
+                        network and receive {formatCurrency(referralCreditAmount)} when
+                        their referee places their first order.
                       </p>
                     ) : (
                       <ul className="lead-list">
@@ -23884,7 +23784,7 @@ function MainApp() {
                                         </p>
                                       </div>
                                     </div>
-                                    <div className="text-right text-xs text-slate-500 space-y-1 min-w-[180px]">
+                                    <div className="referral-card-meta text-right text-xs text-slate-500 space-y-1 min-w-[180px]">
                                       <div>Submitted {formatDateTime(referral.createdAt)}</div>
                                       <div className="text-[11px] text-slate-400">
                                         Updated {formatDateTime(referral.updatedAt)}
@@ -23926,8 +23826,8 @@ function MainApp() {
 	                                  )}
 	                                </div>
 
-                                  <div className="flex flex-wrap items-start justify-between gap-3 w-full">
-                                    <div className="min-w-[200px] space-y-1">
+                                  <div className="referral-card-details flex flex-wrap items-start justify-between gap-3 w-full">
+                                    <div className="referral-card-contact min-w-[200px] space-y-1">
                                       <p className="lead-list-detail">
                                         Referee Email:{" "}
                                         {refereeEmail && refereeEmail !== "—" ? (
@@ -23957,7 +23857,7 @@ function MainApp() {
                                       </p>
                                       <p className="lead-list-detail">Referrer Phone: {referrerPhone}</p>
                                     </div>
-                                    <div className="flex flex-col items-end gap-2 min-w-[240px] ml-auto">
+                                    <div className="referral-card-actions flex flex-col items-end gap-2 min-w-[240px] ml-auto">
                                       <select
                                         value={normalizedStatus}
 	                                        onChange={(event) => {
@@ -26925,6 +26825,11 @@ function MainApp() {
 				                      "—"
 				                    )}
 				                  </div>
+                          {salesDoctorDetail.leadTypeLabel ? (
+                            <div className="text-sm font-normal text-slate-600">
+                              Lead Type: {salesDoctorDetail.leadTypeLabel}
+                            </div>
+                          ) : null}
 						                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
 						                    isDoctorRole(salesDoctorDetail.role) && (
 						                      <div className="text-sm font-normal text-slate-600">

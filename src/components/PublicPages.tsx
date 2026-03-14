@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
 import { listProducts } from '../lib/wooClient';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
@@ -18,7 +18,7 @@ const PUBLIC_PATHS: Record<string, PublicPageKey> = {
 
 export const isPublicSitePath = (pathname: string) => Boolean(PUBLIC_PATHS[pathname]);
 
-const PageContainer = ({ title, children }: { title: string; children: React.ReactNode }) => (
+const PageContainer = ({ title, children }: { title: string; children: ReactNode }) => (
   <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
     <div className="glass-card squircle-xl border border-[var(--brand-glass-border-1)] bg-white/80 p-7 sm:p-10">
       <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900">{title}</h1>

@@ -1,9 +1,16 @@
 
+import React from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster } from "sonner@2.0.3";
 import App from "./App.tsx";
 import "./index.css";
 import "react-day-picker/dist/style.css";
+
+// Defensive runtime bridge for any emitted bundle code that still references
+// the React global instead of the imported module binding.
+if (typeof globalThis !== "undefined") {
+  (globalThis as typeof globalThis & { React?: typeof React }).React = React;
+}
 
 const ensureHeadLink = (selector: string, attrs: Record<string, string>) => {
   const head = document.head || document.querySelector("head");

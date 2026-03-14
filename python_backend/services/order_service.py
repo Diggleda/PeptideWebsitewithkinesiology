@@ -19,6 +19,7 @@ from ..repositories import (
     sales_prospect_repository,
     discount_code_repository,
 )
+from ..database import mysql_client
 from ..integrations import ship_station, stripe_payments, woo_commerce
 from .. import storage
 from . import referral_service
@@ -247,6 +248,66 @@ def _normalize_email(value: Optional[str]) -> str:
     if not value:
         return ""
     return str(value).strip().lower()
+
+
+def _list_house_lead_users_for_sales_tracking() -> List[Dict]:
+    try:
+        rows = mysql_client.fetch_all(
+            """
+            SELECT
+                id,
+                name,
+                email,
+                role,
+                sales_rep_id,
+                lead_type,
+                lead_type_source,
+                lead_type_locked_at,
+                phone,
+                office_address_line1,
+                office_address_line2,
+                office_city,
+                office_state,
+                office_postal_code,
+                office_country,
+                profile_image_url
+            FROM users
+            WHERE LOWER(TRIM(COALESCE(lead_type, ''))) = 'house'
+            """,
+            {},
+        )
+    except Exception:
+        logger.warning("[SalesRep] Failed to load house users from MySQL", exc_info=True)
+        return []
+
+    house_users: List[Dict] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        user_id = str(row.get("id") or "").strip()
+        if not user_id:
+            continue
+        house_users.append(
+            {
+                "id": user_id,
+                "name": row.get("name") or row.get("email") or "House / Contact Form",
+                "email": row.get("email"),
+                "role": row.get("role"),
+                "salesRepId": str(row.get("sales_rep_id") or "").strip() or None,
+                "leadType": row.get("lead_type") or "house",
+                "leadTypeSource": row.get("lead_type_source") or "users.lead_type",
+                "leadTypeLockedAt": row.get("lead_type_locked_at"),
+                "phone": row.get("phone"),
+                "officeAddressLine1": row.get("office_address_line1"),
+                "officeAddressLine2": row.get("office_address_line2"),
+                "officeCity": row.get("office_city"),
+                "officeState": row.get("office_state"),
+                "officePostalCode": row.get("office_postal_code"),
+                "officeCountry": row.get("office_country"),
+                "profileImageUrl": row.get("profile_image_url"),
+            }
+        )
+    return house_users
 
 
 def _is_doctor_role(role: Optional[str]) -> bool:
@@ -1896,6 +1957,39 @@ def get_orders_for_sales_rep(
         for doc in doctors
         if doc.get("id") is not None
     }
+
+    if use_admin_local_fast_path and include_house_contacts:
+        try:
+            seen_house_ids = set(doctor_lookup.keys())
+            for house_user in _list_house_lead_users_for_sales_tracking():
+                house_id = str(house_user.get("id") or "").strip()
+                if not house_id:
+                    continue
+                existing = doctor_lookup.get(house_id) or {}
+                merged = {
+                    "id": house_id,
+                    "name": existing.get("name") or house_user.get("name") or house_user.get("email") or "House / Contact Form",
+                    "email": existing.get("email") or house_user.get("email"),
+                    "phone": existing.get("phone") or house_user.get("phone"),
+                    "profileImageUrl": existing.get("profileImageUrl") or house_user.get("profileImageUrl"),
+                    "salesRepId": existing.get("salesRepId") or house_user.get("salesRepId"),
+                    "leadType": existing.get("leadType") or house_user.get("leadType") or "house",
+                    "leadTypeSource": existing.get("leadTypeSource") or house_user.get("leadTypeSource") or "users.lead_type",
+                    "leadTypeLockedAt": existing.get("leadTypeLockedAt") or house_user.get("leadTypeLockedAt"),
+                    "address1": existing.get("address1") or house_user.get("officeAddressLine1"),
+                    "address2": existing.get("address2") or house_user.get("officeAddressLine2"),
+                    "city": existing.get("city") or house_user.get("officeCity"),
+                    "state": existing.get("state") or house_user.get("officeState"),
+                    "postalCode": existing.get("postalCode") or house_user.get("officePostalCode"),
+                    "country": existing.get("country") or house_user.get("officeCountry"),
+                }
+                doctor_lookup[house_id] = merged
+                user_by_id.setdefault(house_id, house_user)
+                if house_id not in seen_house_ids:
+                    doctors.append(house_user)
+                    seen_house_ids.add(house_id)
+        except Exception:
+            logger.warning("[SalesRep] Failed to merge house users into admin fast path", exc_info=True)
 
     # Include contact-form prospects so reps/admins can see lead activity, and so order attribution by
     # billing email can match house leads even when no doctor user exists yet.
