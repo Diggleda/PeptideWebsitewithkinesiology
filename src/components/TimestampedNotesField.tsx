@@ -363,7 +363,7 @@ export function TimestampedNotesField({
                   side="bottom"
                   align="start"
                   sideOffset={8}
-                  className="timestamp-editor-popover z-[10000] w-[260px] rounded-xl p-3 shadow-xl"
+                  className="timestamp-editor-popover z-[10000] w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-xl p-3 shadow-xl"
                 >
                   <div className="timestamp-editor-popover__grid-wrap">
                     <button

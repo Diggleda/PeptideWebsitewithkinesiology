@@ -19676,7 +19676,7 @@ function MainApp() {
 			          </div>
 
 			          {showSalesDashboardTabs && !isAdmin(user?.role) && (
-                  <div className="relative w-full">
+                  <div className="relative w-full account-tab-shell">
                     <div
                       className="w-full account-tab-scroll-container"
                       ref={setSalesDashboardTabsContainerRef}
@@ -19693,7 +19693,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-sales-dashboard-tab={tab.id}
@@ -19990,7 +19990,7 @@ function MainApp() {
 		          )}
 
                 {isAdmin(user?.role) && (
-                  <div className="relative w-full">
+                  <div className="relative w-full account-tab-shell">
                     <div
                       className="w-full account-tab-scroll-container"
                       ref={setAdminDashboardTabsContainerRef}
@@ -20004,7 +20004,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-admin-dashboard-tab={tab.id}
@@ -22461,7 +22461,7 @@ function MainApp() {
 			          )}
 
           {showSalesDashboardTabs && isAdmin(user?.role) && (
-            <div className="relative w-full">
+            <div className="relative w-full account-tab-shell">
               <div
                 className="w-full account-tab-scroll-container"
                 ref={setSalesDashboardTabsContainerRef}
@@ -22478,7 +22478,7 @@ function MainApp() {
                         key={tab.id}
                         type="button"
                         className={clsx(
-                          "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                          "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                           isActive && "text-slate-900",
                         )}
                         data-sales-dashboard-tab={tab.id}
@@ -23189,8 +23189,7 @@ function MainApp() {
                     </p>
                   ) : filteredActiveProspects.length === 0 ? (
                     <p className="lead-panel-empty text-sm text-slate-500">
-                      Nobody yet. Update a referral or contact form status to
-                      move it here.
+                      Nobody yet. Go get 'em!
                     </p>
                   ) : (
                     <div className="lead-list-scroll active-prospects-list-scroll">
@@ -24079,8 +24078,7 @@ function MainApp() {
                   </div>
                 </section>
                 {isAdmin(user?.role) && (
-                  <div className="sales-rep-leads-card sales-rep-combined-card">
-                  <section className="lead-panel">
+                  <section className="lead-panel sales-rep-leads-card sales-rep-combined-card w-full min-w-0">
 	                    <div className="lead-panel-header">
 	                      <div>
 	                        <h4>{contactFormQueue.length} House / Contact Form{contactFormQueue.length === 1 ? "" : "s"}</h4>
@@ -24089,6 +24087,16 @@ function MainApp() {
 	                        </p>
 	                      </div>
 	                    </div>
+                    <div className="lead-panel-divider" />
+                    {referralDataLoading ? (
+                      <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
+                        Loading contact forms…
+                      </p>
+                    ) : contactFormQueue.length === 0 ? (
+                      <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
+                        Nobody has submitted their details to the PepPro contact form yet.
+                      </p>
+                    ) : (
                     <div className="sales-rep-table-wrapper admin-dashboard-list">
                       <table className="min-w-[720px] divide-y mb-2 divide-slate-200/70">
                         <thead className="bg-slate-50/70">
@@ -24105,26 +24113,7 @@ function MainApp() {
                           </tr>
                         </thead>
                         <tbody className="divide-y mt-2 mb-2 divide-slate-200/60">
-                          {referralDataLoading ? (
-                            <tr>
-                              <td
-                                colSpan={7}
-                                className="px-4 py-6 text-center mt-2 mb-2 text-sm text-slate-500"
-                              >
-                                Loading contact forms…
-                              </td>
-                            </tr>
-                          ) : contactFormQueue.length === 0 ? (
-                            <tr>
-                              <td
-                                colSpan={7}
-                                className="px-4 py-6 text-center mt-4 mb-2 text-sm text-slate-500"
-                              >
-                                No contact form submissions available.
-                              </td>
-                            </tr>
-                          ) : (
-                            contactFormQueue.map((lead) => {
+                          {contactFormQueue.map((lead) => {
                               const isUpdating =
                                 adminActionState.updatingReferral === lead.id;
                               const normalizedStatusRaw = sanitizeReferralStatus(
@@ -24245,12 +24234,12 @@ function MainApp() {
                                 </tr>
                               );
                             })
-                          )}
+                          }
                         </tbody>
                       </table>
                     </div>
+                    )}
                   </section>
-                  </div>
                 )}
               {/* Historic prospects removed; credited referrals appear in Sales */}
 	            </div>
@@ -26808,6 +26797,7 @@ function MainApp() {
                 }
                 required
                 placeholder="Prospect name"
+                className="border-slate-300/90 bg-transparent"
               />
             </div>
 	            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -26825,6 +26815,7 @@ function MainApp() {
                     }))
                   }
                   placeholder="prospect@email.com"
+                  className="border-slate-300/90 bg-transparent"
                 />
               </div>
               <div className="space-y-2">
@@ -26839,7 +26830,8 @@ function MainApp() {
                       phone: event.target.value,
                     }))
                   }
-                  placeholder="(555) 000-0000"
+                  placeholder="(444) 222 4224"
+                  className="border-slate-300/90 bg-transparent"
                 />
 	              </div>
 	            </div>
@@ -26856,8 +26848,8 @@ function MainApp() {
 	                  }))
 	                }
 	                rows={3}
-	                placeholder="Address line 1&#10;City, State ZIP&#10;Country"
-	                className="notes-textarea"
+	                placeholder="Address line 1, City, State, ZIP, Country"
+	                className="notes-textarea manual-prospect-field border-slate-300/90 bg-transparent"
 	              />
 	            </div>
 	            <div className="space-y-2">
@@ -26873,7 +26865,7 @@ function MainApp() {
 	                  }))
 	                }
 	                placeholder="Add optional context"
-	                className="notes-textarea"
+	                className="notes-textarea manual-prospect-field border-slate-300/90 bg-transparent"
 	              />
             </div>
             <div className="space-y-2">
@@ -26888,7 +26880,7 @@ function MainApp() {
                     status: event.target.value,
                   }))
                 }
-                className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                className="w-full rounded-md border border-slate-300/90 bg-transparent px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
               >
                 {REFERRAL_STATUS_FLOW_SELECT.map((stage) => (
                   <option key={stage.key} value={stage.key}>

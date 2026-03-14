@@ -2245,6 +2245,7 @@ const getOrdersForSalesRep = async (
     includeDoctors = false,
     includeSelfOrders = false,
     includeAllDoctors = false,
+    includeHouseContacts = false,
     alternateSalesRepIds = [],
   } = {},
 ) => {
@@ -2269,6 +2270,15 @@ const getOrdersForSalesRep = async (
     const isDoctorRole = role === 'doctor' || role === 'test_doctor';
     const includeSalesRepCustomers = includeAllDoctors && allowedRepIds.size === 0;
     const isSalesRepCustomerRole = includeSalesRepCustomers && (role === 'sales_rep' || role === 'rep');
+    const leadType = String(candidate?.leadType || candidate?.lead_type || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const isHouseContactUser = includeHouseContacts && (
+      leadType === 'contact_form'
+      || leadType === 'house'
+      || leadType === 'house_contact'
+    );
+    if (isHouseContactUser) {
+      return true;
+    }
     if (!isDoctorRole && !isSalesRepCustomerRole) {
       return false;
     }
@@ -2304,13 +2314,16 @@ const getOrdersForSalesRep = async (
     }),
   );
 
-  if (includeAllDoctors && allowedRepIds.size === 0 && mysqlClient.isEnabled()) {
+  if (includeHouseContacts && mysqlClient.isEnabled()) {
     try {
       const houseUsers = await fetchHouseLeadUsersFromSql();
       houseUsers.forEach((row) => {
         const doctorId = normalizeId(row?.id);
         if (!doctorId) return;
         const repId = normalizeId(row?.sales_rep_id);
+        if (allowedRepIds.size > 0 && repId && !allowedRepIds.has(repId)) {
+          return;
+        }
         const rep = repId ? repDirectory.get(repId) : null;
         const nextDoctor = {
           id: doctorId,

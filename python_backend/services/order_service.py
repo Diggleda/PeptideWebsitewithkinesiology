@@ -1907,16 +1907,16 @@ def get_orders_for_sales_rep(
         is_doctor = role in ("doctor", "test_doctor")
         is_sales_rep_customer = include_sales_rep_customers and role in ("sales_rep", "rep")
         lead_type = _normalize_lead_type(user.get("leadType") or user.get("lead_type"))
-        is_house_contact_doctor = include_house_contacts and is_doctor and lead_type in (
+        is_house_contact_user = include_house_contacts and lead_type in (
             "contact_form",
             "house",
             "house_contact",
         )
-        if not is_doctor and not is_sales_rep_customer:
-            continue
         doctor_sales_rep = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
-        if is_house_contact_doctor:
+        if is_house_contact_user:
             doctors.append(user)
+            continue
+        if not is_doctor and not is_sales_rep_customer:
             continue
         if include_all_doctors:
             if allowed_rep_ids and doctor_sales_rep not in allowed_rep_ids:
@@ -2170,7 +2170,9 @@ def get_orders_for_sales_rep(
             "house_contact",
         )
         if local_role:
-            if local_role in ("doctor", "test_doctor"):
+            if local_is_house_contact:
+                pass
+            elif local_role in ("doctor", "test_doctor"):
                 pass
             elif include_sales_rep_customers and local_role in ("sales_rep", "rep"):
                 pass

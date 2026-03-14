@@ -405,6 +405,7 @@ const getOrdersForSalesRep = async (req, res, next) => {
       includeDoctors: true,
       includeSelfOrders: role === 'admin',
       includeAllDoctors: scope === 'all',
+      includeHouseContacts: role === 'admin',
       alternateSalesRepIds:
         requestedSalesRepId && req.user?.id && requestedSalesRepId !== req.user.id ? [req.user.id] : [],
     });
