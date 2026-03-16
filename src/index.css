@@ -3742,6 +3742,7 @@ html {
 .account-tab-row {
   flex-wrap: nowrap;
   white-space: nowrap;
+  padding-bottom: 6px;
 }
 
 .account-tab-shell {
@@ -7663,9 +7664,49 @@ a[href^="mailto:"]:hover {
   gap: 0.5rem;
 }
 
+.delegate-logo-summary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.delegate-logo-summary-copy {
+  min-width: 0;
+}
+
+.delegate-logo-summary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.delegate-logo-summary-button {
+  width: 100%;
+}
+
 @media (min-width: 768px) {
   .active-prospects-filter-layout {
     grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
     align-items: center;
+  }
+
+  .delegate-logo-summary-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 1.5rem;
+    row-gap: 1rem;
+  }
+
+  .delegate-logo-summary-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-self: end;
+    flex-wrap: nowrap;
+  }
+
+  .delegate-logo-summary-button {
+    width: 11rem;
+    flex-shrink: 0;
   }
 }

@@ -28,7 +28,7 @@ const normalizeOptionalString = (value) => {
 const normalizeMarkupPercent = (value, fallback = DEFAULT_MARKUP_PERCENT) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(500, parsed));
+  return Math.max(0, parsed);
 };
 
 const getState = () => {

@@ -35,6 +35,8 @@ const documents = [
   },
 ];
 
+const force = process.argv.includes('--force');
+
 function convertWithTextutil(inputPath) {
   return new Promise((resolve, reject) => {
     execFile(
@@ -169,10 +171,90 @@ async function convertDocument({ docx, html }) {
   console.log(`Converted ${docx} -> ${html}`);
 }
 
-async function run() {
-  for (const doc of documents) {
-    await convertDocument(doc);
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
   }
+}
+
+async function getPublicMirrorTargets(html) {
+  const targets = [];
+  const publicContentRoot = path.join(projectRoot, 'public', 'content');
+  const marker = path.join('src', 'content') + path.sep;
+  const normalizedHtml = html.split('/').join(path.sep);
+  const idx = normalizedHtml.indexOf(marker);
+  if (idx >= 0) {
+    const relative = normalizedHtml.slice(idx + marker.length);
+    targets.push(path.join(publicContentRoot, relative));
+  }
+
+  if (html.endsWith('src/content/landing/physicians-choice.html')) {
+    targets.push(path.join(projectRoot, 'public', 'physicians-choice.html'));
+  }
+  if (html.endsWith('src/content/landing/care-compliance.html')) {
+    targets.push(path.join(projectRoot, 'public', 'care-compliance.html'));
+  }
+
+  return targets;
+}
+
+async function needsConversion({ docx, html }) {
+  if (force) {
+    return true;
+  }
+
+  const inputPath = path.join(projectRoot, docx);
+  const outputPath = path.join(projectRoot, html);
+  const mirrorTargets = await getPublicMirrorTargets(html);
+
+  const [inputStat, outputExists] = await Promise.all([
+    fs.stat(inputPath),
+    pathExists(outputPath),
+  ]);
+
+  if (!outputExists) {
+    return true;
+  }
+
+  const outputStat = await fs.stat(outputPath);
+  if (inputStat.mtimeMs > outputStat.mtimeMs) {
+    return true;
+  }
+
+  for (const target of mirrorTargets) {
+    // eslint-disable-next-line no-await-in-loop
+    const exists = await pathExists(target);
+    if (!exists) {
+      return true;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    const stat = await fs.stat(target);
+    if (inputStat.mtimeMs > stat.mtimeMs) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function run() {
+  const decisions = await Promise.all(
+    documents.map(async (doc) => ({
+      doc,
+      shouldConvert: await needsConversion(doc),
+    })),
+  );
+
+  const pending = decisions.filter((entry) => entry.shouldConvert).map((entry) => entry.doc);
+  if (pending.length === 0) {
+    console.log('DOCX content is up to date; skipping conversion.');
+    return;
+  }
+
+  await Promise.all(pending.map((doc) => convertDocument(doc)));
 }
 
 run().catch((error) => {

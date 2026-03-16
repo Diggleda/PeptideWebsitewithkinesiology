@@ -1,6 +1,7 @@
 // vite.config.ts
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import os from 'os'
 import path from 'path'
 
 const isReplit = Boolean(
@@ -9,6 +10,8 @@ const isReplit = Boolean(
   process.env.REPLIT_ENV ||
   process.env.REPLIT_DB_URL
 );
+
+const viteCacheDir = process.env.VITE_CACHE_DIR || path.join(os.tmpdir(), 'peppro-vite-cache');
 
 export default defineConfig(({ command }) => ({
   // Production builds are currently hanging inside the React SWC plugin path.
@@ -72,6 +75,7 @@ export default defineConfig(({ command }) => ({
     target: 'esnext',
     outDir: 'build',
   },
+  cacheDir: viteCacheDir,
   server: {
     host: true,              // listen on 0.0.0.0 (needed on Replit)
     port: 3000,

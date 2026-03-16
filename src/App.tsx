@@ -1420,6 +1420,19 @@ const formatOrderShippedAtForLocalDisplay = (order: any): string | null => {
 const hasOrderShippedAt = (order: any): boolean =>
   Boolean(resolveOrderShippedAt(order));
 
+const getSalesOrderDateSummary = (
+  order: any,
+): { label: string; value: string | null } => {
+  const shippedAt = formatOrderShippedAtForLocalDisplay(order);
+  if (shippedAt) {
+    return { label: "Shipped", value: shippedAt };
+  }
+  return {
+    label: "Order placed",
+    value: formatOrderPlacedAtForLocalDisplay(order),
+  };
+};
+
 const resolveOrderAsDelegateLabel = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
 
@@ -3470,7 +3483,7 @@ const toCardProduct = (
 ): CardProduct => {
   const markupPercentRaw = Number(options?.markupPercent ?? 0);
   const markupPercent = Number.isFinite(markupPercentRaw)
-    ? Math.max(0, Math.min(500, markupPercentRaw))
+    ? Math.max(0, markupPercentRaw)
     : 0;
   const applyMarkup = (value: number) => {
     if (!markupPercent) return value;
@@ -19424,12 +19437,12 @@ function MainApp() {
 	              Loading orders…
 	            </div>
 	          ) : salesOnHoldError && salesOnHoldOrders.length === 0 ? (
-	            <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
-	              {salesOnHoldError}
+	            <div className="px-4 py-3 text-sm text-slate-500">
+	              No orders on-hold yet.
 	            </div>
 	          ) : salesOnHoldOrders.length === 0 ? (
 	            <div className="px-4 py-3 text-sm text-slate-500">
-	              No on-hold orders found.
+	              No orders on-hold yet.
 	            </div>
 	          ) : (
 	            <div className="w-full" style={{ minWidth: 980 }}>
@@ -19567,12 +19580,12 @@ function MainApp() {
 	              Loading orders…
 	            </div>
 	          ) : adminOnHoldError && adminOnHoldOrders.length === 0 ? (
-	            <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
-	              {adminOnHoldError}
+	            <div className="px-4 py-3 text-sm text-slate-500">
+	              No orders on-hold yet.
 	            </div>
 	          ) : adminOnHoldOrders.length === 0 ? (
 	            <div className="px-4 py-3 text-sm text-slate-500">
-	              No on-hold orders found.
+	              No orders on-hold yet.
 	            </div>
 	          ) : (
 	            <div className="w-full" style={{ minWidth: 980 }}>
@@ -19885,7 +19898,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                "relative inline-flex items-center gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-sales-dashboard-tab={tab.id}
@@ -20196,7 +20209,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                "relative inline-flex items-center gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-admin-dashboard-tab={tab.id}
@@ -20240,11 +20253,13 @@ function MainApp() {
                   >
 		              <div className="flex flex-col gap-2">
 		                <div>
-		                  <h4 className="text-lg font-semibold text-slate-900">Clients</h4>
+		                  <h4 className="text-lg font-semibold text-slate-900">Network</h4>
 		                  <p className="text-sm text-slate-600">
-		                    {isSalesLead(user?.role) || isAdmin(user?.role)
-		                      ? "All doctors and sales reps (online, idle, and offline)."
-		                      : "Your doctors (online, idle, and offline)."}
+		                    {isAdmin(user?.role)
+		                      ? "Everyone in the PepPro network."
+		                      : isSalesLead(user?.role)
+		                        ? "The PepPro team and your clients."
+		                        : "Your clients, sales leads and admin."}
 		                  </p>
 		                </div>
 
@@ -20511,7 +20526,6 @@ function MainApp() {
 		                          return null;
 		                        })();
 
-		                        const idleMinutesLabel = showIdle ? formatIdleMinutes(entry) : null;
 		                        const formatOfflineFor = (value?: string | null) => {
 		                          const raw = formatRelativeMinutes(value);
 		                          if (raw === "a few moments ago") return "a few moments";
@@ -20520,9 +20534,7 @@ function MainApp() {
 		                        const offlineAnchor =
 		                          entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
 		                        const statusLine = isOnlineNow
-		                          ? showIdle
-		                            ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""} - ${formatOnlineDuration(entry.lastLoginAt)}`
-		                            : formatOnlineDuration(entry.lastLoginAt)
+		                          ? formatOnlineDuration(entry.lastLoginAt)
 		                          : offlineAnchor
 		                            ? `Offline for ${formatOfflineFor(offlineAnchor)}`
 		                            : "Offline";
@@ -21106,10 +21118,10 @@ function MainApp() {
 	                <div className="sales-rep-leads-card sales-rep-combined-card">
                   <div>
                     <h4 className="text-lg font-semibold text-slate-900">
-                      Clients
+                      Network
                     </h4>
                     <p className="text-sm text-slate-600">
-                      Users currently online or idle.
+                      Everyone in the PepPro network.
                     </p>
                   </div>
 
@@ -21473,7 +21485,6 @@ function MainApp() {
 				                                (idleReported ||
 				                                  (minutesSinceLastSeen != null &&
 			                                    minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
-				                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
 				                              const formatOfflineFor = (value?: string | null) => {
 				                                const raw = formatRelativeMinutes(value);
 				                                if (raw === "a few moments ago") return "a few moments";
@@ -21482,9 +21493,7 @@ function MainApp() {
 				                              const offlineAnchor =
 				                                entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
 				                              const statusLine = isOnline
-				                                ? showIdle
-				                                  ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""} - ${formatOnlineDuration(entry.lastLoginAt)}`
-				                                  : formatOnlineDuration(entry.lastLoginAt)
+				                                ? formatOnlineDuration(entry.lastLoginAt)
 				                                : offlineAnchor
 				                                  ? `Offline for ${formatOfflineFor(offlineAnchor)}`
 				                                  : "Offline";
@@ -22670,7 +22679,7 @@ function MainApp() {
                         key={tab.id}
                         type="button"
                         className={clsx(
-                          "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                          "relative inline-flex items-center gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                           isActive && "text-slate-900",
                         )}
                         data-sales-dashboard-tab={tab.id}
@@ -23156,8 +23165,6 @@ function MainApp() {
                             id={`sales-orders-${bucket.doctorId}`}
                           >
                           {bucket.orders.map((order) => {
-                            const placedDate =
-                              formatOrderPlacedAtForLocalDisplay(order as any);
                             const shippedDate =
                               formatOrderShippedAtForLocalDisplay(order as any);
                             const isStatusShipped =
@@ -23177,21 +23184,33 @@ function MainApp() {
                                 (order as any)?.shipping?.estimated_delivery_date ||
                                 null
                               : null;
+                            const trackingLabel = resolveTrackingNumber(order as any);
+                            const trackingHref = trackingLabel
+                              ? buildTrackingUrl(
+                                  trackingLabel,
+                                  (order as any)?.shippingEstimate?.carrierId ||
+                                    (order as any)?.shippingEstimate?.carrier_id ||
+                                    (order as any)?.shipping?.carrierId ||
+                                    (order as any)?.shipping?.carrier_id ||
+                                    null,
+                                )
+                              : null;
                             const orderKey = String(order.id || order.number || "");
                             const isHydrating =
                               salesOrderHydratingIds.has(orderKey) ||
                               salesOrderRefreshingIds.has(orderKey);
                             const showShimmer = isHydrating;
-                            const placedLabel = placedDate
-                              ? `Order placed ${placedDate}`
-                              : "Order placed Unknown date";
+                            const dateSummary = getSalesOrderDateSummary(order as any);
+                            const primaryDateLabel = dateSummary.value
+                              ? `${dateSummary.label} ${dateSummary.value}`
+                              : `${dateSummary.label} Unknown date`;
                             const arrivalLabel = isSalesOrderHandDelivered(order as any)
                               ? "Hand delivery"
 	                              : isShipped && shippedDate
 	                                ? `Shipped ${shippedDate}`
 	                                : arrivalDate
 	                                  ? `Expected delivery ${formatDate(arrivalDate as string)}`
-	                                  : "Expected delivery unavailable";
+	                                  : null;
 	                            const statusLabel = describeSalesOrderStatus(order as any);
                               const delegateOrderLabel =
                                 normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
@@ -23244,11 +23263,29 @@ function MainApp() {
 	                                  ) : (
 	                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
 	                                      <div className="lead-list-detail">
-	                                        {placedLabel}
+	                                        {primaryDateLabel}
 	                                      </div>
 	                                      <div className="lead-list-detail">
-	                                        {arrivalLabel}
+	                                        {arrivalLabel || "Tracking pending"}
 	                                      </div>
+                                        {trackingLabel ? (
+                                          <div className="lead-list-detail sm:col-span-2">
+                                            Tracking{" "}
+                                            {trackingHref ? (
+                                              <a
+                                                href={trackingHref}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-[rgb(26,85,173)] hover:underline"
+                                                onClick={(event) => event.stopPropagation()}
+                                              >
+                                                {trackingLabel}
+                                              </a>
+                                            ) : (
+                                              <span>{trackingLabel}</span>
+                                            )}
+                                          </div>
+                                        ) : null}
 	                                      {orderNotes ? (
 	                                        <div className="lead-list-detail sm:col-span-2">
 	                                          <span className="text-xs font-semibold text-slate-500 mr-1">
@@ -28349,7 +28386,7 @@ function MainApp() {
                           const delegateOrderLabel =
                             normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
                             normalizeDelegateOrderLabel((order as any)?.as_delegate);
-                          const placedAt = formatOrderPlacedAtForLocalDisplay(order as any);
+                          const dateSummary = getSalesOrderDateSummary(order as any);
                           const orderSubtotal = resolveOrderItemsSubtotal(order as any);
                           return (
 	                        <button
@@ -28373,7 +28410,9 @@ function MainApp() {
                                 ) : null}
 	                            </div>
 	                            <div className="text-xs text-slate-500">
-	                              {placedAt || "Date unavailable"}
+	                              {dateSummary.value
+                                  ? `${dateSummary.label}: ${dateSummary.value}`
+                                  : "Date unavailable"}
 	                            </div>
 	                          </div>
 	                          <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
@@ -28901,8 +28940,8 @@ function MainApp() {
                   return <p className="text-sm text-slate-500">—</p>;
                 };
 
-                const placedDate =
-                  formatOrderPlacedAtForLocalDisplay(salesOrderDetail as any);
+                const dateSummary =
+                  getSalesOrderDateSummary(salesOrderDetail as any);
                 const shippedDate =
                   formatOrderShippedAtForLocalDisplay(salesOrderDetail as any);
                 const normalizedStatus = String(
@@ -28979,10 +29018,10 @@ function MainApp() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-slate-700">
                       <div>
                         <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
-                          Order placed
+                          {dateSummary.label}
                         </p>
                         <p className="font-semibold text-slate-900">
-                          {renderOrderDetailValue(placedDate, { widthClass: "w-28" })}
+                          {renderOrderDetailValue(dateSummary.value, { widthClass: "w-28" })}
                         </p>
                       </div>
                       <div>
@@ -29053,6 +29092,12 @@ function MainApp() {
                             <p>
                               <span className="font-semibold">Tracking status:</span>{" "}
                               {humanizeAccountOrderStatus(String(carrierTrackingLabel))}
+                            </p>
+                          )}
+                          {shippedDate && (
+                            <p>
+                              <span className="font-semibold">Shipped:</span>{" "}
+                              {shippedDate}
                             </p>
                           )}
                           {Number.isFinite(shippingTotal) && (

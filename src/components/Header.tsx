@@ -1188,7 +1188,6 @@ export function Header({
   const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
   const lastZelleContactRef = useRef<string | null>(null);
   const [zelleContactDraft, setZelleContactDraft] = useState('');
-  const [zelleContactSaving, setZelleContactSaving] = useState(false);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
   const trackingStatusCacheRef = useRef<Map<string, any>>(new Map());
@@ -1817,7 +1816,7 @@ export function Header({
     setZelleContactDraft(raw ? raw.trim() : '');
   }, [localUser?.zelleContact]);
   useEffect(() => {
-    const nextZelleContact = typeof localUser?.zelleContact === 'string' ? localUser.zelleContact.trim() : '';
+    const nextZelleContact = zelleContactDraft.trim();
     const prevZelleContact = typeof lastZelleContactRef.current === 'string' ? lastZelleContactRef.current : '';
 
     if (patientLinkPaymentMethodDraft === 'zelle') {
@@ -1853,12 +1852,12 @@ export function Header({
     lastZelleContactRef.current = nextZelleContact || null;
   }, [
     localUser?.name,
-    localUser?.zelleContact,
     patientLinkInstructionsDraft,
     patientLinkPaymentMethodDraft,
     patientLinkPaymentMethodDraftByToken,
     patientLinks,
     user?.name,
+    zelleContactDraft,
   ]);
   const accountDetailsRefreshSeqRef = useRef(0);
   useEffect(() => {
@@ -3450,7 +3449,7 @@ export function Header({
     details: 'Update your profile, shipping info, and settings.',
     orders: 'Track your orders, reorders, and invoices.',
     patient_links: 'Manage delegate links, product allowlists, and delegate proposals.',
-    research: 'Where you will soon find research tools and resources. We are excited to bring these to you!',
+    research: 'Where you will soon find research tools and resources.',
   };
 
   const normalizeMarkupPercent = useCallback((value: unknown) => {
@@ -3458,7 +3457,7 @@ export function Header({
     if (!Number.isFinite(parsed)) {
       return 0;
     }
-    const clamped = Math.max(0, Math.min(500, parsed));
+    const clamped = Math.max(0, parsed);
     return Math.round((clamped + Number.EPSILON) * 100) / 100;
   }, []);
 
@@ -3730,6 +3729,21 @@ export function Header({
     setPatientLinksCreating(true);
     try {
       const api = await import('../services/api');
+      const zelleContact = zelleContactDraft.trim();
+      const savedZelleContact =
+        typeof localUser?.zelleContact === 'string' ? localUser.zelleContact.trim() : '';
+      if (zelleContact !== savedZelleContact) {
+        const updatedUser = await api.authAPI.updateMe({
+          zelleContact: zelleContact ? zelleContact : null,
+        });
+        const nextUserState: HeaderUser = {
+          ...(localUser || {}),
+          ...(updatedUser || {}),
+          zelleContact: zelleContact ? zelleContact : null,
+        };
+        setLocalUser(nextUserState);
+        onUserUpdated?.(nextUserState);
+      }
       const subjectLabel = patientLinkSubjectLabelDraft.trim();
       const studyLabel = patientLinkStudyLabelDraft.trim();
       const patientReference = patientLinkReferenceDraft.trim();
@@ -3739,7 +3753,7 @@ export function Header({
       const paymentMethod = patientLinkPaymentMethodDraft === 'zelle' ? 'zelle' : '';
       const paymentInstructionsDraft = patientLinkInstructionsDraft.trim();
       const paymentInstructions = paymentMethod === 'zelle'
-        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null))
+        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', zelleContact || null, localUser?.name ?? user?.name ?? null))
         : '';
       await api.delegationAPI.createLink({
         patientId: subjectLabel ? subjectLabel : null,
@@ -3790,8 +3804,11 @@ export function Header({
     patientLinksCreating,
     localUser?.name,
     localUser?.zelleContact,
+    onUserUpdated,
+    setLocalUser,
     showPatientLinksTab,
     user?.name,
+    zelleContactDraft,
   ]);
 
   const getPatientLinkUrl = useCallback((token: string): string => {
@@ -3801,11 +3818,11 @@ export function Header({
     return buildResearchSupplyLinkUrl(window.location.origin, normalized, localUser?.name ?? user?.name ?? null);
   }, [localUser?.name, user?.name]);
 
-  const openTermsOfService = useCallback(() => {
+  const openLegalDocument = useCallback((key: 'terms' | 'shipping' | 'privacy') => {
     if (typeof window === 'undefined') return;
     window.dispatchEvent(
       new CustomEvent('peppro:open-legal', {
-        detail: { key: 'terms', preserveDialogs: true },
+        detail: { key, preserveDialogs: true },
       }),
     );
   }, []);
@@ -4054,17 +4071,6 @@ export function Header({
     },
     [setLocalUser, onUserUpdated, localUser],
   );
-
-  const handleSaveZelleContact = useCallback(async () => {
-    if (zelleContactSaving) return;
-    setZelleContactSaving(true);
-    try {
-      const trimmed = zelleContactDraft.trim();
-      await saveProfileField('Zelle contact', { zelleContact: trimmed ? trimmed : null });
-    } finally {
-      setZelleContactSaving(false);
-    }
-  }, [saveProfileField, zelleContactDraft, zelleContactSaving]);
 
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
@@ -5903,161 +5909,6 @@ export function Header({
 
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
-	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-	        <h3 className="text-lg font-semibold text-slate-900">Give your sessions your logo</h3>
-	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
-	          Make your logo appear in the header of your patient's session. Recommended: horizontal rectangle PNG (we’ll resize to fit the header).
-	        </p>
-		        <div className="mt-2 space-y-4">
-			          <div className="glass-card squircle-lg p-3 !border-0">
-			            <p className="text-xs font-semibold text-slate-700">Header preview</p>
-				            <div className="mt-3 w-full max-w-full overflow-hidden app-header-blur border border-slate-200 shadow-sm rounded-xl px-4 sm:px-6 py-4">
-				              <div className="flex flex-col gap-3 md:gap-4">
-				                <div className="flex w-full min-w-0 items-center gap-3 sm:gap-4 justify-between flex-nowrap">
-				                  <div className="flex items-center gap-3 min-w-0">
-					                    <div
-					                      className="brand-logo relative flex items-center justify-start flex-shrink min-w-0"
-					                      style={{ height: logoSizing.heightPx, maxWidth: logoSizing.maxWidth }}
-					                    >
-					                      <img
-				                        src={
-				                          typeof localUser?.delegateLogoUrl === 'string' &&
-				                          localUser.delegateLogoUrl.trim().length > 0
-				                            ? localUser.delegateLogoUrl
-					                            : withStaticAssetStamp('/PepPro_fulllogo.png')
-				                        }
-				                        alt="Delegate header logo preview"
-					                        className="relative z-[1] flex-shrink-0"
-					                        style={{
-					                          display: 'block',
-					                          width: '100%',
-					                          height: '100%',
-					                          maxHeight: '100%',
-					                          objectFit: 'contain',
-					                        }}
-				                        loading="eager"
-				                        decoding="async"
-				                      />
-				                    </div>
-				                  </div>
-	
-				                  {isLargeScreen && (
-				                    <div className="flex flex-1 justify-center min-w-0 pointer-events-none opacity-95">
-				                      <div className="w-full min-w-0 max-w-md">
-				                        {renderSearchField('', {
-				                          value: '',
-				                          readOnly: true,
-				                          showClearButton: false,
-				                        })}
-				                      </div>
-				                    </div>
-				                  )}
-	
-				                  <div className="ml-auto flex w-auto items-center justify-end gap-2 min-w-0 max-w-full">
-				                    <div
-				                      className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent !text-[rgb(95,179,249)]"
-				                      aria-label="Delegate header preview"
-				                      style={{
-				                        border: '0',
-				                        backgroundColor: 'transparent',
-				                        color: 'rgb(95,179,249)',
-				                      }}
-				                    >
-				                      <User className={delegateUserIconClassName} aria-hidden="true" />
-				                      <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
-				                        localUser?.name ? `Dr. ${localUser.name}` : 'Physician'
-				                      }`}</span>
-				                    </div>
-				                    {!isLargeScreen && (
-				                      <Button
-				                        type="button"
-				                        variant="outline"
-				                        size="icon"
-				                        disabled
-				                        aria-hidden="true"
-				                        className="glass squircle-sm pointer-events-none"
-				                        style={{
-				                          color: secondaryColor,
-				                          borderColor: translucentSecondary,
-				                        }}
-				                      >
-				                        <Search className="h-4 w-4" style={{ color: secondaryColor }} />
-				                      </Button>
-				                    )}
-				                  </div>
-				                </div>
-				              </div>
-				            </div>
-			          </div>
-
-	          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-	            <div className="min-w-0">
-	              <p className="text-sm font-semibold text-slate-900 truncate">
-	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
-	                  ? 'Custom logo set'
-	                  : 'Using PepPro logo'}
-	              </p>
-	              <p className="text-xs text-slate-600">Max ~5MB. Stored on your account (we resize to fit the header).</p>
-	            </div>
-			            <div className="flex min-w-0 flex-col flex-wrap items-stretch gap-2 sm:flex-row sm:items-center">
-			            <input
-			              ref={delegateLogoInputRef}
-			              type="file"
-			              accept="image/*"
-              className="hidden"
-              onChange={(event) => void handleSelectDelegateLogo(event.target.files?.[0] ?? null)}
-            />
-	            <Button
-	              type="button"
-                variant="outline"
-	              onClick={() => delegateLogoInputRef.current?.click()}
-	              disabled={delegateLogoUploading}
-	              className="header-home-button h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm bg-white px-7 text-slate-900"
-	            >
-              {delegateLogoUploading ? 'Uploading…' : 'Upload logo'}
-            </Button>
-			            <Button
-			              type="button"
-			              variant="outline"
-			              onClick={() => void handleRemoveDelegateLogo()}
-			              disabled={delegateLogoUploading}
-			              className="header-home-button patient-link-payment-toggle-button h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm gap-2 bg-white text-slate-900"
-			            >
-			              Remove
-			            </Button>
-		            </div>
-	          </div>
-	        </div>
-	      </div>
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-        <h3 className="text-lg font-semibold text-slate-900">Store payment settings</h3>
-        <p className="mb-4 text-sm leading-relaxed text-slate-700">
-          Set the Zelle email or phone number you want patients to use when paying you.
-        </p>
-        <div className="patient-link-form">
-          <Label
-            htmlFor="doctor-zelle-contact"
-            className="patient-link-form__label patient-link-form__label--zelle-contact text-sm font-semibold text-slate-700"
-          >
-            Zelle email or phone
-          </Label>
-          <Input
-            id="doctor-zelle-contact"
-            value={zelleContactDraft}
-            onChange={(event) => setZelleContactDraft(event.target.value)}
-            placeholder="e.g., billing@clinic.com or +1 (444) 444-4444"
-            className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
-          />
-          <Button
-            type="button"
-            onClick={() => void handleSaveZelleContact()}
-            disabled={!localUser || zelleContactSaving}
-            className="header-home-button patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm bg-white text-slate-900 px-7"
-          >
-            {zelleContactSaving ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
-      </div>
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Create a delegate link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
@@ -6197,7 +6048,7 @@ export function Header({
 	              const next = normalizePatientLinkPaymentMethod(event.target.value);
 	              const currentDefault = buildPatientLinkDefaultInstructions(
 	                patientLinkPaymentMethodDraft,
-	                localUser?.zelleContact ?? null,
+	                zelleContactDraft.trim() || null,
 	                localUser?.name ?? user?.name ?? null,
 	              );
 	              const shouldReplace =
@@ -6206,7 +6057,7 @@ export function Header({
 	              setPatientLinkPaymentMethodDraft(next);
 	              if (shouldReplace) {
 	                setPatientLinkInstructionsDraft(
-                    buildPatientLinkDefaultInstructions(next, localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null),
+                    buildPatientLinkDefaultInstructions(next, zelleContactDraft.trim() || null, localUser?.name ?? user?.name ?? null),
                   );
 	              }
 	            }}
@@ -6218,6 +6069,19 @@ export function Header({
 	              </option>
 	            ))}
 	          </select>
+	          <Label
+	            htmlFor="patient-link-zelle-contact"
+	            className="patient-link-form__label patient-link-form__label--zelle-contact text-sm font-semibold text-slate-700"
+	          >
+	            Zelle email or phone
+	          </Label>
+	          <Input
+	            id="patient-link-zelle-contact"
+	            value={zelleContactDraft}
+	            onChange={(event) => setZelleContactDraft(event.target.value)}
+	            placeholder="e.g., billing@clinic.com or +1 (444) 444-4444"
+	            className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
             </div>
             <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
             <div className="pt-2">
@@ -6254,7 +6118,7 @@ export function Header({
 	            className="patient-link-form__instructions min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
             </div>
-	          <div className="flex items-center gap-3 pt-3 pb-6">
+	          <div className="mt-2 flex items-center gap-3 pt-3 pb-6">
 	            <input
 	              type="checkbox"
 	              id="delegate-link-terms"
@@ -6270,10 +6134,34 @@ export function Header({
 	                onClick={(event) => {
 	                  event.preventDefault();
 	                  event.stopPropagation();
-	                  openTermsOfService();
+	                  openLegalDocument('terms');
 	                }}
 	              >
 	                Terms of Service
+	              </button>
+	              {', '}
+	              <button
+	                type="button"
+	                className="legal-inline-link"
+	                onClick={(event) => {
+	                  event.preventDefault();
+	                  event.stopPropagation();
+	                  openLegalDocument('shipping');
+	                }}
+	              >
+	                Shipping Policy
+	              </button>
+	              {', and '}
+	              <button
+	                type="button"
+	                className="legal-inline-link"
+	                onClick={(event) => {
+	                  event.preventDefault();
+	                  event.stopPropagation();
+	                  openLegalDocument('privacy');
+	                }}
+	              >
+	                Privacy Policy
 	              </button>
 	              .
 	            </label>
@@ -6287,6 +6175,133 @@ export function Header({
 	            >
 	              {patientLinksCreating ? 'Creating…' : 'Create delegate link'}
 	            </Button>
+	          </div>
+	        </div>
+	      </div>
+
+	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+	        <h3 className="text-lg font-semibold text-slate-900">Give your sessions your logo</h3>
+	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
+	          Make your logo appear in the header of your patient&apos;s session. Recommended: horizontal rectangle PNG (we&apos;ll resize to fit the header).
+	        </p>
+	        <div className="mt-2 space-y-4">
+	          <div className="glass-card squircle-lg p-3 !border-0">
+	            <p className="text-xs font-semibold text-slate-700">Header preview</p>
+	            <div className="mt-3 w-full max-w-full overflow-hidden app-header-blur border border-slate-200 shadow-sm rounded-xl px-4 sm:px-6 py-4">
+	              <div className="flex flex-col gap-3 md:gap-4">
+	                <div className="flex w-full min-w-0 items-center gap-3 sm:gap-4 justify-between flex-nowrap">
+	                  <div className="flex items-center gap-3 min-w-0">
+	                    <div
+	                      className="brand-logo relative flex items-center justify-start flex-shrink min-w-0"
+	                      style={{ height: logoSizing.heightPx, maxWidth: logoSizing.maxWidth }}
+	                    >
+	                      <img
+	                        src={
+	                          typeof localUser?.delegateLogoUrl === 'string' &&
+	                          localUser.delegateLogoUrl.trim().length > 0
+	                            ? localUser.delegateLogoUrl
+	                            : withStaticAssetStamp('/PepPro_fulllogo.png')
+	                        }
+	                        alt="Delegate header logo preview"
+	                        className="relative z-[1] flex-shrink-0"
+	                        style={{
+	                          display: 'block',
+	                          width: '100%',
+	                          height: '100%',
+	                          maxHeight: '100%',
+	                          objectFit: 'contain',
+	                        }}
+	                        loading="eager"
+	                        decoding="async"
+	                      />
+	                    </div>
+	                  </div>
+
+	                  {isLargeScreen && (
+	                    <div className="flex flex-1 justify-center min-w-0 pointer-events-none opacity-95">
+	                      <div className="w-full min-w-0 max-w-md">
+	                        {renderSearchField('', {
+	                          value: '',
+	                          readOnly: true,
+	                          showClearButton: false,
+	                        })}
+	                      </div>
+	                    </div>
+	                  )}
+
+	                  <div className="ml-auto flex w-auto items-center justify-end gap-2 min-w-0 max-w-full">
+	                    <div
+	                      className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent !text-[rgb(95,179,249)]"
+	                      aria-label="Delegate header preview"
+	                      style={{
+	                        border: '0',
+	                        backgroundColor: 'transparent',
+	                        color: 'rgb(95,179,249)',
+	                      }}
+	                    >
+	                      <User className={delegateUserIconClassName} aria-hidden="true" />
+	                      <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
+	                        localUser?.name ? `Dr. ${localUser.name}` : 'Physician'
+	                      }`}</span>
+	                    </div>
+	                    {!isLargeScreen && (
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="icon"
+	                        disabled
+	                        aria-hidden="true"
+	                        className="glass squircle-sm pointer-events-none"
+	                        style={{
+	                          color: secondaryColor,
+	                          borderColor: translucentSecondary,
+	                        }}
+	                      >
+	                        <Search className="h-4 w-4" style={{ color: secondaryColor }} />
+	                      </Button>
+	                    )}
+	                  </div>
+	                </div>
+	              </div>
+	            </div>
+	          </div>
+
+	          <div className="delegate-logo-summary-row">
+	            <div className="delegate-logo-summary-copy">
+	              <p className="text-sm font-semibold text-slate-900 truncate">
+	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
+	                  ? 'Custom logo set'
+	                  : 'Using PepPro logo'}
+	              </p>
+	              <p className="text-xs text-slate-600">Max ~5MB. Stored on your account (we resize to fit the header).</p>
+	            </div>
+	            <input
+	              ref={delegateLogoInputRef}
+	              type="file"
+	              accept="image/*"
+	              className="hidden"
+	              onChange={(event) => void handleSelectDelegateLogo(event.target.files?.[0] ?? null)}
+	            />
+	            <div className="delegate-logo-summary-actions">
+	              <Button
+	                type="button"
+	                variant="outline"
+	                onClick={() => delegateLogoInputRef.current?.click()}
+	                disabled={delegateLogoUploading}
+	                className="header-home-button delegate-logo-summary-button h-11 squircle-sm bg-white px-7 text-slate-900"
+	              >
+	                {delegateLogoUploading ? 'Uploading…' : 'Upload logo'}
+	              </Button>
+	              <Button
+	                type="button"
+	                variant="outline"
+	                onClick={() => void handleRemoveDelegateLogo()}
+	                disabled={delegateLogoUploading}
+	                className="header-home-button patient-link-payment-toggle-button delegate-logo-summary-button h-11 squircle-sm gap-2 bg-white text-slate-900"
+	              >
+	                Remove
+	              </Button>
+	            </div>
 	          </div>
 	        </div>
 	      </div>
@@ -6872,6 +6887,9 @@ export function Header({
                   : `We are thrilled to have you with us—let's make healthcare fulfilling together!`}
               </DialogDescription>
               <p className="text-sm text-slate-600">
+                We appreciate you joining us, and we are honored to be your provider.
+              </p>
+              <p className="text-sm font-bold text-slate-600">
                 {accountTabDescriptionById[accountTab]}
               </p>
               <div className="relative w-full">
@@ -6897,7 +6915,7 @@ export function Header({
 	                          key={tab.id}
                           type="button"
 	                          className={clsx(
-	                            'relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible',
+	                            'relative inline-flex items-center gap-2 px-3 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible',
 	                            isActive && 'text-slate-900'
 	                          )}
                           data-tab={tab.id}

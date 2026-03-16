@@ -35,7 +35,7 @@ export const computeUnitPrice = (
   const pricingMode: PricingMode = options?.pricingMode ?? 'wholesale';
   const markupPercentRaw = Number(options?.markupPercent ?? 0);
   const markupPercent = Number.isFinite(markupPercentRaw)
-    ? Math.max(0, Math.min(500, markupPercentRaw))
+    ? Math.max(0, markupPercentRaw)
     : 0;
 
   const basePrice = (() => {
