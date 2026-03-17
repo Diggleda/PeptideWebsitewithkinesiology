@@ -10,14 +10,7 @@ from ..services import get_config
 logger = logging.getLogger(__name__)
 _USAGE_TRACKING_COLUMNS_CACHE: Optional[set[str]] = None
 
-_PAYLOAD_COLUMN_CANDIDATES = (
-    "details_json",
-    "details",
-    "metadata_json",
-    "metadata",
-    "payload_json",
-    "payload",
-)
+_PAYLOAD_COLUMN_CANDIDATES = ("details_json", "details", "metadata_json", "metadata", "payload_json", "payload")
 
 
 def _using_mysql() -> bool:
@@ -79,25 +72,17 @@ def insert_event(event: str, details: Dict[str, Any], *, strict: bool = False) -
         "event": str(event or "").strip()[:128],
         "details_json": json.dumps(details or {}),
     }
-    statements = (
-        f"""
-        INSERT INTO usage_tracking (event, `{payload_column}`)
-        VALUES (%(event)s, %(details_json)s)
-        """,
-        f"""
-        INSERT INTO usage_tracking (event, `{payload_column}`)
-        VALUES (%(event)s, CAST(%(details_json)s AS JSON))
-        """,
-    )
-    last_error: Exception | None = None
-    for statement in statements:
-        try:
-            mysql_client.execute(statement, params)
-            return True
-        except Exception as exc:
-            last_error = exc
-    if strict and last_error is not None:
-        raise last_error
-    if last_error is not None:
+    try:
+        mysql_client.execute(
+            f"""
+            INSERT INTO usage_tracking (event, `{payload_column}`)
+            VALUES (%(event)s, %(details_json)s)
+            """,
+            params,
+        )
+        return True
+    except Exception as exc:
+        if strict:
+            raise exc
         logger.exception("Usage tracking insert failed", extra={"event": params["event"], "payloadColumn": payload_column})
-    return False
+        return False

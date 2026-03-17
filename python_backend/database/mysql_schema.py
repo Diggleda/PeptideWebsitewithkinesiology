@@ -221,7 +221,7 @@ CREATE_TABLE_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS usage_tracking (
         event VARCHAR(128) NOT NULL,
-        details_json JSON NOT NULL
+        details_json LONGTEXT NOT NULL
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -705,6 +705,19 @@ def ensure_schema() -> None:
     try:
         if not _index_exists("patient_links", "idx_patient_links_status"):
             mysql_client.execute("ALTER TABLE patient_links ADD INDEX idx_patient_links_status (status)")
+    except Exception:
+        pass
+
+    # Align usage_tracking payload storage with the rest of the schema:
+    # JSON payloads are generally stored in LONGTEXT columns in this codebase.
+    try:
+        if _table_exists("usage_tracking"):
+            if not _column_exists("usage_tracking", "details_json"):
+                mysql_client.execute("ALTER TABLE usage_tracking ADD COLUMN details_json LONGTEXT NOT NULL")
+            try:
+                mysql_client.execute("ALTER TABLE usage_tracking MODIFY COLUMN details_json LONGTEXT NOT NULL")
+            except Exception:
+                pass
     except Exception:
         pass
 

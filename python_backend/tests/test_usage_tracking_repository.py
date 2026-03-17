@@ -42,25 +42,17 @@ class UsageTrackingRepositoryTests(unittest.TestCase):
 
         self.assertIn("usage_tracking table is missing the required columns", str(ctx.exception))
 
-    def test_insert_event_falls_back_to_cast_variant_after_plain_insert_failure(self):
-        calls = []
-
-        def fake_execute(sql, _params):
-            calls.append(sql)
-            if len(calls) == 1:
-                raise RuntimeError("plain insert failed")
-            return 1
-
+    def test_insert_event_uses_plain_text_json_payload(self):
         with patch("python_backend.repositories.usage_tracking_repository._using_mysql", return_value=True), patch(
             "python_backend.repositories.usage_tracking_repository.mysql_client.fetch_all",
             return_value=[{"COLUMN_NAME": "event"}, {"COLUMN_NAME": "details_json"}],
-        ), patch("python_backend.repositories.usage_tracking_repository.mysql_client.execute", side_effect=fake_execute):
+        ), patch("python_backend.repositories.usage_tracking_repository.mysql_client.execute") as mock_execute:
             tracked = usage_tracking_repository.insert_event("delegate_link_created", {"who": {"id": "u1"}}, strict=True)
 
         self.assertTrue(tracked)
-        self.assertEqual(len(calls), 2)
-        self.assertIn("VALUES (%(event)s, %(details_json)s)", calls[0])
-        self.assertIn("CAST(%(details_json)s AS JSON)", calls[1])
+        sql = mock_execute.call_args[0][0]
+        self.assertIn("VALUES (%(event)s, %(details_json)s)", sql)
+        self.assertNotIn("CAST(%(details_json)s AS JSON)", sql)
 
 
 if __name__ == "__main__":
