@@ -10743,6 +10743,7 @@ function MainApp() {
     Array<{ userId: string; name: string; email?: string | null }>
   >([]);
   const [patientLinksDoctorsOpen, setPatientLinksDoctorsOpen] = useState(false);
+  const [patientLinksDoctorSearch, setPatientLinksDoctorSearch] = useState("");
   const [crmEnabled, setCrmEnabled] = useState(true);
   const [receiveClientOrderUpdateEmails, setReceiveClientOrderUpdateEmails] =
     useState(false);
@@ -10879,6 +10880,7 @@ function MainApp() {
     if (!isAdmin(user?.role)) {
       setPatientLinksDoctorOptions([]);
       setPatientLinksDoctorsOpen(false);
+      setPatientLinksDoctorSearch("");
       return;
     }
     let cancelled = false;
@@ -10908,6 +10910,81 @@ function MainApp() {
       cancelled = true;
     };
   }, [user?.role]);
+
+  const filteredPatientLinksDoctorOptions = useMemo(() => {
+    const query = patientLinksDoctorSearch.trim().toLowerCase();
+    if (!query) {
+      return patientLinksDoctorOptions;
+    }
+    return patientLinksDoctorOptions.filter((doctor) => {
+      const name = String(doctor.name || "").toLowerCase();
+      const email = String(doctor.email || "").toLowerCase();
+      const userId = String(doctor.userId || "").toLowerCase();
+      return (
+        name.includes(query) || email.includes(query) || userId.includes(query)
+      );
+    });
+  }, [patientLinksDoctorOptions, patientLinksDoctorSearch]);
+
+  const filteredPatientLinksDoctorIds = useMemo(
+    () => filteredPatientLinksDoctorOptions.map((doctor) => doctor.userId).filter(Boolean),
+    [filteredPatientLinksDoctorOptions],
+  );
+
+  const allFilteredPatientLinksDoctorsSelected = useMemo(
+    () =>
+      filteredPatientLinksDoctorIds.length > 0
+      && filteredPatientLinksDoctorIds.every((doctorUserId) =>
+        patientLinksDoctorUserIds.includes(doctorUserId),
+      ),
+    [filteredPatientLinksDoctorIds, patientLinksDoctorUserIds],
+  );
+
+  const handlePatientLinksBulkToggle = useCallback(async () => {
+    if (!isAdmin(user?.role) || filteredPatientLinksDoctorIds.length === 0) {
+      return;
+    }
+    const nextDoctorUserIds = allFilteredPatientLinksDoctorsSelected
+      ? patientLinksDoctorUserIds.filter(
+          (value) => !filteredPatientLinksDoctorIds.includes(value),
+        )
+      : Array.from(
+          new Set([...patientLinksDoctorUserIds, ...filteredPatientLinksDoctorIds]),
+        );
+    setSettingsSaving((prev) => ({ ...prev, patientLinks: true }));
+    const previousDoctorUserIds = patientLinksDoctorUserIds;
+    setPatientLinksDoctorUserIds(nextDoctorUserIds);
+    try {
+      const updated = await settingsAPI.updatePatientLinksStatus(
+        patientLinksEnabled,
+        nextDoctorUserIds,
+      );
+      setPatientLinksEnabled(
+        updated && typeof (updated as any).patientLinksEnabled === "boolean"
+          ? (updated as any).patientLinksEnabled
+          : patientLinksEnabled,
+      );
+      setPatientLinksDoctorUserIds(
+        Array.isArray((updated as any)?.patientLinksDoctorUserIds)
+          ? (updated as any).patientLinksDoctorUserIds
+              .map((entry: any) => String(entry || "").trim())
+              .filter((entry: string) => entry.length > 0)
+          : nextDoctorUserIds,
+      );
+    } catch (error) {
+      console.warn("[Settings] Failed to bulk update Delegate Links doctors", error);
+      toast.error("Unable to update Delegate Links doctors right now.");
+      setPatientLinksDoctorUserIds(previousDoctorUserIds);
+    } finally {
+      setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
+    }
+  }, [
+    allFilteredPatientLinksDoctorsSelected,
+    filteredPatientLinksDoctorIds,
+    patientLinksDoctorUserIds,
+    patientLinksEnabled,
+    user?.role,
+  ]);
 
   useEffect(() => {
     if (salesDashboardTab !== "crm") {
@@ -11590,6 +11667,19 @@ function MainApp() {
       return Math.min(maxDelayMs, Math.max(minDelayMs, currentDelayMs * 2));
     };
 
+    const isAuthFailureError = (error: any) => {
+      const status = typeof error?.status === "number" ? error.status : null;
+      const code = typeof error?.code === "string" ? error.code : null;
+      const authCode =
+        typeof error?.authCode === "string" ? error.authCode : null;
+      return (
+        code === "AUTH_REQUIRED" ||
+        status === 401 ||
+        (status === 403 &&
+          (typeof authCode === "string" && authCode.startsWith("TOKEN_")))
+      );
+    };
+
     const getPresenceErrorMessage = (error: any, fallback: string) => {
       if (isPresenceFetchError(error)) {
         return "Live presence is temporarily unavailable. Retrying in the background.";
@@ -11605,7 +11695,7 @@ function MainApp() {
 		    const userRole = user?.role || null;
 		    const isSalesLeadRole = isSalesLead(userRole);
 		    const isSalesRepRole = isRep(userRole);
-		    if (!isSalesLeadRole && !isSalesRepRole) {
+		    if ((!isSalesLeadRole && !isSalesRepRole) || !hasAuthToken()) {
 		      liveClientsInitialLoadDoneRef.current = false;
 		      setLiveClients([]);
 		      setLiveClientsLoading(false);
@@ -11650,6 +11740,9 @@ function MainApp() {
 		        setLiveClients(clients);
 		      } catch (error: any) {
 		        if (cancelled) return;
+            if (isAuthFailureError(error)) {
+              return;
+            }
 		        setLiveClientsError(
               getPresenceErrorMessage(error, "Unable to load clients."),
 	        );
@@ -11723,8 +11816,11 @@ function MainApp() {
 		          setLiveClients(clients);
               setLiveClientsError(null);
               liveClientsRetryDelayMsRef.current = 1000;
-	        } catch (error: any) {
-	          if (cancelled) break;
+			        } catch (error: any) {
+			          if (cancelled) break;
+                if (isAuthFailureError(error)) {
+                  break;
+                }
 	          if (typeof error?.status === "number" && error.status === 404) {
 	            liveClientsLongPollDisabledRef.current = true;
 	            startIntervalFallback();
@@ -11756,10 +11852,10 @@ function MainApp() {
 	      if (intervalId) window.clearInterval(intervalId);
 	      controller.abort();
 	    };
-	  }, [user?.role, user?.id]);
+	  }, [user?.role, user?.id, hasAuthToken]);
 
 		  useEffect(() => {
-		    if (!isAdmin(user?.role)) {
+		    if (!isAdmin(user?.role) || !hasAuthToken()) {
           adminLiveUsersInitialLoadDoneRef.current = false;
 	      setAdminLiveUsers([]);
 	      setAdminLiveUsersLoading(false);
@@ -11789,6 +11885,9 @@ function MainApp() {
 	        setAdminLiveUsers(users);
 	      } catch (error: any) {
 	        if (cancelled) return;
+          if (isAuthFailureError(error)) {
+            return;
+          }
 	        setAdminLiveUsersError(
             getPresenceErrorMessage(error, "Unable to load users."),
 	        );
@@ -11842,6 +11941,9 @@ function MainApp() {
               adminLiveUsersRetryDelayMsRef.current = 1000;
 		        } catch (error: any) {
 		          if (cancelled) break;
+              if (isAuthFailureError(error)) {
+                break;
+              }
 	          if (typeof error?.status === "number" && error.status === 404) {
 	            adminLiveUsersLongPollDisabledRef.current = true;
 	            startIntervalFallback();
@@ -11873,7 +11975,7 @@ function MainApp() {
 	      if (intervalId) window.clearInterval(intervalId);
 	      controller.abort();
 	    };
-	  }, [user?.role, user?.id]);
+	  }, [user?.role, user?.id, hasAuthToken]);
 
 		  const formatOnlineDuration = (lastLoginAt?: string | null) => {
 		    void userActivityNowTick;
@@ -15067,15 +15169,16 @@ function MainApp() {
         const status = typeof error?.status === "number" ? error.status : null;
         const message =
           typeof error?.message === "string" ? error.message : "UNKNOWN_ERROR";
+        if (isAuthFailureError(error)) {
+          setReferralPollingSuppressed(true);
+          referralSummaryCooldownRef.current = Date.now() + 5 * 60 * 1000; // 5 minutes
+          return;
+        }
         console.warn("[Referral] Failed to load data", {
           status,
           message,
           error,
         });
-        if (status === 401 || status === 403) {
-          setReferralPollingSuppressed(true);
-          referralSummaryCooldownRef.current = Date.now() + 5 * 60 * 1000; // 5 minutes
-        }
         setReferralDataError(
           <>
             There is an issue in loading your referral data. Please refresh the
@@ -17027,6 +17130,9 @@ function MainApp() {
     setIsIdle(false);
 
 	    const markActivity = () => {
+	      if (!hasAuthToken()) {
+          return;
+        }
 	      lastActivityAtRef.current = Date.now();
 	      idleLogoutFiredRef.current = false;
 	      setIsIdle(false);
@@ -17046,6 +17152,9 @@ function MainApp() {
 	    };
 
     const checkIdle = () => {
+      if (!hasAuthToken()) {
+        return;
+      }
       const sessionAgeMs = Date.now() - sessionStartedAt;
       if (sessionAgeMs >= sessionMaxMs) {
         if (!sessionLogoutFiredRef.current) {
@@ -17102,11 +17211,11 @@ function MainApp() {
       document.removeEventListener("scroll", markActivity, true);
       window.clearInterval(interval);
     };
-	  }, [user?.id, handleLogout]);
+	  }, [user?.id, handleLogout, hasAuthToken]);
 
 		  useEffect(() => {
 		    if (typeof window === "undefined") return;
-		    if (!user?.id || postLoginHold) {
+		    if (!user?.id || postLoginHold || !hasAuthToken()) {
 		      lastPresenceHeartbeatPingAtRef.current = 0;
 		      lastPresenceInteractionPingAtRef.current = 0;
 		      return;
@@ -17117,6 +17226,7 @@ function MainApp() {
 
 		    const sendHeartbeat = () => {
 		      if (cancelled) return;
+		      if (!hasAuthToken()) return;
 		      if (!isOnline() || !isPageVisible()) return;
 		      const now = Date.now();
 		      const throttleMs = Math.max(10_000, Math.floor(heartbeatMs * 0.75));
@@ -17160,7 +17270,7 @@ function MainApp() {
 		      window.removeEventListener("online", handleOnline);
 		      window.removeEventListener("focus", handleOnline);
 		    };
-		  }, [user?.id, postLoginHold]);
+		  }, [user?.id, postLoginHold, hasAuthToken]);
 
 	  useEffect(() => {
 	    if (typeof window === "undefined") return;
@@ -17171,6 +17281,10 @@ function MainApp() {
 
 	    const checkSession = async () => {
 	      if (cancelled) return;
+	      if (!hasAuthToken()) {
+          handleLogout();
+          return;
+        }
 	      if (!isOnline() || !isPageVisible()) return;
 	      const now = Date.now();
 	      // Avoid hammering `/auth/me` when multiple events fire close together.
@@ -17233,7 +17347,7 @@ function MainApp() {
 	      window.removeEventListener("focus", handleVisibilityOrFocus);
 	      window.removeEventListener("online", handleVisibilityOrFocus);
 	    };
-	  }, [user?.id, handleLogout]);
+	  }, [user?.id, handleLogout, hasAuthToken]);
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
@@ -21011,8 +21125,8 @@ function MainApp() {
                       </div>
                       <div className="pt-2">
 		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-		                    <label
-		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+		                    <div
+		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
 		                    >
 		                      <input
 		                        type="checkbox"
@@ -21039,13 +21153,13 @@ function MainApp() {
 		                          Controls whether physicians see the Explore Peptides view.
 		                        </span>
 		                      </span>
-		                    </label>
+		                    </div>
 		                  </div>
 
                       <div className="border-b border-slate-200/60 py-4 last:border-b-0">
                         <div className="flex items-start gap-3">
-                          <label
-                            className={`flex min-w-0 flex-1 items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+                          <div
+                            className={`flex min-w-0 flex-1 items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
                           >
                             <input
                               type="checkbox"
@@ -21077,47 +21191,140 @@ function MainApp() {
                                 When disabled, only test doctors can access Delegate Links.
                               </span>
                             </span>
-                          </label>
-                          <button
-                            type="button"
-                            aria-label="Toggle Delegate Links doctors"
-                            aria-expanded={patientLinksEnabled ? patientLinksDoctorsOpen : false}
-                            disabled={!patientLinksEnabled}
-                            onClick={() => {
-                              if (!patientLinksEnabled) return;
-                              setPatientLinksDoctorsOpen((current) => !current);
-                            }}
-                            className={clsx(
-                              "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
-                              patientLinksEnabled
-                                ? "bg-[rgba(95,179,249,0.10)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.16)]"
-                                : "cursor-not-allowed bg-slate-100 text-slate-300",
-                            )}
-                          >
-                            <ChevronRight
-                              className="h-5 w-5 transition-transform duration-200"
-                              style={{
-                                transform:
-                                  patientLinksEnabled && patientLinksDoctorsOpen
-                                    ? "rotate(90deg)"
-                                    : "rotate(0deg)",
-                              }}
-                            />
-                          </button>
+                          </div>
+                          {patientLinksEnabled ? (
+                            <div className="flex min-w-0 shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                aria-label="Toggle Delegate Links doctors"
+                                aria-expanded={patientLinksDoctorsOpen}
+                                onClick={() => {
+                                  setPatientLinksDoctorsOpen((current) => !current);
+                                }}
+                                className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(95,179,249,0.10)] transition-colors hover:bg-[rgba(95,179,249,0.16)] sm:hidden"
+                              >
+                                <ChevronRight
+                                  className="h-5 w-5 transition-transform duration-200"
+                                  style={{
+                                    color: "rgb(95, 179, 249)",
+                                    transform: patientLinksDoctorsOpen
+                                      ? "rotate(90deg)"
+                                      : "rotate(0deg)",
+                                  }}
+                                />
+                              </button>
+                              <div className="hidden items-center gap-2 sm:flex">
+                                {patientLinksDoctorsOpen && filteredPatientLinksDoctorOptions.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void handlePatientLinksBulkToggle();
+                                    }}
+                                    disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
+                                    className="shrink-0 text-sm font-medium text-[rgb(95,179,249)] transition-colors hover:text-[rgb(63,160,244)] disabled:cursor-not-allowed disabled:text-slate-400"
+                                  >
+                                    {allFilteredPatientLinksDoctorsSelected
+                                      ? "Disable All"
+                                      : "Enable All"}
+                                  </button>
+                                ) : null}
+                                {patientLinksDoctorsOpen ? (
+                                  <div className="relative w-56 max-w-[40vw] shrink-0">
+                                    <Search
+                                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 !text-slate-500"
+                                      style={{ color: "rgb(100, 116, 139)" }}
+                                    />
+                                    <Input
+                                      type="search"
+                                      inputMode="search"
+                                      enterKeyHint="search"
+                                      value={patientLinksDoctorSearch}
+                                      onChange={(event) =>
+                                        setPatientLinksDoctorSearch(event.target.value)
+                                      }
+                                      placeholder="Search doctors..."
+                                      disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
+                                      className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-3 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
+                                    />
+                                  </div>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  aria-label="Toggle Delegate Links doctors"
+                                  aria-expanded={patientLinksDoctorsOpen}
+                                  onClick={() => {
+                                    setPatientLinksDoctorsOpen((current) => !current);
+                                  }}
+                                  className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(95,179,249,0.10)] transition-colors hover:bg-[rgba(95,179,249,0.16)]"
+                                >
+                                  <ChevronRight
+                                    className="h-5 w-5 transition-transform duration-200"
+                                    style={{
+                                      color: "rgb(95, 179, 249)",
+                                      transform: patientLinksDoctorsOpen
+                                        ? "rotate(90deg)"
+                                        : "rotate(0deg)",
+                                    }}
+                                  />
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                         {patientLinksEnabled && patientLinksDoctorsOpen && (
                           <div className="mt-3 pl-8">
                             <div className="rounded-2xl bg-[rgba(95,179,249,0.06)] px-4 py-3">
-                              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                              <div className="mb-3 mt-2 sm:hidden">
+                                <div className="relative w-full">
+                                  <Search
+                                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 !text-slate-500"
+                                    style={{ color: "rgb(100, 116, 139)" }}
+                                  />
+                                  <Input
+                                    type="search"
+                                    inputMode="search"
+                                    enterKeyHint="search"
+                                    value={patientLinksDoctorSearch}
+                                    onChange={(event) =>
+                                      setPatientLinksDoctorSearch(event.target.value)
+                                    }
+                                    placeholder="Search doctors..."
+                                    disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
+                                    className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-3 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
+                                  />
+                                </div>
+                              </div>
+                              {filteredPatientLinksDoctorOptions.length > 0 ? (
+                                <div className="mb-3 flex justify-start sm:hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void handlePatientLinksBulkToggle();
+                                    }}
+                                    disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
+                                    className="inline-flex text-sm font-medium text-[rgb(95,179,249)] transition-colors hover:text-[rgb(63,160,244)] disabled:cursor-not-allowed disabled:text-slate-400"
+                                  >
+                                    {allFilteredPatientLinksDoctorsSelected
+                                      ? "Disable All"
+                                      : "Enable All"}
+                                  </button>
+                                </div>
+                              ) : null}
+                              <div
+                                className="space-y-2 overflow-y-auto pr-1"
+                                style={{ maxHeight: "calc(5 * 3.5rem + 4 * 0.5rem)" }}
+                              >
                                 {patientLinksDoctorOptions.length === 0 ? (
                                   <p className="text-xs text-slate-500">No doctors available.</p>
+                                ) : filteredPatientLinksDoctorOptions.length === 0 ? (
+                                  <p className="text-xs text-slate-500">No doctors match your search.</p>
                                 ) : (
-                                  patientLinksDoctorOptions.map((doctor) => {
+                                  filteredPatientLinksDoctorOptions.map((doctor) => {
                                     const checked = patientLinksDoctorUserIds.includes(doctor.userId);
                                     return (
-                                      <label
+                                      <div
                                         key={doctor.userId}
-                                        className="flex items-start gap-3 rounded-xl border border-slate-200/70 bg-white px-3 py-2 cursor-pointer"
+                                        className="flex min-h-[3.5rem] items-start gap-3 rounded-xl border border-slate-200/70 bg-white px-3 py-2"
                                       >
                                         <input
                                           type="checkbox"
@@ -21143,7 +21350,7 @@ function MainApp() {
                                             </span>
                                           ) : null}
                                         </span>
-                                      </label>
+                                      </div>
                                     );
                                   })
                                 )}
@@ -21154,8 +21361,8 @@ function MainApp() {
                       </div>
 
                       <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-                        <label
-                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+                        <div
+                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
                         >
                           <input
                             type="checkbox"
@@ -21182,12 +21389,12 @@ function MainApp() {
                               When disabled, only users with role test_rep can access CRM.
                             </span>
                           </span>
-                        </label>
+                        </div>
                       </div>
 		
 		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-		                    <label
-		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+		                    <div
+		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
 		                    >
 		                      <input
 		                        type="checkbox"
@@ -21216,12 +21423,12 @@ function MainApp() {
 		                          Shows/hides the forum card on the info page.
 		                        </span>
 		                      </span>
-		                    </label>
+		                    </div>
 		                  </div>
 		
 		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-		                    <label
-		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+		                    <div
+		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
 		                    >
 		                      <input
 		                        type="checkbox"
@@ -21256,7 +21463,7 @@ function MainApp() {
 		                          When disabled, only admins and test doctors see the work-in-progress research dashboard.
 		                        </span>
 		                      </span>
-		                    </label>
+		                    </div>
 		                  </div>
 
                       <div className="py-4">

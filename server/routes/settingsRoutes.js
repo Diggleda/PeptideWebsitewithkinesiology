@@ -119,6 +119,22 @@ const normalizeOptionalText = (value) => {
   return text.length > 0 ? text : null;
 };
 
+const buildDelegateLinksDoctorEntries = () => userRepository
+  .getAll()
+  .filter((candidate) => normalizeRole(candidate?.role) === 'doctor')
+  .map((doctor) => ({
+    userId: String(doctor.id || '').trim(),
+    name: String(doctor?.name || doctor?.email || `Doctor ${doctor?.id || ''}`).trim(),
+    email: doctor?.email ? String(doctor.email).trim().toLowerCase() : null,
+    delegateLinksEnabled: Boolean(doctor?.delegateLinksEnabled || doctor?.delegate_links_enabled),
+  }))
+  .filter((doctor) => doctor.userId)
+  .sort((a, b) => {
+    const byName = a.name.localeCompare(b.name);
+    if (byName !== 0) return byName;
+    return String(a.email || '').localeCompare(String(b.email || ''));
+  });
+
 const serializeUserProfile = (user) => {
   if (!user) return null;
   return {
@@ -247,7 +263,26 @@ router.get('/shop', async (_req, res) => {
 
 router.get('/patient-links', async (_req, res) => {
   const enabled = await getPatientLinksEnabled();
-  res.json({ patientLinksEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
+  const patientLinksDoctorUserIds = buildDelegateLinksDoctorEntries()
+    .filter((doctor) => doctor.delegateLinksEnabled)
+    .map((doctor) => doctor.userId);
+  res.json({
+    patientLinksEnabled: enabled,
+    patientLinksDoctorUserIds,
+    mysqlEnabled: mysqlClient.isEnabled(),
+  });
+});
+
+router.get('/patient-links/doctors', authenticate, requireAdmin, async (_req, res) => {
+  res.json({
+    doctors: buildDelegateLinksDoctorEntries().map((doctor) => ({
+      userId: doctor.userId,
+      name: doctor.name,
+      email: doctor.email,
+      delegateLinksEnabled: doctor.delegateLinksEnabled,
+    })),
+    mysqlEnabled: mysqlClient.isEnabled(),
+  });
 });
 
 router.get('/forum', async (_req, res) => {
@@ -273,8 +308,44 @@ router.put('/shop', authenticate, requireAdmin, async (req, res) => {
 
 router.put('/patient-links', authenticate, requireAdmin, async (req, res) => {
   const enabled = Boolean(req.body?.enabled);
+  const rawDoctorUserIds = Array.isArray(req.body?.doctorUserIds)
+    ? req.body.doctorUserIds
+    : [];
+  const requestedDoctorUserIds = Array.from(new Set(
+    rawDoctorUserIds
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  ));
+  for (const doctorUserId of requestedDoctorUserIds) {
+    const doctor = userRepository.findById(doctorUserId);
+    if (!doctor) {
+      return res.status(404).json({ error: 'Doctor not found' });
+    }
+    if (normalizeRole(doctor.role) !== 'doctor') {
+      return res.status(400).json({ error: 'Doctor access required' });
+    }
+  }
+  const selectedDoctorIdSet = new Set(requestedDoctorUserIds);
+  userRepository
+    .getAll()
+    .filter((candidate) => normalizeRole(candidate?.role) === 'doctor')
+    .forEach((doctor) => {
+      const doctorId = String(doctor?.id || '').trim();
+      if (!doctorId) return;
+      const nextValue = selectedDoctorIdSet.has(doctorId);
+      if (Boolean(doctor?.delegateLinksEnabled || doctor?.delegate_links_enabled) === nextValue) {
+        return;
+      }
+      userRepository.update({ ...doctor, delegateLinksEnabled: nextValue });
+    });
   const confirmed = await setPatientLinksEnabled(enabled);
-  res.json({ patientLinksEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
+  res.json({
+    patientLinksEnabled: confirmed,
+    patientLinksDoctorUserIds: buildDelegateLinksDoctorEntries()
+      .filter((doctor) => doctor.delegateLinksEnabled)
+      .map((doctor) => doctor.userId),
+    mysqlEnabled: mysqlClient.isEnabled(),
+  });
 });
 
 router.put('/forum', authenticate, requireAdmin, async (req, res) => {

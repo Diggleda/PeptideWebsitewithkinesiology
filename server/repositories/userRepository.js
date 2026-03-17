@@ -117,6 +117,7 @@ const syncDirectShippingToSql = (user) => {
     profileImageUrl: user.profileImageUrl,
     delegateLogoUrl: user.delegateLogoUrl || null,
     delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
+    delegateLinksEnabled: user.delegateLinksEnabled ? 1 : 0,
     npiNumber: user.npiNumber || null,
     npiProviderName: user.npiVerification?.name || null,
     npiClinicName: user.npiVerification?.organizationName || null,
@@ -162,6 +163,7 @@ const syncDirectShippingToSql = (user) => {
           profile_image_url,
           delegate_logo_url,
           delegate_secondary_color,
+          delegate_links_enabled,
           npi_number,
           npi_provider_name,
           npi_clinic_name,
@@ -189,6 +191,7 @@ const syncDirectShippingToSql = (user) => {
           :profileImageUrl,
           :delegateLogoUrl,
           :delegateSecondaryColor,
+          :delegateLinksEnabled,
           :npiNumber,
           :npiProviderName,
           :npiClinicName,
@@ -216,6 +219,7 @@ const syncDirectShippingToSql = (user) => {
           profile_image_url = VALUES(profile_image_url),
           delegate_logo_url = VALUES(delegate_logo_url),
           delegate_secondary_color = VALUES(delegate_secondary_color),
+          delegate_links_enabled = VALUES(delegate_links_enabled),
           npi_number = VALUES(npi_number),
           npi_provider_name = VALUES(npi_provider_name),
           npi_clinic_name = VALUES(npi_clinic_name),
@@ -361,6 +365,12 @@ const ensureUserDefaults = (user) => {
   } else {
     normalized.handDelivered = normalizeBooleanFlag(normalized.handDelivered);
   }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateLinksEnabled')) {
+    normalized.delegateLinksEnabled = normalizeBooleanFlag(normalized.delegate_links_enabled);
+  } else {
+    normalized.delegateLinksEnabled = normalizeBooleanFlag(normalized.delegateLinksEnabled);
+  }
+  normalized.delegate_links_enabled = normalized.delegateLinksEnabled ? 1 : 0;
   normalized.hand_delivered = normalized.handDelivered ? 1 : 0;
   DIRECT_SHIPPING_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {
