@@ -782,7 +782,7 @@ const buildLocalOrderSummary = (order) => {
     shippingTotal: order.shippingTotal ?? null,
     handDelivery: Boolean(order.handDelivery || isHandDeliverySelection(order.shippingEstimate)),
     fulfillmentMethod: (order.handDelivery || isHandDeliverySelection(order.shippingEstimate))
-      ? 'hand_delivery'
+      ? 'hand_delivered'
       : 'shipping',
     pickupLocation: null,
     pickupReadyNotice: null,
@@ -1031,6 +1031,7 @@ const isHandDeliverySelection = (shippingEstimate) => {
     value === 'hand delivery'
     || value === 'hand delivered'
     || value === 'hand_delivery'
+    || value === 'hand_delivered'
     || value === 'local hand delivery'
     || value === 'local_hand_delivery'
     || value === 'local_delivery'
@@ -1238,7 +1239,7 @@ const createOrderInternal = async ({
       preferFallbackAddress: handDeliverySelected,
     }),
     handDelivery: handDeliverySelected,
-    fulfillmentMethod: handDeliverySelected ? 'hand_delivery' : 'shipping',
+    fulfillmentMethod: handDeliverySelected ? 'hand_delivered' : 'shipping',
     pickupLocation: null,
     pickupReadyNotice: null,
     referralCode: referralCode || null,
@@ -1574,7 +1575,7 @@ const estimateOrderTotals = async ({
       preferFallbackAddress: handDeliverySelected,
     }),
     handDelivery: handDeliverySelected,
-    fulfillmentMethod: handDeliverySelected ? 'hand_delivery' : 'shipping',
+    fulfillmentMethod: handDeliverySelected ? 'hand_delivered' : 'shipping',
     status: 'pending',
     createdAt: new Date().toISOString(),
     physicianCertificationAccepted: false,

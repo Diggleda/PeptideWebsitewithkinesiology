@@ -459,6 +459,8 @@ interface AccountOrderSummary {
   id: string;
   asDelegate?: string | null;
   as_delegate?: string | null;
+  pricingMode?: string | null;
+  pricing_mode?: string | null;
   number?: string | null;
   trackingNumber?: string | null;
   shippingCarrier?: string | null;
@@ -736,6 +738,7 @@ const isSalesOrderHandDelivered = (
   order?: AccountOrderSummary | null,
 ): boolean => {
   if (!order) return false;
+  if (resolveTrackingNumber(order)) return false;
   const candidates = [
     (order as any)?.handDelivery === true ? "hand_delivery" : "",
     (order as any)?.facility_pickup === true ? "facility_pickup" : "",
@@ -753,11 +756,13 @@ const isSalesOrderHandDelivered = (
     value === "hand delivery" ||
     value === "hand delivered" ||
     value === "hand_delivery" ||
+    value === "hand_delivered" ||
     value === "local hand delivery" ||
     value === "local_hand_delivery" ||
     value === "local_delivery" ||
     value === "hand-delivery" ||
     value === "hand-delivered" ||
+    value === "fascility_pickup" ||
     value === "facility_pickup",
   );
 };
@@ -1239,17 +1244,21 @@ const resolveOrderSalesSubtotal = (order: any): number => {
 
 const resolveOrderSalesPricingMode = (order: any): "wholesale" | "retail" => {
   const pricingModeRaw =
-    (order as any)?.pricing_mode ??
-    (order as any)?.orders?.pricing_mode ??
     order?.pricingMode ??
+    (order as any)?.pricing_mode ??
+    (order as any)?.payload?.order?.pricingMode ??
+    (order as any)?.payload?.order?.pricing_mode ??
+    (order as any)?.order?.pricingMode ??
+    (order as any)?.order?.pricing_mode ??
+    (order as any)?.orders?.pricingMode ??
+    (order as any)?.orders?.pricing_mode ??
     (order as any)?.pricing ??
     (order as any)?.priceType ??
-    (order as any)?.orders?.pricingMode ??
     (order as any)?.orders?.pricing ??
     (order as any)?.orders?.priceType ??
     null;
   const pricingMode = String(pricingModeRaw || "").toLowerCase().trim();
-  return pricingMode === "wholesale" ? "wholesale" : "retail";
+  return pricingMode === "retail" ? "retail" : "wholesale";
 };
 
 const normalizeLeadTypeValue = (value: unknown) =>
@@ -1979,6 +1988,10 @@ const normalizeAccountOrdersResponse = (
           id: identifier,
           asDelegate: delegateFields.asDelegate,
           as_delegate: delegateFields.as_delegate,
+          pricingMode:
+            normalizeStringField(order?.pricingMode ?? order?.pricing_mode) || null,
+          pricing_mode:
+            normalizeStringField(order?.pricing_mode ?? order?.pricingMode) || null,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           status:
@@ -2062,6 +2075,10 @@ const normalizeAccountOrdersResponse = (
           id: identifier,
           asDelegate: delegateFields.asDelegate,
           as_delegate: delegateFields.as_delegate,
+          pricingMode:
+            normalizeStringField(order?.pricingMode ?? order?.pricing_mode) || null,
+          pricing_mode:
+            normalizeStringField(order?.pricing_mode ?? order?.pricingMode) || null,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           status:
@@ -2142,6 +2159,10 @@ const normalizeAccountOrdersResponse = (
           id: identifier,
           asDelegate: delegateFields.asDelegate,
           as_delegate: delegateFields.as_delegate,
+          pricingMode:
+            normalizeStringField(order?.pricingMode ?? order?.pricing_mode) || null,
+          pricing_mode:
+            normalizeStringField(order?.pricing_mode ?? order?.pricingMode) || null,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           wooOrderNumber: normalizeStringField(order?.number),
@@ -23320,9 +23341,11 @@ function MainApp() {
 	                                      <div className="lead-list-detail">
 	                                        {primaryDateLabel}
 	                                      </div>
+                                        {arrivalLabel || !trackingLabel ? (
 	                                      <div className="lead-list-detail">
 	                                        {arrivalLabel || "Tracking pending"}
 	                                      </div>
+                                        ) : null}
                                         {trackingLabel ? (
                                           <div className="lead-list-detail sm:col-span-2">
                                             Tracking{" "}

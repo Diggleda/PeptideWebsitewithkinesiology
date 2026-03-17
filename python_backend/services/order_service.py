@@ -821,7 +821,7 @@ def create_order(
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
         "handDelivery": is_facility_pickup,
-        "fulfillmentMethod": "hand_delivery" if is_facility_pickup else "shipping",
+        "fulfillmentMethod": "hand_delivered" if is_facility_pickup else "shipping",
         "pickupLocation": FACILITY_PICKUP_LOCATION if is_facility_pickup else None,
         "pickupReadyNotice": FACILITY_PICKUP_NOTICE if is_facility_pickup else None,
         "referralCode": normalized_referral,

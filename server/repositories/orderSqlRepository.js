@@ -20,6 +20,26 @@ const toNumber = (value, fallback = 0) => {
 const roundCurrency = (value) => Math.max(0, Math.round((toNumber(value, 0) + 1e-9) * 100) / 100);
 const HAND_DELIVERY_SERVICE_LABEL = 'Hand Delivered';
 
+const normalizeFulfillmentMethod = (value, fallback = null) => {
+  const normalized = sanitizeString(value || fallback);
+  if (!normalized) {
+    return null;
+  }
+  const key = normalized.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (key === 'facility_pickup' || key === 'fascility_pickup') {
+    return 'hand_delivered';
+  }
+  if (
+    key === 'hand_delivery'
+    || key === 'hand_delivered'
+    || key === 'local_hand_delivery'
+    || key === 'local_delivery'
+  ) {
+    return 'hand_delivered';
+  }
+  return normalized;
+};
+
 const toIsoDateTime = (value) => {
   if (!value) return null;
   if (value instanceof Date) {
@@ -94,12 +114,14 @@ const isHandDeliveryOrder = (order) => {
     value === 'hand delivery'
     || value === 'hand delivered'
     || value === 'hand_delivery'
+    || value === 'hand_delivered'
     || value === 'local hand delivery'
     || value === 'local_hand_delivery'
     || value === 'local_delivery'
     || value === 'hand-delivery'
     || value === 'hand-delivered'
-    || value === 'facility_pickup');
+    || value === 'facility_pickup'
+    || value === 'fascility_pickup');
 };
 
 const computeItemsSubtotal = (order) => {
@@ -190,7 +212,9 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
       ? HAND_DELIVERY_SERVICE_LABEL
       : (order.shippingEstimate?.serviceType || order.shippingEstimate?.serviceCode || order.shippingService || null),
     handDelivery: order.handDelivery === true ? 1 : 0,
-    fulfillmentMethod: sanitizeString(order.fulfillmentMethod || null),
+    fulfillmentMethod: isHandDeliveryOrder(order)
+      ? 'hand_delivered'
+      : normalizeFulfillmentMethod(order.fulfillmentMethod),
     pickupLocation: sanitizeString(order.pickupLocation || null),
     pickupReadyNotice: sanitizeString(order.pickupReadyNotice || null),
     physicianCertified: order.physicianCertificationAccepted === true ? 1 : 0,
@@ -395,13 +419,15 @@ const mapRowToOrder = (row, options = {}) => {
     handDelivery: typeof payloadOrder.handDelivery === 'boolean'
       ? payloadOrder.handDelivery
       : Boolean(row.facility_pickup),
-    fulfillmentMethod: sanitizeString(payloadOrder.fulfillmentMethod)
-      || sanitizeString(row.fulfillment_method)
+    fulfillmentMethod: normalizeFulfillmentMethod(
+      payloadOrder.fulfillmentMethod,
+      row.fulfillment_method,
+    )
       || (Boolean(
         typeof payloadOrder.handDelivery === 'boolean'
           ? payloadOrder.handDelivery
           : row.facility_pickup,
-      ) ? 'facility_pickup' : 'shipping'),
+      ) ? 'hand_delivered' : 'shipping'),
     pickupLocation: sanitizeString(payloadOrder.pickupLocation)
       || sanitizeString(row.pickup_location),
     pickupReadyNotice: sanitizeString(payloadOrder.pickupReadyNotice)

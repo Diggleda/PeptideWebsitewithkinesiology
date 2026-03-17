@@ -12,6 +12,19 @@ from .. import storage
 
 HAND_DELIVERY_SERVICE_LABEL = "Hand Delivered"
 
+
+def _normalize_fulfillment_method(value: object, fallback: object = None) -> Optional[str]:
+    raw = value if value not in (None, "") else fallback
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    key = text.lower().replace("-", "_").replace(" ", "_")
+    if key in {"facility_pickup", "fascility_pickup"}:
+        return "hand_delivered"
+    if key in {"hand_delivery", "hand_delivered", "local_hand_delivery", "local_delivery"}:
+        return "hand_delivered"
+    return text
+
 _SALES_TRACKING_SELECT_COLUMNS = """
     id,
     user_id,
@@ -76,12 +89,14 @@ def _is_hand_delivery_order(order: Dict) -> bool:
             "hand delivery",
             "hand delivered",
             "hand_delivery",
+            "hand_delivered",
             "hand-delivery",
             "hand-delivered",
             "local hand delivery",
             "local_hand_delivery",
             "local_delivery",
             "facility_pickup",
+            "fascility_pickup",
         }
         & normalized
     )
@@ -284,10 +299,12 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                     if row.get("facility_pickup") is not None
                     else payload.get("handDelivery")
                 ),
-                "fulfillmentMethod": row.get("fulfillment_method")
-                or payload.get("fulfillmentMethod")
+                "fulfillmentMethod": _normalize_fulfillment_method(
+                    row.get("fulfillment_method"),
+                    payload.get("fulfillmentMethod"),
+                )
                 or (
-                    "facility_pickup"
+                    "hand_delivered"
                     if bool(
                         row.get("facility_pickup")
                         if row.get("facility_pickup") is not None
@@ -1120,7 +1137,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         if row.get("facility_pickup") is None and payload.get("handDelivery") is not None:
             order["handDelivery"] = bool(payload.get("handDelivery"))
         if not order.get("fulfillmentMethod") and payload.get("fulfillmentMethod"):
-            order["fulfillmentMethod"] = payload.get("fulfillmentMethod")
+            order["fulfillmentMethod"] = _normalize_fulfillment_method(payload.get("fulfillmentMethod"))
         if not order.get("pickupLocation") and payload.get("pickupLocation"):
             order["pickupLocation"] = payload.get("pickupLocation")
         if not order.get("pickupReadyNotice") and payload.get("pickupReadyNotice"):
@@ -1163,7 +1180,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             if key not in order:
                 order[key] = value
     if not order.get("fulfillmentMethod"):
-        order["fulfillmentMethod"] = "facility_pickup" if bool(order.get("handDelivery")) else "shipping"
+        order["fulfillmentMethod"] = "hand_delivered" if bool(order.get("handDelivery")) else "shipping"
     return order
 
 
@@ -1298,13 +1315,14 @@ def _to_db_params(order: Dict) -> Dict:
     grand_total = max(0.0, grand_total)
     tracking_number = _resolve_tracking_number(order)
     facility_pickup = bool(order.get("handDelivery") is True or order.get("facility_pickup") is True)
-    fulfillment_method = (
-        "facility_pickup"
-        if facility_pickup
-        else (str(order.get("fulfillmentMethod") or order.get("fulfillment_method") or "").strip().lower() or "shipping")
+    fulfillment_method = _normalize_fulfillment_method(
+        order.get("fulfillmentMethod"),
+        order.get("fulfillment_method"),
     )
-    if fulfillment_method not in ("shipping", "facility_pickup"):
-        fulfillment_method = "facility_pickup" if facility_pickup else "shipping"
+    if facility_pickup:
+        fulfillment_method = "hand_delivered"
+    elif fulfillment_method not in ("shipping", "hand_delivered"):
+        fulfillment_method = "shipping"
     pickup_location = None
     if facility_pickup:
         pickup_location = str(order.get("pickupLocation") or order.get("pickup_location") or "").strip() or None
