@@ -15,7 +15,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "shopEnabled": True,
     "peptideForumEnabled": True,
     "researchDashboardEnabled": False,
-    # When enabled, show Patient Links tab for all doctors (test doctors always have access).
+    # When enabled, show Delegate Links tab for all doctors (test doctors always have access).
     "patientLinksEnabled": False,
     # When disabled, only test_rep accounts can access CRM.
     "crmEnabled": True,

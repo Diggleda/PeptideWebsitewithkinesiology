@@ -805,7 +805,7 @@ def update_link(
 
 def delete_link(doctor_id: str, token: str) -> Dict[str, Any]:
     if not _using_mysql():
-        err = RuntimeError("MySQL backend is required for patient links")
+        err = RuntimeError("MySQL backend is required for delegate links")
         setattr(err, "status", 501)
         raise err
     _migrate_legacy_links_to_table()
@@ -1063,7 +1063,7 @@ def store_delegate_submission(
 
 def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
     if not _using_mysql():
-        err = RuntimeError("MySQL backend is required for patient links")
+        err = RuntimeError("MySQL backend is required for delegate links")
         setattr(err, "status", 501)
         raise err
     _migrate_legacy_links_to_table()
@@ -1134,7 +1134,7 @@ def review_link_proposal(
     notes: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
-        err = RuntimeError("MySQL backend is required for patient links")
+        err = RuntimeError("MySQL backend is required for delegate links")
         setattr(err, "status", 501)
         raise err
     _migrate_legacy_links_to_table()

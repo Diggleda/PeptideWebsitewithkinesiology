@@ -78,9 +78,9 @@ def _run_loop() -> None:
         try:
             result = sweep_once()
             if result.get("ok") and int(result.get("deleted") or 0) > 0:
-                logger.info("Patient link sweep deleted expired links", extra=result)
+                logger.info("Delegate link sweep deleted expired links", extra=result)
         except Exception:
-            logger.exception("Patient link sweep failed")
+            logger.exception("Delegate link sweep failed")
         time.sleep(interval_s)
 
 

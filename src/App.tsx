@@ -5817,8 +5817,8 @@ function MainApp() {
             // ignore
           }
         } catch (error) {
-          console.warn("[Settings] Failed to update patient links setting", error);
-          toast.error("Unable to update Patient Links setting right now.");
+          console.warn("[Settings] Failed to update delegate links setting", error);
+          toast.error("Unable to update Delegate Links setting right now.");
           setPatientLinksEnabled(previousValue);
           try {
             localStorage.setItem(
@@ -20928,7 +20928,7 @@ function MainApp() {
                         >
                           <input
                             type="checkbox"
-                            aria-label="Enable Patient Links tab for doctors"
+                            aria-label="Enable Delegate Links tab for doctors"
                             checked={patientLinksEnabled}
                             onChange={(e) => handlePatientLinksToggle(e.target.checked)}
                             className="brand-checkbox mt-0.5"
@@ -20936,7 +20936,7 @@ function MainApp() {
                           />
                           <span className="min-w-0">
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                              <span>Patient Links tab (doctors)</span>
+                              <span>Delegate Links tab (doctors)</span>
                               <span className="text-xs font-semibold text-slate-500">
                                 {"\u00A0"}(
                                 {settingsSaving.patientLinks
@@ -20948,7 +20948,7 @@ function MainApp() {
                               </span>
                             </span>
                             <span className="block text-xs text-slate-600">
-                              When disabled, only test doctors can access Patient Links.
+                              When disabled, only test doctors can access Delegate Links.
                             </span>
                           </span>
                         </label>

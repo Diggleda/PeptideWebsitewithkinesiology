@@ -22,7 +22,7 @@ def _require_doctor_access(role: str) -> None:
     if role == "doctor":
         settings = settings_service.get_settings()
         if not bool(settings.get("patientLinksEnabled", False)):
-            err = ValueError("Patient links are not enabled for doctors")
+            err = ValueError("Delegate links are not enabled for doctors")
             setattr(err, "status", 403)
             raise err
 

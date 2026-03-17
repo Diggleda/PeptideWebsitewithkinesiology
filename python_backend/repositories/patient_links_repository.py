@@ -288,7 +288,7 @@ def create_link(
     physician_certified: Optional[Any] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
-        raise RuntimeError("MySQL backend is required for patient links")
+        raise RuntimeError("MySQL backend is required for delegate links")
     doctor_id = str(doctor_id or "").strip()
     if not doctor_id:
         raise ValueError("doctor_id is required")
@@ -396,7 +396,7 @@ def create_link(
                 raise
             continue
 
-    raise RuntimeError("Unable to create patient link")
+    raise RuntimeError("Unable to create delegate link")
 
 
 def list_links(doctor_id: str) -> List[Dict[str, Any]]:
