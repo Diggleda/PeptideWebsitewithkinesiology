@@ -168,6 +168,14 @@ router.patch('/links/:token', authenticate, (req, res) => {
   const bucket = ensureDoctorBucket(state, doctorId);
   const link = bucket.links.find((candidate) => String(candidate?.token || '') === token);
   if (!link) return res.status(404).json({ error: 'Link not found' });
+  if (req.body?.delete || req.body?.deleteLink || req.body?.permanentDelete) {
+    if (!link.revokedAt) {
+      return res.status(409).json({ error: 'Only revoked links can be deleted.' });
+    }
+    bucket.links = bucket.links.filter((candidate) => String(candidate?.token || '') !== token);
+    saveState(state);
+    return res.json({ deleted: true, token });
+  }
 
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'referenceLabel')) {
     link.referenceLabel = normalizeOptionalString(req.body.referenceLabel);

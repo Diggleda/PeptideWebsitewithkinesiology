@@ -12,7 +12,7 @@ from ..middleware.auth import require_auth
 from ..integrations import ship_station
 from ..integrations import woo_commerce
 from ..repositories import order_repository, patient_links_repository, user_repository
-from ..services import order_service, delegation_service
+from ..services import order_service, delegation_service, usage_tracking_service
 from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action, require_admin as _require_admin_user
 
@@ -162,8 +162,8 @@ def create_order():
         or payload.get("physicianCertification")
     )
     user_id = g.current_user.get("id")
-    return handle_action(
-        lambda: order_service.create_order(
+    def action():
+        result = order_service.create_order(
             user_id=user_id,
             items=items,
             total=total,
@@ -180,7 +180,15 @@ def create_order():
             physician_certified=physician_certified,
             as_delegate_label=as_delegate_label,
         )
-    )
+        if normalized_delegate_token:
+            usage_tracking_service.track_event(
+                "delegate_order_placed",
+                actor=getattr(g, "current_user", None) or {},
+                metadata={"delegateProposalToken": normalized_delegate_token, "orderId": result.get("id")},
+            )
+        return result
+
+    return handle_action(action)
 
 
 @blueprint.get("/")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, g, request
 
 from ..middleware.auth import require_auth
-from ..services import delegation_service
+from ..services import delegation_service, usage_tracking_service
 from ..services import settings_service  # type: ignore[attr-defined]
 from ..utils.http import handle_action
 
@@ -105,6 +105,11 @@ def create_link():
             if "paymentInstructions" in payload
             else payload.get("payment_instructions")
         )
+        physician_certified = (
+            payload.get("physicianCertified")
+            if "physicianCertified" in payload
+            else payload.get("physician_certified")
+        )
         link = delegation_service.create_link(
             doctor_id,
             reference_label=reference_label if isinstance(reference_label, str) else None,
@@ -119,6 +124,12 @@ def create_link():
             usage_limit=usage_limit,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
+            physician_certified=physician_certified,
+        )
+        usage_tracking_service.track_event(
+            "delegate_link_created",
+            actor=getattr(g, "current_user", None) or {},
+            metadata={"token": link.get("token"), "subjectLabel": link.get("subjectLabel"), "studyLabel": link.get("studyLabel")},
         )
         return {"success": True, "link": link}
 
@@ -155,6 +166,15 @@ def update_link(token: str):
             else None
         )
         revoke = payload.get("revoke") if "revoke" in payload else None
+        delete_link = (
+            payload.get("delete")
+            if "delete" in payload
+            else payload.get("deleteLink")
+            if "deleteLink" in payload
+            else payload.get("permanentDelete")
+            if "permanentDelete" in payload
+            else None
+        )
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
         instructions = payload.get("instructions") if "instructions" in payload else None
         allowed_products = (
@@ -189,6 +209,10 @@ def update_link(token: str):
             if "paymentReceived" in payload
             else None
         )
+        if bool(delete_link):
+            result = delegation_service.delete_link(doctor_id, token)
+            return {"success": True, **result}
+
         updated = delegation_service.update_link(
             doctor_id,
             token,
@@ -276,6 +300,11 @@ def review_link_proposal(token: str):
             status=str(status),
             order_id=str(order_id).strip() if isinstance(order_id, str) and str(order_id).strip() else None,
             notes=str(notes).strip() if isinstance(notes, str) and str(notes).strip() else None,
+        )
+        usage_tracking_service.track_event(
+            "delegate_proposal_reviewed",
+            actor=getattr(g, "current_user", None) or {},
+            metadata={"token": token, "status": str(status).strip()},
         )
         return {"success": True, **result}
 

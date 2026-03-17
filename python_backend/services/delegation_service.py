@@ -600,6 +600,7 @@ def create_link(
     usage_limit: Optional[Any] = None,
     payment_method: Optional[str] = None,
     payment_instructions: Optional[str] = None,
+    physician_certified: Optional[Any] = None,
 ) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
     if not doctor_id:
@@ -621,6 +622,7 @@ def create_link(
             usage_limit=_normalize_usage_limit(usage_limit),
             payment_method=payment_method,
             payment_instructions=_validate_research_note(payment_instructions, field_name="paymentInstructions"),
+            physician_certified=physician_certified,
         )
         _audit_event(
             "link_created",
@@ -670,6 +672,7 @@ def create_link(
         "openCount": 0,
         "status": "active",
         "receivedPayment": False,
+        "physicianCertified": bool(physician_certified),
         "lastUsedAt": None,
         "lastOpenedAt": None,
         "lastOrderAt": None,
@@ -798,6 +801,48 @@ def update_link(
         raise err
     _persist_links(doctor_id, links)
     return updated
+
+
+def delete_link(doctor_id: str, token: str) -> Dict[str, Any]:
+    if not _using_mysql():
+        err = RuntimeError("MySQL backend is required for patient links")
+        setattr(err, "status", 501)
+        raise err
+    _migrate_legacy_links_to_table()
+    doctor_id = str(doctor_id or "").strip()
+    token = _normalize_token(token)
+    if not doctor_id:
+        err = ValueError("doctor_id is required")
+        setattr(err, "status", 400)
+        raise err
+    if not token:
+        err = ValueError("token is required")
+        setattr(err, "status", 400)
+        raise err
+
+    existing = patient_links_repository.find_by_token(token, include_inactive=True)
+    if not isinstance(existing, dict) or str(existing.get("doctorId") or "").strip() != doctor_id:
+        err = ValueError("Link not found")
+        setattr(err, "status", 404)
+        raise err
+    if not str(existing.get("revokedAt") or "").strip():
+        err = ValueError("Only revoked links can be deleted")
+        setattr(err, "status", 409)
+        raise err
+
+    deleted = patient_links_repository.delete_link(doctor_id, token)
+    if not deleted:
+        err = RuntimeError("Unable to delete link")
+        setattr(err, "status", 502)
+        raise err
+
+    _audit_event(
+        "link_deleted",
+        token=token,
+        doctor_id=doctor_id,
+        payload={"status": existing.get("status"), "revokedAt": existing.get("revokedAt")},
+    )
+    return {"deleted": True, "token": token}
 
 
 def resolve_delegate_token(token: str) -> Dict[str, Any]:
@@ -1038,7 +1083,7 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         err = ValueError("Link not found")
         setattr(err, "status", 404)
         raise err
-    if str(link.get("doctorId") or "").strip() != doctor_id or str(link.get("revokedAt") or "").strip():
+    if str(link.get("doctorId") or "").strip() != doctor_id:
         err = ValueError("Link not found")
         setattr(err, "status", 404)
         raise err
@@ -1109,7 +1154,7 @@ def review_link_proposal(
         err = ValueError("Link not found")
         setattr(err, "status", 404)
         raise err
-    if str(link.get("doctorId") or "").strip() != doctor_id or str(link.get("revokedAt") or "").strip():
+    if str(link.get("doctorId") or "").strip() != doctor_id:
         err = ValueError("Link not found")
         setattr(err, "status", 404)
         raise err

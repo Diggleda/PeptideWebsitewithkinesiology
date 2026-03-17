@@ -1933,6 +1933,7 @@ export const delegationAPI = {
     usageLimit?: number | null;
     paymentMethod?: string | null;
     paymentInstructions?: string | null;
+    physicianCertified?: boolean | null;
   }) => {
     return fetchWithAuth(`${API_BASE_URL}/delegation/links`, {
       method: 'POST',
@@ -1949,6 +1950,7 @@ export const delegationAPI = {
 	      studyLabel?: string | null;
 	      patientReference?: string | null;
 	      revoke?: boolean | null;
+          delete?: boolean | null;
 	      markupPercent?: number | null;
 	      instructions?: string | null;
 	      allowedProducts?: string[] | string | null;
@@ -2031,6 +2033,15 @@ export const delegationAPI = {
     return fetchWithAuth(`${API_BASE_URL}/orders/delegate/share`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+};
+
+export const usageTrackingAPI = {
+  track: async (payload: { event: string; metadata?: Record<string, unknown> | null }) => {
+    return fetchWithAuth(`${API_BASE_URL}/usage-tracking`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
     });
   },
 };

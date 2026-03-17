@@ -76,6 +76,18 @@ def _normalize_optional_int(value: Any) -> Optional[int]:
     return max(1, min(parsed, 10_000))
 
 
+def _normalize_bool_flag(value: Any) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return False
+    text = str(value or "").strip().lower()
+    return text in ("1", "true", "yes", "y", "on")
+
+
 def _normalize_allowed_products(value: Any) -> List[str]:
     if value is None:
         return []
@@ -226,6 +238,7 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         "status": status,
         "paymentMethod": row.get("payment_method") or None,
         "paymentInstructions": row.get("payment_instructions") or None,
+        "physicianCertified": bool(int(row.get("physician_certified") or 0)),
         "receivedPayment": bool(int(row.get("received_payment") or 0)),
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "lastOpenedAt": _fmt_datetime(row.get("last_opened_at")),
@@ -272,6 +285,7 @@ def create_link(
     allowed_products: Optional[Any] = None,
     expires_in_hours: Optional[int] = None,
     usage_limit: Optional[int] = None,
+    physician_certified: Optional[Any] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
         raise RuntimeError("MySQL backend is required for patient links")
@@ -284,6 +298,7 @@ def create_link(
     patient_reference_value = _normalize_optional_text(patient_reference or reference_label)
     payment_method_value = _normalize_optional_text(payment_method, max_len=32)
     payment_instructions_value = _normalize_optional_text(payment_instructions, max_len=4000)
+    physician_certified_value = 1 if _normalize_bool_flag(physician_certified) else 0
     instructions_value = _normalize_optional_text(instructions, max_len=4000)
     allowed_products_value = _normalize_allowed_products(allowed_products)
     usage_limit_value = _normalize_optional_int(usage_limit)
@@ -327,6 +342,7 @@ def create_link(
             "status": "active",
             "payment_method": payment_method_value,
             "payment_instructions": payment_instructions_value,
+            "physician_certified": physician_certified_value,
         }
         try:
             mysql_client.execute(
@@ -336,14 +352,14 @@ def create_link(
                     doctor_id, patient_id, reference_label, subject_label, study_label, patient_reference,
                     created_at, expires_at, markup_percent, instructions, allowed_products_json,
                     usage_limit, usage_count, open_count, status,
-                    payment_method, payment_instructions
+                    payment_method, payment_instructions, physician_certified
                 )
                 VALUES (
                     %(token)s, %(token_version)s, %(token_ciphertext)s, %(token_hint)s,
                     %(doctor_id)s, %(patient_id)s, %(reference_label)s, %(subject_label)s, %(study_label)s, %(patient_reference)s,
                     %(created_at)s, %(expires_at)s, %(markup_percent)s, %(instructions)s, %(allowed_products_json)s,
                     %(usage_limit)s, 0, 0, %(status)s,
-                    %(payment_method)s, %(payment_instructions)s
+                    %(payment_method)s, %(payment_instructions)s, %(physician_certified)s
                 )
                 """,
                 params,
@@ -368,6 +384,7 @@ def create_link(
                 "status": "active",
                 "paymentMethod": payment_method_value,
                 "paymentInstructions": payment_instructions_value,
+                "physicianCertified": bool(physician_certified_value),
                 "receivedPayment": False,
                 "lastUsedAt": None,
                 "lastOpenedAt": None,
@@ -395,7 +412,7 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
                doctor_id, patient_id, reference_label, subject_label, study_label, patient_reference,
                created_at, expires_at, markup_percent, instructions, allowed_products_json,
                usage_limit, usage_count, open_count, status,
-               payment_method, payment_instructions,
+               payment_method, payment_instructions, physician_certified,
                received_payment,
                last_used_at, last_opened_at, last_order_at, revoked_at,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
@@ -426,7 +443,7 @@ def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dic
                created_at, expires_at, last_used_at, last_opened_at, last_order_at, revoked_at,
                markup_percent, instructions, allowed_products_json,
                usage_limit, usage_count, open_count, status,
-               payment_method, payment_instructions,
+               payment_method, payment_instructions, physician_certified,
                received_payment,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
@@ -602,7 +619,7 @@ def update_link(
                doctor_id, patient_id, reference_label, subject_label, study_label, patient_reference,
                created_at, expires_at, markup_percent, instructions, allowed_products_json,
                usage_limit, usage_count, open_count, status,
-               payment_method, payment_instructions, received_payment,
+               payment_method, payment_instructions, physician_certified, received_payment,
                last_used_at, last_opened_at, last_order_at, revoked_at,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
@@ -617,6 +634,39 @@ def update_link(
     if not row:
         return None
     return _map_row(row, fallback_token=raw_token)
+
+
+def delete_link(doctor_id: str, token: str) -> bool:
+    if not _using_mysql():
+        return False
+    doctor_id = str(doctor_id or "").strip()
+    raw_token = str(token or "").strip()
+    if not doctor_id or not raw_token:
+        return False
+
+    existing = mysql_client.fetch_one(
+        """
+        SELECT revoked_at
+        FROM patient_links
+        WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
+          AND doctor_id = %(doctor_id)s
+        LIMIT 1
+        """,
+        {"doctor_id": doctor_id, **_lookup_params(raw_token)},
+    )
+    if not existing or not existing.get("revoked_at"):
+        return False
+
+    result = mysql_client.execute(
+        """
+        DELETE FROM patient_links
+        WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
+          AND doctor_id = %(doctor_id)s
+          AND revoked_at IS NOT NULL
+        """,
+        {"doctor_id": doctor_id, **_lookup_params(raw_token)},
+    )
+    return bool(getattr(result, "rowcount", 0) or (result or {}).get("affectedRows") or 0)
 
 
 def get_doctor_markup_percent(doctor_id: str) -> float:

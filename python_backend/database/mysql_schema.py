@@ -219,6 +219,12 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS usage_tracking (
+        event VARCHAR(128) NOT NULL,
+        details_json JSON NOT NULL
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS discount_codes (
         code VARCHAR(64) PRIMARY KEY,
         discount_value DECIMAL(6,2) NOT NULL DEFAULT 0,
@@ -252,6 +258,7 @@ CREATE_TABLE_STATEMENTS = [
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         payment_method VARCHAR(32) NULL,
         payment_instructions LONGTEXT NULL,
+        physician_certified TINYINT(1) NOT NULL DEFAULT 0,
         received_payment TINYINT(1) NOT NULL DEFAULT 0,
         last_used_at DATETIME NULL,
         last_opened_at DATETIME NULL,
@@ -467,6 +474,7 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS cart JSON NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS receive_client_order_update_emails TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS physician_certified TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
         "ALTER TABLE peptide_forum_posts ADD COLUMN IF NOT EXISTS time_raw VARCHAR(64) NULL",

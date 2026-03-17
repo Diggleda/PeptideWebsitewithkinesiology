@@ -1184,8 +1184,10 @@ export function Header({
   const [patientLinkInstructionsDraft, setPatientLinkInstructionsDraft] = useState<string>('');
   const [patientLinksCreating, setPatientLinksCreating] = useState(false);
   const [patientLinksUpdatingToken, setPatientLinksUpdatingToken] = useState<string | null>(null);
+  const [patientLinksDeletingToken, setPatientLinksDeletingToken] = useState<string | null>(null);
   const [patientLinksSavingPaymentToken, setPatientLinksSavingPaymentToken] = useState<string | null>(null);
   const [patientLinksPaymentReceivedToken, setPatientLinksPaymentReceivedToken] = useState<string | null>(null);
+  const patientLinkTrackedFieldsRef = useRef<Set<string>>(new Set());
   const [patientLinkPaymentMethodDraftByToken, setPatientLinkPaymentMethodDraftByToken] = useState<Record<string, PatientLinkPaymentMethod>>({});
   const [patientLinkInstructionsDraftByToken, setPatientLinkInstructionsDraftByToken] = useState<Record<string, string>>({});
   const [researchDashboardExpanded, setResearchDashboardExpanded] = useState(false);
@@ -3810,6 +3812,7 @@ export function Header({
         usageLimit: usageLimit && Number.isFinite(usageLimit) && usageLimit > 0 ? usageLimit : null,
         paymentMethod,
         paymentInstructions,
+        physicianCertified: patientLinkTermsAccepted,
       });
       setPatientLinkSubjectLabelDraft('');
       setPatientLinkStudyLabelDraft('');
@@ -3869,6 +3872,27 @@ export function Header({
     );
   }, []);
 
+  const trackUsageEvent = useCallback((event: string, metadata?: Record<string, unknown>) => {
+    const normalizedEvent = typeof event === 'string' ? event.trim() : '';
+    if (!normalizedEvent) return;
+    void import('../services/api')
+      .then((api) => api.usageTrackingAPI.track({ event: normalizedEvent, metadata: metadata || {} }))
+      .catch(() => {});
+  }, []);
+
+  const trackPatientLinkFieldEntry = useCallback((field: string, value: string) => {
+    const normalizedField = typeof field === 'string' ? field.trim() : '';
+    const normalizedValue = typeof value === 'string' ? value.trim() : '';
+    if (!normalizedField || !normalizedValue) {
+      return;
+    }
+    if (patientLinkTrackedFieldsRef.current.has(normalizedField)) {
+      return;
+    }
+    patientLinkTrackedFieldsRef.current.add(normalizedField);
+    trackUsageEvent('delegate_link_text_field_entry', { field: normalizedField });
+  }, [trackUsageEvent]);
+
   const handleCopyPatientLink = useCallback(async (token: string) => {
     const url = getPatientLinkUrl(token);
     if (!url) return;
@@ -3911,6 +3935,28 @@ export function Header({
       setPatientLinksUpdatingToken(null);
     }
   }, [loadPatientLinks, patientLinksUpdatingToken]);
+
+  const handleDeletePatientLink = useCallback(async (token: string) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized || patientLinksDeletingToken) {
+      return;
+    }
+    setPatientLinksDeletingToken(normalized);
+    try {
+      const api = await import('../services/api');
+      await api.delegationAPI.updateLink(normalized, { delete: true });
+      toast.success('Link deleted.');
+      await loadPatientLinks();
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to delete link right now.',
+      );
+    } finally {
+      setPatientLinksDeletingToken(null);
+    }
+  }, [loadPatientLinks, patientLinksDeletingToken]);
 
   const handleSetPatientLinkPaymentReceived = useCallback(
     async (token: string, received: boolean) => {
@@ -6024,7 +6070,10 @@ export function Header({
 	          <Input
 	            id="patient-link-subject-label"
 	            value={patientLinkSubjectLabelDraft}
-	            onChange={(event) => setPatientLinkSubjectLabelDraft(event.target.value)}
+	            onChange={(event) => {
+                setPatientLinkSubjectLabelDraft(event.target.value);
+                trackPatientLinkFieldEntry('subject_label', event.target.value);
+              }}
 	            placeholder="e.g., Subject 042"
             className="patient-link-form__patient-id-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
@@ -6037,7 +6086,10 @@ export function Header({
 	          <Input
 	            id="patient-link-study-label"
 	            value={patientLinkStudyLabelDraft}
-	            onChange={(event) => setPatientLinkStudyLabelDraft(event.target.value)}
+	            onChange={(event) => {
+                setPatientLinkStudyLabelDraft(event.target.value);
+                trackPatientLinkFieldEntry('study_label', event.target.value);
+              }}
 	            placeholder="e.g., GH response pilot"
             className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
@@ -6050,7 +6102,10 @@ export function Header({
 	          <Input
 	            id="patient-link-reference"
 	            value={patientLinkReferenceDraft}
-	            onChange={(event) => setPatientLinkReferenceDraft(event.target.value)}
+	            onChange={(event) => {
+                setPatientLinkReferenceDraft(event.target.value);
+                trackPatientLinkFieldEntry('internal_reference', event.target.value);
+              }}
 	            placeholder="e.g., A104"
             className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
@@ -6063,7 +6118,10 @@ export function Header({
 	          <Textarea
 	            id="patient-link-allowed-products"
 	            value={patientLinkAllowedProductsDraft}
-	            onChange={(event) => setPatientLinkAllowedProductsDraft(event.target.value)}
+	            onChange={(event) => {
+                setPatientLinkAllowedProductsDraft(event.target.value);
+                trackPatientLinkFieldEntry('allowed_skus', event.target.value);
+              }}
 	            placeholder="e.g., BPC-157-5MG, TB-500-10MG"
 	            rows={2}
 	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
@@ -6090,7 +6148,10 @@ export function Header({
 	              type="text"
 	              inputMode="decimal"
 	              value={patientLinkMarkupDraft}
-	              onChange={(event) => setPatientLinkMarkupDraft(normalizeMarkupDraftText(event.target.value))}
+	              onChange={(event) => {
+                  setPatientLinkMarkupDraft(normalizeMarkupDraftText(event.target.value));
+                  trackPatientLinkFieldEntry('markup_percent', event.target.value);
+                }}
 	              placeholder="0"
 	              className="!h-11 w-full text-left tabular-nums squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	              style={{ direction: 'ltr' }}
@@ -6107,7 +6168,11 @@ export function Header({
 	            type="text"
 	            inputMode="numeric"
 	            value={patientLinkExpiryHoursDraft}
-	            onChange={(event) => setPatientLinkExpiryHoursDraft(event.target.value.replace(/[^\d]/g, ''))}
+	            onChange={(event) => {
+                const next = event.target.value.replace(/[^\d]/g, '');
+                setPatientLinkExpiryHoursDraft(next);
+                trackPatientLinkFieldEntry('expiration_hours', next);
+              }}
 	            placeholder="72"
             className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
@@ -6122,7 +6187,11 @@ export function Header({
 	            type="text"
 	            inputMode="numeric"
 	            value={patientLinkUsageLimitDraft}
-	            onChange={(event) => setPatientLinkUsageLimitDraft(event.target.value.replace(/[^\d]/g, ''))}
+	            onChange={(event) => {
+                const next = event.target.value.replace(/[^\d]/g, '');
+                setPatientLinkUsageLimitDraft(next);
+                trackPatientLinkFieldEntry('usage_limit', next);
+              }}
 	            placeholder="e.g., 5"
             className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
@@ -6169,7 +6238,10 @@ export function Header({
 	          <Input
 	            id="patient-link-zelle-contact"
 	            value={zelleContactDraft}
-	            onChange={(event) => setZelleContactDraft(event.target.value)}
+	            onChange={(event) => {
+                setZelleContactDraft(event.target.value);
+                trackPatientLinkFieldEntry('zelle_contact', event.target.value);
+              }}
 	            placeholder="e.g., billing@clinic.com or +1 (444) 444-4444"
 	            className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
@@ -6189,7 +6261,10 @@ export function Header({
 	          <Textarea
 	            id="patient-link-research-note"
 	            value={patientLinkResearchNoteDraft}
-	            onChange={(event) => setPatientLinkResearchNoteDraft(event.target.value)}
+	            onChange={(event) => {
+                setPatientLinkResearchNoteDraft(event.target.value);
+                trackPatientLinkFieldEntry('research_note', event.target.value);
+              }}
 	            placeholder="e.g., Restricted to approved protocol materials only."
 	            rows={2}
 	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
@@ -6203,7 +6278,10 @@ export function Header({
 	          <Textarea
 	            id="patient-link-instructions"
 	            value={patientLinkInstructionsDraft}
-	            onChange={(event) => setPatientLinkInstructionsDraft(event.target.value)}
+	            onChange={(event) => {
+                setPatientLinkInstructionsDraft(event.target.value);
+                trackPatientLinkFieldEntry('payment_instructions', event.target.value);
+              }}
 	            placeholder="Enter instructions that the delegate will see in their proposal modal…"
 	            rows={2}
 	            className="patient-link-form__instructions !mb-0 min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
@@ -6568,6 +6646,7 @@ export function Header({
 		              const hasProposal = Boolean(reviewStatus || delegateSharedAt || delegateOrderId);
 		              const isRevoked = Boolean(revokedAt);
 		              const isUpdating = patientLinksUpdatingToken === token;
+		              const isDeleting = patientLinksDeletingToken === token;
 		              const isSavingPayment = patientLinksSavingPaymentToken === token;
 		              const isProposalBusy = patientLinksProposalToken === token;
 		              const isUpdatingReceivedPayment = patientLinksPaymentReceivedToken === token;
@@ -6686,11 +6765,25 @@ export function Header({
 	                        type="button"
 		                      variant="outline"
 		                      size="sm"
-		                      onClick={() => void handleRevokePatientLink(token)}
-		                      disabled={!token || isRevoked || isUpdating}
+		                      onClick={() => {
+                            if (isRevoked) {
+                              void handleDeletePatientLink(token);
+                              return;
+                            }
+                            void handleRevokePatientLink(token);
+                          }}
+		                      disabled={!token || isUpdating || isDeleting}
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm bg-white text-slate-900"
+                          aria-label={isRevoked ? 'Delete revoked link permanently' : 'Revoke link'}
+                          title={isRevoked ? 'Delete permanently' : 'Revoke link'}
 		                    >
-			                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke link'}
+                          {isDeleting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : isRevoked ? (
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            'Revoke link'
+                          )}
 			                    </Button>
 			                    </div>
 			                    {hasProposal && (
@@ -7043,7 +7136,12 @@ export function Header({
 	                          )}
                           data-tab={tab.id}
                           aria-pressed={isActive}
-	                          onClick={() => setAccountTab(tab.id)}
+	                          onClick={() => {
+                              setAccountTab(tab.id);
+                              if (tab.id === 'patient_links') {
+                                trackUsageEvent('delegate_link_tab_clicked', { tab: tab.id });
+                              }
+                            }}
 	                        >
 			                          <span className="relative inline-flex h-6 w-6 items-center justify-center overflow-visible">
 			                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />

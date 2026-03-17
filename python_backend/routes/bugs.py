@@ -8,7 +8,7 @@ from flask import Blueprint, request
 
 from ..database import mysql_client
 from ..repositories import sales_rep_repository, user_repository
-from ..services import get_config
+from ..services import get_config, usage_tracking_service
 from ..storage import bug_report_store
 from ..utils.http import handle_action
 
@@ -108,10 +108,11 @@ def submit_bug_report():
                 reports = bug_report_store.read()
                 reports.append(record)
                 bug_report_store.write(reports)
+                usage_tracking_service.track_event("issue_reported", actor=actor, metadata={"source": "bug_report"})
                 return {"status": "ok"}
             raise
 
+        usage_tracking_service.track_event("issue_reported", actor=actor, metadata={"source": "bug_report"})
         return {"status": "ok"}
 
     return handle_action(action)
-

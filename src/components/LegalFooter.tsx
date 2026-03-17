@@ -280,7 +280,6 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
 
   useEffect(() => {
     const openBugReport = () => {
-      window.dispatchEvent(new Event('peppro:close-dialogs'));
       handleBugOpen();
     };
     window.addEventListener('peppro:open-bug-report', openBugReport);
@@ -381,17 +380,17 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                   </p>
                   <p>{MERCHANT_IDENTITY.businessHours}</p>
                 </div>
-                <nav className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-[rgb(95,179,249)]">
+                <nav className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
                   <button
                     type="button"
-                    className="cursor-pointer rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
                     onClick={() => handleLinkClick('contact')}
                   >
                     Contact
                   </button>
                   <button
                     type="button"
-                    className="cursor-pointer rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
                     onClick={() => handleLinkClick('returns')}
                   >
                     Returns & Refunds
@@ -400,7 +399,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                     <button
                       key={link.key}
                       type="button"
-                      className="cursor-pointer rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
                       onClick={() => handleLinkClick(link.key)}
                     >
                       {link.label}
@@ -442,7 +441,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                     handleBugOpen();
                   }}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                  style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff' }}
                 >
                   Report a bug
                 </button>
@@ -462,17 +461,17 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
                 <p className="text-xs text-slate-500"> This website design is guided by consciousness calibration.</p>
               </div>
-              <nav className="mt-2 mb-2 flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-[rgb(95,179,249)]">
+              <nav className="mt-2 mb-2 flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
                   onClick={() => handleLinkClick('contact')}
                 >
                   Contact
                 </button>
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
                   onClick={() => handleLinkClick('returns')}
                 >
                   Returns & Refunds
@@ -481,7 +480,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                   <button
                     key={link.key}
                     type="button"
-                    className="cursor-pointer rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
                     onClick={() => handleLinkClick(link.key)}
                   >
                     {link.label}
