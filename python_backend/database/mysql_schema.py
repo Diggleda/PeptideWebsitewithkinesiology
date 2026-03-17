@@ -220,8 +220,12 @@ CREATE_TABLE_STATEMENTS = [
     """,
     """
     CREATE TABLE IF NOT EXISTS usage_tracking (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         event VARCHAR(128) NOT NULL,
-        details_json LONGTEXT NOT NULL
+        details_json LONGTEXT NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_usage_tracking_event (event),
+        KEY idx_usage_tracking_created (created_at)
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -374,6 +378,22 @@ def ensure_schema() -> None:
                   AND index_name = %(index)s
                 """,
                 {"table": table, "index": index},
+            )
+            return int((row or {}).get("cnt") or 0) > 0
+        except Exception:
+            return False
+
+    def _primary_key_exists(table: str) -> bool:
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM information_schema.table_constraints
+                WHERE table_schema = DATABASE()
+                  AND table_name = %(table)s
+                  AND constraint_type = 'PRIMARY KEY'
+                """,
+                {"table": table},
             )
             return int((row or {}).get("cnt") or 0) > 0
         except Exception:
@@ -712,10 +732,53 @@ def ensure_schema() -> None:
     # JSON payloads are generally stored in LONGTEXT columns in this codebase.
     try:
         if _table_exists("usage_tracking"):
+            if not _column_exists("usage_tracking", "id"):
+                try:
+                    mysql_client.execute(
+                        "ALTER TABLE usage_tracking ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST"
+                    )
+                except Exception:
+                    pass
+            if not _primary_key_exists("usage_tracking") and _column_exists("usage_tracking", "id"):
+                try:
+                    mysql_client.execute("ALTER TABLE usage_tracking ADD PRIMARY KEY (id)")
+                except Exception:
+                    pass
+            try:
+                if _column_exists("usage_tracking", "id"):
+                    mysql_client.execute(
+                        "ALTER TABLE usage_tracking MODIFY COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT"
+                    )
+            except Exception:
+                pass
             if not _column_exists("usage_tracking", "details_json"):
                 mysql_client.execute("ALTER TABLE usage_tracking ADD COLUMN details_json LONGTEXT NOT NULL")
             try:
                 mysql_client.execute("ALTER TABLE usage_tracking MODIFY COLUMN details_json LONGTEXT NOT NULL")
+            except Exception:
+                pass
+            if not _column_exists("usage_tracking", "created_at"):
+                try:
+                    mysql_client.execute(
+                        "ALTER TABLE usage_tracking ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                    )
+                except Exception:
+                    pass
+            try:
+                if _column_exists("usage_tracking", "created_at"):
+                    mysql_client.execute(
+                        "ALTER TABLE usage_tracking MODIFY COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                    )
+            except Exception:
+                pass
+            try:
+                if not _index_exists("usage_tracking", "idx_usage_tracking_event"):
+                    mysql_client.execute("ALTER TABLE usage_tracking ADD INDEX idx_usage_tracking_event (event)")
+            except Exception:
+                pass
+            try:
+                if not _index_exists("usage_tracking", "idx_usage_tracking_created"):
+                    mysql_client.execute("ALTER TABLE usage_tracking ADD INDEX idx_usage_tracking_created (created_at)")
             except Exception:
                 pass
     except Exception:
