@@ -792,15 +792,11 @@ def estimate_order_totals(
 
     tax_total = 0.0
     source = "flat_zero"
-    if is_facility_pickup:
-        tax_total = 0.0
-        source = "facility_pickup"
-    else:
-        tax_total, source, _state_profile = _calculate_checkout_tax(
-            items_subtotal=float(items_total_effective),
-            shipping_total=float(shipping_total_value),
-            shipping_address=address,
-        )
+    tax_total, source, _state_profile = _calculate_checkout_tax(
+        items_subtotal=float(items_total_effective),
+        shipping_total=float(shipping_total_value),
+        shipping_address=address,
+    )
     grand_total = max(0.0, items_total_effective + shipping_total_value + tax_total)
 
     totals = {
@@ -926,8 +922,6 @@ def create_order(
     shipping_total_value = 0.0 if is_facility_pickup else max(0.0, shipping_total_value)
     if tax_exempt:
         tax_total_value = 0.0
-    elif is_facility_pickup:
-        tax_total_value = 0.0
     else:
         tax_total_value, _tax_source, _state_profile = _calculate_checkout_tax(
             items_subtotal=float(items_subtotal),
@@ -1032,8 +1026,6 @@ def create_order(
         # Recompute taxes based on discounted subtotal (where applicable).
         tax_total_value_effective = 0.0
         if tax_exempt:
-            tax_total_value_effective = 0.0
-        elif is_facility_pickup:
             tax_total_value_effective = 0.0
         else:
             tax_total_value_effective, _tax_source, _state_profile = _calculate_checkout_tax(
