@@ -75,14 +75,29 @@ def insert_event(event: str, details: Dict[str, Any], *, strict: bool = False) -
             raise err
         logger.error(message)
         return False
-    mysql_client.execute(
+    params = {
+        "event": str(event or "").strip()[:128],
+        "details_json": json.dumps(details or {}),
+    }
+    statements = (
         f"""
-        INSERT INTO usage_tracking (event, {payload_column})
+        INSERT INTO usage_tracking (event, `{payload_column}`)
+        VALUES (%(event)s, %(details_json)s)
+        """,
+        f"""
+        INSERT INTO usage_tracking (event, `{payload_column}`)
         VALUES (%(event)s, CAST(%(details_json)s AS JSON))
         """,
-        {
-            "event": str(event or "").strip()[:128],
-            "details_json": json.dumps(details or {}),
-        },
     )
-    return True
+    last_error: Exception | None = None
+    for statement in statements:
+        try:
+            mysql_client.execute(statement, params)
+            return True
+        except Exception as exc:
+            last_error = exc
+    if strict and last_error is not None:
+        raise last_error
+    if last_error is not None:
+        logger.exception("Usage tracking insert failed", extra={"event": params["event"], "payloadColumn": payload_column})
+    return False
