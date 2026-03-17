@@ -1187,9 +1187,11 @@ export function Header({
   const [patientLinksDeletingToken, setPatientLinksDeletingToken] = useState<string | null>(null);
   const [patientLinksSavingPaymentToken, setPatientLinksSavingPaymentToken] = useState<string | null>(null);
   const [patientLinksPaymentReceivedToken, setPatientLinksPaymentReceivedToken] = useState<string | null>(null);
+  const [patientLinksSavingReviewNotesToken, setPatientLinksSavingReviewNotesToken] = useState<string | null>(null);
   const patientLinkTrackedFieldsRef = useRef<Set<string>>(new Set());
   const [patientLinkPaymentMethodDraftByToken, setPatientLinkPaymentMethodDraftByToken] = useState<Record<string, PatientLinkPaymentMethod>>({});
   const [patientLinkInstructionsDraftByToken, setPatientLinkInstructionsDraftByToken] = useState<Record<string, string>>({});
+  const [patientLinkReviewNotesDraftByToken, setPatientLinkReviewNotesDraftByToken] = useState<Record<string, string>>({});
   const [researchDashboardExpanded, setResearchDashboardExpanded] = useState(false);
   const [researchOverlayExpanded, setResearchOverlayExpanded] = useState(false);
   const [researchOverlayRect, setResearchOverlayRect] = useState<{
@@ -3428,10 +3430,15 @@ export function Header({
       borderColor?: string | null;
     },
   ) => (
-    <div className="relative">
+    <div
+      className="relative"
+      style={{
+        '--header-search-border-color': options?.borderColor || (delegateMode ? secondaryColor : undefined),
+      } as CSSProperties}
+    >
       <Search
         className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform !text-slate-500"
-        style={{ color: "rgb(100, 116, 139)" }}
+        style={{ color: delegateMode ? secondaryColor : 'rgb(100, 116, 139)' }}
       />
       <Input
         type="text"
@@ -3447,7 +3454,8 @@ export function Header({
         className={`header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0 ${inputClassName}`.trim()}
         style={{
           minWidth: '100%',
-          '--header-search-border-color': options?.borderColor || undefined,
+          color: delegateMode ? secondaryColor : undefined,
+          caretColor: delegateMode ? secondaryColor : undefined,
         }}
         readOnly={Boolean(options?.readOnly)}
       />
@@ -3621,6 +3629,22 @@ export function Header({
         next[token] = text.trim()
           ? text
           : buildPatientLinkDefaultInstructions(method, localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null);
+      }
+      return next;
+    });
+
+    setPatientLinkReviewNotesDraftByToken((prev) => {
+      const next: Record<string, string> = { ...prev };
+      for (const link of patientLinks) {
+        const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
+        if (!token || typeof next[token] === 'string') continue;
+        const raw =
+          (link as any)?.delegateReviewNotes ??
+          (link as any)?.proposalReviewNotes ??
+          (link as any)?.delegate_review_notes ??
+          (link as any)?.proposal_review_notes ??
+          null;
+        next[token] = typeof raw === 'string' ? raw : '';
       }
       return next;
     });
@@ -4114,6 +4138,39 @@ export function Header({
       }
     },
     [loadPatientLinks, patientLinksProposalToken],
+  );
+
+  const handleSavePatientLinkReviewNotes = useCallback(
+    async (token: string, currentStatus?: string | null) => {
+      const normalized = typeof token === 'string' ? token.trim() : '';
+      if (!normalized || patientLinksSavingReviewNotesToken) {
+        return;
+      }
+      const normalizedStatus = typeof currentStatus === 'string' && currentStatus.trim()
+        ? currentStatus.trim().toLowerCase()
+        : 'pending';
+      const notes = (patientLinkReviewNotesDraftByToken[normalized] ?? '').trim();
+
+      setPatientLinksSavingReviewNotesToken(normalized);
+      try {
+        const api = await import('../services/api');
+        await api.delegationAPI.reviewLinkProposal(normalized, {
+          status: normalizedStatus,
+          notes,
+        });
+        toast.success('Proposal notes saved.');
+        await loadPatientLinks();
+      } catch (error: any) {
+        toast.error(
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message
+            : 'Unable to save proposal notes right now.',
+        );
+      } finally {
+        setPatientLinksSavingReviewNotesToken(null);
+      }
+    },
+    [loadPatientLinks, patientLinkReviewNotesDraftByToken, patientLinksSavingReviewNotesToken],
   );
 
   const saveProfileField = useCallback(
@@ -6647,16 +6704,29 @@ export function Header({
 	                  : (typeof (link as any)?.proposal_status === 'string' && (link as any).proposal_status.trim())
 	                    ? (link as any).proposal_status.trim().toLowerCase()
 	                    : '';
-		              const reviewStatus = delegateReviewStatusRaw || proposalStatusRaw;
-		              const proposalStatus =
-		                reviewStatus || (delegateSharedAt || delegateOrderId ? 'pending' : '');
-		              const hasProposal = Boolean(reviewStatus || delegateSharedAt || delegateOrderId);
+	              const reviewStatus = delegateReviewStatusRaw || proposalStatusRaw;
+	              const proposalStatus =
+	                reviewStatus || (delegateSharedAt || delegateOrderId ? 'pending' : '');
+	              const hasProposal = Boolean(reviewStatus || delegateSharedAt || delegateOrderId);
 		              const isRevoked = Boolean(revokedAt);
 		              const isUpdating = patientLinksUpdatingToken === token;
 		              const isDeleting = patientLinksDeletingToken === token;
 		              const isSavingPayment = patientLinksSavingPaymentToken === token;
 		              const isProposalBusy = patientLinksProposalToken === token;
 		              const isUpdatingReceivedPayment = patientLinksPaymentReceivedToken === token;
+                  const isSavingReviewNotes = patientLinksSavingReviewNotesToken === token;
+                  const proposalReviewNotes =
+                    typeof (link as any)?.delegateReviewNotes === 'string'
+                      ? String((link as any).delegateReviewNotes)
+                      : typeof (link as any)?.proposalReviewNotes === 'string'
+                        ? String((link as any).proposalReviewNotes)
+                        : typeof (link as any)?.delegate_review_notes === 'string'
+                          ? String((link as any).delegate_review_notes)
+                          : typeof (link as any)?.proposal_review_notes === 'string'
+                            ? String((link as any).proposal_review_notes)
+                            : '';
+                  const reviewNotesDraft = patientLinkReviewNotesDraftByToken[token] ?? proposalReviewNotes;
+                  const reviewNotesDirty = reviewNotesDraft !== proposalReviewNotes;
 		              const proposalLabel =
 		                proposalStatus === 'approved' || proposalStatus === 'accepted'
 		                  ? 'Accepted'
@@ -6738,7 +6808,15 @@ export function Header({
 			                        type="button"
 			                        variant="outline"
 		                        size="sm"
-		                        onClick={() => void handleViewPatientProposal(token)}
+		                        onClick={() => {
+                              if (proposalActionLabel === 'Review Proposal') {
+                                trackUsageEvent('delegate_proposal_review_clicked', {
+                                  token,
+                                  status: proposalStatus || 'pending',
+                                });
+                              }
+                              void handleViewPatientProposal(token);
+                            }}
 		                        disabled={!token || isProposalBusy}
 		                        className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 		                      >
@@ -6842,6 +6920,66 @@ export function Header({
 			                        </div>
 			                      </div>
 			                    )}
+                          {hasProposal && (
+                            <div className="w-full rounded-xl border border-slate-200 bg-white/70 px-3 py-3">
+                              <div className="space-y-2">
+                                <Label
+                                  htmlFor={`patient-link-review-notes-${token || label}`}
+                                  className="text-xs font-semibold text-slate-700"
+                                >
+                                  Rejection or suggestion notes
+                                </Label>
+                                <Textarea
+                                  id={`patient-link-review-notes-${token || label}`}
+                                  value={reviewNotesDraft}
+                                  onChange={(event) => {
+                                    setPatientLinkReviewNotesDraftByToken((prev) => ({
+                                      ...prev,
+                                      [token]: event.target.value,
+                                    }));
+                                    trackPatientLinkFieldEntry('proposal_review_notes', event.target.value);
+                                  }}
+                                  rows={3}
+                                  placeholder="Add notes for the delegate here."
+                                  className="min-h-[72px] resize-y squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+                                />
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs text-slate-500">
+                                    These notes are shown to the delegate in their proposal status panel.
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {reviewNotesDirty && (
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setPatientLinkReviewNotesDraftByToken((prev) => ({
+                                            ...prev,
+                                            [token]: proposalReviewNotes,
+                                          }));
+                                        }}
+                                        disabled={isSavingReviewNotes}
+                                        className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
+                                      >
+                                        Reset
+                                      </Button>
+                                    )}
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => void handleSavePatientLinkReviewNotes(token, proposalStatus)}
+                                      disabled={!token || isSavingReviewNotes || !reviewNotesDirty}
+                                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
+                                    >
+                                      {isSavingReviewNotes ? 'Saving…' : 'Save notes'}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
 			                    {!hasProposal && (
 			                      <div
 			                        aria-hidden="true"
@@ -7857,11 +7995,12 @@ export function Header({
                   disabled={Boolean(catalogLoading)}
                   aria-disabled={Boolean(catalogLoading)}
                   className="header-cart-button mobile-search-toggle-button squircle-sm transition-all duration-300"
+                  style={delegateMode ? { borderColor: secondaryColor, color: secondaryColor } : undefined}
                 >
                   {mobileSearchOpen ? (
-                    <X className="h-4 w-4" />
+                    <X className="h-4 w-4" style={delegateMode ? { color: secondaryColor } : undefined} />
                   ) : (
-                    <Search className="h-4 w-4 mobile-search-icon" />
+                    <Search className="h-4 w-4 mobile-search-icon" style={delegateMode ? { color: secondaryColor } : undefined} />
                   )}
                   <span className="sr-only">{mobileSearchOpen ? 'Close search' : 'Open search'}</span>
                 </Button>

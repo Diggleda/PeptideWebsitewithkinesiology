@@ -15,7 +15,7 @@ import shippingHtml from '../content/legal/shipping.html?raw';
 import returnsHtml from '../content/legal/returns.html?raw';
 import contactHtml from '../content/legal/contact.html?raw';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
-import { api } from '../services/api';
+import { api, usageTrackingAPI } from '../services/api';
 
 type LegalDocumentKey = 'terms' | 'privacy' | 'shipping' | 'returns' | 'contact';
 
@@ -187,14 +187,14 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
   }, [selectedDocument, isClosing, isVisible]);
 
   useEffect(() => {
-    const open = Boolean(selectedDocument);
+    const open = Boolean(selectedDocument || contactOpen || bugOpen);
     window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open } }));
     return () => {
       if (open) {
         window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open: false } }));
       }
     };
-  }, [selectedDocument]);
+  }, [selectedDocument, contactOpen, bugOpen]);
 
   useEffect(() => () => {
     if (closeTimerRef.current) {
@@ -262,6 +262,10 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
       clearTimeout(bugCloseTimerRef.current);
       bugCloseTimerRef.current = null;
     }
+    void usageTrackingAPI.track({
+      event: 'issue_report_clicked',
+      metadata: { source: 'bug_report_modal_open' },
+    }).catch(() => {});
     setBugOpen(true);
     requestAnimationFrame(() => setBugVisible(true));
   }, []);
@@ -358,7 +362,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                       handleBugOpen();
                     }}
                     className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
-                    style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                    style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
                   >
                     Report a bug
                   </button>
@@ -441,7 +445,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                     handleBugOpen();
                   }}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff' }}
+                  style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
                 >
                   Report a bug
                 </button>

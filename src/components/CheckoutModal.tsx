@@ -2240,7 +2240,7 @@ export function CheckoutModal({
                 <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3">
                   <div className="space-y-2">
                     <Label htmlFor="proposal-reject-notes" className="text-sm font-semibold text-rose-900">
-                      Rejection notes for the delegate
+                      Rejection or suggestion notes for the delegate
                     </Label>
                     <Textarea
                       id="proposal-reject-notes"
@@ -2278,9 +2278,9 @@ export function CheckoutModal({
                       variant="outline"
                       onClick={handleRejectProposalFromCheckout}
                       disabled={isProcessing || checkoutStatus === 'success' || isRejectingProposal}
-                      className="squircle-sm border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-800"
+                      className="w-[45%] min-w-[45%] squircle-sm border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-800"
                     >
-                      {isRejectingProposal ? 'Rejecting…' : rejectNotesOpen ? 'Reject proposal' : 'Reject'}
+                      {isRejectingProposal ? 'Rejecting…' : 'Reject or suggest'}
                     </Button>
                   </>
                 )}
