@@ -3877,7 +3877,14 @@ export function Header({
     if (!normalizedEvent) return;
     void import('../services/api')
       .then((api) => api.usageTrackingAPI.track({ event: normalizedEvent, metadata: metadata || {} }))
-      .catch(() => {});
+      .catch((error) => {
+        if (import.meta.env.DEV && typeof console !== 'undefined' && typeof console.warn === 'function') {
+          console.warn('[usage-tracking] Failed to record event', {
+            event: normalizedEvent,
+            error,
+          });
+        }
+      });
   }, []);
 
   const trackPatientLinkFieldEntry = useCallback((field: string, value: string) => {

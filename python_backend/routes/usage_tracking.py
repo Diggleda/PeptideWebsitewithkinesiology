@@ -16,12 +16,14 @@ def track_usage_event():
 
     def action():
         event = payload.get("event")
+        normalized_event = str(event or "").strip()
         metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-        usage_tracking_service.track_event(
-            str(event or "").strip(),
+        tracked = usage_tracking_service.track_event(
+            normalized_event,
             actor=getattr(g, "current_user", None) or {},
             metadata=metadata,
+            strict=True,
         )
-        return {"ok": True}
+        return {"ok": True, "tracked": tracked, "event": normalized_event}
 
     return handle_action(action, status=201)
