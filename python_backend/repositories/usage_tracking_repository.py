@@ -74,10 +74,10 @@ def _merge_event_payload(existing_payloads: list[Dict[str, Any]], latest_details
         elif payload:
             instances.append(dict(payload))
     instances.append(dict(latest_details or {}))
-    merged = dict(instances[-1]) if instances else dict(latest_details or {})
-    merged["count"] = len(instances)
-    merged["instances"] = instances
-    return merged
+    return {
+        "count": len(instances),
+        "instances": instances,
+    }
 
 
 def insert_event(event: str, details: Dict[str, Any], *, strict: bool = False) -> bool:

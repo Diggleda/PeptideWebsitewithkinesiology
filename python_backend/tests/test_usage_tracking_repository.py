@@ -63,9 +63,14 @@ class UsageTrackingRepositoryTests(unittest.TestCase):
 
     def test_insert_event_merges_instances_into_existing_event_row(self):
         existing_payload = {
-            "who": {"id": "u1"},
-            "when": "2026-03-17T02:00:00+00:00",
-            "tab": "delegate_links",
+            "count": 1,
+            "instances": [
+                {
+                    "who": {"id": "u1"},
+                    "when": "2026-03-17T02:00:00+00:00",
+                    "tab": "delegate_links",
+                }
+            ],
         }
         execute_calls = []
 
@@ -99,6 +104,9 @@ class UsageTrackingRepositoryTests(unittest.TestCase):
         self.assertEqual(len(payload["instances"]), 2)
         self.assertEqual(payload["instances"][0]["who"]["id"], "u1")
         self.assertEqual(payload["instances"][1]["who"]["id"], "u2")
+        self.assertNotIn("who", payload)
+        self.assertNotIn("when", payload)
+        self.assertNotIn("tab", payload)
 
 
 if __name__ == "__main__":
