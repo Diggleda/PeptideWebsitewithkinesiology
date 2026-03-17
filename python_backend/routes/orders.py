@@ -505,6 +505,7 @@ def update_admin_tax_tracking(state_code: str):
 
 
 @blueprint.get("/admin/product-sales-commission")
+@blueprint.get("/product-sales-commission")
 @require_auth
 def admin_products_commission():
     def action():

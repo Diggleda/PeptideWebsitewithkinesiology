@@ -29,6 +29,11 @@ router.get('/admin/on-hold', authenticate, orderController.getOnHoldOrdersForAdm
 router.get('/admin/taxes-by-state', authenticate, orderController.getTaxesByStateForAdmin);
 router.patch('/admin/tax-tracking/:stateCode', authenticate, orderController.updateTaxTrackingStateForAdmin);
 router.get(
+  '/product-sales-commission',
+  shouldServeFakeAdminReports() ? orderController.getProductSalesCommissionForAdmin : authenticate,
+  orderController.getProductSalesCommissionForAdmin,
+);
+router.get(
   '/admin/product-sales-commission',
   shouldServeFakeAdminReports() ? orderController.getProductSalesCommissionForAdmin : authenticate,
   orderController.getProductSalesCommissionForAdmin,

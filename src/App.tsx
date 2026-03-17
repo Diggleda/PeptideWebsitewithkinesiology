@@ -1297,6 +1297,16 @@ const normalizeStringField = (value: unknown) => {
   return null;
 };
 
+const getTaxCollectionActionLabel = (stateCode?: string | null) => {
+  const normalized = String(stateCode || "")
+    .trim()
+    .toUpperCase();
+  if (!normalized) {
+    return "File for state nexus. Collect state tax going forward.";
+  }
+  return `File for ${normalized} nexus. Collect ${normalized} tax going forward.`;
+};
+
 const parseObjectCandidate = (value: unknown): Record<string, any> | null => {
   if (!value) return null;
   if (typeof value === "object" && !Array.isArray(value)) {
@@ -9367,6 +9377,8 @@ function MainApp() {
   >([]);
   const [adminTaxesByStateBreakdownOpen, setAdminTaxesByStateBreakdownOpen] =
     useState(false);
+  const [adminTaxTrackingNotificationsOpen, setAdminTaxTrackingNotificationsOpen] =
+    useState(false);
   const [adminTaxesByStateMeta, setAdminTaxesByStateMeta] = useState<{
     periodStart?: string | null;
     periodEnd?: string | null;
@@ -9852,6 +9864,7 @@ function MainApp() {
             : null,
         stale: Boolean(taxTrackingRaw?.stale),
       });
+      setAdminTaxTrackingNotificationsOpen(false);
       setAdminTaxesByStateBreakdownOpen(false);
       setAdminTaxesByStateMeta({
         periodStart: (response as any)?.periodStart ?? null,
@@ -9869,6 +9882,7 @@ function MainApp() {
       setAdminTaxesByStateOrders([]);
       setAdminTaxTrackingRows([]);
       setAdminTaxTrackingMeta(null);
+      setAdminTaxTrackingNotificationsOpen(false);
       setAdminTaxesByStateBreakdownOpen(false);
       setAdminTaxesByStateMeta(null);
     } finally {
@@ -22924,12 +22938,16 @@ function MainApp() {
 				              <div className="grid grid-cols-1 gap-2">
                         {adminTaxTrackingRows.length > 0 && (
                           <>
-                            <div
-                              className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
-                              role="region"
-                              aria-label="Tax nexus alerts"
+                            <details
+                              className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar bg-white/60 border border-slate-200/70"
+                              open={adminTaxTrackingNotificationsOpen}
+                              onToggle={(event) => {
+                                setAdminTaxTrackingNotificationsOpen(
+                                  (event.currentTarget as HTMLDetailsElement).open,
+                                );
+                              }}
                             >
-                              <div className="flex flex-wrap items-start justify-between gap-3 border-b-4 border-slate-200/70 bg-white/70 px-3 py-2">
+                              <summary className="cursor-pointer list-none select-none flex flex-wrap items-start justify-between gap-3 border-b-4 border-slate-200/70 bg-white/70 px-3 py-2 [&::-webkit-details-marker]:hidden">
                                 <div className="min-w-0">
                                   <div className="text-sm font-semibold text-slate-900">
                                     Tax Nexus Notifications
@@ -22950,7 +22968,7 @@ function MainApp() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex flex-wrap items-center justify-end gap-2">
                                   {adminTaxTrackingMeta?.stale && (
                                     <Badge
                                       variant="outline"
@@ -22961,7 +22979,7 @@ function MainApp() {
                                   )}
                                   <Badge
                                     variant="outline"
-                                    className="border-amber-200 bg-amber-50 text-amber-700"
+                                    className="border-rose-500 bg-white text-rose-700"
                                   >
                                     {Number(
                                       adminTaxTrackingMeta?.summary?.warningCount || 0,
@@ -22975,7 +22993,7 @@ function MainApp() {
                                   </Badge>
                                   <Badge
                                     variant="outline"
-                                    className="border-rose-200 bg-rose-50 text-rose-700"
+                                    className="border-rose-500 bg-white text-rose-700"
                                   >
                                     {Number(
                                       adminTaxTrackingMeta?.summary?.exceededCount || 0,
@@ -22992,10 +23010,28 @@ function MainApp() {
                                     )}{" "}
                                     collect tax
                                   </Badge>
+                                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/70 px-2 py-1 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
+                                    <span>
+                                      {adminTaxTrackingNotificationsOpen
+                                        ? "Collapse"
+                                        : "Expand"}
+                                    </span>
+                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(95,179,249,0.10)]">
+                                      <ChevronRight
+                                        className="h-3.5 w-3.5 transition-transform duration-200"
+                                        style={{
+                                          color: "rgb(95, 179, 249)",
+                                          transform: adminTaxTrackingNotificationsOpen
+                                            ? "rotate(90deg)"
+                                            : "rotate(0deg)",
+                                        }}
+                                      />
+                                    </span>
+                                  </span>
                                 </div>
-                              </div>
+                              </summary>
                               {adminTaxTrackingNotifications.length > 0 ? (
-                                <ul className="max-h-[220px] overflow-y-auto">
+                                <ul className="max-h-[220px] overflow-y-auto border-b border-slate-200/70">
                                   {adminTaxTrackingNotifications.map((row) => {
                                     const activeReasons =
                                       row.warningLevel === "exceeded"
@@ -23007,7 +23043,9 @@ function MainApp() {
                                     const statusLabel =
                                       row.warningLevel === "exceeded"
                                         ? row.shouldCollectTax
-                                          ? "Collect tax"
+                                          ? getTaxCollectionActionLabel(
+                                              row.stateCode || row.state,
+                                            )
                                           : "Threshold exceeded"
                                         : "90% warning";
                                     return (
@@ -23054,9 +23092,9 @@ function MainApp() {
                                             "shrink-0",
                                             row.warningLevel === "exceeded"
                                               ? row.shouldCollectTax
-                                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                                ? "border-rose-500 bg-white text-rose-700"
                                                 : "border-amber-200 bg-amber-50 text-amber-700"
-                                              : "border-amber-200 bg-amber-50 text-amber-700",
+                                              : "border-rose-500 bg-white text-rose-700",
                                           )}
                                         >
                                           <AlertTriangle className="h-3 w-3" aria-hidden="true" />
@@ -23075,163 +23113,164 @@ function MainApp() {
                                   of a nexus threshold.
                                 </div>
                               )}
-                            </div>
-
-                            <div
-                              className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
-                              role="region"
-                              aria-label="Tax nexus tracker"
-                            >
-                              <div className="w-full" style={{ minWidth: 1220 }}>
-                                <div className="w-max">
-                                  <div
-                                    className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
-                                    style={{
-                                      gridTemplateColumns:
-                                        "minmax(180px,1.2fr) minmax(220px,1.35fr) max-content max-content max-content max-content max-content",
-                                    }}
-                                  >
-                                    <div className="whitespace-nowrap">State</div>
-                                    <div className="whitespace-nowrap">Nexus</div>
-                                    <div className="whitespace-nowrap text-right">
-                                      Filed
+                              <div
+                                className="overflow-x-auto no-scrollbar"
+                                role="region"
+                                aria-label="Tax nexus tracker"
+                              >
+                                <div className="w-full" style={{ minWidth: 1260 }}>
+                                  <div className="w-full">
+                                    <div
+                                      className="grid w-full items-center gap-4 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+                                      style={{
+                                        gridTemplateColumns:
+                                          "minmax(190px,1.15fr) minmax(240px,1.4fr) minmax(88px,0.55fr) minmax(150px,0.9fr) minmax(150px,0.9fr) minmax(130px,0.75fr) minmax(130px,0.75fr)",
+                                      }}
+                                    >
+                                      <div className="whitespace-nowrap text-center">State</div>
+                                      <div className="whitespace-nowrap text-center">Nexus</div>
+                                      <div className="whitespace-nowrap text-center">
+                                        Filed
+                                      </div>
+                                      <div className="whitespace-nowrap text-center">
+                                        Revenue 12mo
+                                      </div>
+                                      <div className="whitespace-nowrap text-center">
+                                        Revenue Threshold
+                                      </div>
+                                      <div className="whitespace-nowrap text-center">
+                                        Orders 12mo
+                                      </div>
+                                      <div className="whitespace-nowrap text-center">
+                                        Order Threshold
+                                      </div>
                                     </div>
-                                    <div className="whitespace-nowrap text-right">
-                                      Revenue 12mo
-                                    </div>
-                                    <div className="whitespace-nowrap text-right">
-                                      Revenue Threshold
-                                    </div>
-                                    <div className="whitespace-nowrap text-right">
-                                      Orders 12mo
-                                    </div>
-                                    <div className="whitespace-nowrap text-right">
-                                      Order Threshold
-                                    </div>
-                                  </div>
-                                  <ul className="w-full border-x border-b border-slate-200/70 max-h-[360px] overflow-y-auto">
-                                    {adminTaxTrackingRows.map((row) => {
-                                      const activeReasons =
-                                        row.warningLevel === "exceeded"
-                                          ? row.exceededReasons
-                                          : row.warningReasons;
-                                      const showNexusBadge =
-                                        row.warningLevel === "warning" ||
-                                        row.warningLevel === "exceeded";
-                                      const badgeLabel =
-                                        row.warningLevel === "exceeded"
-                                          ? row.shouldCollectTax
-                                            ? "Collect tax"
-                                            : "Exceeded"
-                                          : row.warningLevel === "warning"
-                                            ? "90% warning"
-                                            : null;
-                                      const nexusReasons =
-                                        describeTaxTrackingReasons(activeReasons, row);
-                                      const savingFiledState =
-                                        adminTaxTrackingSavingStates[row.stateCode] ===
-                                        true;
-                                      return (
-                                        <li
-                                          key={`tax-tracker-${row.stateCode}`}
-                                          className="grid w-full items-center gap-2 border-b border-slate-200/70 px-2 py-1.5 last:border-b-0"
-                                          style={{
-                                            gridTemplateColumns:
-                                              "minmax(180px,1.2fr) minmax(220px,1.35fr) max-content max-content max-content max-content max-content",
-                                          }}
-                                        >
-                                          <div className="min-w-0">
-                                            <div className="text-sm font-semibold text-slate-900 truncate">
-                                              {row.stateName}
-                                            </div>
-                                            <div className="text-xs text-slate-500 truncate">
-                                              {row.stateCode}
-                                              {row.notes ? ` • ${row.notes}` : ""}
-                                            </div>
-                                          </div>
-                                          <div className="min-w-0">
-                                            {showNexusBadge && badgeLabel && (
-                                              <Badge
-                                                variant="outline"
-                                                className={clsx(
-                                                  "mb-1",
-                                                  row.warningLevel === "exceeded"
-                                                    ? row.shouldCollectTax
-                                                      ? "border-rose-200 bg-rose-50 text-rose-700"
-                                                      : "border-amber-200 bg-amber-50 text-amber-700"
-                                                    : "border-amber-200 bg-amber-50 text-amber-700",
-                                                )}
-                                              >
-                                                {badgeLabel}
-                                              </Badge>
-                                            )}
-                                            {showNexusBadge && nexusReasons && (
-                                              <div className="text-xs text-slate-600 truncate">
-                                                {nexusReasons}
+                                    <ul className="w-full border-x border-b border-slate-200/70 max-h-[360px] overflow-y-auto">
+                                      {adminTaxTrackingRows.map((row) => {
+                                        const activeReasons =
+                                          row.warningLevel === "exceeded"
+                                            ? row.exceededReasons
+                                            : row.warningReasons;
+                                        const showNexusBadge =
+                                          row.warningLevel === "warning" ||
+                                          row.warningLevel === "exceeded";
+                                        const badgeLabel =
+                                          row.warningLevel === "exceeded"
+                                            ? row.shouldCollectTax
+                                              ? getTaxCollectionActionLabel(
+                                                  row.stateCode || row.state,
+                                                )
+                                              : "Exceeded"
+                                            : row.warningLevel === "warning"
+                                              ? "90% warning"
+                                              : null;
+                                        const nexusReasons =
+                                          describeTaxTrackingReasons(activeReasons, row);
+                                        const savingFiledState =
+                                          adminTaxTrackingSavingStates[row.stateCode] ===
+                                          true;
+                                        return (
+                                          <li
+                                            key={`tax-tracker-${row.stateCode}`}
+                                            className="grid w-full items-center gap-4 border-b border-slate-200/70 px-4 py-2 last:border-b-0"
+                                            style={{
+                                              gridTemplateColumns:
+                                                "minmax(190px,1.15fr) minmax(240px,1.4fr) minmax(88px,0.55fr) minmax(150px,0.9fr) minmax(150px,0.9fr) minmax(130px,0.75fr) minmax(130px,0.75fr)",
+                                            }}
+                                          >
+                                            <div className="min-w-0 text-center">
+                                              <div className="text-sm font-semibold text-slate-900">
+                                                {row.stateName}
                                               </div>
-                                            )}
-                                          </div>
-                                          <div className="text-right whitespace-nowrap">
-                                            <button
-                                              type="button"
-                                              disabled={savingFiledState}
-                                              onClick={() =>
-                                                void updateAdminTaxTrackingFiled(
-                                                  row.stateCode,
-                                                  !row.taxNexusApplied,
-                                                )
-                                              }
-                                              className={clsx(
-                                                "inline-flex min-w-[2.25rem] items-center justify-center rounded-md border px-2 py-0.5 text-sm font-semibold tabular-nums transition-colors",
-                                                savingFiledState
-                                                  ? "cursor-wait border-slate-200 bg-slate-100 text-slate-500"
-                                                  : row.taxNexusApplied
-                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                                              <div className="text-xs text-slate-500">
+                                                {row.stateCode}
+                                                {row.notes ? ` • ${row.notes}` : ""}
+                                              </div>
+                                            </div>
+                                            <div className="min-w-0 text-center">
+                                              {showNexusBadge && badgeLabel && (
+                                                <Badge
+                                                  variant="outline"
+                                                  className={clsx(
+                                                    "mb-1 mx-auto",
+                                                    row.warningLevel === "exceeded"
+                                                      ? row.shouldCollectTax
+                                                        ? "border-rose-500 bg-white text-rose-700"
+                                                        : "border-amber-200 bg-amber-50 text-amber-700"
+                                                      : "border-rose-500 bg-white text-rose-700",
+                                                  )}
+                                                >
+                                                  {badgeLabel}
+                                                </Badge>
                                               )}
-                                              aria-label={`Mark ${row.stateName} tax nexus filing as ${
-                                                row.taxNexusApplied ? "not filed" : "filed"
-                                              }`}
-                                              aria-pressed={row.taxNexusApplied}
-                                              title="Toggle whether nexus registration has been filed in this state"
-                                            >
-                                              {savingFiledState
-                                                ? "..."
-                                                : row.taxNexusApplied
-                                                  ? 1
-                                                  : 0}
-                                            </button>
-                                          </div>
-                                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-                                            {formatCurrency(
-                                              row.trailing12MonthRevenueUsd,
-                                            )}
-                                          </div>
-                                          <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
-                                            {row.economicNexusRevenueUsd !== null
-                                              ? formatCurrency(
-                                                  row.economicNexusRevenueUsd,
-                                                )
-                                              : "—"}
-                                          </div>
-                                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-                                            {Number(
-                                              row.trailing12MonthTransactionCount ||
-                                                0,
-                                            )}
-                                          </div>
-                                          <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
-                                            {row.economicNexusTransactions !== null
-                                              ? Number(row.economicNexusTransactions || 0)
-                                              : "—"}
-                                          </div>
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
+                                              {showNexusBadge && nexusReasons && (
+                                                <div className="text-xs text-slate-600">
+                                                  {nexusReasons}
+                                                </div>
+                                              )}
+                                            </div>
+                                            <div className="flex justify-center whitespace-nowrap">
+                                              <button
+                                                type="button"
+                                                disabled={savingFiledState}
+                                                onClick={() =>
+                                                  void updateAdminTaxTrackingFiled(
+                                                    row.stateCode,
+                                                    !row.taxNexusApplied,
+                                                  )
+                                                }
+                                                className={clsx(
+                                                  "inline-flex min-w-[2.25rem] items-center justify-center rounded-md border px-2 py-0.5 text-sm font-semibold tabular-nums transition-colors",
+                                                  savingFiledState
+                                                    ? "cursor-wait border-slate-200 bg-slate-100 text-slate-500"
+                                                    : row.taxNexusApplied
+                                                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                                                )}
+                                                aria-label={`Mark ${row.stateName} tax nexus filing as ${
+                                                  row.taxNexusApplied ? "not filed" : "filed"
+                                                }`}
+                                                aria-pressed={row.taxNexusApplied}
+                                                title="Toggle whether nexus registration has been filed in this state"
+                                              >
+                                                {savingFiledState
+                                                  ? "..."
+                                                  : row.taxNexusApplied
+                                                    ? 1
+                                                    : 0}
+                                              </button>
+                                            </div>
+                                            <div className="text-sm text-center font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                                              {formatCurrency(
+                                                row.trailing12MonthRevenueUsd,
+                                              )}
+                                            </div>
+                                            <div className="text-sm text-center text-slate-800 tabular-nums whitespace-nowrap">
+                                              {row.economicNexusRevenueUsd !== null
+                                                ? formatCurrency(
+                                                    row.economicNexusRevenueUsd,
+                                                  )
+                                                : "—"}
+                                            </div>
+                                            <div className="text-sm text-center font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                                              {Number(
+                                                row.trailing12MonthTransactionCount ||
+                                                  0,
+                                              )}
+                                            </div>
+                                            <div className="text-sm text-center text-slate-800 tabular-nums whitespace-nowrap">
+                                              {row.economicNexusTransactions !== null
+                                                ? Number(row.economicNexusTransactions || 0)
+                                                : "—"}
+                                            </div>
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
+                            </details>
                           </>
                         )}
                         {adminTaxesByStateRows.length === 0 ? (
@@ -23242,7 +23281,7 @@ function MainApp() {
                           </div>
                         ) : (
 						              <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
-			                    <div className="w-full" style={{ minWidth: 920 }}>
+			                    <div className="w-full" style={{ minWidth: 980 }}>
 			                      {adminTaxesByStateMeta?.totals && (
                         <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 			                          <div className="min-w-0">
@@ -23263,20 +23302,20 @@ function MainApp() {
 			                              )}
 			                            </span>
                                   </div>
-			                        </div>
+			                          </div>
 			                      )}
-			                      <div className="w-max">
+			                      <div className="w-full">
 			                        <div
-			                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+			                          className="grid w-full items-center gap-4 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
 			                          style={{
 			                            gridTemplateColumns:
-                                        "minmax(120px,1fr) minmax(140px,max-content) max-content max-content",
+                                        "minmax(190px,1.2fr) minmax(190px,1.1fr) minmax(120px,0.7fr) minmax(150px,0.8fr)",
 			                          }}
 			                        >
-			                          <div className="whitespace-nowrap">State</div>
-                                    <div className="whitespace-nowrap">Nexus</div>
-			                          <div className="whitespace-nowrap text-right">Orders</div>
-			                          <div className="whitespace-nowrap text-right">Tax</div>
+			                          <div className="whitespace-nowrap text-center">State</div>
+                                    <div className="whitespace-nowrap text-center">Nexus</div>
+			                          <div className="whitespace-nowrap text-center">Orders</div>
+			                          <div className="whitespace-nowrap text-center">Tax</div>
 			                        </div>
 			                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
 			                          {adminTaxesByStateRows.map((row) => {
@@ -23291,7 +23330,9 @@ function MainApp() {
                                       const nexusLabel = nexus
                                         ? nexus.warningLevel === "exceeded"
                                           ? nexus.shouldCollectTax
-                                            ? "Collect tax"
+                                            ? getTaxCollectionActionLabel(
+                                                nexus.stateCode || nexus.state,
+                                              )
                                             : "Exceeded"
                                           : nexus.warningLevel === "warning"
                                             ? "90% warning"
@@ -23300,40 +23341,41 @@ function MainApp() {
                                       return (
 			                            <li
 			                              key={row.stateCode || row.state}
-			                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+			                              className="grid w-full items-center gap-4 px-4 py-2 border-b border-slate-200/70 last:border-b-0"
 			                              style={{
 			                                gridTemplateColumns:
-                                              "minmax(120px,1fr) minmax(140px,max-content) max-content max-content",
+                                              "minmax(190px,1.2fr) minmax(190px,1.1fr) minmax(120px,0.7fr) minmax(150px,0.8fr)",
 			                              }}
 			                            >
-			                            <div className="min-w-0">
-                                        <div className="text-sm font-semibold text-slate-900 truncate">
+			                            <div className="min-w-0 text-center">
+                                        <div className="text-sm font-semibold text-slate-900">
                                           {row.stateName || row.state}
                                         </div>
-                                        <div className="text-xs text-slate-500 truncate">
+                                        <div className="text-xs text-slate-500">
                                           {row.stateCode || row.state}
                                         </div>
                                       </div>
-                                      <div className="min-w-0">
+                                      <div className="min-w-0 text-center">
                                         {showNexusBadge && nexusLabel && (
                                           <Badge
                                             variant="outline"
                                             className={clsx(
+                                              "mx-auto",
                                               nexus?.warningLevel === "exceeded"
                                                 ? nexus.shouldCollectTax
-                                                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                                                  ? "border-rose-500 bg-white text-rose-700"
                                                   : "border-amber-200 bg-amber-50 text-amber-700"
-                                                : "border-amber-200 bg-amber-50 text-amber-700",
+                                                : "border-rose-500 bg-white text-rose-700",
                                             )}
                                           >
                                             {nexusLabel}
                                           </Badge>
                                         )}
                                       </div>
-			                            <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+			                            <div className="text-sm text-center text-slate-800 tabular-nums whitespace-nowrap">
 			                              {Number(row.orderCount || 0)}
 			                            </div>
-			                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+			                            <div className="text-sm text-center font-semibold text-slate-900 tabular-nums whitespace-nowrap">
 			                              {formatCurrency(Number(row.taxTotal || 0))}
 			                            </div>
 			                            </li>

@@ -1838,9 +1838,10 @@ export const ordersAPI = {
     if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
     if (options?.debug) params.set('debug', 'true');
     const query = params.toString();
+    // Use non-admin path to avoid infra path-based restrictions; backend supports both.
     const url = query
-      ? `${API_BASE_URL}/orders/admin/product-sales-commission?${query}`
-      : `${API_BASE_URL}/orders/admin/product-sales-commission`;
+      ? `${API_BASE_URL}/orders/product-sales-commission?${query}`
+      : `${API_BASE_URL}/orders/product-sales-commission`;
     return fetchWithAuth(url);
   },
 
