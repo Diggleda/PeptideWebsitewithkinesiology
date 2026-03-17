@@ -942,6 +942,7 @@ export type UpdateProfilePayload = {
   email?: string;
   phone?: string;
   delegateLogoUrl?: string | null;
+  delegateSecondaryColor?: string | null;
   officeAddressLine1?: string | null;
   officeAddressLine2?: string | null;
   officeCity?: string | null;

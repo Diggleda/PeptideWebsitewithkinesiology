@@ -1951,6 +1951,9 @@ export function CheckoutModal({
 	                      <p className="mt-2">
 	                        Payment method is configured by {delegateDoctorDisplayName || 'the physician'} for this proposal.
 	                      </p>
+	                      <p className="mt-1">
+	                        They apply a markup to the subtotal in the form of a service fee.
+	                      </p>
 	                      {delegatePaymentInstructionsText ? (
 	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
 	                          <p className="text-xs font-semibold text-slate-700">Instructions</p>

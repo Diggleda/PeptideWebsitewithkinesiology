@@ -62,6 +62,58 @@ const ensureDoctorBucket = (state, doctorId) => {
 };
 
 const makeToken = () => crypto.randomBytes(12).toString('hex');
+const DEFAULT_DELEGATE_SECONDARY_COLOR = '#5fb3f9';
+
+const buildDummyPaymentInstructions = (doctorName) =>
+  `Reach out to ${doctorName || 'your physician'} for Zelle payment details.`;
+
+const buildNodeDummyResolvePayload = (token, doctorName, doctorSecondaryColor) => {
+  const now = Date.now();
+  const baseCreatedAt = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  const baseExpiresAt = new Date(now + 71 * 60 * 60 * 1000).toISOString();
+  const normalizedDoctorName = normalizeOptionalString(doctorName) || 'Demo Physician';
+  const base = {
+    token: 'node-ui-dummy-link',
+    doctorId: 'node-ui-dummy-doctor',
+    doctorName: normalizedDoctorName,
+    doctorSecondaryColor: normalizeOptionalString(doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR,
+    markupPercent: 15,
+    paymentMethod: 'zelle',
+    paymentInstructions: buildDummyPaymentInstructions(normalizedDoctorName),
+    createdAt: baseCreatedAt,
+    expiresAt: baseExpiresAt,
+    subjectLabel: 'Subject A104',
+    studyLabel: 'GH response pilot',
+    patientReference: 'RS-UI-001',
+    referenceLabel: 'Subject A104',
+    allowedProducts: ['BPC-157-5MG', 'TB-500-10MG'],
+    instructions: null,
+    delegateSharedAt: null,
+    delegateOrderId: null,
+    proposalStatus: null,
+    proposalReviewedAt: null,
+    proposalReviewOrderId: null,
+    proposalReviewNotes: null,
+    status: 'active',
+  };
+  if (token === 'node-ui-dummy-link-2') {
+    const proposalCreatedAt = new Date(now - 45 * 60 * 1000).toISOString();
+    return {
+      ...base,
+      token: 'node-ui-dummy-link-2',
+      subjectLabel: 'Subject B205',
+      patientReference: 'RS-UI-002',
+      referenceLabel: 'Subject B205',
+      createdAt: new Date(now - 36 * 60 * 60 * 1000).toISOString(),
+      delegateSharedAt: proposalCreatedAt,
+      proposalStatus: 'pending',
+    };
+  }
+  if (token === 'node-ui-dummy-link') {
+    return base;
+  }
+  return null;
+};
 
 router.get('/links', authenticate, (req, res) => {
   const doctorId = String(req.user?.id || '').trim();
@@ -189,6 +241,16 @@ router.post('/links/:token/proposal/review', authenticate, (req, res) => {
 router.get('/resolve', authenticateOptional, (req, res) => {
   const token = String(req.query?.token || '').trim();
   if (!token) return res.status(400).json({ error: 'token is required' });
+  if (token.startsWith('node-ui-dummy-link')) {
+    const dummy = buildNodeDummyResolvePayload(
+      token,
+      req.user?.name || null,
+      req.user?.delegateSecondaryColor || null,
+    );
+    if (dummy) {
+      return res.json(dummy);
+    }
+  }
   const state = getState();
   const nowMs = Date.now();
   const doctorIds = Object.keys(state.byDoctorId || {});
@@ -213,6 +275,7 @@ router.get('/resolve', authenticateOptional, (req, res) => {
       token: link.token,
       doctorId,
       doctorName: doctor?.name || 'Doctor',
+      doctorSecondaryColor: doctor?.delegateSecondaryColor || DEFAULT_DELEGATE_SECONDARY_COLOR,
       markupPercent: normalizeMarkupPercent(link.markupPercent, DEFAULT_MARKUP_PERCENT),
       paymentMethod: link.paymentMethod || 'none',
       paymentInstructions: link.paymentInstructions || '',

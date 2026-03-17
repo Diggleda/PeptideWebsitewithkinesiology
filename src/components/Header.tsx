@@ -6,7 +6,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2 } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -108,6 +108,40 @@ const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: 
       receivedPayment: false,
     },
   ];
+};
+
+const DEFAULT_DELEGATE_SECONDARY_COLOR = '#5fb3f9';
+
+const normalizeDelegateSecondaryColor = (value?: string | null) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const raw = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
+  if (/^[0-9a-fA-F]{3}$/.test(raw)) {
+    return `#${raw.split('').map((char) => `${char}${char}`).join('').toLowerCase()}`;
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+    return `#${raw.toLowerCase()}`;
+  }
+  return null;
+};
+
+const hexToRgbCss = (hex: string) => {
+  const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+  const raw = normalized.slice(1);
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+const hexToRgbaCss = (hex: string, alpha: number) => {
+  const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+  const raw = normalized.slice(1);
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
 const isNodePatientLinkDummyMode = (() => {
@@ -261,6 +295,7 @@ interface HeaderUser {
   name: string;
   profileImageUrl?: string | null;
   delegateLogoUrl?: string | null;
+  delegateSecondaryColor?: string | null;
   zelleContact?: string | null;
   role?: string | null;
   referralCode?: string | null;
@@ -346,6 +381,7 @@ interface HeaderProps {
   user: HeaderUser | null;
   delegateMode?: boolean;
   delegateLogoUrl?: string | null;
+  delegateSecondaryColor?: string | null;
   delegateDoctorName?: string | null;
   researchDashboardEnabled?: boolean;
   patientLinksEnabled?: boolean;
@@ -1064,6 +1100,7 @@ export function Header({
   user,
   delegateMode = false,
   delegateLogoUrl = null,
+  delegateSecondaryColor = null,
   delegateDoctorName = null,
   researchDashboardEnabled = false,
   patientLinksEnabled = false,
@@ -1095,10 +1132,14 @@ export function Header({
   patientLinksRefreshToken = 0,
   onAccountIndicatorTotalChange,
 	}: HeaderProps) {
-  const secondaryColor = 'rgb(95, 179, 249)';
-  const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
-  const elevatedShadow = '0 32px 60px -28px rgba(95, 179, 249, 0.55)';
-  const logoHaloBackground = 'rgba(95, 179, 249, 0.08)';
+  const delegateSessionSecondaryHex =
+    normalizeDelegateSecondaryColor(delegateSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+  const secondaryColor = delegateMode ? hexToRgbCss(delegateSessionSecondaryHex) : 'rgb(95, 179, 249)';
+  const translucentSecondary = delegateMode ? hexToRgbaCss(delegateSessionSecondaryHex, 0.18) : 'rgba(95, 179, 249, 0.18)';
+  const elevatedShadow = delegateMode
+    ? `0 32px 60px -28px ${hexToRgbaCss(delegateSessionSecondaryHex, 0.55)}`
+    : '0 32px 60px -28px rgba(95, 179, 249, 0.55)';
+  const logoHaloBackground = delegateMode ? hexToRgbaCss(delegateSessionSecondaryHex, 0.08) : 'rgba(95, 179, 249, 0.08)';
   const [loginOpen, setLoginOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
@@ -1204,8 +1245,8 @@ export function Header({
   const researchPanelRef = useRef<HTMLDivElement | null>(null);
   const accountModalShellRef = useRef<HTMLDivElement | null>(null);
   const accountModalScrollRef = useRef<HTMLDivElement | null>(null);
-  const patientLinksScrollTopRef = useRef(0);
-  const restorePatientLinksScrollRef = useRef(false);
+  const accountTabScrollTopRef = useRef<Partial<Record<AccountTabId, number>>>({});
+  const restoreAccountTabScrollRef = useRef<Partial<Record<AccountTabId, boolean>>>({});
   const researchOverlayTimeoutRef = useRef<number | null>(null);
   const isResearchFullscreen = accountTab === 'research' && researchDashboardExpanded;
   const modalFullscreenHeight =
@@ -2678,26 +2719,26 @@ export function Header({
 
   useLayoutEffect(() => {
     if (!welcomeOpen) {
-      patientLinksScrollTopRef.current = 0;
-      restorePatientLinksScrollRef.current = false;
+      accountTabScrollTopRef.current = {};
+      restoreAccountTabScrollRef.current = {};
       return;
     }
     if (legalModalOpen) {
-      if (accountTab === 'patient_links' && accountModalScrollRef.current) {
-        patientLinksScrollTopRef.current = accountModalScrollRef.current.scrollTop;
-        restorePatientLinksScrollRef.current = true;
+      if (accountModalScrollRef.current) {
+        accountTabScrollTopRef.current[accountTab] = accountModalScrollRef.current.scrollTop;
+        restoreAccountTabScrollRef.current[accountTab] = true;
       }
       return;
     }
-    if (!restorePatientLinksScrollRef.current || accountTab !== 'patient_links') {
+    if (!restoreAccountTabScrollRef.current[accountTab]) {
       return;
     }
     const scrollContainer = accountModalScrollRef.current;
     if (!scrollContainer) {
       return;
     }
-    scrollContainer.scrollTop = patientLinksScrollTopRef.current;
-    restorePatientLinksScrollRef.current = false;
+    scrollContainer.scrollTop = accountTabScrollTopRef.current[accountTab] ?? 0;
+    restoreAccountTabScrollRef.current[accountTab] = false;
   }, [accountTab, legalModalOpen, welcomeOpen]);
 
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
@@ -3404,6 +3445,7 @@ export function Header({
         className={`header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0 ${inputClassName}`.trim()}
         style={{
           minWidth: '100%',
+          '--header-search-border-color': options?.borderColor || undefined,
         }}
         readOnly={Boolean(options?.readOnly)}
       />
@@ -3448,7 +3490,7 @@ export function Header({
   const accountTabDescriptionById: Record<AccountTabId, string> = {
     details: 'Update your profile, shipping info, and settings.',
     orders: 'Track your orders, reorders, and invoices.',
-    patient_links: 'Manage delegate links, product allowlists, and delegate proposals.',
+    patient_links: 'Manage delegate sessions and proposals.',
     research: 'Where you will soon find research tools and resources.',
   };
 
@@ -4074,6 +4116,7 @@ export function Header({
 
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
+  const [delegateSecondaryColorSaving, setDelegateSecondaryColorSaving] = useState(false);
 
   const downscaleImageDataUrl = useCallback(async (
     dataUrl: string,
@@ -4127,6 +4170,8 @@ export function Header({
     if (!file || delegateLogoUploading) {
       return;
     }
+    const currentDelegateSecondaryColor =
+      normalizeDelegateSecondaryColor(localUser?.delegateSecondaryColor ?? null) || DEFAULT_DELEGATE_SECONDARY_COLOR;
     const maxBytes = 5_000_000;
     if (file.size > maxBytes) {
       toast.error('Image is too large. Please choose a smaller file.');
@@ -4168,7 +4213,10 @@ export function Header({
 	        isLargeScreen ? 960 : 840,
 	        isLargeScreen ? 112 : 96,
 	      );
-      await saveProfileField('Delegate logo', { delegateLogoUrl: resized });
+      await saveProfileField('Delegate branding', {
+        delegateLogoUrl: resized,
+        delegateSecondaryColor: currentDelegateSecondaryColor,
+      });
     } catch (error) {
       // saveProfileField handles toasts
     } finally {
@@ -4177,19 +4225,40 @@ export function Header({
         delegateLogoInputRef.current.value = '';
       }
     }
-	  }, [delegateLogoUploading, downscaleImageDataUrl, isLargeScreen, saveProfileField]);
+	  }, [delegateLogoUploading, downscaleImageDataUrl, isLargeScreen, localUser?.delegateSecondaryColor, saveProfileField]);
 
   const handleRemoveDelegateLogo = useCallback(async () => {
     if (delegateLogoUploading) return;
+    const currentDelegateSecondaryColor =
+      normalizeDelegateSecondaryColor(localUser?.delegateSecondaryColor ?? null) || DEFAULT_DELEGATE_SECONDARY_COLOR;
     setDelegateLogoUploading(true);
     try {
-      await saveProfileField('Delegate logo', { delegateLogoUrl: null });
+      await saveProfileField('Delegate branding', {
+        delegateLogoUrl: null,
+        delegateSecondaryColor: currentDelegateSecondaryColor,
+      });
     } catch (error) {
       // saveProfileField handles toasts
     } finally {
       setDelegateLogoUploading(false);
     }
-  }, [delegateLogoUploading, saveProfileField]);
+  }, [delegateLogoUploading, localUser?.delegateSecondaryColor, saveProfileField]);
+
+  const handleDelegateSecondaryColorChange = useCallback(async (value: string) => {
+    const normalized = normalizeDelegateSecondaryColor(value) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+    const current = normalizeDelegateSecondaryColor(localUser?.delegateSecondaryColor ?? null) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+    if (delegateSecondaryColorSaving || normalized === current) {
+      return;
+    }
+    setDelegateSecondaryColorSaving(true);
+    try {
+      await saveProfileField('Delegate session color', { delegateSecondaryColor: normalized });
+    } catch {
+      // saveProfileField handles toasts
+    } finally {
+      setDelegateSecondaryColorSaving(false);
+    }
+  }, [delegateSecondaryColorSaving, localUser?.delegateSecondaryColor, saveProfileField]);
 
   useEffect(() => {
     if (!showPatientLinksTab && accountTab === 'patient_links') {
@@ -5900,15 +5969,37 @@ export function Header({
     </div>
 	  ) : null;
 
-		  const logoSlotHeightPx = isLargeScreen ? 56 : 48;
-		  const logoSizing = {
-		    maxWidth: isLargeScreen ? '240px' : 'min(170px, 40vw)',
-		    heightPx: logoSlotHeightPx,
-		  };
-  const delegateUserIconClassName = 'h-5 w-5 flex-shrink-0 !text-[rgb(95,179,249)]';
+  const logoSlotHeightPx = isLargeScreen ? 56 : 48;
+  const logoSizing = {
+    maxWidth: isLargeScreen ? '240px' : 'min(170px, 40vw)',
+    heightPx: logoSlotHeightPx,
+  };
+  const delegateUserIconClassName = 'h-5 w-5 flex-shrink-0';
+  const delegatePreviewSecondaryHex =
+    normalizeDelegateSecondaryColor(localUser?.delegateSecondaryColor ?? user?.delegateSecondaryColor ?? null)
+    || DEFAULT_DELEGATE_SECONDARY_COLOR;
+  const delegatePreviewSecondaryColor = hexToRgbCss(delegatePreviewSecondaryHex);
+  const delegatePreviewTranslucentSecondary = hexToRgbaCss(delegatePreviewSecondaryHex, 0.18);
 
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
+      <p className="text-sm text-slate-600">
+        This tool is in early access. Please{' '}
+        <button
+          type="button"
+          className="font-bold hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2"
+          style={{
+            color: 'rgb(95,179,249)',
+            textDecorationLine: 'underline',
+            textDecorationColor: 'rgb(95,179,249)',
+            textUnderlineOffset: '2px',
+          }}
+          onClick={() => window.dispatchEvent(new Event('peppro:open-bug-report'))}
+        >
+          report
+        </button>
+        {' '}any issues you encounter, and we will prioritize fixing them (usually within a day or two).
+      </p>
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Create a delegate link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
@@ -6115,72 +6206,74 @@ export function Header({
 	            onChange={(event) => setPatientLinkInstructionsDraft(event.target.value)}
 	            placeholder="Enter instructions that the delegate will see in their proposal modal…"
 	            rows={2}
-	            className="patient-link-form__instructions min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	            className="patient-link-form__instructions !mb-0 min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
             </div>
-	          <div className="mt-2 flex items-center gap-3 pt-3 pb-6">
-	            <input
-	              type="checkbox"
-	              id="delegate-link-terms"
-	              className="brand-checkbox"
-	              checked={patientLinkTermsAccepted}
-	              onChange={(event) => setPatientLinkTermsAccepted(event.target.checked)}
-	            />
-	            <label htmlFor="delegate-link-terms" className="text-sm text-slate-700 leading-snug flex-1">
-	              I certify that I am {localUser?.name || user?.name || 'the licensed physician for this account'}, and I agree to PepPro&apos;s{' '}
-	              <button
+	          <div className="patient-link-submit-row mt-2 pt-3 pb-3">
+	            <div className="patient-link-submit-copy flex items-center gap-3 min-w-0">
+	              <input
+	                type="checkbox"
+	                id="delegate-link-terms"
+	                className="brand-checkbox"
+	                checked={patientLinkTermsAccepted}
+	                onChange={(event) => setPatientLinkTermsAccepted(event.target.checked)}
+	              />
+	              <label htmlFor="delegate-link-terms" className="text-sm text-slate-700 leading-snug flex-1 min-w-0">
+	                I certify that I am {localUser?.name || user?.name || 'the licensed physician for this account'}, and I agree to PepPro&apos;s{' '}
+	                <button
+	                  type="button"
+	                  className="legal-inline-link"
+	                  onClick={(event) => {
+	                    event.preventDefault();
+	                    event.stopPropagation();
+	                    openLegalDocument('terms');
+	                  }}
+	                >
+	                  Terms of Service
+	                </button>
+	                {', '}
+	                <button
+	                  type="button"
+	                  className="legal-inline-link"
+	                  onClick={(event) => {
+	                    event.preventDefault();
+	                    event.stopPropagation();
+	                    openLegalDocument('shipping');
+	                  }}
+	                >
+	                  Shipping Policy
+	                </button>
+	                {', and '}
+	                <button
+	                  type="button"
+	                  className="legal-inline-link"
+	                  onClick={(event) => {
+	                    event.preventDefault();
+	                    event.stopPropagation();
+	                    openLegalDocument('privacy');
+	                  }}
+	                >
+	                  Privacy Policy
+	                </button>
+	                .
+	              </label>
+	            </div>
+	            <div className="patient-link-submit-action">
+	              <Button
 	                type="button"
-	                className="legal-inline-link"
-	                onClick={(event) => {
-	                  event.preventDefault();
-	                  event.stopPropagation();
-	                  openLegalDocument('terms');
-	                }}
+	                onClick={() => void handleCreatePatientLink()}
+	                disabled={!showPatientLinksTab || patientLinksCreating}
+	                className="header-home-button patient-link-form__button !h-11 min-h-[44px] w-full mb-0 squircle-sm bg-white text-slate-900 px-7"
 	              >
-	                Terms of Service
-	              </button>
-	              {', '}
-	              <button
-	                type="button"
-	                className="legal-inline-link"
-	                onClick={(event) => {
-	                  event.preventDefault();
-	                  event.stopPropagation();
-	                  openLegalDocument('shipping');
-	                }}
-	              >
-	                Shipping Policy
-	              </button>
-	              {', and '}
-	              <button
-	                type="button"
-	                className="legal-inline-link"
-	                onClick={(event) => {
-	                  event.preventDefault();
-	                  event.stopPropagation();
-	                  openLegalDocument('privacy');
-	                }}
-	              >
-	                Privacy Policy
-	              </button>
-	              .
-	            </label>
-	          </div>
-	          <div className="pb-3">
-	            <Button
-	              type="button"
-	              onClick={() => void handleCreatePatientLink()}
-	              disabled={!showPatientLinksTab || patientLinksCreating}
-	              className="header-home-button patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm bg-white text-slate-900 px-7"
-	            >
-	              {patientLinksCreating ? 'Creating…' : 'Create delegate link'}
-	            </Button>
+	                {patientLinksCreating ? 'Creating…' : 'Create delegate link'}
+	              </Button>
+	            </div>
 	          </div>
 	        </div>
 	      </div>
 
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-	        <h3 className="text-lg font-semibold text-slate-900">Give your sessions your logo</h3>
+	        <h3 className="text-lg font-semibold text-slate-900">White label your sessions</h3>
 	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
 	          Make your logo appear in the header of your patient&apos;s session. Recommended: horizontal rectangle PNG (we&apos;ll resize to fit the header).
 	        </p>
@@ -6224,6 +6317,7 @@ export function Header({
 	                          value: '',
 	                          readOnly: true,
 	                          showClearButton: false,
+                            borderColor: delegatePreviewSecondaryColor,
 	                        })}
 	                      </div>
 	                    </div>
@@ -6231,15 +6325,15 @@ export function Header({
 
 	                  <div className="ml-auto flex w-auto items-center justify-end gap-2 min-w-0 max-w-full">
 	                    <div
-	                      className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent !text-[rgb(95,179,249)]"
+	                      className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent"
 	                      aria-label="Delegate header preview"
 	                      style={{
 	                        border: '0',
 	                        backgroundColor: 'transparent',
-	                        color: 'rgb(95,179,249)',
+	                        color: delegatePreviewSecondaryColor,
 	                      }}
 	                    >
-	                      <User className={delegateUserIconClassName} aria-hidden="true" />
+	                      <User className={delegateUserIconClassName} aria-hidden="true" style={{ color: delegatePreviewSecondaryColor }} />
 	                      <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
 	                        localUser?.name ? `Dr. ${localUser.name}` : 'Physician'
 	                      }`}</span>
@@ -6253,11 +6347,11 @@ export function Header({
 	                        aria-hidden="true"
 	                        className="glass squircle-sm pointer-events-none"
 	                        style={{
-	                          color: secondaryColor,
-	                          borderColor: translucentSecondary,
+	                          color: delegatePreviewSecondaryColor,
+	                          borderColor: delegatePreviewTranslucentSecondary,
 	                        }}
 	                      >
-	                        <Search className="h-4 w-4" style={{ color: secondaryColor }} />
+	                        <Search className="h-4 w-4" style={{ color: delegatePreviewSecondaryColor }} />
 	                      </Button>
 	                    )}
 	                  </div>
@@ -6288,19 +6382,45 @@ export function Header({
 	                variant="outline"
 	                onClick={() => delegateLogoInputRef.current?.click()}
 	                disabled={delegateLogoUploading}
-	                className="header-home-button delegate-logo-summary-button h-11 squircle-sm bg-white px-7 text-slate-900"
+	                className="header-home-button delegate-logo-summary-button h-11 squircle-sm gap-2 bg-white px-7 text-slate-900"
 	              >
-	                {delegateLogoUploading ? 'Uploading…' : 'Upload logo'}
+                  <Upload className="h-4 w-4" aria-hidden="true" />
+	                {delegateLogoUploading ? 'Uploading…' : 'Upload your logo'}
 	              </Button>
 	              <Button
 	                type="button"
 	                variant="outline"
 	                onClick={() => void handleRemoveDelegateLogo()}
 	                disabled={delegateLogoUploading}
-	                className="header-home-button patient-link-payment-toggle-button delegate-logo-summary-button h-11 squircle-sm gap-2 bg-white text-slate-900"
+                  aria-label="Remove logo"
+	                className="header-home-button patient-link-payment-toggle-button delegate-logo-summary-button h-11 squircle-sm bg-white text-slate-900"
 	              >
-	                Remove
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
 	              </Button>
+	            </div>
+	          </div>
+	          <div className="rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4">
+	            <Label htmlFor="delegate-secondary-color" className="text-sm font-semibold text-slate-700">
+	              Primary color
+	            </Label>
+	            <p className="mt-1 text-xs text-slate-500">
+	              Used for delegate header accents and session highlights.
+	            </p>
+	            <div className="mt-3 flex items-center gap-3">
+	              <input
+	                id="delegate-secondary-color"
+	                type="color"
+	                value={delegatePreviewSecondaryHex}
+	                disabled={delegateSecondaryColorSaving}
+	                onChange={(event) => void handleDelegateSecondaryColorChange(event.target.value)}
+	                className="h-11 w-16 cursor-pointer rounded-md border border-slate-200 bg-white p-1"
+	              />
+	              <div className="min-w-0">
+	                <p className="text-sm font-semibold text-slate-900">{delegatePreviewSecondaryHex.toUpperCase()}</p>
+	                {delegateSecondaryColorSaving ? (
+                    <p className="text-xs text-slate-600">Saving color…</p>
+                  ) : null}
+	              </div>
 	            </div>
 	          </div>
 	        </div>
@@ -6756,16 +6876,16 @@ export function Header({
 		  const authControls = delegateMode ? (
 		    <div className="flex items-center gap-2 min-w-0 max-w-full">
 		      <div
-		        className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent !text-[rgb(95,179,249)]"
+		        className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent"
 		        aria-label={`Delegate of ${delegateDoctorLabel}`}
 		        title={`Delegate of ${delegateDoctorLabel}`}
 		        style={{
 		          border: '0',
 		          backgroundColor: 'transparent',
-		          color: 'rgb(95,179,249)',
+		          color: secondaryColor,
 		        }}
 		      >
-		        <User className={delegateUserIconClassName} aria-hidden="true" />
+		        <User className={delegateUserIconClassName} aria-hidden="true" style={{ color: secondaryColor }} />
 		        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
       </div>
       {renderCartButton()}
@@ -6886,8 +7006,11 @@ export function Header({
                   ? ``
                   : `We are thrilled to have you with us—let's make healthcare fulfilling together!`}
               </DialogDescription>
-              <p className="text-sm text-slate-600">
-                We appreciate you joining us, and we are honored to be your provider.
+              <p
+                className="w-full text-sm text-slate-600"
+                style={{ maxWidth: '53rem' }}
+              >
+                We appreciate you joining us, and we are honored to be your provider. Our services will grow to enable excellence in more areas of healthcare with continued updates, and we are very excited to see the network grow in reach and function.
               </p>
               <p className="text-sm font-bold text-slate-600">
                 {accountTabDescriptionById[accountTab]}

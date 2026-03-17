@@ -227,6 +227,8 @@ const sanitizeUser = (user) => {
   return {
     ...rest,
     profileImageUrl: normalizeOptionalString(user.profileImageUrl),
+    delegateLogoUrl: normalizeOptionalString(user.delegateLogoUrl),
+    delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
     cart: normalizeCartItems(user.cart),
     role: normalizeRole(user.role),
     receiveClientOrderUpdateEmails: normalizeBooleanFlag(user.receiveClientOrderUpdateEmails),
@@ -658,6 +660,12 @@ const updateProfile = async (userId, data) => {
       },
       'Profile image value saved to user record',
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'delegateLogoUrl')) {
+    next.delegateLogoUrl = normalizeOptionalString(data.delegateLogoUrl);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'delegateSecondaryColor')) {
+    next.delegateSecondaryColor = normalizeOptionalString(data.delegateSecondaryColor);
   }
   if (Object.prototype.hasOwnProperty.call(data, 'receiveClientOrderUpdateEmails')) {
     next.receiveClientOrderUpdateEmails = normalizeBooleanFlag(

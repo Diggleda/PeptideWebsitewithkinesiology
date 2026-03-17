@@ -206,6 +206,7 @@ interface User {
   email: string;
   profileImageUrl?: string | null;
   delegateLogoUrl?: string | null;
+  delegateSecondaryColor?: string | null;
   hasPasskeys?: boolean;
   referralCode?: string | null;
   npiNumber?: string | null;
@@ -1009,6 +1010,40 @@ const getInitialLandingMode = (): "login" | "signup" | "forgot" | "reset" =>
 
 const getInitialResetToken = () =>
   isResetPasswordRoute() ? readResetTokenFromLocation() : null;
+
+const DEFAULT_DELEGATE_SECONDARY_COLOR = '#5fb3f9';
+
+const normalizeDelegateSecondaryColor = (value?: string | null) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const raw = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
+  if (/^[0-9a-fA-F]{3}$/.test(raw)) {
+    return `#${raw.split('').map((char) => `${char}${char}`).join('').toLowerCase()}`;
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+    return `#${raw.toLowerCase()}`;
+  }
+  return null;
+};
+
+const hexToRgbCss = (hex: string) => {
+  const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+  const raw = normalized.slice(1);
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+const hexToRgbaCss = (hex: string, alpha: number) => {
+  const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+  const raw = normalized.slice(1);
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 const coerceNumber = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -3685,6 +3720,7 @@ function MainApp() {
     doctorName: string;
     markupPercent: number;
     doctorLogoUrl?: string | null;
+    doctorSecondaryColor?: string | null;
     subjectLabel?: string | null;
     studyLabel?: string | null;
     patientReference?: string | null;
@@ -3717,6 +3753,9 @@ function MainApp() {
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
     return stripped || "Doctor";
   }, [delegateContext?.doctorName]);
+  const delegateSecondaryColorHex =
+    normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
+  const delegateSecondaryColor = hexToRgbCss(delegateSecondaryColorHex);
   const formatDelegateTimeRemaining = useCallback((expiryMs: number | null, nowMs: number) => {
     if (!expiryMs || !Number.isFinite(expiryMs)) return null;
     const diffMs = expiryMs - nowMs;
@@ -3795,7 +3834,13 @@ function MainApp() {
       setDelegateExpiryMs(null);
       return;
     }
+    const isNodeDummyDelegateToken = delegateToken.startsWith('node-ui-dummy-link');
     try {
+      if (isNodeDummyDelegateToken) {
+        window.sessionStorage.removeItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`);
+        setDelegateExpiryMs(null);
+        return;
+      }
       const raw = window.sessionStorage.getItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`);
       const parsed = raw ? Number(raw) : Number.NaN;
       if (Number.isFinite(parsed) && parsed > 0) {
@@ -3840,14 +3885,18 @@ function MainApp() {
     setDelegateLoading(true);
     setDelegateError(null);
     setDelegateValidatedToken(null);
+    const isNodeDummyDelegateToken = delegateToken.startsWith('node-ui-dummy-link');
 
     if (typeof window !== "undefined") {
       try {
+        if (isNodeDummyDelegateToken) {
+          window.sessionStorage.removeItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`);
+        }
         const raw = window.sessionStorage.getItem(
           `${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`,
         );
         const parsed = raw ? Number(raw) : Number.NaN;
-        if (Number.isFinite(parsed) && parsed > 0) {
+        if (!isNodeDummyDelegateToken && Number.isFinite(parsed) && parsed > 0) {
           setDelegateExpiryMs(parsed);
           if (Date.now() >= parsed) {
             setDelegateContext(null);
@@ -3917,6 +3966,12 @@ function MainApp() {
 		          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
 		          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
 	          doctorLogoUrl: typeof resolved?.doctorLogoUrl === "string" ? resolved.doctorLogoUrl : null,
+	          doctorSecondaryColor:
+	            typeof resolved?.doctorSecondaryColor === 'string'
+	              ? resolved.doctorSecondaryColor
+	              : typeof resolved?.doctor_secondary_color === 'string'
+	                ? resolved.doctor_secondary_color
+	                : null,
 	          subjectLabel:
 	            typeof resolved?.subjectLabel === 'string'
 	              ? resolved.subjectLabel
@@ -24910,9 +24965,28 @@ function MainApp() {
 
 	  return (
 	    <div
+	      data-delegate-theme={isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError ? 'true' : 'false'}
 	      className="min-h-screen bg-slate-50 flex flex-col safe-area-vertical"
       style={{
         position: "static",
+        ...(isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError
+          ? {
+              ['--delegate-accent' as const]: delegateSecondaryColor,
+              ['--delegate-accent-08' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.08),
+              ['--delegate-accent-10' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.10),
+              ['--delegate-accent-12' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.12),
+              ['--delegate-accent-14' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.14),
+              ['--delegate-accent-18' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.18),
+              ['--delegate-accent-25' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.25),
+              ['--delegate-accent-30' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.30),
+              ['--delegate-accent-35' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.35),
+              ['--delegate-accent-40' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.40),
+              ['--delegate-accent-45' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.45),
+              ['--delegate-accent-55' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.55),
+              ['--delegate-accent-65' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.65),
+              ['--delegate-accent-80' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.80),
+            }
+          : {}),
       }}
     >
       {/* Ambient background texture */}
@@ -24994,6 +25068,7 @@ function MainApp() {
 	                    user={null}
 	                    delegateMode
 	                    delegateLogoUrl={delegateContext?.doctorLogoUrl ?? null}
+	                    delegateSecondaryColor={delegateContext?.doctorSecondaryColor ?? null}
 	                    delegateDoctorName={delegateDoctorNameForShare}
 	                    researchDashboardEnabled={false}
 	                    patientLinksEnabled={false}
@@ -26691,7 +26766,7 @@ function MainApp() {
 		                }}
 		              >
 			                {delegateTimeRemainingLabel && (
-			                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4 flex justify-center">
+			                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-6 flex justify-center">
 			                    <div className="glass-card p-2 squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-6 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
 			                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
 			                      <span>
@@ -26700,53 +26775,12 @@ function MainApp() {
 			                    </div>
 			                  </div>
 			                )}
-			                <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4">
-			                  <div className="glass-card squircle-xl border border-[var(--brand-glass-border-1)] bg-white/80 p-5 sm:p-6">
-			                    <div className="flex flex-col gap-4">
-			                      <div>
-			                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[rgb(95,179,249)]">Delegate Link</p>
-			                        <h2 className="mt-1 text-xl font-semibold text-slate-900">
-			                          {delegateContext?.studyLabel || delegateContext?.subjectLabel || 'Restricted research materials'}
-			                        </h2>
-			                        <p className="mt-1 text-sm leading-relaxed text-slate-700">
-			                          This link is for research material procurement only. It is not a prescription or treatment order.
-			                        </p>
-			                      </div>
-			                      <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-			                        {delegateContext?.subjectLabel && (
-			                          <div><span className="font-semibold">Subject:</span> {delegateContext.subjectLabel}</div>
-			                        )}
-			                        {delegateContext?.studyLabel && (
-			                          <div><span className="font-semibold">Study:</span> {delegateContext.studyLabel}</div>
-			                        )}
-			                        {delegateContext?.patientReference && (
-			                          <div><span className="font-semibold">Reference:</span> {delegateContext.patientReference}</div>
-			                        )}
-			                        {Array.isArray(delegateContext?.allowedProducts) && delegateContext.allowedProducts.length > 0 && (
-			                          <div className="sm:col-span-2">
-			                            <span className="font-semibold">Approved SKUs:</span> {delegateContext.allowedProducts.join(', ')}
-			                          </div>
-			                        )}
-			                        {delegateContext?.instructions && (
-			                          <div className="sm:col-span-2">
-			                            <span className="font-semibold">Research note:</span> {delegateContext.instructions}
-			                          </div>
-			                        )}
-			                        <div className="sm:col-span-2 font-semibold text-slate-900">
-			                          {delegateContext?.compensationDisclosure || physicianCompensationDisclosure(delegateContext?.markupPercent)}
-			                        </div>
-			                      </div>
-			                      <div className="space-y-1 text-xs leading-relaxed text-slate-600">
-			                        {(delegateContext?.disclosures && delegateContext.disclosures.length > 0 ? delegateContext.disclosures : RESEARCH_SUPPLY_DISCLOSURES).map((line) => (
-			                          <p key={line}>{line}</p>
-			                        ))}
-			                      </div>
-			                    </div>
-			                  </div>
-			                </div>
 		                {delegateHasSubmittedProposal ? (
 		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0">
-		                    <div className="glass-card squircle-xl mt-2 border border-[var(--brand-glass-border-1)] bg-white/80 p-8 sm:p-10">
+		                    <div
+		                      className="glass-card squircle-xl mt-2 border-2 bg-white/80 p-8 sm:p-10"
+		                      style={{ borderColor: delegateSecondaryColor }}
+		                    >
 		                      <div className="flex items-start justify-between gap-4">
 		                        <div className="min-w-0">
 		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
@@ -26762,15 +26796,15 @@ function MainApp() {
 		                          const status = String(delegateContext?.proposalStatus || 'pending').toLowerCase();
 		                          const meta =
 		                            status === 'accepted'
-		                              ? { Icon: CheckCircle2, label: 'Accepted', className: 'text-emerald-700' }
+		                              ? { Icon: CheckCircle2, label: 'Accepted', className: 'text-emerald-700', style: undefined }
 		                              : status === 'modified'
-		                                ? { Icon: NotebookPen, label: 'Modified', className: 'text-blue-700' }
+		                                ? { Icon: NotebookPen, label: 'Modified', className: 'text-blue-700', style: undefined }
 		                                : status === 'rejected'
-		                                  ? { Icon: XCircle, label: 'Rejected', className: 'text-red-700' }
-		                                  : { Icon: Clock, label: 'Pending review', className: 'text-slate-700' };
+		                                  ? { Icon: XCircle, label: 'Rejected', className: 'text-red-700', style: undefined }
+		                                  : { Icon: Clock, label: 'Pending review', className: '', style: { color: delegateSecondaryColor } };
 		                          const Icon = meta.Icon as any;
 		                          return (
-		                            <div className={`flex items-center gap-2 font-semibold ${meta.className}`}>
+		                            <div className={`flex items-center gap-2 font-semibold ${meta.className}`} style={meta.style}>
 		                              <Icon className="h-5 w-5" aria-hidden="true" />
 		                              <span>{meta.label}</span>
 		                            </div>
@@ -26784,6 +26818,20 @@ function MainApp() {
 		                            <span className="font-semibold">Submitted:</span>{' '}
 		                            {new Date(delegateContext.delegateSharedAt).toLocaleString()}
 		                          </p>
+		                        )}
+		                        {(delegateContext?.subjectLabel || delegateContext?.studyLabel) && (
+		                          <div className="space-y-0.5">
+		                            {delegateContext?.subjectLabel && (
+		                              <p>
+		                                <span className="font-semibold">Subject:</span> {delegateContext.subjectLabel}
+		                              </p>
+		                            )}
+		                            {delegateContext?.studyLabel && (
+		                              <p>
+		                                <span className="font-semibold">Study:</span> {delegateContext.studyLabel}
+		                              </p>
+		                            )}
+		                          </div>
 		                        )}
 		                        {delegateContext?.proposalReviewedAt && (
 		                          <p>

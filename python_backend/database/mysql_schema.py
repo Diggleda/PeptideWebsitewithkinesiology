@@ -31,6 +31,7 @@ CREATE_TABLE_STATEMENTS = [
         office_country VARCHAR(64) NULL,
         profile_image_url LONGTEXT NULL,
         delegate_logo_url LONGTEXT NULL,
+        delegate_secondary_color VARCHAR(16) NULL,
         zelle_contact VARCHAR(190) NULL,
         cart JSON NULL,
         downloads LONGTEXT NULL,
@@ -461,6 +462,7 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_postal_code VARCHAR(32) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_logo_url LONGTEXT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_secondary_color VARCHAR(16) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS zelle_contact VARCHAR(190) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS cart JSON NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS receive_client_order_update_emails TINYINT(1) NOT NULL DEFAULT 0",
@@ -604,6 +606,12 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("users", "delegate_logo_url"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN delegate_logo_url LONGTEXT NULL")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("users", "delegate_secondary_color"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN delegate_secondary_color VARCHAR(16) NULL")
     except Exception:
         pass
 

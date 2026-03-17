@@ -283,6 +283,26 @@ body {
   min-width: 0;
 }
 
+.patient-link-submit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.patient-link-submit-copy {
+  width: 100%;
+}
+
+.patient-link-submit-action {
+  width: 100%;
+}
+
+.patient-link-submit-action .patient-link-form__button {
+  height: 2.75rem !important;
+  min-height: 2.75rem !important;
+}
+
 .patient-link-action-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -480,6 +500,24 @@ body {
   .patient-link-form--generate .patient-link-form__button {
     align-self: stretch;
     margin-bottom: 0.55rem !important;
+  }
+
+  .patient-link-submit-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 1.25rem;
+  }
+
+  .patient-link-submit-action {
+    width: 100%;
+    max-width: 100%;
+    justify-self: stretch;
+  }
+
+  .patient-link-submit-action .patient-link-form__button {
+    height: 2.75rem !important;
+    min-height: 2.75rem !important;
   }
 
   .patient-link-actions {
@@ -6158,13 +6196,13 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 }
 
 .header-search-input {
-  border: 2px solid rgb(95, 179, 249) !important;
+  border: 2px solid var(--header-search-border-color, rgb(95, 179, 249)) !important;
   background-color: transparent !important;
   box-shadow: none !important;
 }
 
 .header-search-input:focus-visible {
-  border-color: rgb(95, 179, 249) !important;
+  border-color: var(--header-search-border-color, rgb(95, 179, 249)) !important;
   box-shadow: none !important;
 }
 
@@ -7373,6 +7411,82 @@ a[href^="mailto:"]:hover {
 }
 
 /* Toast styling (Sonner): non-error = brand blue on white */
+
+[data-delegate-theme="true"] [class*="text-[rgb(95,179,249)]"] {
+  color: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] [class*="border-[rgb(95,179,249)]"] {
+  border-color: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] [class*="border-[rgba(95,179,249,0.18)]"] {
+  border-color: var(--delegate-accent-18) !important;
+}
+
+[data-delegate-theme="true"] [class*="border-[rgba(95,179,249,0.35)]"] {
+  border-color: var(--delegate-accent-35) !important;
+}
+
+[data-delegate-theme="true"] [class*="border-[rgba(95,179,249,0.45)]"] {
+  border-color: var(--delegate-accent-45) !important;
+}
+
+[data-delegate-theme="true"] [class*="border-[rgba(95,179,249,0.65)]"] {
+  border-color: var(--delegate-accent-65) !important;
+}
+
+[data-delegate-theme="true"] [class*="bg-[rgba(95,179,249,0.08)]"] {
+  background-color: var(--delegate-accent-08) !important;
+}
+
+[data-delegate-theme="true"] [class*="bg-[rgba(95,179,249,0.10)]"] {
+  background-color: var(--delegate-accent-10) !important;
+}
+
+[data-delegate-theme="true"] [class*="bg-[rgba(95,179,249,0.12)]"] {
+  background-color: var(--delegate-accent-12) !important;
+}
+
+[data-delegate-theme="true"] [class*="bg-[rgba(95,179,249,0.14)]"] {
+  background-color: var(--delegate-accent-14) !important;
+}
+
+[data-delegate-theme="true"] [class*="shadow-[rgba(95,179,249,0.4)]"] {
+  --tw-shadow-color: var(--delegate-accent-40) !important;
+}
+
+[data-delegate-theme="true"] [style*="color: rgb(95, 179, 249)"] {
+  color: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] [style*="text-decoration-color: rgb(95, 179, 249)"] {
+  text-decoration-color: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] [style*="border-color: rgba(95, 179, 249, 0.65)"] {
+  border-color: var(--delegate-accent-65) !important;
+}
+
+[data-delegate-theme="true"] [style*="border-color: rgba(95, 179, 249, 0.35)"] {
+  border-color: var(--delegate-accent-35) !important;
+}
+
+[data-delegate-theme="true"] [style*="border-color: rgba(95, 179, 249, 0.2)"] {
+  border-color: var(--delegate-accent-18) !important;
+}
+
+[data-delegate-theme="true"] [style*="background-color: rgb(95, 179, 249)"] {
+  background-color: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] [style*="background-color: rgba(95, 179, 249, 0.08)"] {
+  background-color: var(--delegate-accent-08) !important;
+}
+
+[data-delegate-theme="true"] [style*="background-color: rgba(95, 179, 249, 0.02)"] {
+  background-color: var(--delegate-accent-08) !important;
+}
 [data-sonner-toast][data-styled='true']:not([data-type='error']) {
   background: rgba(255, 255, 255, 0.98) !important;
   border: 1px solid rgba(95, 179, 249, 0.6) !important;

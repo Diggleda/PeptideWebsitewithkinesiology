@@ -292,6 +292,25 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'delegate_logo_url',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN delegate_logo_url LONGTEXT NULL
+      `,
+      expectedDataType: 'longtext',
+      alter: `
+        ALTER TABLE users
+        MODIFY COLUMN delegate_logo_url LONGTEXT NULL
+      `,
+    },
+    {
+      name: 'delegate_secondary_color',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN delegate_secondary_color VARCHAR(16) NULL
+      `,
+    },
+    {
       name: 'dev_commission',
       ddl: `
         ALTER TABLE users

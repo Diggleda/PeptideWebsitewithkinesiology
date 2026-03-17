@@ -45,6 +45,20 @@ def _normalize_bool(value: Any) -> bool:
     return text in ("1", "true", "yes", "y", "on")
 
 
+def _normalize_delegate_color(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    raw = text[1:] if text.startswith("#") else text
+    if re.fullmatch(r"[0-9a-fA-F]{3}", raw):
+        raw = "".join(ch * 2 for ch in raw)
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", raw):
+        raise _bad_request("INVALID_DELEGATE_PRIMARY_COLOR")
+    return f"#{raw.lower()}"
+
+
 def _normalize_cart_items(value: Any) -> list[dict]:
     if not isinstance(value, list):
         return []
@@ -745,6 +759,11 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     if isinstance(profile_image_url, str):
         profile_image_url = profile_image_url.strip() or None
     delegate_logo_url = data.get("delegateLogoUrl") if "delegateLogoUrl" in data else user.get("delegateLogoUrl") or None
+    delegate_secondary_color = (
+        data.get("delegateSecondaryColor")
+        if "delegateSecondaryColor" in data
+        else user.get("delegateSecondaryColor") or None
+    )
     zelle_contact = data.get("zelleContact") if "zelleContact" in data else user.get("zelleContact") or None
 
     if delegate_logo_url is not None and not isinstance(delegate_logo_url, str):
@@ -761,6 +780,8 @@ def update_profile(user_id: str, data: Dict) -> Dict:
             # Rough size guard (UTF-8 bytes) to avoid extremely large rows.
             if len(delegate_logo_url.encode("utf-8")) > 750_000:
                 raise _bad_request("DELEGATE_LOGO_TOO_LARGE")
+
+    delegate_secondary_color = _normalize_delegate_color(delegate_secondary_color)
 
     if zelle_contact is not None and not isinstance(zelle_contact, str):
         zelle_contact = None
@@ -796,6 +817,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "email": email or user.get("email"),
         "profileImageUrl": profile_image_url,
         "delegateLogoUrl": delegate_logo_url,
+        "delegateSecondaryColor": delegate_secondary_color,
         "zelleContact": zelle_contact,
         "receiveClientOrderUpdateEmails": receive_client_order_update_emails,
         **shipping_fields,

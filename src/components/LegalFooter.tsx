@@ -76,6 +76,12 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
   // Keep this close to the Tailwind `duration-[..]` used below; this controls unmount timing.
   const MODAL_FADE_MS = 65;
   const legalModalState = isClosing ? 'closing' : isVisible ? 'open' : 'closed';
+  const supportModalPanelClass =
+    'relative w-full flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[55ms] ease-out';
+  const supportModalPanelStyle = {
+    width: 'min(100%, 32rem)',
+    maxWidth: '32rem',
+  } as const;
 
   useEffect(() => {
     const body = document.body;
@@ -271,6 +277,17 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
       bugCloseTimerRef.current = null;
     }, MODAL_FADE_MS);
   }, [bugOpen, MODAL_FADE_MS]);
+
+  useEffect(() => {
+    const openBugReport = () => {
+      window.dispatchEvent(new Event('peppro:close-dialogs'));
+      handleBugOpen();
+    };
+    window.addEventListener('peppro:open-bug-report', openBugReport);
+    return () => {
+      window.removeEventListener('peppro:open-bug-report', openBugReport);
+    };
+  }, [handleBugOpen]);
 
   const handleBugSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -588,10 +605,11 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
           />
           <div
             className={clsx(
-              'relative w-full max-w-lg flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[55ms] ease-out',
+              supportModalPanelClass,
               contactVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{
+              ...supportModalPanelStyle,
               backgroundColor: 'rgba(245, 251, 255, 0.94)',
               borderColor: 'rgba(95, 179, 249, 0.65)',
             }}
@@ -701,10 +719,11 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
           />
           <div
             className={clsx(
-              'relative w-full max-w-lg flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[55ms] ease-out',
+              supportModalPanelClass,
               bugVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{
+              ...supportModalPanelStyle,
               backgroundColor: 'rgba(245, 251, 255, 0.94)',
               borderColor: 'rgba(95, 179, 249, 0.65)',
             }}
