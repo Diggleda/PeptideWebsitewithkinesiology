@@ -38,7 +38,19 @@ class UsageTrackingServiceTests(unittest.TestCase):
 
     def test_track_event_builds_actor_and_timestamp_details(self):
         service = self.usage_tracking_service
-        with patch("python_backend.repositories.usage_tracking_repository.insert_event", return_value=True) as insert_event:
+        with patch("python_backend.repositories.usage_tracking_repository.insert_event", return_value=True) as insert_event, patch(
+            "python_backend.services.usage_tracking_service.user_repository.find_by_id",
+            return_value=None,
+        ), patch(
+            "python_backend.services.usage_tracking_service.sales_rep_repository.find_by_id",
+            return_value=None,
+        ), patch(
+            "python_backend.services.usage_tracking_service.user_repository.find_by_email",
+            return_value=None,
+        ), patch(
+            "python_backend.services.usage_tracking_service.sales_rep_repository.find_by_email",
+            return_value=None,
+        ):
             tracked = service.track_event(
                 "delegate_link_tab_clicked",
                 actor={"id": "doc-1", "name": "Dr. Test", "email": "doc@example.com", "role": "doctor"},
@@ -64,6 +76,33 @@ class UsageTrackingServiceTests(unittest.TestCase):
 
         self.assertFalse(tracked)
         insert_event.assert_not_called()
+
+    def test_track_event_resolves_missing_actor_name_from_repository(self):
+        service = self.usage_tracking_service
+        with patch("python_backend.repositories.usage_tracking_repository.insert_event", return_value=True) as insert_event, patch(
+            "python_backend.services.usage_tracking_service.user_repository.find_by_id",
+            return_value={"id": "1771281498418", "name": "Dylan", "email": "diggleda@icloud.com", "role": "test_doctor"},
+        ), patch(
+            "python_backend.services.usage_tracking_service.sales_rep_repository.find_by_id",
+            return_value=None,
+        ), patch(
+            "python_backend.services.usage_tracking_service.user_repository.find_by_email",
+            return_value=None,
+        ), patch(
+            "python_backend.services.usage_tracking_service.sales_rep_repository.find_by_email",
+            return_value=None,
+        ):
+            tracked = service.track_event(
+                "delegate_link_tab_clicked",
+                actor={"id": "1771281498418", "name": None, "email": "diggleda@icloud.com", "role": "test_doctor"},
+                metadata={"tab": "delegate_links"},
+                strict=True,
+            )
+
+        self.assertTrue(tracked)
+        details = insert_event.call_args.args[1]
+        self.assertEqual(details["who"]["name"], "Dylan")
+        self.assertEqual(details["tab"], "delegate_links")
 
 
 if __name__ == "__main__":

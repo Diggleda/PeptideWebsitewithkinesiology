@@ -7146,7 +7146,10 @@ export function Header({
 	                          onClick={() => {
                               setAccountTab(tab.id);
                               if (tab.id === 'patient_links') {
-                                trackUsageEvent('delegate_link_tab_clicked', { tab: tab.id });
+                                trackUsageEvent('delegate_link_tab_clicked', {
+                                  tab: 'delegate_links',
+                                  tabLabel: tab.label,
+                                });
                               }
                             }}
 	                        >
