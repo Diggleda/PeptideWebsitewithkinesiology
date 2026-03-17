@@ -1821,6 +1821,17 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
+  updateTaxNexusAppliedForAdmin: async (stateCode: string, taxNexusApplied: boolean) => {
+    const normalizedStateCode = String(stateCode || '').trim().toUpperCase();
+    if (!normalizedStateCode) {
+      throw new Error('stateCode is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/orders/admin/tax-tracking/${encodeURIComponent(normalizedStateCode)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ taxNexusApplied }),
+    });
+  },
+
   getProductSalesCommissionForAdmin: async (options?: { periodStart?: string; periodEnd?: string; debug?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.periodStart) params.set('periodStart', options.periodStart);

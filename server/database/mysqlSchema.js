@@ -188,6 +188,51 @@ const STATEMENTS = [
       INDEX idx_peptide_forum_sync_token (sync_token)
     ) CHARACTER SET utf8mb4
   `,
+  `
+    CREATE TABLE IF NOT EXISTS tax_tracking (
+      state_code CHAR(2) PRIMARY KEY,
+      state_name VARCHAR(64) NOT NULL UNIQUE,
+      economic_nexus_revenue_usd DECIMAL(12,2) NULL,
+      economic_nexus_transactions INT NULL,
+      collect_tax_default TINYINT(1) NOT NULL DEFAULT 0,
+      research_reagent_taxable TINYINT(1) NOT NULL DEFAULT 1,
+      university_exemption_allowed TINYINT(1) NOT NULL DEFAULT 1,
+      resale_certificate_allowed TINYINT(1) NOT NULL DEFAULT 1,
+      woo_tax_class VARCHAR(32) NULL,
+      notes VARCHAR(255) NULL,
+      avg_combined_tax_rate DECIMAL(7,5) NULL,
+      example_tax_on_100k_sales DECIMAL(12,2) NULL,
+      tax_collection_required_after_nexus TINYINT(1) NOT NULL DEFAULT 0,
+      buffered_tax_rate DECIMAL(7,5) NULL,
+      example_tax_on_100k_sales_buffered DECIMAL(12,2) NULL,
+      tax_nexus_applied TINYINT(1) NOT NULL DEFAULT 0,
+      tracking_year SMALLINT NOT NULL DEFAULT 0,
+      current_year_revenue_usd DECIMAL(12,2) NOT NULL DEFAULT 0,
+      current_year_order_count INT NOT NULL DEFAULT 0,
+      last_synced_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_tax_tracking_year (tracking_year),
+      INDEX idx_tax_tracking_state_name (state_name)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS state_sales_totals (
+      state VARCHAR(64) NOT NULL,
+      state_code CHAR(2) PRIMARY KEY,
+      trailing_12mo_revenue DECIMAL(12,2) NOT NULL DEFAULT 0,
+      transaction_count INT NOT NULL DEFAULT 0,
+      nexus_triggered TINYINT(1) NOT NULL DEFAULT 0,
+      window_start_at DATETIME NULL,
+      window_end_at DATETIME NULL,
+      last_synced_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_state_sales_totals_state (state),
+      INDEX idx_state_sales_totals_nexus (nexus_triggered),
+      INDEX idx_state_sales_totals_state_name (state)
+    ) CHARACTER SET utf8mb4
+  `,
 ];
 
 const ensureIndex = async (tableName, indexName, ddl) => {
@@ -275,6 +320,27 @@ const ensureUserColumns = async () => {
       ddl: `
         ALTER TABLE users
         ADD COLUMN tax_exempt_reason VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'reseller_permit_file_path',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN reseller_permit_file_path VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'reseller_permit_file_name',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN reseller_permit_file_name VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'reseller_permit_uploaded_at',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN reseller_permit_uploaded_at DATETIME NULL
       `,
     },
     {
@@ -691,6 +757,77 @@ const ensureBugReportColumns = async () => {
   }
 };
 
+const ensureTaxTrackingColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const columns = [
+    {
+      name: 'avg_combined_tax_rate',
+      ddl: `
+        ALTER TABLE tax_tracking
+        ADD COLUMN avg_combined_tax_rate DECIMAL(7,5) NULL
+      `,
+    },
+    {
+      name: 'example_tax_on_100k_sales',
+      ddl: `
+        ALTER TABLE tax_tracking
+        ADD COLUMN example_tax_on_100k_sales DECIMAL(12,2) NULL
+      `,
+    },
+    {
+      name: 'tax_collection_required_after_nexus',
+      ddl: `
+        ALTER TABLE tax_tracking
+        ADD COLUMN tax_collection_required_after_nexus TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
+      name: 'buffered_tax_rate',
+      ddl: `
+        ALTER TABLE tax_tracking
+        ADD COLUMN buffered_tax_rate DECIMAL(7,5) NULL
+      `,
+    },
+    {
+      name: 'example_tax_on_100k_sales_buffered',
+      ddl: `
+        ALTER TABLE tax_tracking
+        ADD COLUMN example_tax_on_100k_sales_buffered DECIMAL(12,2) NULL
+      `,
+    },
+    {
+      name: 'tax_nexus_applied',
+      ddl: `
+        ALTER TABLE tax_tracking
+        ADD COLUMN tax_nexus_applied TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+  ];
+
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'tax_tracking'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL tax_tracking column added');
+      }
+    } catch (error) {
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL tax_tracking column');
+    }
+  }
+};
+
 const ensureContactFormIndexes = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -718,6 +855,7 @@ const ensureSchema = async () => {
   await ensureOrderColumns();
   await ensureSalesProspectColumns();
   await ensureBugReportColumns();
+  await ensureTaxTrackingColumns();
   await ensureContactFormIndexes();
   logger.info('MySQL schema ensured');
 };

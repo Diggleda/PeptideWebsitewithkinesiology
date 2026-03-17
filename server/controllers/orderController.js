@@ -11,6 +11,7 @@ const {
   runShipStationStatusSyncOnce,
   getShipStationStatusSyncState,
 } = require('../services/shipStationSyncService');
+const taxTrackingService = require('../services/taxTrackingService');
 
 const normalizeRole = (role) => (role || '')
   .toString()
@@ -577,6 +578,54 @@ const getOnHoldOrdersForAdmin = async (req, res, next) => {
   }
 };
 
+const getTaxesByStateForAdmin = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const periodStart = typeof req.query?.periodStart === 'string' ? req.query.periodStart.trim() : null;
+    const periodEnd = typeof req.query?.periodEnd === 'string' ? req.query.periodEnd.trim() : null;
+    const forceRaw = typeof req.query?.force === 'string' ? req.query.force.trim().toLowerCase() : '';
+    const force = forceRaw === '1' || forceRaw === 'true' || forceRaw === 'yes' || forceRaw === 'on';
+    const payload = await taxTrackingService.getAdminTaxesByStateReport({
+      periodStart,
+      periodEnd,
+      force,
+    });
+    return res.json(payload);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateTaxTrackingStateForAdmin = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const stateCode = typeof req.params?.stateCode === 'string' ? req.params.stateCode.trim() : '';
+    if (!stateCode) {
+      return res.status(400).json({ error: 'stateCode is required' });
+    }
+
+    const rawFiled = req.body?.taxNexusApplied ?? req.body?.filed ?? req.body?.taxFiled;
+    if (rawFiled === undefined) {
+      return res.status(400).json({ error: 'taxNexusApplied is required' });
+    }
+
+    const payload = await taxTrackingService.setTaxNexusApplied(
+      stateCode,
+      normalizeBooleanFlag(rawFiled),
+    );
+    return res.json(payload);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const getProductSalesCommissionForAdmin = async (req, res, next) => {
   try {
     if (!shouldServeFakeAdminReports()) {
@@ -719,6 +768,8 @@ module.exports = {
   getSalesRepOrderDetail,
   getSalesByRepForAdmin,
   getOnHoldOrdersForAdmin,
+  getTaxesByStateForAdmin,
+  updateTaxTrackingStateForAdmin,
   getProductSalesCommissionForAdmin,
   cancelOrder,
   syncShipStationToWoo,

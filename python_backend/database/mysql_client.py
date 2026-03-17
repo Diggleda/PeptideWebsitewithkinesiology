@@ -17,6 +17,10 @@ _pool_total = 0
 _RetryResult = TypeVar("_RetryResult")
 
 
+def is_enabled() -> bool:
+    return bool(_config and _config.mysql.get("enabled"))
+
+
 def configure(config: AppConfig) -> None:
     global _config
     global _pool

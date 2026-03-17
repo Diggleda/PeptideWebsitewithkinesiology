@@ -1,0 +1,51 @@
+state,economic_nexus_revenue_usd,economic_nexus_transactions,collect_tax_default,research_reagent_taxable,university_exemption_allowed,resale_certificate_allowed,woo_tax_class,notes,avg_combined_tax_rate,example_tax_on_100k_sales,tax_collection_required_after_nexus,buffered_tax_rate,example_tax_on_100k_sales_buffered
+Alabama,100000.0,200.0,True,True,True,True,standard,,0.095,9500.0,True,0.095,9500.0
+Alaska,100000.0,200.0,False,True,True,True,standard,No statewide tax; local only,0.02,2000.0,False,0.02,2000.0
+Arizona,100000.0,200.0,True,True,True,True,standard,,0.084,8400.0,True,0.085,8500.0
+Arkansas,100000.0,200.0,True,True,True,True,standard,,0.094,9400.0,True,0.095,9500.0
+California,100000.0,,True,True,True,True,standard,District taxes apply,0.085,8500.0,True,0.085,8500.0
+Colorado,100000.0,200.0,True,True,True,True,standard,Home rule complexity,0.077,7700.0,True,0.08,8000.0
+Connecticut,100000.0,200.0,True,True,True,True,standard,,0.0635,6350.0,True,0.065,6500.0
+Delaware,,,False,True,True,True,none,No sales tax,0.0,0.0,False,0.0,0.0
+Florida,100000.0,,True,True,True,True,standard,,0.07,7000.000000000001,True,0.075,7500.0
+Georgia,100000.0,200.0,True,True,True,True,standard,,0.073,7299.999999999999,True,0.075,7500.0
+Hawaii,100000.0,200.0,True,True,True,True,standard,GET tax,0.04,4000.0,True,0.04,4000.0
+Idaho,100000.0,,True,True,True,True,standard,,0.06,6000.0,True,0.06,6000.0
+Illinois,100000.0,200.0,True,True,True,True,standard,,0.088,8800.0,True,0.09,9000.0
+Indiana,100000.0,200.0,True,True,True,True,standard,,0.07,7000.000000000001,True,0.075,7500.0
+Iowa,100000.0,,True,True,True,True,standard,,0.068,6800.000000000001,True,0.07,7000.000000000001
+Kansas,100000.0,,True,True,True,True,standard,,0.087,8700.0,True,0.09,9000.0
+Kentucky,100000.0,200.0,True,True,True,True,standard,,0.06,6000.0,True,0.06,6000.0
+Louisiana,100000.0,200.0,True,True,True,True,standard,Parish taxes,0.095,9500.0,True,0.095,9500.0
+Maine,100000.0,,True,True,True,True,standard,,0.055,5500.0,True,0.055,5500.0
+Maryland,100000.0,200.0,True,True,True,True,standard,,0.06,6000.0,True,0.06,6000.0
+Massachusetts,100000.0,,True,True,True,True,standard,,0.0625,6250.0,True,0.065,6500.0
+Michigan,100000.0,200.0,True,True,True,True,standard,,0.06,6000.0,True,0.06,6000.0
+Minnesota,100000.0,200.0,True,True,True,True,standard,,0.075,7500.0,True,0.075,7500.0
+Mississippi,250000.0,,True,True,True,True,standard,,0.07,7000.000000000001,True,0.075,7500.0
+Missouri,100000.0,,True,True,True,True,standard,,0.083,8300.0,True,0.085,8500.0
+Montana,,,False,True,True,True,none,No sales tax,0.0,0.0,False,0.0,0.0
+Nebraska,100000.0,200.0,True,True,True,True,standard,,0.069,6900.000000000001,True,0.07,7000.000000000001
+Nevada,100000.0,200.0,True,True,True,True,standard,,0.0825,8250.0,True,0.085,8500.0
+New Hampshire,,,False,True,True,True,none,No sales tax,0.0,0.0,False,0.0,0.0
+New Jersey,100000.0,200.0,True,True,True,True,standard,,0.06625,6625.0,True,0.07,7000.000000000001
+New Mexico,100000.0,200.0,True,True,True,True,standard,GRT tax,0.078,7800.0,True,0.08,8000.0
+New York,500000.0,100.0,True,True,True,True,standard,,0.085,8500.0,True,0.085,8500.0
+North Carolina,100000.0,,True,True,True,True,standard,,0.07,7000.000000000001,True,0.075,7500.0
+North Dakota,100000.0,200.0,True,True,True,True,standard,,0.068,6800.000000000001,True,0.07,7000.000000000001
+Ohio,100000.0,200.0,True,True,True,True,standard,,0.072,7199.999999999999,True,0.075,7500.0
+Oklahoma,100000.0,,True,True,True,True,standard,,0.089,8900.0,True,0.09,9000.0
+Oregon,,,False,True,True,True,none,No sales tax,0.0,0.0,False,0.0,0.0
+Pennsylvania,100000.0,,True,True,True,True,standard,,0.0634,6340.0,True,0.065,6500.0
+Rhode Island,100000.0,200.0,True,True,True,True,standard,,0.07,7000.000000000001,True,0.075,7500.0
+South Carolina,100000.0,,True,True,True,True,standard,,0.074,7400.0,True,0.075,7500.0
+South Dakota,100000.0,200.0,True,True,True,True,standard,,0.064,6400.0,True,0.065,6500.0
+Tennessee,100000.0,,True,True,True,True,standard,,0.095,9500.0,True,0.095,9500.0
+Texas,500000.0,,True,True,True,True,standard,,0.082,8200.0,True,0.085,8500.0
+Utah,100000.0,200.0,True,True,True,True,standard,,0.072,7199.999999999999,True,0.075,7500.0
+Vermont,100000.0,200.0,True,True,True,True,standard,,0.062,6200.0,True,0.065,6500.0
+Virginia,100000.0,200.0,True,True,True,True,standard,,0.057,5700.0,True,0.06,6000.0
+Washington,100000.0,,True,True,True,True,standard,,0.092,9200.0,True,0.095,9500.0
+West Virginia,100000.0,200.0,True,True,True,True,standard,,0.065,6500.0,True,0.065,6500.0
+Wisconsin,100000.0,200.0,True,True,True,True,standard,,0.055,5500.0,True,0.055,5500.0
+Wyoming,100000.0,200.0,True,True,True,True,standard,,0.053,5300.0,True,0.055,5500.0

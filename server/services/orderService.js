@@ -9,6 +9,7 @@ const wooCommerceClient = require('../integration/wooCommerceClient');
 const shipEngineClient = require('../integration/shipEngineClient');
 const shipStationClient = require('../integration/shipStationClient');
 const paymentService = require('./paymentService');
+const taxTrackingService = require('./taxTrackingService');
 const stripeClient = require('../integration/stripeClient');
 const {
   ensureShippingData,
@@ -100,6 +101,13 @@ const normalizeRole = (role) => (role || '')
   .replace(/[\s-]+/g, '_');
 
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
+const normalizeOptionalString = (value) => {
+  if (value == null) {
+    return null;
+  }
+  const text = String(value).trim();
+  return text || null;
+};
 
 const fetchHouseLeadUsersFromSql = async () => {
   if (!mysqlClient.isEnabled()) {
@@ -386,7 +394,32 @@ const canSelectRetailPricing = (role) => {
     || normalized === 'saleslead';
 };
 
+const syncUserPermitFromSource = (user, permitSource) => {
+  if (!user?.id || !permitSource?.resellerPermitFilePath) {
+    return user;
+  }
+  const nextSource = user.isTaxExempt && user.taxExemptSource
+    ? user.taxExemptSource
+    : 'RESELLER_PERMIT';
+  const nextReason = user.isTaxExempt && user.taxExemptReason
+    ? user.taxExemptReason
+    : 'Reseller permit on file';
+  return userRepository.update({
+    id: user.id,
+    resellerPermitFilePath: permitSource.resellerPermitFilePath,
+    resellerPermitFileName: permitSource.resellerPermitFileName || null,
+    resellerPermitUploadedAt: permitSource.resellerPermitUploadedAt || null,
+    isTaxExempt: true,
+    taxExemptSource: nextSource,
+    taxExemptReason: nextReason,
+  }) || user;
+};
+
 const hasResellerPermitOnFile = async (user) => {
+  const directFilePath = normalizeOptionalString(user?.resellerPermitFilePath);
+  if (directFilePath) {
+    return true;
+  }
   const doctorId = normalizeId(user?.id);
   const email = normalizeEmail(user?.email);
   if (!doctorId && !email) {
@@ -410,22 +443,33 @@ const hasResellerPermitOnFile = async (user) => {
     const where = clauses.join(' OR ');
     const row = await mysqlClient.fetchOne(
       `
-        SELECT id
+        SELECT reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at
         FROM sales_prospects
         WHERE reseller_permit_file_path IS NOT NULL
           AND reseller_permit_file_path <> ''
           AND (${where})
+        ORDER BY reseller_permit_uploaded_at DESC, updated_at DESC, created_at DESC
         LIMIT 1
       `,
       params,
     );
-    return Boolean(row);
+    if (!row) {
+      return false;
+    }
+    syncUserPermitFromSource(user, {
+      resellerPermitFilePath: row.reseller_permit_file_path,
+      resellerPermitFileName: row.reseller_permit_file_name,
+      resellerPermitUploadedAt: row.reseller_permit_uploaded_at
+        ? new Date(row.reseller_permit_uploaded_at).toISOString()
+        : null,
+    });
+    return true;
   }
 
   try {
     const prospects = await salesProspectRepository.getAll();
     const list = Array.isArray(prospects) ? prospects : [];
-    return list.some((prospect) => {
+    const matched = list.find((prospect) => {
       const prospectDoctorId = normalizeId(prospect?.doctorId);
       const prospectEmail = normalizeEmail(prospect?.contactEmail);
       const matchesDoctor = doctorId && prospectDoctorId && prospectDoctorId === doctorId;
@@ -436,6 +480,15 @@ const hasResellerPermitOnFile = async (user) => {
       const path = prospect?.resellerPermitFilePath;
       return typeof path === 'string' && path.trim().length > 0;
     });
+    if (!matched) {
+      return false;
+    }
+    syncUserPermitFromSource(user, {
+      resellerPermitFilePath: matched.resellerPermitFilePath,
+      resellerPermitFileName: matched.resellerPermitFileName || null,
+      resellerPermitUploadedAt: matched.resellerPermitUploadedAt || null,
+    });
+    return true;
   } catch {
     return false;
   }
@@ -1085,17 +1138,6 @@ const resolveCheckoutShippingData = ({
   };
 };
 
-const isCaliforniaDestination = (shippingAddress) => {
-  const state = normalizeStateCode(shippingAddress?.state || shippingAddress?.stateCode);
-  return state === 'ca' || state === 'california';
-};
-
-const calculateCaliforniaTax = ({ itemsSubtotal, shippingTotal }) => {
-  const base = Number(itemsSubtotal || 0) + Number(shippingTotal || 0);
-  if (!Number.isFinite(base) || base <= 0) return 0;
-  return roundCurrency(base * 0.077);
-};
-
 const calculateTaxFromRates = ({ rates, itemsSubtotal, shippingTotal }) => {
   if (!Array.isArray(rates) || rates.length === 0) {
     return 0;
@@ -1121,6 +1163,55 @@ const calculateTaxFromRates = ({ rates, itemsSubtotal, shippingTotal }) => {
     accumulatedTax += lineTax + shippingTax;
   });
   return accumulatedTax;
+};
+
+const resolveWooTaxClassForLookup = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized || normalized === 'standard' || normalized === 'none') {
+    return null;
+  }
+  return normalized;
+};
+
+const calculateCheckoutTax = async ({
+  itemsSubtotal,
+  shippingTotal: _shippingTotal,
+  shippingAddress,
+}) => {
+  const country = String(shippingAddress?.country || 'US').trim().toUpperCase();
+  if (country !== 'US') {
+    return { taxTotal: 0, taxSource: 'non_us', stateProfile: null };
+  }
+
+  const stateProfile = await taxTrackingService.getStateTaxProfile(
+    shippingAddress?.state || shippingAddress?.stateCode,
+  );
+  if (!stateProfile?.nexusTriggered) {
+    return { taxTotal: 0, taxSource: 'no_nexus', stateProfile };
+  }
+  if (!stateProfile.collectTaxDefault) {
+    return { taxTotal: 0, taxSource: 'state_no_collection', stateProfile };
+  }
+  if (!stateProfile.taxCollectionRequiredAfterNexus) {
+    return { taxTotal: 0, taxSource: 'state_not_collectable_after_nexus', stateProfile };
+  }
+  if (!stateProfile.researchReagentTaxable) {
+    return { taxTotal: 0, taxSource: 'product_not_taxable', stateProfile };
+  }
+
+  const bufferedRate = Number(stateProfile.bufferedTaxRate);
+  if (!Number.isFinite(bufferedRate) || bufferedRate <= 0) {
+    return {
+      taxTotal: 0,
+      taxSource: 'buffered_rate_missing',
+      stateProfile,
+    };
+  }
+  return {
+    taxTotal: roundCurrency(Number(itemsSubtotal || 0) * bufferedRate),
+    taxSource: 'buffered_tax_rate',
+    stateProfile,
+  };
 };
 
 const createOrderInternal = async ({
@@ -1177,11 +1268,16 @@ const createOrderInternal = async ({
     || shippingData.handDelivery === true
     || isHandDeliverySelection(shippingData.shippingEstimate);
   const itemsSubtotal = calculateItemsSubtotal(items);
-  const normalizedTaxTotal = taxExempt
-    ? 0
-    : (!shippingData.handDelivery && isCaliforniaDestination(shippingData.shippingAddress))
-      ? calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingData.shippingTotal })
-      : 0;
+  const taxCalculation = taxExempt
+    ? { taxTotal: 0, taxSource: 'tax_exempt' }
+    : shippingData.handDelivery
+      ? { taxTotal: 0, taxSource: 'facility_pickup' }
+      : await calculateCheckoutTax({
+        itemsSubtotal,
+        shippingTotal: shippingData.shippingTotal,
+        shippingAddress: shippingData.shippingAddress,
+      });
+  const normalizedTaxTotal = roundCurrency(taxCalculation.taxTotal);
   const computedTotal = roundCurrency(itemsSubtotal + shippingData.shippingTotal + normalizedTaxTotal);
   const normalizedTotal = typeof total === 'number' && !Number.isNaN(total) ? roundCurrency(total) : computedTotal;
   if (normalizedTotal <= 0) {
@@ -1593,15 +1689,18 @@ const estimateOrderTotals = async ({
     city: shippingAddressForTax.city || '',
   };
 
-  if (isCaliforniaDestination(provisionalOrder.shippingAddress)) {
-    taxTotal = calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingTotalFromPreview });
-    taxSource = 'ca_flat_7_7';
-  }
-
-  if (taxSource === 'none') {
-    taxTotal = 0;
-    taxSource = 'flat_zero';
-  }
+  const taxCalculation = shippingData.handDelivery
+    ? { taxTotal: 0, taxSource: 'facility_pickup', stateProfile: null }
+    : await calculateCheckoutTax({
+      itemsSubtotal,
+      shippingTotal: shippingTotalFromPreview,
+      shippingAddress: provisionalOrder.shippingAddress,
+    });
+  taxTotal = roundCurrency(taxCalculation.taxTotal);
+  taxSource = taxCalculation.taxSource || 'flat_zero';
+  wooTaxResponse = taxCalculation.stateProfile
+    ? { stateTaxProfile: taxCalculation.stateProfile }
+    : null;
 
   const grandTotal = roundCurrency(itemsSubtotal + shippingTotalFromPreview + taxTotal);
 

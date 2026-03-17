@@ -50,6 +50,63 @@ const buildInitials = (user) => {
   const base = letters.slice(0, 2).toUpperCase();
   return (base || 'PP').padEnd(2, 'X').slice(0, 2);
 };
+const normalizeOptionalText = (value) => {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+};
+const isDoctorUser = (user) => {
+  const role = normalizeRole(user?.role);
+  return role === 'doctor' || role === 'test_doctor';
+};
+const findLinkedUserForProspect = (prospect) => {
+  const doctorId = normalizeOptionalText(prospect?.doctorId);
+  if (doctorId) {
+    const doctor = userRepository.findById(doctorId);
+    if (doctor) {
+      return doctor;
+    }
+  }
+  const email = normalizeOptionalText(prospect?.contactEmail);
+  if (email) {
+    const normalizedEmail = email.toLowerCase();
+    const user = userRepository.findByEmail(email)
+      || userRepository.getAll().find(
+        (candidate) =>
+          normalizeOptionalText(candidate?.email)?.toLowerCase() === normalizedEmail,
+      );
+    if (user) {
+      return user;
+    }
+  }
+  return null;
+};
+const syncResellerPermitToLinkedUser = ({
+  prospect,
+  resellerPermitFilePath,
+  resellerPermitFileName,
+  resellerPermitUploadedAt,
+}) => {
+  const linkedUser = findLinkedUserForProspect(prospect);
+  if (!linkedUser) {
+    return null;
+  }
+  const nextSource = linkedUser.isTaxExempt && linkedUser.taxExemptSource
+    ? linkedUser.taxExemptSource
+    : 'RESELLER_PERMIT';
+  const nextReason = linkedUser.isTaxExempt && linkedUser.taxExemptReason
+    ? linkedUser.taxExemptReason
+    : 'Reseller permit on file';
+  return userRepository.update({
+    id: linkedUser.id,
+    resellerPermitFilePath,
+    resellerPermitFileName,
+    resellerPermitUploadedAt,
+    isTaxExempt: true,
+    taxExemptSource: nextSource,
+    taxExemptReason: nextReason,
+  });
+};
 const randomSuffix = () => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let output = '';
@@ -1868,22 +1925,45 @@ const uploadResellerPermit = async (req, res, next) => {
           isManual: true,
         };
       } else {
-        base = {
-          id: identifier,
-          salesRepId: String(owner),
-          sourceSystem: 'referral',
-          referralId: identifier,
-          status: 'pending',
-          isManual: false,
-        };
+        const doctor = userRepository.findById(identifier);
+        if (doctor && isDoctorUser(doctor)) {
+          base = {
+            id: `doctor:${identifier}`,
+            salesRepId: String(owner),
+            doctorId: String(identifier),
+            sourceSystem: 'doctor',
+            status: 'converted',
+            isManual: true,
+            contactName: doctor.name || null,
+            contactEmail: doctor.email || null,
+            contactPhone: doctor.phone || null,
+          };
+        } else {
+          base = {
+            id: identifier,
+            salesRepId: String(owner),
+            sourceSystem: 'referral',
+            referralId: identifier,
+            status: 'pending',
+            isManual: false,
+          };
+        }
       }
     }
 
+    const resellerPermitUploadedAt = new Date().toISOString();
+    const resellerPermitFilePath = path.posix.join('uploads', 'reseller-permits', storedName);
     const saved = await salesProspectRepository.upsert({
       ...base,
-      resellerPermitFilePath: path.posix.join('uploads', 'reseller-permits', storedName),
+      resellerPermitFilePath,
       resellerPermitFileName: safeOriginal,
-      resellerPermitUploadedAt: new Date().toISOString(),
+      resellerPermitUploadedAt,
+    });
+    syncResellerPermitToLinkedUser({
+      prospect: saved,
+      resellerPermitFilePath,
+      resellerPermitFileName: safeOriginal,
+      resellerPermitUploadedAt,
     });
 
     res.json({ prospect: saved });

@@ -60,6 +60,7 @@ import {
 				  Trash2,
 				Clock,
 				CheckCircle2,
+        AlertTriangle,
 				XCircle,
 				} from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
@@ -251,6 +252,18 @@ interface ContactFormSubmission {
   source: string;
   created_at: string;
 }
+
+const hasAuthToken = () => {
+  try {
+    const sessionToken = sessionStorage.getItem("auth_token");
+    if (sessionToken && sessionToken.trim().length > 0) {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+};
 
 interface SeamlessRawEntry {
   id: string | number;
@@ -9335,10 +9348,22 @@ function MainApp() {
     string | null
   >(null);
   const [adminTaxesByStateRows, setAdminTaxesByStateRows] = useState<
-    { state: string; taxTotal: number; orderCount: number }[]
+    {
+      state: string;
+      stateCode?: string;
+      stateName?: string | null;
+      taxTotal: number;
+      orderCount: number;
+    }[]
   >([]);
   const [adminTaxesByStateOrders, setAdminTaxesByStateOrders] = useState<
-    { orderNumber: string; state: string; taxTotal: number }[]
+    {
+      orderNumber: string;
+      state: string;
+      stateCode?: string;
+      stateName?: string | null;
+      taxTotal: number;
+    }[]
   >([]);
   const [adminTaxesByStateBreakdownOpen, setAdminTaxesByStateBreakdownOpen] =
     useState(false);
@@ -9347,6 +9372,53 @@ function MainApp() {
     periodEnd?: string | null;
     totals?: { orderCount: number; taxTotal: number } | null;
   } | null>(null);
+  const [adminTaxTrackingRows, setAdminTaxTrackingRows] = useState<
+    {
+      state: string;
+      stateCode: string;
+      stateName: string;
+      economicNexusRevenueUsd: number | null;
+      economicNexusTransactions: number | null;
+      collectTaxDefault: boolean;
+      researchReagentTaxable: boolean;
+      universityExemptionAllowed: boolean;
+      resaleCertificateAllowed: boolean;
+      wooTaxClass: string | null;
+      notes: string | null;
+      trackingYear: number | null;
+      trailing12MonthRevenueUsd: number;
+      trailing12MonthTransactionCount: number;
+      currentYearRevenueUsd: number;
+      currentYearOrderCount: number;
+      revenueProgressRatio: number | null;
+      transactionProgressRatio: number | null;
+      warningLevel: "none" | "warning" | "exceeded";
+      warningReasons: string[];
+      exceededReasons: string[];
+      nexusTriggered: boolean;
+      taxNexusApplied: boolean;
+      shouldCollectTax: boolean;
+    }[]
+  >([]);
+  const [adminTaxTrackingMeta, setAdminTaxTrackingMeta] = useState<{
+    trackingYear?: number | null;
+    rollingWindowMonths?: number | null;
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    warningThresholdRatio?: number | null;
+    summary?:
+      | {
+          trackedStateCount: number;
+          warningCount: number;
+          exceededCount: number;
+          shouldCollectTaxCount: number;
+        }
+      | null;
+    lastSyncedAt?: string | null;
+    stale?: boolean;
+  } | null>(null);
+  const [adminTaxTrackingSavingStates, setAdminTaxTrackingSavingStates] =
+    useState<Record<string, boolean>>({});
   const [adminTaxesByStateLoading, setAdminTaxesByStateLoading] = useState(false);
   const [adminTaxesByStateError, setAdminTaxesByStateError] = useState<string | null>(null);
   const [adminTaxesByStateLastFetchedAt, setAdminTaxesByStateLastFetchedAt] =
@@ -9601,6 +9673,13 @@ function MainApp() {
 	        rows
 	          .map((row) => ({
 	            state: String((row as any)?.state || "UNKNOWN"),
+              stateCode: String(
+                (row as any)?.stateCode || (row as any)?.state || "UNKNOWN",
+              ).toUpperCase(),
+              stateName:
+                typeof (row as any)?.stateName === "string"
+                  ? String((row as any).stateName)
+                  : null,
 	            taxTotal: Number((row as any)?.taxTotal || 0),
 	            orderCount: Number((row as any)?.orderCount || 0),
 	          }))
@@ -9614,12 +9693,165 @@ function MainApp() {
 	          .map((line) => ({
 	            orderNumber: String((line as any)?.orderNumber || ""),
 	            state: String((line as any)?.state || "UNKNOWN"),
+              stateCode: String(
+                (line as any)?.stateCode || (line as any)?.state || "UNKNOWN",
+              ).toUpperCase(),
+              stateName:
+                typeof (line as any)?.stateName === "string"
+                  ? String((line as any).stateName)
+                  : null,
 	            taxTotal: Number((line as any)?.taxTotal || 0),
 	          }))
 	          .filter(
 	            (line) => line.orderNumber.trim().length > 0 && line.taxTotal > 0,
 	          ),
 	      );
+      const taxTrackingRaw =
+        (response as any)?.taxTracking && typeof (response as any).taxTracking === "object"
+          ? ((response as any).taxTracking as any)
+          : null;
+      const trackingRowsRaw = Array.isArray(taxTrackingRaw?.rows)
+        ? (taxTrackingRaw.rows as any[])
+        : [];
+      setAdminTaxTrackingRows(
+        trackingRowsRaw.map((row) => ({
+          state: String((row as any)?.state || "UNKNOWN"),
+          stateCode: String(
+            (row as any)?.stateCode || (row as any)?.state || "UNKNOWN",
+          ).toUpperCase(),
+          stateName:
+            typeof (row as any)?.stateName === "string"
+              ? String((row as any).stateName)
+              : String((row as any)?.state || "UNKNOWN"),
+          economicNexusRevenueUsd:
+            (row as any)?.economicNexusRevenueUsd === null ||
+            (row as any)?.economicNexusRevenueUsd === undefined ||
+            Number.isNaN(Number((row as any)?.economicNexusRevenueUsd))
+              ? null
+              : Number((row as any).economicNexusRevenueUsd),
+          economicNexusTransactions:
+            (row as any)?.economicNexusTransactions === null ||
+            (row as any)?.economicNexusTransactions === undefined ||
+            Number.isNaN(Number((row as any)?.economicNexusTransactions))
+              ? null
+              : Number((row as any).economicNexusTransactions),
+          collectTaxDefault: Boolean((row as any)?.collectTaxDefault),
+          researchReagentTaxable: Boolean((row as any)?.researchReagentTaxable),
+          universityExemptionAllowed: Boolean(
+            (row as any)?.universityExemptionAllowed,
+          ),
+          resaleCertificateAllowed: Boolean(
+            (row as any)?.resaleCertificateAllowed,
+          ),
+          wooTaxClass:
+            typeof (row as any)?.wooTaxClass === "string"
+              ? String((row as any).wooTaxClass)
+              : null,
+          notes:
+            typeof (row as any)?.notes === "string"
+              ? String((row as any).notes)
+              : null,
+          trackingYear:
+            (row as any)?.trackingYear === null ||
+            (row as any)?.trackingYear === undefined ||
+            Number.isNaN(Number((row as any)?.trackingYear))
+              ? null
+              : Number((row as any).trackingYear),
+          trailing12MonthRevenueUsd: Number(
+            (row as any)?.trailing12MonthRevenueUsd ??
+              (row as any)?.currentYearRevenueUsd ??
+              0,
+          ),
+          trailing12MonthTransactionCount: Number(
+            (row as any)?.trailing12MonthTransactionCount ??
+              (row as any)?.transactionCount ??
+              (row as any)?.currentYearOrderCount ??
+              0,
+          ),
+          currentYearRevenueUsd: Number((row as any)?.currentYearRevenueUsd || 0),
+          currentYearOrderCount: Number((row as any)?.currentYearOrderCount || 0),
+          revenueProgressRatio:
+            (row as any)?.revenueProgressRatio === null ||
+            (row as any)?.revenueProgressRatio === undefined ||
+            Number.isNaN(Number((row as any)?.revenueProgressRatio))
+              ? null
+              : Number((row as any).revenueProgressRatio),
+          transactionProgressRatio:
+            (row as any)?.transactionProgressRatio === null ||
+            (row as any)?.transactionProgressRatio === undefined ||
+            Number.isNaN(Number((row as any)?.transactionProgressRatio))
+              ? null
+              : Number((row as any).transactionProgressRatio),
+          warningLevel:
+            (row as any)?.warningLevel === "warning" ||
+            (row as any)?.warningLevel === "exceeded"
+              ? ((row as any).warningLevel as "warning" | "exceeded")
+              : "none",
+          warningReasons: Array.isArray((row as any)?.warningReasons)
+            ? (row as any).warningReasons
+                .map((value: unknown) => String(value || "").trim())
+                .filter(Boolean)
+            : [],
+          exceededReasons: Array.isArray((row as any)?.exceededReasons)
+            ? (row as any).exceededReasons
+                .map((value: unknown) => String(value || "").trim())
+                .filter(Boolean)
+            : [],
+          nexusTriggered: Boolean((row as any)?.nexusTriggered),
+          taxNexusApplied: Boolean((row as any)?.taxNexusApplied),
+          shouldCollectTax: Boolean((row as any)?.shouldCollectTax),
+        })),
+      );
+      setAdminTaxTrackingMeta({
+        trackingYear:
+          taxTrackingRaw?.trackingYear === null ||
+          taxTrackingRaw?.trackingYear === undefined ||
+          Number.isNaN(Number(taxTrackingRaw?.trackingYear))
+            ? null
+            : Number(taxTrackingRaw.trackingYear),
+        rollingWindowMonths:
+          taxTrackingRaw?.rollingWindowMonths === null ||
+          taxTrackingRaw?.rollingWindowMonths === undefined ||
+          Number.isNaN(Number(taxTrackingRaw?.rollingWindowMonths))
+            ? null
+            : Number(taxTrackingRaw.rollingWindowMonths),
+        periodStart:
+          typeof taxTrackingRaw?.periodStart === "string"
+            ? String(taxTrackingRaw.periodStart)
+            : null,
+        periodEnd:
+          typeof taxTrackingRaw?.periodEnd === "string"
+            ? String(taxTrackingRaw.periodEnd)
+            : null,
+        warningThresholdRatio:
+          taxTrackingRaw?.warningThresholdRatio === null ||
+          taxTrackingRaw?.warningThresholdRatio === undefined ||
+          Number.isNaN(Number(taxTrackingRaw?.warningThresholdRatio))
+            ? null
+            : Number(taxTrackingRaw.warningThresholdRatio),
+        summary:
+          taxTrackingRaw?.summary && typeof taxTrackingRaw.summary === "object"
+            ? {
+                trackedStateCount: Number(
+                  (taxTrackingRaw.summary as any)?.trackedStateCount || 0,
+                ),
+                warningCount: Number(
+                  (taxTrackingRaw.summary as any)?.warningCount || 0,
+                ),
+                exceededCount: Number(
+                  (taxTrackingRaw.summary as any)?.exceededCount || 0,
+                ),
+                shouldCollectTaxCount: Number(
+                  (taxTrackingRaw.summary as any)?.shouldCollectTaxCount || 0,
+                ),
+              }
+            : null,
+        lastSyncedAt:
+          typeof taxTrackingRaw?.lastSyncedAt === "string"
+            ? String(taxTrackingRaw.lastSyncedAt)
+            : null,
+        stale: Boolean(taxTrackingRaw?.stale),
+      });
       setAdminTaxesByStateBreakdownOpen(false);
       setAdminTaxesByStateMeta({
         periodStart: (response as any)?.periodStart ?? null,
@@ -9635,12 +9867,75 @@ function MainApp() {
       setAdminTaxesByStateError(message);
       setAdminTaxesByStateRows([]);
       setAdminTaxesByStateOrders([]);
+      setAdminTaxTrackingRows([]);
+      setAdminTaxTrackingMeta(null);
       setAdminTaxesByStateBreakdownOpen(false);
       setAdminTaxesByStateMeta(null);
     } finally {
       setAdminTaxesByStateLoading(false);
     }
   }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
+
+  const updateAdminTaxTrackingFiled = useCallback(
+    async (stateCode: string, nextValue: boolean) => {
+      if (!user || !isAdmin(user.role)) return;
+      const normalizedStateCode = String(stateCode || "").trim().toUpperCase();
+      if (!normalizedStateCode) return;
+
+      const previousValue =
+        adminTaxTrackingRows.find((row) => row.stateCode === normalizedStateCode)
+          ?.taxNexusApplied ?? false;
+
+      setAdminTaxTrackingSavingStates((current) => ({
+        ...current,
+        [normalizedStateCode]: true,
+      }));
+      setAdminTaxTrackingRows((current) =>
+        current.map((row) =>
+          row.stateCode === normalizedStateCode
+            ? { ...row, taxNexusApplied: nextValue }
+            : row,
+        ),
+      );
+
+      try {
+        const response = await ordersAPI.updateTaxNexusAppliedForAdmin(
+          normalizedStateCode,
+          nextValue,
+        );
+        const confirmedValue = Boolean(
+          (response as any)?.taxNexusApplied ?? nextValue,
+        );
+        setAdminTaxTrackingRows((current) =>
+          current.map((row) =>
+            row.stateCode === normalizedStateCode
+              ? { ...row, taxNexusApplied: confirmedValue }
+              : row,
+          ),
+        );
+      } catch (error: any) {
+        setAdminTaxTrackingRows((current) =>
+          current.map((row) =>
+            row.stateCode === normalizedStateCode
+              ? { ...row, taxNexusApplied: previousValue }
+              : row,
+          ),
+        );
+        const message =
+          typeof error?.message === "string"
+            ? error.message
+            : "Unable to update filing status.";
+        toast.error(message);
+      } finally {
+        setAdminTaxTrackingSavingStates((current) => {
+          const next = { ...current };
+          delete next[normalizedStateCode];
+          return next;
+        });
+      }
+    },
+    [adminTaxTrackingRows, user],
+  );
 
 	  const downloadAdminTaxesByStateCsv = useCallback(async () => {
 		    try {
@@ -14986,18 +15281,6 @@ function MainApp() {
 	    salesRepDoctorsById,
 	  ]);
 
-  const hasAuthToken = useCallback(() => {
-    try {
-      const sessionToken = sessionStorage.getItem("auth_token");
-      if (sessionToken && sessionToken.trim().length > 0) {
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-    return false;
-  }, []);
-
   const refreshReferralData = useCallback(
     async (options?: { showLoading?: boolean; force?: boolean }) => {
       if (!user) {
@@ -15659,6 +15942,52 @@ function MainApp() {
       }
     },
     [],
+  );
+
+  const formatThresholdRatio = useCallback((ratio?: number | null) => {
+    if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) {
+      return "—";
+    }
+    return `${Math.round(ratio * 100)}%`;
+  }, []);
+
+  const adminTaxTrackingNotifications = useMemo(
+    () => adminTaxTrackingRows.filter((row) => row.warningLevel !== "none"),
+    [adminTaxTrackingRows],
+  );
+
+  const adminTaxTrackingByState = useMemo(() => {
+    const map = new Map<string, (typeof adminTaxTrackingRows)[number]>();
+    adminTaxTrackingRows.forEach((row) => {
+      map.set(String(row.stateCode || row.state).toUpperCase(), row);
+    });
+    return map;
+  }, [adminTaxTrackingRows]);
+
+  const describeTaxTrackingReasons = useCallback(
+    (
+      reasons: string[],
+      row: {
+        economicNexusRevenueUsd: number | null;
+        economicNexusTransactions: number | null;
+      },
+    ) => {
+      if (!Array.isArray(reasons) || reasons.length === 0) {
+        return null;
+      }
+      return reasons
+        .map((reason) => {
+          if (reason === "revenue") {
+            return `Revenue vs ${formatCurrency(row.economicNexusRevenueUsd || 0)}`;
+          }
+          if (reason === "transactions") {
+            return `Orders vs ${Number(row.economicNexusTransactions || 0)}`;
+          }
+          return reason;
+        })
+        .join(" • ");
+    },
+    [formatCurrency],
   );
 
   // Always start with a clean auth slate on fresh loads
@@ -22591,51 +22920,416 @@ function MainApp() {
 			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">Loading taxes…</div>
 			                </div>
-			              ) : adminTaxesByStateRows.length === 0 ? (
-			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
-			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">No tax data for this period.</div>
-			                </div>
 			              ) : (
 				              <div className="grid grid-cols-1 gap-2">
+                        {adminTaxTrackingRows.length > 0 && (
+                          <>
+                            <div
+                              className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+                              role="region"
+                              aria-label="Tax nexus alerts"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3 border-b-4 border-slate-200/70 bg-white/70 px-3 py-2">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-900">
+                                    Tax Nexus Notifications
+                                  </div>
+                                  <div className="text-xs text-slate-600">
+                                    {adminTaxTrackingMeta?.periodStart &&
+                                    adminTaxTrackingMeta?.periodEnd
+                                      ? `Rolling 12-month progress from ${formatDate(
+                                          adminTaxTrackingMeta.periodStart,
+                                        )} to ${formatDate(
+                                          adminTaxTrackingMeta.periodEnd,
+                                        )}.`
+                                      : "Rolling 12-month progress against imported state thresholds."}
+                                  </div>
+                                  {adminTaxTrackingMeta?.lastSyncedAt && (
+                                    <div className="text-[11px] text-slate-500">
+                                      Synced {formatDateTime(adminTaxTrackingMeta.lastSyncedAt)}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {adminTaxTrackingMeta?.stale && (
+                                    <Badge
+                                      variant="outline"
+                                      className="border-amber-200 bg-amber-50 text-amber-700"
+                                    >
+                                      Cached data
+                                    </Badge>
+                                  )}
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-200 bg-amber-50 text-amber-700"
+                                  >
+                                    {Number(
+                                      adminTaxTrackingMeta?.summary?.warningCount || 0,
+                                    )}{" "}
+                                    warning
+                                    {Number(
+                                      adminTaxTrackingMeta?.summary?.warningCount || 0,
+                                    ) === 1
+                                      ? ""
+                                      : "s"}
+                                  </Badge>
+                                  <Badge
+                                    variant="outline"
+                                    className="border-rose-200 bg-rose-50 text-rose-700"
+                                  >
+                                    {Number(
+                                      adminTaxTrackingMeta?.summary?.exceededCount || 0,
+                                    )}{" "}
+                                    exceeded
+                                  </Badge>
+                                  <Badge
+                                    variant="outline"
+                                    className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  >
+                                    {Number(
+                                      adminTaxTrackingMeta?.summary?.shouldCollectTaxCount ||
+                                        0,
+                                    )}{" "}
+                                    collect tax
+                                  </Badge>
+                                </div>
+                              </div>
+                              {adminTaxTrackingNotifications.length > 0 ? (
+                                <ul className="max-h-[220px] overflow-y-auto">
+                                  {adminTaxTrackingNotifications.map((row) => {
+                                    const activeReasons =
+                                      row.warningLevel === "exceeded"
+                                        ? row.exceededReasons
+                                        : row.warningReasons;
+                                    const revenueActive = activeReasons.includes("revenue");
+                                    const transactionActive =
+                                      activeReasons.includes("transactions");
+                                    const statusLabel =
+                                      row.warningLevel === "exceeded"
+                                        ? row.shouldCollectTax
+                                          ? "Collect tax"
+                                          : "Threshold exceeded"
+                                        : "90% warning";
+                                    return (
+                                      <li
+                                        key={`nexus-alert-${row.stateCode}`}
+                                        className="flex items-start justify-between gap-3 border-b border-slate-200/70 px-3 py-2 last:border-b-0"
+                                      >
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <div className="text-sm font-semibold text-slate-900">
+                                              {row.stateName}
+                                            </div>
+                                            <div className="text-xs text-slate-500">
+                                              {row.stateCode}
+                                            </div>
+                                          </div>
+                                          <div className="text-xs text-slate-600">
+                                            {[
+                                              revenueActive &&
+                                                `Revenue ${formatThresholdRatio(
+                                                  row.revenueProgressRatio,
+                                                )} of ${formatCurrency(
+                                                  row.economicNexusRevenueUsd || 0,
+                                                )}`,
+                                              transactionActive &&
+                                                `Orders ${formatThresholdRatio(
+                                                  row.transactionProgressRatio,
+                                                )} of ${Number(
+                                                  row.economicNexusTransactions || 0,
+                                                )}`,
+                                            ]
+                                              .filter(Boolean)
+                                              .join(" • ") || "Threshold alert"}
+                                          </div>
+                                          {row.notes && (
+                                            <div className="text-[11px] text-slate-500">
+                                              {row.notes}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <Badge
+                                          variant="outline"
+                                          className={clsx(
+                                            "shrink-0",
+                                            row.warningLevel === "exceeded"
+                                              ? row.shouldCollectTax
+                                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                                : "border-amber-200 bg-amber-50 text-amber-700"
+                                              : "border-amber-200 bg-amber-50 text-amber-700",
+                                          )}
+                                        >
+                                          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                          {statusLabel}
+                                        </Badge>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : (
+                                <div className="px-4 py-3 text-sm text-slate-500">
+                                  No states are currently at{" "}
+                                  {formatThresholdRatio(
+                                    adminTaxTrackingMeta?.warningThresholdRatio ?? 0.9,
+                                  )}{" "}
+                                  of a nexus threshold.
+                                </div>
+                              )}
+                            </div>
+
+                            <div
+                              className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+                              role="region"
+                              aria-label="Tax nexus tracker"
+                            >
+                              <div className="w-full" style={{ minWidth: 1220 }}>
+                                <div className="w-max">
+                                  <div
+                                    className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+                                    style={{
+                                      gridTemplateColumns:
+                                        "minmax(180px,1.2fr) minmax(220px,1.35fr) max-content max-content max-content max-content max-content",
+                                    }}
+                                  >
+                                    <div className="whitespace-nowrap">State</div>
+                                    <div className="whitespace-nowrap">Nexus</div>
+                                    <div className="whitespace-nowrap text-right">
+                                      Filed
+                                    </div>
+                                    <div className="whitespace-nowrap text-right">
+                                      Revenue 12mo
+                                    </div>
+                                    <div className="whitespace-nowrap text-right">
+                                      Revenue Threshold
+                                    </div>
+                                    <div className="whitespace-nowrap text-right">
+                                      Orders 12mo
+                                    </div>
+                                    <div className="whitespace-nowrap text-right">
+                                      Order Threshold
+                                    </div>
+                                  </div>
+                                  <ul className="w-full border-x border-b border-slate-200/70 max-h-[360px] overflow-y-auto">
+                                    {adminTaxTrackingRows.map((row) => {
+                                      const activeReasons =
+                                        row.warningLevel === "exceeded"
+                                          ? row.exceededReasons
+                                          : row.warningReasons;
+                                      const showNexusBadge =
+                                        row.warningLevel === "warning" ||
+                                        row.warningLevel === "exceeded";
+                                      const badgeLabel =
+                                        row.warningLevel === "exceeded"
+                                          ? row.shouldCollectTax
+                                            ? "Collect tax"
+                                            : "Exceeded"
+                                          : row.warningLevel === "warning"
+                                            ? "90% warning"
+                                            : null;
+                                      const nexusReasons =
+                                        describeTaxTrackingReasons(activeReasons, row);
+                                      const savingFiledState =
+                                        adminTaxTrackingSavingStates[row.stateCode] ===
+                                        true;
+                                      return (
+                                        <li
+                                          key={`tax-tracker-${row.stateCode}`}
+                                          className="grid w-full items-center gap-2 border-b border-slate-200/70 px-2 py-1.5 last:border-b-0"
+                                          style={{
+                                            gridTemplateColumns:
+                                              "minmax(180px,1.2fr) minmax(220px,1.35fr) max-content max-content max-content max-content max-content",
+                                          }}
+                                        >
+                                          <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-slate-900 truncate">
+                                              {row.stateName}
+                                            </div>
+                                            <div className="text-xs text-slate-500 truncate">
+                                              {row.stateCode}
+                                              {row.notes ? ` • ${row.notes}` : ""}
+                                            </div>
+                                          </div>
+                                          <div className="min-w-0">
+                                            {showNexusBadge && badgeLabel && (
+                                              <Badge
+                                                variant="outline"
+                                                className={clsx(
+                                                  "mb-1",
+                                                  row.warningLevel === "exceeded"
+                                                    ? row.shouldCollectTax
+                                                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                                                      : "border-amber-200 bg-amber-50 text-amber-700"
+                                                    : "border-amber-200 bg-amber-50 text-amber-700",
+                                                )}
+                                              >
+                                                {badgeLabel}
+                                              </Badge>
+                                            )}
+                                            {showNexusBadge && nexusReasons && (
+                                              <div className="text-xs text-slate-600 truncate">
+                                                {nexusReasons}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="text-right whitespace-nowrap">
+                                            <button
+                                              type="button"
+                                              disabled={savingFiledState}
+                                              onClick={() =>
+                                                void updateAdminTaxTrackingFiled(
+                                                  row.stateCode,
+                                                  !row.taxNexusApplied,
+                                                )
+                                              }
+                                              className={clsx(
+                                                "inline-flex min-w-[2.25rem] items-center justify-center rounded-md border px-2 py-0.5 text-sm font-semibold tabular-nums transition-colors",
+                                                savingFiledState
+                                                  ? "cursor-wait border-slate-200 bg-slate-100 text-slate-500"
+                                                  : row.taxNexusApplied
+                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                                              )}
+                                              aria-label={`Mark ${row.stateName} tax nexus filing as ${
+                                                row.taxNexusApplied ? "not filed" : "filed"
+                                              }`}
+                                              aria-pressed={row.taxNexusApplied}
+                                              title="Toggle whether nexus registration has been filed in this state"
+                                            >
+                                              {savingFiledState
+                                                ? "..."
+                                                : row.taxNexusApplied
+                                                  ? 1
+                                                  : 0}
+                                            </button>
+                                          </div>
+                                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                                            {formatCurrency(
+                                              row.trailing12MonthRevenueUsd,
+                                            )}
+                                          </div>
+                                          <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+                                            {row.economicNexusRevenueUsd !== null
+                                              ? formatCurrency(
+                                                  row.economicNexusRevenueUsd,
+                                                )
+                                              : "—"}
+                                          </div>
+                                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                                            {Number(
+                                              row.trailing12MonthTransactionCount ||
+                                                0,
+                                            )}
+                                          </div>
+                                          <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+                                            {row.economicNexusTransactions !== null
+                                              ? Number(row.economicNexusTransactions || 0)
+                                              : "—"}
+                                          </div>
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        {adminTaxesByStateRows.length === 0 ? (
+                          <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
+                            <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">
+                              No tax data for this period.
+                            </div>
+                          </div>
+                        ) : (
 						              <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                    <div className="w-full" style={{ minWidth: 920 }}>
 			                      {adminTaxesByStateMeta?.totals && (
-                        <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-			                          <span>
-			                            Orders:{" "}
-			                            {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}
-			                          </span>
-			                          <span>
-			                            Tax:{" "}
-			                            {formatCurrency(
-			                              Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0),
-			                            )}
-			                          </span>
+                        <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+			                          <div className="min-w-0">
+                                    <div>Selected Period Tax Totals</div>
+                                    <div className="text-xs font-normal text-slate-600">
+                                      Destination-state tax totals for the timeframe above.
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-3">
+			                            <span>
+			                              Orders:{" "}
+			                              {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}
+			                            </span>
+			                            <span>
+			                              Tax:{" "}
+			                              {formatCurrency(
+			                                Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0),
+			                              )}
+			                            </span>
+                                  </div>
 			                        </div>
 			                      )}
 			                      <div className="w-max">
 			                        <div
 			                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 			                          style={{
-			                            gridTemplateColumns: "minmax(120px,1fr) max-content max-content",
+			                            gridTemplateColumns:
+                                        "minmax(120px,1fr) minmax(140px,max-content) max-content max-content",
 			                          }}
 			                        >
 			                          <div className="whitespace-nowrap">State</div>
+                                    <div className="whitespace-nowrap">Nexus</div>
 			                          <div className="whitespace-nowrap text-right">Orders</div>
 			                          <div className="whitespace-nowrap text-right">Tax</div>
 			                        </div>
 			                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-			                          {adminTaxesByStateRows.map((row) => (
+			                          {adminTaxesByStateRows.map((row) => {
+                                      const nexus = adminTaxTrackingByState.get(
+                                        String(row.stateCode || row.state || "UNKNOWN").toUpperCase(),
+                                      );
+                                      const showNexusBadge = Boolean(
+                                        nexus &&
+                                          (nexus.warningLevel === "warning" ||
+                                            nexus.warningLevel === "exceeded"),
+                                      );
+                                      const nexusLabel = nexus
+                                        ? nexus.warningLevel === "exceeded"
+                                          ? nexus.shouldCollectTax
+                                            ? "Collect tax"
+                                            : "Exceeded"
+                                          : nexus.warningLevel === "warning"
+                                            ? "90% warning"
+                                            : null
+                                        : null;
+                                      return (
 			                            <li
-			                              key={row.state}
+			                              key={row.stateCode || row.state}
 			                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
 			                              style={{
-			                                gridTemplateColumns: "minmax(120px,1fr) max-content max-content",
+			                                gridTemplateColumns:
+                                              "minmax(120px,1fr) minmax(140px,max-content) max-content max-content",
 			                              }}
 			                            >
-			                            <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
-			                              {row.state}
-			                            </div>
+			                            <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-slate-900 truncate">
+                                          {row.stateName || row.state}
+                                        </div>
+                                        <div className="text-xs text-slate-500 truncate">
+                                          {row.stateCode || row.state}
+                                        </div>
+                                      </div>
+                                      <div className="min-w-0">
+                                        {showNexusBadge && nexusLabel && (
+                                          <Badge
+                                            variant="outline"
+                                            className={clsx(
+                                              nexus?.warningLevel === "exceeded"
+                                                ? nexus.shouldCollectTax
+                                                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                                                  : "border-amber-200 bg-amber-50 text-amber-700"
+                                                : "border-amber-200 bg-amber-50 text-amber-700",
+                                            )}
+                                          >
+                                            {nexusLabel}
+                                          </Badge>
+                                        )}
+                                      </div>
 			                            <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
 			                              {Number(row.orderCount || 0)}
 			                            </div>
@@ -22643,11 +23337,13 @@ function MainApp() {
 			                              {formatCurrency(Number(row.taxTotal || 0))}
 			                            </div>
 			                            </li>
-			                          ))}
+                                      );
+                                    })}
 			                        </ul>
 			                      </div>
 			                    </div>
 					              </div>
+                        )}
 
 				                  {adminTaxesByStateOrders.length > 0 && (
 						                    <details
@@ -22690,7 +23386,7 @@ function MainApp() {
 					                                  {line.orderNumber}
 					                                </div>
 					                                <div className="text-xs text-slate-600 truncate">
-					                                  State: {line.state}
+					                                  State: {line.stateName || line.state}
 					                                </div>
 					                              </div>
 					                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">

@@ -126,6 +126,9 @@ const syncDirectShippingToSql = (user) => {
     isTaxExempt: user.isTaxExempt ? 1 : 0,
     taxExemptSource: user.taxExemptSource || null,
     taxExemptReason: user.taxExemptReason || null,
+    resellerPermitFilePath: user.resellerPermitFilePath || null,
+    resellerPermitFileName: user.resellerPermitFileName || null,
+    resellerPermitUploadedAt: user.resellerPermitUploadedAt || null,
     devCommission: user.devCommission ? 1 : 0,
     receiveClientOrderUpdateEmails: user.receiveClientOrderUpdateEmails ? 1 : 0,
     handDelivered: user.handDelivered ? 1 : 0,
@@ -172,6 +175,9 @@ const syncDirectShippingToSql = (user) => {
           is_tax_exempt,
           tax_exempt_source,
           tax_exempt_reason,
+          reseller_permit_file_path,
+          reseller_permit_file_name,
+          reseller_permit_uploaded_at,
           dev_commission,
           receive_client_order_update_emails,
           hand_delivered,
@@ -200,6 +206,9 @@ const syncDirectShippingToSql = (user) => {
           :isTaxExempt,
           :taxExemptSource,
           :taxExemptReason,
+          :resellerPermitFilePath,
+          :resellerPermitFileName,
+          :resellerPermitUploadedAt,
           :devCommission,
           :receiveClientOrderUpdateEmails,
           :handDelivered,
@@ -228,6 +237,9 @@ const syncDirectShippingToSql = (user) => {
           is_tax_exempt = VALUES(is_tax_exempt),
           tax_exempt_source = VALUES(tax_exempt_source),
           tax_exempt_reason = VALUES(tax_exempt_reason),
+          reseller_permit_file_path = VALUES(reseller_permit_file_path),
+          reseller_permit_file_name = VALUES(reseller_permit_file_name),
+          reseller_permit_uploaded_at = VALUES(reseller_permit_uploaded_at),
           dev_commission = VALUES(dev_commission),
           receive_client_order_update_emails = VALUES(receive_client_order_update_emails),
           hand_delivered = VALUES(hand_delivered),
@@ -334,6 +346,21 @@ const ensureUserDefaults = (user) => {
   }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'taxExemptReason')) {
     normalized.taxExemptReason = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitFilePath')) {
+    normalized.resellerPermitFilePath = null;
+  } else {
+    normalized.resellerPermitFilePath = normalizeOptionalString(normalized.resellerPermitFilePath);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitFileName')) {
+    normalized.resellerPermitFileName = null;
+  } else {
+    normalized.resellerPermitFileName = normalizeOptionalString(normalized.resellerPermitFileName);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitUploadedAt')) {
+    normalized.resellerPermitUploadedAt = null;
+  } else {
+    normalized.resellerPermitUploadedAt = normalizeOptionalString(normalized.resellerPermitUploadedAt);
   }
   if (!Array.isArray(normalized.passkeys)) {
     normalized.passkeys = [];

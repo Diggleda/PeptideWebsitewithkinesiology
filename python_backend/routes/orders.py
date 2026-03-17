@@ -12,7 +12,7 @@ from ..middleware.auth import require_auth
 from ..integrations import ship_station
 from ..integrations import woo_commerce
 from ..repositories import order_repository, patient_links_repository, user_repository
-from ..services import order_service, delegation_service, usage_tracking_service
+from ..services import order_service, delegation_service, usage_tracking_service, tax_tracking_service
 from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action, require_admin as _require_admin_user
 
@@ -456,6 +456,50 @@ def admin_taxes_by_state():
         period_start = request.args.get("periodStart") or request.args.get("start") or None
         period_end = request.args.get("periodEnd") or request.args.get("end") or None
         return order_service.get_taxes_by_state_for_admin(period_start=period_start, period_end=period_end)
+
+    return handle_action(action)
+
+
+@blueprint.patch("/admin/tax-tracking/<state_code>")
+@require_auth
+def update_admin_tax_tracking(state_code: str):
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+
+        payload = request.get_json(force=True, silent=True) or {}
+        if "taxNexusApplied" in payload:
+            raw_value = payload.get("taxNexusApplied")
+        elif "filed" in payload:
+            raw_value = payload.get("filed")
+        elif "taxFiled" in payload:
+            raw_value = payload.get("taxFiled")
+        else:
+            err = ValueError("taxNexusApplied is required")
+            setattr(err, "status", 400)
+            raise err
+
+        if isinstance(raw_value, bool):
+            tax_nexus_applied = raw_value
+        elif isinstance(raw_value, (int, float)):
+            tax_nexus_applied = raw_value != 0
+        else:
+            tax_nexus_applied = str(raw_value or "").strip().lower() in ("1", "true", "yes", "y", "on")
+
+        try:
+            updated = tax_tracking_service.set_tax_nexus_applied(state_code, tax_nexus_applied)
+        except ValueError as exc:
+            setattr(exc, "status", 400)
+            raise
+        except RuntimeError as exc:
+            setattr(exc, "status", 503)
+            raise
+
+        order_service.invalidate_admin_taxes_by_state_cache()
+        return updated
 
     return handle_action(action)
 

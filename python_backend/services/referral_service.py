@@ -1961,6 +1961,12 @@ def _sanitize_user_for_sales_prospect(user: Optional[Dict]) -> Optional[Dict]:
         "officeState": user.get("officeState") or user.get("office_state"),
         "officePostalCode": user.get("officePostalCode") or user.get("office_postal_code"),
         "officeCountry": user.get("officeCountry") or user.get("office_country"),
+        "isTaxExempt": bool(user.get("isTaxExempt") or user.get("is_tax_exempt")),
+        "taxExemptSource": user.get("taxExemptSource") or user.get("tax_exempt_source"),
+        "taxExemptReason": user.get("taxExemptReason") or user.get("tax_exempt_reason"),
+        "resellerPermitFilePath": user.get("resellerPermitFilePath") or user.get("reseller_permit_file_path"),
+        "resellerPermitFileName": user.get("resellerPermitFileName") or user.get("reseller_permit_file_name"),
+        "resellerPermitUploadedAt": user.get("resellerPermitUploadedAt") or user.get("reseller_permit_uploaded_at"),
     }
 
 
@@ -1980,6 +1986,45 @@ def get_user_for_sales_prospect(prospect: Optional[Dict]) -> Optional[Dict]:
     if email:
         return _sanitize_user_for_sales_prospect(user_repository.find_by_email(str(email)))
     return None
+
+
+def _sync_reseller_permit_to_linked_user(
+    prospect: Optional[Dict],
+    *,
+    reseller_permit_file_path: Optional[str],
+    reseller_permit_file_name: Optional[str],
+    reseller_permit_uploaded_at: Optional[str],
+    clear: bool = False,
+) -> Optional[Dict]:
+    linked_user = get_user_for_sales_prospect(prospect)
+    if not linked_user or not linked_user.get("id"):
+        return None
+
+    current_user = user_repository.find_by_id(str(linked_user.get("id")))
+    if not current_user:
+        return None
+
+    update_payload: Dict[str, object] = {
+        "id": current_user.get("id"),
+        "resellerPermitFilePath": reseller_permit_file_path,
+        "resellerPermitFileName": reseller_permit_file_name,
+        "resellerPermitUploadedAt": reseller_permit_uploaded_at,
+    }
+    if clear:
+        if str(current_user.get("taxExemptSource") or "").strip().upper() == "RESELLER_PERMIT":
+            update_payload["isTaxExempt"] = False
+            update_payload["taxExemptSource"] = None
+            update_payload["taxExemptReason"] = None
+    else:
+        update_payload["isTaxExempt"] = True
+        if current_user.get("isTaxExempt") and current_user.get("taxExemptSource"):
+            update_payload["taxExemptSource"] = current_user.get("taxExemptSource")
+            update_payload["taxExemptReason"] = current_user.get("taxExemptReason")
+        else:
+            update_payload["taxExemptSource"] = "RESELLER_PERMIT"
+            update_payload["taxExemptReason"] = "Reseller permit on file"
+
+    return user_repository.update(update_payload)
 
 def upsert_sales_prospect_for_sales_rep(
     sales_rep_id: str,
@@ -2111,7 +2156,22 @@ def upsert_sales_prospect_for_sales_rep(
                     user_repository.update({"id": user_target.get("id"), **address_updates})
         except Exception:
             pass
-    return sales_prospect_repository.upsert(payload)
+    saved = sales_prospect_repository.upsert(payload)
+    if any(
+        key in payload
+        for key in ("resellerPermitFilePath", "resellerPermitFileName", "resellerPermitUploadedAt")
+    ) and not payload.get("resellerPermitFilePath"):
+        try:
+            _sync_reseller_permit_to_linked_user(
+                saved,
+                reseller_permit_file_path=None,
+                reseller_permit_file_name=None,
+                reseller_permit_uploaded_at=None,
+                clear=True,
+            )
+        except Exception:
+            pass
+    return saved
 
 
 def upload_reseller_permit_for_sales_rep(
@@ -2152,7 +2212,7 @@ def upload_reseller_permit_for_sales_rep(
 
     base = upsert_sales_prospect_for_sales_rep(rep_id, candidate)
     _delete_sales_prospect_reseller_permit_file(base)
-    return sales_prospect_repository.upsert(
+    saved = sales_prospect_repository.upsert(
         {
             **(base or {}),
             "id": str((base or {}).get("id") or candidate),
@@ -2163,6 +2223,16 @@ def upload_reseller_permit_for_sales_rep(
             "resellerPermitUploadedAt": uploaded_at,
         }
     )
+    try:
+        _sync_reseller_permit_to_linked_user(
+            saved,
+            reseller_permit_file_path=stored_relative,
+            reseller_permit_file_name=safe_name,
+            reseller_permit_uploaded_at=uploaded_at,
+        )
+    except Exception:
+        pass
+    return saved
 
 
 def delete_reseller_permit_for_sales_rep(sales_rep_id: str, identifier: str) -> Dict:
@@ -2185,6 +2255,16 @@ def delete_reseller_permit_for_sales_rep(sales_rep_id: str, identifier: str) -> 
             "resellerPermitUploadedAt": None,
         }
     )
+    try:
+        _sync_reseller_permit_to_linked_user(
+            updated,
+            reseller_permit_file_path=None,
+            reseller_permit_file_name=None,
+            reseller_permit_uploaded_at=None,
+            clear=True,
+        )
+    except Exception:
+        pass
     return updated
 
 

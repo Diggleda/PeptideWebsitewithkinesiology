@@ -26,6 +26,8 @@ router.get('/sales-rep-summary', authenticate, orderController.getSalesByRepForA
 router.get('/admin/sales-rep-summary', authenticate, orderController.getSalesByRepForAdmin);
 router.get('/on-hold', authenticate, orderController.getOnHoldOrdersForAdmin);
 router.get('/admin/on-hold', authenticate, orderController.getOnHoldOrdersForAdmin);
+router.get('/admin/taxes-by-state', authenticate, orderController.getTaxesByStateForAdmin);
+router.patch('/admin/tax-tracking/:stateCode', authenticate, orderController.updateTaxTrackingStateForAdmin);
 router.get(
   '/admin/product-sales-commission',
   shouldServeFakeAdminReports() ? orderController.getProductSalesCommissionForAdmin : authenticate,

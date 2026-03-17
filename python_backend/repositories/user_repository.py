@@ -151,6 +151,20 @@ def _ensure_defaults(user: Dict) -> Dict:
     if verification is not None and not isinstance(verification, dict):
         verification = None
     normalized["npiVerification"] = verification
+    normalized["isTaxExempt"] = _normalize_bool(
+        normalized.get("isTaxExempt") if "isTaxExempt" in normalized else normalized.get("is_tax_exempt")
+    )
+    normalized["taxExemptSource"] = normalized.get("taxExemptSource") or normalized.get("tax_exempt_source") or None
+    normalized["taxExemptReason"] = normalized.get("taxExemptReason") or normalized.get("tax_exempt_reason") or None
+    normalized["resellerPermitFilePath"] = (
+        normalized.get("resellerPermitFilePath") or normalized.get("reseller_permit_file_path") or None
+    )
+    normalized["resellerPermitFileName"] = (
+        normalized.get("resellerPermitFileName") or normalized.get("reseller_permit_file_name") or None
+    )
+    normalized["resellerPermitUploadedAt"] = (
+        normalized.get("resellerPermitUploadedAt") or normalized.get("reseller_permit_uploaded_at") or None
+    )
     if "devCommission" in normalized:
         normalized["devCommission"] = _normalize_bool(normalized.get("devCommission"))
     else:
@@ -573,7 +587,9 @@ def _mysql_insert(user: Dict) -> Dict:
             receive_client_order_update_emails,
             markup_percent,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
-            npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
+            npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error,
+            is_tax_exempt, tax_exempt_source, tax_exempt_reason,
+            reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(is_online)s, %(sales_rep_id)s,
             %(referrer_doctor_id)s, %(hand_delivered)s, %(session_id)s, %(last_seen_at)s, %(last_interaction_at)s,
@@ -583,7 +599,9 @@ def _mysql_insert(user: Dict) -> Dict:
             %(profile_image_url)s, %(delegate_logo_url)s, %(zelle_contact)s, %(cart)s, %(downloads)s, %(delegate_secondary_color)s, %(delegate_links_enabled)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(receive_client_order_update_emails)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
-            %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
+            %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s,
+            %(is_tax_exempt)s, %(tax_exempt_source)s, %(tax_exempt_reason)s,
+            %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s
         )
         ON DUPLICATE KEY UPDATE
             name = VALUES(name),
@@ -630,7 +648,13 @@ def _mysql_insert(user: Dict) -> Dict:
             npi_last_verified_at = VALUES(npi_last_verified_at),
             npi_verification = VALUES(npi_verification),
             npi_status = VALUES(npi_status),
-            npi_check_error = VALUES(npi_check_error)
+            npi_check_error = VALUES(npi_check_error),
+            is_tax_exempt = VALUES(is_tax_exempt),
+            tax_exempt_source = VALUES(tax_exempt_source),
+            tax_exempt_reason = VALUES(tax_exempt_reason),
+            reseller_permit_file_path = VALUES(reseller_permit_file_path),
+            reseller_permit_file_name = VALUES(reseller_permit_file_name),
+            reseller_permit_uploaded_at = VALUES(reseller_permit_uploaded_at)
         """,
         params,
     )
@@ -692,7 +716,13 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             npi_last_verified_at = %(npi_last_verified_at)s,
             npi_verification = %(npi_verification)s,
             npi_status = %(npi_status)s,
-            npi_check_error = %(npi_check_error)s
+            npi_check_error = %(npi_check_error)s,
+            is_tax_exempt = %(is_tax_exempt)s,
+            tax_exempt_source = %(tax_exempt_source)s,
+            tax_exempt_reason = %(tax_exempt_reason)s,
+            reseller_permit_file_path = %(reseller_permit_file_path)s,
+            reseller_permit_file_name = %(reseller_permit_file_name)s,
+            reseller_permit_uploaded_at = %(reseller_permit_uploaded_at)s
         WHERE id = %(id)s
         """,
         params,
@@ -771,6 +801,12 @@ def _row_to_user(row: Dict) -> Dict:
             "npiVerification": verification,
             "npiStatus": row.get("npi_status"),
             "npiCheckError": row.get("npi_check_error"),
+            "isTaxExempt": bool(row.get("is_tax_exempt")),
+            "taxExemptSource": row.get("tax_exempt_source"),
+            "taxExemptReason": row.get("tax_exempt_reason"),
+            "resellerPermitFilePath": row.get("reseller_permit_file_path"),
+            "resellerPermitFileName": row.get("reseller_permit_file_name"),
+            "resellerPermitUploadedAt": fmt_datetime(row.get("reseller_permit_uploaded_at")),
             "devCommission": row.get("dev_commission"),
             "receiveClientOrderUpdateEmails": row.get("receive_client_order_update_emails"),
         }
@@ -834,6 +870,12 @@ def _to_db_params(user: Dict) -> Dict:
         "npi_verification": json.dumps(user.get("npiVerification")) if user.get("npiVerification") else None,
         "npi_status": user.get("npiStatus"),
         "npi_check_error": user.get("npiCheckError"),
+        "is_tax_exempt": 1 if _normalize_bool(user.get("isTaxExempt")) else 0,
+        "tax_exempt_source": user.get("taxExemptSource"),
+        "tax_exempt_reason": user.get("taxExemptReason"),
+        "reseller_permit_file_path": user.get("resellerPermitFilePath"),
+        "reseller_permit_file_name": user.get("resellerPermitFileName"),
+        "reseller_permit_uploaded_at": parse_dt(user.get("resellerPermitUploadedAt")),
     }
 
 

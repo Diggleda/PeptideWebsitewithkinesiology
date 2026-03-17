@@ -7,7 +7,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 import json
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from ..utils.http import service_error as _service_error
@@ -25,6 +25,7 @@ from .. import storage
 from . import referral_service
 from . import settings_service
 from . import discount_code_service
+from . import tax_tracking_service
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,13 @@ _ADMIN_PRODUCTS_COMMISSION_TTL_SECONDS = max(5, min(_ADMIN_PRODUCTS_COMMISSION_T
 _admin_products_commission_lock = threading.Lock()
 _admin_products_commission_inflight: Optional[threading.Event] = None
 _admin_products_commission_cache: Dict[str, object] = {"data": None, "key": None, "expiresAtMs": 0}
+
+
+def invalidate_admin_taxes_by_state_cache() -> None:
+    with _admin_taxes_by_state_lock:
+        _admin_taxes_by_state_cache["data"] = None
+        _admin_taxes_by_state_cache["key"] = None
+        _admin_taxes_by_state_cache["expiresAtMs"] = 0
 
 
 def _get_report_timezone() -> timezone:
@@ -315,9 +323,40 @@ def _is_doctor_role(role: Optional[str]) -> bool:
     return normalized in ("doctor", "test_doctor")
 
 
+def _sync_user_permit_from_source(user: Optional[Dict], permit_source: Optional[Dict]) -> Optional[Dict]:
+    if not isinstance(user, dict) or not user.get("id"):
+        return user
+    if not isinstance(permit_source, dict) or not str(permit_source.get("resellerPermitFilePath") or "").strip():
+        return user
+    next_source = (
+        user.get("taxExemptSource")
+        if bool(user.get("isTaxExempt")) and str(user.get("taxExemptSource") or "").strip()
+        else "RESELLER_PERMIT"
+    )
+    next_reason = (
+        user.get("taxExemptReason")
+        if bool(user.get("isTaxExempt")) and str(user.get("taxExemptReason") or "").strip()
+        else "Reseller permit on file"
+    )
+    return user_repository.update(
+        {
+            "id": user.get("id"),
+            "resellerPermitFilePath": permit_source.get("resellerPermitFilePath"),
+            "resellerPermitFileName": permit_source.get("resellerPermitFileName"),
+            "resellerPermitUploadedAt": permit_source.get("resellerPermitUploadedAt"),
+            "isTaxExempt": True,
+            "taxExemptSource": next_source,
+            "taxExemptReason": next_reason,
+        }
+    ) or user
+
+
 def _has_reseller_permit_on_file(user: Optional[Dict]) -> bool:
     if not isinstance(user, dict):
         return False
+    direct_path = str(user.get("resellerPermitFilePath") or "").strip()
+    if direct_path:
+        return True
     doctor_id = str(user.get("id") or "").strip()
     email = _normalize_email(user.get("email"))
     if not doctor_id and not email:
@@ -337,6 +376,14 @@ def _has_reseller_permit_on_file(user: Optional[Dict]) -> bool:
             continue
         file_path = str(prospect.get("resellerPermitFilePath") or "").strip()
         if file_path:
+            _sync_user_permit_from_source(
+                user,
+                {
+                    "resellerPermitFilePath": file_path,
+                    "resellerPermitFileName": prospect.get("resellerPermitFileName"),
+                    "resellerPermitUploadedAt": prospect.get("resellerPermitUploadedAt"),
+                },
+            )
             return True
     return False
 
@@ -347,6 +394,98 @@ def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
     if bool(user.get("isTaxExempt")):
         return True
     return _has_reseller_permit_on_file(user)
+
+
+def _resolve_woo_tax_class_for_lookup(value: object) -> Optional[str]:
+    normalized = str(value or "").strip().lower()
+    if normalized in ("", "standard", "none"):
+        return None
+    return normalized
+
+
+def _calculate_tax_from_rates(rates: object, items_subtotal: float, shipping_total: float) -> float:
+    if not isinstance(rates, list) or not rates:
+        return 0.0
+    sorted_rates = sorted(
+        rates,
+        key=lambda rate: int(_safe_float((rate or {}).get("priority"), 0)),
+    )
+    accumulated_tax = 0.0
+    for rate in sorted_rates:
+        if not isinstance(rate, dict):
+            continue
+        percentage = _safe_float(rate.get("rate"), 0.0)
+        if percentage <= 0:
+            continue
+        multiplier = percentage / 100.0
+        compound = bool(rate.get("compound"))
+        shipping_applies = rate.get("shipping") in (True, 1, "1", "yes", "true")
+        tax_base = float(items_subtotal) + accumulated_tax if compound else float(items_subtotal)
+        line_tax = tax_base * multiplier
+        shipping_tax = float(shipping_total) * multiplier if shipping_applies else 0.0
+        accumulated_tax += line_tax + shipping_tax
+    return accumulated_tax
+
+
+def _fetch_woo_tax_rates_for_checkout(
+    *,
+    country: str,
+    state: str,
+    postcode: str,
+    city: str,
+    tax_class: Optional[str],
+) -> List[Dict[str, Any]]:
+    if not woo_commerce.is_configured():
+        return []
+    try:
+        payload, _meta = woo_commerce.fetch_catalog_proxy(
+            "taxes",
+            {
+                "country": country or None,
+                "state": state or None,
+                "postcode": postcode or None,
+                "city": city or None,
+                "class": tax_class or None,
+                "per_page": 100,
+            },
+        )
+        return payload if isinstance(payload, list) else []
+    except Exception:
+        logger.warning("Woo tax rate lookup failed during checkout", exc_info=True)
+        raise
+
+
+def _calculate_checkout_tax(
+    *,
+    items_subtotal: float,
+    shipping_total: float,
+    shipping_address: Optional[Dict],
+) -> Tuple[float, str, Optional[Dict[str, Any]]]:
+    address = shipping_address or {}
+    country = str(address.get("country") or "US").strip().upper()
+    if country != "US":
+        return 0.0, "non_us", None
+
+    state_profile = tax_tracking_service.get_state_tax_profile(
+        address.get("state") or address.get("stateCode")
+    )
+    if not bool(state_profile.get("nexusTriggered")):
+        return 0.0, "no_nexus", state_profile
+    if not bool(state_profile.get("collectTaxDefault")):
+        return 0.0, "state_no_collection", state_profile
+    if not bool(state_profile.get("taxCollectionRequiredAfterNexus")):
+        return 0.0, "state_not_collectable_after_nexus", state_profile
+    if not bool(state_profile.get("researchReagentTaxable", True)):
+        return 0.0, "product_not_taxable", state_profile
+
+    try:
+        buffered_rate = float(state_profile.get("bufferedTaxRate"))
+    except Exception:
+        buffered_rate = 0.0
+    if buffered_rate <= 0:
+        return 0.0, "buffered_rate_missing", state_profile
+    tax_total = round(max(0.0, float(items_subtotal or 0.0) * buffered_rate), 2)
+    return tax_total, "buffered_tax_rate", state_profile
 
 
 def _compute_allowed_sales_rep_ids(
@@ -636,17 +775,17 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
-    normalized_state = state.strip().lower()
-    is_ca = normalized_state in ("ca", "california")
     tax_total = 0.0
     source = "flat_zero"
     if is_facility_pickup:
         tax_total = 0.0
         source = "facility_pickup"
-    elif is_ca:
-        base = float(items_total_effective + shipping_total_value)
-        tax_total = round(max(0.0, base * 0.077), 2)
-        source = "ca_flat_7_7"
+    else:
+        tax_total, source, _state_profile = _calculate_checkout_tax(
+            items_subtotal=float(items_total_effective),
+            shipping_total=float(shipping_total_value),
+            shipping_address=address,
+        )
     grand_total = max(0.0, items_total_effective + shipping_total_value + tax_total)
 
     totals = {
@@ -770,16 +909,16 @@ def create_order(
     except Exception:
         shipping_total_value = 0.0
     shipping_total_value = 0.0 if is_facility_pickup else max(0.0, shipping_total_value)
-    normalized_state = str((shipping_address or {}).get("state") or "").strip().lower()
-    is_ca = normalized_state in ("ca", "california")
     if tax_exempt:
         tax_total_value = 0.0
     elif is_facility_pickup:
         tax_total_value = 0.0
-    elif is_ca:
-        tax_total_value = round(max(0.0, (items_subtotal + shipping_total_value) * 0.077), 2)
     else:
-        tax_total_value = 0.0
+        tax_total_value, _tax_source, _state_profile = _calculate_checkout_tax(
+            items_subtotal=float(items_subtotal),
+            shipping_total=float(shipping_total_value),
+            shipping_address=shipping_address,
+        )
 
     settings = settings_service.get_settings()
     role = str(user.get("role") or "").strip().lower()
@@ -881,10 +1020,11 @@ def create_order(
             tax_total_value_effective = 0.0
         elif is_facility_pickup:
             tax_total_value_effective = 0.0
-        elif is_ca:
-            tax_total_value_effective = round(
-                max(0.0, (effective_items_subtotal + shipping_total_value) * 0.077),
-                2,
+        else:
+            tax_total_value_effective, _tax_source, _state_profile = _calculate_checkout_tax(
+                items_subtotal=float(effective_items_subtotal),
+                shipping_total=float(shipping_total_value),
+                shipping_address=shipping_address,
             )
         order["taxTotal"] = float(tax_total_value_effective)
         tax_total_value = float(tax_total_value_effective)
@@ -4256,10 +4396,8 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
 
                 shipping = woo_order.get("shipping") or {}
                 billing = woo_order.get("billing") or {}
-                state = (
-                    str((shipping or {}).get("state") or "").strip().upper()
-                    or str((billing or {}).get("state") or "").strip().upper()
-                    or "UNKNOWN"
+                state_code, state_name = tax_tracking_service.canonicalize_state(
+                    (shipping or {}).get("state") or (billing or {}).get("state") or "UNKNOWN"
                 )
 
                 tax_source = None
@@ -4285,15 +4423,18 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
 
                 order_count += 1
                 tax_total_all += tax_total
-                current = bucket.get(state) or {"taxTotal": 0.0, "orderCount": 0.0}
+                current = bucket.get(state_code) or {"taxTotal": 0.0, "orderCount": 0.0, "stateName": state_name}
                 current["taxTotal"] = float(current.get("taxTotal") or 0.0) + float(tax_total or 0.0)
                 current["orderCount"] = float(current.get("orderCount") or 0.0) + 1.0
-                bucket[state] = current
+                current["stateName"] = state_name
+                bucket[state_code] = current
                 order_lines.append(
                     {
                         "orderNumber": woo_order.get("number") or woo_order.get("id"),
                         "wooId": woo_order.get("id"),
-                        "state": state,
+                        "state": state_code,
+                        "stateCode": state_code,
+                        "stateName": state_name,
                         "status": status,
                         "createdAt": created_at.isoformat(),
                         "taxTotal": round(float(tax_total or 0.0), 2),
@@ -4307,6 +4448,8 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
         rows = [
             {
                 "state": state,
+                "stateCode": state,
+                "stateName": values.get("stateName") or state,
                 "taxTotal": round(float(values.get("taxTotal") or 0.0), 2),
                 "orderCount": int(values.get("orderCount") or 0),
             }
@@ -4315,10 +4458,12 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
         rows.sort(key=lambda r: float(r.get("taxTotal") or 0.0), reverse=True)
         # Show math lines for verification: orderNumber -> taxTotal.
         order_lines.sort(key=lambda o: str(o.get("orderNumber") or ""))
+        tax_tracking = tax_tracking_service.get_tax_tracking_snapshot()
         result = {
             "rows": rows,
             "totals": {"orderCount": order_count, "taxTotal": round(tax_total_all, 2)},
             "orderTaxes": order_lines,
+            "taxTracking": tax_tracking,
             **period_meta,
         }
 
