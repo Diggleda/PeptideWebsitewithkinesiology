@@ -5599,6 +5599,13 @@ function MainApp() {
             const info = patientLinksResult.value as any;
             if (info && typeof info.patientLinksEnabled === "boolean") {
               setPatientLinksEnabled(info.patientLinksEnabled);
+              setPatientLinksDoctorUserIds(
+                Array.isArray(info.patientLinksDoctorUserIds)
+                  ? info.patientLinksDoctorUserIds
+                      .map((value: any) => String(value || "").trim())
+                      .filter((value: string) => value.length > 0)
+                  : [],
+              );
               try {
                 localStorage.setItem(
                   "peppro:patient-links-enabled",
@@ -5802,59 +5809,6 @@ function MainApp() {
 	    },
 	    [user?.role],
 	  );
-
-    const handlePatientLinksToggle = useCallback(
-      async (value: boolean) => {
-        if (!isAdmin(user?.role)) {
-          return;
-        }
-        setSettingsSaving((prev) => ({ ...prev, patientLinks: true }));
-        let previousValue = false;
-        setPatientLinksEnabled((prev) => {
-          previousValue = prev;
-          return value;
-        });
-        try {
-          localStorage.setItem(
-            "peppro:patient-links-enabled",
-            value ? "true" : "false",
-          );
-        } catch {
-          // ignore
-        }
-        try {
-          const updated = await settingsAPI.updatePatientLinksStatus(value);
-          const confirmed =
-            updated && typeof (updated as any).patientLinksEnabled === "boolean"
-              ? (updated as any).patientLinksEnabled
-              : value;
-          setPatientLinksEnabled(confirmed);
-          try {
-            localStorage.setItem(
-              "peppro:patient-links-enabled",
-              confirmed ? "true" : "false",
-            );
-          } catch {
-            // ignore
-          }
-        } catch (error) {
-          console.warn("[Settings] Failed to update delegate links setting", error);
-          toast.error("Unable to update Delegate Links setting right now.");
-          setPatientLinksEnabled(previousValue);
-          try {
-            localStorage.setItem(
-              "peppro:patient-links-enabled",
-              previousValue ? "true" : "false",
-            );
-          } catch {
-            // ignore
-          }
-        } finally {
-          setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
-        }
-      },
-      [user?.role],
-    );
 
     const handleCrmToggle = useCallback(
       async (value: boolean) => {
@@ -10784,6 +10738,11 @@ function MainApp() {
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
   const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
+  const [patientLinksDoctorUserIds, setPatientLinksDoctorUserIds] = useState<string[]>([]);
+  const [patientLinksDoctorOptions, setPatientLinksDoctorOptions] = useState<
+    Array<{ userId: string; name: string; email?: string | null }>
+  >([]);
+  const [patientLinksDoctorsOpen, setPatientLinksDoctorsOpen] = useState(false);
   const [crmEnabled, setCrmEnabled] = useState(true);
   const [receiveClientOrderUpdateEmails, setReceiveClientOrderUpdateEmails] =
     useState(false);
@@ -10810,6 +10769,146 @@ function MainApp() {
     testPaymentsOverride: false,
     receiveClientOrderUpdateEmails: false,
   });
+  const handlePatientLinksToggle = useCallback(
+    async (value: boolean) => {
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+      setSettingsSaving((prev) => ({ ...prev, patientLinks: true }));
+      let previousValue = false;
+      setPatientLinksEnabled((prev) => {
+        previousValue = prev;
+        return value;
+      });
+      try {
+        localStorage.setItem(
+          "peppro:patient-links-enabled",
+          value ? "true" : "false",
+        );
+      } catch {
+        // ignore
+      }
+      try {
+        const updated = await settingsAPI.updatePatientLinksStatus(
+          value,
+          patientLinksDoctorUserIds,
+        );
+        const confirmed =
+          updated && typeof (updated as any).patientLinksEnabled === "boolean"
+            ? (updated as any).patientLinksEnabled
+            : value;
+        setPatientLinksEnabled(confirmed);
+        setPatientLinksDoctorUserIds(
+          Array.isArray((updated as any)?.patientLinksDoctorUserIds)
+            ? (updated as any).patientLinksDoctorUserIds
+                .map((entry: any) => String(entry || "").trim())
+                .filter((entry: string) => entry.length > 0)
+            : patientLinksDoctorUserIds,
+        );
+        try {
+          localStorage.setItem(
+            "peppro:patient-links-enabled",
+            confirmed ? "true" : "false",
+          );
+        } catch {
+          // ignore
+        }
+      } catch (error) {
+        console.warn("[Settings] Failed to update delegate links setting", error);
+        toast.error("Unable to update Delegate Links setting right now.");
+        setPatientLinksEnabled(previousValue);
+        try {
+          localStorage.setItem(
+            "peppro:patient-links-enabled",
+            previousValue ? "true" : "false",
+          );
+        } catch {
+          // ignore
+        }
+      } finally {
+        setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
+      }
+    },
+    [patientLinksDoctorUserIds, user?.role],
+  );
+
+  const handlePatientLinksDoctorToggle = useCallback(
+    async (doctorUserId: string, checked: boolean) => {
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+      const normalizedDoctorUserId = String(doctorUserId || "").trim();
+      if (!normalizedDoctorUserId) {
+        return;
+      }
+      const nextDoctorUserIds = checked
+        ? Array.from(new Set([...patientLinksDoctorUserIds, normalizedDoctorUserId]))
+        : patientLinksDoctorUserIds.filter((value) => value !== normalizedDoctorUserId);
+      setSettingsSaving((prev) => ({ ...prev, patientLinks: true }));
+      const previousDoctorUserIds = patientLinksDoctorUserIds;
+      setPatientLinksDoctorUserIds(nextDoctorUserIds);
+      try {
+        const updated = await settingsAPI.updatePatientLinksStatus(
+          patientLinksEnabled,
+          nextDoctorUserIds,
+        );
+        setPatientLinksEnabled(
+          updated && typeof (updated as any).patientLinksEnabled === "boolean"
+            ? (updated as any).patientLinksEnabled
+            : patientLinksEnabled,
+        );
+        setPatientLinksDoctorUserIds(
+          Array.isArray((updated as any)?.patientLinksDoctorUserIds)
+            ? (updated as any).patientLinksDoctorUserIds
+                .map((entry: any) => String(entry || "").trim())
+                .filter((entry: string) => entry.length > 0)
+            : nextDoctorUserIds,
+        );
+      } catch (error) {
+        console.warn("[Settings] Failed to update Delegate Links doctors", error);
+        toast.error("Unable to update Delegate Links doctors right now.");
+        setPatientLinksDoctorUserIds(previousDoctorUserIds);
+      } finally {
+        setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
+      }
+    },
+    [patientLinksDoctorUserIds, patientLinksEnabled, user?.role],
+  );
+
+  useEffect(() => {
+    if (!isAdmin(user?.role)) {
+      setPatientLinksDoctorOptions([]);
+      setPatientLinksDoctorsOpen(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = (await settingsAPI.getPatientLinksDoctors()) as any;
+        if (cancelled) return;
+        const doctors = Array.isArray(payload?.doctors) ? payload.doctors : [];
+        setPatientLinksDoctorOptions(
+          doctors
+            .map((entry: any) => ({
+              userId: String(entry?.userId || "").trim(),
+              name: String(entry?.name || entry?.email || "").trim(),
+              email:
+                typeof entry?.email === "string" && entry.email.trim().length > 0
+                  ? entry.email.trim()
+                  : null,
+            }))
+            .filter((entry: { userId: string; name: string; email?: string | null }) => entry.userId.length > 0),
+        );
+      } catch (error) {
+        if (cancelled) return;
+        console.warn("[Settings] Failed to load Delegate Links doctors", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
+
   useEffect(() => {
     if (salesDashboardTab !== "crm") {
       return;
@@ -20944,35 +21043,114 @@ function MainApp() {
 		                  </div>
 
                       <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-                        <label
-                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
-                        >
-                          <input
-                            type="checkbox"
-                            aria-label="Enable Delegate Links tab for doctors"
-                            checked={patientLinksEnabled}
-                            onChange={(e) => handlePatientLinksToggle(e.target.checked)}
-                            className="brand-checkbox mt-0.5"
-                            disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
-                          />
-                          <span className="min-w-0">
-                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                              <span>Delegate Links tab (doctors)</span>
-                              <span className="text-xs font-semibold text-slate-500">
-                                {"\u00A0"}(
-                                {settingsSaving.patientLinks
-                                  ? "Saving…"
-                                  : patientLinksEnabled
-                                    ? "Enabled"
-                                    : "Disabled"}
-                                )
+                        <div className="flex items-start gap-3">
+                          <label
+                            className={`flex min-w-0 flex-1 items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label="Enable Delegate Links tab for doctors"
+                              checked={patientLinksEnabled}
+                              onChange={(e) => {
+                                if (!e.target.checked) {
+                                  setPatientLinksDoctorsOpen(false);
+                                }
+                                void handlePatientLinksToggle(e.target.checked);
+                              }}
+                              className="brand-checkbox mt-0.5"
+                              disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
+                            />
+                            <span className="min-w-0">
+                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+                                <span>Delegate Links tab (doctors)</span>
+                                <span className="text-xs font-semibold text-slate-500">
+                                  {"\u00A0"}(
+                                  {settingsSaving.patientLinks
+                                    ? "Saving…"
+                                    : patientLinksEnabled
+                                      ? "Enabled"
+                                      : "Disabled"}
+                                  )
+                                </span>
+                              </span>
+                              <span className="block text-xs text-slate-600">
+                                When disabled, only test doctors can access Delegate Links.
                               </span>
                             </span>
-                            <span className="block text-xs text-slate-600">
-                              When disabled, only test doctors can access Delegate Links.
-                            </span>
-                          </span>
-                        </label>
+                          </label>
+                          <button
+                            type="button"
+                            aria-label="Toggle Delegate Links doctors"
+                            aria-expanded={patientLinksEnabled ? patientLinksDoctorsOpen : false}
+                            disabled={!patientLinksEnabled}
+                            onClick={() => {
+                              if (!patientLinksEnabled) return;
+                              setPatientLinksDoctorsOpen((current) => !current);
+                            }}
+                            className={clsx(
+                              "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
+                              patientLinksEnabled
+                                ? "bg-[rgba(95,179,249,0.10)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.16)]"
+                                : "cursor-not-allowed bg-slate-100 text-slate-300",
+                            )}
+                          >
+                            <ChevronRight
+                              className="h-5 w-5 transition-transform duration-200"
+                              style={{
+                                transform:
+                                  patientLinksEnabled && patientLinksDoctorsOpen
+                                    ? "rotate(90deg)"
+                                    : "rotate(0deg)",
+                              }}
+                            />
+                          </button>
+                        </div>
+                        {patientLinksEnabled && patientLinksDoctorsOpen && (
+                          <div className="mt-3 pl-8">
+                            <div className="rounded-2xl bg-[rgba(95,179,249,0.06)] px-4 py-3">
+                              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                                {patientLinksDoctorOptions.length === 0 ? (
+                                  <p className="text-xs text-slate-500">No doctors available.</p>
+                                ) : (
+                                  patientLinksDoctorOptions.map((doctor) => {
+                                    const checked = patientLinksDoctorUserIds.includes(doctor.userId);
+                                    return (
+                                      <label
+                                        key={doctor.userId}
+                                        className="flex items-start gap-3 rounded-xl border border-slate-200/70 bg-white px-3 py-2 cursor-pointer"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          disabled={
+                                            !isAdmin(user.role) || settingsSaving.patientLinks
+                                          }
+                                          onChange={(event) =>
+                                            void handlePatientLinksDoctorToggle(
+                                              doctor.userId,
+                                              event.target.checked,
+                                            )
+                                          }
+                                          className="brand-checkbox mt-0.5"
+                                        />
+                                        <span className="min-w-0">
+                                          <span className="block text-sm font-medium text-slate-800">
+                                            {doctor.name || doctor.email || doctor.userId}
+                                          </span>
+                                          {doctor.email ? (
+                                            <span className="block text-xs text-slate-500">
+                                              {doctor.email}
+                                            </span>
+                                          ) : null}
+                                        </span>
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="border-b border-slate-200/60 py-4 last:border-b-0">
@@ -25044,6 +25222,7 @@ function MainApp() {
 				              user={user}
 				              researchDashboardEnabled={researchDashboardEnabled}
                       patientLinksEnabled={patientLinksEnabled}
+                      patientLinksDoctorUserIds={patientLinksDoctorUserIds}
 				              onLogin={handleLogin}
 		              onLogout={handleLogout}
 		              cartItems={totalCartItems}
@@ -25095,6 +25274,7 @@ function MainApp() {
 	                    delegateDoctorName={delegateDoctorNameForShare}
 	                    researchDashboardEnabled={false}
 	                    patientLinksEnabled={false}
+                      patientLinksDoctorUserIds={[]}
 	                    cartItems={totalCartItems}
 	                    onSearch={handleSearch}
 	                    onCartClick={handleHeaderCartClick}

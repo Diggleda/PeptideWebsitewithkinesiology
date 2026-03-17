@@ -1884,12 +1884,13 @@ def get_orders_for_sales_rep(
                     _SALES_REP_ORDERS_TTL_SECONDS,
                 )
                 return cached.get("value")
+    use_local_sql_path = bool(local_only)
     use_admin_local_fast_path = bool(
-        local_only and include_all_doctors and not normalized_sales_rep_id
+        use_local_sql_path and include_all_doctors and not normalized_sales_rep_id
     )
     users = (
         user_repository.list_sales_tracking_users_for_admin()
-        if use_admin_local_fast_path
+        if use_local_sql_path
         else user_repository.get_all()
     )
     user_by_id = {str(u.get("id")): u for u in users if isinstance(u, dict) and u.get("id") is not None}
@@ -1927,7 +1928,7 @@ def get_orders_for_sales_rep(
         doctors.append(user)
 
     # Ensure doctors have a stable lead type stored for commission tracking.
-    if not use_admin_local_fast_path:
+    if not use_local_sql_path:
         try:
             doctor_only = [d for d in doctors if (d.get("role") or "").lower() in ("doctor", "test_doctor")]
             backfilled = referral_service.backfill_lead_types_for_doctors(doctor_only)
@@ -1963,7 +1964,7 @@ def get_orders_for_sales_rep(
         if doc.get("id") is not None
     }
 
-    if use_admin_local_fast_path and include_house_contacts:
+    if use_local_sql_path and include_house_contacts:
         try:
             seen_house_ids = set(doctor_lookup.keys())
             for house_user in _list_house_lead_users_for_sales_tracking():
@@ -1998,7 +1999,7 @@ def get_orders_for_sales_rep(
 
     # Include contact-form prospects so reps/admins can see lead activity, and so order attribution by
     # billing email can match house leads even when no doctor user exists yet.
-    if use_admin_local_fast_path:
+    if use_local_sql_path:
         prospects = []
     else:
         try:
@@ -2117,7 +2118,7 @@ def get_orders_for_sales_rep(
     local_by_id: Dict[str, Dict] = {}
     try:
         doctor_ids = [str(doc.get("id")) for doc in doctors if doc.get("id") is not None]
-        if use_admin_local_fast_path:
+        if use_local_sql_path:
             local_orders = order_repository.find_sales_tracking_by_user_ids(doctor_ids) if doctor_ids else []
         else:
             local_orders = order_repository.find_by_user_ids(doctor_ids) if doctor_ids else []
@@ -2127,7 +2128,7 @@ def get_orders_for_sales_rep(
     # Merge a recent sales-tracking scan so rep-attributed orders are still included even when the
     # doctor user record is missing or stale. This is especially important for on-hold orders that
     # may be keyed by order metadata before user-to-rep assignment catches up.
-    if not use_admin_local_fast_path:
+    if not use_local_sql_path:
         try:
             fallback_orders = order_repository.list_recent_sales_tracking(750)
         except Exception:
@@ -2418,6 +2419,8 @@ def get_orders_for_sales_rep(
                 "wooOrderId": local.get("wooOrderId") or None,
                 "wooOrderNumber": local.get("wooOrderNumber") or None,
                 "number": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "pricingMode": local.get("pricingMode") or local.get("pricing_mode") or "wholesale",
+                "pricing_mode": local.get("pricing_mode") or local.get("pricingMode") or "wholesale",
                 "status": local.get("status") or "pending",
                 "total": float(local.get("grandTotal") or local.get("total") or 0),
                 "taxTotal": float(local.get("taxTotal") or 0),

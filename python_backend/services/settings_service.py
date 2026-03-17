@@ -17,6 +17,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "researchDashboardEnabled": False,
     # When enabled, show Delegate Links tab for all doctors (test doctors always have access).
     "patientLinksEnabled": False,
+    # Optional doctor user ids that should receive the Delegate Links tab.
+    "patientLinksDoctorUserIds": [],
     # When disabled, only test_rep accounts can access CRM.
     "crmEnabled": True,
     # "test" | "live" | None (None = follow env)
@@ -91,6 +93,19 @@ def _normalize_mode(value: Any) -> Optional[str]:
     return None
 
 
+def _normalize_optional_user_ids(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else [value]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for entry in values:
+        text = str(entry or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+    return normalized
+
+
 def _normalize_iso_timestamp(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -149,6 +164,9 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged["peptideForumEnabled"] = _to_bool(merged.get("peptideForumEnabled", True))
     merged["researchDashboardEnabled"] = _to_bool(merged.get("researchDashboardEnabled", False))
     merged["patientLinksEnabled"] = _to_bool(merged.get("patientLinksEnabled", False))
+    merged["patientLinksDoctorUserIds"] = _normalize_optional_user_ids(
+        merged.get("patientLinksDoctorUserIds")
+    )
     merged["crmEnabled"] = _to_bool(merged.get("crmEnabled", True))
     merged["stripeMode"] = _normalize_mode(merged.get("stripeMode"))
     merged["testPaymentsOverrideEnabled"] = _to_bool(merged.get("testPaymentsOverrideEnabled", False))

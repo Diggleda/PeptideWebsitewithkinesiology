@@ -43,8 +43,6 @@ const STATEMENTS = [
       shipping_service VARCHAR(120) NULL,
       facility_pickup TINYINT(1) NOT NULL DEFAULT 0,
       fulfillment_method VARCHAR(32) NULL,
-      pickup_location VARCHAR(255) NULL,
-      pickup_ready_notice VARCHAR(255) NULL,
       physician_certified TINYINT(1) NOT NULL DEFAULT 0,
       status VARCHAR(50) NOT NULL DEFAULT 'pending',
       order_placed_at DATETIME NULL,
@@ -428,20 +426,6 @@ const ensureOrderColumns = async () => {
       `,
     },
     {
-      name: 'pickup_location',
-      ddl: `
-        ALTER TABLE peppro_orders
-        ADD COLUMN pickup_location VARCHAR(255) NULL AFTER fulfillment_method
-      `,
-    },
-    {
-      name: 'pickup_ready_notice',
-      ddl: `
-        ALTER TABLE peppro_orders
-        ADD COLUMN pickup_ready_notice VARCHAR(255) NULL AFTER pickup_location
-      `,
-    },
-    {
       name: 'status_normalized',
       ddl: `
         ALTER TABLE peppro_orders
@@ -495,6 +479,26 @@ const ensureOrderColumns = async () => {
     'idx_peppro_orders_status_norm_created',
     'ALTER TABLE peppro_orders ADD INDEX idx_peppro_orders_status_norm_created (status_normalized, created_at)',
   );
+  for (const columnName of ['pickup_ready_notice', 'pickup_location']) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'peppro_orders'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName },
+      );
+      if (existing) {
+        await mysqlClient.execute(`ALTER TABLE peppro_orders DROP COLUMN ${columnName}`);
+        logger.info({ column: columnName }, 'MySQL peppro_orders legacy column dropped');
+      }
+    } catch (error) {
+      logger.error({ err: error, column: columnName }, 'Failed to drop legacy MySQL peppro_orders column');
+    }
+  }
 };
 
 const ensureSalesProspectColumns = async () => {

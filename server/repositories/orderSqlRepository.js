@@ -215,8 +215,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     fulfillmentMethod: isHandDeliveryOrder(order)
       ? 'hand_delivered'
       : normalizeFulfillmentMethod(order.fulfillmentMethod),
-    pickupLocation: sanitizeString(order.pickupLocation || null),
-    pickupReadyNotice: sanitizeString(order.pickupReadyNotice || null),
     physicianCertified: order.physicianCertificationAccepted === true ? 1 : 0,
     status: order.status || 'pending',
     orderPlacedAt,
@@ -259,8 +257,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipping_service,
           facility_pickup,
           fulfillment_method,
-          pickup_location,
-          pickup_ready_notice,
           physician_certified,
           status,
           order_placed_at,
@@ -282,8 +278,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :shippingService,
           :handDelivery,
           :fulfillmentMethod,
-          :pickupLocation,
-          :pickupReadyNotice,
           :physicianCertified,
           :status,
           :orderPlacedAt,
@@ -303,8 +297,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipping_service = VALUES(shipping_service),
           facility_pickup = VALUES(facility_pickup),
           fulfillment_method = VALUES(fulfillment_method),
-          pickup_location = VALUES(pickup_location),
-          pickup_ready_notice = VALUES(pickup_ready_notice),
           physician_certified = VALUES(physician_certified),
           status = VALUES(status),
           order_placed_at = COALESCE(order_placed_at, VALUES(order_placed_at)),
@@ -428,10 +420,6 @@ const mapRowToOrder = (row, options = {}) => {
           ? payloadOrder.handDelivery
           : row.facility_pickup,
       ) ? 'hand_delivered' : 'shipping'),
-    pickupLocation: sanitizeString(payloadOrder.pickupLocation)
-      || sanitizeString(row.pickup_location),
-    pickupReadyNotice: sanitizeString(payloadOrder.pickupReadyNotice)
-      || sanitizeString(row.pickup_ready_notice),
     status: payloadOrder.status || row.status || 'pending',
     orderPlacedAt: toIso(
       payloadOrder.orderPlacedAt

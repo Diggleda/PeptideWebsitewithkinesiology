@@ -36,8 +36,6 @@ _SALES_TRACKING_SELECT_COLUMNS = """
     shipping_total,
     facility_pickup,
     fulfillment_method,
-    pickup_location,
-    pickup_ready_notice,
     shipping_rate,
     shipping_carrier,
     shipping_service,
@@ -202,8 +200,6 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 shipping_total,
                 facility_pickup,
                 fulfillment_method,
-                pickup_location,
-                pickup_ready_notice,
                 status,
                 notes,
                 shipping_address,
@@ -312,8 +308,6 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                     )
                     else "shipping"
                 ),
-                "pickupLocation": row.get("pickup_location") or payload.get("pickupLocation") or None,
-                "pickupReadyNotice": row.get("pickup_ready_notice") or payload.get("pickupReadyNotice") or None,
                 "status": row.get("status"),
                 "notes": row.get("notes") if row.get("notes") is not None else None,
                 "shippingAddress": parse_json(row.get("shipping_address")),
@@ -860,14 +854,14 @@ def insert(order: Dict) -> Dict:
                 """
                 INSERT INTO orders (
                     id, user_id, as_delegate, pricing_mode, items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
-                    facility_pickup, fulfillment_method, pickup_location, pickup_ready_notice,
+                    facility_pickup, fulfillment_method,
                     tracking_number, shipped_at,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
                 ) VALUES (
                     %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
-                    %(facility_pickup)s, %(fulfillment_method)s, %(pickup_location)s, %(pickup_ready_notice)s,
+                    %(facility_pickup)s, %(fulfillment_method)s,
                     %(tracking_number)s, %(shipped_at)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
@@ -885,8 +879,6 @@ def insert(order: Dict) -> Dict:
                     shipping_service = VALUES(shipping_service),
                     facility_pickup = VALUES(facility_pickup),
                     fulfillment_method = VALUES(fulfillment_method),
-                    pickup_location = VALUES(pickup_location),
-                    pickup_ready_notice = VALUES(pickup_ready_notice),
                     tracking_number = VALUES(tracking_number),
                     shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
                     physician_certified = VALUES(physician_certified),
@@ -976,8 +968,6 @@ def update(order: Dict) -> Optional[Dict]:
                     shipping_service = %(shipping_service)s,
                     facility_pickup = %(facility_pickup)s,
                     fulfillment_method = %(fulfillment_method)s,
-                    pickup_location = %(pickup_location)s,
-                    pickup_ready_notice = %(pickup_ready_notice)s,
                     tracking_number = %(tracking_number)s,
                     shipped_at = COALESCE(shipped_at, %(shipped_at)s),
                     referral_code = %(referral_code)s,
@@ -1113,8 +1103,6 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingAddress": parse_json(row.get("shipping_address"), None),
         "handDelivery": bool(row.get("facility_pickup")) if row.get("facility_pickup") is not None else False,
         "fulfillmentMethod": row.get("fulfillment_method"),
-        "pickupLocation": row.get("pickup_location") or None,
-        "pickupReadyNotice": row.get("pickup_ready_notice") or None,
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
@@ -1138,10 +1126,6 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             order["handDelivery"] = bool(payload.get("handDelivery"))
         if not order.get("fulfillmentMethod") and payload.get("fulfillmentMethod"):
             order["fulfillmentMethod"] = _normalize_fulfillment_method(payload.get("fulfillmentMethod"))
-        if not order.get("pickupLocation") and payload.get("pickupLocation"):
-            order["pickupLocation"] = payload.get("pickupLocation")
-        if not order.get("pickupReadyNotice") and payload.get("pickupReadyNotice"):
-            order["pickupReadyNotice"] = payload.get("pickupReadyNotice")
         payload_items = None
         if isinstance(payload_order, dict):
             payload_items = payload_order.get("items")
@@ -1323,12 +1307,6 @@ def _to_db_params(order: Dict) -> Dict:
         fulfillment_method = "hand_delivered"
     elif fulfillment_method not in ("shipping", "hand_delivered"):
         fulfillment_method = "shipping"
-    pickup_location = None
-    if facility_pickup:
-        pickup_location = str(order.get("pickupLocation") or order.get("pickup_location") or "").strip() or None
-    pickup_ready_notice = None
-    if facility_pickup:
-        pickup_ready_notice = str(order.get("pickupReadyNotice") or order.get("pickup_ready_notice") or "").strip() or None
 
     return {
         "id": order.get("id"),
@@ -1348,8 +1326,6 @@ def _to_db_params(order: Dict) -> Dict:
         "shipping_total": 0.0 if facility_pickup else float(order.get("shippingTotal") or 0),
         "facility_pickup": 1 if facility_pickup else 0,
         "fulfillment_method": fulfillment_method,
-        "pickup_location": pickup_location,
-        "pickup_ready_notice": pickup_ready_notice,
         "shipping_carrier": order.get("shippingCarrier")
         or order.get("shippingEstimate", {}).get("carrierId")
         or order.get("shippingEstimate", {}).get("carrier_id"),

@@ -385,6 +385,7 @@ interface HeaderProps {
   delegateDoctorName?: string | null;
   researchDashboardEnabled?: boolean;
   patientLinksEnabled?: boolean;
+  patientLinksDoctorUserIds?: string[];
   onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout?: () => void;
   cartItems: number;
@@ -1104,6 +1105,7 @@ export function Header({
   delegateDoctorName = null,
   researchDashboardEnabled = false,
   patientLinksEnabled = false,
+  patientLinksDoctorUserIds = [],
   onLogin,
   onLogout,
   cartItems,
@@ -3479,10 +3481,24 @@ export function Header({
   );
 
   const normalizedRole = String((localUser as any)?.role || '').toLowerCase();
+  const normalizedPatientLinksDoctorUserIds = new Set(
+    Array.isArray(patientLinksDoctorUserIds)
+      ? patientLinksDoctorUserIds.map((value) => String(value || '').trim()).filter(Boolean)
+      : [],
+  );
   const showPatientLinksTab = Boolean(
     localUser && (
       normalizedRole === 'test_doctor'
-      || (normalizedRole === 'doctor' && (patientLinksEnabled || isNodePatientLinkDummyMode))
+      || (
+        normalizedRole === 'doctor'
+        && (
+          isNodePatientLinkDummyMode
+          || (
+            patientLinksEnabled
+            && normalizedPatientLinksDoctorUserIds.has(String((localUser as any)?.id || '').trim())
+          )
+        )
+      )
     ),
   );
   const accountHeaderTabs = useMemo(() => {

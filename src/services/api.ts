@@ -1204,6 +1204,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getPatientLinksDoctors: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/patient-links/doctors`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   getCrmStatus: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/crm`, {
       method: 'GET',
@@ -1238,10 +1245,15 @@ export const settingsAPI = {
       body: JSON.stringify({ enabled }),
     });
   },
-  updatePatientLinksStatus: async (enabled: boolean) => {
+  updatePatientLinksStatus: async (enabled: boolean, doctorUserIds?: Array<string | number> | null) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/patient-links`, {
       method: 'PUT',
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({
+        enabled,
+        doctorUserIds: Array.isArray(doctorUserIds)
+          ? doctorUserIds.map((value) => String(value || '').trim()).filter((value) => value.length > 0)
+          : [],
+      }),
     });
   },
   updateCrmStatus: async (enabled: boolean) => {

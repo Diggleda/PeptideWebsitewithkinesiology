@@ -118,6 +118,57 @@ def _is_hand_delivery_role(role: str) -> bool:
     return normalized in ("sales_rep", "sales_lead", "admin")
 
 
+def _get_delegate_links_doctors() -> list[dict]:
+    doctors = []
+    for user in user_repository.get_all() or []:
+        if not isinstance(user, dict):
+            continue
+        if _normalize_role(user.get("role")) != "doctor":
+            continue
+        user_id = str(user.get("id") or "").strip()
+        if not user_id:
+            continue
+        doctors.append(
+            {
+                "userId": user_id,
+                "name": str(user.get("name") or "").strip()
+                or str(user.get("email") or "").strip()
+                or f"Doctor {user_id}",
+                "email": str(user.get("email") or "").strip().lower() or None,
+                "delegateLinksEnabled": bool(user.get("delegateLinksEnabled")),
+            }
+        )
+    doctors.sort(key=lambda row: (str(row.get("name") or "").lower(), str(row.get("email") or "")))
+    return doctors
+
+
+def _migrate_legacy_delegate_links_to_users() -> None:
+    legacy_ids = [
+        str(value).strip()
+        for value in (settings_service.get_settings().get("patientLinksDoctorUserIds") or [])
+        if str(value).strip()
+    ]
+    if not legacy_ids:
+        return
+    selected_ids = set(legacy_ids)
+    migrated_any = False
+    for doctor in user_repository.get_all() or []:
+        if not isinstance(doctor, dict):
+            continue
+        if _normalize_role(doctor.get("role")) != "doctor":
+            continue
+        doctor_id = str(doctor.get("id") or "").strip()
+        if not doctor_id or doctor_id not in selected_ids:
+            continue
+        if bool(doctor.get("delegateLinksEnabled")):
+            migrated_any = True
+            continue
+        user_repository.update({**doctor, "delegateLinksEnabled": True})
+        migrated_any = True
+    if migrated_any:
+        settings_service.update_settings({"patientLinksDoctorUserIds": []})
+
+
 def _build_sales_rep_indexes(reps: list[dict]) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
     by_id: dict[str, dict] = {}
     by_legacy_user_id: dict[str, dict] = {}
@@ -680,10 +731,26 @@ def get_research():
 @blueprint.get("/patient-links")
 def get_patient_links():
     def action():
+        _migrate_legacy_delegate_links_to_users()
         settings = settings_service.get_settings()
         return {
             "patientLinksEnabled": bool(settings.get("patientLinksEnabled", False)),
+            "patientLinksDoctorUserIds": [
+                str(doctor.get("userId") or "").strip()
+                for doctor in _get_delegate_links_doctors()
+                if bool(doctor.get("delegateLinksEnabled"))
+            ],
         }
+
+    return handle_action(action)
+
+@blueprint.get("/patient-links/doctors")
+@require_auth
+def get_patient_links_doctors():
+    def action():
+        _require_admin()
+        _migrate_legacy_delegate_links_to_users()
+        return {"doctors": _get_delegate_links_doctors()}
 
     return handle_action(action)
 
@@ -751,11 +818,59 @@ def update_research():
 def update_patient_links():
     def action():
         _require_admin()
+        _migrate_legacy_delegate_links_to_users()
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
-        updated = settings_service.update_settings({"patientLinksEnabled": enabled})
+        raw_doctor_ids = payload.get("doctorUserIds")
+        if raw_doctor_ids is None:
+            legacy_single = str(payload.get("doctorUserId") or payload.get("patientLinksDoctorUserId") or "").strip()
+            doctor_user_ids = [legacy_single] if legacy_single else []
+        elif isinstance(raw_doctor_ids, list):
+            doctor_user_ids = [str(value).strip() for value in raw_doctor_ids if str(value).strip()]
+        else:
+            doctor_user_ids = []
+        validated_doctor_user_ids = []
+        seen_doctor_ids = set()
+        for doctor_user_id in doctor_user_ids:
+            if doctor_user_id in seen_doctor_ids:
+                continue
+            seen_doctor_ids.add(doctor_user_id)
+            doctor = user_repository.find_by_id(doctor_user_id)
+            if not doctor:
+                err = RuntimeError("Doctor not found")
+                setattr(err, "status", 404)
+                raise err
+            if _normalize_role(doctor.get("role")) != "doctor":
+                err = RuntimeError("Doctor access required")
+                setattr(err, "status", 400)
+                raise err
+            validated_doctor_user_ids.append(doctor_user_id)
+        selected_ids = set(validated_doctor_user_ids)
+        for doctor in user_repository.get_all() or []:
+            if not isinstance(doctor, dict):
+                continue
+            if _normalize_role(doctor.get("role")) != "doctor":
+                continue
+            doctor_id = str(doctor.get("id") or "").strip()
+            if not doctor_id:
+                continue
+            next_enabled = doctor_id in selected_ids
+            if bool(doctor.get("delegateLinksEnabled")) == next_enabled:
+                continue
+            user_repository.update({**doctor, "delegateLinksEnabled": next_enabled})
+        updated = settings_service.update_settings(
+            {
+                "patientLinksEnabled": enabled,
+                "patientLinksDoctorUserIds": [],
+            }
+        )
         return {
             "patientLinksEnabled": bool(updated.get("patientLinksEnabled", False)),
+            "patientLinksDoctorUserIds": [
+                str(doctor.get("userId") or "").strip()
+                for doctor in _get_delegate_links_doctors()
+                if bool(doctor.get("delegateLinksEnabled"))
+            ],
         }
 
     return handle_action(action)
