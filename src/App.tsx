@@ -1307,6 +1307,25 @@ const getTaxCollectionActionLabel = (stateCode?: string | null) => {
   return `File for ${normalized} nexus. Collect ${normalized} tax going forward.`;
 };
 
+const TAX_WARNING_BADGE_STYLE: CSSProperties = {
+  borderColor: "#dc2626",
+  color: "#b91c1c",
+  backgroundColor: "#ffffff",
+};
+
+const getTaxAlertBadgeStyle = (
+  warningLevel?: "none" | "warning" | "exceeded" | null,
+  shouldCollectTax?: boolean | null,
+): CSSProperties | undefined => {
+  if (warningLevel === "warning") {
+    return TAX_WARNING_BADGE_STYLE;
+  }
+  if (warningLevel === "exceeded" && shouldCollectTax) {
+    return TAX_WARNING_BADGE_STYLE;
+  }
+  return undefined;
+};
+
 const parseObjectCandidate = (value: unknown): Record<string, any> | null => {
   if (!value) return null;
   if (typeof value === "object" && !Array.isArray(value)) {
@@ -22979,7 +22998,8 @@ function MainApp() {
                                   )}
                                   <Badge
                                     variant="outline"
-                                    className="border-rose-500 bg-white text-rose-700"
+                                    className="!border-rose-600 !bg-white !text-rose-700"
+                                    style={TAX_WARNING_BADGE_STYLE}
                                   >
                                     {Number(
                                       adminTaxTrackingMeta?.summary?.warningCount || 0,
@@ -22993,7 +23013,8 @@ function MainApp() {
                                   </Badge>
                                   <Badge
                                     variant="outline"
-                                    className="border-rose-500 bg-white text-rose-700"
+                                    className="!border-rose-600 !bg-white !text-rose-700"
+                                    style={TAX_WARNING_BADGE_STYLE}
                                   >
                                     {Number(
                                       adminTaxTrackingMeta?.summary?.exceededCount || 0,
@@ -23002,7 +23023,8 @@ function MainApp() {
                                   </Badge>
                                   <Badge
                                     variant="outline"
-                                    className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    className="!border-rose-600 !bg-white !text-rose-700"
+                                    style={TAX_WARNING_BADGE_STYLE}
                                   >
                                     {Number(
                                       adminTaxTrackingMeta?.summary?.shouldCollectTaxCount ||
@@ -23092,9 +23114,13 @@ function MainApp() {
                                             "shrink-0",
                                             row.warningLevel === "exceeded"
                                               ? row.shouldCollectTax
-                                                ? "border-rose-500 bg-white text-rose-700"
+                                                ? "!border-rose-600 !bg-white !text-rose-700"
                                                 : "border-amber-200 bg-amber-50 text-amber-700"
-                                              : "border-rose-500 bg-white text-rose-700",
+                                              : "!border-rose-600 !bg-white !text-rose-700",
+                                          )}
+                                          style={getTaxAlertBadgeStyle(
+                                            row.warningLevel,
+                                            row.shouldCollectTax,
                                           )}
                                         >
                                           <AlertTriangle className="h-3 w-3" aria-hidden="true" />
@@ -23195,9 +23221,13 @@ function MainApp() {
                                                     "mb-1 mx-auto",
                                                     row.warningLevel === "exceeded"
                                                       ? row.shouldCollectTax
-                                                        ? "border-rose-500 bg-white text-rose-700"
+                                                        ? "!border-rose-600 !bg-white !text-rose-700"
                                                         : "border-amber-200 bg-amber-50 text-amber-700"
-                                                      : "border-rose-500 bg-white text-rose-700",
+                                                        : "!border-rose-600 !bg-white !text-rose-700",
+                                                  )}
+                                                  style={getTaxAlertBadgeStyle(
+                                                    row.warningLevel,
+                                                    row.shouldCollectTax,
                                                   )}
                                                 >
                                                   {badgeLabel}
@@ -23363,9 +23393,13 @@ function MainApp() {
                                               "mx-auto",
                                               nexus?.warningLevel === "exceeded"
                                                 ? nexus.shouldCollectTax
-                                                  ? "border-rose-500 bg-white text-rose-700"
+                                                  ? "!border-rose-600 !bg-white !text-rose-700"
                                                   : "border-amber-200 bg-amber-50 text-amber-700"
-                                                : "border-rose-500 bg-white text-rose-700",
+                                                : "!border-rose-600 !bg-white !text-rose-700",
+                                            )}
+                                            style={getTaxAlertBadgeStyle(
+                                              nexus?.warningLevel,
+                                              nexus?.shouldCollectTax,
                                             )}
                                           >
                                             {nexusLabel}

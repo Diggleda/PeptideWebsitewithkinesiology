@@ -34,6 +34,7 @@ FACILITY_PICKUP_LOCATION = None
 FACILITY_PICKUP_LABEL = "Hand Delivered"
 FACILITY_PICKUP_NOTICE = None
 FACILITY_PICKUP_SERVICE_CODE = "hand_delivery"
+_CA_FIXED_TAX_RATE = 0.0875
 
 
 def _perf_log(message: str, *, duration_ms: float, threshold_ms: float = 500.0) -> None:
@@ -396,6 +397,15 @@ def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
     return _has_reseller_permit_on_file(user)
 
 
+def _is_california_address(address: Optional[Dict]) -> bool:
+    if not isinstance(address, dict):
+        return False
+    state_code, _state_name = tax_tracking_service.canonicalize_state(
+        address.get("state") or address.get("stateCode")
+    )
+    return state_code == "CA"
+
+
 def _resolve_woo_tax_class_for_lookup(value: object) -> Optional[str]:
     normalized = str(value or "").strip().lower()
     if normalized in ("", "standard", "none"):
@@ -465,6 +475,11 @@ def _calculate_checkout_tax(
     country = str(address.get("country") or "US").strip().upper()
     if country != "US":
         return 0.0, "non_us", None
+
+    if _is_california_address(address):
+        tax_total = round(max(0.0, float(items_subtotal or 0.0) * _CA_FIXED_TAX_RATE), 2)
+        state_profile = tax_tracking_service.get_state_tax_profile("CA")
+        return tax_total, "ca_fixed_rate", state_profile
 
     state_profile = tax_tracking_service.get_state_tax_profile(
         address.get("state") or address.get("stateCode")
