@@ -381,6 +381,12 @@ export function CheckoutModal({
     source?: string | null;
     testPaymentOverrideApplied?: boolean;
     originalGrandTotal?: number | null;
+    shippingTiming?: {
+      averageBusinessDays?: number | null;
+      roundedBusinessDays?: number | null;
+      sampleSize?: number | null;
+      usedHistoricalAverage?: boolean;
+    } | null;
   } | null>(null);
   const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
   const [taxEstimatePending, setTaxEstimatePending] = useState(false);
@@ -802,9 +808,14 @@ export function CheckoutModal({
     const pacificHour = getHourInTimeZone(now, 'America/Los_Angeles');
     const isAfterCutoff = (pacificHour ?? now.getHours()) >= cutoffHourLocal;
 
-    const backorderDays = requiresBackorder ? 3 : 0;
-    const processingMinDays = isAfterCutoff ? 2 : 1;
-    const processingMaxDays = isAfterCutoff ? 3 : 2;
+    const backorderDays = requiresBackorder ? 2 : 0;
+    const historicalAverageDaysRaw = Number(taxEstimate?.shippingTiming?.averageBusinessDays);
+    const historicalRoundedDaysRaw = Number(taxEstimate?.shippingTiming?.roundedBusinessDays);
+    const baselineProcessingDays = Number.isFinite(historicalRoundedDaysRaw) && historicalRoundedDaysRaw > 0
+      ? Math.max(1, Math.round(historicalRoundedDaysRaw))
+      : 1;
+    const processingMinDays = baselineProcessingDays + (isAfterCutoff ? 1 : 0);
+    const processingMaxDays = processingMinDays + 1;
     const shipMinDays = backorderDays + processingMinDays;
     const shipMaxDays = backorderDays + processingMaxDays;
 
@@ -818,9 +829,15 @@ export function CheckoutModal({
 
     const mathParts: string[] = [];
     if (backorderDays) {
-      mathParts.push('3 business day backorder');
+      mathParts.push('2 business day backorder');
     }
-    mathParts.push(`${processingMinDays}–${processingMaxDays} business day processing`);
+    if (Number.isFinite(historicalAverageDaysRaw) && historicalAverageDaysRaw > 0) {
+      mathParts.push(
+        `${processingMinDays}–${processingMaxDays} business day processing (historical avg ${historicalAverageDaysRaw.toFixed(1)} days)`,
+      );
+    } else {
+      mathParts.push(`${processingMinDays}–${processingMaxDays} business day processing`);
+    }
     const mathText = `${mathParts.join(' + ')}${isAfterCutoff ? ' (order placed after 1pm PT)' : ''}`;
 
     return {
@@ -828,7 +845,7 @@ export function CheckoutModal({
       mathText,
       disclaimer: 'Carrier transit begins after shipment and is not guaranteed.',
     };
-  }, [requiresBackorder, selectedShippingRate]);
+  }, [requiresBackorder, selectedShippingRate, taxEstimate?.shippingTiming]);
 
   const delegateSubtotal = useMemo(() => {
     if (!showDualPricing || proposalMarkupPercentValue == null) return null;
@@ -1366,6 +1383,27 @@ export function CheckoutModal({
         source: totals?.source || null,
         testPaymentOverrideApplied,
         originalGrandTotal: Number.isFinite(originalGrandTotalCandidate) ? Math.max(0, originalGrandTotalCandidate) : null,
+        shippingTiming:
+          response?.shippingTiming && typeof response.shippingTiming === 'object'
+            ? {
+                averageBusinessDays:
+                  typeof response.shippingTiming.averageBusinessDays === 'number' &&
+                  Number.isFinite(response.shippingTiming.averageBusinessDays)
+                    ? response.shippingTiming.averageBusinessDays
+                    : null,
+                roundedBusinessDays:
+                  typeof response.shippingTiming.roundedBusinessDays === 'number' &&
+                  Number.isFinite(response.shippingTiming.roundedBusinessDays)
+                    ? response.shippingTiming.roundedBusinessDays
+                    : null,
+                sampleSize:
+                  typeof response.shippingTiming.sampleSize === 'number' &&
+                  Number.isFinite(response.shippingTiming.sampleSize)
+                    ? response.shippingTiming.sampleSize
+                    : null,
+                usedHistoricalAverage: response.shippingTiming.usedHistoricalAverage === true,
+              }
+            : null,
       });
       lastTaxQuoteRef.current = { key: taxQuoteKey, ts: Date.now() };
     } catch (error: any) {

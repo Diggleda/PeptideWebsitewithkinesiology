@@ -70,12 +70,27 @@ _admin_products_commission_lock = threading.Lock()
 _admin_products_commission_inflight: Optional[threading.Event] = None
 _admin_products_commission_cache: Dict[str, object] = {"data": None, "key": None, "expiresAtMs": 0}
 
+_SHIP_TIME_AVERAGE_TTL_SECONDS = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_TTL_SECONDS", "300").strip() or 300)
+_SHIP_TIME_AVERAGE_TTL_SECONDS = max(30, min(_SHIP_TIME_AVERAGE_TTL_SECONDS, 3600))
+_SHIP_TIME_AVERAGE_SAMPLE_LIMIT = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_SAMPLE_LIMIT", "250").strip() or 250)
+_SHIP_TIME_AVERAGE_SAMPLE_LIMIT = max(25, min(_SHIP_TIME_AVERAGE_SAMPLE_LIMIT, 1000))
+_SHIP_TIME_AVERAGE_MIN_SAMPLES = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_MIN_SAMPLES", "8").strip() or 8)
+_SHIP_TIME_AVERAGE_MIN_SAMPLES = max(1, min(_SHIP_TIME_AVERAGE_MIN_SAMPLES, _SHIP_TIME_AVERAGE_SAMPLE_LIMIT))
+_ship_time_average_lock = threading.Lock()
+_ship_time_average_cache: Dict[str, object] = {"data": None, "expiresAtMs": 0}
+
 
 def invalidate_admin_taxes_by_state_cache() -> None:
     with _admin_taxes_by_state_lock:
         _admin_taxes_by_state_cache["data"] = None
         _admin_taxes_by_state_cache["key"] = None
         _admin_taxes_by_state_cache["expiresAtMs"] = 0
+
+
+def invalidate_ship_time_average_cache() -> None:
+    with _ship_time_average_lock:
+        _ship_time_average_cache["data"] = None
+        _ship_time_average_cache["expiresAtMs"] = 0
 
 
 def _get_report_timezone() -> timezone:
@@ -257,6 +272,109 @@ def _normalize_email(value: Optional[str]) -> str:
     if not value:
         return ""
     return str(value).strip().lower()
+
+
+def _business_days_between(start_at: datetime, end_at: datetime) -> float:
+    if end_at <= start_at:
+        return 0.0
+
+    current = start_at
+    total_days = 0.0
+    while current.date() < end_at.date():
+        next_midnight = datetime.combine(
+            current.date() + timedelta(days=1),
+            datetime.min.time(),
+            tzinfo=current.tzinfo,
+        )
+        if current.weekday() < 5:
+            total_days += (next_midnight - current).total_seconds() / 86400.0
+        current = next_midnight
+
+    if current.weekday() < 5:
+        total_days += (end_at - current).total_seconds() / 86400.0
+    return max(0.0, total_days)
+
+
+def _trimmed_average(values: List[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(float(value) for value in values if value is not None)
+    if not ordered:
+        return 0.0
+    if len(ordered) < 10:
+        return sum(ordered) / len(ordered)
+    trim = min(max(int(len(ordered) * 0.1), 1), max((len(ordered) - 1) // 2, 0))
+    trimmed = ordered[trim : len(ordered) - trim] if trim else ordered
+    if not trimmed:
+        trimmed = ordered
+    return sum(trimmed) / len(trimmed)
+
+
+def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
+    try:
+        return mysql_client.fetch_all(
+            """
+            SELECT created_at, shipped_at
+            FROM orders
+            WHERE created_at IS NOT NULL
+              AND shipped_at IS NOT NULL
+              AND shipped_at >= created_at
+              AND COALESCE(facility_pickup, 0) = 0
+              AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled', 'refunded', 'failed')
+            ORDER BY shipped_at DESC
+            LIMIT %(limit)s
+            """,
+            {"limit": int(limit)},
+        )
+    except Exception:
+        orders = order_repository.get_all()
+        fallback_rows: List[Dict[str, object]] = []
+        for order in orders:
+            if not isinstance(order, dict):
+                continue
+            if bool(order.get("handDelivery") or order.get("facility_pickup")):
+                continue
+            status = str(order.get("status") or "").strip().lower()
+            if status in {"cancelled", "canceled", "refunded", "failed"}:
+                continue
+            created_at = order.get("createdAt") or order.get("created_at")
+            shipped_at = order.get("shippedAt") or order.get("shipped_at")
+            if created_at and shipped_at:
+                fallback_rows.append({"created_at": created_at, "shipped_at": shipped_at})
+        return fallback_rows[:limit]
+
+
+def _get_historical_ship_time_average() -> Dict[str, object]:
+    now_ms = int(time.time() * 1000)
+    with _ship_time_average_lock:
+        cached = _ship_time_average_cache.get("data")
+        expires_at = int(_ship_time_average_cache.get("expiresAtMs") or 0)
+        if isinstance(cached, dict) and expires_at > now_ms:
+            return dict(cached)
+
+    durations: List[float] = []
+    rows = _fetch_ship_time_average_rows(_SHIP_TIME_AVERAGE_SAMPLE_LIMIT)
+    for row in rows:
+        created_at = _parse_datetime_utc((row or {}).get("created_at"))
+        shipped_at = _parse_datetime_utc((row or {}).get("shipped_at"))
+        if not created_at or not shipped_at or shipped_at < created_at:
+            continue
+        durations.append(_business_days_between(created_at, shipped_at))
+
+    sample_size = len(durations)
+    average_business_days = _trimmed_average(durations) if sample_size >= _SHIP_TIME_AVERAGE_MIN_SAMPLES else 0.0
+    rounded_business_days = max(1, int(round(average_business_days))) if average_business_days > 0 else 1
+    result = {
+        "averageBusinessDays": round(average_business_days, 2) if average_business_days > 0 else None,
+        "roundedBusinessDays": rounded_business_days,
+        "sampleSize": sample_size,
+        "usedHistoricalAverage": bool(average_business_days > 0),
+    }
+
+    with _ship_time_average_lock:
+        _ship_time_average_cache["data"] = dict(result)
+        _ship_time_average_cache["expiresAtMs"] = now_ms + (_SHIP_TIME_AVERAGE_TTL_SECONDS * 1000)
+    return result
 
 
 def _list_house_lead_users_for_sales_tracking() -> List[Dict]:
@@ -697,6 +815,17 @@ def estimate_order_totals(
     except Exception:
         shipping_total_value = 0.0
     shipping_total_value = 0.0 if is_facility_pickup else max(0.0, shipping_total_value)
+    shipping_timing = {
+        "averageBusinessDays": None,
+        "roundedBusinessDays": 0 if is_facility_pickup else 1,
+        "sampleSize": 0,
+        "usedHistoricalAverage": False,
+    }
+    if not is_facility_pickup:
+        try:
+            shipping_timing = _get_historical_ship_time_average()
+        except Exception:
+            logger.warning("Failed to compute historical ship-time average", exc_info=True)
 
     items_total = 0.0
     normalized_items: List[Dict] = []
@@ -778,6 +907,7 @@ def estimate_order_totals(
                     "originalTaxTotal": 0.0,
                     "originalGrandTotal": round(original_grand_total, 2),
                 },
+                "shippingTiming": shipping_timing,
             }
         return {
             "success": True,
@@ -793,6 +923,7 @@ def estimate_order_totals(
                 "discountCode": normalized_discount_code,
                 "discountCodeAmount": round(max(0.0, discount_code_amount), 2),
             },
+            "shippingTiming": shipping_timing,
         }
 
     address = shipping_address or {}
@@ -844,7 +975,7 @@ def estimate_order_totals(
     if (os.environ.get("STRIPE_TAX_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"):
         logger.info("[TaxEstimate] Result %s", totals)
 
-    return {"success": True, "totals": totals}
+    return {"success": True, "totals": totals, "shippingTiming": shipping_timing}
 
 
 def _resolve_sales_rep_context(doctor: Dict) -> Dict[str, Optional[str]]:
