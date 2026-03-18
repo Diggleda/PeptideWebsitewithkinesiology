@@ -70,8 +70,8 @@ _admin_products_commission_lock = threading.Lock()
 _admin_products_commission_inflight: Optional[threading.Event] = None
 _admin_products_commission_cache: Dict[str, object] = {"data": None, "key": None, "expiresAtMs": 0}
 
-_SHIP_TIME_AVERAGE_TTL_SECONDS = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_TTL_SECONDS", "300").strip() or 300)
-_SHIP_TIME_AVERAGE_TTL_SECONDS = max(30, min(_SHIP_TIME_AVERAGE_TTL_SECONDS, 3600))
+_SHIP_TIME_AVERAGE_TTL_SECONDS = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_TTL_SECONDS", "0").strip() or 0)
+_SHIP_TIME_AVERAGE_TTL_SECONDS = max(0, min(_SHIP_TIME_AVERAGE_TTL_SECONDS, 3600))
 _SHIP_TIME_AVERAGE_SAMPLE_LIMIT = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_SAMPLE_LIMIT", "250").strip() or 250)
 _SHIP_TIME_AVERAGE_SAMPLE_LIMIT = max(25, min(_SHIP_TIME_AVERAGE_SAMPLE_LIMIT, 1000))
 _ship_time_average_lock = threading.Lock()
@@ -384,11 +384,12 @@ def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
 
 def _get_historical_ship_time_average() -> Dict[str, object]:
     now_ms = int(time.time() * 1000)
-    with _ship_time_average_lock:
-        cached = _ship_time_average_cache.get("data")
-        expires_at = int(_ship_time_average_cache.get("expiresAtMs") or 0)
-        if isinstance(cached, dict) and expires_at > now_ms:
-            return dict(cached)
+    if _SHIP_TIME_AVERAGE_TTL_SECONDS > 0:
+        with _ship_time_average_lock:
+            cached = _ship_time_average_cache.get("data")
+            expires_at = int(_ship_time_average_cache.get("expiresAtMs") or 0)
+            if isinstance(cached, dict) and expires_at > now_ms:
+                return dict(cached)
 
     durations: List[float] = []
     rows = _fetch_ship_time_average_rows(_SHIP_TIME_AVERAGE_SAMPLE_LIMIT)
@@ -411,9 +412,10 @@ def _get_historical_ship_time_average() -> Dict[str, object]:
         "usedHistoricalAverage": bool(average_business_days > 0),
     }
 
-    with _ship_time_average_lock:
-        _ship_time_average_cache["data"] = dict(result)
-        _ship_time_average_cache["expiresAtMs"] = now_ms + (_SHIP_TIME_AVERAGE_TTL_SECONDS * 1000)
+    if _SHIP_TIME_AVERAGE_TTL_SECONDS > 0:
+        with _ship_time_average_lock:
+            _ship_time_average_cache["data"] = dict(result)
+            _ship_time_average_cache["expiresAtMs"] = now_ms + (_SHIP_TIME_AVERAGE_TTL_SECONDS * 1000)
     return result
 
 
