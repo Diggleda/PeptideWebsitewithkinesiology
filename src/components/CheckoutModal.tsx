@@ -808,7 +808,7 @@ export function CheckoutModal({
     const pacificHour = getHourInTimeZone(now, 'America/Los_Angeles');
     const isAfterCutoff = (pacificHour ?? now.getHours()) >= cutoffHourLocal;
 
-    const backorderDays = requiresBackorder ? 2 : 0;
+    const backorderDays = 0;
     const historicalAverageDaysRaw = Number(taxEstimate?.shippingTiming?.averageBusinessDays);
     const historicalRoundedDaysRaw = Number(taxEstimate?.shippingTiming?.roundedBusinessDays);
     const baselineProcessingDays = Number.isFinite(historicalRoundedDaysRaw) && historicalRoundedDaysRaw > 0
@@ -828,9 +828,6 @@ export function CheckoutModal({
         : `${shipMinDate.toLocaleDateString()}–${shipMaxDate.toLocaleDateString()}`;
 
     const mathParts: string[] = [];
-    if (backorderDays) {
-      mathParts.push('2 business day backorder');
-    }
     if (Number.isFinite(historicalAverageDaysRaw) && historicalAverageDaysRaw > 0) {
       mathParts.push(
         `${processingMinDays}–${processingMaxDays} business day processing (historical avg ${historicalAverageDaysRaw.toFixed(1)} days)`,

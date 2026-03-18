@@ -34,7 +34,6 @@ _SALES_TRACKING_SELECT_COLUMNS = """
     items_subtotal,
     total,
     shipping_total,
-    facility_pickup,
     fulfillment_method,
     shipping_rate,
     shipping_carrier,
@@ -63,7 +62,7 @@ def _is_hand_delivery_order(order: Dict) -> bool:
     if not isinstance(order, dict):
         return False
 
-    if order.get("handDelivery") is True or order.get("facility_pickup") is True:
+    if order.get("handDelivery") is True:
         return True
 
     candidates = [
@@ -198,7 +197,6 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 items_subtotal,
                 total,
                 shipping_total,
-                facility_pickup,
                 fulfillment_method,
                 status,
                 notes,
@@ -290,24 +288,12 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                     )
                 ),
                 "shippingTotal": float(row.get("shipping_total") or 0),
-                "handDelivery": bool(
-                    row.get("facility_pickup")
-                    if row.get("facility_pickup") is not None
-                    else payload.get("handDelivery")
-                ),
+                "handDelivery": bool(payload.get("handDelivery")),
                 "fulfillmentMethod": _normalize_fulfillment_method(
                     row.get("fulfillment_method"),
                     payload.get("fulfillmentMethod"),
                 )
-                or (
-                    "hand_delivered"
-                    if bool(
-                        row.get("facility_pickup")
-                        if row.get("facility_pickup") is not None
-                        else payload.get("handDelivery")
-                    )
-                    else "shipping"
-                ),
+                or ("hand_delivered" if bool(payload.get("handDelivery")) else "shipping"),
                 "status": row.get("status"),
                 "notes": row.get("notes") if row.get("notes") is not None else None,
                 "shippingAddress": parse_json(row.get("shipping_address")),
@@ -1123,7 +1109,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingTotal": float(row.get("shipping_total") or 0),
         "shippingEstimate": parse_json(row.get("shipping_rate"), parse_json(row.get("integrations"), {}).get("shippingRate", {})),
         "shippingAddress": parse_json(row.get("shipping_address"), None),
-        "handDelivery": bool(row.get("facility_pickup")) if row.get("facility_pickup") is not None else False,
+        "handDelivery": bool(payload.get("handDelivery")) if isinstance(payload, dict) else False,
         "fulfillmentMethod": row.get("fulfillment_method"),
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
@@ -1144,7 +1130,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
     if isinstance(payload, dict) and payload:
-        if row.get("facility_pickup") is None and payload.get("handDelivery") is not None:
+        if payload.get("handDelivery") is not None:
             order["handDelivery"] = bool(payload.get("handDelivery"))
         if not order.get("fulfillmentMethod") and payload.get("fulfillmentMethod"):
             order["fulfillmentMethod"] = _normalize_fulfillment_method(payload.get("fulfillmentMethod"))
@@ -1320,12 +1306,12 @@ def _to_db_params(order: Dict) -> Dict:
     grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
     grand_total = max(0.0, grand_total)
     tracking_number = _resolve_tracking_number(order)
-    facility_pickup = bool(order.get("handDelivery") is True or order.get("facility_pickup") is True)
+    hand_delivery = bool(order.get("handDelivery") is True)
     fulfillment_method = _normalize_fulfillment_method(
         order.get("fulfillmentMethod"),
         order.get("fulfillment_method"),
     )
-    if facility_pickup:
+    if hand_delivery:
         fulfillment_method = "hand_delivered"
     elif fulfillment_method not in ("shipping", "hand_delivered"):
         fulfillment_method = "shipping"
@@ -1345,8 +1331,7 @@ def _to_db_params(order: Dict) -> Dict:
         "items_subtotal": float(max(0.0, items_subtotal)),
         # `orders.total` should reflect the full amount paid (subtotal - discounts + shipping + tax).
         "total": float(grand_total),
-        "shipping_total": 0.0 if facility_pickup else float(order.get("shippingTotal") or 0),
-        "facility_pickup": 1 if facility_pickup else 0,
+        "shipping_total": 0.0 if hand_delivery else float(order.get("shippingTotal") or 0),
         "fulfillment_method": fulfillment_method,
         "shipping_carrier": order.get("shippingCarrier")
         or order.get("shippingEstimate", {}).get("carrierId")
