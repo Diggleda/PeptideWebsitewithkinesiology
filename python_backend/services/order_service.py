@@ -411,36 +411,6 @@ def _normalize_state_lookup_value(value: object) -> str:
     return normalized.rstrip(",. ")
 
 
-def _build_tax_debug_payload(
-    *,
-    shipping_address: Optional[Dict],
-    facility_pickup: bool,
-    tax_source: str,
-    tax_total: float,
-    tax_exempt: bool,
-    state_profile: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    address = shipping_address or {}
-    raw_country = str(address.get("country") or "")
-    normalized_country = _normalize_country_code(raw_country or "US")
-    raw_state = str(address.get("state") or address.get("stateCode") or "")
-    normalized_state = _normalize_state_lookup_value(raw_state)
-    return {
-        "rawCountry": raw_country or None,
-        "normalizedCountry": normalized_country or None,
-        "rawState": raw_state or None,
-        "normalizedState": normalized_state or None,
-        "postalCode": _normalize_address_field(address.get("postalCode") or address.get("postcode") or address.get("zip")),
-        "handDelivery": bool(facility_pickup),
-        "taxExempt": bool(tax_exempt),
-        "taxSource": str(tax_source or "unknown"),
-        "taxTotal": round(float(tax_total or 0.0), 2),
-        "nexusTriggered": bool((state_profile or {}).get("nexusTriggered")) if isinstance(state_profile, dict) else None,
-        "collectTaxDefault": bool((state_profile or {}).get("collectTaxDefault")) if isinstance(state_profile, dict) else None,
-        "bufferedTaxRate": (state_profile or {}).get("bufferedTaxRate") if isinstance(state_profile, dict) else None,
-    }
-
-
 def _is_california_address(address: Optional[Dict]) -> bool:
     if not isinstance(address, dict):
         return False
@@ -792,14 +762,6 @@ def estimate_order_totals(
 
     if _is_tax_exempt_for_checkout(user):
         original_grand_total = max(0.0, items_total_effective + shipping_total_value)
-        tax_debug = _build_tax_debug_payload(
-            shipping_address=shipping_address,
-            facility_pickup=is_facility_pickup,
-            tax_source="tax_exempt",
-            tax_total=0.0,
-            tax_exempt=True,
-            state_profile=None,
-        )
         if test_override:
             return {
                 "success": True,
@@ -816,7 +778,6 @@ def estimate_order_totals(
                     "originalTaxTotal": 0.0,
                     "originalGrandTotal": round(original_grand_total, 2),
                 },
-                "taxDebug": tax_debug,
             }
         return {
             "success": True,
@@ -832,7 +793,6 @@ def estimate_order_totals(
                 "discountCode": normalized_discount_code,
                 "discountCodeAmount": round(max(0.0, discount_code_amount), 2),
             },
-            "taxDebug": tax_debug,
         }
 
     address = shipping_address or {}
@@ -846,7 +806,7 @@ def estimate_order_totals(
 
     tax_total = 0.0
     source = "flat_zero"
-    tax_total, source, state_profile = _calculate_checkout_tax(
+    tax_total, source, _state_profile = _calculate_checkout_tax(
         items_subtotal=float(items_total_effective),
         shipping_total=float(shipping_total_value),
         shipping_address=address,
@@ -884,18 +844,7 @@ def estimate_order_totals(
     if (os.environ.get("STRIPE_TAX_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"):
         logger.info("[TaxEstimate] Result %s", totals)
 
-    return {
-        "success": True,
-        "totals": totals,
-        "taxDebug": _build_tax_debug_payload(
-            shipping_address=address,
-            facility_pickup=is_facility_pickup,
-            tax_source=source,
-            tax_total=tax_total,
-            tax_exempt=False,
-            state_profile=state_profile,
-        ),
-    }
+    return {"success": True, "totals": totals}
 
 
 def _resolve_sales_rep_context(doctor: Dict) -> Dict[str, Optional[str]]:
