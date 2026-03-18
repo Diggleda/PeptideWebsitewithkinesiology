@@ -74,8 +74,6 @@ _SHIP_TIME_AVERAGE_TTL_SECONDS = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_TTL
 _SHIP_TIME_AVERAGE_TTL_SECONDS = max(30, min(_SHIP_TIME_AVERAGE_TTL_SECONDS, 3600))
 _SHIP_TIME_AVERAGE_SAMPLE_LIMIT = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_SAMPLE_LIMIT", "250").strip() or 250)
 _SHIP_TIME_AVERAGE_SAMPLE_LIMIT = max(25, min(_SHIP_TIME_AVERAGE_SAMPLE_LIMIT, 1000))
-_SHIP_TIME_AVERAGE_MIN_SAMPLES = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_MIN_SAMPLES", "8").strip() or 8)
-_SHIP_TIME_AVERAGE_MIN_SAMPLES = max(1, min(_SHIP_TIME_AVERAGE_MIN_SAMPLES, _SHIP_TIME_AVERAGE_SAMPLE_LIMIT))
 _ship_time_average_lock = threading.Lock()
 _ship_time_average_cache: Dict[str, object] = {"data": None, "expiresAtMs": 0}
 
@@ -366,7 +364,7 @@ def _get_historical_ship_time_average() -> Dict[str, object]:
         durations.append(_business_days_between(created_at, shipped_at))
 
     sample_size = len(durations)
-    average_business_days = _trimmed_average(durations) if sample_size >= _SHIP_TIME_AVERAGE_MIN_SAMPLES else 0.0
+    average_business_days = _trimmed_average(durations) if sample_size > 0 else 0.0
     rounded_business_days = max(1, int(round(average_business_days))) if average_business_days > 0 else 1
     result = {
         "averageBusinessDays": round(average_business_days, 2) if average_business_days > 0 else None,
