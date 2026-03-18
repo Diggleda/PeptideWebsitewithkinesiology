@@ -836,16 +836,9 @@ export function CheckoutModal({
       mathParts.push(`${processingMinDays}–${processingMaxDays} business day processing`);
     }
     const mathText = `${mathParts.join(' + ')}${isAfterCutoff ? ' (order placed after 1pm PT)' : ''}`;
-    const historicalSampleSize = Number(taxEstimate?.shippingTiming?.sampleSize);
-    const calculationText =
-      Number.isFinite(historicalAverageDaysRaw) && historicalAverageDaysRaw > 0
-        ? `Average ship time = ${historicalAverageDaysRaw.toFixed(1)} business days${Number.isFinite(historicalSampleSize) && historicalSampleSize > 0 ? ` from ${Math.round(historicalSampleSize)} tracked shipped orders` : ''}, rounded to ${baselineProcessingDays} business days for the baseline.`
-        : null;
-
     return {
       shipWindowLabel,
       mathText,
-      calculationText,
       disclaimer: null,
     };
   }, [requiresBackorder, selectedShippingRate, taxEstimate?.shippingTiming]);
@@ -1981,11 +1974,6 @@ export function CheckoutModal({
                               <p className="text-xs text-slate-600">
                                 {deliveryEstimate.mathText}
                               </p>
-                              {deliveryEstimate.calculationText && (
-                                <p className="text-[11px] text-slate-500">
-                                  {deliveryEstimate.calculationText}
-                                </p>
-                              )}
                               {deliveryEstimate.disclaimer && (
                                 <p className="text-[11px] text-slate-500">
                                   {deliveryEstimate.disclaimer}
