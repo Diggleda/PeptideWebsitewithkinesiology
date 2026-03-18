@@ -1,6 +1,7 @@
 import unittest
 import sys
 import types
+from datetime import datetime
 from unittest.mock import patch
 
 if "pymysql" not in sys.modules:
@@ -65,7 +66,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         )
 
         sql = mock_execute.call_args[0][0]
-        self.assertIn("shipped_at = COALESCE(shipped_at, VALUES(shipped_at))", sql)
+        self.assertIn("WHEN VALUES(shipped_at) IS NOT NULL THEN VALUES(shipped_at)", sql)
 
     @patch("python_backend.repositories.order_repository.find_by_id", return_value={"id": "order-4"})
     @patch("python_backend.repositories.order_repository.mysql_client.execute")
@@ -80,7 +81,32 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         )
 
         sql = mock_execute.call_args[0][0]
-        self.assertIn("shipped_at = COALESCE(shipped_at, %(shipped_at)s)", sql)
+        self.assertIn("WHEN %(shipped_at)s IS NOT NULL THEN %(shipped_at)s", sql)
+
+    def test_row_to_order_formats_naive_mysql_datetime_in_order_timezone(self):
+        with patch.dict("os.environ", {"ORDER_TIMEZONE": "America/Los_Angeles"}):
+            order = order_repository._row_to_order(
+                {
+                    "id": "order-5",
+                    "user_id": "user-5",
+                    "pricing_mode": "wholesale",
+                    "items": "[]",
+                    "total": 0,
+                    "items_subtotal": 0,
+                    "shipping_total": 0,
+                    "shipping_rate": "{}",
+                    "integrations": "{}",
+                    "shipping_address": "{}",
+                    "tracking_number": None,
+                    "shipped_at": datetime(2026, 3, 5, 0, 0, 0),
+                    "physician_certified": 0,
+                    "status": "completed",
+                    "created_at": datetime(2026, 3, 1, 12, 0, 0),
+                    "updated_at": datetime(2026, 3, 1, 12, 0, 0),
+                }
+            )
+
+        self.assertEqual(order["shippedAt"], "2026-03-05T00:00:00-08:00")
 
 
 if __name__ == "__main__":

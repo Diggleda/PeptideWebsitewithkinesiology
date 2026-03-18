@@ -266,7 +266,7 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
 
     if status and not estimate.get("status"):
         estimate["status"] = str(status).strip().lower()
-    if ship_date and not estimate.get("shipDate"):
+    if ship_date:
         estimate["shipDate"] = ship_date
     if carrier and not estimate.get("carrierId"):
         estimate["carrierId"] = carrier
@@ -281,7 +281,7 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
 
     if tracking and not merged.get("trackingNumber"):
         merged["trackingNumber"] = tracking
-    if ship_date and not merged.get("shippedAt") and not merged.get("shipped_at"):
+    if ship_date:
         merged["shippedAt"] = ship_date
     if status and not merged.get("status"):
         merged["status"] = str(status).strip().lower()

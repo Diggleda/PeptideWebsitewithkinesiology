@@ -880,7 +880,10 @@ def insert(order: Dict) -> Dict:
                     facility_pickup = VALUES(facility_pickup),
                     fulfillment_method = VALUES(fulfillment_method),
                     tracking_number = VALUES(tracking_number),
-                    shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
+                    shipped_at = CASE
+                        WHEN VALUES(shipped_at) IS NOT NULL THEN VALUES(shipped_at)
+                        ELSE shipped_at
+                    END,
                     physician_certified = VALUES(physician_certified),
                     referral_code = VALUES(referral_code),
                     status = VALUES(status),
@@ -924,7 +927,10 @@ def insert(order: Dict) -> Dict:
                     shipping_carrier = VALUES(shipping_carrier),
                     shipping_service = VALUES(shipping_service),
                     tracking_number = VALUES(tracking_number),
-                    shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
+                    shipped_at = CASE
+                        WHEN VALUES(shipped_at) IS NOT NULL THEN VALUES(shipped_at)
+                        ELSE shipped_at
+                    END,
                     physician_certified = VALUES(physician_certified),
                     referral_code = VALUES(referral_code),
                     status = VALUES(status),
@@ -969,7 +975,10 @@ def update(order: Dict) -> Optional[Dict]:
                     facility_pickup = %(facility_pickup)s,
                     fulfillment_method = %(fulfillment_method)s,
                     tracking_number = %(tracking_number)s,
-                    shipped_at = COALESCE(shipped_at, %(shipped_at)s),
+                    shipped_at = CASE
+                        WHEN %(shipped_at)s IS NOT NULL THEN %(shipped_at)s
+                        ELSE shipped_at
+                    END,
                     referral_code = %(referral_code)s,
                     status = %(status)s,
                     referrer_bonus = %(referrer_bonus)s,
@@ -999,7 +1008,10 @@ def update(order: Dict) -> Optional[Dict]:
                     shipping_carrier = %(shipping_carrier)s,
                     shipping_service = %(shipping_service)s,
                     tracking_number = %(tracking_number)s,
-                    shipped_at = COALESCE(shipped_at, %(shipped_at)s),
+                    shipped_at = CASE
+                        WHEN %(shipped_at)s IS NOT NULL THEN %(shipped_at)s
+                        ELSE shipped_at
+                    END,
                     referral_code = %(referral_code)s,
                     status = %(status)s,
                     referrer_bonus = %(referrer_bonus)s,
@@ -1073,6 +1085,11 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
     if not row:
         return None
 
+    try:
+        local_tz = ZoneInfo(os.environ.get("ORDER_TIMEZONE") or "America/Los_Angeles")
+    except Exception:
+        local_tz = timezone.utc
+
     def parse_json(value, default):
         if not value:
             return default
@@ -1085,7 +1102,12 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         if not value:
             return None
         if isinstance(value, datetime):
-            return value.replace(tzinfo=timezone.utc).isoformat()
+            parsed = value
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=local_tz)
+            else:
+                parsed = parsed.astimezone(local_tz)
+            return parsed.isoformat()
         return str(value)
 
     payload = parse_json(row.get("payload"), {})

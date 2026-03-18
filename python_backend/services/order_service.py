@@ -3116,7 +3116,7 @@ def _persist_shipping_update(
     ship_date = None
     if isinstance(shipstation_info, dict):
         ship_date = shipstation_info.get("shipDate")
-    if ship_date and not merged.get("shippedAt") and not merged.get("shipped_at"):
+    if ship_date:
         merged["shippedAt"] = ship_date
 
     integrations = _ensure_dict(merged.get("integrationDetails") or merged.get("integrations"))
