@@ -1183,6 +1183,33 @@ const normalizeCountryCode = (value) => {
 
 const normalizeStateLookupValue = (value) => String(value || '').trim().replace(/[,. ]+$/, '');
 
+const buildTaxDebugPayload = ({
+  shippingAddress,
+  handDelivery,
+  taxExempt,
+  taxSource,
+  taxTotal,
+  stateProfile,
+}) => {
+  const address = shippingAddress || {};
+  const rawCountry = String(address.country || '');
+  const rawState = String(address.state || address.stateCode || '');
+  return {
+    rawCountry: rawCountry || null,
+    normalizedCountry: normalizeCountryCode(rawCountry || 'US') || null,
+    rawState: rawState || null,
+    normalizedState: normalizeStateLookupValue(rawState) || null,
+    postalCode: String(address.postalCode || address.postcode || address.zip || '').trim() || null,
+    handDelivery: Boolean(handDelivery),
+    taxExempt: Boolean(taxExempt),
+    taxSource: String(taxSource || 'unknown'),
+    taxTotal: roundCurrency(Number(taxTotal || 0)),
+    nexusTriggered: stateProfile?.nexusTriggered ?? null,
+    collectTaxDefault: stateProfile?.collectTaxDefault ?? null,
+    bufferedTaxRate: stateProfile?.bufferedTaxRate ?? null,
+  };
+};
+
 const calculateCheckoutTax = async ({
   itemsSubtotal,
   shippingTotal: _shippingTotal,
@@ -1676,6 +1703,14 @@ const estimateOrderTotals = async ({
         currency: 'USD',
         source: 'tax_exempt',
       },
+      taxDebug: buildTaxDebugPayload({
+        shippingAddress: shippingData.shippingAddress,
+        handDelivery: handDeliverySelected,
+        taxExempt: true,
+        taxSource: 'tax_exempt',
+        taxTotal: 0,
+        stateProfile: null,
+      }),
       wooPreview: null,
     };
   }
@@ -1732,6 +1767,14 @@ const estimateOrderTotals = async ({
       currency: 'USD',
       source: taxSource || (wooTaxResponse ? 'woocommerce' : 'fallback'),
     },
+    taxDebug: buildTaxDebugPayload({
+      shippingAddress: provisionalOrder.shippingAddress,
+      handDelivery: handDeliverySelected,
+      taxExempt: false,
+      taxSource,
+      taxTotal,
+      stateProfile: taxCalculation.stateProfile || null,
+    }),
     wooPreview: wooTaxResponse,
   };
 };

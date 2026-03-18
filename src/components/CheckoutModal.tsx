@@ -379,6 +379,7 @@ export function CheckoutModal({
     currency: string;
     grandTotal: number;
     source?: string | null;
+    debug?: Record<string, unknown> | null;
     testPaymentOverrideApplied?: boolean;
     originalGrandTotal?: number | null;
   } | null>(null);
@@ -1359,11 +1360,15 @@ export function CheckoutModal({
       const fallbackGrandTotal = Math.max(0, discountedSubtotal - appliedCredits + effectiveShippingCost + amount);
       const testPaymentOverrideApplied = totals?.testPaymentOverrideApplied === true;
       const originalGrandTotalCandidate = Number(totals?.originalGrandTotal);
+      const taxDebug = response?.taxDebug && typeof response.taxDebug === 'object'
+        ? response.taxDebug as Record<string, unknown>
+        : null;
       setTaxEstimate({
         amount,
         currency: typeof totals?.currency === 'string' && totals.currency ? totals.currency : 'USD',
         grandTotal: Number.isFinite(grandTotalFromApi) ? Math.max(0, grandTotalFromApi) : fallbackGrandTotal,
         source: totals?.source || null,
+        debug: taxDebug,
         testPaymentOverrideApplied,
         originalGrandTotal: Number.isFinite(originalGrandTotalCandidate) ? Math.max(0, originalGrandTotalCandidate) : null,
       });
@@ -2216,6 +2221,17 @@ export function CheckoutModal({
 	                  <span>Estimated tax:</span>
 	                  <span>{taxEstimatePending ? 'Calculating…' : `$${displayTaxAmount.toFixed(2)}`}</span>
 	                </div>
+                {taxEstimate?.debug && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                    <div>Tax debug: source={String(taxEstimate.debug.taxSource ?? taxEstimate.source ?? 'unknown')}</div>
+                    <div>
+                      country={String(taxEstimate.debug.normalizedCountry ?? 'n/a')} state={String(taxEstimate.debug.normalizedState ?? 'n/a')} postal={String(taxEstimate.debug.postalCode ?? 'n/a')}
+                    </div>
+                    <div>
+                      handDelivery={String(taxEstimate.debug.handDelivery ?? 'n/a')} taxExempt={String(taxEstimate.debug.taxExempt ?? 'n/a')} nexus={String(taxEstimate.debug.nexusTriggered ?? 'n/a')}
+                    </div>
+                  </div>
+                )}
                 {taxEstimateError && (
                   <div className="flex items-start justify-between text-xs text-red-600">
                     <span className="pr-2">{taxEstimateError}</span>
