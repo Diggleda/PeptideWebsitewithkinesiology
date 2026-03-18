@@ -843,7 +843,7 @@ export function CheckoutModal({
     return {
       shipWindowLabel,
       mathText,
-      disclaimer: 'Carrier transit begins after shipment and is not guaranteed.',
+      disclaimer: null,
     };
   }, [requiresBackorder, selectedShippingRate, taxEstimate?.shippingTiming]);
 

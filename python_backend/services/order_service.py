@@ -318,6 +318,7 @@ def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
             FROM orders
             WHERE created_at IS NOT NULL
               AND shipped_at IS NOT NULL
+              AND NULLIF(TRIM(COALESCE(tracking_number, '')), '') IS NOT NULL
               AND shipped_at >= created_at
               AND COALESCE(facility_pickup, 0) = 0
               AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled', 'refunded', 'failed')
@@ -336,6 +337,9 @@ def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
                 continue
             status = str(order.get("status") or "").strip().lower()
             if status in {"cancelled", "canceled", "refunded", "failed"}:
+                continue
+            tracking_number = str(order.get("trackingNumber") or order.get("tracking_number") or "").strip()
+            if not tracking_number:
                 continue
             created_at = order.get("createdAt") or order.get("created_at")
             shipped_at = order.get("shippedAt") or order.get("shipped_at")
