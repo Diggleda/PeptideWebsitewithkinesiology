@@ -397,11 +397,25 @@ def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
     return _has_reseller_permit_on_file(user)
 
 
+def _normalize_country_code(value: object) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized in ("US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"):
+        return "US"
+    return normalized
+
+
+def _normalize_state_lookup_value(value: object) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    return normalized.rstrip(",. ")
+
+
 def _is_california_address(address: Optional[Dict]) -> bool:
     if not isinstance(address, dict):
         return False
     state_code, _state_name = tax_tracking_service.canonicalize_state(
-        address.get("state") or address.get("stateCode")
+        _normalize_state_lookup_value(address.get("state") or address.get("stateCode"))
     )
     return state_code == "CA"
 
@@ -472,7 +486,7 @@ def _calculate_checkout_tax(
     shipping_address: Optional[Dict],
 ) -> Tuple[float, str, Optional[Dict[str, Any]]]:
     address = shipping_address or {}
-    country = str(address.get("country") or "US").strip().upper()
+    country = _normalize_country_code(address.get("country") or "US")
     if country != "US":
         return 0.0, "non_us", None
 
@@ -482,7 +496,7 @@ def _calculate_checkout_tax(
         return tax_total, "ca_fixed_rate", state_profile
 
     state_profile = tax_tracking_service.get_state_tax_profile(
-        address.get("state") or address.get("stateCode")
+        _normalize_state_lookup_value(address.get("state") or address.get("stateCode"))
     )
     if not bool(state_profile.get("nexusTriggered")):
         return 0.0, "no_nexus", state_profile

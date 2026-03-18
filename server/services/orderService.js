@@ -1173,18 +1173,28 @@ const resolveWooTaxClassForLookup = (value) => {
   return normalized;
 };
 
+const normalizeCountryCode = (value) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(normalized)) {
+    return 'US';
+  }
+  return normalized;
+};
+
+const normalizeStateLookupValue = (value) => String(value || '').trim().replace(/[,. ]+$/, '');
+
 const calculateCheckoutTax = async ({
   itemsSubtotal,
   shippingTotal: _shippingTotal,
   shippingAddress,
 }) => {
-  const country = String(shippingAddress?.country || 'US').trim().toUpperCase();
+  const country = normalizeCountryCode(shippingAddress?.country || 'US');
   if (country !== 'US') {
     return { taxTotal: 0, taxSource: 'non_us', stateProfile: null };
   }
 
   const { stateCode } = taxTrackingService.canonicalizeState(
-    shippingAddress?.state || shippingAddress?.stateCode,
+    normalizeStateLookupValue(shippingAddress?.state || shippingAddress?.stateCode),
   );
   if (stateCode === 'CA') {
     const stateProfile = await taxTrackingService.getStateTaxProfile('CA');
@@ -1196,7 +1206,7 @@ const calculateCheckoutTax = async ({
   }
 
   const stateProfile = await taxTrackingService.getStateTaxProfile(
-    shippingAddress?.state || shippingAddress?.stateCode,
+    normalizeStateLookupValue(shippingAddress?.state || shippingAddress?.stateCode),
   );
   if (!stateProfile?.nexusTriggered) {
     return { taxTotal: 0, taxSource: 'no_nexus', stateProfile };
