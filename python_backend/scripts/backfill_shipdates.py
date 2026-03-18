@@ -255,14 +255,15 @@ def _patch_payload(payload_raw: Any, ship_info: Dict[str, Any]) -> Optional[str]
     return json.dumps(payload, separators=(",", ":"))
 
 
-def _fetch_candidates(table: str, limit: int, offset: int) -> List[Dict[str, Any]]:
+def _fetch_candidates(table: str, limit: int, offset: int, *, force: bool = False) -> List[Dict[str, Any]]:
+    shipped_at_filter = "" if force else "AND shipped_at IS NULL"
     if table == "peppro_orders":
         return mysql_client.fetch_all(
-            """
+            f"""
             SELECT id, woo_order_id, shipstation_order_id, status, payload
             FROM peppro_orders
-            WHERE shipped_at IS NULL
-              AND LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')) IN ('shipped', 'completed')
+            WHERE LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')) IN ('shipped', 'completed')
+              {shipped_at_filter}
             ORDER BY created_at DESC
             LIMIT %(limit)s OFFSET %(offset)s
             """,
@@ -270,11 +271,11 @@ def _fetch_candidates(table: str, limit: int, offset: int) -> List[Dict[str, Any
         )
 
     return mysql_client.fetch_all(
-        """
+        f"""
         SELECT id, woo_order_number, tracking_number, status, payload
         FROM orders
-        WHERE shipped_at IS NULL
-          AND LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')) IN ('shipped', 'completed')
+        WHERE LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')) IN ('shipped', 'completed')
+          {shipped_at_filter}
         ORDER BY created_at DESC
         LIMIT %(limit)s OFFSET %(offset)s
         """,
@@ -352,7 +353,7 @@ def _resolve_ship_info(order_numbers: Sequence[str], sleep_ms: int) -> Optional[
     return None
 
 
-def run(*, apply: bool, limit: int, offset: int, sleep_ms: int, require_tracking: bool) -> None:
+def run(*, apply: bool, limit: int, offset: int, sleep_ms: int, require_tracking: bool, force: bool) -> None:
     _bootstrap_cli_env()
     config = load_config()
     configure_logging(config)
@@ -379,7 +380,7 @@ def run(*, apply: bool, limit: int, offset: int, sleep_ms: int, require_tracking
     skipped_tracking_required = 0
 
     for table in tables:
-        rows = _fetch_candidates(table, limit=limit, offset=offset)
+        rows = _fetch_candidates(table, limit=limit, offset=offset, force=force)
         for row in rows or []:
             scanned += 1
             order_id = _safe_str(row.get("id"))
@@ -428,6 +429,7 @@ def run(*, apply: bool, limit: int, offset: int, sleep_ms: int, require_tracking
     mode = "APPLIED" if apply else "DRY-RUN"
     summary = {
         "mode": mode,
+        "force": force,
         "limit": limit,
         "offset": offset,
         "scanned": scanned,
@@ -452,6 +454,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only update rows where ShipStation also has a tracking number.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Rescan shipped/completed rows even when shipped_at is already populated.",
+    )
     return parser.parse_args()
 
 
@@ -463,4 +470,5 @@ if __name__ == "__main__":
         offset=max(0, int(args.offset)),
         sleep_ms=max(0, min(int(args.sleep_ms), 10000)),
         require_tracking=bool(args.require_tracking),
+        force=bool(args.force),
     )

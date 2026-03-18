@@ -68,6 +68,18 @@ class TestBackfillShipdates(unittest.TestCase):
         self.assertIn("SET shipped_at = %(shipped_at)s", sql)
         self.assertEqual(params["shipped_at"], "2026-03-05 00:00:00")
 
+    @patch("python_backend.scripts.backfill_shipdates.mysql_client.fetch_all", return_value=[])
+    def test_fetch_candidates_default_only_scans_null_shipped_at(self, mock_fetch_all):
+        backfill_shipdates._fetch_candidates("orders", limit=10, offset=0, force=False)
+        sql, _params = mock_fetch_all.call_args[0]
+        self.assertIn("shipped_at IS NULL", sql)
+
+    @patch("python_backend.scripts.backfill_shipdates.mysql_client.fetch_all", return_value=[])
+    def test_fetch_candidates_force_includes_populated_shipped_at_rows(self, mock_fetch_all):
+        backfill_shipdates._fetch_candidates("orders", limit=10, offset=0, force=True)
+        sql, _params = mock_fetch_all.call_args[0]
+        self.assertNotIn("shipped_at IS NULL", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
