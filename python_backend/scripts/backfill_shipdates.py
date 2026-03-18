@@ -210,8 +210,8 @@ def _patch_payload(payload_raw: Any, ship_info: Dict[str, Any]) -> Optional[str]
     status = _safe_str(ship_info.get("status"))
 
     if ship_date:
-        payload["shippedAt"] = payload.get("shippedAt") or ship_date
-        payload["shipped_at"] = payload.get("shipped_at") or ship_date
+        payload["shippedAt"] = ship_date
+        payload["shipped_at"] = ship_date
 
     integrations = payload.get("integrations")
     if not isinstance(integrations, dict):
@@ -222,7 +222,7 @@ def _patch_payload(payload_raw: Any, ship_info: Dict[str, Any]) -> Optional[str]
     if status:
         shipstation["status"] = status
     if ship_date:
-        shipstation["shipDate"] = shipstation.get("shipDate") or ship_date
+        shipstation["shipDate"] = ship_date
     if tracking:
         shipstation["trackingNumber"] = shipstation.get("trackingNumber") or tracking
     if carrier:
@@ -233,13 +233,13 @@ def _patch_payload(payload_raw: Any, ship_info: Dict[str, Any]) -> Optional[str]
     if isinstance(payload.get("order"), dict):
         order = dict(payload["order"])
         if ship_date:
-            order["shippedAt"] = order.get("shippedAt") or ship_date
-            order["shipped_at"] = order.get("shipped_at") or ship_date
+            order["shippedAt"] = ship_date
+            order["shipped_at"] = ship_date
         shipping_estimate = order.get("shippingEstimate")
         if not isinstance(shipping_estimate, dict):
             shipping_estimate = {}
         if ship_date:
-            shipping_estimate["shipDate"] = shipping_estimate.get("shipDate") or ship_date
+            shipping_estimate["shipDate"] = ship_date
         if status:
             shipping_estimate["status"] = shipping_estimate.get("status") or str(status).lower()
         if carrier:
@@ -304,7 +304,7 @@ def _apply_update(
         mysql_client.execute(
             """
             UPDATE peppro_orders
-            SET shipped_at = COALESCE(shipped_at, %(shipped_at)s),
+            SET shipped_at = %(shipped_at)s,
                 payload = CASE
                   WHEN %(payload)s IS NULL THEN payload
                   ELSE %(payload)s
@@ -319,7 +319,7 @@ def _apply_update(
     mysql_client.execute(
         """
         UPDATE orders
-        SET shipped_at = COALESCE(shipped_at, %(shipped_at)s),
+        SET shipped_at = %(shipped_at)s,
             tracking_number = COALESCE(tracking_number, %(tracking)s),
             payload = CASE
               WHEN %(payload)s IS NULL THEN payload
