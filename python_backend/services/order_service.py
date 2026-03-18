@@ -312,7 +312,6 @@ def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
               AND created_at IS NOT NULL
               AND shipped_at IS NOT NULL
               AND DATE(shipped_at) >= DATE(created_at)
-              AND COALESCE(facility_pickup, 0) = 0
               AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled', 'refunded', 'failed')
             ORDER BY shipped_at DESC
             LIMIT %(limit)s
@@ -324,8 +323,6 @@ def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
         fallback_rows: List[Dict[str, object]] = []
         for order in orders:
             if not isinstance(order, dict):
-                continue
-            if bool(order.get("handDelivery") or order.get("facility_pickup")):
                 continue
             status = str(order.get("status") or "").strip().lower()
             if status in {"cancelled", "canceled", "refunded", "failed"}:
