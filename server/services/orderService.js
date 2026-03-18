@@ -1183,6 +1183,18 @@ const calculateCheckoutTax = async ({
     return { taxTotal: 0, taxSource: 'non_us', stateProfile: null };
   }
 
+  const { stateCode } = taxTrackingService.canonicalizeState(
+    shippingAddress?.state || shippingAddress?.stateCode,
+  );
+  if (stateCode === 'CA') {
+    const stateProfile = await taxTrackingService.getStateTaxProfile('CA');
+    return {
+      taxTotal: roundCurrency(Number(itemsSubtotal || 0) * 0.0875),
+      taxSource: 'ca_fixed_rate',
+      stateProfile,
+    };
+  }
+
   const stateProfile = await taxTrackingService.getStateTaxProfile(
     shippingAddress?.state || shippingAddress?.stateCode,
   );
@@ -1270,9 +1282,7 @@ const createOrderInternal = async ({
   const itemsSubtotal = calculateItemsSubtotal(items);
   const taxCalculation = taxExempt
     ? { taxTotal: 0, taxSource: 'tax_exempt' }
-    : shippingData.handDelivery
-      ? { taxTotal: 0, taxSource: 'facility_pickup' }
-      : await calculateCheckoutTax({
+    : await calculateCheckoutTax({
         itemsSubtotal,
         shippingTotal: shippingData.shippingTotal,
         shippingAddress: shippingData.shippingAddress,
@@ -1689,9 +1699,7 @@ const estimateOrderTotals = async ({
     city: shippingAddressForTax.city || '',
   };
 
-  const taxCalculation = shippingData.handDelivery
-    ? { taxTotal: 0, taxSource: 'facility_pickup', stateProfile: null }
-    : await calculateCheckoutTax({
+  const taxCalculation = await calculateCheckoutTax({
       itemsSubtotal,
       shippingTotal: shippingTotalFromPreview,
       shippingAddress: provisionalOrder.shippingAddress,

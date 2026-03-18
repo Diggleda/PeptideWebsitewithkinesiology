@@ -1718,6 +1718,7 @@ export const ordersAPI = {
       shippingAddress: any;
       shippingEstimate: any;
       shippingTotal: number;
+      handDelivery?: boolean;
       paymentMethod?: string | null;
       discountCode?: string | null;
     },

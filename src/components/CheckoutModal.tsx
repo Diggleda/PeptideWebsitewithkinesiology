@@ -158,6 +158,20 @@ const isAddressComplete = (address: ShippingAddress) =>
     && normalizeAddressField(address.country)
   );
 
+const isTaxAddressReady = (address: ShippingAddress) => {
+  const country = normalizeAddressField(address.country).toUpperCase();
+  if (!country) {
+    return false;
+  }
+  if (country !== 'US') {
+    return true;
+  }
+  return Boolean(
+    normalizeAddressField(address.state)
+    && normalizeAddressField(address.postalCode)
+  );
+};
+
 const toTitleCase = (value: string) => value.replace(/\b\w/g, (char) => char.toUpperCase());
 
 const formatShippingServiceLabel = (rate: ShippingRate) => {
@@ -546,15 +560,14 @@ export function CheckoutModal({
     .map((value) => normalizeAddressField(value).toUpperCase())
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
+  const taxAddressReady = isTaxAddressReady(shippingAddress);
   const isPaymentValid = true;
   const hasSelectedShippingRate = isHandDeliveryEnabled
     || Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
     && (isAuthenticated || allowUnauthenticatedCheckout)
-    && hasSelectedShippingRate
-    && !isHandDeliveryEnabled
-    && shippingAddressComplete
+    && taxAddressReady
     && checkoutLineItems.length > 0,
   );
   const taxReady = !shouldFetchTax || (!!taxEstimate && !taxEstimatePending);
@@ -1308,6 +1321,18 @@ export function CheckoutModal({
     setTaxEstimateError(null);
     try {
       const estimate = estimateTotals ?? ordersAPI.estimateTotals;
+      const handDeliveryRate: ShippingRate | null = isHandDeliveryEnabled
+        ? {
+            carrierId: 'hand_delivery',
+            serviceCode: 'hand_delivery',
+            serviceType: 'Hand delivered',
+            estimatedDeliveryDays: null,
+            deliveryDateGuaranteed: null,
+            rate: 0,
+            currency: 'USD',
+            addressFingerprint: shippingAddressSignature || null,
+          }
+        : null;
       const response = await estimate(
         {
           items: checkoutLineItems.map((item) => ({
@@ -1317,8 +1342,9 @@ export function CheckoutModal({
             quantity: item.quantity,
           })),
           shippingAddress,
-          shippingEstimate: selectedShippingRate,
+          shippingEstimate: isHandDeliveryEnabled ? handDeliveryRate : selectedShippingRate,
           shippingTotal: effectiveShippingCost,
+          handDelivery: isHandDeliveryEnabled,
           paymentMethod,
           discountCode: discountCodeApplied?.code ?? null,
         },
@@ -1367,6 +1393,8 @@ export function CheckoutModal({
     estimateTotals,
     paymentMethod,
     selectedShippingRate,
+    isHandDeliveryEnabled,
+    shippingAddressSignature,
     shippingAddress,
     effectiveShippingCost,
     shouldFetchTax,
