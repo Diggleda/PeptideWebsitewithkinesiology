@@ -273,24 +273,18 @@ def _normalize_email(value: Optional[str]) -> str:
 
 
 def _business_days_between(start_at: datetime, end_at: datetime) -> float:
-    if end_at <= start_at:
+    start_date = start_at.date()
+    end_date = end_at.date()
+    if end_date < start_date:
         return 0.0
 
-    current = start_at
+    current_date = start_date
     total_days = 0.0
-    while current.date() < end_at.date():
-        next_midnight = datetime.combine(
-            current.date() + timedelta(days=1),
-            datetime.min.time(),
-            tzinfo=current.tzinfo,
-        )
-        if current.weekday() < 5:
-            total_days += (next_midnight - current).total_seconds() / 86400.0
-        current = next_midnight
-
-    if current.weekday() < 5:
-        total_days += (end_at - current).total_seconds() / 86400.0
-    return max(0.0, total_days)
+    while current_date <= end_date:
+        if current_date.weekday() < 5:
+            total_days += 1.0
+        current_date += timedelta(days=1)
+    return total_days
 
 
 def _trimmed_average(values: List[float]) -> float:
@@ -317,7 +311,7 @@ def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
             WHERE NULLIF(TRIM(COALESCE(tracking_number, '')), '') IS NOT NULL
               AND created_at IS NOT NULL
               AND shipped_at IS NOT NULL
-              AND shipped_at >= created_at
+              AND DATE(shipped_at) >= DATE(created_at)
               AND COALESCE(facility_pickup, 0) = 0
               AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled', 'refunded', 'failed')
             ORDER BY shipped_at DESC
@@ -362,7 +356,7 @@ def _get_historical_ship_time_average() -> Dict[str, object]:
     for row in rows:
         created_at = _parse_datetime_utc((row or {}).get("created_at"))
         shipped_at = _parse_datetime_utc((row or {}).get("shipped_at"))
-        if not created_at or not shipped_at or shipped_at < created_at:
+        if not created_at or not shipped_at or shipped_at.date() < created_at.date():
             continue
         durations.append(_business_days_between(created_at, shipped_at))
 
