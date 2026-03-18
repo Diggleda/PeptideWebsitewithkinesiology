@@ -308,50 +308,14 @@ def _trimmed_average(values: List[float]) -> float:
     return sum(trimmed) / len(trimmed)
 
 
-def _resolve_historical_tracking_number(value: Dict[str, object]) -> Optional[str]:
-    direct_candidates = [
-        value.get("tracking_number"),
-        value.get("trackingNumber"),
-        value.get("tracking"),
-    ]
-    for candidate in direct_candidates:
-        text = str(candidate or "").strip()
-        if text:
-            return text
-
-    payload = _ensure_dict(value.get("payload"))
-    integrations = _ensure_dict(value.get("integrations"))
-    shipping = _ensure_dict(value.get("shipping_rate"))
-    if payload:
-        integrations = _ensure_dict(payload.get("integrationDetails") or payload.get("integrations")) or integrations
-        shipping = _ensure_dict(payload.get("shippingEstimate") or payload.get("shipping")) or shipping
-        payload_tracking = payload.get("trackingNumber") or payload.get("tracking_number") or payload.get("tracking")
-        text = str(payload_tracking or "").strip()
-        if text:
-            return text
-
-    shipstation = _ensure_dict(integrations.get("shipStation") or integrations.get("shipstation"))
-    for candidate in (
-        shipstation.get("trackingNumber"),
-        shipstation.get("tracking_number"),
-        shipstation.get("tracking"),
-        shipping.get("trackingNumber"),
-        shipping.get("tracking_number"),
-        shipping.get("tracking"),
-    ):
-        text = str(candidate or "").strip()
-        if text:
-            return text
-    return None
-
-
 def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
     try:
         return mysql_client.fetch_all(
             """
-            SELECT created_at, shipped_at, tracking_number, integrations, shipping_rate, payload
+            SELECT created_at, shipped_at, tracking_number
             FROM orders
-            WHERE created_at IS NOT NULL
+            WHERE NULLIF(TRIM(COALESCE(tracking_number, '')), '') IS NOT NULL
+              AND created_at IS NOT NULL
               AND shipped_at IS NOT NULL
               AND shipped_at >= created_at
               AND COALESCE(facility_pickup, 0) = 0
@@ -372,13 +336,15 @@ def _fetch_ship_time_average_rows(limit: int) -> List[Dict[str, object]]:
             status = str(order.get("status") or "").strip().lower()
             if status in {"cancelled", "canceled", "refunded", "failed"}:
                 continue
-            tracking_number = _resolve_historical_tracking_number(order)
+            tracking_number = str(order.get("trackingNumber") or order.get("tracking_number") or "").strip()
             if not tracking_number:
                 continue
             created_at = order.get("createdAt") or order.get("created_at")
             shipped_at = order.get("shippedAt") or order.get("shipped_at")
             if created_at and shipped_at:
-                fallback_rows.append({"created_at": created_at, "shipped_at": shipped_at})
+                fallback_rows.append(
+                    {"created_at": created_at, "shipped_at": shipped_at, "tracking_number": tracking_number}
+                )
         return fallback_rows[:limit]
 
 
@@ -394,8 +360,6 @@ def _get_historical_ship_time_average() -> Dict[str, object]:
     durations: List[float] = []
     rows = _fetch_ship_time_average_rows(_SHIP_TIME_AVERAGE_SAMPLE_LIMIT)
     for row in rows:
-        if not _resolve_historical_tracking_number(row):
-            continue
         created_at = _parse_datetime_utc((row or {}).get("created_at"))
         shipped_at = _parse_datetime_utc((row or {}).get("shipped_at"))
         if not created_at or not shipped_at or shipped_at < created_at:
