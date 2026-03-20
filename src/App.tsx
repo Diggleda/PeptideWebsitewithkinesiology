@@ -5294,7 +5294,6 @@ function MainApp() {
       apiWarmupInFlight.current = true;
       try {
         await checkServerHealth();
-        console.debug("[Health] API warmup complete");
       } catch (error) {
         console.warn("[Health] API warmup failed", error);
         if (!cancelled) {
@@ -12858,12 +12857,6 @@ function MainApp() {
         return;
       }
       leaderActivityLogRef.current.set(leaderKey, now);
-      console.debug("[Leader] Active", {
-        leaderKey,
-        label,
-        intervalMs,
-        tabId: getTabId(),
-      });
     },
     [],
   );
@@ -14279,10 +14272,6 @@ function MainApp() {
 	    };
 
 	    try {
-	      console.log("[Sales Tracking] Fetch start", {
-	        role: role || null,
-        salesRepId: salesRepId || null,
-      });
       let orders: AccountOrderSummary[] = [];
 	      const doctorLookup = new Map<
 	        string,
@@ -14701,19 +14690,6 @@ function MainApp() {
 	      }
 	      salesTrackingFailureCountRef.current = 0;
 	      salesTrackingNextAllowedAtRef.current = 0;
-	      console.log("[Sales Tracking] Orders loaded", {
-	        count: normalizedOrders.length,
-	        doctors: doctorLookup.size,
-        sample:
-          normalizedOrders[0] && {
-            id: normalizedOrders[0].id,
-            number: normalizedOrders[0].number,
-            createdAt: normalizedOrders[0].createdAt,
-            updatedAt: normalizedOrders[0].updatedAt,
-            shippingEstimate: normalizedOrders[0].shippingEstimate,
-            arrival: normalizedOrders[0].shippingEstimate?.estimatedArrivalDate,
-          },
-      });
 	    } catch (error: any) {
 	      const message =
 	        typeof error?.message === "string"
@@ -15379,14 +15355,10 @@ function MainApp() {
   const refreshReferralData = useCallback(
     async (options?: { showLoading?: boolean; force?: boolean }) => {
       if (!user) {
-        console.debug("[Referral] refreshReferralData skipped: no user");
         return;
       }
 
       if (referralPollingSuppressed) {
-        console.debug(
-          "[Referral] refreshReferralData suppressed due to prior auth error",
-        );
         return;
       }
 
@@ -15396,10 +15368,6 @@ function MainApp() {
       if (!forceRefresh && !shouldShowLoading) {
         const last = referralLastRefreshAtRef.current;
         if (last > 0 && now - last < REFERRAL_BACKGROUND_MIN_INTERVAL_MS) {
-          console.debug("[Referral] refreshReferralData throttled", {
-            sinceMs: now - last,
-            minIntervalMs: REFERRAL_BACKGROUND_MIN_INTERVAL_MS,
-          });
           return;
         }
       }
@@ -15409,14 +15377,10 @@ function MainApp() {
         referralSummaryCooldownRef.current &&
         referralSummaryCooldownRef.current > Date.now()
       ) {
-        console.debug("[Referral] refreshReferralData in cooldown");
         return;
       }
 
       if (!hasAuthToken()) {
-        console.debug(
-          "[Referral] refreshReferralData skipped: missing auth token",
-        );
         setReferralPollingSuppressed(true);
         return;
       }
@@ -15434,11 +15398,6 @@ function MainApp() {
       if (shouldShowLoading) {
         setReferralDataLoading(true);
       }
-
-      console.debug("[Referral] Refresh start", {
-        role: user.role,
-        userId: user.id,
-      });
 
       try {
         setReferralDataError(null);
@@ -15520,10 +15479,6 @@ function MainApp() {
               salesRep: responseSalesRep,
             };
           });
-          console.debug("[Referral] Doctor summary loaded", {
-            referrals: normalizedReferrals.length,
-            credits: normalizedCredits,
-          });
 	        } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
 	          // Sales leads should only see their own prospects (same scope as reps).
 	          const scopeAll = false;
@@ -15534,14 +15489,6 @@ function MainApp() {
 	            scope: scopeAll ? "all" : "mine",
 	          });
 	          setSalesRepDashboard(dashboard);
-	          console.debug("[Referral] Sales rep dashboard loaded", {
-	            referrals: dashboard?.referrals?.length ?? 0,
-	            statuses: dashboard?.statuses ?? null,
-	          });
-        } else {
-          console.debug("[Referral] Refresh skipped for role", {
-            role: user.role,
-          });
         }
       } catch (error: any) {
         const status = typeof error?.status === "number" ? error.status : null;
@@ -15571,7 +15518,6 @@ function MainApp() {
           </>,
         );
       } finally {
-        console.debug("[Referral] Refresh complete", { role: user.role });
         referralRefreshInFlight.current = false;
         if (shouldShowLoading) {
           setReferralDataLoading(false);
@@ -16095,24 +16041,8 @@ function MainApp() {
   useEffect(() => {
     let cancelled = false;
     const warmApi = async () => {
-      const start =
-        typeof performance !== "undefined" &&
-        typeof performance.now === "function"
-          ? performance.now()
-          : Date.now();
       try {
-        const healthy = await checkServerHealth();
-        if (!cancelled) {
-          const end =
-            typeof performance !== "undefined" &&
-            typeof performance.now === "function"
-              ? performance.now()
-              : Date.now();
-          console.debug("[Auth] API warm-up complete", {
-            healthy,
-            durationMs: Math.round(end - start),
-          });
-        }
+        await checkServerHealth();
       } catch (error) {
         if (!cancelled) {
           console.warn("[Auth] API warm-up failed", error);
@@ -16962,15 +16892,10 @@ function MainApp() {
   ): Promise<AuthActionResult> => {
     const loginContextAtStart = context ?? loginContext;
     const startedAt = Date.now();
-    console.debug("[Auth] Login attempt", { email, attempt });
     try {
       const user = await authAPI.login(email, password);
       applyLoginSuccessState(user);
       void storePasswordCredential(email, password, user.name || email);
-      console.debug("[Auth] Login success", {
-        userId: user.id,
-        visits: user.visits,
-      });
       return { status: "success" };
     } catch (error: any) {
       console.warn("[Auth] Login failed", { email, error });
@@ -18929,7 +18854,6 @@ function MainApp() {
   };
 
   const handleRequireLogin = () => {
-    console.debug("[Checkout] Require login triggered");
     setCheckoutOpen(false);
     setLoginPromptToken((token) => token + 1);
     setShouldReopenCheckout(true);
@@ -18939,7 +18863,6 @@ function MainApp() {
   };
 
   const handleAdvanceFromWelcome = () => {
-    console.debug("[Intro] Advance from welcome", { shouldReopenCheckout });
     setPostLoginHold(false);
     scrollViewportToTop();
     if (shouldReopenCheckout) {
@@ -26255,7 +26178,10 @@ function MainApp() {
             "linear-gradient(to top, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.05) 50%, rgba(0,0,0,0) 100%)",
         }}
       />
-      {infoFocusActive && postLoginHold && user && (
+      {infoFocusActive &&
+        postLoginHold &&
+        user &&
+        !showResearchTermsAgreementModal && (
         <div className="info-focus-overlay" aria-hidden="true" />
       )}
       <Dialog
@@ -26270,7 +26196,7 @@ function MainApp() {
         <DialogContent
           hideCloseButton
           className="max-w-2xl"
-          containerClassName="fixed inset-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
+          containerClassName="research-terms-modal-container fixed inset-0 z-[10000] flex justify-center px-3 pb-6"
           trapFocus={!researchTermsLegalModalOpen}
           onEscapeKeyDown={(event) => event.preventDefault()}
           onPointerDownOutside={(event) => event.preventDefault()}
@@ -26298,11 +26224,11 @@ function MainApp() {
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[rgb(95,179,249)]">
                 Review
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                 <Button
                   type="button"
                   variant="outline"
-                  className="border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
+                  className="w-full min-w-0 whitespace-normal text-center border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
                   onClick={() => openResearchTermsLegalDocument("terms")}
                 >
                   Terms of Service
@@ -26310,7 +26236,7 @@ function MainApp() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
+                  className="w-full min-w-0 whitespace-normal text-center border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
                   onClick={() => openResearchTermsLegalDocument("privacy")}
                 >
                   Privacy Policy
@@ -26318,7 +26244,7 @@ function MainApp() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
+                  className="w-full min-w-0 whitespace-normal text-center border-[rgba(95,179,249,0.35)] bg-white text-slate-900 sm:col-span-2"
                   onClick={() => openResearchTermsLegalDocument("shipping")}
                 >
                   Shipping Policy
@@ -26492,7 +26418,8 @@ function MainApp() {
                         </div>
                         {landingAccountButton}
                       </div>
-                      {!hideMobileWelcomeDuringLogout && (
+                      {!hideMobileWelcomeDuringLogout &&
+                        !showResearchTermsAgreementModal && (
                         <div
                           className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
                             showWelcome

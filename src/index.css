@@ -6440,6 +6440,24 @@ body.account-modal-open .info-focus-overlay {
   pointer-events: none;
 }
 
+.research-terms-modal-container {
+  align-items: flex-start;
+  padding-top: calc(var(--app-header-height, 120px) + 6rem);
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  padding-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .research-terms-modal-container {
+    align-items: center;
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
 .header-account-avatar.header-avatar-fallback {
   /* Match details tab avatar tone but stay fully opaque for stacking */
   background: linear-gradient(135deg, #e2f1fd, #bbdffc);

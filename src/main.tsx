@@ -12,6 +12,17 @@ if (typeof globalThis !== "undefined") {
   (globalThis as typeof globalThis & { React?: typeof React }).React = React;
 }
 
+if (typeof window !== "undefined" && typeof console !== "undefined") {
+  const originalWarn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    const first = typeof args[0] === "string" ? args[0] : "";
+    if (first.includes("window.styleMedia is a deprecated draft version of window.matchMedia API")) {
+      return;
+    }
+    originalWarn(...args);
+  };
+}
+
 const ensureHeadLink = (selector: string, attrs: Record<string, string>) => {
   const head = document.head || document.querySelector("head");
   if (!head) return;
