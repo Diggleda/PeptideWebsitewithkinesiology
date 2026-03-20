@@ -2,7 +2,7 @@ const pino = require('pino');
 const { env, isProduction } = require('./env');
 const { getRequestContext } = require('./requestContext');
 
-const usePretty = env.logPretty || !isProduction;
+const usePretty = env.logPretty === true;
 
 const summarizeValue = (value) => {
   if (value === null || value === undefined) {

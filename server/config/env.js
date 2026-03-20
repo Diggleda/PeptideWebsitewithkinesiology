@@ -222,6 +222,13 @@ const env = {
     apiToken: process.env.SHIPSTATION_API_TOKEN || process.env.SHIPSTATION_PRODUCTION_KEY || '',
     apiKey: process.env.SHIPSTATION_API_KEY || '',
     apiSecret: process.env.SHIPSTATION_API_SECRET || '',
+    orderStatusLookupsEnabled: (() => {
+      const explicit = parseBooleanEnv(process.env.SHIPSTATION_ORDER_STATUS_LOOKUPS_ENABLED);
+      if (explicit !== null) {
+        return explicit;
+      }
+      return process.env.NODE_ENV === 'production';
+    })(),
     storeId: process.env.SHIPSTATION_STORE_ID || '',
     webhookSecret: process.env.SHIPSTATION_WEBHOOK_SECRET || '',
     carrierCode: process.env.SHIPSTATION_CARRIER_CODE || '',

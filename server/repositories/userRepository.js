@@ -28,6 +28,13 @@ const normalizeOptionalString = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeEmail = (value) => {
+  if (value == null) {
+    return '';
+  }
+  return String(value).trim().toLowerCase();
+};
+
 const normalizeIdentifier = (value) => {
   if (value == null) return null;
   const text = String(value).trim();
@@ -448,7 +455,13 @@ const saveUsers = (users) => {
 
 const getAll = () => loadUsers();
 
-const findByEmail = (email) => loadUsers().find((user) => user.email === email) || null;
+const findByEmail = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    return null;
+  }
+  return loadUsers().find((user) => normalizeEmail(user.email) === normalized) || null;
+};
 
 const findById = (id) => loadUsers().find((user) => user.id === id) || null;
 

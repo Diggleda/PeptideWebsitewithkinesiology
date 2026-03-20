@@ -1,5 +1,4 @@
 const http = require('http');
-const net = require('net');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { bootstrap } = require('./bootstrap');
@@ -26,81 +25,45 @@ const assertSecureRuntimeConfig = () => {
   }
 };
 
-const probeListen = (port, host) => new Promise((resolve) => {
-  const tester = net.createServer();
-  let settled = false;
-
-  const finish = (available, code = null) => {
-    if (settled) return;
-    settled = true;
-    resolve({ available, code });
+const tryListen = (app, port) => new Promise((resolve, reject) => {
+  const server = http.createServer(app);
+  const onError = (error) => {
+    server.removeListener('listening', onListening);
+    reject(error);
   };
-
-  tester.once('error', (err) => {
-    const code = err && typeof err.code === 'string' ? err.code : null;
-    try {
-      tester.close(() => finish(false, code));
-    } catch {
-      finish(false, code);
-    }
-  });
-
-  tester.once('listening', () => {
-    try {
-      tester.close(() => finish(true, null));
-    } catch {
-      finish(true, null);
-    }
-  });
-
-  try {
-    tester.listen({ port, host });
-  } catch (err) {
-    const code = err && typeof err.code === 'string' ? err.code : null;
-    try {
-      tester.close(() => finish(false, code));
-    } catch {
-      finish(false, code);
-    }
-  }
+  const onListening = () => {
+    server.removeListener('error', onError);
+    resolve(server);
+  };
+  server.once('error', onError);
+  server.once('listening', onListening);
+  server.listen(port);
 });
 
-const probePortAvailability = async (port) => {
-  // Match `server.listen(port)` behavior which prefers IPv6 dual-stack (`::`) when available.
-  const ipv6 = await probeListen(port, '::');
-  if (ipv6.available) {
-    return ipv6;
-  }
-  const retryIpv4 =
-    ipv6.code === 'EAFNOSUPPORT'
-    || ipv6.code === 'EADDRNOTAVAIL'
-    || ipv6.code === 'EPERM'
-    || ipv6.code === 'EACCES';
-  if (!retryIpv4) {
-    return ipv6;
-  }
-  return probeListen(port, '0.0.0.0');
-};
-
-const findAvailablePort = async (startPort, attempts = 5) => {
+const createServerWithPortFallback = async (app, startPort, attempts = 1) => {
   const failureCodes = [];
   for (let i = 0; i < attempts; i += 1) {
     const candidate = startPort + i;
-    // eslint-disable-next-line no-await-in-loop
-    const probe = await probePortAvailability(candidate);
-    if (probe.available) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const server = await tryListen(app, candidate);
       if (i > 0) {
         logger.warn({ tried: startPort, selected: candidate }, 'Port in use, using fallback');
       }
-      return candidate;
+      return { server, port: candidate };
+    } catch (error) {
+      const code = error && typeof error.code === 'string' ? error.code : null;
+      failureCodes.push(code);
+      if (code !== 'EADDRINUSE' && code !== 'EPERM' && code !== 'EACCES') {
+        throw error;
+      }
     }
-    failureCodes.push(probe.code);
   }
   const distinctCodes = Array.from(new Set(failureCodes.filter(Boolean)));
   if (distinctCodes.length === 1 && (distinctCodes[0] === 'EPERM' || distinctCodes[0] === 'EACCES')) {
     throw new Error(
       `Unable to bind to ports starting at ${startPort} (${distinctCodes[0]}). `
-      + 'This environment may block listening sockets; choose a different PORT or update hosting configuration.',
+      + 'Choose a different PORT or update host permissions.',
     );
   }
   throw new Error(`No available port found starting at ${startPort}`);
@@ -116,58 +79,64 @@ const start = async () => {
       allowPortFallback: env.allowPortFallback,
     });
     assertSecureRuntimeConfig();
+    // eslint-disable-next-line no-console
+    console.log('[boot] bootstrap:begin');
     await bootstrap();
-
-    let port = env.port;
-    if (env.allowPortFallback) {
-      port = await findAvailablePort(env.port, 6);
-    } else {
-      const probe = await probePortAvailability(env.port);
-      if (!probe.available) {
-        if (probe.code === 'EPERM' || probe.code === 'EACCES') {
-          throw new Error(
-            `Unable to bind to port ${env.port} (${probe.code}). `
-            + 'Choose a different PORT or update host permissions.',
-          );
-        }
-        throw new Error(
-          `Port ${env.port} is already in use. Stop the existing process or set PORT, or set ALLOW_PORT_FALLBACK=true.`,
-        );
-      }
-    }
+    // eslint-disable-next-line no-console
+    console.log('[boot] bootstrap:done');
 
     const createApp = require('./app');
+    // eslint-disable-next-line no-console
+    console.log('[boot] app:require-done');
     const app = createApp();
-    const server = http.createServer(app);
+    // eslint-disable-next-line no-console
+    console.log('[boot] app:create-done');
+    // eslint-disable-next-line no-console
+    console.log('[boot] listen:begin', { port: env.port, allowPortFallback: env.allowPortFallback });
+    const { server, port } = await createServerWithPortFallback(
+      app,
+      env.port,
+      env.allowPortFallback ? 6 : 1,
+    );
+    // eslint-disable-next-line no-console
+    console.log('[boot] listen:done', { port });
 
-    server.listen(port, () => {
-      logger.info(
-        {
-          service: 'peppro-backend',
-          port,
-          nodeEnv: env.nodeEnv,
-        },
-        'Backend server is ready',
-      );
+    logger.info(
+      {
+        service: 'peppro-backend',
+        port,
+        nodeEnv: env.nodeEnv,
+      },
+      'Backend server is ready',
+    );
+    setImmediate(() => {
       try {
-        const { startOrderSyncJob } = require('./services/orderService');
-        startOrderSyncJob();
+        if (typeof app.prewarmApiModules === 'function') {
+          app.prewarmApiModules();
+          logger.debug('Background API route prewarm started');
+        }
       } catch (error) {
-        logger.error({ err: error }, 'Failed to start background order sync job');
-      }
-      try {
-        const { startShipStationStatusSyncJob } = require('./services/shipStationSyncService');
-        startShipStationStatusSyncJob();
-      } catch (error) {
-        logger.error({ err: error }, 'Failed to start ShipStation status sync job');
-      }
-      try {
-        const { startSeamlessReconciliationJob } = require('./services/crmSeamlessService');
-        startSeamlessReconciliationJob();
-      } catch (error) {
-        logger.error({ err: error }, 'Failed to start CRM Seamless reconciliation job');
+        logger.warn({ err: error }, 'Background API route prewarm failed');
       }
     });
+    try {
+      const { startOrderSyncJob } = require('./services/orderService');
+      startOrderSyncJob();
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to start background order sync job');
+    }
+    try {
+      const { startShipStationStatusSyncJob } = require('./services/shipStationSyncService');
+      startShipStationStatusSyncJob();
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to start ShipStation status sync job');
+    }
+    try {
+      const { startSeamlessReconciliationJob } = require('./services/crmSeamlessService');
+      startSeamlessReconciliationJob();
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to start CRM Seamless reconciliation job');
+    }
 
     server.on('error', (error) => {
       logger.error({ err: error }, 'HTTP server error');

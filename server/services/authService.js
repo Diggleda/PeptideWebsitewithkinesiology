@@ -240,6 +240,17 @@ const sanitizeUser = (user) => {
   };
 };
 
+const sanitizeUserForAuthResponse = (user) => {
+  const sanitized = sanitizeUser(user);
+  return {
+    ...sanitized,
+    // Large data URLs make login/register responses noticeably slower.
+    // The client can hydrate these later via profile fetch/update flows.
+    profileImageUrl: null,
+    delegateLogoUrl: null,
+  };
+};
+
 const normalizeHumanName = (value = '') =>
   String(value)
     .replace(/\s+/g, ' ')
@@ -528,7 +539,7 @@ const register = async ({
 
   return {
     token,
-    user: sanitizeUser(hydratedUser),
+    user: sanitizeUserForAuthResponse(hydratedUser),
   };
 };
 
@@ -585,7 +596,7 @@ const login = async ({ email, password }) => {
   const token = createAuthToken({ id: user.id, email: user.email });
   const totalMs = elapsedMs(totalStart);
   const hydratedUser = await hydrateUserCartFromSql(updated || user);
-  const sanitizedUser = sanitizeUser(hydratedUser);
+  const sanitizedUser = sanitizeUserForAuthResponse(hydratedUser);
 
   logger.debug(
     {
@@ -813,6 +824,7 @@ module.exports = {
   updateProfile,
   updateCart,
   sanitizeUser,
+  sanitizeUserForAuthResponse,
   createAuthToken,
   requestPasswordReset,
   resetPassword,

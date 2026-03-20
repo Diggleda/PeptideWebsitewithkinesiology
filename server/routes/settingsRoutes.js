@@ -14,6 +14,8 @@ const {
   setResearchDashboardEnabled,
   getCrmEnabled,
   setCrmEnabled,
+  getTestPaymentsOverrideEnabled,
+  setTestPaymentsOverrideEnabled,
   getStripeMode,
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
@@ -308,6 +310,11 @@ router.get('/crm', async (_req, res) => {
   res.json({ crmEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
+router.get('/test-payments-override', authenticate, requireAdmin, async (_req, res) => {
+  const enabled = await getTestPaymentsOverrideEnabled();
+  res.json({ testPaymentsOverrideEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
 router.put('/shop', authenticate, requireAdmin, async (req, res) => {
   const enabled = Boolean(req.body?.enabled);
   const confirmed = await setShopEnabled(enabled);
@@ -377,6 +384,12 @@ router.put('/crm', authenticate, requireAdmin, async (req, res) => {
   const enabled = req.body?.crmEnabled ?? req.body?.enabled;
   const confirmed = await setCrmEnabled(Boolean(enabled));
   res.json({ crmEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.put('/test-payments-override', authenticate, requireAdmin, async (req, res) => {
+  const enabled = req.body?.testPaymentsOverrideEnabled ?? req.body?.enabled;
+  const confirmed = await setTestPaymentsOverrideEnabled(Boolean(enabled));
+  res.json({ testPaymentsOverrideEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/stripe', async (_req, res) => {
@@ -528,6 +541,40 @@ router.get('/users/:userId', authenticate, requireAdminOrSalesLead, async (req, 
   }
 
   return res.json({ user: serializeUserProfile(user) });
+});
+
+router.get('/users', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const rawIds = String(req.query?.ids || '').trim();
+  if (!rawIds) {
+    return res.status(400).json({ error: 'ids is required' });
+  }
+
+  const requestedIds = Array.from(new Set(
+    rawIds
+      .split(',')
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  )).slice(0, 100);
+
+  const users = requestedIds
+    .map((targetId) => (
+      userRepository.findById(targetId)
+      || userRepository.getAll().find((candidate) => String(candidate?.salesRepId || '').trim() === targetId)
+      || null
+    ))
+    .filter(Boolean)
+    .map((user) => {
+      const profile = serializeUserProfile(user);
+      return {
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role,
+        profileImageUrl: profile.profileImageUrl || null,
+      };
+    });
+
+  return res.json({ users });
 });
 
 router.patch('/users/:userId', authenticate, requireAdminOrSalesLead, async (req, res) => {

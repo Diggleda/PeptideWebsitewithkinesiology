@@ -578,6 +578,44 @@ const getOnHoldOrdersForAdmin = async (req, res, next) => {
   }
 };
 
+const getOnHoldOrdersForSalesRep = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    const isSalesLeadRole = role === 'sales_lead' || role === 'saleslead' || role === 'sales-lead';
+    const isSalesRepRole = role === 'sales_rep' || role === 'test_rep' || role === 'rep';
+    if (role !== 'admin' && !isSalesLeadRole && !isSalesRepRole) {
+      return res.status(403).json({ error: 'Sales access required' });
+    }
+    const querySalesRepId = typeof req.query?.salesRepId === 'string' ? req.query.salesRepId.trim() : '';
+    const requestedSalesRepId = role === 'admin'
+      ? (querySalesRepId || req.user?.salesRepId || req.user?.id)
+      : (querySalesRepId || req.user?.salesRepId || req.user?.id);
+    const alternateSalesRepIds = [];
+    if (req.user?.salesRepId && String(req.user.salesRepId).trim()) {
+      alternateSalesRepIds.push(String(req.user.salesRepId).trim());
+    }
+    if (req.user?.id && String(req.user.id).trim()) {
+      alternateSalesRepIds.push(String(req.user.id).trim());
+    }
+    const limitRaw = Number(req.query?.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000)
+      : 500;
+    const orders = await orderService.getOnHoldOrdersForSalesRep(requestedSalesRepId, {
+      limit,
+      includeAllDoctors: role === 'admin' || isSalesLeadRole,
+      alternateSalesRepIds,
+      includeHouseContacts: true,
+    });
+    return res.json({
+      orders: Array.isArray(orders) ? orders : [],
+      fetchedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const getTaxesByStateForAdmin = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
@@ -767,6 +805,7 @@ module.exports = {
   getOrdersForSalesRep,
   getSalesRepOrderDetail,
   getSalesByRepForAdmin,
+  getOnHoldOrdersForSalesRep,
   getOnHoldOrdersForAdmin,
   getTaxesByStateForAdmin,
   updateTaxTrackingStateForAdmin,

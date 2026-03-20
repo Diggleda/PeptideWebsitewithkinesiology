@@ -1,9 +1,34 @@
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
-const wooCommerceClient = require('../integration/wooCommerceClient');
-const shipEngineClient = require('../integration/shipEngineClient');
-const shipStationClient = require('../integration/shipStationClient');
 const os = require('os');
+
+let wooCommerceClient;
+let shipEngineClient;
+let shipStationClient;
+
+const getWooCommerceClient = () => {
+  if (!wooCommerceClient) {
+    // eslint-disable-next-line global-require
+    wooCommerceClient = require('../integration/wooCommerceClient');
+  }
+  return wooCommerceClient;
+};
+
+const getShipEngineClient = () => {
+  if (!shipEngineClient) {
+    // eslint-disable-next-line global-require
+    shipEngineClient = require('../integration/shipEngineClient');
+  }
+  return shipEngineClient;
+};
+
+const getShipStationClient = () => {
+  if (!shipStationClient) {
+    // eslint-disable-next-line global-require
+    shipStationClient = require('../integration/shipStationClient');
+  }
+  return shipStationClient;
+};
 
 const getServerUsage = () => {
   try {
@@ -50,13 +75,13 @@ const getHelp = (_req, res) => {
     build: env.backendBuild,
     integrations: {
       wooCommerce: {
-        configured: wooCommerceClient.isConfigured(),
+        configured: getWooCommerceClient().isConfigured(),
       },
       shipEngine: {
-        configured: shipEngineClient.isConfigured(),
+        configured: getShipEngineClient().isConfigured(),
       },
       shipStation: {
-        configured: shipStationClient.isConfigured(),
+        configured: getShipStationClient().isConfigured(),
       },
       mysql: {
         enabled: env.mysql?.enabled === true,

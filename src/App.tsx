@@ -54,7 +54,7 @@ import {
 			  Plus,
 				  Package,
 				  Upload,
-			  Download,
+				  Download,
 				  NotebookPen,
 				  CheckSquare,
 				  Trash2,
@@ -179,6 +179,24 @@ const AdjustmentsHorizontalIcon = ({ className }: { className?: string }) => (
       strokeLinecap="round"
       strokeLinejoin="round"
       d="M10.5 6L20.25 6M10.5 6C10.5 6.82843 9.82843 7.5 9 7.5C8.17157 7.5 7.5 6.82843 7.5 6M10.5 6C10.5 5.17157 9.82843 4.5 9 4.5C8.17157 4.5 7.5 5.17157 7.5 6M3.75 6H7.5M10.5 18H20.25M10.5 18C10.5 18.8284 9.82843 19.5 9 19.5C8.17157 19.5 7.5 18.8284 7.5 18M10.5 18C10.5 17.1716 9.82843 16.5 9 16.5C8.17157 16.5 7.5 17.1716 7.5 18M3.75 18L7.5 18M16.5 12L20.25 12M16.5 12C16.5 12.8284 15.8284 13.5 15 13.5C14.1716 13.5 13.5 12.8284 13.5 12M16.5 12C16.5 11.1716 15.8284 10.5 15 10.5C14.1716 10.5 13.5 11.1716 13.5 12M3.75 12H13.5"
+    />
+  </svg>
+);
+
+const CubeTransparentIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M21 7.5l-2.25-1.313M21 7.5v2.25m0-2.25l-2.25 1.313M3 7.5l2.25-1.313M3 7.5l2.25 1.313M3 7.5v2.25m9 3l2.25-1.313M12 12.75l-2.25-1.313M12 12.75V15m0 6.75l2.25-1.313M12 21.75V19.5m0 2.25l-2.25-1.313m0-16.875L12 2.25l2.25 1.313M21 14.25v2.25l-2.25 1.313m-13.5 0L3 16.5v-2.25"
     />
   </svg>
 );
@@ -5436,6 +5454,19 @@ function MainApp() {
     setShowLandingSignupConfirm(false);
     // Allow auto-registration attempt after each successful login
     passkeyAutoRegisterAttemptedRef.current = false;
+
+    // Hydrate the full profile in the background so login does not wait on
+    // large media fields like avatar/logo data URLs.
+    void authAPI
+      .getCurrentUser()
+      .then((current) => {
+        if (!current) return;
+        setUser((previous) => ({
+          ...(previous || {}),
+          ...(current as User),
+        }));
+      })
+      .catch(() => undefined);
   }, []);
 
   const openResearchTermsLegalDocument = useCallback(
@@ -8259,6 +8290,46 @@ function MainApp() {
   ] as const;
 
   type PortalBetaServiceKey = (typeof PORTAL_BETA_SERVICE_KEYS)[number];
+  const PORTAL_BETA_SERVICE_LABELS: Record<PortalBetaServiceKey, string> = {
+    shop: "Explore Peptides",
+    patientLinks: "Delegate Links",
+    crm: "CRM",
+    forum: "The Peptide Forum",
+    research: "Research Dashboard",
+    testPaymentsOverride: "Test Payments Override",
+  };
+  const buildAdminDashboardTabs = (betaServices: PortalBetaServiceKey[]) => {
+    const tabs = [
+      { id: "here_now" as const, label: "Here and now", Icon: GlobeAmericasIcon },
+      {
+        id: "admin_report" as const,
+        label: "Admin Report",
+        Icon: BuildingStorefrontIcon,
+      },
+      {
+        id: "structure" as const,
+        label: "Structure",
+        Icon: UserGroupIcon,
+      },
+    ] satisfies Array<{
+      id: "here_now" | "admin_report" | "structure" | "betas" | "maintenance";
+      label: string;
+      Icon: ({ className }: { className?: string }) => ReactNode;
+    }>;
+    if (betaServices.length > 0) {
+      tabs.push({
+        id: "betas" as const,
+        label: "Betas",
+        Icon: CubeTransparentIcon,
+      });
+    }
+    tabs.push({
+      id: "maintenance" as const,
+      label: "Settings",
+      Icon: AdjustmentsHorizontalIcon,
+    });
+    return tabs;
+  };
 
   const normalizePortalBetaServices = (value: unknown): PortalBetaServiceKey[] => {
     const allowed = new Set<string>(PORTAL_BETA_SERVICE_KEYS);
@@ -10815,7 +10886,7 @@ function MainApp() {
     void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
-  type AdminDashboardTabId = "here_now" | "admin_report" | "structure" | "maintenance";
+  type AdminDashboardTabId = "here_now" | "admin_report" | "structure" | "betas" | "maintenance";
   const [adminDashboardTab, setAdminDashboardTab] =
     useState<AdminDashboardTabId>("here_now");
   type SalesDashboardTabId =
@@ -10864,6 +10935,10 @@ function MainApp() {
   }, [user?.role]);
   const isSalesDashboardVisible = isRep(user?.role) || isSalesLead(user?.role) || isAdmin(user?.role);
   const salesDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const salesDashboardTabLayoutKey = useMemo(
+    () => salesDashboardTabs.map((tab) => tab.id).join("|"),
+    [salesDashboardTabs],
+  );
   const [salesDashboardIndicatorLeft, setSalesDashboardIndicatorLeft] = useState<number>(0);
   const [salesDashboardIndicatorWidth, setSalesDashboardIndicatorWidth] = useState<number>(0);
   const [salesDashboardIndicatorOpacity, setSalesDashboardIndicatorOpacity] = useState<number>(0);
@@ -10882,7 +10957,7 @@ function MainApp() {
     setSalesDashboardIndicatorLeft(left);
     setSalesDashboardIndicatorWidth(width);
     setSalesDashboardIndicatorOpacity(width > 0 ? 1 : 0);
-  }, [salesDashboardTab]);
+  }, [salesDashboardTab, salesDashboardTabLayoutKey]);
 
   const setSalesDashboardTabsContainerRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -10905,13 +10980,14 @@ function MainApp() {
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator, salesDashboardTab]);
+  }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator, salesDashboardTab, salesDashboardTabLayoutKey]);
   useEffect(() => {
     if (!isSalesDashboardVisible) return;
+    updateSalesDashboardTabIndicator();
     const onResize = () => updateSalesDashboardTabIndicator();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator]);
+  }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator, salesDashboardTabLayoutKey]);
   useEffect(() => {
     if (!isSalesDashboardVisible) return;
     const container = salesDashboardTabsContainerRef.current;
@@ -10984,98 +11060,6 @@ function MainApp() {
     user?.id,
     user?.role,
   ]);
-  const adminDashboardTabs = useMemo(
-    () =>
-      [
-        { id: "here_now" as const, label: "Here and now", Icon: GlobeAmericasIcon },
-        {
-          id: "admin_report" as const,
-          label: "Admin Report",
-          Icon: BuildingStorefrontIcon,
-        },
-        {
-          id: "structure" as const,
-          label: "Structure",
-          Icon: UserGroupIcon,
-        },
-        {
-          id: "maintenance" as const,
-          label: "Settings",
-          Icon: AdjustmentsHorizontalIcon,
-        },
-      ] satisfies Array<{
-        id: AdminDashboardTabId;
-        label: string;
-        Icon: ({ className }: { className?: string }) => ReactNode;
-      }>,
-    [],
-  );
-  const adminDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
-  const isAdminDashboardVisible = isAdmin(user?.role);
-  const [adminDashboardTabIndicator, setAdminDashboardTabIndicator] = useState<{
-    left: number;
-    width: number;
-    opacity: number;
-  }>({ left: 0, width: 0, opacity: 0 });
-  const updateAdminDashboardTabIndicator = useCallback(() => {
-    const container = adminDashboardTabsContainerRef.current;
-    if (!container) return;
-    const activeBtn =
-      container.querySelector<HTMLButtonElement>(
-      `button[data-admin-dashboard-tab="${adminDashboardTab}"]`,
-      ) || container.querySelector<HTMLButtonElement>("button[data-admin-dashboard-tab]");
-    if (!activeBtn) return;
-    const inset = 8;
-    const scrollLeft = container.scrollLeft || 0;
-    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
-    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
-    setAdminDashboardTabIndicator({ left, width, opacity: 1 });
-  }, [adminDashboardTab]);
-  const setAdminDashboardTabsContainerRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      adminDashboardTabsContainerRef.current = node;
-      if (!node) return;
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          updateAdminDashboardTabIndicator();
-        });
-      });
-    },
-    [updateAdminDashboardTabIndicator],
-  );
-  useLayoutEffect(() => {
-    if (!isAdminDashboardVisible) return;
-    const frame = window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        updateAdminDashboardTabIndicator();
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator, adminDashboardTab]);
-  useEffect(() => {
-    if (!isAdminDashboardVisible) return;
-    updateAdminDashboardTabIndicator();
-    const onResize = () => updateAdminDashboardTabIndicator();
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-    };
-  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator]);
-  useEffect(() => {
-    if (!isAdminDashboardVisible) return;
-    const container = adminDashboardTabsContainerRef.current;
-    if (!container) return;
-    const handleScroll = () => {
-      updateAdminDashboardTabIndicator();
-    };
-    container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      container.removeEventListener("scroll", handleScroll);
-    };
-  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator]);
-
 	  const salesByRepAutoLoadedKeyRef = useRef<string>("");
 	  useEffect(() => {
 	    if (!user || (!isAdmin(user.role) && !isSalesLead(user.role))) {
@@ -11326,12 +11310,107 @@ function MainApp() {
 		  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 		  const [shopEnabled, setShopEnabled] = useState(true);
   const [betaServices, setBetaServices] = useState<PortalBetaServiceKey[]>([]);
+  const activePortalBetaServices = useMemo(
+    () =>
+      PORTAL_BETA_SERVICE_KEYS.filter((serviceKey) => betaServices.includes(serviceKey)),
+    [betaServices],
+  );
+  const availableAdminDashboardTabs = useMemo(
+    () => buildAdminDashboardTabs(betaServices) as Array<{
+      id: AdminDashboardTabId;
+      label: string;
+      Icon: ({ className }: { className?: string }) => ReactNode;
+    }>,
+    [betaServices],
+  );
+  const adminDashboardTabLayoutKey = useMemo(
+    () => availableAdminDashboardTabs.map((tab) => tab.id).join("|"),
+    [availableAdminDashboardTabs],
+  );
+  const adminDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const isAdminDashboardVisible = isAdmin(user?.role);
+  const [adminDashboardTabIndicator, setAdminDashboardTabIndicator] = useState<{
+    left: number;
+    width: number;
+    opacity: number;
+  }>({ left: 0, width: 0, opacity: 0 });
+  const updateAdminDashboardTabIndicator = useCallback(() => {
+    const container = adminDashboardTabsContainerRef.current;
+    if (!container) return;
+    const activeBtn =
+      container.querySelector<HTMLButtonElement>(
+      `button[data-admin-dashboard-tab="${adminDashboardTab}"]`,
+      ) || container.querySelector<HTMLButtonElement>("button[data-admin-dashboard-tab]");
+    if (!activeBtn) return;
+    const inset = 8;
+    const scrollLeft = container.scrollLeft || 0;
+    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
+    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
+    setAdminDashboardTabIndicator({ left, width, opacity: 1 });
+  }, [adminDashboardTab, adminDashboardTabLayoutKey]);
+  const setAdminDashboardTabsContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      adminDashboardTabsContainerRef.current = node;
+      if (!node) return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          updateAdminDashboardTabIndicator();
+        });
+      });
+    },
+    [updateAdminDashboardTabIndicator],
+  );
+  useLayoutEffect(() => {
+    if (!isAdminDashboardVisible) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        updateAdminDashboardTabIndicator();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator, adminDashboardTab, adminDashboardTabLayoutKey]);
+  useEffect(() => {
+    if (!isAdminDashboardVisible) return;
+    updateAdminDashboardTabIndicator();
+    const onResize = () => updateAdminDashboardTabIndicator();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator, adminDashboardTabLayoutKey]);
+  useEffect(() => {
+    if (!isAdminDashboardVisible) return;
+    const container = adminDashboardTabsContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      updateAdminDashboardTabIndicator();
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator]);
   const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
   const [patientLinksDoctorUserIds, setPatientLinksDoctorUserIds] = useState<string[]>([]);
   const [patientLinksDoctorOptions, setPatientLinksDoctorOptions] = useState<
     Array<{ userId: string; name: string; email?: string | null }>
   >([]);
   const [patientLinksDoctorsOpen, setPatientLinksDoctorsOpen] = useState(false);
+  useEffect(() => {
+    if (!isAdmin(user?.role)) {
+      return;
+    }
+    const availableTabs = new Set(availableAdminDashboardTabs.map((tab) => tab.id));
+    if (availableTabs.has(adminDashboardTab)) {
+      return;
+    }
+    const fallbackTab = availableAdminDashboardTabs[0]?.id;
+    if (fallbackTab) {
+      setAdminDashboardTab(fallbackTab);
+    }
+  }, [adminDashboardTab, availableAdminDashboardTabs, user?.role]);
   const [patientLinksDoctorSearch, setPatientLinksDoctorSearch] = useState("");
   const [crmEnabled, setCrmEnabled] = useState(true);
   const [receiveClientOrderUpdateEmails, setReceiveClientOrderUpdateEmails] =
@@ -12956,23 +13035,18 @@ function MainApp() {
 		    if (!user || !isAdmin(user.role) || postLoginHold) {
 		      return;
 		    }
+        if (adminDashboardTab !== "maintenance" || !certificateUploadsVisible) {
+          return;
+        }
 		    void fetchMissingCertificates();
-		  }, [user?.id, user?.role, postLoginHold, fetchMissingCertificates]);
-
-		  useEffect(() => {
-		    if (!user || !isAdmin(user.role) || postLoginHold) {
-		      return;
-		    }
-		    if (missingCertificatesError || missingCertificates.length > 0) {
-		      setCertificateUploadsVisible(true);
-		    }
 		  }, [
-		    user?.id,
-		    user?.role,
-		    postLoginHold,
-		    missingCertificatesError,
-		    missingCertificates.length,
-		  ]);
+        adminDashboardTab,
+        certificateUploadsVisible,
+        user?.id,
+        user?.role,
+        postLoginHold,
+        fetchMissingCertificates,
+      ]);
 
 		  const fetchCertificateProducts = useCallback(
 		    async (options?: { force?: boolean }) => {
@@ -13023,7 +13097,7 @@ function MainApp() {
 		        certificateProductsInFlightRef.current = false;
 		      }
 		    },
-		    [user?.id, user?.role, postLoginHold, certificateUploadsVisible],
+		    [adminDashboardTab, user?.id, user?.role, postLoginHold, certificateUploadsVisible],
 		  );
 
 		  useEffect(() => {
@@ -13031,13 +13105,19 @@ function MainApp() {
 		  }, [fetchCertificateProducts]);
 
 		  const selectedCertificateInfoRequestIdRef = useRef(0);
-		  const fetchSelectedCertificateInfo = useCallback(async () => {
+	  const fetchSelectedCertificateInfo = useCallback(async () => {
 	    if (!user || !isAdmin(user.role) || postLoginHold) {
 	      setMissingCertificatesInfo(null);
 	      setMissingCertificatesInfoLoading(false);
 	      setMissingCertificatesInfoError(null);
 	      return;
 	    }
+      if (adminDashboardTab !== "maintenance" || !certificateUploadsVisible) {
+        setMissingCertificatesInfo(null);
+        setMissingCertificatesInfoLoading(false);
+        setMissingCertificatesInfoError(null);
+        return;
+      }
 	    if (!missingCertificatesSelectedId) {
 	      setMissingCertificatesInfo(null);
 	      setMissingCertificatesInfoLoading(false);
@@ -13081,7 +13161,14 @@ function MainApp() {
 	        setMissingCertificatesInfoLoading(false);
 	      }
 	    }
-	  }, [user?.id, user?.role, postLoginHold, missingCertificatesSelectedId]);
+	  }, [
+      adminDashboardTab,
+      certificateUploadsVisible,
+      user?.id,
+      user?.role,
+      postLoginHold,
+      missingCertificatesSelectedId,
+    ]);
 
 	  useEffect(() => {
 	    void fetchSelectedCertificateInfo();
@@ -20334,6 +20421,7 @@ function MainApp() {
 		    }
 
     const referrals = normalizedReferrals;
+    const adminDashboardTabs = availableAdminDashboardTabs;
 
     const totalReferrals = referrals.length;
     const activeStatuses = new Set(["pending", "contacted", "nuture"]);
@@ -20926,7 +21014,7 @@ function MainApp() {
                       ref={setSalesDashboardTabsContainerRef}
                       onScroll={updateSalesDashboardTabIndicator}
                     >
-                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                      <div className="flex items-center gap-4 pb-0 account-tab-row">
                         {salesDashboardTabs.map((tab) => {
                           if (tab.id === "crm" && !crmEnabled && !isTestRep(user?.role)) {
                             return null;
@@ -20937,7 +21025,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                "relative inline-flex items-end gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-sales-dashboard-tab={tab.id}
@@ -20945,11 +21033,11 @@ function MainApp() {
                               onClick={() => setSalesDashboardTab(tab.id)}
                             >
                               <span
-                                className="inline-flex items-center gap-2"
+                                className="inline-flex items-end gap-2"
                                 data-sales-dashboard-tab-content
                               >
-                                <span className="inline-flex h-5 w-5 items-center justify-center">
-                                  <tab.Icon className="h-5 w-5" />
+                                <span className="inline-flex h-4 w-4 items-end justify-center">
+                                  <tab.Icon className="h-4 w-4" />
                                 </span>
                                 <span className="inline-flex items-center">{tab.label}</span>
                               </span>
@@ -21240,7 +21328,7 @@ function MainApp() {
                       ref={setAdminDashboardTabsContainerRef}
                       onScroll={updateAdminDashboardTabIndicator}
                     >
-                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                      <div className="flex items-center gap-4 pb-0 account-tab-row">
                         {adminDashboardTabs.map((tab) => {
                           const isActive = adminDashboardTab === tab.id;
                           return (
@@ -21248,7 +21336,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                "relative inline-flex items-end gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-admin-dashboard-tab={tab.id}
@@ -21256,11 +21344,11 @@ function MainApp() {
                               onClick={() => setAdminDashboardTab(tab.id)}
                             >
                               <span
-                                className="inline-flex items-center gap-2"
+                                className="inline-flex items-end gap-2"
                                 data-admin-dashboard-tab-content
                               >
-                                <span className="inline-flex h-5 w-5 items-center justify-center">
-                                  <tab.Icon className="h-5 w-5" />
+                                <span className="inline-flex h-4 w-4 items-end justify-center">
+                                  <tab.Icon className="h-4 w-4" />
                                 </span>
                                 <span className="inline-flex items-center">
                                   {tab.id === "crm" ? "CRM In-Development" : tab.label}
@@ -21688,11 +21776,30 @@ function MainApp() {
 	                    className={clsx(
 	                      "admin-tab-panel-enter",
 	                      adminDashboardTab === "here_now" ||
-	                        adminDashboardTab === "maintenance"
+	                        adminDashboardTab === "maintenance" ||
+                          adminDashboardTab === "betas"
 	                        ? "space-y-6"
 	                        : "sales-rep-leads-card sales-rep-combined-card",
 	                    )}
 	                  >
+                {adminDashboardTab === "betas" && (
+                  <div className="space-y-4">
+                    {activePortalBetaServices.map((serviceKey) => (
+                      <div
+                        key={serviceKey}
+                        className="sales-rep-leads-card sales-rep-combined-card"
+                      >
+                        <div className="border-b border-slate-200/60 pb-3">
+                          <h4 className="text-lg font-semibold text-slate-900">
+                            {PORTAL_BETA_SERVICE_LABELS[serviceKey]}
+                          </h4>
+                        </div>
+                        <div className="pt-4 min-h-[3rem]" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {adminDashboardTab === "maintenance" && (
                 <div className="mb-6 squircle-xl border border-slate-200/70 bg-white/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -24319,7 +24426,7 @@ function MainApp() {
                 ref={setSalesDashboardTabsContainerRef}
                 onScroll={updateSalesDashboardTabIndicator}
               >
-                <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                <div className="flex items-center gap-4 pb-0 account-tab-row">
                   {salesDashboardTabs.map((tab) => {
                     if (tab.id === "crm" && !crmEnabled && !isTestRep(user?.role)) {
                       return null;
@@ -24330,7 +24437,7 @@ function MainApp() {
                         key={tab.id}
                         type="button"
                         className={clsx(
-                          "relative inline-flex items-center gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                          "relative inline-flex items-end gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                           isActive && "text-slate-900",
                         )}
                         data-sales-dashboard-tab={tab.id}
@@ -24338,11 +24445,11 @@ function MainApp() {
                         onClick={() => setSalesDashboardTab(tab.id)}
                       >
                         <span
-                          className="inline-flex items-center gap-2"
+                          className="inline-flex items-end gap-2"
                           data-sales-dashboard-tab-content
                         >
-                          <span className="inline-flex h-5 w-5 items-center justify-center">
-                            <tab.Icon className="h-5 w-5" />
+                          <span className="inline-flex h-4 w-4 items-end justify-center">
+                            <tab.Icon className="h-4 w-4" />
                           </span>
                           <span className="inline-flex items-center">{tab.label}</span>
                         </span>

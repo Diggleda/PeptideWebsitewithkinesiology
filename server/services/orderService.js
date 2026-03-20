@@ -889,7 +889,11 @@ const resolveShipStationOrderNumber = (order) => {
 };
 
 const enrichOrderWithShipStation = async (order) => {
-  if (!order || !shipStationClient.isConfigured()) {
+  if (
+    !order
+    || !shipStationClient.isConfigured()
+    || env.shipStation.orderStatusLookupsEnabled !== true
+  ) {
     return order;
   }
 
@@ -3385,6 +3389,35 @@ const getOnHoldOrdersForAdmin = async ({ limit = 500 } = {}) => {
   return normalized;
 };
 
+const getOnHoldOrdersForSalesRep = async (
+  salesRepId,
+  {
+    limit = 500,
+    includeAllDoctors = false,
+    alternateSalesRepIds = [],
+    includeHouseContacts = true,
+  } = {},
+) => {
+  const orders = await getOrdersForSalesRep(salesRepId, {
+    includeAllDoctors,
+    alternateSalesRepIds,
+    includeHouseContacts,
+  });
+  const normalizeStatus = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+  const effectiveLimit = Number.isFinite(Number(limit))
+    ? Math.min(Math.max(Math.trunc(Number(limit)), 1), 5000)
+    : 500;
+  return (Array.isArray(orders) ? orders : [])
+    .filter((order) => {
+      const normalized = normalizeStatus(order?.status);
+      return normalized === 'on-hold' || normalized === 'onhold';
+    })
+    .slice(0, effectiveLimit);
+};
+
 const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
   if (!orderId) {
     return null;
@@ -3517,6 +3550,7 @@ module.exports = {
   estimateOrderTotals,
   getOrdersForUser,
   getOrdersForSalesRep,
+  getOnHoldOrdersForSalesRep,
   getOnHoldOrdersForAdmin,
   getSalesByRep,
   cancelOrder,

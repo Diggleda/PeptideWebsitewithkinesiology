@@ -3780,13 +3780,20 @@ html {
 .account-tab-row {
   flex-wrap: nowrap;
   white-space: nowrap;
-  padding-bottom: 6px;
+  padding-bottom: 5px;
 }
 
 .account-tab-shell {
   overflow-x: hidden;
   overflow-y: visible;
-  padding-bottom: 3px;
+  padding-bottom: 0;
+}
+
+.documentation-header-tabs {
+  align-self: flex-end;
+  margin-top: auto;
+  padding-top: 0.75rem;
+  padding-bottom: 0.25rem;
 }
 
 .account-tab-scroll-container {

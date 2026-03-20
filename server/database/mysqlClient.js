@@ -1,9 +1,20 @@
-const mysql = require('mysql2/promise');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
 
 let pool = null;
 let loggedDisabled = false;
+let mysqlModule = null;
+
+const getMysqlModule = () => {
+  if (!mysqlModule) {
+    // Lazily require mysql2 so local/dev runs with MYSQL disabled do not pay
+    // the module startup cost or get stuck in mysql2 initialization.
+    // This keeps backend boot fast when the app is using JSON/local storage only.
+    // eslint-disable-next-line global-require
+    mysqlModule = require('mysql2/promise');
+  }
+  return mysqlModule;
+};
 
 const logDisabledOnce = () => {
   if (!loggedDisabled) {
@@ -25,6 +36,7 @@ const configure = async () => {
   if (pool) {
     return;
   }
+  const mysql = getMysqlModule();
   pool = mysql.createPool({
     host: env.mysql.host,
     port: env.mysql.port,

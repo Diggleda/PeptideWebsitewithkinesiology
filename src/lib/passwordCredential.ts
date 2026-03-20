@@ -29,11 +29,19 @@ const getCredentialsContainer = (): CredentialsContainer | null => {
   return container;
 };
 
+const supportsStoredPasswordRequest = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const passwordCtor = (window as typeof window & { PasswordCredential?: typeof PasswordCredential }).PasswordCredential;
+  return typeof passwordCtor === 'function';
+};
+
 export const requestStoredPasswordCredential = async (options?: {
   mediation?: PasswordCredentialMediation;
 }): Promise<StoredPasswordCredential | null> => {
   const container = getCredentialsContainer();
-  if (!container) {
+  if (!container || !supportsStoredPasswordRequest()) {
     return null;
   }
 
@@ -53,6 +61,9 @@ export const requestStoredPasswordCredential = async (options?: {
       };
     }
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'NotSupportedError') {
+      return null;
+    }
     console.debug('[Credentials] Stored credential request failed', error);
   }
 

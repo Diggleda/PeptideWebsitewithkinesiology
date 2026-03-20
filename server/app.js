@@ -4,32 +4,74 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { router: paymentRoutes, handleStripeWebhook } = require('./routes/paymentRoutes');
-const authRoutes = require('./routes/authRoutes');
-const orderRoutes = require('./routes/orderRoutes');
-const systemRoutes = require('./routes/systemRoutes');
-const newsRoutes = require('./routes/newsRoutes');
-const wooRoutes = require('./routes/wooRoutes');
-const catalogRoutes = require('./routes/catalogRoutes');
-const quotesRoutes = require('./routes/quotesRoutes');
-const shippingRoutes = require('./routes/shippingRoutes');
-const referralRoutes = require('./routes/referralRoutes');
-const passwordResetRoutes = require('./routes/passwordReset');
-const contactRoutes = require('./routes/contactRoutes');
-const bugRoutes = require('./routes/bugRoutes');
-const settingsRoutes = require('./routes/settingsRoutes');
-const moderationRoutes = require('./routes/moderationRoutes');
-const peptideForumRoutes = require('./routes/peptideForumRoutes');
-const googleSheetsRoutes = require('./routes/googleSheetsRoutes');
-const shipStationRoutes = require('./routes/shipStationRoutes');
-const seamlessRoutes = require('./routes/seamlessRoutes');
-const trackingRoutes = require('./routes/trackingRoutes');
-const delegationRoutes = require('./routes/delegationRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { requestContext } = require('./config/requestContext');
 const { rateLimit } = require('./middleware/rateLimit');
 const { requestTiming } = require('./middleware/requestTiming');
+
+const lazyModule = (load) => {
+  let cached;
+  return () => {
+    if (!cached) {
+      cached = load();
+    }
+    return cached;
+  };
+};
+
+const lazyRoute = (loadRoute) => {
+  const getRoute = lazyModule(loadRoute);
+  return (req, res, next) => {
+    try {
+      const route = getRoute();
+      return route(req, res, next);
+    } catch (error) {
+      return next(error);
+    }
+  };
+};
+
+const getPaymentRoutes = lazyModule(() => require('./routes/paymentRoutes'));
+const getAuthRoutes = lazyModule(() => require('./routes/authRoutes'));
+const getOrderRoutes = lazyModule(() => require('./routes/orderRoutes'));
+const getSystemRoutes = lazyModule(() => require('./routes/systemRoutes'));
+const getNewsRoutes = lazyModule(() => require('./routes/newsRoutes'));
+const getWooRoutes = lazyModule(() => require('./routes/wooRoutes'));
+const getCatalogRoutes = lazyModule(() => require('./routes/catalogRoutes'));
+const getQuotesRoutes = lazyModule(() => require('./routes/quotesRoutes'));
+const getShippingRoutes = lazyModule(() => require('./routes/shippingRoutes'));
+const getReferralRoutes = lazyModule(() => require('./routes/referralRoutes'));
+const getPasswordResetRoutes = lazyModule(() => require('./routes/passwordReset'));
+const getContactRoutes = lazyModule(() => require('./routes/contactRoutes'));
+const getBugRoutes = lazyModule(() => require('./routes/bugRoutes'));
+const getSettingsRoutes = lazyModule(() => require('./routes/settingsRoutes'));
+const getModerationRoutes = lazyModule(() => require('./routes/moderationRoutes'));
+const getPeptideForumRoutes = lazyModule(() => require('./routes/peptideForumRoutes'));
+const getGoogleSheetsRoutes = lazyModule(() => require('./routes/googleSheetsRoutes'));
+const getShipStationRoutes = lazyModule(() => require('./routes/shipStationRoutes'));
+const getSeamlessRoutes = lazyModule(() => require('./routes/seamlessRoutes'));
+const getTrackingRoutes = lazyModule(() => require('./routes/trackingRoutes'));
+const getDelegationRoutes = lazyModule(() => require('./routes/delegationRoutes'));
+
+const prewarmApiModules = () => {
+  const warmers = [
+    ['authRoutes', getAuthRoutes],
+    ['systemRoutes', getSystemRoutes],
+    ['settingsRoutes', getSettingsRoutes],
+    ['orderRoutes', getOrderRoutes],
+    ['catalogRoutes', getCatalogRoutes],
+    ['wooRoutes', getWooRoutes],
+  ];
+
+  for (const [name, load] of warmers) {
+    try {
+      load();
+    } catch (error) {
+      logger.warn({ err: error, module: name }, 'Background route prewarm failed');
+    }
+  }
+};
 
 const sanitizePublicMessage = (message) => {
   if (!message || typeof message !== 'string') {
@@ -303,7 +345,11 @@ const createApp = () => {
   app.use(requestTiming);
 
   // Stripe webhook needs the raw body for signature verification.
-  app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
+  app.post(
+    '/api/payments/stripe/webhook',
+    express.raw({ type: 'application/json' }),
+    (req, res, next) => getPaymentRoutes().handleStripeWebhook(req, res, next),
+  );
 
   app.use(bodyParser.json({ limit: env.bodyParser.limit }));
   app.use(bodyParser.urlencoded({ limit: env.bodyParser.limit, extended: true }));
@@ -344,44 +390,47 @@ const createApp = () => {
     next();
   });
 
-  app.use('/api/auth', authRoutes);
-  app.use('/api/orders', orderRoutes);
-  app.use('/api/payments', paymentRoutes);
-  app.use('/api/shipping', shippingRoutes);
-  app.use('/api/referrals', referralRoutes);
-  app.use('/api/woo', wooRoutes);
-  app.use('/api/catalog', catalogRoutes);
-  app.use('/api/quotes', quotesRoutes);
-  app.use('/api/news', newsRoutes);
-  app.use('/api/password-reset', passwordResetRoutes);
-  app.use('/api/contact', contactRoutes);
-  app.use('/api/bugs', bugRoutes);
-  app.use('/api/settings', settingsRoutes);
-  app.use('/api/moderation', moderationRoutes);
-  app.use('/api/forum', peptideForumRoutes);
-  app.use('/api/integrations/google-sheets', googleSheetsRoutes);
-  app.use('/api/integrations/shipstation', shipStationRoutes);
-  app.use('/api/integrations/seamless', seamlessRoutes);
-  app.use('/api/tracking', trackingRoutes);
-  app.use('/api/delegation', delegationRoutes);
-  app.use('/api', systemRoutes);
+  app.use('/api/auth', lazyRoute(() => getAuthRoutes()));
+  app.use('/api/orders', lazyRoute(() => getOrderRoutes()));
+  app.use('/api/payments', lazyRoute(() => getPaymentRoutes().router));
+  app.use('/api/shipping', lazyRoute(() => getShippingRoutes()));
+  app.use('/api/referrals', lazyRoute(() => getReferralRoutes()));
+  app.use('/api/woo', lazyRoute(() => getWooRoutes()));
+  app.use('/api/catalog', lazyRoute(() => getCatalogRoutes()));
+  app.use('/api/quotes', lazyRoute(() => getQuotesRoutes()));
+  app.use('/api/news', lazyRoute(() => getNewsRoutes()));
+  app.use('/api/password-reset', lazyRoute(() => getPasswordResetRoutes()));
+  app.use('/api/contact', lazyRoute(() => getContactRoutes()));
+  app.use('/api/bugs', lazyRoute(() => getBugRoutes()));
+  app.use('/api/settings', lazyRoute(() => getSettingsRoutes()));
+  app.use('/api/moderation', lazyRoute(() => getModerationRoutes()));
+  app.use('/api/forum', lazyRoute(() => getPeptideForumRoutes()));
+  app.use('/api/integrations/google-sheets', lazyRoute(() => getGoogleSheetsRoutes()));
+  app.use('/api/integrations/shipstation', lazyRoute(() => getShipStationRoutes()));
+  app.use('/api/integrations/seamless', lazyRoute(() => getSeamlessRoutes()));
+  app.use('/api/tracking', lazyRoute(() => getTrackingRoutes()));
+  app.use('/api/delegation', lazyRoute(() => getDelegationRoutes()));
+  app.use('/api', lazyRoute(() => getSystemRoutes()));
 
   app.use('/api', (req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
   });
 
-  // Serve the built frontend for local/test usage when present.
-  const frontendResolved = resolveFrontendRoot();
-  const frontendRoot = frontendResolved?.root || null;
-  const frontendBase = frontendResolved?.base || process.cwd();
-  if (frontendRoot) {
-    logger.info({ frontendRoot, frontendBase }, 'Serving bundled frontend');
-    const contentRoot = path.join(frontendBase, 'src', 'content');
-    if (fs.existsSync(contentRoot)) {
-      app.use('/content', express.static(contentRoot));
+  // In development, Vite serves the frontend on port 3000, so skip bundled-frontend
+  // discovery/mounting here to keep backend startup predictable.
+  if (env.nodeEnv === 'production') {
+    const frontendResolved = resolveFrontendRoot();
+    const frontendRoot = frontendResolved?.root || null;
+    const frontendBase = frontendResolved?.base || process.cwd();
+    if (frontendRoot) {
+      logger.info({ frontendRoot, frontendBase }, 'Serving bundled frontend');
+      const contentRoot = path.join(frontendBase, 'src', 'content');
+      if (fs.existsSync(contentRoot)) {
+        app.use('/content', express.static(contentRoot));
+      }
+      app.use(express.static(frontendRoot));
+      app.get(/^\/(?!api\/).*/, (req, res, next) => res.sendFile(path.join(frontendRoot, 'index.html')));
     }
-    app.use(express.static(frontendRoot));
-    app.get(/^\/(?!api\/).*/, (req, res, next) => res.sendFile(path.join(frontendRoot, 'index.html')));
   }
 
   app.use((err, req, res, _next) => {
@@ -397,6 +446,8 @@ const createApp = () => {
       details: isClientError && err?.details !== undefined ? err.details : undefined,
     });
   });
+
+  app.prewarmApiModules = prewarmApiModules;
 
   return app;
 };

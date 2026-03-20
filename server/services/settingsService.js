@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   peptideForumEnabled: true,
   researchDashboardEnabled: false,
   crmEnabled: true,
+  testPaymentsOverrideEnabled: false,
   stripeMode: null, // null = follow env
   salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
   salesLeadSalesBySalesRepCsvDownloadedAt: null, // ISO timestamp (sales lead report)
@@ -61,6 +62,9 @@ const normalizeSettings = (settings = {}) => {
     raw.researchDashboardEnabled ?? DEFAULT_SETTINGS.researchDashboardEnabled,
   );
   merged.crmEnabled = Boolean(raw.crmEnabled ?? DEFAULT_SETTINGS.crmEnabled);
+  merged.testPaymentsOverrideEnabled = Boolean(
+    raw.testPaymentsOverrideEnabled ?? DEFAULT_SETTINGS.testPaymentsOverrideEnabled,
+  );
   const stripeMode = typeof raw.stripeMode === 'string'
     ? raw.stripeMode.toLowerCase().trim()
     : null;
@@ -194,6 +198,11 @@ const getCrmEnabled = async () => {
   return Boolean(settings.crmEnabled);
 };
 
+const getTestPaymentsOverrideEnabled = async () => {
+  const settings = await getSettings();
+  return Boolean(settings.testPaymentsOverrideEnabled);
+};
+
 const setShopEnabled = async (enabled) => {
   const base = await getSettings();
   const next = normalizeSettings({ ...(base || loadFromStore()), shopEnabled: Boolean(enabled) });
@@ -285,6 +294,22 @@ const setCrmEnabled = async (enabled) => {
   }
   persistToStore(next);
   return Boolean(next.crmEnabled);
+};
+
+const setTestPaymentsOverrideEnabled = async (enabled) => {
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    testPaymentsOverrideEnabled: Boolean(enabled),
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.testPaymentsOverrideEnabled);
+  }
+  persistToStore(next);
+  return Boolean(next.testPaymentsOverrideEnabled);
 };
 
 const resolveStripeMode = (settings) => {
@@ -420,6 +445,8 @@ module.exports = {
   setResearchDashboardEnabled,
   getCrmEnabled,
   setCrmEnabled,
+  getTestPaymentsOverrideEnabled,
+  setTestPaymentsOverrideEnabled,
   getStripeMode,
   getStripeModeSync,
   setStripeMode,

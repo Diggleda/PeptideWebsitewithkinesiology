@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter } from './ui/card';
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
 import { ShoppingCart, Minus, Plus, Loader2, Download, X } from 'lucide-react';
 import { api, wooAPI } from '../services/api';
+import protixaIonSystemDossierPdf from '../content/documents/ProtixaIONSystemDossierS.pdf';
 
 const AUTO_OPEN_STRENGTH_ENABLED = (() => {
   const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH ?? '').toLowerCase().trim();
@@ -194,7 +195,423 @@ const pickDefaultVariation = (variations: ProductVariation[] | undefined | null)
   return variations.find((variation) => Boolean(variation?.image)) ?? variations[0];
 };
 
+let pdfJsRuntimePromise: Promise<{ getDocument: any; GlobalWorkerOptions: any }> | null = null;
+const pdfByteCache = new Map<string, Uint8Array>();
+
+const getPdfJsRuntime = async () => {
+  if (!pdfJsRuntimePromise) {
+    pdfJsRuntimePromise = (async () => {
+      const [{ getDocument, GlobalWorkerOptions }, workerModule] = await Promise.all([
+        import('pdfjs-dist/legacy/build/pdf.mjs'),
+        import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
+      ]);
+      GlobalWorkerOptions.workerSrc = workerModule.default;
+      return { getDocument, GlobalWorkerOptions };
+    })();
+  }
+  return pdfJsRuntimePromise;
+};
+
+const getCachedPdfBytes = async (src: string) => {
+  const cached = pdfByteCache.get(src);
+  if (cached) {
+    return cached;
+  }
+  const response = await fetch(src, { cache: 'force-cache' });
+  if (!response.ok) {
+    throw new Error(`Unable to load document preview (${response.status}).`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  pdfByteCache.set(src, bytes);
+  return bytes;
+};
+
+const prefersNativePdfPreview = () => {
+  return true;
+};
+
+function PdfPreview({
+  src,
+  height,
+  minHeight,
+  scale = 0.84,
+  zoomPercent,
+  onZoomIn,
+  onZoomOut,
+}: {
+  src: string;
+  height: string;
+  minHeight: string;
+  scale?: number;
+  zoomPercent: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const documentRef = useRef<any>(null);
+  const pageCacheRef = useRef<any[]>([]);
+  const pageTextCacheRef = useRef<string[]>([]);
+  const renderCycleRef = useRef(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [documentReadyVersion, setDocumentReadyVersion] = useState(0);
+  const [useNativePreview, setUseNativePreview] = useState(() => prefersNativePdfPreview());
+
+  useEffect(() => {
+    let cancelled = false;
+    documentRef.current = null;
+    pageCacheRef.current = [];
+    pageTextCacheRef.current = [];
+
+    const loadPdf = async () => {
+      const container = containerRef.current;
+      if (!container || useNativePreview) {
+        return;
+      }
+
+      container.replaceChildren();
+      setLoading(true);
+      setError(null);
+
+      try {
+        const { getDocument } = await getPdfJsRuntime();
+        const pdfBytes = await getCachedPdfBytes(src);
+        const loadingTask = getDocument({
+          data: pdfBytes,
+          disableRange: true,
+          disableStream: true,
+          disableAutoFetch: true,
+        });
+        const loadedDocument = await loadingTask.promise;
+        if (cancelled) {
+          try {
+            loadedDocument?.destroy?.();
+          } catch {
+            // ignore cleanup errors
+          }
+          return;
+        }
+        documentRef.current = loadedDocument;
+        setLoading(false);
+        setDocumentReadyVersion((current) => current + 1);
+      } catch (renderError: any) {
+        if (cancelled) {
+          return;
+        }
+        const message = typeof renderError?.message === 'string' ? renderError.message : '';
+        const shouldFallbackToNative =
+          message.toLowerCase().includes('readablestream')
+          || message.toLowerCase().includes('missing request type')
+          || message.toLowerCase().includes('import')
+          || message.toLowerCase().includes('worker');
+        if (shouldFallbackToNative) {
+          setUseNativePreview(true);
+          setLoading(false);
+          return;
+        }
+        container.replaceChildren();
+        setError(message || 'Unable to load document preview.');
+        setLoading(false);
+      }
+    };
+
+    void loadPdf();
+
+    return () => {
+      cancelled = true;
+      try {
+        documentRef.current?.destroy?.();
+      } catch {
+        // ignore cleanup errors
+      }
+      documentRef.current = null;
+      pageCacheRef.current = [];
+      pageTextCacheRef.current = [];
+    };
+  }, [src, useNativePreview]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const currentCycle = renderCycleRef.current + 1;
+    renderCycleRef.current = currentCycle;
+    const renderTasks: Array<{ cancel?: () => void; promise?: Promise<unknown> }> = [];
+
+    const renderPdf = async () => {
+      const container = containerRef.current;
+      const currentDocument = documentRef.current;
+      if (!container || !currentDocument || useNativePreview) {
+        return;
+      }
+
+      container.replaceChildren();
+      setError(null);
+      setLoading(true);
+
+      try {
+        const deviceScale = typeof window !== 'undefined'
+          ? Math.max(1.5, Math.min(window.devicePixelRatio || 1, 2))
+          : 1.5;
+        let firstPageRendered = false;
+        const pageCount = currentDocument.numPages;
+        const pageShells: HTMLDivElement[] = [];
+        const pages: any[] = [];
+
+        for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+          if (cancelled) {
+            return;
+          }
+
+          const cachedPage = pageCacheRef.current[pageNumber - 1];
+          const page = cachedPage || await currentDocument.getPage(pageNumber);
+          pageCacheRef.current[pageNumber - 1] = page;
+          pages[pageNumber - 1] = page;
+          const displayViewport = page.getViewport({ scale });
+          const pageShell = document.createElement('div');
+          pageShell.className = 'relative flex justify-center';
+          pageShell.style.minHeight = `${displayViewport.height}px`;
+          pageShell.style.width = '100%';
+          container.appendChild(pageShell);
+          pageShells.push(pageShell);
+        }
+
+        const renderPage = async (pageIndex: number) => {
+          if (cancelled) {
+            return;
+          }
+
+          const page = pages[pageIndex];
+          if (!page) {
+            return;
+          }
+          const displayViewport = page.getViewport({ scale });
+          const renderViewport = page.getViewport({ scale: scale * deviceScale });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+
+          if (!context) {
+            throw new Error('Unable to render document preview.');
+          }
+
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = 'high';
+
+          canvas.width = Math.ceil(renderViewport.width);
+          canvas.height = Math.ceil(renderViewport.height);
+          canvas.style.width = `${displayViewport.width}px`;
+          canvas.style.height = `${displayViewport.height}px`;
+          canvas.style.display = 'block';
+          canvas.style.maxWidth = '100%';
+          canvas.className = 'bg-white shadow-sm';
+
+          const pageShell = pageShells[pageIndex];
+          if (!pageShell) {
+            throw new Error('Unable to reserve document page slot.');
+          }
+          pageShell.replaceChildren();
+
+          const cachedPageText = pageTextCacheRef.current[pageIndex];
+          let pageText = cachedPageText;
+          if (typeof pageText !== 'string') {
+            const textContent = await page.getTextContent();
+            pageText = textContent.items
+              .map((item: any) => {
+                const text = typeof item?.str === 'string' ? item.str : '';
+                return item?.hasEOL ? `${text}\n` : text;
+              })
+              .join(' ')
+              .replace(/[ \t]+\n/g, '\n')
+              .replace(/\n{3,}/g, '\n\n')
+              .trim();
+            pageTextCacheRef.current[pageIndex] = pageText;
+          }
+
+          if (pageText) {
+            const textLayer = document.createElement('div');
+            textLayer.setAttribute('aria-hidden', 'true');
+            textLayer.style.position = 'absolute';
+            textLayer.style.inset = '0';
+            textLayer.style.padding = '0.25rem';
+            textLayer.style.whiteSpace = 'pre-wrap';
+            textLayer.style.wordBreak = 'break-word';
+            textLayer.style.overflow = 'hidden';
+            textLayer.style.opacity = '0.01';
+            textLayer.style.color = 'transparent';
+            textLayer.style.pointerEvents = 'none';
+            textLayer.style.userSelect = 'text';
+            textLayer.style.zIndex = '0';
+            textLayer.textContent = pageText;
+            pageShell.appendChild(textLayer);
+          }
+
+          canvas.style.position = 'relative';
+          canvas.style.zIndex = '1';
+          pageShell.appendChild(canvas);
+
+          const renderTask = page.render({
+            canvasContext: context,
+            viewport: renderViewport,
+          });
+          renderTasks.push(renderTask);
+          await renderTask.promise;
+        };
+
+        if (pageCount > 0) {
+          await renderPage(0);
+          if (!firstPageRendered && !cancelled && renderCycleRef.current === currentCycle) {
+            firstPageRendered = true;
+            setLoading(false);
+          }
+        }
+
+        const remainingIndexes = Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => index + 1);
+        const backgroundWorkers = Math.min(3, remainingIndexes.length);
+        const runBackgroundWorker = async () => {
+          while (remainingIndexes.length > 0) {
+            if (cancelled || renderCycleRef.current !== currentCycle) {
+              return;
+            }
+            const nextIndex = remainingIndexes.shift();
+            if (typeof nextIndex !== 'number') {
+              return;
+            }
+            await new Promise<void>((resolve) => {
+              window.requestAnimationFrame(() => resolve());
+            });
+            await renderPage(nextIndex);
+          }
+        };
+
+        await Promise.all(
+          Array.from({ length: backgroundWorkers }, () => runBackgroundWorker()),
+        );
+
+        if (!cancelled && renderCycleRef.current === currentCycle && !firstPageRendered) {
+          setLoading(false);
+        }
+      } catch (renderError: any) {
+        if (cancelled) {
+          return;
+        }
+        container.replaceChildren();
+        setError(typeof renderError?.message === 'string' ? renderError.message : 'Unable to load document preview.');
+        setLoading(false);
+      }
+    };
+
+    void renderPdf();
+
+    return () => {
+      cancelled = true;
+      renderTasks.forEach((task) => {
+        try {
+          task.cancel?.();
+        } catch {
+          // ignore cleanup errors
+        }
+      });
+    };
+  }, [documentReadyVersion, scale, useNativePreview]);
+
+  return (
+    <div className="relative flex h-full min-h-0 w-full flex-col">
+      {!useNativePreview && (
+      <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-full border border-[var(--brand-glass-border-2)] bg-white/90 px-2 py-1 shadow-sm backdrop-blur">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-slate-700"
+          onClick={onZoomOut}
+          aria-label="Zoom out"
+        >
+          <Minus className="h-4 w-4" />
+        </Button>
+        <span className="min-w-[3rem] text-center text-xs font-semibold tabular-nums text-slate-700">
+          {zoomPercent}%
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-slate-700"
+          onClick={onZoomIn}
+          aria-label="Zoom in"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+      )}
+      <div
+        className={`w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${useNativePreview ? '' : 'pt-14'}`}
+        style={{
+          height,
+          minHeight,
+        }}
+      >
+      {useNativePreview ? (
+        <iframe
+          src={src}
+          title="Protixa ION System Dossier"
+          className="h-full w-full bg-white"
+          style={{
+            height,
+            minHeight,
+            border: '0',
+          }}
+        />
+      ) : (
+        <>
+      {loading && (
+        <div
+          className="flex items-center justify-center gap-2 text-sm text-slate-600"
+          style={{ minHeight }}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading document…
+        </div>
+      )}
+      {error && !loading && (
+        <div
+          className="flex items-center justify-center text-sm text-slate-600 text-center"
+          style={{ minHeight }}
+        >
+          {error}
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className={`space-y-4 ${loading || error ? 'hidden' : ''}`}
+      />
+        </>
+      )}
+      </div>
+    </div>
+  );
+}
+
 export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMode = false }: ProductCardProps) {
+  type DocumentationTabId = 'certificate' | 'nasals';
+  const hasNasalsDocumentation = useMemo(() => {
+    const normalizedCategory = String(product.category || '')
+      .trim()
+      .toLowerCase();
+    if (!normalizedCategory) {
+      return false;
+    }
+    return (
+      normalizedCategory === 'nasals'
+      || normalizedCategory.includes('nasal')
+      || normalizedCategory.includes('oral sprays')
+      || normalizedCategory.includes('spray top')
+    );
+  }, [product.category]);
+  const documentationTabs = useMemo(
+    () => ([
+      { id: 'certificate', label: 'Certificate of Analysis' },
+      ...(hasNasalsDocumentation ? [{ id: 'nasals', label: 'Technical Dossier' } as const] : []),
+    ] as Array<{ id: DocumentationTabId; label: string }>),
+    [hasNasalsDocumentation],
+  );
   const selectableVariations = useMemo(() => {
     const variations = Array.isArray(product.variations) ? product.variations : [];
     return variations.filter((variation) => variation?.id !== PLACEHOLDER_VARIATION_ID);
@@ -218,12 +635,21 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [isCardVisible, setIsCardVisible] = useState(false);
   const userInteractedRef = useRef(false);
+  const [documentationTab, setDocumentationTab] = useState<DocumentationTabId>('certificate');
   const autoCycleDoneRef = useRef<string | null>(null);
   const autoOpenDoneRef = useRef<string | null>(null);
   const [coaOpen, setCoaOpen] = useState(false);
   const [coaLoading, setCoaLoading] = useState(false);
   const [coaError, setCoaError] = useState<string | null>(null);
   const [coaObjectUrl, setCoaObjectUrl] = useState<string | null>(null);
+  const coaLoadAttemptedRef = useRef(false);
+  const documentationTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [documentationIndicatorLeft, setDocumentationIndicatorLeft] = useState(0);
+  const [documentationIndicatorWidth, setDocumentationIndicatorWidth] = useState(0);
+  const [documentationIndicatorOpacity, setDocumentationIndicatorOpacity] = useState(0);
+  const [documentationViewportHeight, setDocumentationViewportHeight] = useState<number | null>(null);
+  const [nasalsPreviewScale, setNasalsPreviewScale] = useState(0.82);
+  const [hasOpenedNasalsDocumentation, setHasOpenedNasalsDocumentation] = useState(false);
 
   const wooProductId = useMemo(() => {
     const raw = String(product.id || '').trim();
@@ -247,6 +673,91 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
       }
     };
   }, [coaObjectUrl]);
+
+  useEffect(() => {
+    if (!hasNasalsDocumentation && documentationTab === 'nasals') {
+      setDocumentationTab('certificate');
+    }
+  }, [documentationTab, hasNasalsDocumentation]);
+
+  useEffect(() => {
+    if (hasNasalsDocumentation && documentationTab === 'nasals') {
+      setHasOpenedNasalsDocumentation(true);
+    }
+  }, [documentationTab, hasNasalsDocumentation]);
+
+  useEffect(() => {
+    if (!coaOpen) {
+      setNasalsPreviewScale(0.82);
+    }
+  }, [coaOpen]);
+
+  const updateDocumentationTabIndicator = useCallback(() => {
+    const container = documentationTabsContainerRef.current;
+    if (!container) return;
+    const activeBtn =
+      container.querySelector<HTMLButtonElement>(`button[data-documentation-tab="${documentationTab}"]`)
+      || container.querySelector<HTMLButtonElement>('button[data-documentation-tab]');
+    if (!activeBtn) return;
+    const inset = 8;
+    const scrollLeft = container.scrollLeft || 0;
+    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
+    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
+    setDocumentationIndicatorLeft(left);
+    setDocumentationIndicatorWidth(width);
+    setDocumentationIndicatorOpacity(width > 0 ? 1 : 0);
+  }, [documentationTab]);
+
+  const setDocumentationTabsContainerRef = useCallback((node: HTMLDivElement | null) => {
+    documentationTabsContainerRef.current = node;
+    if (!node) return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        updateDocumentationTabIndicator();
+      });
+    });
+  }, [updateDocumentationTabIndicator]);
+
+  useLayoutEffect(() => {
+    if (!coaOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      updateDocumentationTabIndicator();
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [coaOpen, documentationTab, documentationTabs, updateDocumentationTabIndicator]);
+
+  useEffect(() => {
+    if (!coaOpen) return;
+    const handleResize = () => updateDocumentationTabIndicator();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [coaOpen, updateDocumentationTabIndicator]);
+
+  useEffect(() => {
+    if (!coaOpen || typeof window === 'undefined') {
+      return;
+    }
+
+    const syncViewportHeight = () => {
+      const nextHeight = Math.max(window.innerHeight || 0, window.visualViewport?.height || 0);
+      setDocumentationViewportHeight(nextHeight > 0 ? nextHeight : null);
+    };
+
+    syncViewportHeight();
+    window.addEventListener('resize', syncViewportHeight);
+    window.addEventListener('orientationchange', syncViewportHeight);
+    window.visualViewport?.addEventListener('resize', syncViewportHeight);
+
+    return () => {
+      window.removeEventListener('resize', syncViewportHeight);
+      window.removeEventListener('orientationchange', syncViewportHeight);
+      window.visualViewport?.removeEventListener('resize', syncViewportHeight);
+    };
+  }, [coaOpen]);
 
   useEffect(() => {
     const rawVariations = Array.isArray(product.variations) ? product.variations : [];
@@ -525,17 +1036,18 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     });
   }, [needsVariants, onEnsureVariants, product.id, variantsLoading]);
 
-  const openCertificateOfAnalysis = async () => {
-    setCoaOpen(true);
+  const ensureCertificateOfAnalysisLoaded = useCallback(async () => {
     setCoaError(null);
-    if (coaObjectUrl || coaLoading) {
+    if (coaObjectUrl || coaLoading || coaLoadAttemptedRef.current) {
       return;
     }
     if (!wooProductId) {
+      coaLoadAttemptedRef.current = true;
       setCoaError('Certificate unavailable for this product.');
       return;
     }
 
+    coaLoadAttemptedRef.current = true;
     setCoaLoading(true);
     try {
       const { blob } = await wooAPI.getCertificateOfAnalysis(wooProductId);
@@ -551,7 +1063,21 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     } finally {
       setCoaLoading(false);
     }
+  }, [coaLoading, coaObjectUrl, wooProductId]);
+
+  const openDocumentationModal = () => {
+    coaLoadAttemptedRef.current = false;
+    setCoaOpen(true);
+    setDocumentationTab(hasNasalsDocumentation ? 'nasals' : 'certificate');
+    setCoaError(null);
   };
+
+  useEffect(() => {
+    if (!coaOpen || documentationTab !== 'certificate') {
+      return;
+    }
+    void ensureCertificateOfAnalysisLoaded();
+  }, [coaOpen, documentationTab, ensureCertificateOfAnalysisLoaded]);
 
   const downloadCertificateOfAnalysis = () => {
     if (!coaObjectUrl) return;
@@ -582,16 +1108,51 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     }
   };
 
+  const downloadNasalsDocumentation = () => {
+    const link = document.createElement('a');
+    link.href = protixaIonSystemDossierPdf;
+    link.download = 'ProtixaIONSystemDossierS.pdf';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const downloadActiveDocumentation = () => {
+    if (hasNasalsDocumentation && documentationTab === 'nasals') {
+      downloadNasalsDocumentation();
+      return;
+    }
+    downloadCertificateOfAnalysis();
+  };
+  const hasActiveDocumentationPreview =
+    (hasNasalsDocumentation && documentationTab === 'nasals')
+    || (documentationTab === 'certificate' && Boolean(coaObjectUrl) && !coaLoading);
+  const modalHeaderOffsetPx = 96;
+  const modalBottomMarginPx = 12;
+  const measuredModalMaxHeight = documentationViewportHeight
+    ? Math.max(420, documentationViewportHeight - modalHeaderOffsetPx - modalBottomMarginPx)
+    : null;
+  const documentationModalMaxHeight = measuredModalMaxHeight
+    ? `${measuredModalMaxHeight}px`
+    : 'calc(100dvh - var(--modal-header-offset, 6rem))';
+  const documentationPreviewHeight = hasActiveDocumentationPreview
+    ? '100%'
+    : '320px';
+  const documentationPreviewMinHeight = hasActiveDocumentationPreview ? '380px' : '320px';
+  const nasalsDocumentationPreviewUrl = protixaIonSystemDossierPdf;
+  const nasalsPreviewPercent = Math.round(nasalsPreviewScale * 100);
+
 			  const productMeta = (
 			    <>
 	      <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
-	      <button
+      <button
 	        type="button"
-	        onClick={() => void openCertificateOfAnalysis()}
+	        onClick={openDocumentationModal}
         className="line-clamp-2 text-left hover:underline"
         style={{ color: 'rgb(95, 179, 249)' }}
       >
-        Certificate of Analysis
+        Documentation and Analysis
       </button>
       {product.manufacturer && <p className="text-xs text-gray-500">{product.manufacturer}</p>}
     </>
@@ -824,9 +1385,11 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 
 	      <Dialog
 	        open={coaOpen}
-	        onOpenChange={(open) => {
+        onOpenChange={(open) => {
           setCoaOpen(open);
           if (!open) {
+            coaLoadAttemptedRef.current = false;
+            setDocumentationTab('certificate');
             setCoaError(null);
             if (coaObjectUrl) {
               URL.revokeObjectURL(coaObjectUrl);
@@ -835,18 +1398,69 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
           }
         }}
 	      >
-			      <DialogContent
-              className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
-              style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
+              <DialogContent
+              className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col overflow-hidden"
+              containerClassName="fixed inset-x-0 bottom-0 z-[10000] flex items-end justify-center px-3 pb-3 sm:px-4 sm:pb-3"
+              containerStyle={{
+                top: 'var(--modal-header-offset, 6rem)',
+                left: 0,
+                right: 0,
+              }}
+              style={{
+                backdropFilter: 'blur(38px) saturate(1.6)',
+                height: documentationModalMaxHeight,
+                maxHeight: documentationModalMaxHeight,
+                margin: '0 auto',
+              }}
               hideCloseButton
             >
               <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
-                      Certificate of Analysis
-                    </DialogTitle>
-                    <DialogDescription className="truncate">{product.name}</DialogDescription>
+                  <div className="flex-1 min-w-0 self-end">
+                    <div className="flex items-stretch gap-6">
+                      <div className="min-w-0 flex-shrink">
+                        <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+                          Documentation and Analysis
+                        </DialogTitle>
+                        <DialogDescription className="truncate">{product.name}</DialogDescription>
+                      </div>
+                      <div className="relative ml-auto flex-shrink-0 account-tab-shell documentation-header-tabs">
+                        <div
+                          className="account-tab-scroll-container"
+                          ref={setDocumentationTabsContainerRef}
+                          onScroll={updateDocumentationTabIndicator}
+                        >
+                          <div className="flex items-center gap-4 pb-0 account-tab-row">
+                            {documentationTabs.map((tab) => {
+                              const isActive = documentationTab === tab.id;
+                              return (
+                                <button
+                                  key={tab.id}
+                                  type="button"
+                                  onClick={() => setDocumentationTab(tab.id)}
+                                  className={`relative inline-flex items-center gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 ${
+                                    isActive ? 'text-slate-900' : ''
+                                  }`}
+                                  data-documentation-tab={tab.id}
+                                  aria-pressed={isActive}
+                                >
+                                  {tab.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <span
+                          aria-hidden="true"
+                          className="account-tab-underline-indicator"
+                          style={{
+                            left: documentationIndicatorLeft,
+                            width: documentationIndicatorWidth,
+                            opacity: documentationIndicatorOpacity,
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <Button
@@ -854,19 +1468,26 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
                       variant="outline"
                       size="sm"
                       className="gap-2"
-                      onClick={downloadCertificateOfAnalysis}
-                      disabled={!coaObjectUrl || coaLoading}
-                      title={coaObjectUrl ? 'Download certificate' : 'Certificate not loaded yet'}
+                      onClick={downloadActiveDocumentation}
+                      disabled={documentationTab === 'certificate' && (!coaObjectUrl || coaLoading)}
+                      title={
+                        hasNasalsDocumentation && documentationTab === 'nasals'
+                          ? 'Download nasals documentation'
+                          : coaObjectUrl
+                            ? 'Download certificate'
+                            : 'Certificate not loaded yet'
+                      }
                     >
                       <Download className="h-4 w-4" aria-hidden="true" />
                       Download
                     </Button>
                     <DialogClose
-                      className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 aspect-square items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                      className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
                       style={{
                         backgroundColor: 'rgb(95, 179, 249)',
+                        borderRadius: '50%',
                       }}
-                      aria-label="Close certificate"
+                      aria-label="Close"
                     >
                       <X className="h-4 w-4" />
                     </DialogClose>
@@ -874,10 +1495,28 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
                 </div>
               </DialogHeader>
 		
-		          <div className="flex-1 overflow-y-auto px-6 pb-6">
-                <div className="space-y-6 pt-6">
-                  <div className="min-h-[320px] rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4 flex items-center justify-center">
-		            {coaLoading ? (
+		          <div className={`flex flex-1 min-h-0 flex-col overflow-hidden px-6 ${hasActiveDocumentationPreview ? 'pb-5' : 'pb-6'}`}>
+                <div className="flex flex-1 min-h-0 flex-col pt-6">
+                  <div
+                    className="flex flex-1 min-h-0 items-center justify-center rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4"
+                    style={{
+                      minHeight: documentationPreviewMinHeight,
+                    }}
+                  >
+		            {hasNasalsDocumentation && hasOpenedNasalsDocumentation ? (
+                    <div className={documentationTab === 'nasals' ? 'flex h-full min-h-0 w-full' : 'hidden'}>
+                      <PdfPreview
+                        src={nasalsDocumentationPreviewUrl}
+                        height={documentationPreviewHeight}
+                        minHeight={documentationPreviewMinHeight}
+                        scale={nasalsPreviewScale}
+                        zoomPercent={nasalsPreviewPercent}
+                        onZoomOut={() => setNasalsPreviewScale((current) => Math.max(0.55, Number((current - 0.08).toFixed(2))))}
+                        onZoomIn={() => setNasalsPreviewScale((current) => Math.min(1.4, Number((current + 0.08).toFixed(2))))}
+                      />
+                    </div>
+                  ) : null}
+                  {documentationTab === 'nasals' ? null : coaLoading ? (
 		              <div className="flex items-center gap-2 text-sm text-slate-600">
 		                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
 		                Loading certificate…
@@ -886,7 +1525,11 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 		              <img
 		                src={coaObjectUrl}
 		                alt={`Certificate of Analysis for ${product.name}`}
-		                className="max-h-[70vh] w-auto max-w-full object-contain"
+		                className="block h-auto max-h-full w-auto max-w-full object-contain"
+                        style={{
+                          height: documentationPreviewHeight,
+                          maxHeight: documentationPreviewHeight,
+                        }}
 		              />
 		            ) : (
 		              <div className="text-sm text-slate-600 text-center">
