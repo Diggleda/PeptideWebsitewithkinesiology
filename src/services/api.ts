@@ -467,24 +467,6 @@ const toSameOriginApiUrl = (url: string) => {
   }
 };
 
-const shouldRetrySameOriginApiFallbackFromResponse = (response: Response) => {
-  if (!response || response.ok) {
-    return false;
-  }
-  const status = typeof response.status === 'number' ? response.status : 0;
-  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-  const responseUrl = String(response.url || '').toLowerCase();
-  return (
-    status === 401
-    || status === 403
-    || status === 404
-    || response.redirected
-    || contentType.includes('text/html')
-    || contentType.includes('application/xhtml+xml')
-    || /\/login(?:[/?#]|$)/.test(responseUrl)
-  );
-};
-
 const _fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number) => {
   if (typeof window === 'undefined' || timeoutMs <= 0 || !Number.isFinite(timeoutMs)) {
     return fetch(url, init);
@@ -593,36 +575,6 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
           throw wrapped;
         }
         throw error;
-      }
-    }
-
-    const sameOriginFallbackUrl =
-      !usedSameOriginFallback
-      && ((method === 'GET' || method === 'HEAD') && shouldUseSameOriginApiFallback(requestUrl, options))
-        ? toSameOriginApiUrl(requestUrl)
-        : null;
-    if (
-      sameOriginFallbackUrl
-      && shouldRetrySameOriginApiFallbackFromResponse(response)
-    ) {
-      try {
-        const retryResponse = await _fetchWithTimeout(sameOriginFallbackUrl, requestInit, timeoutMs);
-        response = retryResponse;
-        requestUrl = sameOriginFallbackUrl;
-        usedSameOriginFallback = true;
-      } catch (retryError: any) {
-        const retryIsAbort = retryError?.name === 'AbortError';
-        const retryMessage = retryIsAbort
-          ? 'Request timed out'
-          : (typeof retryError?.message === 'string' ? retryError.message : null);
-        dispatchApiReachability({ ok: false, status: null, message: retryMessage });
-        if (retryIsAbort) {
-          const wrapped = new Error('Request timed out');
-          (wrapped as any).code = 'TIMEOUT';
-          (wrapped as any).status = null;
-          throw wrapped;
-        }
-        throw retryError;
       }
     }
 
