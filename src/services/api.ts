@@ -9,11 +9,7 @@ export const API_BASE_URL = (() => {
     if (import.meta.env.DEV) {
       return 'http://localhost:3001/api';
     }
-    // In production, default to same-origin so deployments that serve the API under `/api`
-    // work without requiring a rebuild-time env var.
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}/api`;
-    }
+    // In production, default to relative same-origin `/api` so the bundle stays host-agnostic.
     return '/api';
   }
 

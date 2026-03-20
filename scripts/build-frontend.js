@@ -10,6 +10,14 @@ const env = {
   NODE_ENV: "production",
   FRONTEND_BUILD: process.env.FRONTEND_BUILD || stamp,
   VITE_FRONTEND_BUILD_ID: process.env.VITE_FRONTEND_BUILD_ID || stamp,
+  // Prevent local dev env files like `.env.local` from leaking cross-origin API targets
+  // into production bundles unless the build caller explicitly exports them.
+  VITE_API_URL: Object.prototype.hasOwnProperty.call(process.env, "VITE_API_URL")
+    ? process.env.VITE_API_URL
+    : "",
+  VITE_ALLOW_CROSS_ORIGIN_API: Object.prototype.hasOwnProperty.call(process.env, "VITE_ALLOW_CROSS_ORIGIN_API")
+    ? process.env.VITE_ALLOW_CROSS_ORIGIN_API
+    : "",
 };
 
 const viteBin =
