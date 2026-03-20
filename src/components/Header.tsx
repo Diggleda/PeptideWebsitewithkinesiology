@@ -4704,6 +4704,14 @@ export function Header({
       .replace(/[_-]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+    const isDraftLabel =
+      normalized === 'draft'
+      || normalized === 'delegate draft'
+      || normalized === 'delegate proposal'
+      || normalized === 'proposal'
+      || normalized === 'pending delegate'
+      || normalized === 'delegate pending';
+    if (isDraftLabel) return '';
     const isGenericLabel =
       normalized === 'label'
       || normalized === 'delegate'
@@ -6955,9 +6963,9 @@ export function Header({
                                         }}
                                         disabled={isSavingReviewNotes}
                                         className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
-                                      >
-                                        Reset
-                                      </Button>
+	                                      >
+	                                        Revert
+	                                      </Button>
                                     )}
                                     <Button
                                       type="button"

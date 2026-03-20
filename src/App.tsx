@@ -1523,25 +1523,12 @@ const getSalesOrderDateSummary = (
 const resolveOrderAsDelegateLabel = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
 
-  const hasDelegateProposalToken = (value: any): boolean => {
-    if (!value || typeof value !== "object") return false;
-    return Boolean(
-      normalizeStringField(value?.delegateProposalToken) ||
-      normalizeStringField(value?.delegate_proposal_token) ||
-      normalizeStringField(value?.delegationToken) ||
-      normalizeStringField(value?.delegation_token) ||
-      normalizeStringField(value?.proposalToken) ||
-      normalizeStringField(value?.proposal_token),
-    );
-  };
-
   const direct =
     normalizeStringField(order?.asDelegate) ||
     normalizeStringField(order?.as_delegate) ||
     normalizeStringField(order?.delegateOrderLabel) ||
     normalizeStringField(order?.delegate_order_label);
   if (direct) return direct;
-  if (hasDelegateProposalToken(order)) return "Delegate Order";
 
   const integrations = parseMaybeJson(order?.integrationDetails || order?.integrations) || {};
   const wooIntegration = parseMaybeJson(integrations?.wooCommerce || integrations?.woocommerce) || {};
@@ -1556,14 +1543,6 @@ const resolveOrderAsDelegateLabel = (order: any): string | null => {
     normalizeStringField(wooPayload?.asDelegate) ||
     normalizeStringField(wooPayload?.as_delegate);
   if (nestedDirect) return nestedDirect;
-  if (
-    hasDelegateProposalToken(integrations) ||
-    hasDelegateProposalToken(wooIntegration) ||
-    hasDelegateProposalToken(wooResponse) ||
-    hasDelegateProposalToken(wooPayload)
-  ) {
-    return "Delegate Order";
-  }
 
   const readMeta = (meta: any, keys: string[]) => {
     if (!Array.isArray(meta)) return null;
@@ -1594,29 +1573,6 @@ const resolveOrderAsDelegateLabel = (order: any): string | null => {
     ]);
   if (metaLabel) return metaLabel;
 
-  const metaHasDelegateToken =
-    readMeta(wooResponse?.meta_data, [
-      "delegate_proposal_token",
-      "delegateproposaltoken",
-      "proposal_token",
-      "proposaltoken",
-      "delegation_token",
-      "delegationtoken",
-      "peppro_delegate_proposal_token",
-      "pepprodelegateproposaltoken",
-    ]) ||
-    readMeta(wooPayload?.meta_data, [
-      "delegate_proposal_token",
-      "delegateproposaltoken",
-      "proposal_token",
-      "proposaltoken",
-      "delegation_token",
-      "delegationtoken",
-      "peppro_delegate_proposal_token",
-      "pepprodelegateproposaltoken",
-    ]);
-  if (metaHasDelegateToken) return "Delegate Order";
-
   return null;
 };
 
@@ -1640,6 +1596,16 @@ const normalizeDelegateOrderLabel = (value: unknown): string | null => {
   if (!trimmed) return null;
 
   const normalized = trimmed.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const isDraftLabel =
+    normalized === "draft" ||
+    normalized === "delegate draft" ||
+    normalized === "delegate proposal" ||
+    normalized === "proposal" ||
+    normalized === "pending delegate" ||
+    normalized === "delegate pending";
+  if (isDraftLabel) {
+    return null;
+  }
   const isGenericLabel =
     normalized === "label" ||
     normalized === "delegate" ||
@@ -2372,6 +2338,21 @@ const CATALOG_DEBUG =
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
   "v2.1.10";
+const BUILD_LOG_PREFIX = "[Build]";
+const FRONTEND_ASSET_NAME = (() => {
+  try {
+    const rawUrl =
+      typeof import.meta !== "undefined" && typeof import.meta.url === "string"
+        ? import.meta.url
+        : "";
+    if (!rawUrl) return null;
+    const pathname = new URL(rawUrl, typeof window !== "undefined" ? window.location.href : "http://localhost").pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    return segments.length > 0 ? segments[segments.length - 1] : null;
+  } catch {
+    return null;
+  }
+})();
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -4967,16 +4948,24 @@ function MainApp() {
       user && (isDoctorRole(user.role) || isRep(user.role)),
     );
     if (suppress && !consoleRestoreRef.current) {
+      const passthroughBuildLog =
+        (method: (...args: any[]) => void) =>
+        (...args: any[]) => {
+          const first = args[0];
+          if (typeof first === "string" && first.startsWith(BUILD_LOG_PREFIX)) {
+            method(...args);
+          }
+        };
       consoleRestoreRef.current = {
         log: console.log,
         info: console.info,
         debug: console.debug,
         warn: console.warn,
       };
-      console.log = noop;
-      console.info = noop;
+      console.log = passthroughBuildLog(consoleRestoreRef.current.log);
+      console.info = passthroughBuildLog(consoleRestoreRef.current.info);
       console.debug = noop;
-      console.warn = noop;
+      console.warn = passthroughBuildLog(consoleRestoreRef.current.warn);
     }
     if (!suppress && consoleRestoreRef.current) {
       console.log = consoleRestoreRef.current.log;
@@ -4995,6 +4984,12 @@ function MainApp() {
       }
     };
   }, [user?.role]);
+
+  useEffect(() => {
+    console.info(
+      `${BUILD_LOG_PREFIX} Frontend ${FRONTEND_BUILD_ID}${FRONTEND_ASSET_NAME ? ` (${FRONTEND_ASSET_NAME})` : ""}`,
+    );
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -11487,9 +11482,43 @@ function MainApp() {
 		    return () => window.clearInterval(id);
 		  }, [user?.role]);
 
+  const readPresenceSnapshot = useCallback((storageKey: string | null) => {
+    if (!storageKey || typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem(storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { items?: unknown; updatedAt?: unknown } | null;
+      const items = Array.isArray(parsed?.items) ? parsed.items : null;
+      const updatedAt =
+        typeof parsed?.updatedAt === "number" && Number.isFinite(parsed.updatedAt)
+          ? parsed.updatedAt
+          : null;
+      if (!items || !updatedAt) return null;
+      return { items, updatedAt };
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const writePresenceSnapshot = useCallback((storageKey: string | null, items: any[]) => {
+    if (!storageKey || typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          items,
+          updatedAt: Date.now(),
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }, []);
+
 	  const [liveClients, setLiveClients] = useState<any[]>([]);
 		  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
 		  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
+  const [liveClientsUsingCachedSnapshot, setLiveClientsUsingCachedSnapshot] = useState(false);
 		  const liveClientsInitialLoadDoneRef = useRef(false);
 		  const liveClientsEtagRef = useRef<string | null>(null);
 		  const liveClientsLongPollDisabledRef = useRef(false);
@@ -11497,14 +11526,20 @@ function MainApp() {
 	  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
 	  const [liveClientsSearch, setLiveClientsSearch] = useState<string>("");
 	  const [salesLeadLiveUsersRoleFilter, setSalesLeadLiveUsersRoleFilter] = useState<string>("all");
+  type LivePresenceProfileImageCacheEntry = {
+    value: string | null;
+    fetchedAt: number;
+  };
+  const LIVE_PRESENCE_NULL_AVATAR_RETRY_MS = 120_000;
   const [livePresenceProfileImageByUserId, setLivePresenceProfileImageByUserId] = useState<
-    Record<string, string | null>
+    Record<string, LivePresenceProfileImageCacheEntry>
   >({});
   const livePresenceProfileImageRequestIdsRef = useRef<Set<string>>(new Set());
 
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
 	  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
 	  const [adminLiveUsersError, setAdminLiveUsersError] = useState<string | null>(null);
+  const [adminLiveUsersUsingCachedSnapshot, setAdminLiveUsersUsingCachedSnapshot] = useState(false);
   const adminLiveUsersInitialLoadDoneRef = useRef(false);
 	  const adminLiveUsersEtagRef = useRef<string | null>(null);
 	  const adminLiveUsersLongPollDisabledRef = useRef(false);
@@ -11512,6 +11547,17 @@ function MainApp() {
 	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(true);
 	  const [adminLiveUsersSearch, setAdminLiveUsersSearch] = useState<string>("");
 	  const [adminLiveUsersRoleFilter, setAdminLiveUsersRoleFilter] = useState<string>("all");
+  const liveClientsPresenceCacheKey = useMemo(() => {
+    const role = normalizeRole(user?.role || "");
+    const ownerId = String(user?.salesRepId || user?.id || "").trim();
+    if (!role || !ownerId) return null;
+    return `peppro:presence:v1:live-clients:${role}:${ownerId}`;
+  }, [user?.id, user?.role, user?.salesRepId]);
+  const adminLiveUsersPresenceCacheKey = useMemo(() => {
+    const ownerId = String(user?.id || "").trim();
+    if (!ownerId) return null;
+    return `peppro:presence:v1:admin-live-users:${ownerId}`;
+  }, [user?.id]);
 	  type HandDeliveryEntry = {
 	    userId: string;
 	    salesRepId?: string | null;
@@ -11595,33 +11641,41 @@ function MainApp() {
     return false;
   }, [adminHandDeliveryUsers, adminLiveUsers, liveClients, user]);
 
-  useEffect(() => {
-    const canFetchSqlProfileImages = Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
+	  useEffect(() => {
+	    const canFetchSqlProfileImages =
+        Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role) || isRep(user?.role));
     if (!canFetchSqlProfileImages) {
       return;
     }
 
-    const sourceEntries = [
-      ...(Array.isArray(liveClients) ? liveClients : []),
-      ...(Array.isArray(adminLiveUsers) ? adminLiveUsers : []),
-    ];
-    const missingIds = Array.from(
-      new Set(
-        sourceEntries
-          .map((entry: any) => {
+	    const sourceEntries = [
+	      ...(Array.isArray(liveClients) ? liveClients : []),
+	      ...(Array.isArray(adminLiveUsers) ? adminLiveUsers : []),
+	    ];
+      const now = Date.now();
+	    const missingIds = Array.from(
+	      new Set(
+	        sourceEntries
+	          .map((entry: any) => {
             const userId = String(entry?.id || "").trim();
             if (!userId) return null;
-            const existingAvatar =
-              typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
-                ? entry.profileImageUrl.trim()
-                : null;
-            if (existingAvatar) return null;
-            if (Object.prototype.hasOwnProperty.call(livePresenceProfileImageByUserId, userId)) return null;
-            if (livePresenceProfileImageRequestIdsRef.current.has(userId)) return null;
-            return userId;
-          })
-          .filter((value): value is string => Boolean(value)),
-      ),
+	            const existingAvatar =
+	              typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
+	                ? entry.profileImageUrl.trim()
+	                : null;
+	            if (existingAvatar) return null;
+              const cachedEntry = livePresenceProfileImageByUserId[userId];
+              if (cachedEntry) {
+                if (cachedEntry.value) return null;
+                if ((now - cachedEntry.fetchedAt) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS) {
+                  return null;
+                }
+              }
+	            if (livePresenceProfileImageRequestIdsRef.current.has(userId)) return null;
+	            return userId;
+	          })
+	          .filter((value): value is string => Boolean(value)),
+	      ),
     );
 
     if (!missingIds.length) {
@@ -11632,26 +11686,30 @@ function MainApp() {
     batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.add(userId));
     let cancelled = false;
 
-    void (async () => {
-      try {
-        const payload = (await settingsAPI.getAdminUserProfiles(batchIds)) as any;
-        if (cancelled) return;
-        const users = Array.isArray(payload?.users) ? payload.users : [];
-        const nextById: Record<string, string | null> = {};
-        batchIds.forEach((userId) => {
-          nextById[userId] = null;
-        });
-        users.forEach((profile: any) => {
-          const userId = String(profile?.id || "").trim();
-          if (!userId) return;
-          nextById[userId] =
-            typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
-              ? profile.profileImageUrl.trim()
-              : null;
-        });
-        setLivePresenceProfileImageByUserId((current) => ({ ...current, ...nextById }));
-      } catch {
-        if (cancelled) return;
+	    void (async () => {
+	      try {
+	        const payload = (await settingsAPI.getAdminUserProfiles(batchIds)) as any;
+	        if (cancelled) return;
+	        const users = Array.isArray(payload?.users) ? payload.users : [];
+          const fetchedAt = Date.now();
+	        const nextById: Record<string, LivePresenceProfileImageCacheEntry> = {};
+	        batchIds.forEach((userId) => {
+	          nextById[userId] = { value: null, fetchedAt };
+	        });
+	        users.forEach((profile: any) => {
+	          const userId = String(profile?.id || "").trim();
+	          if (!userId) return;
+	          nextById[userId] = {
+                value:
+                  typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
+                    ? profile.profileImageUrl.trim()
+                    : null,
+                fetchedAt,
+              };
+	        });
+	        setLivePresenceProfileImageByUserId((current) => ({ ...current, ...nextById }));
+	      } catch {
+	        if (cancelled) return;
       } finally {
         batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.delete(userId));
       }
@@ -11672,13 +11730,13 @@ function MainApp() {
         return inlineAvatar;
       }
       const userId = String(entry?.id || "").trim();
-      if (!userId) {
-        return null;
-      }
-      return livePresenceProfileImageByUserId[userId] ?? null;
-    },
-    [livePresenceProfileImageByUserId],
-  );
+	      if (!userId) {
+	        return null;
+	      }
+	      return livePresenceProfileImageByUserId[userId]?.value ?? null;
+	    },
+	    [livePresenceProfileImageByUserId],
+	  );
 
 	  const normalizeHandDeliveryEntry = useCallback(
 	    (entry: any): HandDeliveryEntry | null => {
@@ -12092,6 +12150,7 @@ function MainApp() {
 		      setLiveClients([]);
 		      setLiveClientsLoading(false);
 		      setLiveClientsError(null);
+          setLiveClientsUsingCachedSnapshot(false);
 		      liveClientsEtagRef.current = null;
 		      liveClientsLongPollDisabledRef.current = false;
           liveClientsRetryDelayMsRef.current = 1000;
@@ -12102,6 +12161,15 @@ function MainApp() {
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
       liveClientsLongPollDisabledRef.current = false;
       liveClientsRetryDelayMsRef.current = 1000;
+
+      const cachedSnapshot = readPresenceSnapshot(liveClientsPresenceCacheKey);
+      if (cachedSnapshot && cachedSnapshot.items.length > 0) {
+        setLiveClients(cachedSnapshot.items as any[]);
+        setLiveClientsUsingCachedSnapshot(true);
+        setLiveClientsLoading(true);
+      } else {
+        setLiveClientsUsingCachedSnapshot(false);
+      }
 
 	    const fetchOnce = async () => {
 		      try {
@@ -12130,6 +12198,8 @@ function MainApp() {
 		          return true;
 		        });
 		        setLiveClients(clients);
+            writePresenceSnapshot(liveClientsPresenceCacheKey, clients);
+            setLiveClientsUsingCachedSnapshot(false);
 		      } catch (error: any) {
 		        if (cancelled) return;
             if (isAuthFailureError(error)) {
@@ -12206,6 +12276,8 @@ function MainApp() {
 		            return true;
 		          });
 		          setLiveClients(clients);
+              writePresenceSnapshot(liveClientsPresenceCacheKey, clients);
+              setLiveClientsUsingCachedSnapshot(false);
               setLiveClientsError(null);
               liveClientsRetryDelayMsRef.current = 1000;
 			        } catch (error: any) {
@@ -12244,7 +12316,7 @@ function MainApp() {
 	      if (intervalId) window.clearInterval(intervalId);
 	      controller.abort();
 	    };
-	  }, [user?.role, user?.id, hasAuthToken]);
+	  }, [user?.role, user?.id, user?.salesRepId, hasAuthToken, liveClientsPresenceCacheKey, readPresenceSnapshot, writePresenceSnapshot]);
 
 		  useEffect(() => {
 		    if (!isAdmin(user?.role) || !hasAuthToken()) {
@@ -12252,6 +12324,7 @@ function MainApp() {
 	      setAdminLiveUsers([]);
 	      setAdminLiveUsersLoading(false);
 	      setAdminLiveUsersError(null);
+          setAdminLiveUsersUsingCachedSnapshot(false);
 	      adminLiveUsersEtagRef.current = null;
 	      adminLiveUsersLongPollDisabledRef.current = false;
         adminLiveUsersRetryDelayMsRef.current = 1000;
@@ -12262,6 +12335,15 @@ function MainApp() {
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
       adminLiveUsersLongPollDisabledRef.current = false;
       adminLiveUsersRetryDelayMsRef.current = 1000;
+
+      const cachedSnapshot = readPresenceSnapshot(adminLiveUsersPresenceCacheKey);
+      if (cachedSnapshot && cachedSnapshot.items.length > 0) {
+        setAdminLiveUsers(cachedSnapshot.items as any[]);
+        setAdminLiveUsersUsingCachedSnapshot(true);
+        setAdminLiveUsersLoading(true);
+      } else {
+        setAdminLiveUsersUsingCachedSnapshot(false);
+      }
 
 	    const fetchOnce = async () => {
 	      try {
@@ -12275,6 +12357,8 @@ function MainApp() {
 	        adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 	        const users = Array.isArray(payload?.users) ? payload.users : [];
 	        setAdminLiveUsers(users);
+          writePresenceSnapshot(adminLiveUsersPresenceCacheKey, users);
+          setAdminLiveUsersUsingCachedSnapshot(false);
 	      } catch (error: any) {
 	        if (cancelled) return;
           if (isAuthFailureError(error)) {
@@ -12329,6 +12413,8 @@ function MainApp() {
 		          adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 		          const users = Array.isArray(payload?.users) ? payload.users : [];
 		          setAdminLiveUsers(users);
+              writePresenceSnapshot(adminLiveUsersPresenceCacheKey, users);
+              setAdminLiveUsersUsingCachedSnapshot(false);
               setAdminLiveUsersError(null);
               adminLiveUsersRetryDelayMsRef.current = 1000;
 		        } catch (error: any) {
@@ -12367,7 +12453,7 @@ function MainApp() {
 	      if (intervalId) window.clearInterval(intervalId);
 	      controller.abort();
 	    };
-	  }, [user?.role, user?.id, hasAuthToken]);
+	  }, [user?.role, user?.id, hasAuthToken, adminLiveUsersPresenceCacheKey, readPresenceSnapshot, writePresenceSnapshot]);
 
 		  const formatOnlineDuration = (lastLoginAt?: string | null) => {
 		    void userActivityNowTick;
@@ -20142,6 +20228,20 @@ function MainApp() {
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown doctor";
+                      const doctorIdForModal =
+                        resolveOrderDoctorId(order as any) ||
+                        order.doctorId ||
+                        orderAny?.doctor_id ||
+                        orderAny?.userId ||
+                        orderAny?.user_id ||
+                        null;
+                      const doctorEmailForModal =
+                        order.doctorEmail ||
+                        orderAny?.doctor_email ||
+                        shippingAddress?.email ||
+                        billingAddress?.email ||
+                        null;
+                      const canOpenDoctorModal = Boolean(doctorIdForModal || doctorEmailForModal);
 	                    const orderPlacedAt =
 	                      formatOrderPlacedAtForLocalDisplay(order as any);
 	                    const total = Number(
@@ -20171,7 +20271,44 @@ function MainApp() {
 	                          </button>
 	                        </div>
 	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
-	                          {doctorLabel}
+                            {canOpenDoctorModal ? (
+                              <button
+                                type="button"
+                                className="min-w-0 truncate text-center hover:underline"
+                                title={`Open ${doctorLabel}`}
+                                onClick={() =>
+                                  openSalesDoctorDetail(
+                                    {
+                                      doctorId: String(
+                                        doctorIdForModal || doctorEmailForModal || `anon:${order.id || order.number || index}`,
+                                      ),
+                                      referralId: resolveReferralIdForDoctorNotes(
+                                        doctorIdForModal ? String(doctorIdForModal) : null,
+                                        doctorEmailForModal ? String(doctorEmailForModal) : null,
+                                      ),
+                                      doctorName: doctorLabel,
+                                      doctorEmail: doctorEmailForModal ? String(doctorEmailForModal) : null,
+                                      doctorAvatar: order.doctorProfileImageUrl || null,
+                                      ownerSalesRepId:
+                                        orderAny?.doctorSalesRepId ||
+                                        orderAny?.doctor_sales_rep_id ||
+                                        orderAny?.salesRepId ||
+                                        orderAny?.sales_rep_id ||
+                                        null,
+                                      orders: [order],
+                                      total,
+                                      totalOrderValue: total,
+                                      orderQuantity: shouldCountRevenueForStatus(order.status) ? 1 : 0,
+                                    },
+                                    "doctor",
+                                  )
+                                }
+                              >
+                                {doctorLabel}
+                              </button>
+                            ) : (
+	                            doctorLabel
+                            )}
 	                        </div>
 	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">
 	                          {orderPlacedAt
@@ -20285,6 +20422,20 @@ function MainApp() {
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown doctor";
+                    const doctorIdForModal =
+                      resolveOrderDoctorId(order as any) ||
+                      order.doctorId ||
+                      orderAny?.doctor_id ||
+                      orderAny?.userId ||
+                      orderAny?.user_id ||
+                      null;
+                    const doctorEmailForModal =
+                      order.doctorEmail ||
+                      orderAny?.doctor_email ||
+                      shippingAddress?.email ||
+                      billingAddress?.email ||
+                      null;
+                    const canOpenDoctorModal = Boolean(doctorIdForModal || doctorEmailForModal);
                     const orderPlacedAt =
                       formatOrderPlacedAtForLocalDisplay(order as any);
 	                    const total = Number(
@@ -20314,7 +20465,44 @@ function MainApp() {
 	                          </button>
 	                        </div>
 	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
-	                          {doctorLabel}
+                            {canOpenDoctorModal ? (
+                              <button
+                                type="button"
+                                className="min-w-0 truncate text-center hover:underline"
+                                title={`Open ${doctorLabel}`}
+                                onClick={() =>
+                                  openSalesDoctorDetail(
+                                    {
+                                      doctorId: String(
+                                        doctorIdForModal || doctorEmailForModal || `anon:${order.id || order.number || index}`,
+                                      ),
+                                      referralId: resolveReferralIdForDoctorNotes(
+                                        doctorIdForModal ? String(doctorIdForModal) : null,
+                                        doctorEmailForModal ? String(doctorEmailForModal) : null,
+                                      ),
+                                      doctorName: doctorLabel,
+                                      doctorEmail: doctorEmailForModal ? String(doctorEmailForModal) : null,
+                                      doctorAvatar: order.doctorProfileImageUrl || null,
+                                      ownerSalesRepId:
+                                        orderAny?.doctorSalesRepId ||
+                                        orderAny?.doctor_sales_rep_id ||
+                                        orderAny?.salesRepId ||
+                                        orderAny?.sales_rep_id ||
+                                        null,
+                                      orders: [order],
+                                      total,
+                                      totalOrderValue: total,
+                                      orderQuantity: shouldCountRevenueForStatus(order.status) ? 1 : 0,
+                                    },
+                                    "doctor",
+                                  )
+                                }
+                              >
+                                {doctorLabel}
+                              </button>
+                            ) : (
+	                            doctorLabel
+                            )}
 	                        </div>
 	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">
 	                          {orderPlacedAt
@@ -20939,7 +21127,7 @@ function MainApp() {
 	                  </div>
 	                )}
 
-	                {liveClientsLoading ? (
+	                {liveClientsLoading && liveClients.length === 0 ? (
 	                  <div className="px-4 py-3 text-sm text-slate-500">
 	                    Loading clients…
 	                  </div>
@@ -21021,6 +21209,13 @@ function MainApp() {
 
 	                  return (
 	                      <div className="space-y-3">
+                          {liveClientsLoading && liveClients.length > 0 && (
+                            <div className="px-3 py-2 text-xs text-slate-500 rounded-md border border-slate-200 bg-slate-50/70">
+                              {liveClientsUsingCachedSnapshot
+                                ? "Showing a recent presence snapshot while live status refreshes."
+                                : "Refreshing live presence…"}
+                            </div>
+                          )}
 	                        <div
                             className={clsx(
                               "clients-controls-row flex flex-col gap-3 px-3 sm:px-1",
@@ -21973,7 +22168,7 @@ function MainApp() {
                     </div>
                   )}
 
-                  {adminLiveUsersLoading ? (
+                  {adminLiveUsersLoading && adminLiveUsers.length === 0 ? (
                     <div className="px-4 py-3 text-sm text-slate-500">
                       Loading users…
                     </div>
@@ -22159,6 +22354,13 @@ function MainApp() {
 
                     return (
                       <div className="space-y-3">
+                        {adminLiveUsersLoading && adminLiveUsers.length > 0 && (
+                          <div className="px-3 py-2 text-xs text-slate-500 rounded-md border border-slate-200 bg-slate-50/70">
+                            {adminLiveUsersUsingCachedSnapshot
+                              ? "Showing a recent presence snapshot while live status refreshes."
+                              : "Refreshing live presence…"}
+                          </div>
+                        )}
                         <div className="clients-controls-row flex flex-col gap-3 px-3 sm:px-1">
                           <div className="clients-controls-leading flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-none sm:gap-3">
                           <label className="inline-flex shrink-0 whitespace-nowrap items-center gap-2 text-sm text-slate-700">
@@ -26201,8 +26403,8 @@ function MainApp() {
       >
         <DialogContent
           hideCloseButton
-          className="max-w-2xl"
-          containerClassName="research-terms-modal-container fixed inset-0 z-[10000] flex justify-center px-3 pb-6"
+          className="max-w-2xl max-h-[calc(var(--viewport-height,100dvh)-1rem)] overflow-y-auto overscroll-contain"
+          containerClassName="research-terms-modal-container fixed inset-0 z-[10000] flex items-start justify-center overflow-y-auto px-3 pt-3 pb-6 sm:pt-6"
           trapFocus={!researchTermsLegalModalOpen}
           onEscapeKeyDown={(event) => event.preventDefault()}
           onPointerDownOutside={(event) => event.preventDefault()}
@@ -28697,7 +28899,9 @@ function MainApp() {
 				                </DialogTitle>
 				                <DialogDescription>Account details</DialogDescription>
 				              </DialogHeader>
-		              {salesDoctorDetail && isDoctorRole(salesDoctorDetail.role) && (
+		              {salesDoctorDetail &&
+                    isDoctorRole(salesDoctorDetail.role) &&
+                    (isAdmin(user?.role) || isRep(user?.role)) && (
 		                <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
 		                  <p className="text-sm font-semibold justify-center text-slate-800">
                         Shared Notes (Rep and Admin only)
@@ -28781,10 +28985,11 @@ function MainApp() {
 	                  )}
 	                </div>
 	                <div className="space-y-1">
-			                    {((isRep(salesDoctorDetail.role) ||
+			                    {((isAdmin(user?.role) || isRep(user?.role)) &&
+                            ((isRep(salesDoctorDetail.role) ||
                             isAdmin(salesDoctorDetail.role)) ||
 		                        typeof salesDoctorDetail.personalRevenue === "number" ||
-		                        typeof salesDoctorDetail.salesRevenue === "number") ? (
+		                        typeof salesDoctorDetail.salesRevenue === "number")) ? (
 			                      <>
 				                        {(() => {
 				                          const role = normalizeRole(salesDoctorDetail.role || "");
@@ -29128,7 +29333,7 @@ function MainApp() {
                 </div>
               </div>
 
-              {(isRep(salesDoctorDetail.role) || isAdmin(salesDoctorDetail.role)) && (() => {
+              {(isAdmin(user?.role) || isRep(user?.role)) && (() => {
                 const formatDateObject = (date?: Date | null) => {
                   if (!date) return null;
                   if (Number.isNaN(date.getTime())) return null;
@@ -29395,7 +29600,7 @@ function MainApp() {
                 </div>
               </div>
 
-              {!(isRep(salesDoctorDetail.role) || isAdmin(salesDoctorDetail.role)) && (() => {
+              {!(isAdmin(user?.role) || isRep(user?.role)) && (() => {
                 const formatDateObject = (date?: Date | null) => {
                   if (!date) return null;
                   if (Number.isNaN(date.getTime())) return null;
@@ -29639,7 +29844,11 @@ function MainApp() {
                       return (
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
                           <p className="text-sm font-semibold text-slate-700">
-                            {isDoctorRole(salesDoctorDetail.role) ? "Orders" : "Orders by type"}
+                            {isAdmin(user?.role) || isRep(user?.role)
+                              ? isDoctorRole(salesDoctorDetail.role)
+                                ? "Orders"
+                                : "Orders by type"
+                              : "Orders"}
                           </p>
                           <span className="text-xs text-slate-500">
                             {customRangeLabel || periodLabel}
@@ -29674,7 +29883,11 @@ function MainApp() {
 			                    salesDoctorDetail,
 			                    salesDoctorCommissionRange,
 			                  );
-                      const forceSingleOrdersList = isDoctorRole(salesDoctorDetail.role);
+                      const forceSingleOrdersList =
+                        !isAdmin(user?.role) &&
+                        !isRep(user?.role)
+                          ? true
+                          : isDoctorRole(salesDoctorDetail.role);
 		                  const personalRevenueForDisplay =
 		                    personalOrders.length > 0
 		                      ? sumRevenueFromOrders(personalOrdersInRange)

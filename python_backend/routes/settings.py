@@ -36,7 +36,7 @@ _LIVE_CLIENTS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_CLIENTS_LONG
 
 _LIVE_USERS_CACHE_LOCK = threading.Lock()
 _LIVE_USERS_CACHE: dict[str, dict] = {"payload": None, "expiresAt": 0.0}
-_LIVE_USERS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_USERS_LONGPOLL_CONCURRENCY") or 4)
+_LIVE_USERS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_USERS_LONGPOLL_CONCURRENCY") or 12)
 _LIVE_USERS_LONGPOLL_CONCURRENCY = max(1, min(_LIVE_USERS_LONGPOLL_CONCURRENCY, 20))
 _LIVE_USERS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_USERS_LONGPOLL_CONCURRENCY)
 
@@ -642,6 +642,7 @@ def _compute_live_users_payload() -> dict:
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": normalize_user_role(user.get("role")),
+                "profileImageUrl": user.get("profileImageUrl") or None,
                 **snapshot,
             }
         )
@@ -662,6 +663,7 @@ def _compute_live_users_payload() -> dict:
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
             "lastLoginAt": entry.get("lastLoginAt") or None,
+            "profileImageUrl": entry.get("profileImageUrl") or None,
         }
         for entry in entries
     ]

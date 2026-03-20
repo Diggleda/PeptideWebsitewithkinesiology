@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { Router } = require('express');
 const { authenticate } = require('../middleware/authenticate');
 const {
@@ -875,6 +876,7 @@ const buildLiveUsersPayload = () => {
       name: user.name || null,
       email: user.email || null,
       role: normalizeUserRole(user.role),
+      profileImageUrl: user.profileImageUrl || null,
       ...snapshot,
     };
   });
@@ -894,6 +896,7 @@ const buildLiveUsersPayload = () => {
         name: entry.name || null,
         email: entry.email || null,
         role: normalizeUserRole(entry.role),
+        profileImageUrl: null,
         isOnline: true,
         isIdle: (liveUsers.length + index) % 3 === 0,
         isSimulated: true,
@@ -914,7 +917,22 @@ const buildLiveUsersPayload = () => {
       .localeCompare(String(b?.name || b?.email || b?.id || '').toLowerCase()),
   );
 
+  const sig = liveUsers.map((entry) => ({
+    id: entry.id,
+    role: entry.role || 'unknown',
+    isOnline: Boolean(entry.isOnline),
+    isIdle: Boolean(entry.isIdle),
+    lastLoginAt: entry.lastLoginAt || null,
+    profileImageUrl: entry.profileImageUrl || null,
+  }));
+  sig.sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
+  const etag = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ users: sig }))
+    .digest('hex');
+
   return {
+    etag,
     generatedAt: new Date().toISOString(),
     users: liveUsers,
     total: liveUsers.length,
