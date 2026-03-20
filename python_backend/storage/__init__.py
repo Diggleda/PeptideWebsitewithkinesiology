@@ -54,6 +54,7 @@ def init_storage(config) -> None:
         "settings.json",
         {
             "shopEnabled": True,
+            "betaServices": [],
             "peptideForumEnabled": True,
             "stripeMode": None,
             "salesBySalesRepCsvDownloadedAt": None,

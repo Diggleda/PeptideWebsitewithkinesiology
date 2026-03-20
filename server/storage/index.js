@@ -18,6 +18,7 @@ const peptideForumStore = new JsonStore(env.dataDir, 'the-peptide-forum.json', {
 });
 const settingsStore = new JsonStore(env.dataDir, 'settings.json', {
   shopEnabled: true,
+  betaServices: [],
   peptideForumEnabled: true,
   stripeMode: null,
   salesBySalesRepCsvDownloadedAt: null,

@@ -1198,6 +1198,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getBetaServices: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/beta-services`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   getPatientLinksStatus: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/patient-links`, {
       method: 'GET',
@@ -1244,6 +1251,16 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
+    });
+  },
+  updateBetaServices: async (betaServices: Array<string>) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/beta-services`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        betaServices: (Array.isArray(betaServices) ? betaServices : [])
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      }),
     });
   },
   updatePatientLinksStatus: async (enabled: boolean, doctorUserIds?: Array<string | number> | null) => {

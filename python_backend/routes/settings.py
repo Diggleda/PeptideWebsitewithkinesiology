@@ -40,6 +40,10 @@ _LIVE_USERS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_USERS_LONGPOLL_CONCU
 _LIVE_USERS_LONGPOLL_CONCURRENCY = max(1, min(_LIVE_USERS_LONGPOLL_CONCURRENCY, 20))
 _LIVE_USERS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_USERS_LONGPOLL_CONCURRENCY)
 
+def _mysql_enabled() -> bool:
+    config = get_config()
+    return bool(getattr(config, "mysql", {}).get("enabled"))
+
 def _is_sales_lead() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
     return role in ("sales_lead", "saleslead", "sales-lead")
@@ -702,7 +706,24 @@ def _compute_live_users_cached() -> dict:
 def get_shop():
     def action():
         settings = settings_service.get_settings()
-        return {"shopEnabled": bool(settings.get("shopEnabled", True))}
+        return {
+            "shopEnabled": bool(settings.get("shopEnabled", True)),
+            "mysqlEnabled": _mysql_enabled(),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.get("/beta-services")
+@require_auth
+def get_beta_services():
+    def action():
+        _require_admin()
+        settings = settings_service.get_settings()
+        return {
+            "betaServices": settings.get("betaServices") or [],
+            "mysqlEnabled": _mysql_enabled(),
+        }
 
     return handle_action(action)
 
@@ -710,10 +731,9 @@ def get_shop():
 def get_forum():
     def action():
         settings = settings_service.get_settings()
-        config = get_config()
         return {
             "peptideForumEnabled": bool(settings.get("peptideForumEnabled", True)),
-            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -722,10 +742,9 @@ def get_forum():
 def get_research():
     def action():
         settings = settings_service.get_settings()
-        config = get_config()
         return {
             "researchDashboardEnabled": bool(settings.get("researchDashboardEnabled", False)),
-            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -742,6 +761,7 @@ def get_patient_links():
                 for doctor in _get_delegate_links_doctors()
                 if bool(doctor.get("delegateLinksEnabled"))
             ],
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -752,7 +772,10 @@ def get_patient_links_doctors():
     def action():
         _require_admin()
         _migrate_legacy_delegate_links_to_users()
-        return {"doctors": _get_delegate_links_doctors()}
+        return {
+            "doctors": _get_delegate_links_doctors(),
+            "mysqlEnabled": _mysql_enabled(),
+        }
 
     return handle_action(action)
 
@@ -762,6 +785,7 @@ def get_crm():
         settings = settings_service.get_settings()
         return {
             "crmEnabled": bool(settings.get("crmEnabled", True)),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -775,10 +799,26 @@ def update_shop():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"shopEnabled": enabled})
-        config = get_config()
         return {
             "shopEnabled": bool(updated.get("shopEnabled", True)),
-            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+            "mysqlEnabled": _mysql_enabled(),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.put("/beta-services")
+@require_auth
+def update_beta_services():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        updated = settings_service.update_settings(
+            {"betaServices": payload.get("betaServices") or []}
+        )
+        return {
+            "betaServices": updated.get("betaServices") or [],
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -791,10 +831,9 @@ def update_forum():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"peptideForumEnabled": enabled})
-        config = get_config()
         return {
             "peptideForumEnabled": bool(updated.get("peptideForumEnabled", True)),
-            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -807,10 +846,9 @@ def update_research():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"researchDashboardEnabled": enabled})
-        config = get_config()
         return {
             "researchDashboardEnabled": bool(updated.get("researchDashboardEnabled", False)),
-            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -873,6 +911,7 @@ def update_patient_links():
                 for doctor in _get_delegate_links_doctors()
                 if bool(doctor.get("delegateLinksEnabled"))
             ],
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -887,6 +926,7 @@ def update_crm():
         updated = settings_service.update_settings({"crmEnabled": enabled})
         return {
             "crmEnabled": bool(updated.get("crmEnabled", True)),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -899,6 +939,7 @@ def get_test_payments_override():
         settings = settings_service.get_settings()
         return {
             "testPaymentsOverrideEnabled": bool(settings.get("testPaymentsOverrideEnabled", False)),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)
@@ -914,6 +955,7 @@ def update_test_payments_override():
         updated = settings_service.update_settings({"testPaymentsOverrideEnabled": enabled})
         return {
             "testPaymentsOverrideEnabled": bool(updated.get("testPaymentsOverrideEnabled", False)),
+            "mysqlEnabled": _mysql_enabled(),
         }
 
     return handle_action(action)

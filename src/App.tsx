@@ -1627,6 +1627,32 @@ const normalizeDelegateOrderLabel = (value: unknown): string | null => {
   return `Delegate: ${trimmed}`;
 };
 
+const isDelegateDraftOrder = (order: any): boolean => {
+  const normalizedStatus = String(order?.status || "").trim().toLowerCase();
+  if (normalizedStatus === "delegation_draft") {
+    return true;
+  }
+
+  const rawDelegateLabel = resolveOrderAsDelegateLabel(order);
+  if (!rawDelegateLabel) {
+    return false;
+  }
+
+  const normalizedLabel = rawDelegateLabel
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  return (
+    normalizedLabel === "draft" ||
+    normalizedLabel === "delegate draft" ||
+    normalizedLabel === "delegate proposal" ||
+    normalizedLabel === "proposal" ||
+    normalizedLabel === "pending delegate" ||
+    normalizedLabel === "delegate pending"
+  );
+};
+
 const sanitizeOrderAddress = (address: any): AccountOrderAddress | null => {
   if (!address || typeof address !== "object") {
     return null;
@@ -2665,8 +2691,8 @@ const PipelineTooltip = ({
             return (
               <li key={id || `${name}:${index}`} className="truncate">
                 {canOpen ? (
-                  <button
-                    type="button"
+	                                <button
+	                                  type="button"
                     className="max-w-full truncate text-left text-[rgb(26,85,173)] hover:underline"
                     onClick={(event) => {
                       event.preventDefault();
@@ -5676,14 +5702,17 @@ function MainApp() {
       }
 		    let cancelled = false;
 		    const fetchSetting = async () => {
-		      try {
-		        const [shopResult, patientLinksResult, crmResult, forumResult, researchResult] = await Promise.allSettled([
-		          settingsAPI.getShopStatus(),
-              settingsAPI.getPatientLinksStatus(),
-              settingsAPI.getCrmStatus(),
-		          settingsAPI.getForumStatus(),
-		          settingsAPI.getResearchStatus(),
-		        ]);
+			      try {
+			        const [shopResult, patientLinksResult, crmResult, forumResult, researchResult, betaServicesResult] = await Promise.allSettled([
+			          settingsAPI.getShopStatus(),
+	              settingsAPI.getPatientLinksStatus(),
+	              settingsAPI.getCrmStatus(),
+			          settingsAPI.getForumStatus(),
+			          settingsAPI.getResearchStatus(),
+                isAdmin(user?.role)
+                  ? settingsAPI.getBetaServices()
+                  : Promise.resolve({ betaServices: [] }),
+			        ]);
 		        if (cancelled) return;
 	        if (shopResult.status === "fulfilled") {
 	          const shop = shopResult.value as any;
@@ -5732,11 +5761,11 @@ function MainApp() {
             }
           }
 
-	        if (forumResult.status === "fulfilled") {
-	          const classes = forumResult.value as any;
-	          if (classes && typeof classes.peptideForumEnabled === "boolean") {
-	            setPeptideForumEnabled(classes.peptideForumEnabled);
-	            localStorage.setItem(
+		        if (forumResult.status === "fulfilled") {
+		          const classes = forumResult.value as any;
+		          if (classes && typeof classes.peptideForumEnabled === "boolean") {
+		            setPeptideForumEnabled(classes.peptideForumEnabled);
+		            localStorage.setItem(
 	              "peppro:peptide-forum-enabled",
 	              classes.peptideForumEnabled ? "true" : "false",
 	            );
@@ -5770,6 +5799,11 @@ function MainApp() {
 		            }
 		          }
 		        }
+
+            if (betaServicesResult.status === "fulfilled") {
+              const betaInfo = betaServicesResult.value as any;
+              setBetaServices(normalizePortalBetaServices(betaInfo?.betaServices));
+            }
 	      } catch (error) {
 	        console.warn(
 	          "[Settings] Unable to load settings, using local fallback",
@@ -8215,6 +8249,33 @@ function MainApp() {
     return normalized === "on-hold" || normalized === "onhold";
   };
 
+  const PORTAL_BETA_SERVICE_KEYS = [
+    "shop",
+    "patientLinks",
+    "crm",
+    "forum",
+    "research",
+    "testPaymentsOverride",
+  ] as const;
+
+  type PortalBetaServiceKey = (typeof PORTAL_BETA_SERVICE_KEYS)[number];
+
+  const normalizePortalBetaServices = (value: unknown): PortalBetaServiceKey[] => {
+    const allowed = new Set<string>(PORTAL_BETA_SERVICE_KEYS);
+    const values = Array.isArray(value) ? value : [value];
+    const normalized: PortalBetaServiceKey[] = [];
+    const seen = new Set<string>();
+    values.forEach((entry) => {
+      const text = String(entry || "").trim();
+      if (!text || seen.has(text) || !allowed.has(text)) {
+        return;
+      }
+      seen.add(text);
+      normalized.push(text as PortalBetaServiceKey);
+    });
+    return normalized;
+  };
+
   const filterOrdersForCommissionRange = (
     orders: AccountOrderSummary[] | any[],
     range?: DateRange,
@@ -8298,11 +8359,16 @@ function MainApp() {
     detail: any,
     range?: DateRange,
   ) => {
+    const excludeDelegateDrafts = isDoctorRole(detail?.role);
     const personalOrders = Array.isArray(detail?.personalOrders)
-      ? detail.personalOrders
+      ? detail.personalOrders.filter((order: any) =>
+          excludeDelegateDrafts ? !isDelegateDraftOrder(order) : true,
+        )
       : [];
     const salesOrdersRaw = Array.isArray(detail?.salesOrders)
-      ? detail.salesOrders
+      ? detail.salesOrders.filter((order: any) =>
+          excludeDelegateDrafts ? !isDelegateDraftOrder(order) : true,
+        )
       : [];
     const personalOrderKeys = new Set(
       personalOrders
@@ -8350,12 +8416,17 @@ function MainApp() {
       return !isPersonalOrderForActor(order);
     });
     const allOrdersInRange = filterOrdersForCommissionRange(
-      Array.isArray(detail?.orders) ? detail.orders : [],
+      Array.isArray(detail?.orders)
+        ? detail.orders.filter((order: any) =>
+            excludeDelegateDrafts ? !isDelegateDraftOrder(order) : true,
+          )
+        : [],
       range,
     );
     const personalOrdersInRange = filterOrdersForCommissionRange(personalOrders, range);
     const salesOrdersInRange = filterOrdersForCommissionRange(salesOrders, range);
-    const isSalesActor = isRep(detail?.role) || isAdmin(detail?.role);
+    const isSalesActor =
+      isRep(detail?.role) || isSalesLead(detail?.role) || isAdmin(detail?.role);
     const hasSplit =
       isSalesActor ||
       ((typeof detail?.personalRevenue === "number" ||
@@ -8925,22 +8996,32 @@ function MainApp() {
               String(profile?.salesRepId || profile?.sales_rep_id || "").trim(),
             ].filter((value) => value.length > 0),
           );
-          const commissionRowForModal = adminCommissionRowsRef.current.find((row) => {
-            const rowRole = normalizeRole((row as any)?.role || "");
-            const rowNameKey =
-              typeof (row as any)?.name === "string" && String((row as any).name).trim().length > 0
-                ? String((row as any).name).trim().toLowerCase()
-                : "";
-            const rowId = String((row as any)?.id || "").trim();
-            const rowAliasIds = Array.isArray((row as any)?.aliasIds)
-              ? ((row as any).aliasIds as unknown[])
-                  .map((value) => String(value || "").trim())
-                  .filter((value) => value.length > 0)
-              : [];
-            if (rowId && lookupIdSet.has(rowId)) return true;
-            if (rowAliasIds.some((value) => lookupIdSet.has(value))) return true;
-            return Boolean(profileNameKey && rowNameKey && profileNameKey === rowNameKey && rowRole === roleFromProfile);
-          });
+          const isSalesActorProfile =
+            isRep(roleFromProfile) || isSalesLead(roleFromProfile) || isAdmin(roleFromProfile);
+          const commissionRowForModal = isSalesActorProfile
+            ? adminCommissionRowsRef.current.find((row) => {
+                const rowRole = normalizeRole((row as any)?.role || "");
+                const rowNameKey =
+                  typeof (row as any)?.name === "string" &&
+                  String((row as any).name).trim().length > 0
+                    ? String((row as any).name).trim().toLowerCase()
+                    : "";
+                const rowId = String((row as any)?.id || "").trim();
+                const rowAliasIds = Array.isArray((row as any)?.aliasIds)
+                  ? ((row as any).aliasIds as unknown[])
+                      .map((value) => String(value || "").trim())
+                      .filter((value) => value.length > 0)
+                  : [];
+                if (rowId && lookupIdSet.has(rowId)) return true;
+                if (rowAliasIds.some((value) => lookupIdSet.has(value))) return true;
+                return Boolean(
+                  profileNameKey &&
+                    rowNameKey &&
+                    profileNameKey === rowNameKey &&
+                    rowRole === roleFromProfile,
+                );
+              })
+            : null;
 
           const address =
             typeof modalResp?.address === "string" && modalResp.address.trim().length > 0
@@ -8957,8 +9038,8 @@ function MainApp() {
                   .join("\n") || null;
           const isSalesProfile = Boolean(modalResp?.isSalesProfile);
 
-          let immediateSalesWholesaleRevenue = salesWholesaleRevenue;
-          let immediateSalesRetailRevenue = salesRetailRevenue;
+          let immediateSalesWholesaleRevenue = isSalesActorProfile ? salesWholesaleRevenue : null;
+          let immediateSalesRetailRevenue = isSalesActorProfile ? salesRetailRevenue : null;
           let immediateSalesRevenue: number | null = null;
           let immediateSalesOrderCount: number | null = null;
           if (commissionRowForModal) {
@@ -9101,6 +9182,126 @@ function MainApp() {
       user?.role,
       user?.salesRepId,
     ],
+  );
+
+  const resolveOrderUserModalEntry = useCallback(
+    (order: any, fallbackLabel?: string | null) => {
+      const orderAny = order as any;
+      const shippingAddress = (orderAny?.shippingAddress ?? orderAny?.shipping_address ?? {}) as any;
+      const billingAddress = (orderAny?.billingAddress ?? orderAny?.billing_address ?? {}) as any;
+      const doctorId =
+        resolveOrderDoctorId(order as any) ||
+        order?.doctorId ||
+        orderAny?.doctor_id ||
+        orderAny?.userId ||
+        orderAny?.user_id ||
+        null;
+      const doctorEmail =
+        order?.doctorEmail ||
+        orderAny?.doctor_email ||
+        shippingAddress?.email ||
+        billingAddress?.email ||
+        null;
+      const normalizedDoctorEmail =
+        typeof doctorEmail === "string" ? doctorEmail.trim().toLowerCase() : "";
+      const doctorName =
+        (typeof fallbackLabel === "string" && fallbackLabel.trim() ? fallbackLabel.trim() : "") ||
+        (typeof order?.doctorName === "string" && order.doctorName.trim() ? order.doctorName.trim() : "") ||
+        (typeof orderAny?.doctor_name === "string" && orderAny.doctor_name.trim()
+          ? orderAny.doctor_name.trim()
+          : "") ||
+        normalizedDoctorEmail ||
+        "Doctor";
+
+      const candidateIds = new Set(
+        [
+          doctorId,
+          orderAny?.doctorId,
+          orderAny?.doctor_id,
+          orderAny?.userId,
+          orderAny?.user_id,
+        ]
+          .map((value) => String(value || "").trim())
+          .filter((value) => value.length > 0),
+      );
+
+      const liveEntry =
+        [...(Array.isArray(liveClientsRef.current) ? liveClientsRef.current : []), ...(Array.isArray(adminLiveUsersRef.current) ? adminLiveUsersRef.current : [])].find(
+          (entry: any) => {
+            const entryId = String(entry?.id || "").trim();
+            const aliasIds = Array.isArray(entry?.aliasIds)
+              ? (entry.aliasIds as unknown[])
+                  .map((value) => String(value || "").trim())
+                  .filter((value) => value.length > 0)
+              : [];
+            if (entryId && candidateIds.has(entryId)) return true;
+            if (aliasIds.some((value) => candidateIds.has(value))) return true;
+            const entryEmail =
+              typeof entry?.email === "string" ? entry.email.trim().toLowerCase() : "";
+            return Boolean(normalizedDoctorEmail && entryEmail && entryEmail === normalizedDoctorEmail);
+          },
+        ) || null;
+
+      if (liveEntry && String(liveEntry?.id || "").trim()) {
+        return liveEntry;
+      }
+
+      const trackedDoctor = (() => {
+        const directId = String(doctorId || "").trim();
+        if (directId) {
+          const direct = salesTrackingDoctors.get(directId);
+          if (direct) return { ...direct, id: directId };
+        }
+        if (normalizedDoctorEmail) {
+          for (const [trackedId, doctor] of salesTrackingDoctors.entries()) {
+            const trackedEmail =
+              typeof doctor?.email === "string" ? doctor.email.trim().toLowerCase() : "";
+            if (trackedEmail && trackedEmail === normalizedDoctorEmail) {
+              return { ...doctor, id: trackedId };
+            }
+          }
+        }
+        return null;
+      })();
+
+      const resolvedId = String(
+        trackedDoctor?.id ||
+          trackedDoctor?.doctorId ||
+          trackedDoctor?.userId ||
+          doctorId ||
+          "",
+      ).trim();
+
+      if (!resolvedId) {
+        return null;
+      }
+
+      return {
+        id: resolvedId,
+        role: "doctor",
+        name:
+          trackedDoctor?.name ||
+          [trackedDoctor?.firstName, trackedDoctor?.lastName].filter(Boolean).join(" ").trim() ||
+          doctorName,
+        email: trackedDoctor?.email || doctorEmail || null,
+        profileImageUrl:
+          trackedDoctor?.profileImageUrl ||
+          trackedDoctor?.profile_image_url ||
+          order?.doctorProfileImageUrl ||
+          null,
+        ownerSalesRepId:
+          trackedDoctor?.ownerSalesRepId ||
+          trackedDoctor?.owner_sales_rep_id ||
+          trackedDoctor?.salesRepId ||
+          trackedDoctor?.sales_rep_id ||
+          orderAny?.doctorSalesRepId ||
+          orderAny?.doctor_sales_rep_id ||
+          orderAny?.salesRepId ||
+          orderAny?.sales_rep_id ||
+          null,
+      };
+    },
+    [salesTrackingDoctors],
   );
 
   const renderSalesOrderSkeleton = () => (
@@ -11121,9 +11322,10 @@ function MainApp() {
     useState(false);
   const [prospectDetailModalProspect, setProspectDetailModalProspect] =
     useState<any | null>(null);
-	  const [referralDataLoading, setReferralDataLoading] = useState(false);
-	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
-	  const [shopEnabled, setShopEnabled] = useState(true);
+		  const [referralDataLoading, setReferralDataLoading] = useState(false);
+		  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
+		  const [shopEnabled, setShopEnabled] = useState(true);
+  const [betaServices, setBetaServices] = useState<PortalBetaServiceKey[]>([]);
   const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
   const [patientLinksDoctorUserIds, setPatientLinksDoctorUserIds] = useState<string[]>([]);
   const [patientLinksDoctorOptions, setPatientLinksDoctorOptions] = useState<
@@ -11148,15 +11350,44 @@ function MainApp() {
     research: boolean;
     testPaymentsOverride: boolean;
     receiveClientOrderUpdateEmails: boolean;
-  }>({
+	  }>({
     shop: false,
     patientLinks: false,
     crm: false,
     forum: false,
     research: false,
-    testPaymentsOverride: false,
-    receiveClientOrderUpdateEmails: false,
-  });
+	    testPaymentsOverride: false,
+	    receiveClientOrderUpdateEmails: false,
+	  });
+  const [betaServiceSaving, setBetaServiceSaving] = useState<
+    Partial<Record<PortalBetaServiceKey, boolean>>
+  >({});
+  const handlePortalBetaToggle = useCallback(
+    async (serviceKey: PortalBetaServiceKey, enabled: boolean) => {
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+      const previous = betaServices;
+      const next = normalizePortalBetaServices(
+        enabled
+          ? [...betaServices, serviceKey]
+          : betaServices.filter((entry) => entry !== serviceKey),
+      );
+      setBetaServices(next);
+      setBetaServiceSaving((prev) => ({ ...prev, [serviceKey]: true }));
+      try {
+        const updated = (await settingsAPI.updateBetaServices(next)) as any;
+        setBetaServices(normalizePortalBetaServices(updated?.betaServices));
+      } catch (error) {
+        console.warn("[Settings] Failed to update beta services", error);
+        toast.error("Unable to update beta services right now.");
+        setBetaServices(previous);
+      } finally {
+        setBetaServiceSaving((prev) => ({ ...prev, [serviceKey]: false }));
+      }
+    },
+    [betaServices, user?.role],
+  );
   const handlePatientLinksToggle = useCallback(
     async (value: boolean) => {
       if (!isAdmin(user?.role)) {
@@ -11312,6 +11543,34 @@ function MainApp() {
       );
     });
   }, [patientLinksDoctorOptions, patientLinksDoctorSearch]);
+
+  const renderPortalControlBetaToggle = useCallback(
+    (serviceKey: PortalBetaServiceKey) => {
+      const checked = betaServices.includes(serviceKey);
+      const saving = betaServiceSaving[serviceKey] === true;
+      const disabled = !isAdmin(user?.role) || saving;
+      return (
+        <label
+          className={`inline-flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-700 ${
+            disabled ? "cursor-not-allowed opacity-80" : "cursor-pointer"
+          }`}
+        >
+          <span>{saving ? "Beta…" : "Beta"}</span>
+          <input
+            type="checkbox"
+            className="brand-checkbox"
+            checked={checked}
+            disabled={disabled}
+            onChange={(event) => {
+              void handlePortalBetaToggle(serviceKey, event.target.checked);
+            }}
+            aria-label={`Enable beta flag for ${serviceKey}`}
+          />
+        </label>
+      );
+    },
+    [betaServiceSaving, betaServices, handlePortalBetaToggle, user?.role],
+  );
 
   const filteredPatientLinksDoctorIds = useMemo(
     () => filteredPatientLinksDoctorOptions.map((doctor) => doctor.userId).filter(Boolean),
@@ -20228,20 +20487,8 @@ function MainApp() {
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown doctor";
-                      const doctorIdForModal =
-                        resolveOrderDoctorId(order as any) ||
-                        order.doctorId ||
-                        orderAny?.doctor_id ||
-                        orderAny?.userId ||
-                        orderAny?.user_id ||
-                        null;
-                      const doctorEmailForModal =
-                        order.doctorEmail ||
-                        orderAny?.doctor_email ||
-                        shippingAddress?.email ||
-                        billingAddress?.email ||
-                        null;
-                      const canOpenDoctorModal = Boolean(doctorIdForModal || doctorEmailForModal);
+                      const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabel);
+                      const canOpenDoctorModal = Boolean(doctorModalEntry);
 	                    const orderPlacedAt =
 	                      formatOrderPlacedAtForLocalDisplay(order as any);
 	                    const total = Number(
@@ -20276,33 +20523,11 @@ function MainApp() {
                                 type="button"
                                 className="min-w-0 truncate text-center hover:underline"
                                 title={`Open ${doctorLabel}`}
-                                onClick={() =>
-                                  openSalesDoctorDetail(
-                                    {
-                                      doctorId: String(
-                                        doctorIdForModal || doctorEmailForModal || `anon:${order.id || order.number || index}`,
-                                      ),
-                                      referralId: resolveReferralIdForDoctorNotes(
-                                        doctorIdForModal ? String(doctorIdForModal) : null,
-                                        doctorEmailForModal ? String(doctorEmailForModal) : null,
-                                      ),
-                                      doctorName: doctorLabel,
-                                      doctorEmail: doctorEmailForModal ? String(doctorEmailForModal) : null,
-                                      doctorAvatar: order.doctorProfileImageUrl || null,
-                                      ownerSalesRepId:
-                                        orderAny?.doctorSalesRepId ||
-                                        orderAny?.doctor_sales_rep_id ||
-                                        orderAny?.salesRepId ||
-                                        orderAny?.sales_rep_id ||
-                                        null,
-                                      orders: [order],
-                                      total,
-                                      totalOrderValue: total,
-                                      orderQuantity: shouldCountRevenueForStatus(order.status) ? 1 : 0,
-                                    },
-                                    "doctor",
-                                  )
-                                }
+                                onClick={() => {
+                                  if (doctorModalEntry) {
+                                    openLiveUserDetail(doctorModalEntry);
+                                  }
+                                }}
                               >
                                 {doctorLabel}
                               </button>
@@ -20422,20 +20647,8 @@ function MainApp() {
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown doctor";
-                    const doctorIdForModal =
-                      resolveOrderDoctorId(order as any) ||
-                      order.doctorId ||
-                      orderAny?.doctor_id ||
-                      orderAny?.userId ||
-                      orderAny?.user_id ||
-                      null;
-                    const doctorEmailForModal =
-                      order.doctorEmail ||
-                      orderAny?.doctor_email ||
-                      shippingAddress?.email ||
-                      billingAddress?.email ||
-                      null;
-                    const canOpenDoctorModal = Boolean(doctorIdForModal || doctorEmailForModal);
+                    const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabel);
+                    const canOpenDoctorModal = Boolean(doctorModalEntry);
                     const orderPlacedAt =
                       formatOrderPlacedAtForLocalDisplay(order as any);
 	                    const total = Number(
@@ -20470,33 +20683,11 @@ function MainApp() {
                                 type="button"
                                 className="min-w-0 truncate text-center hover:underline"
                                 title={`Open ${doctorLabel}`}
-                                onClick={() =>
-                                  openSalesDoctorDetail(
-                                    {
-                                      doctorId: String(
-                                        doctorIdForModal || doctorEmailForModal || `anon:${order.id || order.number || index}`,
-                                      ),
-                                      referralId: resolveReferralIdForDoctorNotes(
-                                        doctorIdForModal ? String(doctorIdForModal) : null,
-                                        doctorEmailForModal ? String(doctorEmailForModal) : null,
-                                      ),
-                                      doctorName: doctorLabel,
-                                      doctorEmail: doctorEmailForModal ? String(doctorEmailForModal) : null,
-                                      doctorAvatar: order.doctorProfileImageUrl || null,
-                                      ownerSalesRepId:
-                                        orderAny?.doctorSalesRepId ||
-                                        orderAny?.doctor_sales_rep_id ||
-                                        orderAny?.salesRepId ||
-                                        orderAny?.sales_rep_id ||
-                                        null,
-                                      orders: [order],
-                                      total,
-                                      totalOrderValue: total,
-                                      orderQuantity: shouldCountRevenueForStatus(order.status) ? 1 : 0,
-                                    },
-                                    "doctor",
-                                  )
-                                }
+                                onClick={() => {
+                                  if (doctorModalEntry) {
+                                    openLiveUserDetail(doctorModalEntry);
+                                  }
+                                }}
                               >
                                 {doctorLabel}
                               </button>
@@ -21665,8 +21856,6 @@ function MainApp() {
 
 		              {adminDashboardTab === "maintenance" && (
                     <>
-	                {renderEmailControlsCard()}
-
 		                <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
                       <div className="border-b border-slate-200/60 pb-3">
                         <h4 className="text-lg font-semibold text-slate-900">Portal Controls</h4>
@@ -21675,43 +21864,46 @@ function MainApp() {
                         </p>
                       </div>
                       <div className="pt-2">
-		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-		                    <div
-		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
-		                    >
-		                      <input
-		                        type="checkbox"
-		                        aria-label="Enable Explore Peptides view for users"
-		                        checked={shopEnabled}
-		                        onChange={(e) => handleShopToggle(e.target.checked)}
-		                        className="brand-checkbox mt-0.5"
-		                        disabled={!isAdmin(user.role) || settingsSaving.shop}
-		                      />
-		                      <span className="min-w-0">
-		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Explore Peptides view for users</span>
-		                          <span className="text-xs font-semibold text-slate-500">
-		                            {"\u00A0"}(
-		                            {settingsSaving.shop
-		                              ? "Saving…"
-		                              : shopEnabled
-		                                ? "Enabled"
-		                                : "Disabled"}
-		                            )
-		                          </span>
-		                        </span>
-		                        <span className="block text-xs text-slate-600">
-		                          Controls whether physicians see the Explore Peptides view.
-		                        </span>
-		                      </span>
-		                    </div>
-		                  </div>
+			                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+			                    <div
+			                      className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
+			                    >
+                          <div className="flex min-w-0 items-start gap-3">
+			                        <input
+			                          type="checkbox"
+			                          aria-label="Enable Explore Peptides view for users"
+			                          checked={shopEnabled}
+			                          onChange={(e) => handleShopToggle(e.target.checked)}
+			                          className="brand-checkbox mt-0.5"
+			                          disabled={!isAdmin(user.role) || settingsSaving.shop}
+			                        />
+			                        <span className="min-w-0">
+			                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+			                            <span>Explore Peptides view for users</span>
+			                            <span className="text-xs font-semibold text-slate-500">
+			                              {"\u00A0"}(
+			                              {settingsSaving.shop
+			                                ? "Saving…"
+			                                : shopEnabled
+			                                  ? "Enabled"
+			                                  : "Disabled"}
+			                              )
+			                            </span>
+			                          </span>
+			                          <span className="block text-xs text-slate-600">
+			                            Controls whether physicians see the Explore Peptides view.
+			                          </span>
+			                        </span>
+                          </div>
+                          {renderPortalControlBetaToggle("shop")}
+			                    </div>
+			                  </div>
 
                       <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`flex min-w-0 flex-1 items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
-                          >
+	                        <div className="flex items-start justify-between gap-3">
+	                          <div
+	                            className={`flex min-w-0 flex-1 items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
+	                          >
                             <input
                               type="checkbox"
                               aria-label="Enable Delegate Links tab for doctors"
@@ -21743,9 +21935,10 @@ function MainApp() {
                               </span>
                             </span>
                           </div>
-                          {patientLinksEnabled ? (
-                            <div className="flex min-w-0 shrink-0 items-center gap-2">
-                              <button
+                            <div className="flex min-w-0 shrink-0 items-center gap-3">
+	                            {patientLinksEnabled ? (
+	                              <div className="flex min-w-0 shrink-0 items-center gap-2">
+	                              <button
                                 type="button"
                                 aria-label="Toggle Delegate Links doctors"
                                 aria-expanded={patientLinksDoctorsOpen}
@@ -21816,12 +22009,14 @@ function MainApp() {
                                         ? "rotate(90deg)"
                                         : "rotate(0deg)",
                                     }}
-                                  />
-                                </button>
-                              </div>
+	                                  />
+	                                </button>
+		                              </div>
+                                </div>
+		                            ) : null}
+                              {renderPortalControlBetaToggle("patientLinks")}
                             </div>
-                          ) : null}
-                        </div>
+	                        </div>
                         {patientLinksEnabled && patientLinksDoctorsOpen && (
                           <div className="mt-3 pl-8">
                             <div className="rounded-2xl bg-[rgba(95,179,249,0.06)] px-4 py-3">
@@ -21911,145 +22106,157 @@ function MainApp() {
                         )}
                       </div>
 
-                      <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-                        <div
-                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
-                        >
-                          <input
-                            type="checkbox"
-                            aria-label="Enable CRM for sales users"
-                            checked={crmEnabled}
-                            onChange={(e) => handleCrmToggle(e.target.checked)}
-                            className="brand-checkbox mt-0.5"
-                            disabled={!isAdmin(user.role) || settingsSaving.crm}
-                          />
-                          <span className="min-w-0">
-                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                              <span>CRM tab (sales users)</span>
-                              <span className="text-xs font-semibold text-slate-500">
-                                {"\u00A0"}(
-                                {settingsSaving.crm
-                                  ? "Saving…"
-                                  : crmEnabled
-                                    ? "Enabled"
-                                    : "Disabled"}
-                                )
-                              </span>
-                            </span>
-                            <span className="block text-xs text-slate-600">
-                              When disabled, only users with role test_rep can access CRM.
-                            </span>
-                          </span>
-                        </div>
-                      </div>
-		
-		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-		                    <div
-		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
-		                    >
-		                      <input
-		                        type="checkbox"
-		                        aria-label="Enable The Peptide Forum card"
-		                        checked={peptideForumEnabled}
-		                        onChange={(e) =>
-		                          handlePeptideForumToggle(e.target.checked)
-		                        }
-		                        className="brand-checkbox mt-0.5"
-		                        disabled={!isAdmin(user.role) || settingsSaving.forum}
-		                      />
-		                      <span className="min-w-0">
-		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>The Peptide Forum card</span>
-		                          <span className="text-xs font-semibold text-slate-500">
-		                            {"\u00A0"}(
-		                            {settingsSaving.forum
-		                              ? "Saving…"
-		                              : peptideForumEnabled
-		                                ? "Enabled"
-		                                : "Disabled"}
-		                            )
-		                          </span>
-		                        </span>
-		                        <span className="block text-xs text-slate-600">
-		                          Shows/hides the forum card on the info page.
-		                        </span>
-		                      </span>
-		                    </div>
-		                  </div>
-		
-		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
-		                    <div
-		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
-		                    >
-		                      <input
-		                        type="checkbox"
-		                        aria-label="Enable Research dashboard for doctors and reps"
-		                        checked={researchDashboardEnabled}
-		                        onChange={(e) =>
-		                          handleResearchDashboardToggle(e.target.checked)
-		                        }
-		                        className="brand-checkbox mt-0.5"
-		                        disabled={
-		                          !isAdmin(user.role) ||
-		                          settingsSaving.research ||
-		                          !settingsSupport.research
-		                        }
-		                      />
-		                      <span className="min-w-0">
-		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Research dashboard access (doctors/reps)</span>
-		                          <span className="text-xs font-semibold text-slate-500">
-		                            {"\u00A0"}(
-		                            {settingsSaving.research
-		                              ? "Saving…"
-		                              : !settingsSupport.research
-		                                ? "Unavailable"
-		                                : researchDashboardEnabled
-		                                  ? "Enabled"
-		                                  : "Disabled"}
-		                            )
-		                          </span>
-		                        </span>
-		                        <span className="block text-xs text-slate-600">
-		                          When disabled, only admins and test doctors see the work-in-progress research dashboard.
-		                        </span>
-		                      </span>
-		                    </div>
-		                  </div>
+	                      <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+	                        <div
+	                          className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
+	                        >
+                            <div className="flex min-w-0 items-start gap-3">
+	                            <input
+	                              type="checkbox"
+	                              aria-label="Enable CRM for sales users"
+	                              checked={crmEnabled}
+	                              onChange={(e) => handleCrmToggle(e.target.checked)}
+	                              className="brand-checkbox mt-0.5"
+	                              disabled={!isAdmin(user.role) || settingsSaving.crm}
+	                            />
+	                            <span className="min-w-0">
+	                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+	                                <span>CRM tab (sales users)</span>
+	                                <span className="text-xs font-semibold text-slate-500">
+	                                  {"\u00A0"}(
+	                                  {settingsSaving.crm
+	                                    ? "Saving…"
+	                                    : crmEnabled
+	                                      ? "Enabled"
+	                                      : "Disabled"}
+	                                  )
+	                                </span>
+	                              </span>
+	                              <span className="block text-xs text-slate-600">
+	                                When disabled, only users with role test_rep can access CRM.
+	                              </span>
+	                            </span>
+                            </div>
+                            {renderPortalControlBetaToggle("crm")}
+	                        </div>
+	                      </div>
+			
+			                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+			                    <div
+			                      className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
+			                    >
+                            <div className="flex min-w-0 items-start gap-3">
+			                        <input
+			                          type="checkbox"
+			                          aria-label="Enable The Peptide Forum card"
+			                          checked={peptideForumEnabled}
+			                          onChange={(e) =>
+			                            handlePeptideForumToggle(e.target.checked)
+			                          }
+			                          className="brand-checkbox mt-0.5"
+			                          disabled={!isAdmin(user.role) || settingsSaving.forum}
+			                        />
+			                        <span className="min-w-0">
+			                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+			                            <span>The Peptide Forum card</span>
+			                            <span className="text-xs font-semibold text-slate-500">
+			                              {"\u00A0"}(
+			                              {settingsSaving.forum
+			                                ? "Saving…"
+			                                : peptideForumEnabled
+			                                  ? "Enabled"
+			                                  : "Disabled"}
+			                              )
+			                            </span>
+			                          </span>
+			                          <span className="block text-xs text-slate-600">
+			                            Shows/hides the forum card on the info page.
+			                          </span>
+			                        </span>
+                            </div>
+                            {renderPortalControlBetaToggle("forum")}
+			                    </div>
+			                  </div>
+			
+			                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+			                    <div
+			                      className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
+			                    >
+                            <div className="flex min-w-0 items-start gap-3">
+			                        <input
+			                          type="checkbox"
+			                          aria-label="Enable Research dashboard for doctors and reps"
+			                          checked={researchDashboardEnabled}
+			                          onChange={(e) =>
+			                            handleResearchDashboardToggle(e.target.checked)
+			                          }
+			                          className="brand-checkbox mt-0.5"
+			                          disabled={
+			                            !isAdmin(user.role) ||
+			                            settingsSaving.research ||
+			                            !settingsSupport.research
+			                          }
+			                        />
+			                        <span className="min-w-0">
+			                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+			                            <span>Research dashboard access (doctors/reps)</span>
+			                            <span className="text-xs font-semibold text-slate-500">
+			                              {"\u00A0"}(
+			                              {settingsSaving.research
+			                                ? "Saving…"
+			                                : !settingsSupport.research
+			                                  ? "Unavailable"
+			                                  : researchDashboardEnabled
+			                                    ? "Enabled"
+			                                    : "Disabled"}
+			                              )
+			                            </span>
+			                          </span>
+			                          <span className="block text-xs text-slate-600">
+			                            When disabled, only admins and test doctors see the work-in-progress research dashboard.
+			                          </span>
+			                        </span>
+                            </div>
+                            {renderPortalControlBetaToggle("research")}
+			                    </div>
+			                  </div>
 
-                      <div className="py-4">
-                        <label
-                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
-                        >
-                          <input
-                            type="checkbox"
-                            aria-label="Enable test payments override"
-                            checked={testPaymentsOverrideEnabled}
-                            onChange={(e) =>
-                              handleTestPaymentsOverrideToggle(e.target.checked)
-                            }
-                            className="brand-checkbox mt-0.5"
-                            disabled={!isAdmin(user.role) || settingsSaving.testPaymentsOverride}
-                          />
-                          <span className="min-w-0">
-                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                              <span>Test payments override ($0.01)</span>
-                              <span className="text-xs font-semibold text-slate-500">
-                                {"\u00A0"}(
-                                {settingsSaving.testPaymentsOverride
-                                  ? "Saving…"
-                                  : testPaymentsOverrideEnabled
-                                    ? "Enabled"
-                                    : "Disabled"}
-                                )
-                              </span>
-                            </span>
-                            <span className="block text-xs text-slate-600">
-                              When enabled, admin + test_doctor checkouts using Zelle/bank transfer are forced to $0.01.
-                            </span>
-                          </span>
-		                        </label>
-		                      </div>
+	                      <div className="py-4">
+	                        <div className="flex items-start justify-between gap-3">
+                            <label
+                              className={`flex min-w-0 items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+                            >
+	                            <input
+	                              type="checkbox"
+	                              aria-label="Enable test payments override"
+	                              checked={testPaymentsOverrideEnabled}
+	                              onChange={(e) =>
+	                                handleTestPaymentsOverrideToggle(e.target.checked)
+	                              }
+	                              className="brand-checkbox mt-0.5"
+	                              disabled={!isAdmin(user.role) || settingsSaving.testPaymentsOverride}
+	                            />
+	                            <span className="min-w-0">
+	                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+	                                <span>Test payments override ($0.01)</span>
+	                                <span className="text-xs font-semibold text-slate-500">
+	                                  {"\u00A0"}(
+	                                  {settingsSaving.testPaymentsOverride
+	                                    ? "Saving…"
+	                                    : testPaymentsOverrideEnabled
+	                                      ? "Enabled"
+	                                      : "Disabled"}
+	                                  )
+	                                </span>
+	                              </span>
+	                              <span className="block text-xs text-slate-600">
+	                                When enabled, admin + test_doctor checkouts using Zelle/bank transfer are forced to $0.01.
+	                              </span>
+	                            </span>
+			                          </label>
+                            {renderPortalControlBetaToggle("testPaymentsOverride")}
+                          </div>
+			                      </div>
                       </div>
 		                </div>
 	                    </>
@@ -28985,16 +29192,17 @@ function MainApp() {
 	                  )}
 	                </div>
 	                <div className="space-y-1">
-			                    {((isAdmin(user?.role) || isRep(user?.role)) &&
-                            ((isRep(salesDoctorDetail.role) ||
-                            isAdmin(salesDoctorDetail.role)) ||
-		                        typeof salesDoctorDetail.personalRevenue === "number" ||
-		                        typeof salesDoctorDetail.salesRevenue === "number")) ? (
+				                    {((isAdmin(user?.role) || isRep(user?.role)) &&
+                            (isRep(salesDoctorDetail.role) ||
+                            isSalesLead(salesDoctorDetail.role) ||
+                            isAdmin(salesDoctorDetail.role))) ? (
 			                      <>
 				                        {(() => {
 				                          const role = normalizeRole(salesDoctorDetail.role || "");
-                                  const isSalesActor =
-                                    isRep(salesDoctorDetail.role) || isAdmin(salesDoctorDetail.role);
+	                                  const isSalesActor =
+	                                    isRep(salesDoctorDetail.role) ||
+	                                    isSalesLead(salesDoctorDetail.role) ||
+	                                    isAdmin(salesDoctorDetail.role);
 				                          const personalOrdersRaw = Array.isArray(
 				                            salesDoctorDetail.personalOrders,
 				                          )
@@ -29333,7 +29541,8 @@ function MainApp() {
                 </div>
               </div>
 
-              {(isAdmin(user?.role) || isRep(user?.role)) && (() => {
+	              {(isAdmin(user?.role) || isRep(user?.role)) &&
+                  !isDoctorRole(salesDoctorDetail.role) && (() => {
                 const formatDateObject = (date?: Date | null) => {
                   if (!date) return null;
                   if (Number.isNaN(date.getTime())) return null;
@@ -29600,7 +29809,8 @@ function MainApp() {
                 </div>
               </div>
 
-              {!(isAdmin(user?.role) || isRep(user?.role)) && (() => {
+	              {!(isAdmin(user?.role) || isRep(user?.role)) &&
+                  !isDoctorRole(salesDoctorDetail.role) && (() => {
                 const formatDateObject = (date?: Date | null) => {
                   if (!date) return null;
                   if (Number.isNaN(date.getTime())) return null;
@@ -29781,7 +29991,160 @@ function MainApp() {
                 );
               })()}
 
-		              <div className="space-y-2">
+			              <div className="space-y-2">
+                    {isDoctorRole(salesDoctorDetail.role) &&
+                      (() => {
+                        const formatDateObject = (date?: Date | null) => {
+                          if (!date) return null;
+                          if (Number.isNaN(date.getTime())) return null;
+                          return date.toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          });
+                        };
+                        const formatOrdersPeriodLabel = (
+                          startRaw?: string | null,
+                          endRaw?: string | null,
+                        ) => {
+                          const start = startRaw ? formatDate(String(startRaw)) : null;
+                          const end = endRaw ? formatDate(String(endRaw)) : null;
+                          if (start && end && start !== "—" && end !== "—") {
+                            return `${start} - ${end}`;
+                          }
+                          if (start && start !== "—") {
+                            return `Since ${start}`;
+                          }
+                          if (end && end !== "—") {
+                            return `Until ${end}`;
+                          }
+                          return "All time";
+                        };
+                        const hasCustomRange =
+                          Boolean(salesDoctorCommissionRange?.from) &&
+                          Boolean(salesDoctorCommissionRange?.to);
+                        const customRangeLabel = hasCustomRange
+                          ? (() => {
+                              const start = formatDateObject(
+                                salesDoctorCommissionRange?.from || null,
+                              );
+                              const end = formatDateObject(
+                                salesDoctorCommissionRange?.to || null,
+                              );
+                              return start && end ? `${start} - ${end}` : start || end || null;
+                            })()
+                          : null;
+                        const periodLabel = formatOrdersPeriodLabel(
+                          adminProductsCommissionMeta?.periodStart ??
+                            salesRepPeriodStart ??
+                            salesRepSalesSummaryMeta?.periodStart ??
+                            salesRepProductSalesSummaryMeta?.periodStart ??
+                            null,
+                          adminProductsCommissionMeta?.periodEnd ??
+                            salesRepPeriodEnd ??
+                            salesRepSalesSummaryMeta?.periodEnd ??
+                            salesRepProductSalesSummaryMeta?.periodEnd ??
+                            null,
+                        );
+
+                        return (
+                          <div className="border-t border-slate-200 pt-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-800">Timeframe</p>
+                                <p className="text-xs text-slate-500">
+                                  {customRangeLabel || periodLabel}
+                                </p>
+                              </div>
+                              <Popover.Root
+                                open={salesDoctorCommissionPickerOpen}
+                                onOpenChange={setSalesDoctorCommissionPickerOpen}
+                              >
+                                <Popover.Trigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="header-home-button squircle-sm h-8 w-8"
+                                    aria-label="Select user modal date range"
+                                    title="Select date range"
+                                  >
+                                    <CalendarDays aria-hidden="true" />
+                                  </Button>
+                                </Popover.Trigger>
+                                <Popover.Portal>
+                                  <Popover.Content
+                                    side="bottom"
+                                    align="start"
+                                    sideOffset={8}
+                                    className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+                                  >
+                                    <div className="text-sm font-semibold text-slate-800">
+                                      User modal timeframe
+                                    </div>
+                                    <div className="mt-2">
+                                      <DayPicker
+                                        mode="range"
+                                        numberOfMonths={1}
+                                        selected={salesDoctorCommissionRange}
+                                        onSelect={(range) => {
+                                          setSalesDoctorCommissionRange(range);
+                                          if (range?.from && range?.to) {
+                                            setSalesRepPeriodStart(formatDateInputValue(range.from));
+                                            setSalesRepPeriodEnd(formatDateInputValue(range.to));
+                                          }
+                                        }}
+                                        defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
+                                      />
+                                    </div>
+                                    <div className="mt-3 flex items-center justify-between">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-slate-700"
+                                        onClick={() => {
+                                          const cleared = getClearedSalesDoctorCommissionWindow();
+                                          setSalesDoctorCommissionRange(cleared.range);
+                                          setSalesRepPeriodStart(cleared.start);
+                                          setSalesRepPeriodEnd(cleared.end);
+                                          applyAdminDashboardPeriod();
+                                        }}
+                                      >
+                                        Clear
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+                                        onClick={() => {
+                                          if (
+                                            salesDoctorCommissionRange?.from &&
+                                            salesDoctorCommissionRange?.to
+                                          ) {
+                                            setSalesRepPeriodStart(
+                                              formatDateInputValue(salesDoctorCommissionRange.from),
+                                            );
+                                            setSalesRepPeriodEnd(
+                                              formatDateInputValue(salesDoctorCommissionRange.to),
+                                            );
+                                          }
+                                          applyAdminDashboardPeriod();
+                                          setSalesDoctorCommissionPickerOpen(false);
+                                        }}
+                                      >
+                                        Done
+                                      </Button>
+                                    </div>
+                                    <Popover.Arrow className="calendar-popover-arrow" />
+                                  </Popover.Content>
+                                </Popover.Portal>
+                              </Popover.Root>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     {(() => {
                       const hasCustomRange =
                         Boolean(salesDoctorCommissionRange?.from) &&

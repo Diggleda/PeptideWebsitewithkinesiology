@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "shopEnabled": True,
+    "betaServices": [],
     "peptideForumEnabled": True,
     "researchDashboardEnabled": False,
     # When enabled, show Delegate Links tab for all doctors (test doctors always have access).
@@ -38,6 +39,15 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     # Research supply links default to 72h and cap physician markup to reduce compliance risk.
     "patientLinkDefaultExpiryHours": 72,
     "patientLinkMaxMarkupPercent": 20,
+}
+
+_BETA_SERVICE_KEYS = {
+    "shop",
+    "patientLinks",
+    "crm",
+    "forum",
+    "research",
+    "testPaymentsOverride",
 }
 
 _STRIPE_SECRET_PREFIXES = {
@@ -106,6 +116,19 @@ def _normalize_optional_user_ids(value: Any) -> list[str]:
     return normalized
 
 
+def _normalize_beta_services(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else [value]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for entry in values:
+        text = str(entry or "").strip()
+        if not text or text in seen or text not in _BETA_SERVICE_KEYS:
+            continue
+        seen.add(text)
+        normalized.append(text)
+    return normalized
+
+
 def _normalize_iso_timestamp(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -161,6 +184,7 @@ def _normalize_patient_link_max_markup_percent(value: Any) -> float:
 def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {**DEFAULT_SETTINGS, **(data or {})}
     merged["shopEnabled"] = _to_bool(merged.get("shopEnabled", True))
+    merged["betaServices"] = _normalize_beta_services(merged.get("betaServices"))
     merged["peptideForumEnabled"] = _to_bool(merged.get("peptideForumEnabled", True))
     merged["researchDashboardEnabled"] = _to_bool(merged.get("researchDashboardEnabled", False))
     merged["patientLinksEnabled"] = _to_bool(merged.get("patientLinksEnabled", False))

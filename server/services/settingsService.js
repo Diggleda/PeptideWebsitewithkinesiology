@@ -5,6 +5,7 @@ const { env } = require('../config/env');
 
 const DEFAULT_SETTINGS = {
   shopEnabled: true,
+  betaServices: [],
   patientLinksEnabled: false,
   peptideForumEnabled: true,
   researchDashboardEnabled: false,
@@ -17,6 +18,14 @@ const DEFAULT_SETTINGS = {
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
+const BETA_SERVICE_KEYS = new Set([
+  'shop',
+  'patientLinks',
+  'crm',
+  'forum',
+  'research',
+  'testPaymentsOverride',
+]);
 
 const normalizeIsoTimestamp = (value) => {
   if (typeof value !== 'string') {
@@ -37,6 +46,11 @@ const normalizeSettings = (settings = {}) => {
   const raw = settings && typeof settings === 'object' ? settings : {};
   const merged = { ...DEFAULT_SETTINGS };
   merged.shopEnabled = Boolean(raw.shopEnabled ?? DEFAULT_SETTINGS.shopEnabled);
+  merged.betaServices = Array.from(new Set(
+    (Array.isArray(raw.betaServices) ? raw.betaServices : [raw.betaServices])
+      .map((value) => String(value || '').trim())
+      .filter((value) => value && BETA_SERVICE_KEYS.has(value)),
+  ));
   merged.patientLinksEnabled = Boolean(
     raw.patientLinksEnabled ?? DEFAULT_SETTINGS.patientLinksEnabled,
   );
@@ -155,6 +169,11 @@ const getShopEnabled = async () => {
   return Boolean(settings.shopEnabled);
 };
 
+const getBetaServices = async () => {
+  const settings = await getSettings();
+  return Array.isArray(settings.betaServices) ? settings.betaServices : [];
+};
+
 const getPeptideForumEnabled = async () => {
   const settings = await getSettings();
   return Boolean(settings.peptideForumEnabled);
@@ -186,6 +205,22 @@ const setShopEnabled = async (enabled) => {
   }
   persistToStore(next);
   return Boolean(next.shopEnabled);
+};
+
+const setBetaServices = async (services) => {
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    betaServices: services,
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Array.isArray(confirmed.betaServices) ? confirmed.betaServices : [];
+  }
+  persistToStore(next);
+  return Array.isArray(next.betaServices) ? next.betaServices : [];
 };
 
 const setPeptideForumEnabled = async (enabled) => {
@@ -375,6 +410,8 @@ module.exports = {
   getSettings,
   getShopEnabled,
   setShopEnabled,
+  getBetaServices,
+  setBetaServices,
   getPatientLinksEnabled,
   setPatientLinksEnabled,
   getPeptideForumEnabled,

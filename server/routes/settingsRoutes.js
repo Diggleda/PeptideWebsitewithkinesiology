@@ -4,6 +4,8 @@ const { authenticate } = require('../middleware/authenticate');
 const {
   getShopEnabled,
   setShopEnabled,
+  getBetaServices,
+  setBetaServices,
   getPatientLinksEnabled,
   setPatientLinksEnabled,
   getPeptideForumEnabled,
@@ -262,6 +264,11 @@ router.get('/shop', async (_req, res) => {
   res.json({ shopEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
+router.get('/beta-services', authenticate, requireAdmin, async (_req, res) => {
+  const betaServices = await getBetaServices();
+  res.json({ betaServices, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
 router.get('/patient-links', async (_req, res) => {
   const enabled = await getPatientLinksEnabled();
   const patientLinksDoctorUserIds = buildDelegateLinksDoctorEntries()
@@ -305,6 +312,11 @@ router.put('/shop', authenticate, requireAdmin, async (req, res) => {
   const enabled = Boolean(req.body?.enabled);
   const confirmed = await setShopEnabled(enabled);
   res.json({ shopEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.put('/beta-services', authenticate, requireAdmin, async (req, res) => {
+  const betaServices = await setBetaServices(req.body?.betaServices);
+  res.json({ betaServices, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.put('/patient-links', authenticate, requireAdmin, async (req, res) => {
