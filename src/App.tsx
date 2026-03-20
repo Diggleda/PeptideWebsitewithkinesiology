@@ -3829,7 +3829,7 @@ function MainApp() {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     if (hours <= 0) return `${minutes}m`;
     return `${hours}h ${minutes}m`;
-  }, []);
+  }, [user?.id]);
   const delegateTimeRemainingLabel = useMemo(
     () => (isDelegateMode ? formatDelegateTimeRemaining(delegateExpiryMs, delegateNowMs) : null),
     [formatDelegateTimeRemaining, isDelegateMode, delegateExpiryMs, delegateNowMs],
@@ -5676,6 +5676,9 @@ function MainApp() {
 	      researchSupported = true;
 	    }
 	    setSettingsSupport((prev) => ({ ...prev, research: researchSupported }));
+      if (!user) {
+        return;
+      }
 		    let cancelled = false;
 		    const fetchSetting = async () => {
 		      try {
@@ -27111,7 +27114,6 @@ function MainApp() {
                             id="landing-login-form"
                             name="login"
                             method="post"
-                            action="/auth/login"
                             onSubmit={async (e) => {
 	                              e.preventDefault();
 	                              if (landingLoginPending) {

@@ -206,6 +206,15 @@ async function catalogGet<T = unknown>(endpoint: string, params: QueryParams = {
       });
     }
     if (!res.ok) {
+      if (res.status === 404) {
+        if (WOO_DEBUG) {
+          console.warn('[Catalog] Snapshot endpoint missing, falling back to Woo proxy', {
+            endpoint,
+            url: url.toString(),
+          });
+        }
+        return wooGet<T>(endpoint, params);
+      }
       throw new Error(`Catalog snapshot request failed (${res.status})`);
     }
     return res.json() as Promise<T>;

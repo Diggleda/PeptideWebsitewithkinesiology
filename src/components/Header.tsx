@@ -7530,7 +7530,6 @@ export function Header({
                 id="login-form"
                 name="login"
                 method="post"
-                action="/auth/login"
                 ref={loginFormRef}
                 autoComplete="on"
                 onSubmit={handleLogin}
