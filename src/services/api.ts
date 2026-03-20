@@ -900,7 +900,9 @@ export const authAPI = {
   checkEmail: async (email: string) => {
     const response = await fetch(`${API_BASE_URL}/auth/check-email?email=${encodeURIComponent(email)}`);
     if (!response.ok) {
-      throw new Error('EMAIL_CHECK_FAILED');
+      const error = new Error('EMAIL_CHECK_FAILED');
+      (error as any).status = response.status;
+      throw error;
     }
     return response.json();
   },

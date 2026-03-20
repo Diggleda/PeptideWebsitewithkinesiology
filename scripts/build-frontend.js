@@ -1,5 +1,15 @@
+const fs = require("fs");
 const { spawnSync } = require("child_process");
 const path = require("path");
+const dotenv = require("dotenv");
+
+const repoRoot = process.cwd();
+const productionEnvPath = path.join(repoRoot, ".env.production");
+let productionEnv = {};
+
+if (fs.existsSync(productionEnvPath)) {
+  productionEnv = dotenv.parse(fs.readFileSync(productionEnvPath));
+}
 
 const stamp =
   process.env.FRONTEND_BUILD ||
@@ -14,10 +24,10 @@ const env = {
   // into production bundles unless the build caller explicitly exports them.
   VITE_API_URL: Object.prototype.hasOwnProperty.call(process.env, "VITE_API_URL")
     ? process.env.VITE_API_URL
-    : "",
+    : (productionEnv.VITE_API_URL || ""),
   VITE_ALLOW_CROSS_ORIGIN_API: Object.prototype.hasOwnProperty.call(process.env, "VITE_ALLOW_CROSS_ORIGIN_API")
     ? process.env.VITE_ALLOW_CROSS_ORIGIN_API
-    : "",
+    : (productionEnv.VITE_ALLOW_CROSS_ORIGIN_API || ""),
 };
 
 const viteBin =

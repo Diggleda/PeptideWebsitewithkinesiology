@@ -1,5 +1,6 @@
 export type AuthActionResult =
   | { status: 'success' }
+  | { status: 'maintenance_unavailable' }
   | { status: 'email_not_found' }
   | { status: 'invalid_password' }
   | { status: 'email_exists' }

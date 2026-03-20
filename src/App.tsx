@@ -17241,6 +17241,8 @@ function MainApp() {
     attempt = 0,
     context?: "checkout" | null,
   ): Promise<AuthActionResult> => {
+    const loginMaintenanceMessage =
+      "Our portal is having an issue or down for maintenance. Please try again";
     const loginContextAtStart = context ?? loginContext;
     const startedAt = Date.now();
     try {
@@ -17267,6 +17269,9 @@ function MainApp() {
 
       const statusCode =
         typeof error?.status === "number" ? error.status : null;
+      if (statusCode === 404) {
+        return { status: "maintenance_unavailable" };
+      }
       const normalizedMessage =
         typeof message === "string" ? message.toUpperCase() : "";
       const isNetworkError =
@@ -17310,12 +17315,22 @@ function MainApp() {
             ? { status: "invalid_password" }
             : { status: "email_not_found" };
         } catch (lookupError: any) {
+          if (typeof lookupError?.status === "number" && lookupError.status === 404) {
+            return { status: "maintenance_unavailable" };
+          }
           return { status: "email_not_found" };
         }
       }
 
       if (message === "EMAIL_REQUIRED") {
         return { status: "error", message };
+      }
+
+      if (
+        typeof message === "string"
+        && message.trim() === loginMaintenanceMessage
+      ) {
+        return { status: "maintenance_unavailable" };
       }
 
       return { status: "error", message };
@@ -27582,7 +27597,11 @@ function MainApp() {
 	                                  fd.get("password") as string,
 	                                );
 	                                if (res.status !== "success") {
-	                                  if (res.status === "invalid_password") {
+	                                  if (res.status === "maintenance_unavailable") {
+	                                    setLandingLoginError(
+	                                      "Our portal is having an issue or down for maintenance. Please try again",
+	                                    );
+	                                  } else if (res.status === "invalid_password") {
 	                                    setLandingLoginError(
 	                                      "Incorrect password. Please try again.",
 	                                    );

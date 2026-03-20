@@ -2240,6 +2240,15 @@ export function Header({
       return;
     }
 
+    if (result.status === 'maintenance_unavailable') {
+      setLoginError('Our portal is having an issue or down for maintenance. Please try again');
+      setShowLoginPassword(false);
+      setShowSignupPassword(false);
+      setShowSignupConfirmPassword(false);
+      setLoginSubmitting(false);
+      return;
+    }
+
     if (result.status === 'email_not_found') {
       setLoginError('');
       setSignupError('We couldn\'t find that email. Please create your account below.');
@@ -2932,6 +2941,21 @@ export function Header({
       setSignupError('We couldn\'t find that email. Please create your account below.');
       setAuthMode('signup');
       setSignupEmail(details.email);
+      setSignupSuffix('');
+      setSignupPassword('');
+      setSignupConfirmPassword('');
+      setSignupCode('');
+      setShowLoginPassword(false);
+      setShowSignupPassword(false);
+      setShowSignupConfirmPassword(false);
+      return;
+    }
+
+    if (result.status === 'maintenance_unavailable') {
+      setSignupError('');
+      setLoginError('Our portal is having an issue or down for maintenance. Please try again');
+      setAuthMode('login');
+      queueLoginPrefill({ email: details.email, password: '' });
       setSignupSuffix('');
       setSignupPassword('');
       setSignupConfirmPassword('');
