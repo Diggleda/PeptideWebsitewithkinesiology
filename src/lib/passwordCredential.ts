@@ -52,8 +52,8 @@ export const requestStoredPasswordCredential = async (options?: {
         password: passwordCredential.password || '',
       };
     }
-  } catch {
-    // Ignore unsupported password credential flows silently.
+  } catch (error) {
+    console.debug('[Credentials] Stored credential request failed', error);
   }
 
   return null;
@@ -82,8 +82,8 @@ export const storePasswordCredential = async (id: string, password: string, name
       password,
     });
     await container.store(credential);
-  } catch {
-    // Ignore credential store failures silently.
+  } catch (error) {
+    console.debug('[Credentials] Unable to store credential', error);
   }
 };
 
