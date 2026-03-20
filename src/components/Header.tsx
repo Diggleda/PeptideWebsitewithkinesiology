@@ -17,7 +17,6 @@ import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
 import {
   buildResearchSupplyLinkUrl,
-  normalizeAllowedProductsInput,
 } from '../lib/researchSupplyLinks';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
@@ -75,7 +74,6 @@ const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: s
     studyLabel: 'GH response pilot',
     createdAt,
     expiresAt,
-    allowedProducts: ['BPC-157-5MG', 'TB-500-10MG'],
     usageLimit: 5,
     usageCount: 0,
     status: 'active',
@@ -309,6 +307,7 @@ interface HeaderUser {
   officeCity?: string | null;
   officeState?: string | null;
   officePostalCode?: string | null;
+  researchTermsAgreement?: boolean;
 }
 
 interface AccountOrderLineItem {
@@ -1177,7 +1176,6 @@ export function Header({
   const [patientLinkSubjectLabelDraft, setPatientLinkSubjectLabelDraft] = useState('');
   const [patientLinkStudyLabelDraft, setPatientLinkStudyLabelDraft] = useState('');
   const [patientLinkReferenceDraft, setPatientLinkReferenceDraft] = useState('');
-  const [patientLinkAllowedProductsDraft, setPatientLinkAllowedProductsDraft] = useState('');
   const [patientLinkExpiryHoursDraft, setPatientLinkExpiryHoursDraft] = useState('72');
   const [patientLinkUsageLimitDraft, setPatientLinkUsageLimitDraft] = useState('');
   const [patientLinkResearchNoteDraft, setPatientLinkResearchNoteDraft] = useState('');
@@ -3847,7 +3845,6 @@ export function Header({
         referenceLabel: patientReference ? patientReference : studyLabel ? studyLabel : null,
         markupPercent,
         instructions: patientLinkResearchNoteDraft.trim() ? patientLinkResearchNoteDraft.trim() : null,
-        allowedProducts: normalizeAllowedProductsInput(patientLinkAllowedProductsDraft),
         expiresInHours: Number.isFinite(expiresInHours) && expiresInHours > 0 ? expiresInHours : null,
         usageLimit: usageLimit && Number.isFinite(usageLimit) && usageLimit > 0 ? usageLimit : null,
         paymentMethod,
@@ -3857,7 +3854,6 @@ export function Header({
       setPatientLinkSubjectLabelDraft('');
       setPatientLinkStudyLabelDraft('');
       setPatientLinkReferenceDraft('');
-      setPatientLinkAllowedProductsDraft('');
       setPatientLinkUsageLimitDraft('');
       setPatientLinkResearchNoteDraft('');
       setPatientLinkTermsAccepted(false);
@@ -3875,7 +3871,6 @@ export function Header({
   }, [
     loadPatientLinks,
     normalizeMarkupPercent,
-    patientLinkAllowedProductsDraft,
     patientLinkExpiryHoursDraft,
     patientLinkMarkupDraft,
     patientLinkReferenceDraft,
@@ -6129,7 +6124,7 @@ export function Header({
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Create a delegate link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
-          Configure a session for your patient, and share the link with them once configured. This tool is intended to help you fascilate independent peptide research. Please be consienscious when setting compensation and allowed products, as patients will see the disclosures you set when they access the link. You can demo your own links before sharing by clicking the "View" button.
+          Configure a session for your patient, and share the link with them once configured. This tool is intended to help you fascilate independent peptide research. Please be consienscious when setting compensation, as patients will see the disclosures you set when they access the link. You can demo your own links before sharing by clicking the "View" button.
         </p>
 	        <div className="mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
             <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
@@ -6138,7 +6133,7 @@ export function Header({
                 Subject & Access
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Define subject metadata and restrict which products are available in this delegate session.
+                Define subject metadata for this delegate session.
               </p>
             </div>
 	          <Label
@@ -6188,23 +6183,6 @@ export function Header({
               }}
 	            placeholder="e.g., A104"
             className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
-	          />
-	          <Label
-	            htmlFor="patient-link-allowed-products"
-	            className="patient-link-form__label text-sm font-semibold text-slate-700"
-	          >
-	            Allowed SKUs <span className="label-paren">(comma-separated whitelist)</span>
-	          </Label>
-	          <Textarea
-	            id="patient-link-allowed-products"
-	            value={patientLinkAllowedProductsDraft}
-	            onChange={(event) => {
-                setPatientLinkAllowedProductsDraft(event.target.value);
-                trackPatientLinkFieldEntry('allowed_skus', event.target.value);
-              }}
-	            placeholder="e.g., BPC-157-5MG, TB-500-10MG"
-	            rows={2}
-	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
             </div>
             <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">

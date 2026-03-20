@@ -237,6 +237,7 @@ interface User {
   officePostalCode?: string | null;
   receiveClientOrderUpdateEmails?: boolean;
   handDelivered?: boolean;
+  researchTermsAgreement?: boolean;
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
@@ -3851,6 +3852,13 @@ function MainApp() {
   >(getInitialLandingMode);
   const [postLoginHold, setPostLoginHold] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
+  const [researchTermsSubmitting, setResearchTermsSubmitting] = useState(false);
+  const [researchTermsError, setResearchTermsError] = useState("");
+  const [researchTermsLegalModalOpen, setResearchTermsLegalModalOpen] =
+    useState(false);
+  const showResearchTermsAgreementModal = Boolean(
+    user && isDoctorRole(user.role) && !user.researchTermsAgreement,
+  );
 
   useEffect(() => {
     if (!activeDelegationProposal) {
@@ -3875,6 +3883,26 @@ function MainApp() {
       setCheckoutPricingMode("wholesale");
     }
   }, [canUseRetailPricing, checkoutPricingMode]);
+
+  useEffect(() => {
+    if (showResearchTermsAgreementModal) {
+      return;
+    }
+    setResearchTermsSubmitting(false);
+    setResearchTermsError("");
+  }, [showResearchTermsAgreementModal]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleLegalState = (event: Event) => {
+      const custom = event as CustomEvent<{ open?: boolean }>;
+      setResearchTermsLegalModalOpen(Boolean(custom.detail?.open));
+    };
+    window.addEventListener("peppro:legal-state", handleLegalState);
+    return () => {
+      window.removeEventListener("peppro:legal-state", handleLegalState);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -5389,6 +5417,40 @@ function MainApp() {
     // Allow auto-registration attempt after each successful login
     passkeyAutoRegisterAttemptedRef.current = false;
   }, []);
+
+  const openResearchTermsLegalDocument = useCallback(
+    (key: "terms" | "shipping" | "privacy") => {
+      if (typeof window === "undefined") return;
+      window.dispatchEvent(
+        new CustomEvent("peppro:open-legal", {
+          detail: { key, preserveDialogs: true },
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleAcceptResearchTermsAgreement = useCallback(async () => {
+    if (!user || !isDoctorRole(user.role) || researchTermsSubmitting) {
+      return;
+    }
+    setResearchTermsSubmitting(true);
+    setResearchTermsError("");
+    try {
+      const updated = (await authAPI.updateMe({
+        researchTermsAgreement: true,
+      })) as User;
+      setUser(updated);
+    } catch (error: any) {
+      setResearchTermsError(
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message.trim()
+          : "Unable to save your research participation agreement right now.",
+      );
+    } finally {
+      setResearchTermsSubmitting(false);
+    }
+  }, [researchTermsSubmitting, user]);
 
   const performPasskeyLogin = useCallback(
     async (options?: {
@@ -17352,6 +17414,9 @@ function MainApp() {
 	    setLoginContext(null);
 	    setPostLoginHold(false);
 	    setIsReturningUser(false);
+      setResearchTermsSubmitting(false);
+      setResearchTermsError("");
+      setResearchTermsLegalModalOpen(false);
 	    setCheckoutOpen(false);
 	    setShouldReopenCheckout(false);
     setShouldAnimateInfoFocus(false);
@@ -26193,6 +26258,102 @@ function MainApp() {
       {infoFocusActive && postLoginHold && user && (
         <div className="info-focus-overlay" aria-hidden="true" />
       )}
+      <Dialog
+        open={showResearchTermsAgreementModal}
+        modal={!researchTermsLegalModalOpen}
+        onOpenChange={(open) => {
+          if (!open && showResearchTermsAgreementModal) {
+            return;
+          }
+        }}
+      >
+        <DialogContent
+          hideCloseButton
+          className="max-w-2xl"
+          containerClassName="fixed inset-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
+          trapFocus={!researchTermsLegalModalOpen}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          <DialogHeader className="gap-0">
+            <DialogTitle>Research Participation Agreement</DialogTitle>
+            <DialogDescription className="text-muted-foreground mb-3 text-sm">
+              Physician acknowledgment required before continuing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 text-sm leading-relaxed text-slate-700">
+            <p>
+              By proceeding, you agree to join the PepPro research network
+              and, at your discretion, contribute your time, expertise, and
+              de-identified, anonymized patient outcome data in compliance
+              with applicable privacy laws and professional obligations.
+            </p>
+            <p>
+              Continuing also confirms your acceptance of PepPro&apos;s Terms
+              of Service, Privacy Policy, Shipping Policy, and any
+              applicable research network requirements.
+            </p>
+            <div className="rounded-2xl border border-[rgba(95,179,249,0.28)] bg-[rgba(255,255,255,0.82)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[rgb(95,179,249)]">
+                Review
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
+                  onClick={() => openResearchTermsLegalDocument("terms")}
+                >
+                  Terms of Service
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
+                  onClick={() => openResearchTermsLegalDocument("privacy")}
+                >
+                  Privacy Policy
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
+                  onClick={() => openResearchTermsLegalDocument("shipping")}
+                >
+                  Shipping Policy
+                </Button>
+              </div>
+            </div>
+            {researchTermsError && (
+              <p className="text-sm text-red-600" role="alert">
+                {researchTermsError}
+              </p>
+            )}
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-slate-300 bg-white text-slate-900"
+                onClick={handleLogout}
+                disabled={researchTermsSubmitting}
+              >
+                Log Out
+              </Button>
+              <Button
+                type="button"
+                className="header-home-button min-w-[220px]"
+                onClick={() => void handleAcceptResearchTermsAgreement()}
+                disabled={researchTermsSubmitting}
+              >
+                {researchTermsSubmitting
+                  ? "Saving agreement…"
+                  : "I Agree and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 		      <div className="relative z-10 flex flex-1 flex-col">
 		        {/* Header */}
 			        {user && !isDelegateMode && (

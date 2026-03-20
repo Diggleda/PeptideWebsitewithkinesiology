@@ -827,19 +827,15 @@ export function CheckoutModal({
         ? shipMinDate.toLocaleDateString()
         : `${shipMinDate.toLocaleDateString()}–${shipMaxDate.toLocaleDateString()}`;
 
-    const mathParts: string[] = [];
-    if (Number.isFinite(historicalAverageDaysRaw) && historicalAverageDaysRaw > 0) {
-      mathParts.push(
-        `${processingMinDays}–${processingMaxDays} business day processing (historical avg ${historicalAverageDaysRaw.toFixed(1)} days)`,
-      );
-    } else {
-      mathParts.push(`${processingMinDays}–${processingMaxDays} business day processing`);
-    }
-    const mathText = `${mathParts.join(' + ')}${isAfterCutoff ? ' (order placed after 1pm PT)' : ''}`;
+    const mathText = `${processingMinDays}–${processingMaxDays} business day processing`;
+    const disclaimer =
+      Number.isFinite(historicalAverageDaysRaw) && historicalAverageDaysRaw > 0
+        ? `Baseline avg ${historicalAverageDaysRaw.toFixed(1)} business days, and to ensure our product is kept temperature controlled we ship only M-Th to avoid weekend warehouses.`
+        : 'To ensure our product is kept temperature controlled we ship only M-Th to avoid weekend warehouses.';
     return {
       shipWindowLabel,
       mathText,
-      disclaimer: null,
+      disclaimer,
     };
   }, [requiresBackorder, selectedShippingRate, taxEstimate?.shippingTiming]);
 

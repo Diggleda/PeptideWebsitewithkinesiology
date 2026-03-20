@@ -424,6 +424,7 @@ def register(data: Dict) -> Dict:
             "npiVerification": npi_verification,
             "npiStatus": npi_status,
             "npiCheckError": None,
+            "researchTermsAgreement": False,
             "sessionId": _new_session_id(),
         }
     )
@@ -804,6 +805,11 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         if "receiveClientOrderUpdateEmails" in data
         else _normalize_bool(user.get("receiveClientOrderUpdateEmails"))
     )
+    research_terms_agreement = (
+        _normalize_bool(data.get("researchTermsAgreement"))
+        if "researchTermsAgreement" in data
+        else _normalize_bool(user.get("researchTermsAgreement"))
+    )
 
     if email and email != user.get("email"):
         existing = user_repository.find_by_email(email)
@@ -820,6 +826,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "delegateSecondaryColor": delegate_secondary_color,
         "zelleContact": zelle_contact,
         "receiveClientOrderUpdateEmails": receive_client_order_update_emails,
+        "researchTermsAgreement": research_terms_agreement,
         **shipping_fields,
     }
 

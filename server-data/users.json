@@ -7,9 +7,9 @@
     "referralCode": "49110E",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 1169,
+    "visits": 1171,
     "createdAt": "2025-11-24T15:21:45.364Z",
-    "lastLoginAt": "2026-03-17T21:56:36.570Z",
+    "lastLoginAt": "2026-03-20T00:01:39.294Z",
     "role": "sales_lead",
     "salesRepId": "rep1",
     "passkeys": [],
@@ -28,7 +28,7 @@
     "taxExemptSource": null,
     "taxExemptReason": null,
     "lastSeenAt": "1970-01-01T00:00:00.000Z",
-    "lastInteractionAt": "2026-03-17T21:56:36.738Z",
+    "lastInteractionAt": "2026-03-20T00:01:39.438Z",
     "isOnline": false,
     "isIdle": false,
     "devCommission": false,
@@ -37,7 +37,12 @@
     "hand_delivered": 0,
     "cart": [],
     "delegateLinksEnabled": false,
-    "delegate_links_enabled": 0
+    "delegate_links_enabled": 0,
+    "resellerPermitFilePath": null,
+    "resellerPermitFileName": null,
+    "resellerPermitUploadedAt": null,
+    "researchTermsAgreement": false,
+    "research_terms_agreement": 0
   },
   {
     "id": "1763997887996",
@@ -47,9 +52,9 @@
     "referralCode": "57F8DC",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 316,
+    "visits": 328,
     "createdAt": "2025-11-24T15:24:47.996Z",
-    "lastLoginAt": "2026-03-17T03:28:57.395Z",
+    "lastLoginAt": "2026-03-20T00:39:12.904Z",
     "role": "test_doctor",
     "salesRepId": "rep1",
     "npiNumber": "1063837144",
@@ -74,7 +79,7 @@
     "taxExemptSource": null,
     "taxExemptReason": null,
     "lastSeenAt": "1970-01-01T00:00:00.000Z",
-    "lastInteractionAt": "2026-03-17T03:33:22.055Z",
+    "lastInteractionAt": "2026-03-20T00:39:13.017Z",
     "isOnline": false,
     "isIdle": false,
     "devCommission": false,
@@ -83,7 +88,12 @@
     "hand_delivered": 0,
     "cart": [],
     "delegateLinksEnabled": false,
-    "delegate_links_enabled": 0
+    "delegate_links_enabled": 0,
+    "resellerPermitFilePath": null,
+    "resellerPermitFileName": null,
+    "resellerPermitUploadedAt": null,
+    "researchTermsAgreement": false,
+    "research_terms_agreement": 0
   },
   {
     "id": "1764556043938",
@@ -122,7 +132,12 @@
     "hand_delivered": 0,
     "cart": [],
     "delegateLinksEnabled": false,
-    "delegate_links_enabled": 0
+    "delegate_links_enabled": 0,
+    "resellerPermitFilePath": null,
+    "resellerPermitFileName": null,
+    "resellerPermitUploadedAt": null,
+    "researchTermsAgreement": false,
+    "research_terms_agreement": 0
   },
   {
     "id": "1765228144842",
@@ -167,7 +182,12 @@
     "hand_delivered": 0,
     "cart": [],
     "delegateLinksEnabled": false,
-    "delegate_links_enabled": 0
+    "delegate_links_enabled": 0,
+    "resellerPermitFilePath": null,
+    "resellerPermitFileName": null,
+    "resellerPermitUploadedAt": null,
+    "researchTermsAgreement": false,
+    "research_terms_agreement": 0
   },
   {
     "id": "1771871579569",
@@ -206,6 +226,11 @@
     "hand_delivered": 0,
     "cart": [],
     "delegateLinksEnabled": false,
-    "delegate_links_enabled": 0
+    "delegate_links_enabled": 0,
+    "resellerPermitFilePath": null,
+    "resellerPermitFileName": null,
+    "resellerPermitUploadedAt": null,
+    "researchTermsAgreement": false,
+    "research_terms_agreement": 0
   }
 ]

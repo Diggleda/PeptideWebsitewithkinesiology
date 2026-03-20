@@ -949,6 +949,7 @@ export type UpdateProfilePayload = {
   officeState?: string | null;
   officePostalCode?: string | null;
   receiveClientOrderUpdateEmails?: boolean;
+  researchTermsAgreement?: boolean;
 };
 
 export type PersistedCartItemPayload = {
