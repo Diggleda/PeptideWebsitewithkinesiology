@@ -16062,6 +16062,9 @@ function MainApp() {
     if (typeof window === "undefined") {
       return;
     }
+    if (!user && !isDelegateMode) {
+      return;
+    }
     // Delegate sessions should only load the catalog after the delegate link is validated.
     // If the link is revoked/expired, we render the expired-session view and skip all catalog loading.
     if (isDelegateMode) {
@@ -16507,7 +16510,7 @@ function MainApp() {
 	      }
 	      window.clearInterval(intervalId);
 	    };
-	  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateLoading, delegateError, delegateContext?.allowedProducts]);
+	  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateLoading, delegateError, delegateContext?.allowedProducts, user?.id]);
 
   useEffect(() => {
     if (catalogEmptyTimerRef.current) {
