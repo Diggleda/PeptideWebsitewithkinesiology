@@ -382,6 +382,13 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'research_terms_agreement',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN research_terms_agreement TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
       name: 'dev_commission',
       ddl: `
         ALTER TABLE users
