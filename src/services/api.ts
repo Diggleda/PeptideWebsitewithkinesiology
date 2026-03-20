@@ -3,8 +3,6 @@ import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
-  const allowCrossOriginApi =
-    String((import.meta.env.VITE_ALLOW_CROSS_ORIGIN_API as string | undefined) || '').toLowerCase() === 'true';
 
   if (!configured) {
     // In dev we expect the API on localhost:3001 by default.
@@ -20,64 +18,10 @@ export const API_BASE_URL = (() => {
   }
 
   const normalized = configured.replace(/\/+$/, '');
-  const normalizedWithApi = normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
-
-  // Guardrail: when loaded from a hosted browser origin, default to same-origin API unless
-  // explicitly overridden. This prevents env/proxy drift from sending the app cross-origin.
-  if (!allowCrossOriginApi && typeof window !== 'undefined' && window.location?.origin) {
-    try {
-      if (/^https?:\/\//i.test(normalizedWithApi)) {
-        const parsed = new URL(normalizedWithApi);
-        const current = new URL(window.location.origin);
-        const currentHost = String(current.hostname || '').toLowerCase();
-        const isCurrentLocalhost =
-          currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1';
-        if (!isCurrentLocalhost && parsed.origin !== current.origin) {
-          if (typeof console !== 'undefined' && console.warn) {
-            console.warn('[API] Ignoring cross-origin VITE_API_URL for hosted origin; defaulting to same-origin /api');
-          }
-          return `${window.location.origin}/api`;
-        }
-      }
-    } catch {
-      // If parsing fails, fall through to returning the configured value.
-    }
-  }
-
-  return normalizedWithApi;
+  return normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
 })();
 
-type AuthenticatedRequestInit = RequestInit & {
-  preferSameOriginApiFallback?: boolean;
-};
-
-const shouldUseSameOriginApiFallback = (
-  requestUrl: string,
-  options?: AuthenticatedRequestInit,
-) => {
-  if (typeof window === 'undefined' || !window.location?.origin) {
-    return false;
-  }
-  try {
-    const request = new URL(requestUrl, window.location.origin);
-    const current = new URL(window.location.origin);
-    if (request.origin === current.origin) {
-      return false;
-    }
-    if (options?.preferSameOriginApiFallback) {
-      return request.pathname.startsWith('/api/');
-    }
-    // If the app is intentionally configured to use a cross-origin API, do not
-    // silently retry onto `window.location.origin/api/*`.
-    const apiBase = new URL(API_BASE_URL, window.location.origin);
-    if (apiBase.origin !== current.origin) {
-      return false;
-    }
-  } catch {
-    return false;
-  }
-  return true;
-};
+type AuthenticatedRequestInit = RequestInit;
 
 type AuthTabEvent = {
   type: 'LOGIN';
@@ -449,24 +393,6 @@ const isNetworkLikeFetchError = (error: any) => {
   );
 };
 
-const toSameOriginApiUrl = (url: string) => {
-  if (typeof window === 'undefined' || !window.location?.origin) {
-    return null;
-  }
-  try {
-    const parsed = new URL(url, window.location.origin);
-    if (parsed.origin === window.location.origin) {
-      return null;
-    }
-    if (!parsed.pathname.startsWith('/api/')) {
-      return null;
-    }
-    return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return null;
-  }
-};
-
 const _fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number) => {
   if (typeof window === 'undefined' || timeoutMs <= 0 || !Number.isFinite(timeoutMs)) {
     return fetch(url, init);
@@ -512,7 +438,6 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
 
   const run = async () => {
     let requestUrl = rewrittenUrl;
-    let usedSameOriginFallback = false;
 
     if (method === 'GET' && !(options.cache && options.cache !== 'default')) {
       const normalized = requestUrl.toLowerCase();
@@ -541,48 +466,16 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     try {
       response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
-      const sameOriginFallbackUrl =
-        ((method === 'GET' || method === 'HEAD') && shouldUseSameOriginApiFallback(requestUrl, options))
-          ? toSameOriginApiUrl(requestUrl)
-          : null;
-      if (sameOriginFallbackUrl && isNetworkLikeFetchError(error)) {
-        try {
-          response = await _fetchWithTimeout(sameOriginFallbackUrl, requestInit, timeoutMs);
-          requestUrl = sameOriginFallbackUrl;
-          usedSameOriginFallback = true;
-        } catch (retryError: any) {
-          const retryIsAbort = retryError?.name === 'AbortError';
-          const retryMessage = retryIsAbort
-            ? 'Request timed out'
-            : (typeof retryError?.message === 'string' ? retryError.message : null);
-          dispatchApiReachability({ ok: false, status: null, message: retryMessage });
-          if (retryIsAbort) {
-            const wrapped = new Error('Request timed out');
-            (wrapped as any).code = 'TIMEOUT';
-            (wrapped as any).status = null;
-            throw wrapped;
-          }
-          throw retryError;
-        }
-      } else {
-        const isAbort = error?.name === 'AbortError';
-        const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
-        dispatchApiReachability({ ok: false, status: null, message });
-        if (isAbort) {
-          const wrapped = new Error('Request timed out');
-          (wrapped as any).code = 'TIMEOUT';
-          (wrapped as any).status = null;
-          throw wrapped;
-        }
-        throw error;
+      const isAbort = error?.name === 'AbortError';
+      const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
+      dispatchApiReachability({ ok: false, status: null, message });
+      if (isAbort) {
+        const wrapped = new Error('Request timed out');
+        (wrapped as any).code = 'TIMEOUT';
+        (wrapped as any).status = null;
+        throw wrapped;
       }
-    }
-
-    if (usedSameOriginFallback && typeof console !== 'undefined' && console.warn) {
-      console.warn('[API] Cross-origin request failed; retried on same-origin /api', {
-        originalUrl: rewrittenUrl,
-        fallbackUrl: requestUrl,
-      });
+      throw error;
     }
 
     if (response.ok) {
@@ -1351,7 +1244,6 @@ export const settingsAPI = {
     const query = params.toString() ? `?${params.toString()}` : '';
     return fetchWithAuth(`${API_BASE_URL}/settings/live-clients${query}`, {
       method: 'GET',
-      preferSameOriginApiFallback: true,
     });
   },
   getLiveClientsLongPoll: async (
@@ -1374,14 +1266,12 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-clients/longpoll${query}`, {
       method: 'GET',
       signal,
-      preferSameOriginApiFallback: true,
     });
   },
 
   getLiveUsers: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-users`, {
       method: 'GET',
-      preferSameOriginApiFallback: true,
     });
   },
 
@@ -1401,7 +1291,6 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-users/longpoll${query}`, {
       method: 'GET',
       signal,
-      preferSameOriginApiFallback: true,
     });
   },
   getAdminUserProfile: async (userId: string | number) => {
