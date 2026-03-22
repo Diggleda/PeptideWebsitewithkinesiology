@@ -234,6 +234,9 @@ const sanitizeUser = (user) => {
     researchTermsAgreement: normalizeBooleanFlag(
       user.researchTermsAgreement ?? user.research_terms_agreement,
     ),
+    delegateOptIn: normalizeBooleanFlag(
+      user.delegateOptIn ?? user.delegate_opt_in,
+    ),
     receiveClientOrderUpdateEmails: normalizeBooleanFlag(user.receiveClientOrderUpdateEmails),
     hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
     salesRep: resolveSalesRepSummary(user),
@@ -510,6 +513,7 @@ const register = async ({
     taxExemptSource,
     taxExemptReason,
     researchTermsAgreement: false,
+    delegateOptIn: false,
     npiVerification: npiVerification
       ? {
         name: npiVerification.name,
@@ -690,7 +694,9 @@ const updateProfile = async (userId, data) => {
   if (Object.prototype.hasOwnProperty.call(data, 'researchTermsAgreement')) {
     next.researchTermsAgreement = normalizeBooleanFlag(data.researchTermsAgreement);
   }
-
+  if (Object.prototype.hasOwnProperty.call(data, 'delegateOptIn')) {
+    next.delegateOptIn = normalizeBooleanFlag(data.delegateOptIn);
+  }
   const updated = userRepository.update(next) || next;
   logger.debug(
     {

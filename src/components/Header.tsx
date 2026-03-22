@@ -308,6 +308,7 @@ interface HeaderUser {
   officeState?: string | null;
   officePostalCode?: string | null;
   researchTermsAgreement?: boolean;
+  delegateOptIn?: boolean;
 }
 
 interface AccountOrderLineItem {
@@ -4209,7 +4210,7 @@ export function Header({
   );
 
   const saveProfileField = useCallback(
-    async (label: string, payload: Record<string, string | null>) => {
+    async (label: string, payload: Record<string, string | boolean | null>) => {
       const toastId = `profile-field:${label.toLowerCase().replace(/\s+/g, '-')}`;
       try {
         const api = await import('../services/api');
@@ -4262,6 +4263,7 @@ export function Header({
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
   const [delegateSecondaryColorSaving, setDelegateSecondaryColorSaving] = useState(false);
+  const [delegateOptInSaving, setDelegateOptInSaving] = useState(false);
 
   const downscaleImageDataUrl = useCallback(async (
     dataUrl: string,
@@ -6128,6 +6130,7 @@ export function Header({
     heightPx: logoSlotHeightPx,
   };
   const delegateUserIconClassName = 'h-5 w-5 flex-shrink-0';
+  const delegateOptInEnabled = Boolean(localUser?.delegateOptIn);
   const delegatePreviewSecondaryHex =
     normalizeDelegateSecondaryColor(localUser?.delegateSecondaryColor ?? user?.delegateSecondaryColor ?? null)
     || DEFAULT_DELEGATE_SECONDARY_COLOR;
@@ -6136,6 +6139,37 @@ export function Header({
 
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
+      {!delegateOptInEnabled ? (
+        <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+          <div className="max-w-3xl space-y-4">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-slate-900">Delegate Links beta opt-in</h3>
+              <p className="text-sm leading-relaxed text-slate-700">
+                The Delegate Link beta has been enabled for you. You are now able to manage delegate sessions for your patients to build order proposals. You are the responsible steward of this tool for your own independent research. If you agree and understand, click opt-in to gain access to the tool.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={async () => {
+                if (delegateOptInSaving) {
+                  return;
+                }
+                setDelegateOptInSaving(true);
+                try {
+                  await saveProfileField('Delegate Links opt-in', { delegateOptIn: true });
+                } finally {
+                  setDelegateOptInSaving(false);
+                }
+              }}
+              disabled={delegateOptInSaving}
+              className="header-home-button h-11 min-h-[44px] squircle-sm bg-white px-7 text-slate-900"
+            >
+              {delegateOptInSaving ? 'Opting in…' : 'Opt-in'}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
       <p className="text-sm text-slate-600">
         This tool is in early access. Please{' '}
         <button
@@ -7099,6 +7133,8 @@ export function Header({
 	          </div>
 	        )}
 	      </div>
+        </>
+      )}
     </div>
   ) : null;
 

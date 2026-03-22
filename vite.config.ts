@@ -12,6 +12,28 @@ const isReplit = Boolean(
 );
 
 const viteCacheDir = process.env.VITE_CACHE_DIR || path.join(os.tmpdir(), 'peppro-vite-cache');
+const ignoredWatchGlobs = [
+  '**/.git/**',
+  '**/node_modules/**',
+  '**/.DS_Store',
+  '**/.env',
+  '**/.env.local',
+  '**/.tmp_frontend_flat*/**',
+  '**/tmp/frontend_flattened_*/**',
+  '**/build/**',
+  '**/build_debug/**',
+  '**/build_main_tmp/**',
+  '**/build_staging_tmp/**',
+  '**/public_html/**',
+  '**/artifacts/**',
+  '**/Database Backups/**',
+  '**/Order tab/**',
+  '**/python_backend/**',
+  '**/server/templates/**',
+  '**/server-data/**',
+  '**/server-data/woo-proxy-cache/**',
+  '**/vite.config.ts',
+];
 
 export default defineConfig(({ command }) => ({
   // Production builds are currently hanging inside the React SWC plugin path.
@@ -87,5 +109,8 @@ export default defineConfig(({ command }) => ({
     ...(isReplit
       ? { hmr: { protocol: 'wss', clientPort: 443 } }
       : { hmr: { protocol: 'ws', host: 'localhost', port: 3000 } }),
+    watch: {
+      ignored: ignoredWatchGlobs,
+    },
   },
 }))

@@ -81,7 +81,7 @@ const start = async () => {
     assertSecureRuntimeConfig();
     // eslint-disable-next-line no-console
     console.log('[boot] bootstrap:begin');
-    await bootstrap();
+    const { runDeferred } = await bootstrap();
     // eslint-disable-next-line no-console
     console.log('[boot] bootstrap:done');
 
@@ -109,6 +109,13 @@ const start = async () => {
       },
       'Backend server is ready',
     );
+    if (typeof runDeferred === 'function') {
+      setImmediate(() => {
+        void runDeferred().catch((error) => {
+          logger.warn({ err: error }, 'Deferred bootstrap work failed');
+        });
+      });
+    }
     setImmediate(() => {
       try {
         if (typeof app.prewarmApiModules === 'function') {

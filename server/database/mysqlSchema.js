@@ -389,6 +389,13 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'delegate_opt_in',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN delegate_opt_in TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
       name: 'dev_commission',
       ddl: `
         ALTER TABLE users

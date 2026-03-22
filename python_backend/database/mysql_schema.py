@@ -547,6 +547,7 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_secondary_color VARCHAR(16) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_links_enabled TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS research_terms_agreement TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_opt_in TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS zelle_contact VARCHAR(190) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS cart JSON NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS receive_client_order_update_emails TINYINT(1) NOT NULL DEFAULT 0",

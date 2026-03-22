@@ -839,6 +839,7 @@ export type UpdateProfilePayload = {
   officePostalCode?: string | null;
   receiveClientOrderUpdateEmails?: boolean;
   researchTermsAgreement?: boolean;
+  delegateOptIn?: boolean;
 };
 
 export type PersistedCartItemPayload = {

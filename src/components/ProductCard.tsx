@@ -238,14 +238,16 @@ function PdfPreview({
   zoomPercent,
   onZoomIn,
   onZoomOut,
+  preferNativePreview = prefersNativePdfPreview(),
 }: {
   src: string;
-  height: string;
+  height?: string;
   minHeight: string;
   scale?: number;
   zoomPercent: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  preferNativePreview?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const documentRef = useRef<any>(null);
@@ -255,7 +257,7 @@ function PdfPreview({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [documentReadyVersion, setDocumentReadyVersion] = useState(0);
-  const [useNativePreview, setUseNativePreview] = useState(() => prefersNativePdfPreview());
+  const [useNativePreview, setUseNativePreview] = useState(preferNativePreview);
 
   useEffect(() => {
     let cancelled = false;
@@ -513,7 +515,7 @@ function PdfPreview({
   }, [documentReadyVersion, scale, useNativePreview]);
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col">
+    <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">
       {!useNativePreview && (
       <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-full border border-[var(--brand-glass-border-2)] bg-white/90 px-2 py-1 shadow-sm backdrop-blur">
         <Button
@@ -542,23 +544,25 @@ function PdfPreview({
       </div>
       )}
       <div
-        className={`w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${useNativePreview ? '' : 'pt-14'}`}
+        className={`w-full flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden ${useNativePreview ? '' : 'pt-14'}`}
         style={{
           height,
           minHeight,
         }}
       >
       {useNativePreview ? (
-        <iframe
-          src={src}
-          title="Protixa ION System Dossier"
-          className="h-full w-full bg-white"
-          style={{
-            height,
-            minHeight,
-            border: '0',
-          }}
-        />
+        <div className="h-full w-full min-w-0 overflow-auto bg-white">
+          <iframe
+            src={src}
+            title="Protixa ION System Dossier"
+            className="block h-full w-full bg-white"
+            style={{
+              height,
+              minHeight,
+              border: '0',
+            }}
+          />
+        </div>
       ) : (
         <>
       {loading && (
@@ -642,6 +646,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   const [coaLoading, setCoaLoading] = useState(false);
   const [coaError, setCoaError] = useState<string | null>(null);
   const [coaObjectUrl, setCoaObjectUrl] = useState<string | null>(null);
+  const [coaBlobType, setCoaBlobType] = useState<string | null>(null);
   const coaLoadAttemptedRef = useRef(false);
   const documentationTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const [documentationIndicatorLeft, setDocumentationIndicatorLeft] = useState(0);
@@ -649,6 +654,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   const [documentationIndicatorOpacity, setDocumentationIndicatorOpacity] = useState(0);
   const [documentationViewportHeight, setDocumentationViewportHeight] = useState<number | null>(null);
   const [nasalsPreviewScale, setNasalsPreviewScale] = useState(0.82);
+  const [coaPreviewScale, setCoaPreviewScale] = useState(0.82);
   const [hasOpenedNasalsDocumentation, setHasOpenedNasalsDocumentation] = useState(false);
 
   const wooProductId = useMemo(() => {
@@ -689,6 +695,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   useEffect(() => {
     if (!coaOpen) {
       setNasalsPreviewScale(0.82);
+      setCoaPreviewScale(0.82);
     }
   }, [coaOpen]);
 
@@ -1052,6 +1059,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     try {
       const { blob } = await wooAPI.getCertificateOfAnalysis(wooProductId);
       const url = URL.createObjectURL(blob);
+      setCoaBlobType(blob?.type || null);
       setCoaObjectUrl(url);
     } catch (error: any) {
       const status = typeof error?.status === 'number' ? error.status : null;
@@ -1086,7 +1094,8 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
       .replace(/[^a-z0-9]+/gi, '_')
       .replace(/^_+|_+$/g, '')
       .slice(0, 80);
-    const filename = `${safeBase || 'certificate_of_analysis'}.png`;
+    const extension = coaBlobType?.toLowerCase().includes('pdf') ? 'pdf' : 'png';
+    const filename = `${safeBase || 'certificate_of_analysis'}.${extension}`;
     const link = document.createElement('a');
     link.href = coaObjectUrl;
     link.download = filename;
@@ -1137,11 +1146,13 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     ? `${measuredModalMaxHeight}px`
     : 'calc(100dvh - var(--modal-header-offset, 6rem))';
   const documentationPreviewHeight = hasActiveDocumentationPreview
-    ? '100%'
+    ? undefined
     : '320px';
   const documentationPreviewMinHeight = hasActiveDocumentationPreview ? '380px' : '320px';
   const nasalsDocumentationPreviewUrl = protixaIonSystemDossierPdf;
+  const coaPreviewIsPdf = Boolean(coaBlobType?.toLowerCase().includes('pdf'));
   const nasalsPreviewPercent = Math.round(nasalsPreviewScale * 100);
+  const coaPreviewPercent = Math.round(coaPreviewScale * 100);
 
 			  const productMeta = (
 			    <>
@@ -1391,6 +1402,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
             coaLoadAttemptedRef.current = false;
             setDocumentationTab('certificate');
             setCoaError(null);
+            setCoaBlobType(null);
             if (coaObjectUrl) {
               URL.revokeObjectURL(coaObjectUrl);
               setCoaObjectUrl(null);
@@ -1399,7 +1411,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
         }}
 	      >
               <DialogContent
-              className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col overflow-hidden"
+              className="checkout-modal account-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col overflow-hidden"
               containerClassName="fixed inset-x-0 bottom-0 z-[10000] flex items-end justify-center px-3 pb-3 sm:px-4 sm:pb-3"
               containerStyle={{
                 top: 'var(--modal-header-offset, 6rem)',
@@ -1411,6 +1423,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
                 height: documentationModalMaxHeight,
                 maxHeight: documentationModalMaxHeight,
                 margin: '0 auto',
+                overflow: 'hidden',
               }}
               hideCloseButton
             >
@@ -1496,15 +1509,15 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
               </DialogHeader>
 		
 		          <div className={`flex flex-1 min-h-0 flex-col overflow-hidden px-6 ${hasActiveDocumentationPreview ? 'pb-5' : 'pb-6'}`}>
-                <div className="flex flex-1 min-h-0 flex-col pt-6">
+                <div className="flex flex-1 min-h-0 flex-col overflow-hidden pt-6">
                   <div
-                    className="flex flex-1 min-h-0 items-center justify-center rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4"
+                    className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4"
                     style={{
                       minHeight: documentationPreviewMinHeight,
                     }}
                   >
 		            {hasNasalsDocumentation && hasOpenedNasalsDocumentation ? (
-                    <div className={documentationTab === 'nasals' ? 'flex h-full min-h-0 w-full' : 'hidden'}>
+                    <div className={documentationTab === 'nasals' ? 'flex h-full min-h-0 w-full min-w-0 flex-1 self-stretch' : 'hidden'}>
                       <PdfPreview
                         src={nasalsDocumentationPreviewUrl}
                         height={documentationPreviewHeight}
@@ -1517,22 +1530,40 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
                     </div>
                   ) : null}
                   {documentationTab === 'nasals' ? null : coaLoading ? (
-		              <div className="flex items-center gap-2 text-sm text-slate-600">
+		              <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-600">
 		                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
 		                Loading certificate…
 		              </div>
 		            ) : coaObjectUrl ? (
-		              <img
-		                src={coaObjectUrl}
-		                alt={`Certificate of Analysis for ${product.name}`}
-		                className="block h-auto max-h-full w-auto max-w-full object-contain"
+                    coaPreviewIsPdf ? (
+                      <div className="flex h-full min-h-0 w-full min-w-0 flex-1 self-stretch">
+                        <PdfPreview
+                          src={coaObjectUrl}
+                          height={documentationPreviewHeight}
+                          minHeight={documentationPreviewMinHeight}
+                          scale={coaPreviewScale}
+                          zoomPercent={coaPreviewPercent}
+                          onZoomOut={() => setCoaPreviewScale((current) => Math.max(0.55, Number((current - 0.08).toFixed(2))))}
+                          onZoomIn={() => setCoaPreviewScale((current) => Math.min(1.4, Number((current + 0.08).toFixed(2))))}
+                          preferNativePreview={false}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className="h-full w-full min-w-0 flex-1 self-stretch overflow-y-auto overflow-x-hidden bg-white"
                         style={{
-                          height: documentationPreviewHeight,
-                          maxHeight: documentationPreviewHeight,
+                          minHeight: documentationPreviewMinHeight,
                         }}
-		              />
+                      >
+                        <img
+                          src={coaObjectUrl}
+                          alt={`Certificate of Analysis for ${product.name}`}
+                          className="block h-auto w-full max-w-full"
+                        />
+                      </div>
+                    )
 		            ) : (
-		              <div className="text-sm text-slate-600 text-center">
+		              <div className="flex flex-1 items-center justify-center text-sm text-slate-600 text-center">
 		                {coaError || 'Unable to load certificate.'}
 		              </div>
 		            )}

@@ -425,6 +425,7 @@ def register(data: Dict) -> Dict:
             "npiStatus": npi_status,
             "npiCheckError": None,
             "researchTermsAgreement": False,
+            "delegateOptIn": False,
             "sessionId": _new_session_id(),
         }
     )
@@ -810,6 +811,11 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         if "researchTermsAgreement" in data
         else _normalize_bool(user.get("researchTermsAgreement"))
     )
+    delegate_opt_in = (
+        _normalize_bool(data.get("delegateOptIn"))
+        if "delegateOptIn" in data
+        else _normalize_bool(user.get("delegateOptIn"))
+    )
 
     if email and email != user.get("email"):
         existing = user_repository.find_by_email(email)
@@ -827,6 +833,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "zelleContact": zelle_contact,
         "receiveClientOrderUpdateEmails": receive_client_order_update_emails,
         "researchTermsAgreement": research_terms_agreement,
+        "delegateOptIn": delegate_opt_in,
         **shipping_fields,
     }
 
@@ -923,6 +930,11 @@ def _sanitize_user(user: Dict) -> Dict:
     sanitized.pop("password", None)
     sanitized.pop("sessionId", None)
     sanitized.pop("downloads", None)
+    sanitized["delegateOptIn"] = _normalize_bool(
+        sanitized.get("delegateOptIn")
+        if "delegateOptIn" in sanitized
+        else sanitized.get("delegate_opt_in")
+    )
     rep_id = sanitized.get("salesRepId")
     sales_rep = None
     if rep_id:

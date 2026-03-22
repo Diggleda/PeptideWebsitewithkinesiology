@@ -129,7 +129,7 @@ import {
 	storePasswordCredential,
 } from "./lib/passwordCredential";
 
-const GlobeAmericasIcon = ({ className }: { className?: string }) => (
+const GlobeAmericasIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     fill="none"
@@ -138,6 +138,7 @@ const GlobeAmericasIcon = ({ className }: { className?: string }) => (
     stroke="currentColor"
     className={className}
     aria-hidden="true"
+    {...props}
   >
     <path
       strokeLinecap="round"
@@ -147,7 +148,7 @@ const GlobeAmericasIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const BuildingStorefrontIcon = ({ className }: { className?: string }) => (
+const BuildingStorefrontIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     fill="none"
@@ -156,6 +157,7 @@ const BuildingStorefrontIcon = ({ className }: { className?: string }) => (
     stroke="currentColor"
     className={className}
     aria-hidden="true"
+    {...props}
   >
     <path
       strokeLinecap="round"
@@ -165,7 +167,7 @@ const BuildingStorefrontIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const AdjustmentsHorizontalIcon = ({ className }: { className?: string }) => (
+const AdjustmentsHorizontalIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     fill="none"
@@ -174,6 +176,7 @@ const AdjustmentsHorizontalIcon = ({ className }: { className?: string }) => (
     stroke="currentColor"
     className={className}
     aria-hidden="true"
+    {...props}
   >
     <path
       strokeLinecap="round"
@@ -183,7 +186,7 @@ const AdjustmentsHorizontalIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const CubeTransparentIcon = ({ className }: { className?: string }) => (
+const CubeTransparentIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     fill="none"
@@ -192,6 +195,7 @@ const CubeTransparentIcon = ({ className }: { className?: string }) => (
     stroke="currentColor"
     className={className}
     aria-hidden="true"
+    {...props}
   >
     <path
       strokeLinecap="round"
@@ -201,7 +205,7 @@ const CubeTransparentIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const UserGroupIcon = ({ className }: { className?: string }) => (
+const UserGroupIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     fill="none"
@@ -210,11 +214,31 @@ const UserGroupIcon = ({ className }: { className?: string }) => (
     stroke="currentColor"
     className={className}
     aria-hidden="true"
+    {...props}
   >
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
       d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z"
+    />
+  </svg>
+);
+
+const IdentificationIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Zm6-10.125a1.875 1.875 0 1 1-3.75 0 1.875 1.875 0 0 1 3.75 0Zm1.294 6.336a6.721 6.721 0 0 1-3.17.789 6.721 6.721 0 0 1-3.168-.789 3.376 3.376 0 0 1 6.338 0Z"
     />
   </svg>
 );
@@ -1308,6 +1332,44 @@ const isHouseLeadTypeValue = (value: unknown) => {
   );
 };
 
+const isHouseContactProspectRow = (row: any) => {
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+  const status = String(row?.status || "").trim().toLowerCase();
+  const id = String(row?.id || "").trim().toLowerCase();
+  const source = String(row?.source || "").trim().toLowerCase();
+  const leadType = normalizeLeadTypeValue(row?.leadType || row?.lead_type);
+  const referrerName = String(
+    row?.referrerDoctorName || row?.referrer_doctor_name || "",
+  )
+    .trim()
+    .toLowerCase();
+  const contactFormIdRaw =
+    row?.contactFormId ||
+    row?.contact_form_id ||
+    row?.contactFormID ||
+    row?.contact_formId ||
+    null;
+  const hasContactFormId =
+    (typeof contactFormIdRaw === "string" && contactFormIdRaw.trim().length > 0) ||
+    (typeof contactFormIdRaw === "number" && Number.isFinite(contactFormIdRaw));
+  const hasHouseReferrerName =
+    referrerName === "contact form / house" ||
+    referrerName === "house / contact form";
+
+  return (
+    status === "contact_form" ||
+    id.startsWith("contact_form:") ||
+    hasContactFormId ||
+    source === "contact_form" ||
+    source === "house" ||
+    source === "house_contact" ||
+    isHouseLeadTypeValue(leadType) ||
+    hasHouseReferrerName
+  );
+};
+
 const normalizeStringField = (value: unknown) => {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -1344,6 +1406,14 @@ const getTaxAlertBadgeStyle = (
   }
   return undefined;
 };
+
+const getTaxSummaryBadgeClassName = (count: number) =>
+  count > 1
+    ? "!border-rose-600 !bg-white !text-rose-700"
+    : "border-slate-200 bg-white text-slate-600";
+
+const getTaxSummaryBadgeStyle = (count: number): CSSProperties | undefined =>
+  count > 1 ? TAX_WARNING_BADGE_STYLE : undefined;
 
 const parseObjectCandidate = (value: unknown): Record<string, any> | null => {
   if (!value) return null;
@@ -5846,7 +5916,7 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (!user || !isAdmin(user.role) || postLoginHold) {
@@ -7154,34 +7224,9 @@ function MainApp() {
 				            const status = sanitizeReferralStatus(row?.status);
 				            return status !== "nuture";
 				          })
-                  .filter((row: any) => {
-                    if (shouldIncludeHouseContactProspects) {
-                      return true;
-                    }
-                    const contactFormIdRaw =
-                      row?.contactFormId ||
-                      row?.contact_form_id ||
-                      row?.contactFormID ||
-                      row?.contact_formId ||
-                      null;
-                    const leadTypeRaw =
-                      typeof row?.leadType === "string"
-                        ? row.leadType
-                        : typeof row?.lead_type === "string"
-                          ? row.lead_type
-                          : "";
-                    const leadType = leadTypeRaw.trim().toLowerCase();
-                    const hasContactFormId =
-                      (typeof contactFormIdRaw === "string" && contactFormIdRaw.trim().length > 0) ||
-                      (typeof contactFormIdRaw === "number" && Number.isFinite(contactFormIdRaw));
-                    return !(
-                      hasContactFormId ||
-                      leadType === "contact_form" ||
-                      leadType === "house" ||
-                      leadType === "house_contact" ||
-                      leadType.includes("contact")
-                    );
-                  })
+                  .filter((row: any) =>
+                    shouldIncludeHouseContactProspects ? true : !isHouseContactProspectRow(row),
+                  )
 				          .map((row: any) => {
 				            const contactFormIdRaw =
 				              row?.contactFormId ||
@@ -10908,7 +10953,7 @@ function MainApp() {
       {
         id: "doctor_referrals_manual" as const,
         label: "Your Leads",
-        Icon: UserGroupIcon,
+        Icon: IdentificationIcon,
       },
       { id: "your_sales" as const, label: "Your Sales", Icon: BuildingStorefrontIcon },
       { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
@@ -20929,7 +20974,7 @@ function MainApp() {
 		    return (
           <div className="w-full space-y-3">
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
-		        <div className="flex flex-col gap-6">
+		        <div className="flex flex-col gap-4">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 		            <div>
 		              <h2 className="text-xl font-semibold text-slate-900">
@@ -21025,7 +21070,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-end gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-sales-dashboard-tab={tab.id}
@@ -21033,11 +21078,15 @@ function MainApp() {
                               onClick={() => setSalesDashboardTab(tab.id)}
                             >
                               <span
-                                className="inline-flex items-end gap-2"
+                                className="inline-flex items-center gap-2"
                                 data-sales-dashboard-tab-content
                               >
-                                <span className="inline-flex h-4 w-4 items-end justify-center">
-                                  <tab.Icon className="h-4 w-4" />
+                                <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-visible">
+                                  <tab.Icon
+                                    className="shrink-0"
+                                    aria-hidden="true"
+                                    style={{ width: "1.6rem", height: "1.6rem" } as CSSProperties}
+                                  />
                                 </span>
                                 <span className="inline-flex items-center">{tab.label}</span>
                               </span>
@@ -21207,7 +21256,7 @@ function MainApp() {
 		                      No sales recorded yet.
 		                    </div>
 		                  ) : (
-		                    <div className="w-full" style={{ minWidth: 920 }}>
+		                    <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 		                      {(() => {
 		                        const metaTotals = salesRepSalesSummaryMeta?.totals || null;
 		                        const totals = metaTotals
@@ -21336,7 +21385,7 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex items-end gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                                 isActive && "text-slate-900",
                               )}
                               data-admin-dashboard-tab={tab.id}
@@ -21344,11 +21393,15 @@ function MainApp() {
                               onClick={() => setAdminDashboardTab(tab.id)}
                             >
                               <span
-                                className="inline-flex items-end gap-2"
+                                className="inline-flex items-center gap-2"
                                 data-admin-dashboard-tab-content
                               >
-                                <span className="inline-flex h-4 w-4 items-end justify-center">
-                                  <tab.Icon className="h-4 w-4" />
+                                <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-visible">
+                                  <tab.Icon
+                                    className="shrink-0"
+                                    aria-hidden="true"
+                                    style={{ width: "1.6rem", height: "1.6rem" } as CSSProperties}
+                                  />
                                 </span>
                                 <span className="inline-flex items-center">
                                   {tab.id === "crm" ? "CRM In-Development" : tab.label}
@@ -23230,7 +23283,7 @@ function MainApp() {
 				                    {/* Period controls moved to the parent Admin Reports header. */}
                   </div>
                   <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-                    <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
                       <button
                         type="button"
                         onClick={scrollToAdminReportsCalendar}
@@ -23243,7 +23296,7 @@ function MainApp() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2 order-2 sm:order-1"
+                        className="gap-2"
                         onClick={downloadSalesBySalesRepCsv}
                         disabled={salesRepSalesSummary.length === 0}
                         title="Download CSV"
@@ -23251,7 +23304,7 @@ function MainApp() {
                         <Download className="h-4 w-4" aria-hidden="true" />
                         Download CSV
                       </Button>
-                      <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+                      <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
                         <span className="sm:hidden block min-w-0 truncate">
                           Last downloaded:{" "}
                           {salesRepSalesCsvDownloadedAt
@@ -23297,7 +23350,7 @@ function MainApp() {
 	                    No sales recorded yet.
 	                  </div>
 		                ) : (
-			                  <div className="w-full" style={{ minWidth: 920 }}>
+			                  <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 		                        {(() => {
 		                          const metaTotals = salesRepSalesSummaryMeta?.totals || null;
 		                          const totals = metaTotals
@@ -23418,11 +23471,11 @@ function MainApp() {
 			                    {/* Period controls moved to the parent Admin Reports header. */}
 	                  </div>
 	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-	                    <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
                         <button
                           type="button"
                           onClick={scrollToAdminReportsCalendar}
-                          className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right"
+                          className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right sm:hidden"
                           title="Jump to timeframe selector"
                         >
                           {adminDashboardPeriodLabel}
@@ -23431,7 +23484,7 @@ function MainApp() {
 	                        type="button"
 	                        variant="outline"
 	                        size="sm"
-	                        className="gap-2 order-2 sm:order-1"
+	                        className="gap-2"
 	                        onClick={() => void downloadAdminTaxesByStateCsv()}
 	                        disabled={adminTaxesByStateRows.length === 0}
 	                        title="Download CSV"
@@ -23439,7 +23492,7 @@ function MainApp() {
 	                        <Download className="h-4 w-4" aria-hidden="true" />
 	                        Download CSV
 	                      </Button>
-	                      <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+	                      <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
 	                        <span className="sm:hidden block min-w-0 truncate">
 	                          Last downloaded:{" "}
 	                          {adminTaxesByStateCsvDownloadedAt
@@ -23491,7 +23544,7 @@ function MainApp() {
                                 );
                               }}
                             >
-                              <summary className="cursor-pointer list-none select-none flex flex-wrap items-start justify-between gap-3 border-b-4 border-slate-200/70 bg-white/70 px-3 py-2 [&::-webkit-details-marker]:hidden">
+                              <summary className="cursor-pointer list-none select-none grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 border-b-4 border-slate-200/70 bg-white/70 px-3 py-2 sm:flex sm:flex-row sm:flex-wrap sm:items-start sm:justify-between [&::-webkit-details-marker]:hidden">
                                 <div className="min-w-0">
                                   <div className="text-sm font-semibold text-slate-900">
                                     Tax Nexus Notifications
@@ -23512,51 +23565,7 @@ function MainApp() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex flex-wrap items-center justify-end gap-2">
-                                  {adminTaxTrackingMeta?.stale && (
-                                    <Badge
-                                      variant="outline"
-                                      className="border-amber-200 bg-amber-50 text-amber-700"
-                                    >
-                                      Cached data
-                                    </Badge>
-                                  )}
-                                  <Badge
-                                    variant="outline"
-                                    className="!border-rose-600 !bg-white !text-rose-700"
-                                    style={TAX_WARNING_BADGE_STYLE}
-                                  >
-                                    {Number(
-                                      adminTaxTrackingMeta?.summary?.warningCount || 0,
-                                    )}{" "}
-                                    warning
-                                    {Number(
-                                      adminTaxTrackingMeta?.summary?.warningCount || 0,
-                                    ) === 1
-                                      ? ""
-                                      : "s"}
-                                  </Badge>
-                                  <Badge
-                                    variant="outline"
-                                    className="!border-rose-600 !bg-white !text-rose-700"
-                                    style={TAX_WARNING_BADGE_STYLE}
-                                  >
-                                    {Number(
-                                      adminTaxTrackingMeta?.summary?.exceededCount || 0,
-                                    )}{" "}
-                                    exceeded
-                                  </Badge>
-                                  <Badge
-                                    variant="outline"
-                                    className="!border-rose-600 !bg-white !text-rose-700"
-                                    style={TAX_WARNING_BADGE_STYLE}
-                                  >
-                                    {Number(
-                                      adminTaxTrackingMeta?.summary?.shouldCollectTaxCount ||
-                                        0,
-                                    )}{" "}
-                                    collect tax
-                                  </Badge>
+                                <div className="col-start-2 row-start-1 self-start sm:w-auto">
                                   <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/70 px-2 py-1 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
                                     <span>
                                       {adminTaxTrackingNotificationsOpen
@@ -23575,6 +23584,58 @@ function MainApp() {
                                       />
                                     </span>
                                   </span>
+                                </div>
+                                <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-auto sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                                  {(() => {
+                                    const warningCount = Number(
+                                      adminTaxTrackingMeta?.summary?.warningCount || 0,
+                                    );
+                                    const exceededCount = Number(
+                                      adminTaxTrackingMeta?.summary?.exceededCount || 0,
+                                    );
+                                    const shouldCollectTaxCount = Number(
+                                      adminTaxTrackingMeta?.summary?.shouldCollectTaxCount || 0,
+                                    );
+                                    return (
+                                      <>
+                                  {adminTaxTrackingMeta?.stale && (
+                                    <Badge
+                                      variant="outline"
+                                      className="border-amber-200 bg-amber-50 text-amber-700"
+                                    >
+                                      Cached data
+                                    </Badge>
+                                  )}
+                                  <Badge
+                                    variant="outline"
+                                    className={getTaxSummaryBadgeClassName(warningCount)}
+                                    style={getTaxSummaryBadgeStyle(warningCount)}
+                                  >
+                                    {warningCount}{" "}
+                                    warning
+                                    {warningCount === 1 ? "" : "s"}
+                                  </Badge>
+                                  <Badge
+                                    variant="outline"
+                                    className={getTaxSummaryBadgeClassName(exceededCount)}
+                                    style={getTaxSummaryBadgeStyle(exceededCount)}
+                                  >
+                                    {exceededCount}{" "}
+                                    exceeded
+                                  </Badge>
+                                  <Badge
+                                    variant="outline"
+                                    className={getTaxSummaryBadgeClassName(
+                                      shouldCollectTaxCount,
+                                    )}
+                                    style={getTaxSummaryBadgeStyle(shouldCollectTaxCount)}
+                                  >
+                                    {shouldCollectTaxCount}{" "}
+                                    collect tax
+                                  </Badge>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </summary>
                               {adminTaxTrackingNotifications.length > 0 ? (
@@ -23962,7 +24023,7 @@ function MainApp() {
                               {adminTaxesByStateBreakdownOpen ? "Collapse" : "Expand"}
                             </span>
 		                      </summary>
-					                      <div className="w-full" style={{ minWidth: 920 }}>
+					                      <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 					                      <div className="w-max">
 					                        <div
 					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
@@ -24006,7 +24067,7 @@ function MainApp() {
 
             <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="flex flex-col gap-3 mb-4">
-                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="sales-rep-header-row flex w-full flex-col gap-3">
 	                  <div className="min-w-0">
 	                    <h3 className="text-lg font-semibold text-slate-900">Products Sold & Commission</h3>
 	                    <p className="text-sm text-slate-600">
@@ -24027,12 +24088,20 @@ function MainApp() {
                     )}
                   </div>
 	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-	                    <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+                        <button
+                          type="button"
+                          onClick={scrollToAdminReportsCalendar}
+                          className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right"
+                          title="Jump to timeframe selector"
+                        >
+                          {adminDashboardPeriodLabel}
+                        </button>
 	                      <Button
 	                        type="button"
 	                        variant="outline"
 	                        size="sm"
-	                        className="gap-2 order-2 sm:order-1"
+	                        className="gap-2"
 	                        onClick={() => void downloadAdminProductsCommissionCsv()}
 	                        disabled={
 	                          adminProductSalesRows.length === 0 &&
@@ -24043,7 +24112,7 @@ function MainApp() {
 	                        <Download className="h-4 w-4" aria-hidden="true" />
 	                        Download CSV
 	                      </Button>
-	                      <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+	                      <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
 	                        <span className="sm:hidden block min-w-0 truncate">
 	                          Last downloaded:{" "}
 	                          {adminProductsCommissionCsvDownloadedAt
@@ -24102,7 +24171,7 @@ function MainApp() {
                                   {adminDashboardPeriodLabel}
                                 </button>
 					                    </div>
-					                    <div className="w-full" style={{ minWidth: 920 }}>
+					                    <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 					                      <div className="w-max">
 					                        <div
 					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
@@ -24146,52 +24215,99 @@ function MainApp() {
 						              </div>
 
 							                  <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
-							                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-						                      <span>Commission</span>
-                                <div className="flex items-center gap-2 min-w-0">
+							                    <div className="bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+                                <div className="admin-commission-header-mobile flex flex-col gap-2">
                                   <button
                                     type="button"
                                     onClick={scrollToAdminReportsCalendar}
-                                    className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right"
+                                    className="self-end text-sm font-semibold leading-tight text-right hover:underline underline-offset-4"
                                     title="Jump to timeframe selector"
                                   >
                                     {adminDashboardPeriodLabel}
                                   </button>
-                                  <Button
-                                    asChild
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-full"
-                                    title="Open Google Sheet"
-                                  >
-                                    <a
-                                      href="https://docs.google.com/spreadsheets/d/1KFAGGtys4YmMbeiy7f-su8iZQUBpg40hifjDrf5aGTU/edit?gid=72196618#gid=72196618"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      aria-label="Open Google Sheet"
+                                  <div className="flex items-center justify-between gap-2">
+						                      <span>Commission</span>
+                                    <Button
+                                      asChild
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-full"
+                                      title="Open Google Sheet"
                                     >
-                                      <svg
-                                        viewBox="0 0 48 48"
-                                        width="18"
-                                        height="18"
-                                        aria-hidden="true"
+                                      <a
+                                        href="https://docs.google.com/spreadsheets/d/1KFAGGtys4YmMbeiy7f-su8iZQUBpg40hifjDrf5aGTU/edit?gid=72196618#gid=72196618"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label="Open Google Sheet"
                                       >
-                                        <path
-                                          fill="#0F9D58"
-                                          d="M28,3H12c-2.21,0-4,1.79-4,4v34c0,2.21,1.79,4,4,4h24c2.21,0,4-1.79,4-4V15L28,3z"
-                                        />
-                                        <path fill="#87CEAC" d="M28,3v10c0,1.1,0.9,2,2,2h10L28,3z" />
-                                        <path
-                                          fill="#FFFFFF"
-                                          d="M16 21h16v2H16zm0 5h16v2H16zm0 5h16v2H16zm0 5h10v2H16z"
-                                        />
-                                      </svg>
-                                    </a>
-                                  </Button>
+                                        <svg
+                                          viewBox="0 0 48 48"
+                                          width="18"
+                                          height="18"
+                                          aria-hidden="true"
+                                        >
+                                          <path
+                                            fill="#0F9D58"
+                                            d="M28,3H12c-2.21,0-4,1.79-4,4v34c0,2.21,1.79,4,4,4h24c2.21,0,4-1.79,4-4V15L28,3z"
+                                          />
+                                          <path fill="#87CEAC" d="M28,3v10c0,1.1,0.9,2,2,2h10L28,3z" />
+                                          <path
+                                            fill="#FFFFFF"
+                                            d="M16 21h16v2H16zm0 5h16v2H16zm0 5h16v2H16zm0 5h10v2H16z"
+                                          />
+                                        </svg>
+                                      </a>
+                                    </Button>
+                                  </div>
                                 </div>
-						                    </div>
-							                    <div className="w-full" style={{ minWidth: 920 }}>
+                                <div className="admin-commission-header-desktop items-center justify-between gap-2">
+						                  <span className="shrink-0">Commission</span>
+                                  <div className="admin-commission-header-desktop-actions flex items-center justify-end gap-2 whitespace-nowrap shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={scrollToAdminReportsCalendar}
+                                      className="whitespace-nowrap shrink-0 text-sm font-semibold leading-tight text-right hover:underline underline-offset-4"
+                                      title="Jump to timeframe selector"
+                                    >
+                                      {adminDashboardPeriodLabel}
+                                    </button>
+                                    <Button
+                                      asChild
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 shrink-0 rounded-full"
+                                      title="Open Google Sheet"
+                                    >
+                                      <a
+                                        href="https://docs.google.com/spreadsheets/d/1KFAGGtys4YmMbeiy7f-su8iZQUBpg40hifjDrf5aGTU/edit?gid=72196618#gid=72196618"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label="Open Google Sheet"
+                                      >
+                                        <svg
+                                          viewBox="0 0 48 48"
+                                          width="18"
+                                          height="18"
+                                          aria-hidden="true"
+                                        >
+                                          <path
+                                            fill="#0F9D58"
+                                            d="M28,3H12c-2.21,0-4,1.79-4,4v34c0,2.21,1.79,4,4,4h24c2.21,0,4-1.79,4-4V15L28,3z"
+                                          />
+                                          <path fill="#87CEAC" d="M28,3v10c0,1.1,0.9,2,2,2h10L28,3z" />
+                                          <path
+                                            fill="#FFFFFF"
+                                            d="M16 21h16v2H16zm0 5h16v2H16zm0 5h16v2H16zm0 5h10v2H16z"
+                                          />
+                                        </svg>
+                                      </a>
+                                    </Button>
+                                  </div>
+                                </div>
+					                    </div>
+							                    <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 							                      <div className="w-max">
 							                        <div
 							                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
@@ -24437,7 +24553,7 @@ function MainApp() {
                         key={tab.id}
                         type="button"
                         className={clsx(
-                          "relative inline-flex items-end gap-2 px-3 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                          "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
                           isActive && "text-slate-900",
                         )}
                         data-sales-dashboard-tab={tab.id}
@@ -24445,11 +24561,15 @@ function MainApp() {
                         onClick={() => setSalesDashboardTab(tab.id)}
                       >
                         <span
-                          className="inline-flex items-end gap-2"
+                          className="inline-flex items-center gap-2"
                           data-sales-dashboard-tab-content
                         >
-                          <span className="inline-flex h-4 w-4 items-end justify-center">
-                            <tab.Icon className="h-4 w-4" />
+                          <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-visible">
+                            <tab.Icon
+                              className="shrink-0"
+                              aria-hidden="true"
+                              style={{ width: "1.6rem", height: "1.6rem" } as CSSProperties}
+                            />
                           </span>
                           <span className="inline-flex items-center">{tab.label}</span>
                         </span>
@@ -24675,53 +24795,55 @@ function MainApp() {
             <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="sales-rep-leads-header">
                 <div className="sales-rep-leads-title">
-                  <div className="flex items-start mb-1 justify-between gap-3 flex-wrap">
-                    <div className="min-w-0">
-                      <h3 className="text-lg sm:text-xl">Your Sales</h3>
-                      <p className="text-sm text-slate-600">
-                        Live orders grouped by your doctors.
-                      </p>
+                  <div className="sales-metric-header">
+                    <div className="sales-metric-header-top">
+                      <div className="sales-metric-header-copy min-w-0 flex-1">
+                        <h3 className="text-lg sm:text-xl">Your Sales</h3>
+                        <p className="text-sm text-slate-600">
+                          Live orders grouped by your doctors.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void fetchSalesTrackingOrders({ force: true }).catch((error) => {
+                            console.debug("[Sales Tracking] Manual refresh skipped", error);
+                          });
+                        }}
+                        disabled={salesTrackingLoading || salesTrackingRefreshing}
+                        className="sales-metric-refresh-button header-home-button squircle-sm bg-white text-slate-900"
+                        title="Refresh your sales data"
+                      >
+                        {salesTrackingLoading || salesTrackingRefreshing ? "Refreshing…" : "Refresh"}
+                      </Button>
                     </div>
-                    <div className="sales-rep-card-controls">
-		                      <Button
-		                        type="button"
-		                        variant="outline"
-		                        size="sm"
-		                        onClick={(e) => {
-		                          e.stopPropagation();
-		                          void fetchSalesTrackingOrders({ force: true }).catch((error) => {
-		                            console.debug("[Sales Tracking] Manual refresh skipped", error);
-		                          });
-		                        }}
-		                        disabled={salesTrackingLoading || salesTrackingRefreshing}
-		                        className="header-home-button squircle-sm bg-white text-slate-900"
-		                        title="Refresh your sales data"
-		                      >
-	                        {salesTrackingLoading || salesTrackingRefreshing ? "Refreshing…" : "Refresh"}
-		                      </Button>
+                    <div className="sales-metric-header-bottom">
+                      <div className="sales-metric-controls">
+                        <div className="sales-metric-pill-group">
+                          <div className="sales-metric-pill">
+                            <p className="sales-metric-label">Orders</p>
+                            <p className="sales-metric-value">
+                              {salesTrackingSummary?.totalOrders ?? 0}
+                            </p>
+                          </div>
+                          <div className="sales-metric-pill">
+                            <p className="sales-metric-label">Wholesale Revenue</p>
+                            <p className="sales-metric-value">
+                              {formatCurrency(salesTrackingSummary?.wholesaleRevenue ?? 0)}
+                            </p>
+                          </div>
+                          <div className="sales-metric-pill">
+                            <p className="sales-metric-label">Retail Revenue</p>
+                            <p className="sales-metric-value">
+                              {formatCurrency(salesTrackingSummary?.retailRevenue ?? 0)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-              <div className="sales-metric-controls">
-                <div className="sales-metric-pill-group">
-                  <div className="sales-metric-pill">
-                    <p className="sales-metric-label">Orders</p>
-                    <p className="sales-metric-value">
-                      {salesTrackingSummary?.totalOrders ?? 0}
-                    </p>
-                  </div>
-                  <div className="sales-metric-pill">
-                    <p className="sales-metric-label">Wholesale Revenue</p>
-                    <p className="sales-metric-value">
-                      {formatCurrency(salesTrackingSummary?.wholesaleRevenue ?? 0)}
-                    </p>
-                  </div>
-                  <div className="sales-metric-pill">
-                    <p className="sales-metric-label">Retail Revenue</p>
-                    <p className="sales-metric-value">
-                      {formatCurrency(salesTrackingSummary?.retailRevenue ?? 0)}
-                    </p>
                   </div>
                 </div>
               </div>

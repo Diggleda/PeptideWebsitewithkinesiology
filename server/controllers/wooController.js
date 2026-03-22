@@ -165,6 +165,77 @@ const resolveWooHostnames = () => {
 
 const allowedMediaHosts = resolveWooHostnames();
 
+const developmentCoaCandidates = [
+  path.join(process.cwd(), 'server-data', 'documents'),
+  path.join(process.cwd(), 'cpanel_backend', 'server-data', 'documents'),
+];
+
+const getMimeTypeForFilename = (filename) => {
+  const ext = path.extname(String(filename || '')).toLowerCase();
+  switch (ext) {
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
+};
+
+const resolveDevelopmentCoaAsset = () => {
+  const configuredPath = String(process.env.DEV_COA_DUMMY_PATH || '').trim();
+  const configuredCandidates = configuredPath
+    ? [path.isAbsolute(configuredPath) ? configuredPath : path.join(process.cwd(), configuredPath)]
+    : [];
+  const candidates = [...configuredCandidates];
+
+  for (const dir of developmentCoaCandidates) {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (!/\.(png|jpe?g|webp|pdf)$/i.test(entry.name)) continue;
+        candidates.push(path.join(dir, entry.name));
+      }
+    } catch {
+      // ignore missing directories
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const stats = fs.statSync(candidate);
+      if (!stats.isFile()) continue;
+      return {
+        filePath: candidate,
+        filename: path.basename(candidate),
+        mimeType: getMimeTypeForFilename(candidate),
+        bytes: stats.size,
+        updatedAt: stats.mtime.toISOString(),
+      };
+    } catch {
+      // ignore unreadable candidates
+    }
+  }
+
+  return null;
+};
+
+const sendDevelopmentCoa = async (res, asset) => {
+  const buffer = await fs.promises.readFile(asset.filePath);
+  const etag = `"${crypto.createHash('sha256').update(buffer).digest('hex')}"`;
+  res.set('Content-Type', asset.mimeType);
+  res.set('Content-Disposition', `inline; filename="${asset.filename}"`);
+  res.set('Cache-Control', 'private, max-age=300');
+  res.set('ETag', etag);
+  res.send(buffer);
+};
+
 const sanitizeMediaUrl = (value) => {
   if (typeof value !== 'string') {
     return null;
@@ -421,7 +492,52 @@ const proxyMedia = async (req, res, next) => {
   }
 };
 
+const getCertificateOfAnalysis = async (req, res, next) => {
+  try {
+    const asset = resolveDevelopmentCoaAsset();
+    if (!asset) {
+      throw createHttpError('Certificate of analysis not found', 404);
+    }
+    await sendDevelopmentCoa(res, asset);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getCertificateOfAnalysisDelegate = async (req, res, next) => {
+  try {
+    const asset = resolveDevelopmentCoaAsset();
+    if (!asset) {
+      throw createHttpError('Certificate of analysis not found', 404);
+    }
+    await sendDevelopmentCoa(res, asset);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getCertificateOfAnalysisInfo = async (req, res, next) => {
+  try {
+    const productId = Number.parseInt(String(req.params.productId || ''), 10);
+    const asset = resolveDevelopmentCoaAsset();
+    res.json({
+      wooProductId: Number.isFinite(productId) ? productId : null,
+      exists: Boolean(asset),
+      filename: asset?.filename || null,
+      mimeType: asset?.mimeType || null,
+      bytes: asset?.bytes || null,
+      updatedAt: asset?.updatedAt || null,
+      sha256: null,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
+  getCertificateOfAnalysis,
+  getCertificateOfAnalysisDelegate,
+  getCertificateOfAnalysisInfo,
   proxyCatalog,
   proxyMedia,
 };
