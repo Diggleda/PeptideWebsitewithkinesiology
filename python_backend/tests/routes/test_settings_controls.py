@@ -114,6 +114,14 @@ class TestSettingsControls(unittest.TestCase):
                     {"betaServices": ["shop", "crm"], "mysqlEnabled": True},
                 )
 
+            with self.app.test_request_context("/api/settings/beta-services", method="GET"):
+                g.current_user = {"id": "doctor-1", "role": "doctor"}
+                response = self._make_response(settings.get_beta_services.__wrapped__())
+                self.assertEqual(
+                    response.get_json(),
+                    {"betaServices": ["shop", "crm"], "mysqlEnabled": True},
+                )
+
             with self.app.test_request_context(
                 "/api/settings/beta-services",
                 method="PUT",

@@ -718,7 +718,6 @@ def get_shop():
 @require_auth
 def get_beta_services():
     def action():
-        _require_admin()
         settings = settings_service.get_settings()
         return {
             "betaServices": settings.get("betaServices") or [],
