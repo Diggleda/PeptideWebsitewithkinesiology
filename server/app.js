@@ -53,6 +53,7 @@ const getShipStationRoutes = lazyModule(() => require('./routes/shipStationRoute
 const getSeamlessRoutes = lazyModule(() => require('./routes/seamlessRoutes'));
 const getTrackingRoutes = lazyModule(() => require('./routes/trackingRoutes'));
 const getDelegationRoutes = lazyModule(() => require('./routes/delegationRoutes'));
+const getUsageTrackingRoutes = lazyModule(() => require('./routes/usageTrackingRoutes'));
 
 const prewarmApiModules = () => {
   const warmers = [
@@ -410,6 +411,7 @@ const createApp = () => {
   app.use('/api/integrations/seamless', lazyRoute(() => getSeamlessRoutes()));
   app.use('/api/tracking', lazyRoute(() => getTrackingRoutes()));
   app.use('/api/delegation', lazyRoute(() => getDelegationRoutes()));
+  app.use('/api/usage-tracking', lazyRoute(() => getUsageTrackingRoutes()));
   app.use('/api', lazyRoute(() => getSystemRoutes()));
 
   app.use('/api', (req, res) => {

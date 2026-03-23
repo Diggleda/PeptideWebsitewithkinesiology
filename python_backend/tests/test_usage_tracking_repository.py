@@ -108,6 +108,38 @@ class UsageTrackingRepositoryTests(unittest.TestCase):
         self.assertNotIn("when", payload)
         self.assertNotIn("tab", payload)
 
+    def test_get_event_counts_reads_counts_from_payload(self):
+        with patch("python_backend.repositories.usage_tracking_repository._using_mysql", return_value=True), patch(
+            "python_backend.repositories.usage_tracking_repository.mysql_client.fetch_all",
+            side_effect=[
+                [{"COLUMN_NAME": "id"}, {"COLUMN_NAME": "event"}, {"COLUMN_NAME": "details_json"}],
+                [
+                    {
+                        "event": "delegate_link_created",
+                        "payload_value": json.dumps({"count": 4, "instances": [{}, {}, {}, {}]}),
+                    },
+                    {
+                        "event": "delegate_order_placed",
+                        "payload_value": json.dumps({"instances": [{}, {}]}),
+                    },
+                ],
+            ],
+        ):
+            counts = usage_tracking_repository.get_event_counts([
+                "delegate_link_created",
+                "delegate_proposal_reviewed",
+                "delegate_order_placed",
+            ])
+
+        self.assertEqual(
+            counts,
+            {
+                "delegate_link_created": 4,
+                "delegate_proposal_reviewed": 0,
+                "delegate_order_placed": 2,
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

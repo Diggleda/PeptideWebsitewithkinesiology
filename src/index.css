@@ -4188,6 +4188,12 @@ html {
   gap: 0;
 }
 
+.sales-rep-leads-card.sales-rep-combined-card,
+.sales-rep-leads-card.sales-rep-combined-card.admin-tab-panel-enter,
+.lead-panel.sales-rep-leads-card.sales-rep-combined-card.active-prospects-panel {
+  gap: 12px;
+}
+
 .sales-rep-combined-card .sales-rep-table-wrapper.admin-dashboard-list {
   width: 100%;
   max-width: 100%;

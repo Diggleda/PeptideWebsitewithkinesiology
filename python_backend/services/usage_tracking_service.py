@@ -64,3 +64,11 @@ def track_event(
             raise
         logger.exception("Usage tracking write failed", extra={"event": name})
         return False
+
+
+def get_event_counts(events: list[str] | tuple[str, ...] | None) -> Dict[str, int]:
+    try:
+        return usage_tracking_repository.get_event_counts(events)
+    except Exception:
+        logger.exception("Usage tracking read failed", extra={"events": list(events or [])})
+        return {str(event or "").strip(): 0 for event in (events or []) if str(event or "").strip()}

@@ -80,6 +80,30 @@ def _merge_event_payload(existing_payloads: list[Dict[str, Any]], latest_details
     }
 
 
+def _normalize_event_names(events: list[str] | tuple[str, ...] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in events or []:
+        name = str(value or "").strip()[:128]
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        normalized.append(name)
+    return normalized
+
+
+def _payload_count(payload: Dict[str, Any]) -> int:
+    raw_count = payload.get("count")
+    if isinstance(raw_count, bool):
+        raw_count = int(raw_count)
+    if isinstance(raw_count, (int, float)):
+        return max(0, int(raw_count))
+    instances = payload.get("instances")
+    if isinstance(instances, list):
+        return len(instances)
+    return 1 if payload else 0
+
+
 def insert_event(event: str, details: Dict[str, Any], *, strict: bool = False) -> bool:
     if not _using_mysql():
         if strict:
@@ -163,3 +187,44 @@ def insert_event(event: str, details: Dict[str, Any], *, strict: bool = False) -
             raise exc
         logger.exception("Usage tracking insert failed", extra={"event": params["event"], "payloadColumn": payload_column})
         return False
+
+
+def get_event_counts(events: list[str] | tuple[str, ...] | None) -> Dict[str, int]:
+    normalized_events = _normalize_event_names(events)
+    if not normalized_events:
+        return {}
+    if not _using_mysql():
+        return {event: 0 for event in normalized_events}
+
+    columns = _usage_tracking_columns()
+    payload_column = _payload_column(columns)
+    if "event" not in columns or not payload_column:
+        logger.error(
+            "usage_tracking table is missing the required columns for analytics. Detected columns: %s",
+            sorted(columns) if columns else [],
+        )
+        return {event: 0 for event in normalized_events}
+
+    params: Dict[str, Any] = {}
+    placeholders: list[str] = []
+    for index, event in enumerate(normalized_events):
+        key = f"event_{index}"
+        params[key] = event
+        placeholders.append(f"%({key})s")
+
+    rows = mysql_client.fetch_all(
+        f"""
+        SELECT event, `{payload_column}` AS payload_value
+        FROM usage_tracking
+        WHERE event IN ({", ".join(placeholders)})
+        """,
+        params,
+    )
+
+    counts = {event: 0 for event in normalized_events}
+    for row in rows or []:
+        event_name = str((row or {}).get("event") or "").strip()
+        if not event_name or event_name not in counts:
+            continue
+        counts[event_name] = _payload_count(_parse_payload((row or {}).get("payload_value")))
+    return counts

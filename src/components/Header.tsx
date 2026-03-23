@@ -171,6 +171,15 @@ const isNodePatientLinkDummyMode = (() => {
 type NetworkQuality = 'good' | 'fair' | 'poor' | 'offline';
 type AccountTabId = 'details' | 'orders' | 'research' | 'patient_links';
 
+const DELEGATE_LINK_FUNNEL_STAGES = [
+  { event: 'delegate_link_tab_clicked', label: 'Tab Clicked' },
+  { event: 'delegate_link_text_field_entry', label: 'Text Field Entry' },
+  { event: 'delegate_link_created', label: 'Link Created' },
+  { event: 'delegate_proposal_review_clicked', label: 'Review Clicked' },
+  { event: 'delegate_proposal_reviewed', label: 'Proposal Reviewed' },
+  { event: 'delegate_order_placed', label: 'Delegate Order Placed' },
+] as const;
+
 const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
   const active = Math.max(0, Math.min(activeBars, 3));
   const activeFill = 'rgb(30, 41, 59)'; // slate-800
@@ -3528,6 +3537,7 @@ export function Header({
   );
   const showPatientLinksBetaLabel = Array.isArray(betaServices)
     && betaServices.includes('patientLinks');
+  const delegateOptInEnabled = Boolean(localUser?.delegateOptIn);
   const accountHeaderTabs = useMemo(() => {
     const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
       { id: 'details', label: 'Details', Icon: Info },
@@ -3951,6 +3961,49 @@ export function Header({
       });
   }, []);
 
+  useEffect(() => {
+    if (!welcomeOpen || accountTab !== 'patient_links' || !showPatientLinksTab || delegateOptInEnabled) {
+      return;
+    }
+
+    let cancelled = false;
+    const zeroCounts = Object.fromEntries(DELEGATE_LINK_FUNNEL_STAGES.map((stage) => [stage.event, 0]));
+
+    setDelegateFunnelLoading(true);
+    setDelegateFunnelError(null);
+
+    void import('../services/api')
+      .then((api) => api.usageTrackingAPI.getFunnel(DELEGATE_LINK_FUNNEL_STAGES.map((stage) => stage.event)))
+      .then((result: any) => {
+        if (cancelled) return;
+        const nextCounts = Object.fromEntries(
+          DELEGATE_LINK_FUNNEL_STAGES.map((stage) => {
+            const rawCount = Number((result?.counts || {})?.[stage.event]);
+            return [stage.event, Number.isFinite(rawCount) ? Math.max(0, Math.floor(rawCount)) : 0];
+          }),
+        );
+        setDelegateFunnelCounts(nextCounts);
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setDelegateFunnelCounts(zeroCounts);
+        setDelegateFunnelError(
+          error?.status === 404
+            ? 'Usage funnel data is not available on this backend.'
+            : 'Unable to load usage funnel right now.',
+        );
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDelegateFunnelLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountTab, delegateOptInEnabled, showPatientLinksTab, welcomeOpen]);
+
   const trackPatientLinkFieldEntry = useCallback((field: string, value: string) => {
     const normalizedField = typeof field === 'string' ? field.trim() : '';
     const normalizedValue = typeof value === 'string' ? value.trim() : '';
@@ -4268,6 +4321,11 @@ export function Header({
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
   const [delegateSecondaryColorSaving, setDelegateSecondaryColorSaving] = useState(false);
   const [delegateOptInSaving, setDelegateOptInSaving] = useState(false);
+  const [delegateFunnelLoading, setDelegateFunnelLoading] = useState(false);
+  const [delegateFunnelError, setDelegateFunnelError] = useState<string | null>(null);
+  const [delegateFunnelCounts, setDelegateFunnelCounts] = useState<Record<string, number>>(() =>
+    Object.fromEntries(DELEGATE_LINK_FUNNEL_STAGES.map((stage) => [stage.event, 0])),
+  );
 
   const downscaleImageDataUrl = useCallback(async (
     dataUrl: string,
@@ -6134,7 +6192,6 @@ export function Header({
     heightPx: logoSlotHeightPx,
   };
   const delegateUserIconClassName = 'h-5 w-5 flex-shrink-0';
-  const delegateOptInEnabled = Boolean(localUser?.delegateOptIn);
   const delegatePreviewSecondaryHex =
     normalizeDelegateSecondaryColor(localUser?.delegateSecondaryColor ?? user?.delegateSecondaryColor ?? null)
     || DEFAULT_DELEGATE_SECONDARY_COLOR;
@@ -6143,6 +6200,14 @@ export function Header({
   const delegateSupportEmail = 'support@peppro.net';
   const delegateSalesRepEmail = String(localUser?.salesRep?.email || '').trim();
   const hasDelegateSalesRepEmail = delegateSalesRepEmail.length > 0;
+  const delegateFunnelStageData = DELEGATE_LINK_FUNNEL_STAGES.map((stage) => ({
+    ...stage,
+    count: Math.max(0, Math.floor(Number(delegateFunnelCounts[stage.event]) || 0)),
+  }));
+  const delegateFunnelMaxCount = delegateFunnelStageData.reduce(
+    (max, stage) => Math.max(max, stage.count),
+    0,
+  );
 
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
@@ -6178,6 +6243,53 @@ export function Header({
                 </a>
                 .
               </p>
+            </div>
+            <div className="rounded-2xl border border-[rgba(95,179,249,0.18)] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,250,255,0.96))] px-4 py-4 shadow-[0_18px_40px_-28px_rgba(95,179,249,0.42)] sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgb(95,179,249)]">
+                    Delegate Links Beta Funnel
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    Aggregate event frequency across the six delegate-link stages.
+                  </p>
+                </div>
+                <p className="shrink-0 text-[11px] font-medium text-slate-400">
+                  {delegateFunnelLoading ? 'Loading…' : 'Live'}
+                </p>
+              </div>
+              {delegateFunnelError ? (
+                <p className="mt-4 text-sm text-slate-500">
+                  {delegateFunnelError}
+                </p>
+              ) : (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                  {delegateFunnelStageData.map((stage, index) => {
+                    const barHeight = delegateFunnelMaxCount > 0
+                      ? Math.max(10, Math.round((stage.count / delegateFunnelMaxCount) * 112))
+                      : 10;
+                    return (
+                      <div
+                        key={stage.event}
+                        className="flex min-h-[188px] flex-col rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-3 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.5)]"
+                      >
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Step {index + 1}
+                        </div>
+                        <div className="mt-3 flex flex-1 items-end">
+                          <div className="w-full rounded-t-[16px] bg-[linear-gradient(180deg,rgba(95,179,249,0.98),rgba(30,99,197,0.92))] shadow-[0_10px_20px_-14px_rgba(95,179,249,0.85)] transition-[height] duration-300 ease-out" style={{ height: `${barHeight}px` }} />
+                        </div>
+                        <div className="mt-3 text-2xl font-semibold tracking-[-0.02em] text-slate-900">
+                          {stage.count.toLocaleString()}
+                        </div>
+                        <div className="mt-1 text-[11px] leading-4 text-slate-600">
+                          {stage.label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="w-full text-right">
               <Button

@@ -1975,6 +1975,24 @@ export const usageTrackingAPI = {
       body: JSON.stringify(payload || {}),
     });
   },
+  getFunnel: async (events: Array<string>) => {
+    const normalizedEvents = (Array.isArray(events) ? events : [])
+      .map((value) => String(value || '').trim())
+      .filter((value) => value.length > 0);
+    const params = new URLSearchParams();
+    if (normalizedEvents.length > 0) {
+      params.set('events', normalizedEvents.join(','));
+    }
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/usage-tracking/funnel?${query}`
+      : `${API_BASE_URL}/usage-tracking/funnel`;
+    return fetchWithAuth(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
 };
 
 export const trackingAPI = {
