@@ -90,6 +90,7 @@ import {
     getServerHealth,
 	  passwordResetAPI,
 	  settingsAPI,
+    usageTrackingAPI,
 	  API_BASE_URL,
     type PersistedCartItemPayload,
 	} from "./services/api";
@@ -2747,11 +2748,19 @@ const PipelineTooltip = ({
   payload,
   label,
   onLeadClick,
+  countLabelSingular = "lead",
+  countLabelPlural = "leads",
+  getSummaryRows,
 }: {
   active?: boolean;
   payload?: any[];
   label?: string;
   onLeadClick?: (lead: { id?: string; name?: string; email?: string | null; role?: string | null }) => void;
+  countLabelSingular?: string;
+  countLabelPlural?: string;
+  getSummaryRows?: (
+    entry: any,
+  ) => Array<{ label: string; value: string | number }> | null | undefined;
 }) => {
   if (!active || !payload || payload.length === 0) {
     return null;
@@ -2764,12 +2773,26 @@ const PipelineTooltip = ({
   const list = leads.length > 0 ? leads : names.map((name: string) => ({ name }));
   const visibleItems = list.slice(0, maxNames);
   const remaining = list.length - visibleItems.length;
+  const summaryRows = getSummaryRows?.(entry) || [];
   return (
     <div className="pipeline-tooltip max-w-[260px] rounded-xl border border-slate-200/90 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-lg backdrop-blur-lg">
       <div className="text-sm font-semibold text-slate-900">{label}</div>
       <div className="text-[11px] text-slate-500">
-        {count} lead{count === 1 ? "" : "s"}
+        {count} {count === 1 ? countLabelSingular : countLabelPlural}
       </div>
+      {summaryRows.length > 0 && (
+        <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
+          {summaryRows.map((row) => (
+            <div
+              key={`${row.label}:${row.value}`}
+              className="flex items-center justify-between gap-3"
+            >
+              <span>{row.label}</span>
+              <span className="font-semibold text-slate-900">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {visibleItems.length > 0 && (
         <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto pr-1 text-[11px] text-slate-700">
           {visibleItems.map((item: any, index: number) => {
@@ -2814,17 +2837,30 @@ const PipelineXAxisTick = ({
   x = 0,
   y = 0,
   payload,
+  maxLength = 18,
+  fontSize = 12,
+  fontWeight,
+  lineHeight = 14,
+  yOffset = 12,
+  angle = 0,
+  textAnchor = "middle",
 }: {
   x?: number;
   y?: number;
   payload?: { value: string };
+  maxLength?: number;
+  fontSize?: number;
+  fontWeight?: number;
+  lineHeight?: number;
+  yOffset?: number;
+  angle?: number;
+  textAnchor?: "start" | "middle" | "end";
 }) => {
-  const lines = wrapPipelineLabel(payload?.value || "");
-  const lineHeight = 14;
-  const startY = y + 12 - ((lines.length - 1) * lineHeight) / 2;
+  const lines = wrapPipelineLabel(payload?.value || "", maxLength);
+  const startY = y + yOffset - ((lines.length - 1) * lineHeight) / 2;
   return (
-    <g transform={`translate(${x},${startY})`}>
-      <text textAnchor="middle" fill="#334155" fontSize={12}>
+    <g transform={`translate(${x},${startY}) rotate(${angle})`}>
+      <text textAnchor={textAnchor} fill="#334155" fontSize={fontSize} fontWeight={fontWeight}>
         {lines.map((line, index) => (
           <tspan key={`${line}-${index}`} x={0} dy={index === 0 ? 0 : lineHeight}>
             {line}
@@ -5825,25 +5861,7 @@ function MainApp() {
 	        }
 
           if (patientLinksResult.status === "fulfilled") {
-            const info = patientLinksResult.value as any;
-            if (info && typeof info.patientLinksEnabled === "boolean") {
-              setPatientLinksEnabled(info.patientLinksEnabled);
-              setPatientLinksDoctorUserIds(
-                Array.isArray(info.patientLinksDoctorUserIds)
-                  ? info.patientLinksDoctorUserIds
-                      .map((value: any) => String(value || "").trim())
-                      .filter((value: string) => value.length > 0)
-                  : [],
-              );
-              try {
-                localStorage.setItem(
-                  "peppro:patient-links-enabled",
-                  info.patientLinksEnabled ? "true" : "false",
-                );
-              } catch {
-                // ignore
-              }
-            }
+            applyPatientLinksStatus(patientLinksResult.value);
           }
           if (crmResult.status === "fulfilled") {
             const crm = crmResult.value as any;
@@ -5913,6 +5931,49 @@ function MainApp() {
     fetchSetting();
     return () => {
       cancelled = true;
+    };
+  }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    if (!user || !isDoctorRole(user.role)) {
+      return;
+    }
+    let cancelled = false;
+    const refreshPatientLinksStatus = async (reason: string) => {
+      try {
+        const info = (await settingsAPI.getPatientLinksStatus()) as any;
+        if (cancelled) return;
+        applyPatientLinksStatus(info);
+      } catch (error: any) {
+        if (cancelled) return;
+        const status = typeof error?.status === "number" ? error.status : null;
+        if (status && status !== 404) {
+          console.warn(`[Settings] Failed to refresh Delegate Links status (${reason})`, error);
+        }
+      }
+    };
+    const handleVisibilityOrFocus = () => {
+      if (!isPageVisible()) {
+        return;
+      }
+      void refreshPatientLinksStatus("visibility/focus");
+    };
+
+    void refreshPatientLinksStatus("mount");
+    const intervalId = window.setInterval(() => {
+      if (!isPageVisible()) {
+        return;
+      }
+      void refreshPatientLinksStatus("interval");
+    }, 30000);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
     };
   }, [user?.id, user?.role]);
 
@@ -8340,6 +8401,22 @@ function MainApp() {
     forum: "The Peptide Forum",
     research: "Research Dashboard",
     testPaymentsOverride: "Test Payments Override",
+  };
+  const ADMIN_DELEGATE_LINK_FUNNEL_STAGES = [
+    { event: "delegate_link_tab_clicked", label: "Tab Clicked", shortLabel: "Tab" },
+    { event: "delegate_link_text_field_entry", label: "Text Field Entry", shortLabel: "Field" },
+    { event: "delegate_link_created", label: "Link Created", shortLabel: "Created" },
+    { event: "delegate_proposal_review_clicked", label: "Review Clicked", shortLabel: "Review" },
+    { event: "delegate_proposal_reviewed", label: "Proposal Reviewed", shortLabel: "Done" },
+    { event: "delegate_order_placed", label: "Delegate Order Placed", shortLabel: "Order" },
+  ] as const;
+  const ADMIN_DELEGATE_LINK_FUNNEL_DEMO_COUNTS: Record<string, number> = {
+    delegate_link_tab_clicked: 148,
+    delegate_link_text_field_entry: 121,
+    delegate_link_created: 84,
+    delegate_proposal_review_clicked: 49,
+    delegate_proposal_reviewed: 31,
+    delegate_order_placed: 18,
   };
   const buildAdminDashboardTabs = (betaServices: PortalBetaServiceKey[]) => {
     const tabs = [
@@ -11351,13 +11428,27 @@ function MainApp() {
     useState<any | null>(null);
 		  const [referralDataLoading, setReferralDataLoading] = useState(false);
 		  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
-		  const [shopEnabled, setShopEnabled] = useState(true);
+  const [shopEnabled, setShopEnabled] = useState(true);
   const [betaServices, setBetaServices] = useState<PortalBetaServiceKey[]>([]);
+  const [adminDelegateFunnelLoading, setAdminDelegateFunnelLoading] = useState(false);
+  const [adminDelegateFunnelError, setAdminDelegateFunnelError] = useState<string | null>(null);
+  const [adminDelegateFunnelCounts, setAdminDelegateFunnelCounts] = useState<Record<string, number>>(() =>
+    Object.fromEntries(ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => [stage.event, 0])),
+  );
   const activePortalBetaServices = useMemo(
     () =>
       PORTAL_BETA_SERVICE_KEYS.filter((serviceKey) => betaServices.includes(serviceKey)),
     [betaServices],
   );
+  const visibleAdminBetaServices = useMemo(() => {
+    const ordered: PortalBetaServiceKey[] = ["patientLinks"];
+    activePortalBetaServices.forEach((serviceKey) => {
+      if (!ordered.includes(serviceKey)) {
+        ordered.push(serviceKey);
+      }
+    });
+    return ordered;
+  }, [activePortalBetaServices]);
   const availableAdminDashboardTabs = useMemo(
     () => buildAdminDashboardTabs(betaServices) as Array<{
       id: AdminDashboardTabId;
@@ -11370,6 +11461,37 @@ function MainApp() {
     () => availableAdminDashboardTabs.map((tab) => tab.id).join("|"),
     [availableAdminDashboardTabs],
   );
+  const adminDelegateFunnelChartData = useMemo(
+    () =>
+      ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage, index, allStages) => {
+        const count = Math.max(0, Math.floor(Number(adminDelegateFunnelCounts[stage.event]) || 0));
+        const firstStageEvent = allStages[0]?.event;
+        const previousStageEvent = index > 0 ? allStages[index - 1]?.event : null;
+        const firstCount = Math.max(
+          0,
+          Math.floor(Number(firstStageEvent ? adminDelegateFunnelCounts[firstStageEvent] : count) || 0),
+        );
+        const previousCount = Math.max(
+          0,
+          Math.floor(Number(previousStageEvent ? adminDelegateFunnelCounts[previousStageEvent] : count) || 0),
+        );
+        return {
+          ...stage,
+          chartLabel: stage.label.replace("Delegate ", ""),
+          count,
+          shareOfStart: firstCount > 0 ? Math.round((count / firstCount) * 100) : 0,
+          shareOfPrevious: previousCount > 0 ? Math.round((count / previousCount) * 100) : 0,
+        };
+      }),
+    [adminDelegateFunnelCounts],
+  );
+  const adminDelegateFunnelFirstCount = adminDelegateFunnelChartData[0]?.count ?? 0;
+  const adminDelegateFunnelFinalCount =
+    adminDelegateFunnelChartData[adminDelegateFunnelChartData.length - 1]?.count ?? 0;
+  const adminDelegateFunnelOverallConversion =
+    adminDelegateFunnelFirstCount > 0
+      ? Math.round((adminDelegateFunnelFinalCount / adminDelegateFunnelFirstCount) * 100)
+      : 0;
   const adminDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const isAdminDashboardVisible = isAdmin(user?.role);
   const [adminDashboardTabIndicator, setAdminDashboardTabIndicator] = useState<{
@@ -11435,12 +11557,86 @@ function MainApp() {
       container.removeEventListener("scroll", handleScroll);
     };
   }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator]);
+  useEffect(() => {
+    if (!isAdmin(user?.role) || adminDashboardTab !== "betas") {
+      return;
+    }
+
+    let cancelled = false;
+    const zeroCounts = Object.fromEntries(
+      ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => [stage.event, 0]),
+    );
+
+    setAdminDelegateFunnelLoading(true);
+    setAdminDelegateFunnelError(null);
+
+    void usageTrackingAPI
+      .getFunnel(ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => stage.event))
+      .then((payload: any) => {
+        if (cancelled) return;
+        const responseCounts = Object.fromEntries(
+          ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => {
+            const rawCount = Number((payload?.counts || {})?.[stage.event]);
+            return [stage.event, Number.isFinite(rawCount) ? Math.max(0, Math.floor(rawCount)) : 0];
+          }),
+        );
+        const hasPositiveCounts = Object.values(responseCounts).some((value) => Number(value) > 0);
+        const nextCounts = payload?.tracked === false && !hasPositiveCounts
+          ? ADMIN_DELEGATE_LINK_FUNNEL_DEMO_COUNTS
+          : responseCounts;
+        setAdminDelegateFunnelCounts(nextCounts);
+        if (payload?.tracked === false) {
+          setAdminDelegateFunnelError("Showing seeded Node demo data for layout work.");
+        } else {
+          setAdminDelegateFunnelError(null);
+        }
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setAdminDelegateFunnelCounts(zeroCounts);
+        setAdminDelegateFunnelError(
+          error?.status === 404
+            ? "Usage funnel data is not available on this backend."
+            : "Unable to load usage funnel right now.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAdminDelegateFunnelLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminDashboardTab, user?.role]);
   const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
   const [patientLinksDoctorUserIds, setPatientLinksDoctorUserIds] = useState<string[]>([]);
   const [patientLinksDoctorOptions, setPatientLinksDoctorOptions] = useState<
     Array<{ userId: string; name: string; email?: string | null }>
   >([]);
   const [patientLinksDoctorsOpen, setPatientLinksDoctorsOpen] = useState(false);
+  function applyPatientLinksStatus(info: any) {
+    if (!info || typeof info.patientLinksEnabled !== "boolean") {
+      return;
+    }
+    setPatientLinksEnabled(info.patientLinksEnabled);
+    setPatientLinksDoctorUserIds(
+      Array.isArray(info.patientLinksDoctorUserIds)
+        ? info.patientLinksDoctorUserIds
+            .map((value: any) => String(value || "").trim())
+            .filter((value: string) => value.length > 0)
+        : [],
+    );
+    try {
+      localStorage.setItem(
+        "peppro:patient-links-enabled",
+        info.patientLinksEnabled ? "true" : "false",
+      );
+    } catch {
+      // ignore
+    }
+  }
   useEffect(() => {
     if (!isAdmin(user?.role)) {
       return;
@@ -21835,7 +22031,7 @@ function MainApp() {
 	                  >
                 {adminDashboardTab === "betas" && (
                   <div className="space-y-4">
-                    {activePortalBetaServices.map((serviceKey) => (
+                    {visibleAdminBetaServices.map((serviceKey) => (
                       <div
                         key={serviceKey}
                         className="sales-rep-leads-card sales-rep-combined-card"
@@ -21845,7 +22041,142 @@ function MainApp() {
                             {PORTAL_BETA_SERVICE_LABELS[serviceKey]}
                           </h4>
                         </div>
-                        <div className="pt-4 min-h-[3rem]" />
+                        <div className="pt-4 min-h-[3rem]">
+                          {serviceKey === "patientLinks" ? (
+                            <div className="pt-0">
+                              <div className="sales-rep-chart-header">
+                                <div>
+                                  <h3>Conversion Funnel</h3>
+                                  <p>
+                                    Track event volume as users move through the delegate-link flow.
+                                    {adminDelegateFunnelError ? ` ${adminDelegateFunnelError}` : ""}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="sales-rep-chart-body">
+                                <ResponsiveContainer width="100%" height={210}>
+                                  <BarChart
+                                    data={adminDelegateFunnelChartData.map((stage) => ({
+                                      ...stage,
+                                      label: stage.chartLabel,
+                                    }))}
+                                    margin={{ top: 16, right: 12, left: -14, bottom: 0 }}
+                                  >
+                                    <defs>
+                                      <linearGradient
+                                        id="adminDelegateStatusBar"
+                                        x1="0"
+                                        y1="0"
+                                        x2="1"
+                                        y2="1"
+                                      >
+                                        <stop
+                                          offset="0%"
+                                          stopColor="#5FB3F9"
+                                          stopOpacity={0.9}
+                                        />
+                                        <stop
+                                          offset="100%"
+                                          stopColor="#95C5F9"
+                                          stopOpacity={0.9}
+                                        />
+                                      </linearGradient>
+                                    </defs>
+                                    <CartesianGrid
+                                      strokeDasharray="3 3"
+                                      stroke="rgba(148, 163, 184, 0.3)"
+                                    />
+                                    <XAxis
+                                      dataKey="label"
+                                      interval={0}
+                                      tick={
+                                        <PipelineXAxisTick
+                                          maxLength={16}
+                                          angle={28}
+                                          textAnchor="start"
+                                          yOffset={18}
+                                        />
+                                      }
+                                      tickLine={false}
+                                      height={84}
+                                      tickMargin={0}
+                                      padding={{ left: 0, right: 0 }}
+                                    />
+                                    <YAxis
+                                      allowDecimals={false}
+                                      tick={{ fontSize: 12, fill: "#334155" }}
+                                      width={34}
+                                      tickMargin={2}
+                                    />
+                                    <Tooltip
+                                      cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
+                                      wrapperStyle={{ pointerEvents: "auto" }}
+                                      content={(props: any) => (
+                                        <PipelineTooltip
+                                          {...props}
+                                          countLabelSingular="event"
+                                          countLabelPlural="events"
+                                          getSummaryRows={(entry) => [
+                                            {
+                                              label: "Vs. first step",
+                                              value: `${Number(entry?.shareOfStart) || 0}%`,
+                                            },
+                                            {
+                                              label: "Vs. previous step",
+                                              value: `${Number(entry?.shareOfPrevious) || 0}%`,
+                                            },
+                                          ]}
+                                        />
+                                      )}
+                                    />
+                                    <Bar
+                                      dataKey="count"
+                                      radius={[4, 4, 2.5, 2.5]}
+                                      fill="url(#adminDelegateStatusBar)"
+                                      barSize={32}
+                                    >
+                                      <LabelList
+                                        dataKey="count"
+                                        position="insideTop"
+                                        fill="#ffffff"
+                                        fontSize={12}
+                                        offset={7}
+                                        formatter={(value: any) =>
+                                          typeof value === "number" ? value : Number(value) || 0
+                                        }
+                                        style={{ textShadow: "0 1px 4px rgba(15, 23, 42, 0.35)" }}
+                                        content={(props: any) => {
+                                          const val = Number(props.value) || 0;
+                                          if (val === 0) return null;
+                                          const { x, width } = props;
+                                          const cx = x + width / 2;
+                                          const cy = (props.y || 0) + 12;
+                                          return (
+                                            <text
+                                              x={cx}
+                                              y={cy}
+                                              textAnchor="middle"
+                                              fill="#ffffff"
+                                              fontSize={12}
+                                              style={{ textShadow: "0 1px 4px rgba(15, 23, 42, 0.35)" }}
+                                            >
+                                              {val}
+                                            </text>
+                                          );
+                                        }}
+                                      />
+                                    </Bar>
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                                <span>Starts: {adminDelegateFunnelFirstCount.toLocaleString()}</span>
+                                <span>Orders: {adminDelegateFunnelFinalCount.toLocaleString()}</span>
+                                <span>Conversion: {adminDelegateFunnelOverallConversion}%</span>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     ))}
                   </div>

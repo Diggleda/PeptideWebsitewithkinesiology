@@ -2066,8 +2066,7 @@ export const wooAPI = {
     if (!productId) {
       throw new Error('productId is required');
     }
-    const token = getAuthToken();
-    if (!token && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       const delegateToken = new URLSearchParams(window.location.search).get('delegate');
       const normalized = delegateToken && delegateToken.trim() ? delegateToken.trim() : '';
       if (normalized) {

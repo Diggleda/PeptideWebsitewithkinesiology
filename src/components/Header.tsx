@@ -6214,16 +6214,33 @@ export function Header({
       {!delegateOptInEnabled ? (
         <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
           <div className="w-full space-y-4">
-            <div className="max-w-3xl space-y-2">
-              <h3 className="text-lg font-semibold text-slate-900">Delegate Links (Beta Access)</h3>
+            <div className="max-w-3xl space-y-3">
+              <h3 className="text-lg font-semibold text-slate-900">Welcome to Delegate Links!</h3>
               <p className="text-sm leading-relaxed text-slate-700">
-                Delegate Links has been enabled for your account in an beta capacity. This tool allows you to initiate and manage white labeled delegate sessions for patient-specific order proposals. The intention for this tool is to minimize research friction in your patient workflow, and to empower your reach in the industry. Upon enabling access, you are responsible for its appropriate use within your independent research and professional contexts.
+                This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate sessions for patient-specific order proposals. This means you can send your patients links to allow them to create a proposal of products for your approval, ordering, modification, or rejection.
+              </p>
+              <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+                {[1, 2].map((imageIndex) => (
+                  <div
+                    key={imageIndex}
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
+                  >
+                    <img
+                      src={withStaticAssetStamp('/PepPro_icon.png')}
+                      alt={`Delegate Links placeholder ${imageIndex}`}
+                      className="h-48 w-full object-contain bg-white p-6"
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm leading-relaxed text-slate-700">
+                The intention for this tool is to empower your clinical reach by minimizing friction in your patient research workflow. By enabling Delegate Links, you understand that you are solely responsible for its appropriate use within your independent research and professional context. Links can be viewed and tested before being sent out to your patients.
               </p>
               <p className="text-sm leading-relaxed text-slate-700">
-                If you have any questions or recommendations while you are using this tool, please contact{' '}
+                If you have any questions or recommendations, please contact{' '}
                 {hasDelegateSalesRepEmail ? (
                   <>
-                    your PepPro rep at{' '}
+                    your rep at{' '}
                     <a
                       href={`mailto:${delegateSalesRepEmail}`}
                       className="font-semibold text-[rgb(95,179,249)] underline decoration-[rgb(95,179,249)] underline-offset-2 hover:opacity-80"
@@ -6243,53 +6260,6 @@ export function Header({
                 </a>
                 .
               </p>
-            </div>
-            <div className="rounded-2xl border border-[rgba(95,179,249,0.18)] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,250,255,0.96))] px-4 py-4 shadow-[0_18px_40px_-28px_rgba(95,179,249,0.42)] sm:px-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgb(95,179,249)]">
-                    Delegate Links Beta Funnel
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                    Aggregate event frequency across the six delegate-link stages.
-                  </p>
-                </div>
-                <p className="shrink-0 text-[11px] font-medium text-slate-400">
-                  {delegateFunnelLoading ? 'Loading…' : 'Live'}
-                </p>
-              </div>
-              {delegateFunnelError ? (
-                <p className="mt-4 text-sm text-slate-500">
-                  {delegateFunnelError}
-                </p>
-              ) : (
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-                  {delegateFunnelStageData.map((stage, index) => {
-                    const barHeight = delegateFunnelMaxCount > 0
-                      ? Math.max(10, Math.round((stage.count / delegateFunnelMaxCount) * 112))
-                      : 10;
-                    return (
-                      <div
-                        key={stage.event}
-                        className="flex min-h-[188px] flex-col rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-3 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.5)]"
-                      >
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          Step {index + 1}
-                        </div>
-                        <div className="mt-3 flex flex-1 items-end">
-                          <div className="w-full rounded-t-[16px] bg-[linear-gradient(180deg,rgba(95,179,249,0.98),rgba(30,99,197,0.92))] shadow-[0_10px_20px_-14px_rgba(95,179,249,0.85)] transition-[height] duration-300 ease-out" style={{ height: `${barHeight}px` }} />
-                        </div>
-                        <div className="mt-3 text-2xl font-semibold tracking-[-0.02em] text-slate-900">
-                          {stage.count.toLocaleString()}
-                        </div>
-                        <div className="mt-1 text-[11px] leading-4 text-slate-600">
-                          {stage.label}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
             <div className="w-full text-right">
               <Button

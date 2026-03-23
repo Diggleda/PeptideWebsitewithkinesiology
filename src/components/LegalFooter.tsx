@@ -361,7 +361,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                       window.dispatchEvent(new Event('peppro:close-dialogs'));
                       handleBugOpen();
                     }}
-                    className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
+                    className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
                     style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
                   >
                     Report a bug
@@ -444,7 +444,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                     window.dispatchEvent(new Event('peppro:close-dialogs'));
                     handleBugOpen();
                   }}
-                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
                   style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
                 >
                   Report a bug

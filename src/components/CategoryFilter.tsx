@@ -318,7 +318,7 @@ export function CategoryFilter({
             {categories.map((category) => (
               <div key={category} className="flex flex-wrap items-center gap-2">
                 <div className="-ml-1 flex items-center space-x-2 min-w-0">
-                  <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm">
+                  <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm text-[rgb(95,179,249)] border-[rgba(95,179,249,0.35)]">
                     {productCounts[category] || 0}
                   </Badge>
                   <Checkbox
@@ -348,7 +348,7 @@ export function CategoryFilter({
                       className="flex flex-wrap items-center gap-2"
                     >
                       <div className="-ml-1 flex items-center space-x-2 min-w-0">
-                        <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm">
+                        <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm text-[rgb(95,179,249)] border-[rgba(95,179,249,0.35)]">
                           {tag.count || 0}
                         </Badge>
                         <Checkbox

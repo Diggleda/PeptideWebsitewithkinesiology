@@ -1,6 +1,14 @@
 const { Router } = require('express');
 
 const router = Router();
+const demoCountsByEvent = {
+  delegate_link_tab_clicked: 148,
+  delegate_link_text_field_entry: 121,
+  delegate_link_created: 84,
+  delegate_proposal_review_clicked: 49,
+  delegate_proposal_reviewed: 31,
+  delegate_order_placed: 18,
+};
 
 router.get('/funnel', (req, res) => {
   const events = String(req.query?.events || '')
@@ -8,7 +16,9 @@ router.get('/funnel', (req, res) => {
     .map((value) => String(value || '').trim())
     .filter(Boolean);
 
-  const counts = Object.fromEntries(events.map((event) => [event, 0]));
+  const counts = Object.fromEntries(
+    events.map((event) => [event, demoCountsByEvent[event] ?? 0]),
+  );
   res.json({ events, counts, tracked: false });
 });
 

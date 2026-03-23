@@ -185,6 +185,28 @@ const formatShippingServiceLabel = (rate: ShippingRate) => {
   return titled;
 };
 
+const fallbackServiceTransitDays: Array<{ pattern: RegExp; days: number }> = [
+  { pattern: /(next|1st|first)[_-]?(day|air)|overnight/i, days: 1 },
+  { pattern: /(2nd|second)[_-]?day/i, days: 2 },
+  { pattern: /(3rd|third|3)[_-]?day/i, days: 3 },
+  { pattern: /3\s*day\s*select/i, days: 3 },
+];
+
+const inferTransitDaysFromService = (rate?: ShippingRate | null) => {
+  const candidate = String(
+    rate?.serviceCode || rate?.serviceType || rate?.carrierId || '',
+  ).toLowerCase();
+  if (!candidate) {
+    return null;
+  }
+  for (const entry of fallbackServiceTransitDays) {
+    if (entry.pattern.test(candidate)) {
+      return entry.days;
+    }
+  }
+  return null;
+};
+
 const addBusinessDays = (start: Date, days: number) => {
   const next = new Date(start);
   let remaining = Math.max(0, Math.floor(days));
@@ -818,22 +840,30 @@ export function CheckoutModal({
     const processingMaxDays = processingMinDays + 1;
     const shipMinDays = backorderDays + processingMinDays;
     const shipMaxDays = backorderDays + processingMaxDays;
+    const transitDaysRaw = Number(selectedShippingRate.estimatedDeliveryDays);
+    const transitDays = Number.isFinite(transitDaysRaw) && transitDaysRaw > 0
+      ? Math.round(transitDaysRaw)
+      : (inferTransitDaysFromService(selectedShippingRate) ?? 0);
 
     const shipMinDate = addBusinessDays(now, shipMinDays);
     const shipMaxDate = addBusinessDays(now, shipMaxDays);
+    const deliveryMinDate = addBusinessDays(shipMinDate, transitDays);
+    const deliveryMaxDate = addBusinessDays(shipMaxDate, transitDays);
 
-    const shipWindowLabel =
-      shipMinDate.toDateString() === shipMaxDate.toDateString()
-        ? shipMinDate.toLocaleDateString()
-        : `${shipMinDate.toLocaleDateString()}–${shipMaxDate.toLocaleDateString()}`;
+    const deliveryWindowLabel =
+      deliveryMinDate.toDateString() === deliveryMaxDate.toDateString()
+        ? deliveryMinDate.toLocaleDateString()
+        : `${deliveryMinDate.toLocaleDateString()}–${deliveryMaxDate.toLocaleDateString()}`;
 
-    const mathText = `${processingMinDays}–${processingMaxDays} business day processing`;
+    const mathText = transitDays > 0
+      ? `${processingMinDays}–${processingMaxDays} business day processing + ${transitDays} business day transit`
+      : `${processingMinDays}–${processingMaxDays} business day processing`;
     const disclaimer =
       Number.isFinite(historicalAverageDaysRaw) && historicalAverageDaysRaw > 0
         ? `Baseline avg ${historicalAverageDaysRaw.toFixed(1)} business days, and to ensure our product is kept temperature controlled we ship only M-Th to avoid weekend warehouses.`
         : 'To ensure our product is kept temperature controlled we ship only M-Th to avoid weekend warehouses.';
     return {
-      shipWindowLabel,
+      deliveryWindowLabel,
       mathText,
       disclaimer,
     };
@@ -985,7 +1015,7 @@ export function CheckoutModal({
 	        shippingRate: checkoutShippingRate,
 	        shippingTotal: effectiveShippingCost,
           handDelivery: isHandDeliveryEnabled,
-	        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
+	        expectedShipmentWindow: deliveryEstimate?.deliveryWindowLabel ?? null,
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
 	        paymentMethod: paymentMethod === 'none' ? null : paymentMethod,
@@ -1965,7 +1995,7 @@ export function CheckoutModal({
                           {deliveryEstimate && (
                             <div className="space-y-1">
                               <p className="text-sm font-semibold text-slate-800">
-                                Estimated Shipping window: {deliveryEstimate.shipWindowLabel}
+                                Estimated delivery window: {deliveryEstimate.deliveryWindowLabel}
                               </p>
                               <p className="text-xs text-slate-600">
                                 {deliveryEstimate.mathText}
