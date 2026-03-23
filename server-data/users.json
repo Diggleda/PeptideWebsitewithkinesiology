@@ -7,9 +7,9 @@
     "referralCode": "49110E",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 1219,
+    "visits": 1221,
     "createdAt": "2025-11-24T15:21:45.364Z",
-    "lastLoginAt": "2026-03-22T19:39:01.809Z",
+    "lastLoginAt": "2026-03-23T02:02:13.591Z",
     "role": "sales_lead",
     "salesRepId": "rep1",
     "passkeys": [],
@@ -28,7 +28,7 @@
     "taxExemptSource": null,
     "taxExemptReason": null,
     "lastSeenAt": "1970-01-01T00:00:00.000Z",
-    "lastInteractionAt": "2026-03-22T19:39:02.501Z",
+    "lastInteractionAt": "2026-03-23T02:02:13.913Z",
     "isOnline": false,
     "isIdle": false,
     "devCommission": false,
@@ -42,7 +42,9 @@
     "resellerPermitFileName": null,
     "resellerPermitUploadedAt": null,
     "researchTermsAgreement": false,
-    "research_terms_agreement": 0
+    "research_terms_agreement": 0,
+    "delegateOptIn": false,
+    "delegate_opt_in": 0
   },
   {
     "id": "1763997887996",
@@ -52,9 +54,9 @@
     "referralCode": "57F8DC",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 344,
+    "visits": 357,
     "createdAt": "2025-11-24T15:24:47.996Z",
-    "lastLoginAt": "2026-03-20T01:51:35.045Z",
+    "lastLoginAt": "2026-03-23T02:02:17.883Z",
     "role": "test_doctor",
     "salesRepId": "rep1",
     "npiNumber": "1063837144",
@@ -78,10 +80,10 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "1970-01-01T00:00:00.000Z",
-    "lastInteractionAt": "2026-03-20T01:53:19.591Z",
-    "isOnline": false,
-    "isIdle": false,
+    "lastSeenAt": "2026-03-23T02:24:21.124Z",
+    "lastInteractionAt": "2026-03-23T02:23:49.594Z",
+    "isOnline": true,
+    "isIdle": true,
     "devCommission": false,
     "receiveClientOrderUpdateEmails": false,
     "handDelivered": false,
@@ -92,10 +94,10 @@
     "resellerPermitFilePath": null,
     "resellerPermitFileName": null,
     "resellerPermitUploadedAt": null,
-    "researchTermsAgreement": false,
-    "research_terms_agreement": 0,
-    "delegateOptIn": false,
-    "delegate_opt_in": 0
+    "researchTermsAgreement": true,
+    "research_terms_agreement": 1,
+    "delegateOptIn": true,
+    "delegate_opt_in": 1
   },
   {
     "id": "1764556043938",
@@ -139,7 +141,9 @@
     "resellerPermitFileName": null,
     "resellerPermitUploadedAt": null,
     "researchTermsAgreement": false,
-    "research_terms_agreement": 0
+    "research_terms_agreement": 0,
+    "delegateOptIn": false,
+    "delegate_opt_in": 0
   },
   {
     "id": "1765228144842",
@@ -189,7 +193,9 @@
     "resellerPermitFileName": null,
     "resellerPermitUploadedAt": null,
     "researchTermsAgreement": false,
-    "research_terms_agreement": 0
+    "research_terms_agreement": 0,
+    "delegateOptIn": false,
+    "delegate_opt_in": 0
   },
   {
     "id": "1771871579569",
@@ -233,6 +239,8 @@
     "resellerPermitFileName": null,
     "resellerPermitUploadedAt": null,
     "researchTermsAgreement": false,
-    "research_terms_agreement": 0
+    "research_terms_agreement": 0,
+    "delegateOptIn": false,
+    "delegate_opt_in": 0
   }
 ]

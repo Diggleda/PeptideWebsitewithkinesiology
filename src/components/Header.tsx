@@ -386,6 +386,7 @@ interface HeaderProps {
   researchDashboardEnabled?: boolean;
   patientLinksEnabled?: boolean;
   patientLinksDoctorUserIds?: string[];
+  betaServices?: string[];
   onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout?: () => void;
   cartItems: number;
@@ -1106,6 +1107,7 @@ export function Header({
   researchDashboardEnabled = false,
   patientLinksEnabled = false,
   patientLinksDoctorUserIds = [],
+  betaServices = [],
   onLogin,
   onLogout,
   cartItems,
@@ -3524,6 +3526,8 @@ export function Header({
       )
     ),
   );
+  const showPatientLinksBetaLabel = Array.isArray(betaServices)
+    && betaServices.includes('patientLinks');
   const accountHeaderTabs = useMemo(() => {
     const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
       { id: 'details', label: 'Details', Icon: Info },
@@ -6136,36 +6140,65 @@ export function Header({
     || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegatePreviewSecondaryColor = hexToRgbCss(delegatePreviewSecondaryHex);
   const delegatePreviewTranslucentSecondary = hexToRgbaCss(delegatePreviewSecondaryHex, 0.18);
+  const delegateSupportEmail = 'support@peppro.net';
+  const delegateSalesRepEmail = String(localUser?.salesRep?.email || '').trim();
+  const hasDelegateSalesRepEmail = delegateSalesRepEmail.length > 0;
 
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
       {!delegateOptInEnabled ? (
         <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-          <div className="max-w-3xl space-y-4">
-            <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-slate-900">Delegate Links beta opt-in</h3>
+          <div className="w-full space-y-4">
+            <div className="max-w-3xl space-y-2">
+              <h3 className="text-lg font-semibold text-slate-900">Delegate Links (Beta Access)</h3>
               <p className="text-sm leading-relaxed text-slate-700">
-                The Delegate Link beta has been enabled for you. You are now able to manage delegate sessions for your patients to build order proposals. You are the responsible steward of this tool for your own independent research. If you agree and understand, click opt-in to gain access to the tool.
+                Delegate Links has been enabled for your account in an beta capacity. This tool allows you to initiate and manage white labeled delegate sessions for patient-specific order proposals. The intention for this tool is to minimize research friction in your patient workflow, and to empower your reach in the industry. Upon enabling access, you are responsible for its appropriate use within your independent research and professional contexts.
+              </p>
+              <p className="text-sm leading-relaxed text-slate-700">
+                If you have any questions or recommendations while you are using this tool, please contact{' '}
+                {hasDelegateSalesRepEmail ? (
+                  <>
+                    your PepPro rep at{' '}
+                    <a
+                      href={`mailto:${delegateSalesRepEmail}`}
+                      className="font-semibold text-[rgb(95,179,249)] underline decoration-[rgb(95,179,249)] underline-offset-2 hover:opacity-80"
+                    >
+                      {delegateSalesRepEmail}
+                    </a>
+                    {' '}or our support team at{' '}
+                  </>
+                ) : (
+                  <>our support team at{' '}</>
+                )}
+                <a
+                  href={`mailto:${delegateSupportEmail}`}
+                  className="font-semibold text-[rgb(95,179,249)] underline decoration-[rgb(95,179,249)] underline-offset-2 hover:opacity-80"
+                >
+                  {delegateSupportEmail}
+                </a>
+                .
               </p>
             </div>
-            <Button
-              type="button"
-              onClick={async () => {
-                if (delegateOptInSaving) {
-                  return;
-                }
-                setDelegateOptInSaving(true);
-                try {
-                  await saveProfileField('Delegate Links opt-in', { delegateOptIn: true });
-                } finally {
-                  setDelegateOptInSaving(false);
-                }
-              }}
-              disabled={delegateOptInSaving}
-              className="header-home-button h-11 min-h-[44px] squircle-sm bg-white px-7 text-slate-900"
-            >
-              {delegateOptInSaving ? 'Opting in…' : 'Opt-in'}
-            </Button>
+            <div className="w-full text-right">
+              <Button
+                type="button"
+                onClick={async () => {
+                  if (delegateOptInSaving) {
+                    return;
+                  }
+                  setDelegateOptInSaving(true);
+                  try {
+                    await saveProfileField('Delegate Links opt-in', { delegateOptIn: true });
+                  } finally {
+                    setDelegateOptInSaving(false);
+                  }
+                }}
+                disabled={delegateOptInSaving}
+                className="header-home-button inline-flex h-auto min-h-[44px] w-auto flex-none squircle-sm bg-white p-3 leading-none text-slate-900"
+              >
+                {delegateOptInSaving ? 'Enabling access…' : 'Enable Access'}
+              </Button>
+            </div>
           </div>
         </div>
       ) : (
@@ -7358,6 +7391,14 @@ export function Header({
 		                          </span>
                           <span className="inline-flex items-center">
                             {tab.label}
+                            {tab.id === 'patient_links' && showPatientLinksBetaLabel && (
+                              <span
+                                className="delegate-links-beta-chip"
+                                aria-label="Beta"
+                              >
+                                beta
+                              </span>
+                            )}
                             {showIndicator && (
                               <Badge
                                 variant="outline"

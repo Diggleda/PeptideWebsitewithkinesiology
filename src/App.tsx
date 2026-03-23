@@ -5810,9 +5810,7 @@ function MainApp() {
 	              settingsAPI.getCrmStatus(),
 			          settingsAPI.getForumStatus(),
 			          settingsAPI.getResearchStatus(),
-                isAdmin(user?.role)
-                  ? settingsAPI.getBetaServices()
-                  : Promise.resolve({ betaServices: [] }),
+                settingsAPI.getBetaServices(),
 			        ]);
 		        if (cancelled) return;
 	        if (shopResult.status === "fulfilled") {
@@ -26948,6 +26946,7 @@ function MainApp() {
 				              researchDashboardEnabled={researchDashboardEnabled}
                       patientLinksEnabled={patientLinksEnabled}
                       patientLinksDoctorUserIds={patientLinksDoctorUserIds}
+                      betaServices={betaServices}
 				              onLogin={handleLogin}
 		              onLogout={handleLogout}
 		              cartItems={totalCartItems}
@@ -27000,6 +26999,7 @@ function MainApp() {
 	                    researchDashboardEnabled={false}
 	                    patientLinksEnabled={false}
                       patientLinksDoctorUserIds={[]}
+                      betaServices={[]}
 	                    cartItems={totalCartItems}
 	                    onSearch={handleSearch}
 	                    onCartClick={handleHeaderCartClick}

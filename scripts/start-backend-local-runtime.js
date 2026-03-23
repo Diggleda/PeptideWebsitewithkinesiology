@@ -37,30 +37,6 @@ const safeStat = (targetPath) => {
   }
 };
 
-const collectLatestMtimeMs = (targetPath) => {
-  const stat = safeStat(targetPath);
-  if (!stat) {
-    return 0;
-  }
-  if (!stat.isDirectory()) {
-    return stat.mtimeMs;
-  }
-
-  let latest = stat.mtimeMs;
-  for (const entry of fs.readdirSync(targetPath)) {
-    latest = Math.max(latest, collectLatestMtimeMs(path.join(targetPath, entry)));
-  }
-  return latest;
-};
-
-const buildSourceSignature = () => copyTargets.map((target) => {
-  const absolutePath = path.join(repoRoot, target);
-  return {
-    target,
-    mtimeMs: collectLatestMtimeMs(absolutePath),
-  };
-});
-
 const readState = () => {
   try {
     return JSON.parse(fs.readFileSync(statePath, 'utf8'));
@@ -81,20 +57,66 @@ const removeTarget = (targetPath) => {
   }
 };
 
+const runCommand = (command, args, { allowFailure = false } = {}) => {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (!allowFailure && result.status !== 0) {
+    process.exit(typeof result.status === 'number' ? result.status : 1);
+  }
+
+  return result;
+};
+
+const copySingleTarget = (target) => {
+  const sourcePath = path.join(repoRoot, target);
+  if (!fs.existsSync(sourcePath)) {
+    removeTarget(path.join(runtimeRoot, target));
+    return;
+  }
+  const destinationPath = path.join(runtimeRoot, target);
+  removeTarget(destinationPath);
+  ensureParentDir(destinationPath);
+  fs.cpSync(sourcePath, destinationPath, {
+    recursive: true,
+    force: true,
+  });
+};
+
 const syncRuntimeFiles = () => {
   fs.mkdirSync(runtimeRoot, { recursive: true });
-  for (const target of copyTargets) {
-    const sourcePath = path.join(repoRoot, target);
-    if (!fs.existsSync(sourcePath)) {
-      continue;
-    }
-    const destinationPath = path.join(runtimeRoot, target);
-    removeTarget(destinationPath);
-    ensureParentDir(destinationPath);
-    fs.cpSync(sourcePath, destinationPath, {
+  const sourceServerDir = path.join(repoRoot, 'server');
+  const destinationServerDir = path.join(runtimeRoot, 'server');
+  ensureParentDir(destinationServerDir);
+
+  const rsyncResult = runCommand(
+    'rsync',
+    [
+      '-a',
+      '--delete',
+      `${sourceServerDir}/`,
+      `${destinationServerDir}/`,
+    ],
+    { allowFailure: true },
+  );
+
+  if (rsyncResult.status !== 0) {
+    removeTarget(destinationServerDir);
+    ensureParentDir(destinationServerDir);
+    fs.cpSync(sourceServerDir, destinationServerDir, {
       recursive: true,
       force: true,
     });
+  }
+
+  for (const target of copyTargets) {
+    if (target === 'server') {
+      continue;
+    }
+    copySingleTarget(target);
   }
 };
 
@@ -115,28 +137,24 @@ const installDependencies = () => {
   }
 };
 
-const sourceSignature = buildSourceSignature();
 const previousState = readState();
-const currentLockfile = collectLatestMtimeMs(path.join(repoRoot, 'package-lock.json'));
-
-const runtimeNeedsSync = !previousState
-  || JSON.stringify(previousState.sourceSignature) !== JSON.stringify(sourceSignature);
+const currentLockfile = safeStat(path.join(repoRoot, 'package-lock.json'))?.mtimeMs || 0;
+const runtimeVersion = 2;
+const runtimeNeedsSync = !previousState || previousState.runtimeVersion !== runtimeVersion;
 
 const runtimeNeedsInstall = !safeStat(path.join(runtimeRoot, 'node_modules'))
   || !previousState
   || previousState.lockfileMtimeMs !== currentLockfile;
 
-if (runtimeNeedsSync) {
-  // eslint-disable-next-line no-console
-  console.log(`[backend-runtime] Syncing backend files to ${runtimeRoot}`);
-  syncRuntimeFiles();
-}
+// eslint-disable-next-line no-console
+console.log(`[backend-runtime] Syncing backend files to ${runtimeRoot}`);
+syncRuntimeFiles();
 
 if (runtimeNeedsInstall) {
   installDependencies();
 }
 
-if (!runtimeNeedsSync && !runtimeNeedsInstall) {
+if (!runtimeNeedsInstall) {
   // eslint-disable-next-line no-console
   console.log(`[backend-runtime] Reusing existing runtime at ${runtimeRoot}`);
 }
@@ -145,7 +163,7 @@ fs.writeFileSync(
   statePath,
   JSON.stringify(
     {
-      sourceSignature,
+      runtimeVersion,
       lockfileMtimeMs: currentLockfile,
       updatedAt: new Date().toISOString(),
     },

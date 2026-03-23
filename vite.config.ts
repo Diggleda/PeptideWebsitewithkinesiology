@@ -10,6 +10,7 @@ const isReplit = Boolean(
   process.env.REPLIT_ENV ||
   process.env.REPLIT_DB_URL
 );
+const repoPathLooksCloudBacked = /Mobile Documents|iCloud/i.test(process.cwd());
 
 const viteCacheDir = process.env.VITE_CACHE_DIR || path.join(os.tmpdir(), 'peppro-vite-cache');
 const ignoredWatchGlobs = [
@@ -36,6 +37,7 @@ const ignoredWatchGlobs = [
 ];
 
 export default defineConfig(({ command }) => ({
+  envFile: process.env.PEPPRO_VITE_SKIP_ENV_FILES === 'true' ? false : undefined,
   // Production builds are currently hanging inside the React SWC plugin path.
   // Vite's native esbuild TSX handling is sufficient for build output here,
   // so keep SWC only for dev where fast refresh matters.
@@ -111,6 +113,9 @@ export default defineConfig(({ command }) => ({
       : { hmr: { protocol: 'ws', host: 'localhost', port: 3000 } }),
     watch: {
       ignored: ignoredWatchGlobs,
+      usePolling: repoPathLooksCloudBacked,
+      interval: repoPathLooksCloudBacked ? 200 : undefined,
+      binaryInterval: repoPathLooksCloudBacked ? 500 : undefined,
     },
   },
 }))

@@ -266,7 +266,7 @@ router.get('/shop', async (_req, res) => {
   res.json({ shopEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
-router.get('/beta-services', authenticate, requireAdmin, async (_req, res) => {
+router.get('/beta-services', authenticate, async (_req, res) => {
   const betaServices = await getBetaServices();
   res.json({ betaServices, mysqlEnabled: mysqlClient.isEnabled() });
 });

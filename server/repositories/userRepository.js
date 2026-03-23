@@ -436,8 +436,10 @@ const ensureUserDefaults = (user) => {
   return normalized;
 };
 
-const loadUsers = () => {
-  const users = userStore.read();
+const loadUsers = ({ forWrite = false } = {}) => {
+  const users = forWrite || typeof userStore.readCached !== 'function'
+    ? userStore.read()
+    : userStore.readCached();
   let changed = false;
   const normalized = users.map((user) => {
     const candidate = ensureUserDefaults(user);
@@ -495,7 +497,7 @@ const findByPasskeyId = (credentialId) => {
 };
 
 const insert = (user) => {
-  const users = loadUsers();
+  const users = loadUsers({ forWrite: true });
   const candidate = ensureUserDefaults(user);
   users.push(candidate);
   saveUsers(users);
@@ -504,7 +506,7 @@ const insert = (user) => {
 };
 
 const update = (user) => {
-  const users = loadUsers();
+  const users = loadUsers({ forWrite: true });
   const index = users.findIndex((item) => item.id === user.id);
   if (index === -1) {
     return null;
@@ -517,7 +519,7 @@ const update = (user) => {
 };
 
 const replace = (predicate, updater) => {
-  const users = loadUsers();
+  const users = loadUsers({ forWrite: true });
   const index = users.findIndex(predicate);
   if (index === -1) {
     return null;
@@ -533,7 +535,7 @@ const replace = (predicate, updater) => {
 };
 
 const removeById = (id) => {
-  const users = loadUsers();
+  const users = loadUsers({ forWrite: true });
   const index = users.findIndex((item) => item.id === id);
   if (index === -1) {
     return null;
