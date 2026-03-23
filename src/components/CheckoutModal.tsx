@@ -1963,7 +1963,8 @@ export function CheckoutModal({
                         variant="secondary"
                         onClick={handleGetRates}
                         disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
-                        className="squircle-sm"
+                        className={isDelegateFlow ? 'squircle-sm border-0 text-white' : 'squircle-sm'}
+                        style={isDelegateFlow ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
                       >
                         {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
                       </Button>
@@ -2378,7 +2379,10 @@ export function CheckoutModal({
                   variant="ghost"
                   onClick={handlePrimaryAction}
                   disabled={!meetsCheckoutRequirements || isProcessing || checkoutStatus === 'success'}
-                  className="flex-1 glass-brand squircle-sm gap-2 transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                  className={isDelegateFlow
+                    ? 'flex-1 squircle-sm gap-2 border-0 text-white transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0'
+                    : 'flex-1 glass-brand squircle-sm gap-2 transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0'}
+                  style={isDelegateFlow ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
                 >
                   {isDelegateFlow ? (
                     <svg

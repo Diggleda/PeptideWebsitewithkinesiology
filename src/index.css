@@ -7086,6 +7086,14 @@ body.account-modal-open .info-focus-overlay {
   flex-shrink: 0;
 }
 
+.dialog-close-btn,
+.dialog-close-btn svg,
+.legal-modal-close-btn,
+.legal-modal-close-btn svg {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
 .legal-modal-header {
   /* Force header height independent of Tailwind utility generation. */
   padding-top: 1rem !important;
@@ -7752,6 +7760,83 @@ a[href^="mailto:"]:hover {
 [data-delegate-theme="true"] .account-tab-underline-indicator {
   background: var(--delegate-accent) !important;
   box-shadow: 0 4px 12px var(--delegate-accent-45) !important;
+}
+
+[data-delegate-theme="true"] .legal-inline-link,
+[data-delegate-theme="true"] .header-user-name,
+[data-delegate-theme="true"] .account-indicator-badge,
+[data-delegate-theme="true"] .header-count-indicator,
+[data-delegate-theme="true"] .mobile-search-toggle-button,
+[data-delegate-theme="true"] .mobile-search-toggle-button .mobile-search-icon {
+  color: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] .brand-checkbox::after {
+  background: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] .brand-checkbox:focus-visible {
+  box-shadow: 0 0 0 3px var(--delegate-accent-25) !important;
+}
+
+[data-delegate-theme="true"] .brand-checkbox:checked {
+  border-color: var(--delegate-accent) !important;
+  background: var(--delegate-accent-08) !important;
+}
+
+[data-delegate-theme="true"] .shipping-rate-select:focus {
+  border-color: var(--delegate-accent) !important;
+  box-shadow: 0 0 0 3px var(--delegate-accent-18) !important;
+}
+
+[data-delegate-theme="true"] .checkout-payment-method-button--active {
+  background-color: var(--delegate-accent) !important;
+  border-color: var(--delegate-accent-45) !important;
+}
+
+[data-delegate-theme="true"] .header-home-button,
+[data-delegate-theme="true"] .shop-home-button,
+[data-delegate-theme="true"] .header-account-button,
+[data-delegate-theme="true"] .header-cart-button,
+[data-delegate-theme="true"] .mobile-search-toggle-button {
+  border-color: var(--delegate-accent) !important;
+  color: var(--delegate-accent) !important;
+}
+
+[data-delegate-theme="true"] .header-home-button:hover,
+[data-delegate-theme="true"] .header-home-button:focus-visible,
+[data-delegate-theme="true"] .header-home-button[data-state="open"],
+[data-delegate-theme="true"] .header-home-button[aria-expanded="true"],
+[data-delegate-theme="true"] .shop-home-button:hover,
+[data-delegate-theme="true"] .shop-home-button:focus-visible,
+[data-delegate-theme="true"] .shop-home-button[data-state="open"],
+[data-delegate-theme="true"] .shop-home-button[aria-expanded="true"],
+[data-delegate-theme="true"] .header-account-button:hover,
+[data-delegate-theme="true"] .header-account-button:focus-visible,
+[data-delegate-theme="true"] .header-account-button[data-state="open"],
+[data-delegate-theme="true"] .header-account-button[aria-expanded="true"],
+[data-delegate-theme="true"] .header-cart-button:not(.mobile-search-toggle-button):hover,
+[data-delegate-theme="true"] .header-cart-button:not(.mobile-search-toggle-button):focus-visible,
+[data-delegate-theme="true"] .header-cart-button:not(.mobile-search-toggle-button)[data-state="open"],
+[data-delegate-theme="true"] .header-cart-button:not(.mobile-search-toggle-button)[aria-expanded="true"],
+[data-delegate-theme="true"] .mobile-search-toggle-button:hover,
+[data-delegate-theme="true"] .mobile-search-toggle-button:focus-visible,
+[data-delegate-theme="true"] .mobile-search-toggle-button[data-state="open"],
+[data-delegate-theme="true"] .mobile-search-toggle-button[aria-expanded="true"] {
+  background-color: var(--delegate-accent) !important;
+  border-color: var(--delegate-accent) !important;
+  color: #ffffff !important;
+}
+
+[data-delegate-theme="true"] .mobile-search-toggle-button:hover .mobile-search-icon,
+[data-delegate-theme="true"] .mobile-search-toggle-button:focus-visible .mobile-search-icon,
+[data-delegate-theme="true"] .mobile-search-toggle-button[data-state="open"] .mobile-search-icon,
+[data-delegate-theme="true"] .mobile-search-toggle-button[aria-expanded="true"] .mobile-search-icon,
+[data-delegate-theme="true"] .header-cart-button:hover .header-count-indicator,
+[data-delegate-theme="true"] .header-cart-button:focus-visible .header-count-indicator,
+[data-delegate-theme="true"] .header-cart-button[data-state="open"] .header-count-indicator,
+[data-delegate-theme="true"] .header-cart-button[aria-expanded="true"] .header-count-indicator {
+  color: #ffffff !important;
 }
 [data-sonner-toast][data-styled='true']:not([data-type='error']) {
   background: rgba(255, 255, 255, 0.98) !important;

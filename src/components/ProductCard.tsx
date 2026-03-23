@@ -1350,7 +1350,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
         setQuantityInput('1');
         setBulkOpen(false);
       }}
-      className={proposalMode ? 'squircle-sm btn-hover-lighter w-full border-0 text-white' : 'squircle-sm glass-brand btn-hover-lighter w-full'}
+      className={proposalMode ? 'squircle-sm btn-hover-lighter w-full border-0 text-white [&_svg]:text-white' : 'squircle-sm glass-brand btn-hover-lighter w-full'}
       style={proposalMode ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
 	    >
 	      {proposalMode ? (
@@ -1358,7 +1358,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 	      ) : (
 	        <ShoppingCart className="w-4 h-4 mr-2" />
 	      )}
-	      {proposalMode ? 'Add to Proposal' : 'Add to cart'}
+	      {proposalMode ? '+ Add to Proposal' : 'Add to cart'}
 	    </Button>
 	  );
 

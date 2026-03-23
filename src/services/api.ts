@@ -1,5 +1,6 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText';
+import { readDelegateTokenFromLocation } from '../lib/researchSupplyLinks';
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
@@ -2067,8 +2068,7 @@ export const wooAPI = {
       throw new Error('productId is required');
     }
     if (typeof window !== 'undefined') {
-      const delegateToken = new URLSearchParams(window.location.search).get('delegate');
-      const normalized = delegateToken && delegateToken.trim() ? delegateToken.trim() : '';
+      const normalized = readDelegateTokenFromLocation(window.location);
       if (normalized) {
         const params = new URLSearchParams({ token: normalized });
         return fetchWithAuthBlob(
