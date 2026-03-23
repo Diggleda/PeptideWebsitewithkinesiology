@@ -3951,6 +3951,7 @@ function MainApp() {
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegateSecondaryColor = hexToRgbCss(delegateSecondaryColorHex);
+  const isDelegateThemeActive = isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError;
   const formatDelegateTimeRemaining = useCallback((expiryMs: number | null, nowMs: number) => {
     if (!expiryMs || !Number.isFinite(expiryMs)) return null;
     const diffMs = expiryMs - nowMs;
@@ -4093,6 +4094,42 @@ function MainApp() {
       if (intervalId) window.clearInterval(intervalId);
     };
   }, [delegateExpiryMs, isDelegateMode]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const body = document.body;
+    if (!body) return;
+
+    const styleEntries: Array<[string, string]> = [
+      ['--delegate-accent', delegateSecondaryColor],
+      ['--delegate-accent-08', hexToRgbaCss(delegateSecondaryColorHex, 0.08)],
+      ['--delegate-accent-10', hexToRgbaCss(delegateSecondaryColorHex, 0.10)],
+      ['--delegate-accent-12', hexToRgbaCss(delegateSecondaryColorHex, 0.12)],
+      ['--delegate-accent-14', hexToRgbaCss(delegateSecondaryColorHex, 0.14)],
+      ['--delegate-accent-18', hexToRgbaCss(delegateSecondaryColorHex, 0.18)],
+      ['--delegate-accent-25', hexToRgbaCss(delegateSecondaryColorHex, 0.25)],
+      ['--delegate-accent-30', hexToRgbaCss(delegateSecondaryColorHex, 0.30)],
+      ['--delegate-accent-35', hexToRgbaCss(delegateSecondaryColorHex, 0.35)],
+      ['--delegate-accent-40', hexToRgbaCss(delegateSecondaryColorHex, 0.40)],
+      ['--delegate-accent-45', hexToRgbaCss(delegateSecondaryColorHex, 0.45)],
+      ['--delegate-accent-55', hexToRgbaCss(delegateSecondaryColorHex, 0.55)],
+      ['--delegate-accent-65', hexToRgbaCss(delegateSecondaryColorHex, 0.65)],
+      ['--delegate-accent-80', hexToRgbaCss(delegateSecondaryColorHex, 0.80)],
+    ];
+
+    if (isDelegateThemeActive) {
+      body.setAttribute('data-delegate-theme', 'true');
+      styleEntries.forEach(([key, value]) => body.style.setProperty(key, value));
+    } else {
+      body.setAttribute('data-delegate-theme', 'false');
+      styleEntries.forEach(([key]) => body.style.removeProperty(key));
+    }
+
+    return () => {
+      body.setAttribute('data-delegate-theme', 'false');
+      styleEntries.forEach(([key]) => body.style.removeProperty(key));
+    };
+  }, [delegateSecondaryColor, delegateSecondaryColorHex, isDelegateThemeActive]);
 
   useEffect(() => {
     if (!delegateToken) {
@@ -27121,11 +27158,11 @@ function MainApp() {
 
 	  return (
 	    <div
-	      data-delegate-theme={isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError ? 'true' : 'false'}
+	      data-delegate-theme={isDelegateThemeActive ? 'true' : 'false'}
 	      className="min-h-screen bg-slate-50 flex flex-col safe-area-vertical"
       style={{
         position: "static",
-        ...(isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError
+        ...(isDelegateThemeActive
           ? {
               ['--delegate-accent' as const]: delegateSecondaryColor,
               ['--delegate-accent-08' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.08),

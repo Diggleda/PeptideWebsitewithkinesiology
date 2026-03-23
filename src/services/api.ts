@@ -723,9 +723,9 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   return response.text();
 };
 
-const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
+const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?: boolean } = {}) => {
   const requestUrl = rewriteBlockedAdminPaths(url);
-  const token = getAuthToken();
+  const token = options.skipAuth ? null : getAuthToken();
   const headers: HeadersInit = {
     ...(options.headers || {}),
   };
@@ -2073,7 +2073,7 @@ export const wooAPI = {
         const params = new URLSearchParams({ token: normalized });
         return fetchWithAuthBlob(
           `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis/delegate?${params.toString()}`,
-          { method: 'GET', cache: 'no-store' },
+          { method: 'GET', cache: 'no-store', skipAuth: true },
         );
       }
     }

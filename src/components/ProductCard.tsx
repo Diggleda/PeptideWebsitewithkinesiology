@@ -1351,7 +1351,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
         setBulkOpen(false);
       }}
       className={proposalMode ? 'squircle-sm btn-hover-lighter w-full border-0 text-white' : 'squircle-sm glass-brand btn-hover-lighter w-full'}
-      style={proposalMode ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)' } : undefined}
+      style={proposalMode ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
 	    >
 	      {proposalMode ? (
 	        <Plus className="w-4 h-4 mr-2" />
