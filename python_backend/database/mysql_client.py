@@ -47,7 +47,7 @@ def _create_connection() -> pymysql.connections.Connection:
     ssl_disabled = not mysql_config.get("ssl")
     ssl_params = None
     if not ssl_disabled:
-        ssl_params = {"ssl": {}}
+        ssl_params = {}
 
     return pymysql.connect(
         host=mysql_config.get("host"),

@@ -58,3 +58,20 @@ test('production rejects DOTENV_CONFIG_PATH inside the working tree', () => {
   assert.notEqual(result.status, 0);
   assert.match(`${result.stderr}\n${result.stdout}`, /server-managed file outside the repo/i);
 });
+
+test('production requires MYSQL_SSL when MySQL is enabled', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peppro-env-'));
+
+  const result = runEnvModule({
+    cwd: tempDir,
+    extraEnv: {
+      MYSQL_ENABLED: 'true',
+      MYSQL_HOST: 'db.example',
+      MYSQL_USER: 'peppr',
+      MYSQL_DATABASE: 'peppr',
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stderr}\n${result.stdout}`, /MYSQL_SSL=true is required/i);
+});
