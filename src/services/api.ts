@@ -18,7 +18,9 @@ export const API_BASE_URL = (() => {
   return normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
 })();
 
-type AuthenticatedRequestInit = RequestInit;
+type AuthenticatedRequestInit = RequestInit & {
+  skipReachabilityDispatch?: boolean;
+};
 
 type AuthTabEvent = {
   type: 'LOGIN';
@@ -354,6 +356,8 @@ const dispatchApiReachability = (payload: { ok: boolean; status?: number | null;
 const _PEPPRO_DEFAULT_TIMEOUT_MS = 15000;
 const _PEPPRO_AUTH_TIMEOUT_MS = 12000;
 const _PEPPRO_HEALTH_TIMEOUT_MS = 5000;
+const _PEPPRO_HEALTH_SUCCESS_TTL_MS = 15000;
+const _PEPPRO_HEALTH_FAILURE_COOLDOWN_MS = 45000;
 const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
 const _PEPPRO_CHECKOUT_TIMEOUT_MS = 45000;
 const _PEPPRO_SALES_TRACKING_TIMEOUT_MS = 45000;
@@ -417,18 +421,19 @@ const rewriteBlockedAdminPaths = (url: string) => {
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}) => {
   const rewrittenUrl = rewriteBlockedAdminPaths(url);
+  const { skipReachabilityDispatch = false, ...requestOptions } = options;
   const token = getAuthToken();
-  const method = (options.method || 'GET').toUpperCase();
+  const method = (requestOptions.method || 'GET').toUpperCase();
   const headers: Record<string, string> = {
-    ...((options.headers as any) || {}),
+    ...((requestOptions.headers as any) || {}),
   };
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const hasBody = method !== 'GET' && method !== 'HEAD' && options.body != null;
-  const isFormDataBody = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const hasBody = method !== 'GET' && method !== 'HEAD' && requestOptions.body != null;
+  const isFormDataBody = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
   if (hasBody && !isFormDataBody && headers['Content-Type'] == null) {
     headers['Content-Type'] = 'application/json';
   }
@@ -436,7 +441,7 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
   const run = async () => {
     let requestUrl = rewrittenUrl;
 
-    if (method === 'GET' && !(options.cache && options.cache !== 'default')) {
+    if (method === 'GET' && !(requestOptions.cache && requestOptions.cache !== 'default')) {
       const normalized = requestUrl.toLowerCase();
       const shouldAddTs =
         !normalized.includes('/longpoll')
@@ -451,8 +456,8 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
 
     let response: Response;
     const requestInit: RequestInit = {
-      cache: options.cache ?? 'no-store',
-      ...options,
+      cache: requestOptions.cache ?? 'no-store',
+      ...requestOptions,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
@@ -465,7 +470,9 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     } catch (error: any) {
       const isAbort = error?.name === 'AbortError';
       const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
-      dispatchApiReachability({ ok: false, status: null, message });
+      if (!skipReachabilityDispatch) {
+        dispatchApiReachability({ ok: false, status: null, message });
+      }
       if (isAbort) {
         const wrapped = new Error('Request timed out');
         (wrapped as any).code = 'TIMEOUT';
@@ -475,9 +482,9 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
       throw error;
     }
 
-    if (response.ok) {
+    if (!skipReachabilityDispatch && response.ok) {
       dispatchApiReachability({ ok: true, status: response.status });
-    } else if (response.status >= 500 || response.status === 429) {
+    } else if (!skipReachabilityDispatch && (response.status >= 500 || response.status === 429)) {
       dispatchApiReachability({ ok: false, status: response.status });
     }
 
@@ -599,6 +606,10 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
   );
   return promise;
 };
+
+let _healthCheckInFlight: Promise<boolean> | null = null;
+let _healthCheckLastAt = 0;
+let _healthCheckLastOk = false;
 
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   const requestUrl = rewriteBlockedAdminPaths(url);
@@ -2343,23 +2354,48 @@ export const seamlessAPI = {
 };
 
 // Health check
-export const getServerHealth = async () => {
+export const getServerHealth = async (options: { quiet?: boolean } = {}) => {
   return fetchWithAuth(`${API_BASE_URL}/health`, {
     method: 'GET',
     headers: {
       Accept: 'application/json',
     },
     cache: 'no-store',
+    skipReachabilityDispatch: options.quiet === true,
   });
 };
 
-export const checkServerHealth = async () => {
-  try {
-    await getServerHealth();
-    return true;
-  } catch {
-    return false;
+export const checkServerHealth = async (options: { force?: boolean; quiet?: boolean } = {}) => {
+  const now = Date.now();
+  if (!options.force && _healthCheckLastAt > 0) {
+    const ageMs = now - _healthCheckLastAt;
+    if (_healthCheckLastOk && ageMs < _PEPPRO_HEALTH_SUCCESS_TTL_MS) {
+      return true;
+    }
+    if (!_healthCheckLastOk && ageMs < _PEPPRO_HEALTH_FAILURE_COOLDOWN_MS) {
+      return false;
+    }
   }
+  if (_healthCheckInFlight) {
+    return _healthCheckInFlight;
+  }
+
+  _healthCheckInFlight = (async () => {
+    try {
+      await getServerHealth({ quiet: options.quiet !== false });
+      _healthCheckLastAt = Date.now();
+      _healthCheckLastOk = true;
+      return true;
+    } catch {
+      _healthCheckLastAt = Date.now();
+      _healthCheckLastOk = false;
+      return false;
+    } finally {
+      _healthCheckInFlight = null;
+    }
+  })();
+
+  return _healthCheckInFlight;
 };
 
 export const newsAPI = {
