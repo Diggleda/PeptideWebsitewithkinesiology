@@ -17678,7 +17678,33 @@ function MainApp() {
             ? { status: "invalid_password" }
             : { status: "email_not_found" };
         } catch (lookupError: any) {
-          if (typeof lookupError?.status === "number" && lookupError.status === 404) {
+          const lookupStatus =
+            typeof lookupError?.status === "number" ? lookupError.status : null;
+          const lookupMessage =
+            typeof lookupError?.message === "string" ? lookupError.message : "";
+          const normalizedLookupMessage = lookupMessage.toUpperCase();
+          const lookupCode =
+            typeof lookupError?.code === "string" ? lookupError.code : null;
+          const isLookupNetworkError =
+            lookupMessage === "Failed to fetch" ||
+            normalizedLookupMessage.includes("FETCH API CANNOT LOAD") ||
+            normalizedLookupMessage.includes("LOAD FAILED") ||
+            normalizedLookupMessage.includes("NETWORKERROR") ||
+            normalizedLookupMessage.includes("NETWORK_ERROR") ||
+            normalizedLookupMessage.includes("NETWORK REQUEST FAILED") ||
+            normalizedLookupMessage.includes("ECONNREFUSED") ||
+            normalizedLookupMessage.includes("ENOTFOUND") ||
+            normalizedLookupMessage.includes("EAI_AGAIN") ||
+            normalizedLookupMessage.includes("ACCESS-CONTROL-ALLOW-ORIGIN") ||
+            normalizedLookupMessage.includes("ORIGIN HTTPS://");
+          const isLookupTimeout =
+            lookupCode === "TIMEOUT" || normalizedLookupMessage.includes("TIMED OUT");
+          if (
+            lookupStatus === 404 ||
+            (lookupStatus !== null && lookupStatus >= 500) ||
+            isLookupNetworkError ||
+            isLookupTimeout
+          ) {
             return { status: "maintenance_unavailable" };
           }
           return { status: "email_not_found" };

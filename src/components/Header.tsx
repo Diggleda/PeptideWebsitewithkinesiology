@@ -2153,6 +2153,7 @@ export function Header({
 	    const emailValue = loginEmailRef.current?.value ?? '';
 	    const passwordValue = loginPasswordRef.current?.value ?? '';
 
+	    const backendDownLoginMessage = 'The network is down for maintanence. Please try again.';
 	    const classifyNetworkIssue = (message?: string | null): 'offline' | 'network' | null => {
 	      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
 	        return 'offline';
@@ -2202,7 +2203,7 @@ export function Header({
 	        issue === 'offline'
 	          ? 'No internet connection detected. Please turn on Wi-Fi or cellular data and try again.'
 	          : issue === 'network'
-	            ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	            ? backendDownLoginMessage
 	          : 'Unable to log in. Please try again.',
 	      );
 	      setLoginSubmitting(false);
@@ -2253,7 +2254,7 @@ export function Header({
     }
 
     if (result.status === 'maintenance_unavailable') {
-      setLoginError('Our portal is having an issue or down for maintenance. Please try again');
+      setLoginError(backendDownLoginMessage);
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -2283,7 +2284,7 @@ export function Header({
 	        issue === 'offline'
 	          ? 'No internet connection detected. Please turn on Wi-Fi or cellular data and try again.'
 	          : issue === 'network'
-	            ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	            ? backendDownLoginMessage
 	          : 'Unable to log in. Please try again.',
 	      );
 	    }
@@ -2965,7 +2966,7 @@ export function Header({
 
     if (result.status === 'maintenance_unavailable') {
       setSignupError('');
-      setLoginError('Our portal is having an issue or down for maintenance. Please try again');
+      setLoginError('The network is down for maintanence. Please try again.');
       setAuthMode('login');
       queueLoginPrefill({ email: details.email, password: '' });
       setSignupSuffix('');
