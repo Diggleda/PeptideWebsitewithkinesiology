@@ -2,6 +2,7 @@ const express = require('express');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 const { authenticateOptional } = require('../middleware/authenticate');
+const { encryptText } = require('../utils/cryptoEnvelope');
 
 const router = express.Router();
 
@@ -27,14 +28,23 @@ router.post('/', authenticateOptional, async (req, res) => {
     try {
       await mysqlClient.execute(
         `
-          INSERT INTO bugs_reported (user_id, name, email, report)
-          VALUES (:userId, :name, :email, :report)
+          INSERT INTO bugs_reported (
+            user_id, name, email, report, name_encrypted, email_encrypted, report_encrypted
+          )
+          VALUES (
+            :userId, NULL, NULL, :reportPlaceholder, :nameEncrypted, :emailEncrypted, :reportEncrypted
+          )
         `,
         {
           userId,
-          name,
-          email,
-          report,
+          reportPlaceholder: '[ENCRYPTED]',
+          nameEncrypted: name
+            ? encryptText(name, { aad: { table: 'bugs_reported', field: 'name' } })
+            : null,
+          emailEncrypted: email
+            ? encryptText(email, { aad: { table: 'bugs_reported', field: 'email' } })
+            : null,
+          reportEncrypted: encryptText(report, { aad: { table: 'bugs_reported', field: 'report' } }),
         },
       );
     } catch (error) {

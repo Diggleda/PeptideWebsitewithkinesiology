@@ -9,6 +9,7 @@ from ..storage import contact_form_store
 from ..utils.http import handle_action
 from ..database import mysql_client
 from ..repositories import sales_rep_repository, sales_prospect_repository, user_repository
+from ..utils.crypto_envelope import compute_blind_index, encrypt_text
 
 blueprint = Blueprint("contact", __name__, url_prefix="/api/contact")
 
@@ -41,13 +42,35 @@ def submit_contact():
             with mysql_client.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO contact_forms (name, email, phone, source)
-                    VALUES (%(name)s, %(email)s, %(phone)s, %(source)s)
+                    INSERT INTO contact_forms (
+                        name, email, phone, name_encrypted, email_encrypted, phone_encrypted, email_blind_index, source
+                    )
+                    VALUES (
+                        %(name)s, %(email)s, %(phone)s, %(name_encrypted)s, %(email_encrypted)s, %(phone_encrypted)s,
+                        %(email_blind_index)s, %(source)s
+                    )
                     """,
                     {
                         "name": record["name"],
                         "email": record["email"],
                         "phone": record["phone"],
+                        "name_encrypted": encrypt_text(
+                            record["name"],
+                            aad={"table": "contact_forms", "field": "name"},
+                        ),
+                        "email_encrypted": encrypt_text(
+                            record["email"],
+                            aad={"table": "contact_forms", "field": "email"},
+                        ),
+                        "phone_encrypted": encrypt_text(
+                            record["phone"],
+                            aad={"table": "contact_forms", "field": "phone"},
+                        ) if record["phone"] else None,
+                        "email_blind_index": compute_blind_index(
+                            record["email"],
+                            label="contact_forms.email",
+                            normalizer=lambda value: value.strip().lower(),
+                        ),
                         "source": record["source"],
                     },
                 )

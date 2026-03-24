@@ -1,6 +1,7 @@
 const mysqlClient = require('../database/mysqlClient');
 const { salesProspectStore } = require('../storage');
 const { logger } = require('../config/logger');
+const { decryptJson, encryptJson } = require('../utils/cryptoEnvelope');
 
 const normalizeId = (value) => {
   if (value === null || value === undefined) return null;
@@ -31,8 +32,22 @@ const ensureDefaults = (record) => {
   const resellerPermitUploadedAt =
     record.resellerPermitUploadedAt || record.reseller_permit_uploaded_at || null;
   const sourcePayloadJson = record.sourcePayloadJson || record.source_payload_json || null;
+  const encryptedSourcePayload = record.source_payload_encrypted || null;
   const assignedAt = record.assignedAt || record.assigned_at || null;
   const lastSyncedAt = record.lastSyncedAt || record.last_synced_at || null;
+  const resolvedSourcePayload = (() => {
+    const decrypted = decryptJson(encryptedSourcePayload, {
+      aad: {
+        table: 'sales_prospects',
+        record_ref: normalizeId(record.id) || 'pending',
+        field: 'source_payload_json',
+      },
+    });
+    if (decrypted && typeof decrypted === 'object') {
+      return decrypted;
+    }
+    return sourcePayloadJson;
+  })();
   return {
     id: normalizeId(record.id),
     salesRepId: normalizeId(record.salesRepId || record.sales_rep_id),
@@ -42,13 +57,13 @@ const ensureDefaults = (record) => {
     sourceSystem: normalizeId(record.sourceSystem || record.source_system),
     sourceExternalId: normalizeId(record.sourceExternalId || record.source_external_id),
     sourcePayloadJson:
-      sourcePayloadJson == null
+      resolvedSourcePayload == null
         ? null
-        : typeof sourcePayloadJson === 'object'
-          ? sourcePayloadJson
+        : typeof resolvedSourcePayload === 'object'
+          ? resolvedSourcePayload
           : (() => {
             try {
-              return JSON.parse(String(sourcePayloadJson));
+              return JSON.parse(String(resolvedSourcePayload));
             } catch {
               return null;
             }
@@ -98,7 +113,17 @@ const toDbParams = (record) => {
     sourceExternalId: record.sourceExternalId || null,
     sourcePayloadJson:
       record.sourcePayloadJson && typeof record.sourcePayloadJson === 'object'
-        ? JSON.stringify(record.sourcePayloadJson)
+        ? null
+        : null,
+    sourcePayloadEncrypted:
+      record.sourcePayloadJson && typeof record.sourcePayloadJson === 'object'
+        ? encryptJson(record.sourcePayloadJson, {
+          aad: {
+            table: 'sales_prospects',
+            record_ref: record.id,
+            field: 'source_payload_json',
+          },
+        })
         : null,
     assignedByRuleId: record.assignedByRuleId || null,
     assignedAt,
@@ -467,6 +492,7 @@ const upsert = async (prospect) => {
 	          source_system,
 	          source_external_id,
 	          source_payload_json,
+	          source_payload_encrypted,
 	          assigned_by_rule_id,
 	          assigned_at,
 	          last_synced_at,
@@ -492,6 +518,7 @@ const upsert = async (prospect) => {
 	          :sourceSystem,
 	          :sourceExternalId,
 	          :sourcePayloadJson,
+	          :sourcePayloadEncrypted,
 	          :assignedByRuleId,
 	          :assignedAt,
 	          :lastSyncedAt,
@@ -520,6 +547,7 @@ const upsert = async (prospect) => {
 	          source_system = VALUES(source_system),
 	          source_external_id = VALUES(source_external_id),
 	          source_payload_json = VALUES(source_payload_json),
+	          source_payload_encrypted = VALUES(source_payload_encrypted),
 	          assigned_by_rule_id = VALUES(assigned_by_rule_id),
 	          assigned_at = VALUES(assigned_at),
 	          last_synced_at = VALUES(last_synced_at),

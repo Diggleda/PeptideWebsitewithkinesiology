@@ -51,6 +51,8 @@ const STATEMENTS = [
         GENERATED ALWAYS AS (LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')))
         STORED,
       payload LONGTEXT NULL,
+      payload_encrypted LONGTEXT NULL,
+      phi_payload_ref VARCHAR(64) NULL,
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
       INDEX idx_peppro_orders_user (user_id),
@@ -66,9 +68,14 @@ const STATEMENTS = [
       name VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL,
       phone VARCHAR(64) NULL,
+      name_encrypted LONGTEXT NULL,
+      email_encrypted LONGTEXT NULL,
+      phone_encrypted LONGTEXT NULL,
+      email_blind_index CHAR(64) NULL,
       source VARCHAR(255) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_contact_forms_email (email),
+      INDEX idx_contact_forms_email_blind (email_blind_index),
       INDEX idx_contact_forms_created_at (created_at)
     ) CHARACTER SET utf8mb4
   `,
@@ -79,6 +86,9 @@ const STATEMENTS = [
       name VARCHAR(255) NULL,
       email VARCHAR(255) NULL,
       report LONGTEXT NOT NULL,
+      name_encrypted LONGTEXT NULL,
+      email_encrypted LONGTEXT NULL,
+      report_encrypted LONGTEXT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
   `,
@@ -92,6 +102,7 @@ const STATEMENTS = [
       source_system VARCHAR(32) NULL,
       source_external_id VARCHAR(128) NULL,
       source_payload_json LONGTEXT NULL,
+      source_payload_encrypted LONGTEXT NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'pending',
       notes LONGTEXT NULL,
       is_manual TINYINT(1) NOT NULL DEFAULT 0,
@@ -535,6 +546,20 @@ const ensureOrderColumns = async () => {
         ADD COLUMN shipped_at DATETIME NULL AFTER order_placed_at
       `,
     },
+    {
+      name: 'payload_encrypted',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN payload_encrypted LONGTEXT NULL AFTER payload
+      `,
+    },
+    {
+      name: 'phi_payload_ref',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN phi_payload_ref VARCHAR(64) NULL AFTER payload_encrypted
+      `,
+    },
   ];
   for (const column of columns) {
     try {
@@ -612,6 +637,13 @@ const ensureSalesProspectColumns = async () => {
       ddl: `
         ALTER TABLE sales_prospects
         ADD COLUMN source_payload_json LONGTEXT NULL
+      `,
+    },
+    {
+      name: 'source_payload_encrypted',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN source_payload_encrypted LONGTEXT NULL
       `,
     },
     {
@@ -748,6 +780,27 @@ const ensureBugReportColumns = async () => {
         ADD COLUMN email VARCHAR(255) NULL AFTER name
       `,
     },
+    {
+      name: 'name_encrypted',
+      ddl: `
+        ALTER TABLE bugs_reported
+        ADD COLUMN name_encrypted LONGTEXT NULL AFTER name
+      `,
+    },
+    {
+      name: 'email_encrypted',
+      ddl: `
+        ALTER TABLE bugs_reported
+        ADD COLUMN email_encrypted LONGTEXT NULL AFTER email
+      `,
+    },
+    {
+      name: 'report_encrypted',
+      ddl: `
+        ALTER TABLE bugs_reported
+        ADD COLUMN report_encrypted LONGTEXT NULL AFTER report
+      `,
+    },
   ];
   for (const column of columns) {
     try {
@@ -846,10 +899,53 @@ const ensureContactFormIndexes = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
   }
+  const columns = [
+    {
+      name: 'name_encrypted',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN name_encrypted LONGTEXT NULL',
+    },
+    {
+      name: 'email_encrypted',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN email_encrypted LONGTEXT NULL',
+    },
+    {
+      name: 'phone_encrypted',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN phone_encrypted LONGTEXT NULL',
+    },
+    {
+      name: 'email_blind_index',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN email_blind_index CHAR(64) NULL',
+    },
+  ];
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'contact_forms'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL contact_forms column added');
+      }
+    } catch (error) {
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL contact_forms column');
+    }
+  }
   await ensureIndex(
     'contact_forms',
     'idx_contact_forms_email',
     'ALTER TABLE contact_forms ADD INDEX idx_contact_forms_email (email)',
+  );
+  await ensureIndex(
+    'contact_forms',
+    'idx_contact_forms_email_blind',
+    'ALTER TABLE contact_forms ADD INDEX idx_contact_forms_email_blind (email_blind_index)',
   );
   await ensureIndex(
     'contact_forms',

@@ -4,7 +4,7 @@ const { logger } = require('./config/logger');
 const { bootstrap } = require('./bootstrap');
 
 process.on('uncaughtException', (err) => {
-  // Ensure we see boot/runtime crashes even if logger transport is misconfigured under Passenger.
+  // Ensure we see boot/runtime crashes even if structured logging is misconfigured.
   // eslint-disable-next-line no-console
   console.error('[boot] uncaughtException', err);
   logger.fatal({ err }, 'Uncaught exception');
