@@ -14,12 +14,29 @@ except ImportError:  # pragma: no cover - optional dependency
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-def _load_dotenv() -> None:
+def _path_within_root(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.resolve(strict=False).relative_to(root.resolve(strict=False))
+        return True
+    except ValueError:
+        return False
+
+
+def _load_dotenv(node_env: Optional[str] = None) -> None:
+    runtime_env = str(node_env or os.environ.get("NODE_ENV") or "development").strip().lower()
     env_path = os.environ.get("DOTENV_CONFIG_PATH")
     if env_path:
         candidate = Path(env_path).expanduser()
-    else:
-        candidate = BASE_DIR / ".env"
+        if runtime_env == "production" and _path_within_root(candidate, BASE_DIR):
+            raise RuntimeError(
+                "DOTENV_CONFIG_PATH must reference a server-managed file outside the repo in production"
+            )
+        if load_dotenv:
+            load_dotenv(candidate)
+        return
+    if runtime_env == "production":
+        return
+    candidate = BASE_DIR / ".env"
     if load_dotenv:
         load_dotenv(candidate)
 
@@ -111,9 +128,9 @@ class AppConfig:
 
 
 def load_config() -> AppConfig:
-    _load_dotenv()
-
-    node_env = os.environ.get("NODE_ENV", "development")
+    bootstrap_node_env = os.environ.get("NODE_ENV", "development")
+    _load_dotenv(bootstrap_node_env)
+    node_env = os.environ.get("NODE_ENV", bootstrap_node_env)
     cors_allow_list = _parse_list(os.environ.get("CORS_ALLOW_ORIGINS") or "*")
     if cors_allow_list == ["*"]:
         cors_allow_list = ["*"]
@@ -194,6 +211,9 @@ def load_config() -> AppConfig:
         encryption={
             "key": os.environ.get("DATA_ENCRYPTION_KEY", ""),
             "algorithm": os.environ.get("DATA_ENCRYPTION_ALGO", "aes-256-gcm"),
+            "key_version": os.environ.get("DATA_ENCRYPTION_KEY_VERSION", "local-v1"),
+            "kms_key_id": os.environ.get("DATA_ENCRYPTION_KMS_KEY_ID", ""),
+            "blind_index_key": os.environ.get("DATA_ENCRYPTION_BLIND_INDEX_KEY", ""),
         },
         ship_station={
             "api_token": _s(os.environ.get("SHIPSTATION_API_TOKEN")),
@@ -299,6 +319,19 @@ def load_config() -> AppConfig:
         config.stripe["publishable_key"] = config.stripe.get("publishable_key_live") or ""
     else:
         config.stripe["publishable_key"] = config.stripe.get("publishable_key_test") or config.stripe.get("publishable_key_live") or ""
+
+    if config.is_production:
+        if not config.jwt_secret or config.jwt_secret == "your-secret-key-change-in-production":
+            raise RuntimeError("JWT_SECRET must be set to a strong value in production")
+        if not str(config.encryption.get("key") or "").strip():
+            raise RuntimeError("DATA_ENCRYPTION_KEY must be configured in production")
+        if bool(config.mysql.get("enabled")) and not bool(config.mysql.get("ssl")):
+            raise RuntimeError("MYSQL_SSL=true is required in production when MySQL is enabled")
+        redis_url = str(os.environ.get("REDIS_URL") or "").strip()
+        if redis_url and not redis_url.lower().startswith("rediss://"):
+            raise RuntimeError("REDIS_URL must use rediss:// in production")
+        if config.frontend_base_url and not config.frontend_base_url.lower().startswith("https://"):
+            raise RuntimeError("FRONTEND_BASE_URL must use HTTPS in production")
 
     return config
 

@@ -461,7 +461,7 @@ const buildLineItems = (items, { taxTotal = 0, taxRateId = null } = {}) => {
       subtotal: total,
       total_tax: '0.00',
       subtotal_tax: '0.00',
-      meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
+      meta_data: [],
       _line_total_value: lineTotalValue,
     };
     // Include product/variation ids so Woo and ShipStation exports keep the items.
@@ -561,7 +561,6 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
       shippingEstimate.serviceCode ? { key: 'peppro_service_code', value: shippingEstimate.serviceCode } : null,
       shippingEstimate.serviceType ? { key: 'peppro_service_type', value: shippingEstimate.serviceType } : null,
       handDelivery ? { key: 'peppro_delivery_method', value: 'hand_delivery' } : null,
-      handDelivery && deliveryAddress ? { key: 'peppro_hand_delivery_address', value: deliveryAddress } : null,
       Number.isFinite(shippingEstimate.estimatedDeliveryDays)
         ? { key: 'peppro_estimated_delivery_days', value: shippingEstimate.estimatedDeliveryDays }
         : null,
@@ -584,6 +583,18 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
   }
   return [];
 };
+
+const buildSanitizedWooAddress = () => ({
+  first_name: 'PepPro',
+  email: 'orders@peppro.example',
+  phone: '',
+  address_1: '',
+  address_2: '',
+  city: '',
+  state: '',
+  postcode: '',
+  country: 'US',
+});
 
 const buildOrderPayload = async ({ order, customer }) => {
   const shippingAddress = order.shippingAddress || null;
@@ -668,17 +679,7 @@ const buildOrderPayload = async ({ order, customer }) => {
     shipping_tax: '0.00',
     line_items: buildLineItems(order.items || [], { taxTotal, taxRateId: manualTaxRateId }),
     meta_data: metaData,
-    billing: {
-      first_name: billingAddress?.name || customer.name || 'PepPro',
-      email: billingAddress?.email || customer.email || 'orders@peppro.example',
-      phone: billingAddress?.phone || '',
-      address_1: billingAddress?.addressLine1 || '',
-      address_2: billingAddress?.addressLine2 || '',
-      city: billingAddress?.city || '',
-      state: billingAddress?.state || '',
-      postcode: billingAddress?.postalCode || '',
-      country: billingAddress?.country || 'US',
-    },
+    billing: buildSanitizedWooAddress(),
   };
   if (manualTaxRateId && taxTotal > 0) {
     payload.tax_lines = [{
@@ -695,15 +696,7 @@ const buildOrderPayload = async ({ order, customer }) => {
   }
 
   if (shippingAddress) {
-    payload.shipping = {
-      first_name: shippingAddress.name || customer.name || 'PepPro',
-      address_1: shippingAddress.addressLine1 || '',
-      address_2: shippingAddress.addressLine2 || '',
-      city: shippingAddress.city || '',
-      state: shippingAddress.state || '',
-      postcode: shippingAddress.postalCode || '',
-      country: shippingAddress.country || 'US',
-    };
+    payload.shipping = buildSanitizedWooAddress();
   }
 
   const shippingLines = buildShippingLines({

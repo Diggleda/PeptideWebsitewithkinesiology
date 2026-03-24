@@ -4,6 +4,7 @@ const { logger } = require('../config/logger');
 const { ensureAdmin } = require('../middleware/auth');
 const salesRepRepository = require('../repositories/salesRepRepository');
 const salesProspectRepository = require('../repositories/salesProspectRepository');
+const { computeBlindIndex, decryptText, encryptText } = require('../utils/cryptoEnvelope');
 
 const router = express.Router();
 
@@ -15,12 +16,19 @@ router.get('/', ensureAdmin, async (req, res) => {
   try {
     const submissions = await mysqlClient.fetchAll(
       `
-        SELECT id, name, email, phone, source, created_at
+        SELECT id, name, email, phone, name_encrypted, email_encrypted, phone_encrypted, source, created_at
         FROM contact_forms
         ORDER BY created_at DESC
       `,
     );
-    return res.status(200).json(submissions);
+    return res.status(200).json(
+      (submissions || []).map((row) => ({
+        ...row,
+        name: decryptText(row.name_encrypted) || row.name || null,
+        email: decryptText(row.email_encrypted) || row.email || null,
+        phone: decryptText(row.phone_encrypted) || row.phone || null,
+      })),
+    );
   } catch (error) {
     logger.error({ err: error }, 'Failed to fetch contact forms');
     return res.status(500).json({ error: 'Unable to fetch contact forms. Please try again later.' });
@@ -43,10 +51,25 @@ router.post('/', async (req, res) => {
   try {
     const result = await mysqlClient.execute(
       `
-        INSERT INTO contact_forms (name, email, phone, source)
-        VALUES (:name, :email, :phone, :source)
+        INSERT INTO contact_forms (
+          name, email, phone, name_encrypted, email_encrypted, phone_encrypted, email_blind_index, source
+        )
+        VALUES (
+          :name, :email, :phone, :nameEncrypted, :emailEncrypted, :phoneEncrypted, :emailBlindIndex, :source
+        )
       `,
-      trimmed,
+      {
+        ...trimmed,
+        nameEncrypted: encryptText(trimmed.name, { aad: { table: 'contact_forms', field: 'name' } }),
+        emailEncrypted: encryptText(trimmed.email, { aad: { table: 'contact_forms', field: 'email' } }),
+        phoneEncrypted: trimmed.phone
+          ? encryptText(trimmed.phone, { aad: { table: 'contact_forms', field: 'phone' } })
+          : null,
+        emailBlindIndex: computeBlindIndex(trimmed.email.toLowerCase(), {
+          label: 'contact_forms.email',
+          normalizer: (value) => value.trim().toLowerCase(),
+        }),
+      },
     );
 
     try {

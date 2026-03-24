@@ -201,18 +201,18 @@ def _audit_event(
         or request.remote_addr
         or ""
     )
-    metadata = {
-        **(payload or {}),
-        "ip": request_ip.split(",")[0].strip() if request_ip else None,
-        "userAgent": request.headers.get("User-Agent"),
-    }
     patient_links_repository.insert_audit_event(
         token=token,
         doctor_id=doctor_id,
         actor_user_id=str(actor.get("id") or "").strip() or None,
         actor_role=str(actor.get("role") or "").strip() or None,
         event_type=event_type,
-        payload=metadata,
+        resource_ref=str(token or "").strip() or None,
+        purpose="delegate_link_workflow",
+        result="success",
+        request_ip=request_ip.split(",")[0].strip() if request_ip else None,
+        device_info=request.headers.get("User-Agent"),
+        payload=payload or {},
     )
 
 

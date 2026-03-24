@@ -10,6 +10,7 @@ from ..database import mysql_client
 from ..repositories import sales_rep_repository, user_repository
 from ..services import get_config, usage_tracking_service
 from ..storage import bug_report_store
+from ..utils.crypto_envelope import encrypt_text
 from ..utils.http import handle_action
 
 blueprint = Blueprint("bugs", __name__, url_prefix="/api/bugs")
@@ -93,14 +94,28 @@ def submit_bug_report():
             with mysql_client.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO bugs_reported (user_id, name, email, report)
-                    VALUES (%(user_id)s, %(name)s, %(email)s, %(report)s)
+                    INSERT INTO bugs_reported (
+                        user_id, name, email, report, name_encrypted, email_encrypted, report_encrypted
+                    )
+                    VALUES (
+                        %(user_id)s, NULL, NULL, %(report_placeholder)s, %(name_encrypted)s, %(email_encrypted)s, %(report_encrypted)s
+                    )
                     """,
                     {
                         "user_id": record["userId"],
-                        "name": record["name"],
-                        "email": record["email"],
-                        "report": record["report"],
+                        "report_placeholder": "[ENCRYPTED]",
+                        "name_encrypted": encrypt_text(
+                            record["name"],
+                            aad={"table": "bugs_reported", "field": "name"},
+                        ) if record["name"] else None,
+                        "email_encrypted": encrypt_text(
+                            record["email"],
+                            aad={"table": "bugs_reported", "field": "email"},
+                        ) if record["email"] else None,
+                        "report_encrypted": encrypt_text(
+                            record["report"],
+                            aad={"table": "bugs_reported", "field": "report"},
+                        ),
                     },
                 )
         except Exception:

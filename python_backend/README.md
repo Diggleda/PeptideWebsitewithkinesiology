@@ -2,7 +2,7 @@
 
 This directory hosts the new Flask-based backend that mirrors the capabilities
 of the original Node/Express service.  The app uses a modular structure so it
-can run both locally and inside cPanel's “Setup Python App” environment.
+can run both locally and in the production systemd/gunicorn deployment.
 
 Key pieces:
 
@@ -18,7 +18,7 @@ Key pieces:
   frontend.
 - `integrations/` – outbound connectors (WooCommerce and ShipEngine).
 - `middleware/auth.py` – JWT authentication decorator.
-- `wsgi.py` – entry point used by Passenger/mod_wsgi on cPanel.
+- `wsgi.py` – WSGI entry point used by gunicorn in production.
 - `database/` – MySQL connection helpers and schema bootstrap (used only when
   the MySQL backend is enabled via environment variables).
 
@@ -31,8 +31,34 @@ Local development flow:
 3. Run `flask --app python_backend.wsgi:app run --debug` (or `python -m flask`
    with the same module path) to start the backend alongside `npm run dev`.
 
-When deploying to cPanel, set the application entry point to
-`python_backend/wsgi.py` and make sure the `WORKING_DIRECTORY` points to the
-project root. If you enable MySQL (`MYSQL_ENABLED=true`), provide the GoDaddy
-database credentials in the environment variables; the schema is created
-automatically on first boot.
+Production runtime notes:
+
+- The live Python backend runs under `systemd` as `peppr-api.service`.
+- Production secrets must be stored manually on the server in
+  `/etc/peppr-api.env`, not in repo `.env` files.
+- The runtime env file should be root-managed and non-world-readable:
+  `root:root` with mode `0600`.
+- Production boots no longer fall back to repo `.env` files unless you
+  explicitly set `DOTENV_CONFIG_PATH` to an external server-managed path.
+- Do not point `DOTENV_CONFIG_PATH` at a file inside the repo in production.
+- If you enable MySQL (`MYSQL_ENABLED=true`), the schema is created
+  automatically on first boot, so the runtime DB user must be able to add the
+  new encrypted columns and indexes.
+
+Required production settings:
+
+- `NODE_ENV=production`
+- `JWT_SECRET=<strong random value>`
+- `DATA_ENCRYPTION_KEY=<stable random value>`
+- `DATA_ENCRYPTION_BLIND_INDEX_KEY=<stable random value>`
+- `DATA_ENCRYPTION_KEY_VERSION=prod-v1`
+- `MYSQL_SSL=true`
+- `FRONTEND_BASE_URL=https://your-domain`
+
+Optional production settings:
+
+- `REDIS_URL=rediss://...` if Redis/RQ is used in production
+- `DATA_DIR=/opt/peppr/backend/server-data`
+
+See [`ops/peppr-api.env.example`](../ops/peppr-api.env.example)
+for a safe non-secret template.
