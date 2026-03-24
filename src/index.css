@@ -3827,6 +3827,25 @@ html {
   padding-bottom: 0.25rem;
 }
 
+.documentation-header-tabs.account-tab-shell {
+  min-height: 2.35rem;
+}
+
+.documentation-header-tabs .account-tab-scroll-container {
+  padding-top: 0;
+  padding-bottom: 6px;
+}
+
+.documentation-header-tabs .account-tab-row {
+  min-height: 2.15rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.documentation-header-tabs .account-tab-underline-indicator {
+  bottom: 12px;
+}
+
 .account-tab-scroll-container {
   overflow-x: auto;
   overflow-y: visible;
@@ -7753,13 +7772,19 @@ a[href^="mailto:"]:hover {
   background-color: var(--delegate-accent) !important;
 }
 
+[data-delegate-theme="true"] .dialog-close-btn svg,
+[data-delegate-theme="true"] .legal-modal-close-btn svg {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
 [data-delegate-theme="true"] .dialog-close-btn:hover {
   background-color: var(--delegate-accent-80) !important;
 }
 
 [data-delegate-theme="true"] .account-tab-underline-indicator {
   background: var(--delegate-accent) !important;
-  box-shadow: 0 4px 12px var(--delegate-accent-45) !important;
+  box-shadow: none !important;
 }
 
 [data-delegate-theme="true"] .legal-inline-link,

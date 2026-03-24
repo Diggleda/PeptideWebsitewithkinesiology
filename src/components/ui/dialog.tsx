@@ -118,7 +118,7 @@ const DialogContent = React.forwardRef<
                 borderRadius: "50%",
               }}
             >
-              <XIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+              <XIcon className="h-4 w-4 text-white sm:h-5 sm:w-5" />
               <span className="sr-only">Close</span>
             </DialogPrimitive.Close>
           )}

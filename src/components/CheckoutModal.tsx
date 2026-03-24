@@ -596,7 +596,8 @@ export function CheckoutModal({
     isOpen
     && (isAuthenticated || allowUnauthenticatedCheckout)
     && taxAddressReady
-    && checkoutLineItems.length > 0,
+    && checkoutLineItems.length > 0
+    && hasSelectedShippingRate,
   );
   const taxReady = !shouldFetchTax || (!!taxEstimate && !taxEstimatePending);
   const meetsCheckoutRequirements = termsAccepted
@@ -1345,6 +1346,9 @@ export function CheckoutModal({
     if (!shouldFetchTax || !taxQuoteKey) {
       return;
     }
+    if (!isHandDeliveryEnabled && !selectedShippingRate) {
+      return;
+    }
     if (!options?.force && lastTaxQuoteRef.current?.key === taxQuoteKey) {
       return;
     }
@@ -1570,7 +1574,7 @@ export function CheckoutModal({
               }}
 	              aria-label={proposalMode ? 'Close proposal' : 'Close checkout'}
 	            >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4 text-white" />
             </DialogClose>
           </div>
         </DialogHeader>

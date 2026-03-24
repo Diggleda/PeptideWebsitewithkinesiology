@@ -15,6 +15,8 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
+import delegateLinkBetaImage1 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage1.png';
+import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage2.png';
 import {
   buildResearchSupplyLinkUrl,
 } from '../lib/researchSupplyLinks';
@@ -1928,19 +1930,17 @@ export function Header({
         const fresh = await api.authAPI.getCurrentUser();
         if (seq !== accountDetailsRefreshSeqRef.current) return;
         if (!fresh) return;
-        setLocalUser((prev) => {
-          const nextUserState: HeaderUser = {
-            ...(prev || {}),
-            ...(fresh as any),
-          };
-          onUserUpdated?.(nextUserState);
-          return nextUserState;
-        });
+        const nextUserState: HeaderUser = {
+          ...(localUser || user || {}),
+          ...(fresh as any),
+        };
+        setLocalUser(nextUserState);
+        onUserUpdated?.(nextUserState);
       } catch (error) {
         console.warn('[Header] Failed to refresh account details', error);
       }
     })();
-  }, [welcomeOpen, accountTab, user, onUserUpdated]);
+  }, [welcomeOpen, accountTab, user, localUser, onUserUpdated]);
   useEffect(() => {
     if (!loginOpen || authMode !== 'login') {
       return;
@@ -6220,15 +6220,18 @@ export function Header({
                 This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate sessions for patient-specific order proposals. This means you can send your patients links to allow them to create a proposal of products for your approval, ordering, modification, or rejection.
               </p>
               <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
-                {[1, 2].map((imageIndex) => (
+                {[
+                  { src: delegateLinkBetaImage1, alt: 'Delegate Links beta preview 1' },
+                  { src: delegateLinkBetaImage2, alt: 'Delegate Links beta preview 2' },
+                ].map((image) => (
                   <div
-                    key={imageIndex}
+                    key={image.src}
                     className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
                   >
                     <img
-                      src={withStaticAssetStamp('/PepPro_icon.png')}
-                      alt={`Delegate Links placeholder ${imageIndex}`}
-                      className="h-48 w-full object-contain bg-white p-6"
+                      src={image.src}
+                      alt={image.alt}
+                      className="h-48 w-full object-cover bg-white"
                     />
                   </div>
                 ))}
@@ -7712,7 +7715,7 @@ export function Header({
               }}
               aria-label="Close account modal"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4 text-white" />
             </DialogClose>
           </DialogHeader>
           {authMode === 'login' ? (
