@@ -9,7 +9,6 @@ from flask import Blueprint, request
 from ..database import mysql_client
 from ..repositories import sales_rep_repository, user_repository
 from ..services import get_config, usage_tracking_service
-from ..storage import bug_report_store
 from ..utils.crypto_envelope import encrypt_text
 from ..utils.http import handle_action
 
@@ -80,12 +79,6 @@ def submit_bug_report():
         }
 
         if not get_config().mysql.get("enabled"):
-            # Mirror the contact form behavior: fall back to JSON storage when MySQL is unavailable.
-            if bug_report_store:
-                reports = bug_report_store.read()
-                reports.append(record)
-                bug_report_store.write(reports)
-                return {"status": "ok"}
             error = RuntimeError("Bug report storage requires MySQL to be enabled.")
             error.status = 503  # type: ignore[attr-defined]
             raise error
@@ -119,12 +112,6 @@ def submit_bug_report():
                     },
                 )
         except Exception:
-            if bug_report_store:
-                reports = bug_report_store.read()
-                reports.append(record)
-                bug_report_store.write(reports)
-                usage_tracking_service.track_event("issue_reported", actor=actor, metadata={"source": "bug_report"})
-                return {"status": "ok"}
             raise
 
         usage_tracking_service.track_event("issue_reported", actor=actor, metadata={"source": "bug_report"})

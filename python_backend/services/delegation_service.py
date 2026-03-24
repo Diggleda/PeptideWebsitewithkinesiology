@@ -5,6 +5,7 @@ import logging
 import re
 import secrets
 import threading
+import math
 from datetime import timedelta
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -44,6 +45,22 @@ _PROHIBITED_RESEARCH_TERMS = (
     "patient instructions",
     "consume",
     "ingest",
+)
+_AUDIT_BLOCKED_KEY_FRAGMENTS = (
+    "patient",
+    "subject",
+    "study",
+    "reference",
+    "label",
+    "name",
+    "email",
+    "phone",
+    "address",
+    "instruction",
+    "note",
+    "payment",
+    "shipping",
+    "cart",
 )
 
 
@@ -183,6 +200,63 @@ def _research_supply_disclosures(markup_percent: object) -> List[str]:
     ]
 
 
+def _audit_key_is_blocked(key: object) -> bool:
+    normalized = str(key or "").strip().lower()
+    if not normalized:
+        return False
+    return any(fragment in normalized for fragment in _AUDIT_BLOCKED_KEY_FRAGMENTS)
+
+
+def _sanitize_audit_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            numeric = float(value)
+        except Exception:
+            return None
+        if not math.isfinite(numeric):
+            return None
+        if isinstance(value, int):
+            return value
+        return round(numeric, 4)
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat() if value.tzinfo else value.replace(tzinfo=timezone.utc).isoformat()
+    if isinstance(value, str):
+        text = value.strip()
+        return text[:255] if text else None
+    if isinstance(value, dict):
+        sanitized: Dict[str, Any] = {}
+        for key, nested in value.items():
+            if _audit_key_is_blocked(key):
+                continue
+            nested_value = _sanitize_audit_value(nested)
+            if nested_value in (None, "", [], {}):
+                continue
+            sanitized[str(key)] = nested_value
+        return sanitized
+    if isinstance(value, (list, tuple, set)):
+        items: List[Any] = []
+        for entry in value:
+            sanitized_entry = _sanitize_audit_value(entry)
+            if sanitized_entry in (None, "", [], {}):
+                continue
+            items.append(sanitized_entry)
+            if len(items) >= 25:
+                break
+        return items
+    return None
+
+
+def _sanitize_audit_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    sanitized = _sanitize_audit_value(payload)
+    return sanitized if isinstance(sanitized, dict) else {}
+
+
 def _audit_event(
     event_type: str,
     *,
@@ -212,7 +286,7 @@ def _audit_event(
         result="success",
         request_ip=request_ip.split(",")[0].strip() if request_ip else None,
         device_info=request.headers.get("User-Agent"),
-        payload=payload or {},
+        payload=_sanitize_audit_payload(payload or {}),
     )
 
 
@@ -629,10 +703,7 @@ def create_link(
             token=created.get("token"),
             doctor_id=doctor_id,
             payload={
-                "subjectLabel": created.get("subjectLabel"),
-                "studyLabel": created.get("studyLabel"),
-                "patientReference": created.get("patientReference"),
-                "allowedProducts": created.get("allowedProducts"),
+                "allowedProductsCount": len(created.get("allowedProducts") or []),
                 "expiresAt": created.get("expiresAt"),
                 "usageLimit": created.get("usageLimit"),
                 "markupPercent": created.get("markupPercent"),

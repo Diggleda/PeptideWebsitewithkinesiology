@@ -7,6 +7,7 @@ const salesProspectRepository = require('../repositories/salesProspectRepository
 const { computeBlindIndex, decryptText, encryptText } = require('../utils/cryptoEnvelope');
 
 const router = express.Router();
+const ENCRYPTED_PLACEHOLDER = '[ENCRYPTED]';
 
 router.get('/', ensureAdmin, async (req, res) => {
   if (!mysqlClient.isEnabled()) {
@@ -60,6 +61,9 @@ router.post('/', async (req, res) => {
       `,
       {
         ...trimmed,
+        name: ENCRYPTED_PLACEHOLDER,
+        email: ENCRYPTED_PLACEHOLDER,
+        phone: null,
         nameEncrypted: encryptText(trimmed.name, { aad: { table: 'contact_forms', field: 'name' } }),
         emailEncrypted: encryptText(trimmed.email, { aad: { table: 'contact_forms', field: 'email' } }),
         phoneEncrypted: trimmed.phone
@@ -79,19 +83,29 @@ router.post('/', async (req, res) => {
         .find((candidate) => String(candidate?.salesCode || '').trim().toUpperCase() === normalizedSource);
 
       const insertId = result && typeof result.insertId !== 'undefined' ? result.insertId : null;
-      if (rep && insertId) {
-        await salesProspectRepository.upsert({
-          id: `contact_form:${insertId}`,
-          salesRepId: String(rep.id || rep.salesRepId),
-          contactFormId: String(insertId),
-          status: 'contact_form',
-          isManual: false,
-          contactName: trimmed.name,
-          contactEmail: trimmed.email,
-          contactPhone: trimmed.phone || null,
-          notes: null,
-        });
-      }
+        if (rep && insertId) {
+          await salesProspectRepository.upsert({
+            id: `contact_form:${insertId}`,
+            salesRepId: String(rep.id || rep.salesRepId),
+            contactFormId: String(insertId),
+            sourceSystem: 'contact_form',
+            sourceExternalId: String(insertId),
+            sourcePayloadJson: {
+              contactFormId: String(insertId),
+              source: trimmed.source || null,
+              submittedAt: new Date().toISOString(),
+              contactName: trimmed.name,
+              contactEmail: trimmed.email,
+              contactPhone: trimmed.phone || null,
+            },
+            status: 'contact_form',
+            isManual: false,
+            contactName: null,
+            contactEmail: null,
+            contactPhone: null,
+            notes: null,
+          });
+        }
     } catch (error) {
       logger.warn({ err: error }, 'Failed to upsert sales prospect for contact form submission');
     }

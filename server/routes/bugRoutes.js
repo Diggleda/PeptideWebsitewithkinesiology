@@ -25,41 +25,27 @@ router.post('/', authenticateOptional, async (req, res) => {
   const email = req.user?.email ? String(req.user.email).trim() : null;
 
   try {
-    try {
-      await mysqlClient.execute(
-        `
-          INSERT INTO bugs_reported (
-            user_id, name, email, report, name_encrypted, email_encrypted, report_encrypted
-          )
-          VALUES (
-            :userId, NULL, NULL, :reportPlaceholder, :nameEncrypted, :emailEncrypted, :reportEncrypted
-          )
-        `,
-        {
-          userId,
-          reportPlaceholder: '[ENCRYPTED]',
-          nameEncrypted: name
-            ? encryptText(name, { aad: { table: 'bugs_reported', field: 'name' } })
-            : null,
-          emailEncrypted: email
-            ? encryptText(email, { aad: { table: 'bugs_reported', field: 'email' } })
-            : null,
-          reportEncrypted: encryptText(report, { aad: { table: 'bugs_reported', field: 'report' } }),
-        },
-      );
-    } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ER_BAD_FIELD_ERROR') {
-        await mysqlClient.execute(
-          `
-            INSERT INTO bugs_reported (report)
-            VALUES (:report)
-          `,
-          { report },
-        );
-      } else {
-        throw error;
-      }
-    }
+    await mysqlClient.execute(
+      `
+        INSERT INTO bugs_reported (
+          user_id, name, email, report, name_encrypted, email_encrypted, report_encrypted
+        )
+        VALUES (
+          :userId, NULL, NULL, :reportPlaceholder, :nameEncrypted, :emailEncrypted, :reportEncrypted
+        )
+      `,
+      {
+        userId,
+        reportPlaceholder: '[ENCRYPTED]',
+        nameEncrypted: name
+          ? encryptText(name, { aad: { table: 'bugs_reported', field: 'name' } })
+          : null,
+        emailEncrypted: email
+          ? encryptText(email, { aad: { table: 'bugs_reported', field: 'email' } })
+          : null,
+        reportEncrypted: encryptText(report, { aad: { table: 'bugs_reported', field: 'report' } }),
+      },
+    );
     return res.status(200).json({ status: 'ok' });
   } catch (error) {
     logger.error({ err: error }, 'Failed to persist bug report');

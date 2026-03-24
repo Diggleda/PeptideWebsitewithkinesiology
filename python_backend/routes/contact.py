@@ -5,13 +5,13 @@ from typing import Any, Dict
 
 from flask import Blueprint, request
 
-from ..storage import contact_form_store
 from ..utils.http import handle_action
 from ..database import mysql_client
 from ..repositories import sales_rep_repository, sales_prospect_repository, user_repository
 from ..utils.crypto_envelope import compute_blind_index, encrypt_text
 
 blueprint = Blueprint("contact", __name__, url_prefix="/api/contact")
+ENCRYPTED_PLACEHOLDER = "[ENCRYPTED]"
 
 
 @blueprint.route("", methods=["POST"], strict_slashes=False)
@@ -36,7 +36,11 @@ def submit_contact():
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Prefer MySQL; fall back to JSON store if unavailable.
+        if not mysql_client.is_enabled():
+            error = RuntimeError("Contact form storage requires MySQL to be enabled.")
+            error.status = 503  # type: ignore[attr-defined]
+            raise error
+
         try:
             inserted_id = None
             with mysql_client.cursor() as cur:
@@ -51,9 +55,9 @@ def submit_contact():
                     )
                     """,
                     {
-                        "name": record["name"],
-                        "email": record["email"],
-                        "phone": record["phone"],
+                        "name": ENCRYPTED_PLACEHOLDER,
+                        "email": ENCRYPTED_PLACEHOLDER,
+                        "phone": None,
                         "name_encrypted": encrypt_text(
                             record["name"],
                             aad={"table": "contact_forms", "field": "name"},
@@ -87,9 +91,6 @@ def submit_contact():
                             "contactFormId": str(inserted_id),
                             "status": "contact_form",
                             "isManual": False,
-                            "contactName": record["name"],
-                            "contactEmail": record["email"],
-                            "contactPhone": record["phone"],
                         }
                     )
                     user_repository.mark_contact_form_origin_for_email(
@@ -99,17 +100,7 @@ def submit_contact():
             except Exception:
                 pass
         except Exception:
-            if contact_form_store:
-                forms = contact_form_store.read()
-                forms.append(record)
-                contact_form_store.write(forms)
-            try:
-                user_repository.mark_contact_form_origin_for_email(
-                    record["email"],
-                    source="contact_form",
-                )
-            except Exception:
-                pass
+            raise
 
         return {"status": "ok"}
 

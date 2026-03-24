@@ -96,6 +96,29 @@ class DelegationServiceTests(unittest.TestCase):
             )
         self.assertEqual(getattr(ctx.exception, "status", None), 400)
 
+    def test_sanitize_audit_payload_strips_phi_keys(self):
+        sanitized = self.delegation_service._sanitize_audit_payload(
+            {
+                "subjectLabel": "John Doe",
+                "patientReference": "MRN-123",
+                "markupPercent": 12.5,
+                "allowedProductsCount": 2,
+                "nested": {
+                    "studyLabel": "Jane Doe",
+                    "status": "active",
+                },
+            }
+        )
+
+        self.assertEqual(
+            sanitized,
+            {
+                "markupPercent": 12.5,
+                "allowedProductsCount": 2,
+                "nested": {"status": "active"},
+            },
+        )
+
     def test_validate_delegate_items_enforces_allowed_products(self):
         service = self.delegation_service
         original_find = service.patient_links_repository.find_by_token
