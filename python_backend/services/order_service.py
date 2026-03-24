@@ -3469,7 +3469,13 @@ def _normalize_shipstation_delivery_status(shipstation_info: Dict) -> Optional[s
     return None
 
 
-def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Optional[str] = None) -> Optional[Dict]:
+def get_sales_rep_order_detail(
+    order_id: str,
+    sales_rep_id: str,
+    token_role: Optional[str] = None,
+    doctor_id_hint: Optional[str] = None,
+    doctor_email_hint: Optional[str] = None,
+) -> Optional[Dict]:
     """
     Fetch a single Woo order detail and ensure it belongs to a doctor tied to this sales rep.
     """
@@ -3478,8 +3484,69 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
     if not woo_commerce.is_configured():
         return None
 
+    def _has_populated_address(value: object) -> bool:
+        if not isinstance(value, dict):
+            return False
+        for key in ("name", "addressLine1", "addressLine2", "city", "state", "postalCode", "country", "phone", "email"):
+            text = str(value.get(key) or "").strip()
+            if text:
+                return True
+        return False
+
+    def _is_unusable_email(value: object) -> bool:
+        normalized = _normalize_email(str(value or ""))
+        return (not normalized) or normalized == "[encrypted]" or normalized.endswith("@peppro.example")
+
+    def _pick_doctor(local_order: Optional[Dict]) -> Optional[Dict]:
+        billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
+        if not _is_unusable_email(billing_email):
+            doctor_by_billing = user_repository.find_by_email(billing_email)
+            if doctor_by_billing:
+                return doctor_by_billing
+
+        normalized_hint_id = str(doctor_id_hint or "").strip()
+        if normalized_hint_id:
+            hinted = user_repository.find_by_id(normalized_hint_id)
+            if hinted:
+                return hinted
+
+        normalized_hint_email = _normalize_email(doctor_email_hint)
+        if normalized_hint_email and "@" in normalized_hint_email:
+            hinted = user_repository.find_by_email(normalized_hint_email)
+            if hinted:
+                return hinted
+
+        local_user_id = str(
+            (local_order or {}).get("userId")
+            or (local_order or {}).get("user_id")
+            or ""
+        ).strip()
+        if local_user_id:
+            return user_repository.find_by_id(local_user_id)
+        return None
+
+    local_order = None
     try:
-        candidates = _normalize_order_identifier(order_id)
+        local_order = (
+            order_repository.find_by_order_identifier(str(order_id))
+            or _find_order_by_woo_id(str(order_id))
+            or order_repository.find_by_id(str(order_id))
+        )
+    except Exception:
+        local_order = None
+
+    try:
+        candidates: List[str] = []
+        for raw_candidate in (
+            (local_order or {}).get("wooOrderId"),
+            (local_order or {}).get("woo_order_id"),
+            (local_order or {}).get("wooOrderNumber"),
+            (local_order or {}).get("woo_order_number"),
+            order_id,
+        ):
+            for candidate in _normalize_order_identifier(str(raw_candidate or "")):
+                if candidate not in candidates:
+                    candidates.append(candidate)
         woo_order = None
         logger.debug(
             "[SalesRep] Order detail lookup start",
@@ -3519,6 +3586,41 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
             pass
     except Exception:
         raise _service_error("Unable to load order details right now. Please try again soon.", 503)
+
+    resolved_doctor = _pick_doctor(local_order)
+    normalized_token_role = (token_role or "").strip().lower()
+    is_admin_request = normalized_token_role in (
+        "admin",
+        "sales_lead",
+        "saleslead",
+        "sales-lead",
+    )
+    if resolved_doctor:
+        if not is_admin_request:
+            users = user_repository.get_all()
+            rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+            allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
+
+            doctor_sales_rep = str(
+                resolved_doctor.get("salesRepId") or resolved_doctor.get("sales_rep_id") or ""
+            )
+            if doctor_sales_rep and doctor_sales_rep not in allowed_rep_ids:
+                raise _service_error("Order not found", 404)
+    elif not is_admin_request:
+        if not local_order:
+            raise _service_error("Order not found", 404)
+        users = user_repository.get_all()
+        rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+        allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
+        order_rep_candidates = {
+            str(local_order.get("doctorSalesRepId") or "").strip(),
+            str(local_order.get("salesRepId") or "").strip(),
+            str(local_order.get("sales_rep_id") or "").strip(),
+            str(local_order.get("doctor_sales_rep_id") or "").strip(),
+        }
+        order_rep_candidates.discard("")
+        if not order_rep_candidates or order_rep_candidates.isdisjoint(allowed_rep_ids):
+            raise _service_error("Order not found", 404)
 
     # Enrich with ShipStation status/tracking when available
     shipstation_info = None
@@ -3576,46 +3678,34 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
             shipstation_info,
         )
 
-    # Associate doctor by billing email
-    billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
-    doctor = user_repository.find_by_email(billing_email) if billing_email else None
-    if doctor:
-        normalized_token_role = (token_role or "").strip().lower()
-        is_admin_request = normalized_token_role in (
-            "admin",
-            "sales_lead",
-            "saleslead",
-            "sales-lead",
-        )
-        if not is_admin_request:
-            users = user_repository.get_all()
-            rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
-            allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
-
-            doctor_sales_rep = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "")
-            if doctor_sales_rep and doctor_sales_rep not in allowed_rep_ids:
-                raise _service_error("Order not found", 404)
-    else:
-        # If we can't associate to a known doctor, don't leak order detail to arbitrary reps.
-        raise _service_error("Order not found", 404)
-    if doctor:
-        mapped["doctorId"] = doctor.get("id")
-        mapped["doctorName"] = doctor.get("name") or billing_email
-        mapped["doctorEmail"] = doctor.get("email")
-        mapped["doctorSalesRepId"] = doctor.get("salesRepId")
-
-    # Pull local PepPro order fields (MySQL `orders` table) for display-only details like notes.
-    # Prefer lookup by pepproOrderId to avoid scanning all orders.
+    # Pull local PepPro order fields for fallback detail hydration and display-only metadata.
+    # This keeps the detail modal usable when Woo returns sparse billing/shipping data or when
+    # the order was authored before the current Woo payload shape.
     try:
         integrations = _ensure_dict(mapped.get("integrationDetails") or mapped.get("integrations"))
         woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
         peppro_order_id = woo_details.get("pepproOrderId") or woo_details.get("peppro_order_id") or None
-        local_order = None
-        if peppro_order_id:
+        if peppro_order_id and not local_order:
             local_order = order_repository.find_by_id(str(peppro_order_id))
         if not local_order:
-            local_order = _find_order_by_woo_id(str(mapped.get("wooOrderId") or mapped.get("id") or mapped.get("wooOrderNumber") or "")) or None
+            local_order = (
+                order_repository.find_by_order_identifier(
+                    str(mapped.get("wooOrderId") or mapped.get("id") or mapped.get("wooOrderNumber") or "")
+                )
+                or _find_order_by_woo_id(
+                    str(mapped.get("wooOrderId") or mapped.get("id") or mapped.get("wooOrderNumber") or "")
+                )
+                or None
+            )
         if local_order:
+            local_shipping = _ensure_dict(local_order.get("shippingAddress") or local_order.get("shipping_address"))
+            local_billing = _ensure_dict(local_order.get("billingAddress") or local_order.get("billing_address"))
+            local_payment = (
+                local_order.get("paymentDetails")
+                or local_order.get("paymentMethod")
+                or None
+            )
+
             if local_order.get("notes") is not None:
                 mapped["notes"] = local_order.get("notes")
             if local_order.get("trackingNumber") is not None:
@@ -3630,8 +3720,58 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
                 mapped.setdefault("shippingEstimate", {})
                 if isinstance(mapped.get("shippingEstimate"), dict):
                     mapped["shippingEstimate"]["serviceType"] = local_order.get("shippingService")
+            if not _has_populated_address(mapped.get("shippingAddress")) and _has_populated_address(local_shipping):
+                mapped["shippingAddress"] = local_shipping
+            if not _has_populated_address(mapped.get("billingAddress")):
+                if _has_populated_address(local_billing):
+                    mapped["billingAddress"] = local_billing
+                elif _has_populated_address(local_shipping):
+                    mapped["billingAddress"] = local_shipping
+            if (not mapped.get("paymentMethod")) and local_payment:
+                mapped["paymentMethod"] = local_payment
+            if (not mapped.get("paymentDetails")) and local_payment:
+                mapped["paymentDetails"] = local_payment
+            if _is_unusable_email(mapped.get("billingEmail")):
+                fallback_email = (
+                    local_billing.get("email")
+                    or local_shipping.get("email")
+                    or (resolved_doctor or {}).get("email")
+                    or None
+                )
+                if fallback_email:
+                    mapped["billingEmail"] = fallback_email
     except Exception:
         pass
+
+    if resolved_doctor:
+        mapped["doctorId"] = resolved_doctor.get("id")
+        mapped["doctorName"] = resolved_doctor.get("name") or mapped.get("billingEmail")
+        mapped["doctorEmail"] = resolved_doctor.get("email")
+        mapped["doctorSalesRepId"] = resolved_doctor.get("salesRepId")
+    elif local_order:
+        fallback_shipping = _ensure_dict(local_order.get("shippingAddress") or local_order.get("shipping_address"))
+        fallback_billing = _ensure_dict(local_order.get("billingAddress") or local_order.get("billing_address"))
+        fallback_name = (
+            fallback_shipping.get("name")
+            or fallback_billing.get("name")
+            or mapped.get("billingEmail")
+            or None
+        )
+        mapped["doctorId"] = local_order.get("userId") or local_order.get("user_id") or None
+        mapped["doctorName"] = fallback_name
+        mapped["doctorEmail"] = (
+            fallback_billing.get("email")
+            or fallback_shipping.get("email")
+            or mapped.get("billingEmail")
+            or None
+        )
+        mapped["doctorSalesRepId"] = (
+            local_order.get("doctorSalesRepId")
+            or local_order.get("salesRepId")
+            or local_order.get("sales_rep_id")
+            or local_order.get("doctor_sales_rep_id")
+            or None
+        )
     try:
         logger.debug(
             "[SalesRep] Order detail return",

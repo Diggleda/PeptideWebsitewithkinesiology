@@ -74,6 +74,24 @@ def _install_test_stubs() -> None:
         sys.modules["pymysql"] = pymysql
         sys.modules["pymysql.cursors"] = pymysql_cursors
 
+    storage_stub = sys.modules.get("python_backend.storage")
+    if storage_stub is None:
+        storage_stub = types.ModuleType("python_backend.storage")
+        sys.modules["python_backend.storage"] = storage_stub
+    storage_stub.user_store = getattr(storage_stub, "user_store", None)
+    storage_stub.order_store = getattr(storage_stub, "order_store", None)
+    storage_stub.sales_rep_store = getattr(storage_stub, "sales_rep_store", None)
+    storage_stub.referral_code_store = getattr(storage_stub, "referral_code_store", None)
+    storage_stub.referral_store = getattr(storage_stub, "referral_store", None)
+    storage_stub.sales_prospect_store = getattr(storage_stub, "sales_prospect_store", None)
+    storage_stub.credit_ledger_store = getattr(storage_stub, "credit_ledger_store", None)
+    storage_stub.contact_form_store = getattr(storage_stub, "contact_form_store", None)
+    storage_stub.bug_report_store = getattr(storage_stub, "bug_report_store", None)
+    storage_stub.contact_form_status_store = getattr(storage_stub, "contact_form_status_store", None)
+    storage_stub.settings_store = getattr(storage_stub, "settings_store", None)
+    storage_stub.peptide_forum_store = getattr(storage_stub, "peptide_forum_store", None)
+    storage_stub.seamless_store = getattr(storage_stub, "seamless_store", None)
+
     if "requests" not in sys.modules:
         requests = types.ModuleType("requests")
         requests_auth = types.ModuleType("requests.auth")
