@@ -584,17 +584,90 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
   return [];
 };
 
-const buildSanitizedWooAddress = () => ({
-  first_name: 'PepPro',
-  email: 'orders@peppro.example',
-  phone: '',
-  address_1: '',
-  address_2: '',
-  city: '',
-  state: '',
-  postcode: '',
-  country: 'US',
-});
+const firstNonEmptyText = (...values) => {
+  for (const value of values) {
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+const splitPersonName = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return ['', ''];
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return ['', ''];
+  if (parts.length === 1) return [parts[0], ''];
+  return [parts[0], parts.slice(1).join(' ')];
+};
+
+const buildWooAddress = ({ address, customer, fallbackAddress }) => {
+  const source = address && typeof address === 'object' ? address : {};
+  const fallback = fallbackAddress && typeof fallbackAddress === 'object' ? fallbackAddress : {};
+  const customerRecord = customer && typeof customer === 'object' ? customer : {};
+
+  const fullName = firstNonEmptyText(
+    source.name,
+    source.fullName,
+    fallback.name,
+    fallback.fullName,
+    customerRecord.name,
+  );
+  let firstName = firstNonEmptyText(source.firstName, source.first_name, fallback.firstName, fallback.first_name);
+  let lastName = firstNonEmptyText(source.lastName, source.last_name, fallback.lastName, fallback.last_name);
+  if (fullName && (!firstName || !lastName)) {
+    const [splitFirst, splitLast] = splitPersonName(fullName);
+    if (!firstName) firstName = splitFirst;
+    if (!lastName) lastName = splitLast;
+  }
+
+  return {
+    first_name: firstName,
+    last_name: lastName,
+    company: firstNonEmptyText(source.company, fallback.company, customerRecord.company),
+    email: firstNonEmptyText(
+      source.email,
+      source.emailAddress,
+      source.email_address,
+      fallback.email,
+      fallback.emailAddress,
+      fallback.email_address,
+      customerRecord.email,
+    ),
+    phone: firstNonEmptyText(source.phone, fallback.phone, customerRecord.phone),
+    address_1: firstNonEmptyText(
+      source.addressLine1,
+      source.address_1,
+      fallback.addressLine1,
+      fallback.address_1,
+      customerRecord.officeAddressLine1,
+    ),
+    address_2: firstNonEmptyText(
+      source.addressLine2,
+      source.address_2,
+      fallback.addressLine2,
+      fallback.address_2,
+      customerRecord.officeAddressLine2,
+    ),
+    city: firstNonEmptyText(source.city, fallback.city, customerRecord.officeCity),
+    state: firstNonEmptyText(
+      source.state,
+      source.stateCode,
+      fallback.state,
+      fallback.stateCode,
+      customerRecord.officeState,
+    ),
+    postcode: firstNonEmptyText(
+      source.postalCode,
+      source.postcode,
+      fallback.postalCode,
+      fallback.postcode,
+      customerRecord.officePostalCode,
+    ),
+    country: firstNonEmptyText(source.country, fallback.country, customerRecord.officeCountry, 'US'),
+  };
+};
 
 const buildOrderPayload = async ({ order, customer }) => {
   const shippingAddress = order.shippingAddress || null;
@@ -679,7 +752,11 @@ const buildOrderPayload = async ({ order, customer }) => {
     shipping_tax: '0.00',
     line_items: buildLineItems(order.items || [], { taxTotal, taxRateId: manualTaxRateId }),
     meta_data: metaData,
-    billing: buildSanitizedWooAddress(),
+    billing: buildWooAddress({
+      address: billingAddress,
+      customer,
+      fallbackAddress: shippingAddress,
+    }),
   };
   if (manualTaxRateId && taxTotal > 0) {
     payload.tax_lines = [{
@@ -696,7 +773,11 @@ const buildOrderPayload = async ({ order, customer }) => {
   }
 
   if (shippingAddress) {
-    payload.shipping = buildSanitizedWooAddress();
+    payload.shipping = buildWooAddress({
+      address: shippingAddress,
+      customer,
+      fallbackAddress: billingAddress,
+    });
   }
 
   const shippingLines = buildShippingLines({

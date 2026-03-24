@@ -107,7 +107,7 @@ class CryptoEnvelopeTests(unittest.TestCase):
 
 
 class WooPayloadSanitizationTests(unittest.TestCase):
-    def test_build_order_payload_strips_phi(self) -> None:
+    def test_build_order_payload_preserves_customer_address_but_strips_extra_meta(self) -> None:
         payload = woo_commerce.build_order_payload(
             {
                 "id": "order-1",
@@ -145,9 +145,12 @@ class WooPayloadSanitizationTests(unittest.TestCase):
 
         meta_keys = {entry.get("key") for entry in payload.get("meta_data") or []}
 
-        self.assertEqual(payload["billing"]["address_1"], "")
-        self.assertEqual(payload["shipping"]["address_1"], "")
-        self.assertEqual(payload["billing"]["email"], "orders@peppro.example")
+        self.assertEqual(payload["billing"]["first_name"], "John")
+        self.assertEqual(payload["billing"]["last_name"], "Doe")
+        self.assertEqual(payload["billing"]["address_1"], "123 Main St")
+        self.assertEqual(payload["shipping"]["address_1"], "123 Main St")
+        self.assertEqual(payload["billing"]["email"], "john@example.com")
+        self.assertEqual(payload["shipping"]["phone"], "555-123-4567")
         self.assertEqual(payload["line_items"][0]["meta_data"], [])
         self.assertNotIn("peppro_hand_delivery_address", meta_keys)
         self.assertNotIn("peppro_payment_method", meta_keys)

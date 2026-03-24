@@ -134,18 +134,125 @@ def _format_shipping_address_line(address: object) -> str:
     return ", ".join(str(part).strip() for part in parts if str(part or "").strip())
 
 
-def _build_sanitized_woo_address() -> Dict[str, str]:
+def _first_non_empty_text(*values: object) -> str:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _split_person_name(value: object) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if not text:
+        return "", ""
+    parts = [part for part in re.split(r"\s+", text) if part]
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def _build_woo_address(
+    address: object,
+    *,
+    customer: Optional[Mapping[str, Any]] = None,
+    fallback_address: object = None,
+) -> Dict[str, str]:
+    address_dict = address if isinstance(address, dict) else {}
+    fallback_dict = fallback_address if isinstance(fallback_address, dict) else {}
+    customer_dict = customer if isinstance(customer, Mapping) else {}
+
+    full_name = _first_non_empty_text(
+        address_dict.get("name"),
+        address_dict.get("fullName"),
+        fallback_dict.get("name"),
+        fallback_dict.get("fullName"),
+        customer_dict.get("name"),
+    )
+    first_name = _first_non_empty_text(
+        address_dict.get("firstName"),
+        address_dict.get("first_name"),
+        fallback_dict.get("firstName"),
+        fallback_dict.get("first_name"),
+    )
+    last_name = _first_non_empty_text(
+        address_dict.get("lastName"),
+        address_dict.get("last_name"),
+        fallback_dict.get("lastName"),
+        fallback_dict.get("last_name"),
+    )
+    if full_name and (not first_name or not last_name):
+        split_first, split_last = _split_person_name(full_name)
+        if not first_name:
+            first_name = split_first
+        if not last_name:
+            last_name = split_last
+
     return {
-        "first_name": "PepPro",
-        "last_name": "",
-        "email": "orders@peppro.example",
-        "address_1": "",
-        "address_2": "",
-        "city": "",
-        "state": "",
-        "postcode": "",
-        "country": "US",
-        "phone": "",
+        "first_name": first_name,
+        "last_name": last_name,
+        "company": _first_non_empty_text(
+            address_dict.get("company"),
+            fallback_dict.get("company"),
+            customer_dict.get("company"),
+        ),
+        "email": _first_non_empty_text(
+            address_dict.get("email"),
+            address_dict.get("emailAddress"),
+            address_dict.get("email_address"),
+            fallback_dict.get("email"),
+            fallback_dict.get("emailAddress"),
+            fallback_dict.get("email_address"),
+            customer_dict.get("email"),
+        ),
+        "address_1": _first_non_empty_text(
+            address_dict.get("addressLine1"),
+            address_dict.get("address_1"),
+            fallback_dict.get("addressLine1"),
+            fallback_dict.get("address_1"),
+            customer_dict.get("officeAddressLine1"),
+        ),
+        "address_2": _first_non_empty_text(
+            address_dict.get("addressLine2"),
+            address_dict.get("address_2"),
+            fallback_dict.get("addressLine2"),
+            fallback_dict.get("address_2"),
+            customer_dict.get("officeAddressLine2"),
+        ),
+        "city": _first_non_empty_text(
+            address_dict.get("city"),
+            fallback_dict.get("city"),
+            customer_dict.get("officeCity"),
+        ),
+        "state": _first_non_empty_text(
+            address_dict.get("state"),
+            address_dict.get("stateCode"),
+            fallback_dict.get("state"),
+            fallback_dict.get("stateCode"),
+            customer_dict.get("officeState"),
+        ),
+        "postcode": _first_non_empty_text(
+            address_dict.get("postalCode"),
+            address_dict.get("postcode"),
+            fallback_dict.get("postalCode"),
+            fallback_dict.get("postcode"),
+            customer_dict.get("officePostalCode"),
+        ),
+        "country": _first_non_empty_text(
+            address_dict.get("country"),
+            fallback_dict.get("country"),
+            customer_dict.get("officeCountry"),
+            "US",
+        ),
+        "phone": _first_non_empty_text(
+            address_dict.get("phone"),
+            fallback_dict.get("phone"),
+            customer_dict.get("phone"),
+        ),
     }
 
 
@@ -957,6 +1064,8 @@ def _ensure_peppro_manual_tax_rate_id() -> Optional[int]:
 
 
 def build_order_payload(order: Dict, customer: Dict) -> Dict:
+    shipping_address = order.get("shippingAddress") or order.get("shipping_address") or {}
+    billing_address = order.get("billingAddress") or order.get("billing_address") or shipping_address or {}
     test_override = bool((order.get("testPaymentOverride") or {}).get("enabled"))
     override_amount = 0.0
     if test_override:
@@ -1128,8 +1237,16 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "shipping_lines": shipping_lines,
         "discount_total": discount_total,
         "meta_data": meta_data,
-        "billing": _build_sanitized_woo_address(),
-        "shipping": _build_sanitized_woo_address(),
+        "billing": _build_woo_address(
+            billing_address,
+            customer=customer,
+            fallback_address=shipping_address,
+        ),
+        "shipping": _build_woo_address(
+            shipping_address,
+            customer=customer,
+            fallback_address=billing_address,
+        ),
     }
     if order_total > 0:
         payload["total"] = f"{order_total:.2f}"

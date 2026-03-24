@@ -1,0 +1,251 @@
+import sys
+import types
+import unittest
+
+
+def _install_test_stubs() -> None:
+    if "flask" not in sys.modules:
+        flask = types.ModuleType("flask")
+
+        class Response:  # minimal stub
+            pass
+
+        flask.Response = Response
+        flask.request = types.SimpleNamespace(method="GET", path="/")
+        flask.g = types.SimpleNamespace(current_user=None)
+        flask.jsonify = lambda payload=None, *args, **kwargs: payload
+        sys.modules["flask"] = flask
+
+    if "werkzeug" not in sys.modules:
+        werkzeug = types.ModuleType("werkzeug")
+        exceptions = types.ModuleType("werkzeug.exceptions")
+
+        class HTTPException(Exception):
+            code = 500
+            description = ""
+
+        exceptions.HTTPException = HTTPException
+        sys.modules["werkzeug"] = werkzeug
+        sys.modules["werkzeug.exceptions"] = exceptions
+
+    if "cryptography" not in sys.modules:
+        cryptography = types.ModuleType("cryptography")
+        hazmat = types.ModuleType("cryptography.hazmat")
+        primitives = types.ModuleType("cryptography.hazmat.primitives")
+        ciphers = types.ModuleType("cryptography.hazmat.primitives.ciphers")
+        aead = types.ModuleType("cryptography.hazmat.primitives.ciphers.aead")
+
+        class AESGCM:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def encrypt(self, _iv, data, _aad):
+                return data
+
+            def decrypt(self, _iv, data, _aad):
+                return data
+
+        aead.AESGCM = AESGCM
+        sys.modules["cryptography"] = cryptography
+        sys.modules["cryptography.hazmat"] = hazmat
+        sys.modules["cryptography.hazmat.primitives"] = primitives
+        sys.modules["cryptography.hazmat.primitives.ciphers"] = ciphers
+        sys.modules["cryptography.hazmat.primitives.ciphers.aead"] = aead
+
+    if "pymysql" not in sys.modules:
+        pymysql = types.ModuleType("pymysql")
+        pymysql_cursors = types.ModuleType("pymysql.cursors")
+
+        class DictCursor:
+            pass
+
+        pymysql_cursors.DictCursor = DictCursor
+
+        class _Connections(types.SimpleNamespace):
+            class Connection:
+                pass
+
+        pymysql.connections = _Connections()
+
+        def connect(*_args, **_kwargs):
+            raise RuntimeError("pymysql.connect called during unit test")
+
+        pymysql.connect = connect
+        sys.modules["pymysql"] = pymysql
+        sys.modules["pymysql.cursors"] = pymysql_cursors
+
+    if "requests" not in sys.modules:
+        requests = types.ModuleType("requests")
+        requests_auth = types.ModuleType("requests.auth")
+
+        def _blocked(*_args, **_kwargs):
+            raise RuntimeError("requests used during unit test")
+
+        class HTTPBasicAuth:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+        requests.get = _blocked
+        requests.post = _blocked
+        requests.put = _blocked
+        requests.patch = _blocked
+        requests.delete = _blocked
+        requests_auth.HTTPBasicAuth = HTTPBasicAuth
+        sys.modules["requests"] = requests
+        sys.modules["requests.auth"] = requests_auth
+
+
+class ContactFormEncryptedReadTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        _install_test_stubs()
+        import python_backend.services as services_package
+        from python_backend.services import order_service, referral_service
+
+        cls.services_package = services_package
+        cls.order_service = order_service
+        cls.referral_service = referral_service
+
+    def test_fetch_contact_form_ids_by_email_uses_blind_index_and_decrypts_email(self):
+        service = self.referral_service
+        original_fetch_all = service.mysql_client.fetch_all
+        original_compute = service.compute_blind_index
+        original_decrypt = service.decrypt_text
+        captured = {}
+        try:
+            service.compute_blind_index = lambda value, *, label: f"idx:{value}"
+
+            def fake_fetch_all(query, params):
+                captured["query"] = query
+                captured["params"] = dict(params)
+                return [
+                    {
+                        "id": 7,
+                        "email": "[ENCRYPTED]",
+                        "email_encrypted": "cipher-email",
+                        "created_at": "2026-03-24T00:00:00Z",
+                    }
+                ]
+
+            service.mysql_client.fetch_all = fake_fetch_all
+            service.decrypt_text = (
+                lambda value, aad=None: "doctor@example.com" if value == "cipher-email" else None
+            )
+
+            mapping = service._fetch_contact_form_ids_by_email([" Doctor@example.com "])
+
+            self.assertEqual(mapping, {"doctor@example.com": "contact_form:7"})
+            self.assertIn("email_blind_index IN", captured["query"])
+            self.assertEqual(captured["params"]["email_0"], "doctor@example.com")
+            self.assertEqual(captured["params"]["blind_0"], "idx:doctor@example.com")
+        finally:
+            service.mysql_client.fetch_all = original_fetch_all
+            service.compute_blind_index = original_compute
+            service.decrypt_text = original_decrypt
+
+    def test_load_contact_form_referrals_decrypts_fields_for_dashboard(self):
+        service = self.referral_service
+        original_get_config = service.get_config
+        original_fetch_all = service.mysql_client.fetch_all
+        original_upsert = service.sales_prospect_repository.upsert
+        original_decrypt = service.decrypt_text
+        original_apply_account_fields = service._apply_referred_contact_account_fields
+        captured = {}
+        try:
+            service.get_config = lambda: types.SimpleNamespace(mysql={"enabled": True})
+
+            def fake_fetch_all(_query, _params=None):
+                return [
+                    {
+                        "id": 7,
+                        "name": "[ENCRYPTED]",
+                        "email": "[ENCRYPTED]",
+                        "phone": None,
+                        "name_encrypted": "cipher-name",
+                        "email_encrypted": "cipher-email",
+                        "phone_encrypted": "cipher-phone",
+                        "source": "WEB",
+                        "created_at": "2026-03-24T00:00:00Z",
+                        "prospect_sales_rep_id": None,
+                        "prospect_doctor_id": None,
+                        "prospect_status": None,
+                        "prospect_notes": None,
+                        "prospect_updated_at": None,
+                        "reseller_permit_exempt": 0,
+                        "reseller_permit_file_path": None,
+                        "reseller_permit_file_name": None,
+                        "reseller_permit_uploaded_at": None,
+                    }
+                ]
+
+            def fake_upsert(payload):
+                captured["upsert"] = dict(payload)
+                return dict(payload)
+
+            def fake_decrypt(value, aad=None):
+                mapping = {
+                    "cipher-name": "Encrypted Lead",
+                    "cipher-email": "lead@example.com",
+                    "cipher-phone": "555-0100",
+                }
+                return mapping.get(value)
+
+            service.mysql_client.fetch_all = fake_fetch_all
+            service.sales_prospect_repository.upsert = fake_upsert
+            service.decrypt_text = fake_decrypt
+            service._apply_referred_contact_account_fields = lambda record: record
+
+            records = service._load_contact_form_referrals()
+
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["referredContactName"], "Encrypted Lead")
+            self.assertEqual(records[0]["referredContactEmail"], "lead@example.com")
+            self.assertEqual(records[0]["referredContactPhone"], "555-0100")
+            self.assertEqual(captured["upsert"]["contactName"], "Encrypted Lead")
+            self.assertEqual(captured["upsert"]["contactEmail"], "lead@example.com")
+            self.assertEqual(captured["upsert"]["contactPhone"], "555-0100")
+        finally:
+            service.get_config = original_get_config
+            service.mysql_client.fetch_all = original_fetch_all
+            service.sales_prospect_repository.upsert = original_upsert
+            service.decrypt_text = original_decrypt
+            service._apply_referred_contact_account_fields = original_apply_account_fields
+
+    def test_load_contact_form_emails_from_mysql_decrypts_contact_form_rows(self):
+        service = self.order_service
+        services_package = self.services_package
+        original_get_config = services_package.get_config
+        original_fetch_all = service.mysql_client.fetch_all
+        original_decrypt = service.decrypt_text
+        try:
+            services_package.get_config = lambda: types.SimpleNamespace(mysql={"enabled": True})
+
+            def fake_fetch_all(query, _params=None):
+                if "FROM contact_forms" in query:
+                    return [
+                        {"email": "[ENCRYPTED]", "email_encrypted": "cipher-email"},
+                        {"email": "plaintext@example.com", "email_encrypted": None},
+                    ]
+                if "FROM contact_form" in query:
+                    return [{"email": "legacy@example.com"}]
+                return []
+
+            service.mysql_client.fetch_all = fake_fetch_all
+            service.decrypt_text = (
+                lambda value, aad=None: "encrypted@example.com" if value == "cipher-email" else None
+            )
+
+            emails = service._load_contact_form_emails_from_mysql()
+
+            self.assertEqual(
+                emails,
+                {"encrypted@example.com", "plaintext@example.com", "legacy@example.com"},
+            )
+        finally:
+            services_package.get_config = original_get_config
+            service.mysql_client.fetch_all = original_fetch_all
+            service.decrypt_text = original_decrypt
+
+
+if __name__ == "__main__":
+    unittest.main()

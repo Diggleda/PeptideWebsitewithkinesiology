@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from ..utils.http import service_error as _service_error
+from ..utils.crypto_envelope import decrypt_text
 from ..repositories import (
     order_repository,
     user_repository,
@@ -76,6 +77,59 @@ _SHIP_TIME_AVERAGE_SAMPLE_LIMIT = int(os.environ.get("ORDER_SHIP_TIME_AVERAGE_SA
 _SHIP_TIME_AVERAGE_SAMPLE_LIMIT = max(25, min(_SHIP_TIME_AVERAGE_SAMPLE_LIMIT, 1000))
 _ship_time_average_lock = threading.Lock()
 _ship_time_average_cache: Dict[str, object] = {"data": None, "expiresAtMs": 0}
+
+
+def _normalize_contact_form_email(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _read_contact_form_email(row: Dict[str, Any], *, table: str) -> Optional[str]:
+    if table == "contact_forms":
+        decrypted = decrypt_text(
+            row.get("email_encrypted"),
+            aad={"table": "contact_forms", "field": "email"},
+        )
+        if isinstance(decrypted, str) and decrypted.strip():
+            return decrypted.strip()
+    value = row.get("email")
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "[ENCRYPTED]":
+        return None
+    return text
+
+
+def _load_contact_form_emails_from_mysql() -> set[str]:
+    contact_form_emails: set[str] = set()
+    try:
+        from . import get_config  # type: ignore
+        from ..database import mysql_client  # type: ignore
+
+        if not bool(get_config().mysql.get("enabled")):
+            return contact_form_emails
+
+        for table in ("contact_form", "contact_forms"):
+            try:
+                query = (
+                    "SELECT DISTINCT email, email_encrypted FROM contact_forms"
+                    if table == "contact_forms"
+                    else f"SELECT DISTINCT email FROM {table}"
+                )
+                rows = mysql_client.fetch_all(query, {})
+            except Exception:
+                rows = []
+            for row in rows or []:
+                if not isinstance(row, dict):
+                    continue
+                form_email = _normalize_contact_form_email(
+                    _read_contact_form_email(row, table=table)
+                )
+                if form_email:
+                    contact_form_emails.add(form_email)
+    except Exception:
+        return set()
+    return contact_form_emails
 
 
 def invalidate_admin_taxes_by_state_cache() -> None:
@@ -3830,22 +3884,7 @@ def get_sales_by_rep(
 
         # Any order placed by an email present in the MySQL `contact_forms` table should be
         # treated as a house/contact-form order and split across admins.
-        contact_form_emails: set[str] = set()
-        try:
-            from . import get_config  # type: ignore
-            from ..database import mysql_client  # type: ignore
-
-            rows = []
-            if bool(get_config().mysql.get("enabled")):
-                rows = mysql_client.fetch_all("SELECT DISTINCT email FROM contact_forms", {})
-            for row in rows or []:
-                if not isinstance(row, dict):
-                    continue
-                form_email = _norm_email(row.get("email"))
-                if form_email:
-                    contact_form_emails.add(form_email)
-        except Exception:
-            contact_form_emails = set()
+        contact_form_emails = _load_contact_form_emails_from_mysql()
 
         valid_rep_ids: set[str] = set()
         for rep in reps:
@@ -4855,27 +4894,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
         # Any order placed by an email present in the MySQL contact-form submissions table should be
         # treated as a house/contact-form order and split across admins.
-        contact_form_emails: set[str] = set()
-        try:
-            from . import get_config  # type: ignore
-            from ..database import mysql_client  # type: ignore
-
-            if bool(get_config().mysql.get("enabled")):
-                # Some deployments use `contact_form` while others use `contact_forms`.
-                # Prefer loading from both when possible.
-                for table in ("contact_form", "contact_forms"):
-                    try:
-                        rows = mysql_client.fetch_all(f"SELECT DISTINCT email FROM {table}", {})
-                    except Exception:
-                        rows = []
-                    for row in rows or []:
-                        if not isinstance(row, dict):
-                            continue
-                        form_email = _norm_email(row.get("email"))
-                        if form_email:
-                            contact_form_emails.add(form_email)
-        except Exception:
-            contact_form_emails = set()
+        contact_form_emails = _load_contact_form_emails_from_mysql()
 
         recipient_rows: Dict[str, Dict[str, object]] = {}
         for rep in reps:

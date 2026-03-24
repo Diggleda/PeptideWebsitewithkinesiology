@@ -13,6 +13,7 @@ const orderRepository = require('../repositories/orderRepository');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 const { env } = require('../config/env');
+const { computeBlindIndex, decryptText } = require('../utils/cryptoEnvelope');
 const { parseMultipartSingleFile } = require('../utils/multipart');
 
 const REFERRAL_STATUSES = ['pending', 'contacted', 'verified', 'account_created', 'converted', 'nuture', 'contact_form'];
@@ -232,6 +233,32 @@ const normalizeEmail = (value) => {
   }
   normalized = normalized.replace(/\s+/g, '');
   return normalized || null;
+};
+
+const readContactFormField = (row, field) => {
+  const decrypted = decryptText(row?.[`${field}_encrypted`], {
+    aad: { table: 'contact_forms', field },
+  });
+  if (typeof decrypted === 'string' && decrypted.trim()) {
+    return decrypted.trim();
+  }
+  const value = row?.[field];
+  if (value == null) {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text || text === '[ENCRYPTED]') {
+    return null;
+  }
+  return text;
+};
+
+const computeContactFormEmailBlindIndex = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    return null;
+  }
+  return computeBlindIndex(normalized, { label: 'contact_forms.email' });
 };
 
 const normalizePhoneDigits = (value) => {
@@ -822,7 +849,7 @@ const getDoctorLedger = (req, res, next) => {
 		      try {
 		        const rows = await mysqlClient.fetchAll(
 		          `
-		            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
+		            SELECT id, name, email, phone, name_encrypted, email_encrypted, phone_encrypted, source, created_at, updated_at, createdAt, updatedAt
 	            FROM contact_forms
 	            ORDER BY COALESCE(updated_at, updatedAt, created_at, createdAt) DESC
 	          `,
@@ -830,6 +857,9 @@ const getDoctorLedger = (req, res, next) => {
         const mapped = (rows || []).map((row) => {
           const createdAt = row.created_at || row.createdAt || null;
           const updatedAt = row.updated_at || row.updatedAt || createdAt || null;
+          const contactName = readContactFormField(row, 'name');
+          const contactEmail = normalizeEmail(readContactFormField(row, 'email'));
+          const contactPhone = readContactFormField(row, 'phone');
           return {
             id: row.id ? `contact_form:${row.id}` : crypto.randomUUID(),
             status: 'contact_form',
@@ -838,9 +868,9 @@ const getDoctorLedger = (req, res, next) => {
             referrerDoctorName: 'Contact Form / House',
             referrerDoctorEmail: null,
             referrerDoctorPhone: null,
-            referredContactName: row.name || 'Contact Form Lead',
-            referredContactEmail: row.email || null,
-            referredContactPhone: row.phone || null,
+            referredContactName: contactName || 'Contact Form Lead',
+            referredContactEmail: contactEmail,
+            referredContactPhone: contactPhone,
             notes: row.source || 'Contact form submission',
             createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
             updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString(),
@@ -1533,9 +1563,20 @@ const createManualProspect = async (req, res, next) => {
           return false;
         }
         try {
+          const normalizedEmail = normalizeEmail(email);
+          const emailBlindIndex = computeContactFormEmailBlindIndex(normalizedEmail);
           const row = await mysqlClient.fetchOne(
-            'SELECT id FROM contact_forms WHERE email = :email LIMIT 1',
-            { email },
+            `
+              SELECT id
+              FROM contact_forms
+              WHERE email_blind_index = :emailBlindIndex
+                 OR LOWER(email) = :email
+              LIMIT 1
+            `,
+            {
+              email: normalizedEmail,
+              emailBlindIndex,
+            },
           );
           return Boolean(row);
         } catch {

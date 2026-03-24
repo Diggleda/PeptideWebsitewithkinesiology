@@ -8,7 +8,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from time import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ..utils.http import service_error as _service_error, utc_now_iso as _now
 from ..repositories import (
@@ -23,6 +23,7 @@ from ..repositories import (
 )
 from ..database import mysql_client
 from ..integrations import woo_commerce
+from ..utils.crypto_envelope import compute_blind_index, decrypt_text
 from . import get_config
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,55 @@ def _sanitize_phone(value: Optional[str]) -> Optional[str]:
         return None
     cleaned = re.sub(r"[^0-9+()\-\s]", "", str(value)).strip()
     return cleaned[:32] if cleaned else None
+
+
+def _contact_form_field_aad(field: str) -> Dict[str, str]:
+    return {"table": "contact_forms", "field": field}
+
+
+def _read_contact_form_field(row: Dict, field: str) -> Optional[str]:
+    decrypted = decrypt_text(row.get(f"{field}_encrypted"), aad=_contact_form_field_aad(field))
+    if isinstance(decrypted, str) and decrypted.strip():
+        return decrypted.strip()
+    value = row.get(field)
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "[ENCRYPTED]":
+        return None
+    return text
+
+
+def _contact_form_email_blind_index(email: Optional[str]) -> Optional[str]:
+    normalized = _sanitize_email(email)
+    if not normalized:
+        return None
+    return compute_blind_index(normalized, label="contact_forms.email")
+
+
+def _build_contact_form_email_lookup(emails: List[str]) -> Tuple[str, Dict[str, str]]:
+    normalized = sorted({(_sanitize_email(e) or "") for e in emails if e})
+    normalized = [email for email in normalized if email]
+    if not normalized:
+        return "", {}
+
+    params: Dict[str, str] = {}
+    email_placeholders: List[str] = []
+    blind_placeholders: List[str] = []
+    for idx, email in enumerate(normalized):
+        params[f"email_{idx}"] = email
+        email_placeholders.append(f"%(email_{idx})s")
+        blind_index = _contact_form_email_blind_index(email)
+        if blind_index:
+            params[f"blind_{idx}"] = blind_index
+            blind_placeholders.append(f"%(blind_{idx})s")
+
+    clauses: List[str] = []
+    if blind_placeholders:
+        clauses.append(f"email_blind_index IN ({', '.join(blind_placeholders)})")
+    if email_placeholders:
+        clauses.append(f"LOWER(email) IN ({', '.join(email_placeholders)})")
+    return " OR ".join(clauses), params
 
 
 def _is_deleted_user_identifier(value: Optional[str]) -> bool:
@@ -280,23 +330,15 @@ def _normalize_lead_type(value: Optional[str]) -> Optional[str]:
 
 def _fetch_contact_form_ids_by_email(emails: List[str]) -> Dict[str, str]:
     """Return mapping of normalized email -> contact_form:<id> for the earliest submission."""
-    normalized = sorted({(_sanitize_email(e) or "") for e in emails if e})
-    normalized = [e for e in normalized if e]
-    if not normalized:
-        return {}
-    try:
-        placeholders = ", ".join([f"%(email_{idx})s" for idx in range(len(normalized))])
-    except Exception:
-        placeholders = ""
-    params = {f"email_{idx}": email for idx, email in enumerate(normalized)}
-    if not placeholders:
+    where_clause, params = _build_contact_form_email_lookup(emails)
+    if not where_clause:
         return {}
     try:
         rows = mysql_client.fetch_all(
             f"""
-            SELECT id, email, created_at
+            SELECT id, email, email_encrypted, created_at
             FROM contact_forms
-            WHERE LOWER(email) IN ({placeholders})
+            WHERE {where_clause}
             ORDER BY created_at ASC
             """,
             params,
@@ -305,7 +347,7 @@ def _fetch_contact_form_ids_by_email(emails: List[str]) -> Dict[str, str]:
         return {}
     mapping: Dict[str, str] = {}
     for row in rows or []:
-        email = _sanitize_email(row.get("email"))
+        email = _sanitize_email(_read_contact_form_field(row, "email"))
         if not email or email in mapping:
             continue
         if row.get("id") is None:
@@ -774,9 +816,14 @@ def create_manual_prospect(data: Dict) -> Dict:
             pass
         try:
             if get_config().mysql.get("enabled"):
-                row = mysql_client.fetch_one(
-                    "SELECT id FROM contact_forms WHERE LOWER(email) = %(email)s LIMIT 1",
-                    {"email": contact_email},
+                where_clause, params = _build_contact_form_email_lookup([contact_email])
+                row = (
+                    mysql_client.fetch_one(
+                        f"SELECT id FROM contact_forms WHERE {where_clause} LIMIT 1",
+                        params,
+                    )
+                    if where_clause
+                    else None
                 )
                 if row:
                     raise _service_error("EMAIL_ALREADY_EXISTS", 400)
@@ -1083,6 +1130,9 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     cf.name,
                     cf.email,
                     cf.phone,
+                    cf.name_encrypted,
+                    cf.email_encrypted,
+                    cf.phone_encrypted,
                     cf.source,
                     cf.created_at,
                     sp.doctor_id AS prospect_doctor_id,
@@ -1111,6 +1161,9 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     cf.name,
                     cf.email,
                     cf.phone,
+                    cf.name_encrypted,
+                    cf.email_encrypted,
+                    cf.phone_encrypted,
                     cf.source,
                     cf.created_at,
                     sp.sales_rep_id AS prospect_sales_rep_id,
@@ -1157,6 +1210,9 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         created_at = created_at_raw.isoformat() if isinstance(created_at_raw, datetime) else created_at_raw
         updated_at_raw = row.get("prospect_updated_at") or row.get("updated_at") or row.get("updatedAt") or created_at_raw
         updated_at = updated_at_raw.isoformat() if isinstance(updated_at_raw, datetime) else updated_at_raw or created_at
+        contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
+        contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
+        contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
         record_id = f"contact_form:{row.get('id')}" if row.get("id") is not None else _generate_unique_code("system")
         status = row.get("prospect_status") or "contact_form"
         prospect_sales_rep_id = row.get("prospect_sales_rep_id") or None
@@ -1170,9 +1226,9 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                         "contactFormId": str(row.get("id")),
                         "status": "contact_form",
                         "isManual": False,
-                        "contactName": row.get("name") or None,
-                        "contactEmail": row.get("email") or None,
-                        "contactPhone": row.get("phone") or None,
+                        "contactName": contact_name,
+                        "contactEmail": contact_email,
+                        "contactPhone": contact_phone,
                     }
                 )
             except Exception:
@@ -1183,9 +1239,9 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
             "salesRepId": str(sales_rep_id)
             if sales_rep_id
             else (str(prospect_sales_rep_id) if prospect_sales_rep_id else None),
-            "referredContactName": row.get("name") or "Contact Form Lead",
-            "referredContactEmail": row.get("email") or None,
-            "referredContactPhone": row.get("phone") or None,
+            "referredContactName": contact_name or "Contact Form Lead",
+            "referredContactEmail": contact_email,
+            "referredContactPhone": contact_phone,
             "status": status,
             "salesRepNotes": row.get("prospect_notes") or None,
             "notes": row.get("source") or "Contact form submission",
@@ -1732,14 +1788,17 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         str(contact_form_pk),
     )
     current_status = (existing.get("status") if existing else None) or "contact_form"
+    contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
+    contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
+    contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
 
     payload: Dict = {
         "id": str(referral_id),
         "salesRepId": str(_resolve_user_id(sales_rep_id) or sales_rep_id),
         "contactFormId": str(contact_form_pk),
-        "contactName": row.get("name"),
-        "contactEmail": row.get("email"),
-        "contactPhone": row.get("phone"),
+        "contactName": contact_name,
+        "contactEmail": contact_email,
+        "contactPhone": contact_phone,
         "isManual": False,
         "status": current_status,
         "notes": existing.get("notes") if existing else None,
@@ -1762,9 +1821,9 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         "id": str(referral_id),
         "referrerDoctorId": None,
         "salesRepId": str(_resolve_user_id(sales_rep_id) or sales_rep_id),
-        "referredContactName": row.get("name") or "Contact Form Lead",
-        "referredContactEmail": row.get("email") or None,
-        "referredContactPhone": row.get("phone") or None,
+        "referredContactName": contact_name or "Contact Form Lead",
+        "referredContactEmail": contact_email,
+        "referredContactPhone": contact_phone,
         "status": saved.get("status") or "contact_form",
         "salesRepNotes": saved.get("notes") or None,
         "notes": row.get("source") or "Contact form submission",
