@@ -1,6 +1,5 @@
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
-const { decryptJson, encryptJson } = require('../utils/cryptoEnvelope');
 
 const sanitizeString = (value) => {
   if (value === null || value === undefined) {
@@ -174,84 +173,6 @@ const computeGrandTotal = (order) => {
   return roundCurrency(order.total ?? order.total_ex_tax ?? 0);
 };
 
-const buildCommerceIntegrationDetails = (integrationDetails) => {
-  if (!integrationDetails || typeof integrationDetails !== 'object') {
-    return null;
-  }
-  const sanitized = {};
-  if (integrationDetails.wooCommerce && typeof integrationDetails.wooCommerce === 'object') {
-    sanitized.wooCommerce = {
-      id: sanitizeString(integrationDetails.wooCommerce.id),
-      number: sanitizeString(integrationDetails.wooCommerce.number),
-      status: sanitizeString(integrationDetails.wooCommerce.status),
-      invoiceUrl: sanitizeString(integrationDetails.wooCommerce.invoiceUrl),
-      paymentUrl: sanitizeString(integrationDetails.wooCommerce.paymentUrl),
-    };
-  }
-  if (integrationDetails.shipStation && typeof integrationDetails.shipStation === 'object') {
-    sanitized.shipStation = {
-      orderId: sanitizeString(integrationDetails.shipStation.orderId),
-      orderNumber: sanitizeString(integrationDetails.shipStation.orderNumber),
-      status: sanitizeString(integrationDetails.shipStation.status),
-      shipmentId: sanitizeString(integrationDetails.shipStation.shipmentId),
-      trackingNumber: sanitizeString(integrationDetails.shipStation.trackingNumber),
-      shipDate: toIsoDateTime(integrationDetails.shipStation.shipDate),
-    };
-  }
-  if (integrationDetails.stripe && typeof integrationDetails.stripe === 'object') {
-    sanitized.stripe = {
-      paymentIntentId: sanitizeString(integrationDetails.stripe.paymentIntentId),
-      status: sanitizeString(integrationDetails.stripe.status),
-      mode: sanitizeString(integrationDetails.stripe.mode),
-    };
-  }
-  return Object.keys(sanitized).length > 0 ? sanitized : null;
-};
-
-const buildCommercePayload = (order, payloadOrder = {}) => {
-  const source = payloadOrder && typeof payloadOrder === 'object' ? payloadOrder : order;
-  if (!source || typeof source !== 'object') {
-    return {};
-  }
-  const sanitized = {
-    ...source,
-    shippingAddress: null,
-    shipping_address: null,
-    billingAddress: null,
-    billing_address: null,
-    paymentDetails: null,
-    paymentMethod: null,
-    customer: null,
-    customerInfo: null,
-    customerName: null,
-    customerEmail: null,
-    customerPhone: null,
-    doctorEmail: null,
-    doctorName: null,
-    salesRepEmail: null,
-    doctorSalesRepEmail: null,
-    email: null,
-    phone: null,
-    instructions: null,
-    paymentInstructions: null,
-    notes: null,
-    delegateProposalToken: null,
-    delegateToken: null,
-    token: null,
-  };
-  if (sanitized.items && Array.isArray(sanitized.items)) {
-    sanitized.items = sanitized.items.map((item) => ({
-      productId: item?.productId ?? item?.product_id ?? null,
-      variationId: item?.variationId ?? item?.variation_id ?? null,
-      sku: item?.sku ?? null,
-      quantity: Number(item?.quantity || 0),
-      price: Number(item?.price || 0),
-      name: typeof item?.name === 'string' ? item.name : 'Item',
-    }));
-  }
-  return sanitized;
-};
-
 const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
   if (!mysqlClient.isEnabled()) {
     return {
@@ -298,41 +219,24 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     status: order.status || 'pending',
     orderPlacedAt,
     shippedAt,
-    paymentDetails: null,
+    paymentDetails: sanitizeString(order.paymentDetails || order.paymentMethod || null),
     payload: JSON.stringify({
-      order: buildCommercePayload(order),
+      order: {
+        ...(order && typeof order === 'object' ? order : {}),
+        total: computeGrandTotal(order),
+        grandTotal: computeGrandTotal(order),
+        orderPlacedAt,
+        order_placed_at: orderPlacedAt,
+        shippedAt,
+        shipped_at: shippedAt,
+        createdAt: createdAtRawWithPst || createdAtRaw,
+        created_at: createdAtRawWithPst || createdAtRaw,
+      },
       orders: {
         created_at: createdAtRawWithPst || createdAtRaw,
       },
-      integrations: buildCommerceIntegrationDetails(order.integrationDetails),
+      integrations: order.integrationDetails,
     }),
-    payloadEncrypted: encryptJson(
-      {
-        order: {
-          ...(order && typeof order === 'object' ? order : {}),
-          total: computeGrandTotal(order),
-          grandTotal: computeGrandTotal(order),
-          orderPlacedAt,
-          order_placed_at: orderPlacedAt,
-          shippedAt,
-          shipped_at: shippedAt,
-          createdAt: createdAtRawWithPst || createdAtRaw,
-          created_at: createdAtRawWithPst || createdAtRaw,
-        },
-        orders: {
-          created_at: createdAtRawWithPst || createdAtRaw,
-        },
-        integrations: order.integrationDetails,
-      },
-      {
-        aad: {
-          table: 'peppro_orders',
-          record_ref: sanitizeString(order.id) || 'pending',
-          field: 'payload',
-        },
-      },
-    ),
-    phiPayloadRef: sanitizeString(order.id),
     createdAt: createdAtRaw,
     updatedAt: new Date().toISOString(),
   };
@@ -359,8 +263,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipped_at,
           \`Payment Details\`,
           payload,
-          payload_encrypted,
-          phi_payload_ref,
           created_at,
           updated_at
         ) VALUES (
@@ -382,8 +284,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :shippedAt,
           :paymentDetails,
           :payload,
-          :payloadEncrypted,
-          :phiPayloadRef,
           :createdAt,
           :updatedAt
         )
@@ -403,8 +303,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
           \`Payment Details\` = VALUES(\`Payment Details\`),
           payload = VALUES(payload),
-          payload_encrypted = VALUES(payload_encrypted),
-          phi_payload_ref = VALUES(phi_payload_ref),
           pricing_mode = VALUES(pricing_mode),
           updated_at = VALUES(updated_at)
       `,
@@ -434,19 +332,7 @@ const mapRowToOrder = (row, options = {}) => {
     }
   };
 
-  const payload = (() => {
-    const decrypted = decryptJson(row.payload_encrypted, {
-      aad: {
-        table: 'peppro_orders',
-        record_ref: sanitizeString(row.phi_payload_ref || row.id) || 'pending',
-        field: 'payload',
-      },
-    });
-    if (decrypted && typeof decrypted === 'object') {
-      return decrypted;
-    }
-    return parseJson(row.payload, {});
-  })();
+  const payload = parseJson(row.payload, {});
   // Node backend stores payload as `{ order: {...}, integrations: ... }`, while the Python backend
   // stores the order dict directly as the payload. Tolerate both.
   const payloadOrder = (() => {
@@ -580,7 +466,6 @@ const mapRowToOrder = (row, options = {}) => {
     referralCode: payloadOrder.referralCode || null,
     taxTotal: payloadOrder.taxTotal ?? payloadOrder.tax_total ?? payloadOrder.totalTax ?? payloadOrder.total_tax ?? null,
     payload,
-    phiPayloadRef: sanitizeString(row.phi_payload_ref),
     source: options?.source || 'mysql',
   };
 

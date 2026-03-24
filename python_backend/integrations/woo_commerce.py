@@ -134,49 +134,6 @@ def _format_shipping_address_line(address: object) -> str:
     return ", ".join(str(part).strip() for part in parts if str(part or "").strip())
 
 
-def _build_sanitized_woo_address() -> Dict[str, str]:
-    return {
-        "first_name": "PepPro",
-        "last_name": "",
-        "email": "orders@peppro.example",
-        "address_1": "",
-        "address_2": "",
-        "city": "",
-        "state": "",
-        "postcode": "",
-        "country": "US",
-        "phone": "",
-    }
-
-
-def _summarize_woo_payload(payload: object) -> Dict[str, Any]:
-    if not isinstance(payload, dict):
-        return {"type": type(payload).__name__}
-    return {
-        "status": payload.get("status"),
-        "line_item_count": len(payload.get("line_items") or []),
-        "shipping_line_count": len(payload.get("shipping_lines") or []),
-        "fee_line_count": len(payload.get("fee_lines") or []),
-        "meta_key_count": len(payload.get("meta_data") or []),
-        "total": payload.get("total"),
-    }
-
-
-def _summarize_woo_response(value: object) -> object:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        trimmed = value.strip()
-        if not trimmed:
-            return None
-        return trimmed[:800]
-    if isinstance(value, list):
-        return {"type": "list", "count": len(value)}
-    if isinstance(value, dict):
-        return {"type": "dict", "keys": sorted(list(value.keys()))[:25]}
-    return str(value)
-
-
 def _should_trip_proxy_breaker(status: Optional[int]) -> bool:
     if status is None:
         return True
@@ -835,7 +792,7 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
                 "price": f"{price:.2f}",
                 "total": total,
                 "subtotal": total,
-                "meta_data": [],
+                "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
                 "_line_total_value": line_total_value,
             }
         )
@@ -1052,6 +1009,8 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         or customer.get("salesRepId")
         or customer.get("sales_rep_id")
     )
+    sales_rep_name = order.get("doctorSalesRepName") or order.get("salesRepName")
+    sales_rep_email = order.get("doctorSalesRepEmail") or order.get("salesRepEmail")
     sales_rep_code = order.get("doctorSalesRepCode") or order.get("salesRepCode")
     method_code = HAND_DELIVERY_CODE if is_hand_delivery else (shipping_estimate.get("serviceCode") or shipping_estimate.get("serviceType") or "flat_rate")
     method_title = HAND_DELIVERY_LABEL if is_hand_delivery else (shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode") or "Shipping")
@@ -1075,6 +1034,34 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             items_total = 0.0
         order_total = max(0.0, items_total - applied_credit + shipping_total + tax_total)
 
+    address = order.get("shippingAddress") or {}
+    recipient_name = str(address.get("name") or "").strip() if isinstance(address, dict) else ""
+    if not recipient_name:
+        recipient_name = str(customer.get("name") or "PepPro").strip() or "PepPro"
+    billing_address = {
+        "first_name": recipient_name,
+        "last_name": "",
+        "email": customer.get("email") or "orders@peppro.example",
+        "address_1": address.get("addressLine1") or "",
+        "address_2": address.get("addressLine2") or "",
+        "city": address.get("city") or "",
+        "state": address.get("state") or "",
+        "postcode": address.get("postalCode") or "",
+        "country": address.get("country") or "US",
+        "phone": address.get("phone") or "",
+    }
+    shipping_address = {
+        "first_name": recipient_name,
+        "last_name": "",
+        "address_1": address.get("addressLine1") or "",
+        "address_2": address.get("addressLine2") or "",
+        "city": address.get("city") or "",
+        "state": address.get("state") or "",
+        "postcode": address.get("postalCode") or "",
+        "country": address.get("country") or "US",
+        "phone": address.get("phone") or "",
+    }
+
     meta_data = [
         {"key": "peppro_order_id", "value": order.get("id")},
         {"key": "peppro_total", "value": order.get("total")},
@@ -1094,10 +1081,17 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         meta_data.append({"key": "peppro_discount_code_amount", "value": order.get("discountCodeAmount")})
     if sales_rep_id:
         meta_data.append({"key": "peppro_sales_rep_id", "value": sales_rep_id})
+    if sales_rep_name:
+        meta_data.append({"key": "peppro_sales_rep_name", "value": sales_rep_name})
+    if sales_rep_email:
+        meta_data.append({"key": "peppro_sales_rep_email", "value": sales_rep_email})
     if sales_rep_code:
         meta_data.append({"key": "peppro_sales_rep_code", "value": sales_rep_code})
     if is_hand_delivery:
         meta_data.append({"key": "peppro_delivery_method", "value": HAND_DELIVERY_CODE})
+        hand_delivery_address = _format_shipping_address_line(address)
+        if hand_delivery_address:
+            meta_data.append({"key": "peppro_hand_delivery_address", "value": hand_delivery_address})
 
     payment_method = str(order.get("paymentMethod") or "").strip().lower()
     if payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer"):
@@ -1107,6 +1101,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
 
     raw_payment_details = str(order.get("paymentDetails") or "").strip()
     raw_payment_method = str(order.get("paymentMethod") or "").strip()
+    if raw_payment_details:
+        meta_data.append({"key": "peppro_payment_method", "value": raw_payment_details})
+    elif raw_payment_method:
+        meta_data.append({"key": "peppro_payment_method", "value": raw_payment_method})
 
     status = "on-hold" if payment_method == "bacs" else "pending"
     line_items_source = order.get("items")
@@ -1121,15 +1119,15 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
 
     payload = {
         "status": status,
-        "customer_note": f"PepPro Order {order.get('id')}",
+        "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
         "line_items": build_line_items(line_items_source, tax_total=(0.0 if test_override else tax_total), tax_rate_id=tax_rate_id),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
         "discount_total": discount_total,
         "meta_data": meta_data,
-        "billing": _build_sanitized_woo_address(),
-        "shipping": _build_sanitized_woo_address(),
+        "billing": billing_address,
+        "shipping": shipping_address,
     }
     if order_total > 0:
         payload["total"] = f"{order_total:.2f}"
@@ -1195,29 +1193,31 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
             except Exception:
                 response_text = None
         status_code = getattr(exc.response, "status_code", None)
+        # Emit a verbose log line so cPanel / Passenger logs show the payload and Woo response.
         logger.error(
-            "Failed to create WooCommerce order | orderId=%s status=%s woo_response=%s payload_summary=%s",
+            "Failed to create WooCommerce order | orderId=%s status=%s woo_response_json=%s woo_response_text=%s woo_payload=%s",
             order.get("id"),
             status_code,
-            _summarize_woo_response(data or response_text),
-            _summarize_woo_payload(payload),
+            data,
+            response_text,
+            payload,
             exc_info=True,
         )
+        # Also log a plain string without structured placeholders in case the host logging formatter drops extras.
         try:
             logger.error(
-                "WooCommerce detail: status=%s response=%s payload_summary=%s",
+                "WooCommerce 400 detail: status=%s json=%s text=%s payload=%s",
                 status_code,
-                _summarize_woo_response(data or response_text),
-                _summarize_woo_payload(payload),
+                data,
+                response_text,
+                payload,
             )
         except Exception:
             pass
+        # And force a stdout/stderr line to survive any logging config quirks on cPanel/Passenger.
         try:
             print(
-                "WOO_COMMERCE_ERROR "
-                f"status={status_code} type={type(exc).__name__} message={exc} "
-                f"response={_summarize_woo_response(data or response_text)} "
-                f"payload_summary={_summarize_woo_payload(payload)}",
+                f"WOO_COMMERCE_ERROR status={status_code} type={type(exc).__name__} message={exc} json={data} text={response_text} payload={payload}",
                 flush=True,
             )
         except Exception:
@@ -1339,6 +1339,10 @@ def update_order_metadata(details: Dict[str, Any]) -> Dict[str, Any]:
         meta.append({"key": "peppro_stripe_mode", "value": details.get("stripe_mode")})
     if details.get("sales_rep_id"):
         meta.append({"key": "peppro_sales_rep_id", "value": details.get("sales_rep_id")})
+    if details.get("sales_rep_name"):
+        meta.append({"key": "peppro_sales_rep_name", "value": details.get("sales_rep_name")})
+    if details.get("sales_rep_email"):
+        meta.append({"key": "peppro_sales_rep_email", "value": details.get("sales_rep_email")})
     if details.get("sales_rep_code"):
         meta.append({"key": "peppro_sales_rep_code", "value": details.get("sales_rep_code")})
     if details.get("refunded") is not None:
@@ -1391,10 +1395,7 @@ def update_order_metadata(details: Dict[str, Any]) -> Dict[str, Any]:
         )
         try:
             print(
-                "WOO_COMMERCE_META_UPDATE_ERROR "
-                f"woo_order_id={woo_order_id} status={status_code} "
-                f"response={_summarize_woo_response(data)} "
-                f"payload_summary={_summarize_woo_payload(payload)}",
+                f"WOO_COMMERCE_META_UPDATE_ERROR woo_order_id={woo_order_id} status={status_code} response={data} payload={payload}",
                 flush=True,
             )
         except Exception:
@@ -1524,10 +1525,7 @@ def create_refund(
         )
         try:
             print(
-                "WOO_COMMERCE_REFUND_ERROR "
-                f"woo_order_id={woo_order_id} status={status_code} "
-                f"response={_summarize_woo_response(data)} "
-                f"payload_summary={_summarize_woo_payload(payload)}",
+                f"WOO_COMMERCE_REFUND_ERROR woo_order_id={woo_order_id} status={status_code} response={data} payload={payload}",
                 flush=True,
             )
         except Exception:

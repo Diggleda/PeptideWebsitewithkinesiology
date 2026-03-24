@@ -10,11 +10,7 @@ _QUEUE: Queue | None = None
 
 
 def _redis_url() -> str:
-    url = (os.environ.get("REDIS_URL") or "redis://127.0.0.1:6379/0").strip()
-    node_env = (os.environ.get("NODE_ENV") or "development").strip().lower()
-    if node_env == "production" and not url.lower().startswith("rediss://"):
-        raise RuntimeError("REDIS_URL must use rediss:// in production")
-    return url
+    return (os.environ.get("REDIS_URL") or "redis://127.0.0.1:6379/0").strip()
 
 def _to_float(value: str | None, fallback: float) -> float:
     raw = (value or "").strip()

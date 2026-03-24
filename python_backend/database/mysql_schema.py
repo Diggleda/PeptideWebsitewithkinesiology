@@ -209,15 +209,8 @@ CREATE_TABLE_STATEMENTS = [
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) NOT NULL,
         phone VARCHAR(64) NULL,
-        name_encrypted LONGTEXT NULL,
-        email_encrypted LONGTEXT NULL,
-        phone_encrypted LONGTEXT NULL,
-        email_blind_index CHAR(64) NULL,
         source VARCHAR(255) NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        KEY idx_contact_forms_email (email),
-        KEY idx_contact_forms_email_blind (email_blind_index),
-        KEY idx_contact_forms_created_at (created_at)
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -227,9 +220,6 @@ CREATE_TABLE_STATEMENTS = [
         name VARCHAR(255) NULL,
         email VARCHAR(255) NULL,
         report LONGTEXT NOT NULL,
-        name_encrypted LONGTEXT NULL,
-        email_encrypted LONGTEXT NULL,
-        report_encrypted LONGTEXT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
     """,
@@ -314,20 +304,14 @@ CREATE_TABLE_STATEMENTS = [
         token_hint VARCHAR(32) NULL,
         doctor_id VARCHAR(32) NOT NULL,
         patient_id VARCHAR(128) NULL,
-        patient_id_encrypted LONGTEXT NULL,
         reference_label VARCHAR(190) NULL,
-        reference_label_encrypted LONGTEXT NULL,
         subject_label VARCHAR(190) NULL,
-        subject_label_encrypted LONGTEXT NULL,
         study_label VARCHAR(190) NULL,
-        study_label_encrypted LONGTEXT NULL,
         patient_reference VARCHAR(190) NULL,
-        patient_reference_encrypted LONGTEXT NULL,
         created_at DATETIME NOT NULL,
         expires_at DATETIME NOT NULL,
         markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
         instructions LONGTEXT NULL,
-        instructions_encrypted LONGTEXT NULL,
         allowed_products_json JSON NULL,
         usage_limit INT NULL,
         usage_count INT NOT NULL DEFAULT 0,
@@ -335,7 +319,6 @@ CREATE_TABLE_STATEMENTS = [
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         payment_method VARCHAR(32) NULL,
         payment_instructions LONGTEXT NULL,
-        payment_instructions_encrypted LONGTEXT NULL,
         physician_certified TINYINT(1) NOT NULL DEFAULT 0,
         received_payment TINYINT(1) NOT NULL DEFAULT 0,
         last_used_at DATETIME NULL,
@@ -343,18 +326,14 @@ CREATE_TABLE_STATEMENTS = [
         last_order_at DATETIME NULL,
         revoked_at DATETIME NULL,
         delegate_cart_json LONGTEXT NULL,
-        delegate_cart_encrypted LONGTEXT NULL,
         delegate_shipping_json LONGTEXT NULL,
-        delegate_shipping_encrypted LONGTEXT NULL,
         delegate_payment_json LONGTEXT NULL,
-        delegate_payment_encrypted LONGTEXT NULL,
         delegate_shared_at DATETIME NULL,
         delegate_order_id VARCHAR(32) NULL,
         delegate_review_status VARCHAR(32) NULL,
         delegate_reviewed_at DATETIME NULL,
         delegate_review_order_id VARCHAR(32) NULL,
         delegate_review_notes LONGTEXT NULL,
-        delegate_review_notes_encrypted LONGTEXT NULL,
         KEY idx_patient_links_doctor (doctor_id),
         KEY idx_patient_links_expires (expires_at),
         KEY idx_patient_links_status (status)
@@ -368,17 +347,11 @@ CREATE_TABLE_STATEMENTS = [
         actor_user_id VARCHAR(32) NULL,
         actor_role VARCHAR(64) NULL,
         event_type VARCHAR(64) NOT NULL,
-        resource_ref VARCHAR(128) NULL,
-        purpose VARCHAR(64) NULL,
-        result VARCHAR(32) NULL,
-        request_ip VARCHAR(64) NULL,
-        device_info VARCHAR(255) NULL,
         event_payload_json LONGTEXT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY idx_patient_link_audit_token (patient_link_token),
         KEY idx_patient_link_audit_doctor (doctor_id),
         KEY idx_patient_link_audit_event (event_type),
-        KEY idx_patient_link_audit_resource_ref (resource_ref),
         KEY idx_patient_link_audit_created (created_at)
     ) CHARACTER SET utf8mb4
     """,
@@ -597,10 +570,6 @@ def ensure_schema() -> None:
         "ALTER TABLE tax_tracking ADD COLUMN IF NOT EXISTS example_tax_on_100k_sales_buffered DECIMAL(12,2) NULL",
         "ALTER TABLE tax_tracking ADD COLUMN IF NOT EXISTS tax_nexus_applied TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS physician_certified TINYINT(1) NOT NULL DEFAULT 0",
-        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS name_encrypted LONGTEXT NULL",
-        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS email_encrypted LONGTEXT NULL",
-        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS phone_encrypted LONGTEXT NULL",
-        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS email_blind_index CHAR(64) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
         "ALTER TABLE peptide_forum_posts ADD COLUMN IF NOT EXISTS time_raw VARCHAR(64) NULL",
@@ -614,17 +583,6 @@ def ensure_schema() -> None:
         "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS patient_id_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS reference_label_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS subject_label_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS study_label_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS patient_reference_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS instructions_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_cart_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_shipping_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_payment_encrypted LONGTEXT NULL",
-        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_review_notes_encrypted LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS received_payment TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS patient_id VARCHAR(128) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS reference_label VARCHAR(190) NULL",
@@ -635,9 +593,6 @@ def ensure_schema() -> None:
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) NULL",
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL",
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL",
-        "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS name_encrypted LONGTEXT NULL",
-        "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS email_encrypted LONGTEXT NULL",
-        "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS report_encrypted LONGTEXT NULL",
     ]
     for stmt in migrations:
         try:
@@ -783,24 +738,14 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN token_hint VARCHAR(32) NULL")
         if not _column_exists("patient_links", "patient_id"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_id VARCHAR(128) NULL")
-        if not _column_exists("patient_links", "patient_id_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_id_encrypted LONGTEXT NULL")
         if not _column_exists("patient_links", "reference_label"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN reference_label VARCHAR(190) NULL")
-        if not _column_exists("patient_links", "reference_label_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN reference_label_encrypted LONGTEXT NULL")
         if not _column_exists("patient_links", "subject_label"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN subject_label VARCHAR(190) NULL")
-        if not _column_exists("patient_links", "subject_label_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN subject_label_encrypted LONGTEXT NULL")
         if not _column_exists("patient_links", "study_label"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN study_label VARCHAR(190) NULL")
-        if not _column_exists("patient_links", "study_label_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN study_label_encrypted LONGTEXT NULL")
         if not _column_exists("patient_links", "patient_reference"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_reference VARCHAR(190) NULL")
-        if not _column_exists("patient_links", "patient_reference_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_reference_encrypted LONGTEXT NULL")
         if not _column_exists("patient_links", "received_payment"):
             mysql_client.execute(
                 "ALTER TABLE patient_links ADD COLUMN received_payment TINYINT(1) NOT NULL DEFAULT 0"
@@ -815,8 +760,6 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
         if not _column_exists("patient_links", "instructions"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN instructions LONGTEXT NULL")
-        if not _column_exists("patient_links", "instructions_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN instructions_encrypted LONGTEXT NULL")
         if not _column_exists("patient_links", "allowed_products_json"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN allowed_products_json JSON NULL")
         if not _column_exists("patient_links", "usage_limit"):
@@ -847,14 +790,6 @@ def ensure_schema() -> None:
 
     # Ensure patient link proposal review fields exist.
     try:
-        if not _column_exists("patient_links", "payment_instructions_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN payment_instructions_encrypted LONGTEXT NULL")
-        if not _column_exists("patient_links", "delegate_cart_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_cart_encrypted LONGTEXT NULL")
-        if not _column_exists("patient_links", "delegate_shipping_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_shipping_encrypted LONGTEXT NULL")
-        if not _column_exists("patient_links", "delegate_payment_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_payment_encrypted LONGTEXT NULL")
         if not _column_exists("patient_links", "delegate_review_status"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_status VARCHAR(32) NULL")
         if not _column_exists("patient_links", "delegate_reviewed_at"):
@@ -863,36 +798,6 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_order_id VARCHAR(32) NULL")
         if not _column_exists("patient_links", "delegate_review_notes"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_notes LONGTEXT NULL")
-        if not _column_exists("patient_links", "delegate_review_notes_encrypted"):
-            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_notes_encrypted LONGTEXT NULL")
-    except Exception:
-        pass
-
-    try:
-        if not _column_exists("contact_forms", "name_encrypted"):
-            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN name_encrypted LONGTEXT NULL")
-        if not _column_exists("contact_forms", "email_encrypted"):
-            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN email_encrypted LONGTEXT NULL")
-        if not _column_exists("contact_forms", "phone_encrypted"):
-            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN phone_encrypted LONGTEXT NULL")
-        if not _column_exists("contact_forms", "email_blind_index"):
-            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN email_blind_index CHAR(64) NULL")
-        if not _index_exists("contact_forms", "idx_contact_forms_email"):
-            mysql_client.execute("ALTER TABLE contact_forms ADD INDEX idx_contact_forms_email (email)")
-        if not _index_exists("contact_forms", "idx_contact_forms_email_blind"):
-            mysql_client.execute("ALTER TABLE contact_forms ADD INDEX idx_contact_forms_email_blind (email_blind_index)")
-        if not _index_exists("contact_forms", "idx_contact_forms_created_at"):
-            mysql_client.execute("ALTER TABLE contact_forms ADD INDEX idx_contact_forms_created_at (created_at)")
-    except Exception:
-        pass
-
-    try:
-        if not _column_exists("bugs_reported", "name_encrypted"):
-            mysql_client.execute("ALTER TABLE bugs_reported ADD COLUMN name_encrypted LONGTEXT NULL")
-        if not _column_exists("bugs_reported", "email_encrypted"):
-            mysql_client.execute("ALTER TABLE bugs_reported ADD COLUMN email_encrypted LONGTEXT NULL")
-        if not _column_exists("bugs_reported", "report_encrypted"):
-            mysql_client.execute("ALTER TABLE bugs_reported ADD COLUMN report_encrypted LONGTEXT NULL")
     except Exception:
         pass
 
@@ -977,20 +882,6 @@ def ensure_schema() -> None:
                     KEY idx_patient_link_audit_created (created_at)
                 ) CHARACTER SET utf8mb4
                 """
-            )
-        if not _column_exists("patient_link_audit_events", "resource_ref"):
-            mysql_client.execute("ALTER TABLE patient_link_audit_events ADD COLUMN resource_ref VARCHAR(128) NULL")
-        if not _column_exists("patient_link_audit_events", "purpose"):
-            mysql_client.execute("ALTER TABLE patient_link_audit_events ADD COLUMN purpose VARCHAR(64) NULL")
-        if not _column_exists("patient_link_audit_events", "result"):
-            mysql_client.execute("ALTER TABLE patient_link_audit_events ADD COLUMN result VARCHAR(32) NULL")
-        if not _column_exists("patient_link_audit_events", "request_ip"):
-            mysql_client.execute("ALTER TABLE patient_link_audit_events ADD COLUMN request_ip VARCHAR(64) NULL")
-        if not _column_exists("patient_link_audit_events", "device_info"):
-            mysql_client.execute("ALTER TABLE patient_link_audit_events ADD COLUMN device_info VARCHAR(255) NULL")
-        if not _index_exists("patient_link_audit_events", "idx_patient_link_audit_resource_ref"):
-            mysql_client.execute(
-                "ALTER TABLE patient_link_audit_events ADD INDEX idx_patient_link_audit_resource_ref (resource_ref)"
             )
     except Exception:
         pass

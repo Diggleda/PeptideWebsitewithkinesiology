@@ -14,27 +14,16 @@ const loadEnvFile = (filePath, { override } = {}) => {
   return true;
 };
 
-const runtimeNodeEnv = String(process.env.NODE_ENV || 'development').trim().toLowerCase();
-const normalizeRealPath = (target) => {
-  const resolved = path.resolve(target);
-  try {
-    return fs.realpathSync.native(resolved);
-  } catch {
-    return resolved;
-  }
-};
-const pathWithinRoot = (candidate, root) => {
-  const relative = path.relative(normalizeRealPath(root), normalizeRealPath(candidate));
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-};
-
 if (process.env.DOTENV_CONFIG_PATH) {
-  if (runtimeNodeEnv === 'production' && pathWithinRoot(process.env.DOTENV_CONFIG_PATH, process.cwd())) {
-    throw new Error('DOTENV_CONFIG_PATH must reference a server-managed file outside the repo in production');
-  }
   loadEnvFile(process.env.DOTENV_CONFIG_PATH, { override: true });
-} else if (runtimeNodeEnv !== 'production') {
+} else {
+  // Always load .env as the baseline configuration
   loadEnvFile(path.join(process.cwd(), '.env'));
+
+  // When running in production, allow .env.production to override only the specific keys it defines.
+  if (process.env.NODE_ENV === 'production') {
+    loadEnvFile(path.join(process.cwd(), '.env.production'), { override: true });
+  }
 }
 
 const toNumber = (value, fallback) => {
@@ -181,13 +170,6 @@ const env = {
   frontendBaseUrl: process.env.FRONTEND_BASE_URL
     || process.env.APP_BASE_URL
     || 'http://localhost:3000',
-  encryption: {
-    key: process.env.DATA_ENCRYPTION_KEY || '',
-    algorithm: process.env.DATA_ENCRYPTION_ALGO || 'aes-256-gcm',
-    keyVersion: process.env.DATA_ENCRYPTION_KEY_VERSION || 'local-v1',
-    kmsKeyId: process.env.DATA_ENCRYPTION_KMS_KEY_ID || '',
-    blindIndexKey: process.env.DATA_ENCRYPTION_BLIND_INDEX_KEY || '',
-  },
   stripe: {
     // Master switch to disable all outbound Stripe API usage while keeping code in place.
     externalEnabled: process.env.STRIPE_EXTERNAL_ENABLED === 'true',
@@ -317,34 +299,6 @@ env.mysql = {
 };
 
 const isProduction = env.nodeEnv === 'production';
-
-const assertHttpsUrl = (value) => {
-  const raw = String(value || '').trim();
-  if (!raw) return;
-  if (/^https:\/\//i.test(raw)) return;
-  throw new Error(`Expected HTTPS URL in production, received: ${raw}`);
-};
-
-const validateSecureEnv = () => {
-  if (!isProduction) {
-    return;
-  }
-  if (!process.env.JWT_SECRET || env.jwtSecret === 'your-secret-key-change-in-production') {
-    throw new Error('JWT_SECRET must be set to a strong value in production');
-  }
-  if (!String(env.encryption?.key || '').trim()) {
-    throw new Error('DATA_ENCRYPTION_KEY must be configured in production');
-  }
-  if (env.mysql?.enabled && env.mysql.ssl !== true) {
-    throw new Error('MYSQL_SSL=true is required in production when MySQL is enabled');
-  }
-  if (process.env.REDIS_URL && !String(process.env.REDIS_URL).trim().toLowerCase().startsWith('rediss://')) {
-    throw new Error('REDIS_URL must use rediss:// in production');
-  }
-  assertHttpsUrl(env.frontendBaseUrl);
-};
-
-validateSecureEnv();
 
 module.exports = {
   env,
