@@ -32,4 +32,13 @@ def get_config() -> AppConfig:
             return config
     except Exception:
         pass
+    try:
+        from ..config import get_config as get_global_config
+
+        config = get_global_config()
+        if isinstance(config, AppConfig):
+            _APP_CONFIG = config
+            return config
+    except Exception:
+        pass
     raise RuntimeError("Service configuration has not been initialised")

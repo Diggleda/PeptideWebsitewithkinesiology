@@ -21893,12 +21893,19 @@ function MainApp() {
             <div
               className="overflow-hidden"
               style={{
-                display: "grid",
-                gridTemplateColumns: "260px minmax(0, 1fr)",
-                alignItems: "start",
+                display: "flex",
+                alignItems: "stretch",
+                flexWrap: "nowrap",
               }}
             >
-              <aside className="min-w-0 border-r border-[#b7b7b7] bg-[#eef1f4] text-left">
+              <aside
+                className="border-r border-[#b7b7b7] bg-[#eef1f4] text-left"
+                style={{
+                  flex: "0 0 260px",
+                  width: 260,
+                  minWidth: 260,
+                }}
+              >
                 <div className="border-b border-[#c9c9c9] px-3 py-3">
                   <p className="text-2xl font-semibold italic leading-none text-[#7d8fc9]">
                     php<span className="text-[#f1a33c]">MyAdmin</span>
@@ -21948,7 +21955,14 @@ function MainApp() {
                 </div>
               </aside>
 
-              <div className="min-w-0 overflow-hidden bg-[#f7f7f7]" style={{ minWidth: 0 }}>
+              <div
+                className="overflow-hidden bg-[#f7f7f7]"
+                style={{
+                  flex: "1 1 0%",
+                  minWidth: 0,
+                  width: "calc(100% - 260px)",
+                }}
+              >
                 {selectedTable ? (
                   <>
                     <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-white">
@@ -22066,18 +22080,28 @@ function MainApp() {
                           </div>
                         </div>
 
-                        <div className="overflow-hidden border border-[#c1c1c1] bg-white" style={{ minWidth: 0 }}>
+                        <div
+                          className="overflow-hidden border border-[#c1c1c1] bg-white"
+                          style={{ minWidth: 0, maxWidth: "100%" }}
+                        >
                           <div
                             className="w-full"
                             style={{
-                              overflowX: "auto",
+                              display: "block",
+                              overflowX: "scroll",
                               overflowY: "hidden",
                               WebkitOverflowScrolling: "touch",
                               scrollbarGutter: "stable both-edges",
                               maxWidth: "100%",
                             }}
                           >
-                            <table className="text-left text-sm" style={{ width: "max-content", minWidth: "100%" }}>
+                            <table
+                              className="text-left text-sm"
+                              style={{
+                                width: "max-content",
+                                minWidth: "100%",
+                              }}
+                            >
                               <thead className="bg-gradient-to-b from-[#f8f8f8] to-[#d1d1d1] text-[#2d5f8b]">
                                 <tr>
                                   <th className="sticky left-0 z-[1] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap">
