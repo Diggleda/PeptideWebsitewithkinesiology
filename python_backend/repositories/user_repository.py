@@ -9,6 +9,7 @@ from ..services import get_config
 from ..database import mysql_client
 
 from .. import storage
+from ._mysql_datetime import to_mysql_datetime
 
 
 def _get_store():
@@ -833,15 +834,7 @@ def _row_to_user(row: Dict) -> Dict:
 
 def _to_db_params(user: Dict) -> Dict:
     def parse_dt(value):
-        if not value:
-            return None
-        if isinstance(value, datetime):
-            return value.replace(tzinfo=None)
-        value = str(value)
-        if value.endswith("Z"):
-            value = value[:-1]
-        value = value.replace("T", " ")
-        return value[:26]
+        return to_mysql_datetime(value)
 
     return {
         "id": user.get("id"),

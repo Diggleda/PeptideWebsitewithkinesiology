@@ -9,6 +9,7 @@ from .. import storage
 import re
 
 from . import user_repository, referral_code_repository, sales_rep_repository
+from ._mysql_datetime import to_mysql_datetime
 from ..utils.http import utc_now_iso as _now
 
 
@@ -371,15 +372,7 @@ def _row_to_referral(row: Optional[Dict]) -> Optional[Dict]:
 
 def _to_db_params(referral: Dict) -> Dict:
     def parse_dt(value):
-        if not value:
-            return None
-        if isinstance(value, datetime):
-            return value.replace(tzinfo=None)
-        value = str(value)
-        if value.endswith("Z"):
-            value = value[:-1]
-        value = value.replace("T", " ")
-        return value[:26]
+        return to_mysql_datetime(value)
 
     return {
         "id": referral.get("id"),

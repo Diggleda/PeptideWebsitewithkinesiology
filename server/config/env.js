@@ -336,8 +336,10 @@ const validateSecureEnv = () => {
   if (!String(env.encryption?.key || '').trim()) {
     throw new Error('DATA_ENCRYPTION_KEY must be configured in production');
   }
-  if (env.mysql?.enabled && env.mysql.ssl !== true) {
-    throw new Error('MYSQL_SSL=true is required in production when MySQL is enabled');
+  const mysqlHost = String(env.mysql?.host || '').trim().toLowerCase();
+  const mysqlIsLocal = mysqlHost === '' || mysqlHost === 'localhost' || mysqlHost === '127.0.0.1' || mysqlHost === '::1';
+  if (env.mysql?.enabled && env.mysql.ssl !== true && !mysqlIsLocal) {
+    throw new Error('MYSQL_SSL=true is required in production when MySQL is enabled on a non-local host');
   }
   if (process.env.REDIS_URL && !String(process.env.REDIS_URL).trim().toLowerCase().startsWith('rediss://')) {
     throw new Error('REDIS_URL must use rediss:// in production');

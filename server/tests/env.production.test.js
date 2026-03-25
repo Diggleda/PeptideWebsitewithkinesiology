@@ -75,3 +75,21 @@ test('production requires MYSQL_SSL when MySQL is enabled', () => {
   assert.notEqual(result.status, 0);
   assert.match(`${result.stderr}\n${result.stdout}`, /MYSQL_SSL=true is required/i);
 });
+
+test('production allows localhost MySQL without MYSQL_SSL', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peppro-env-'));
+
+  const result = runEnvModule({
+    cwd: tempDir,
+    extraEnv: {
+      MYSQL_ENABLED: 'true',
+      MYSQL_HOST: '127.0.0.1',
+      MYSQL_USER: 'peppr',
+      MYSQL_DATABASE: 'peppr',
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const parsed = JSON.parse(result.stdout.trim());
+  assert.equal(parsed.port, 3001);
+});

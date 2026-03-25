@@ -86,11 +86,30 @@ class ConfigRuntimeEnvTests(unittest.TestCase):
                     "DATA_ENCRYPTION_KEY": "enc-key",
                     "FRONTEND_BASE_URL": "https://prod.example",
                     "MYSQL_ENABLED": "true",
+                    "MYSQL_HOST": "db.example",
                 },
                 clear=True,
             ):
                 with self.assertRaises(RuntimeError):
                     config.load_config()
+
+    def test_load_config_allows_local_mysql_without_ssl_in_production(self) -> None:
+        with patch.object(config, "_load_dotenv", lambda *_args, **_kwargs: None):
+            with patch.dict(
+                os.environ,
+                {
+                    "NODE_ENV": "production",
+                    "JWT_SECRET": "x" * 64,
+                    "DATA_ENCRYPTION_KEY": "enc-key",
+                    "FRONTEND_BASE_URL": "https://prod.example",
+                    "MYSQL_ENABLED": "true",
+                    "MYSQL_HOST": "127.0.0.1",
+                },
+                clear=True,
+            ):
+                loaded = config.load_config()
+
+        self.assertFalse(bool(loaded.mysql.get("ssl")))
 
 
 if __name__ == "__main__":

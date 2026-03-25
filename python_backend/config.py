@@ -326,8 +326,10 @@ def load_config() -> AppConfig:
             raise RuntimeError("JWT_SECRET must be set to a strong value in production")
         if not str(config.encryption.get("key") or "").strip():
             raise RuntimeError("DATA_ENCRYPTION_KEY must be configured in production")
-        if bool(config.mysql.get("enabled")) and not bool(config.mysql.get("ssl")):
-            raise RuntimeError("MYSQL_SSL=true is required in production when MySQL is enabled")
+        mysql_host = str(config.mysql.get("host") or "").strip().lower()
+        mysql_is_local = mysql_host in {"", "localhost", "127.0.0.1", "::1"}
+        if bool(config.mysql.get("enabled")) and not bool(config.mysql.get("ssl")) and not mysql_is_local:
+            raise RuntimeError("MYSQL_SSL=true is required in production when MySQL is enabled on a non-local host")
         redis_url = str(os.environ.get("REDIS_URL") or "").strip()
         if redis_url and not redis_url.lower().startswith("rediss://"):
             raise RuntimeError("REDIS_URL must use rediss:// in production")

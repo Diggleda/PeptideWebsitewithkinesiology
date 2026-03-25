@@ -8,6 +8,7 @@ from ..services import get_config
 from ..database import mysql_client
 from .. import storage
 from ..utils.http import utc_now_iso as _now
+from ._mysql_datetime import to_mysql_datetime
 
 
 def _using_mysql() -> bool:
@@ -310,15 +311,7 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
 
 def _to_db_params(rep: Dict) -> Dict:
     def parse_dt(value):
-        if not value:
-            return None
-        if isinstance(value, datetime):
-            return value.replace(tzinfo=None)
-        value = str(value)
-        if value.endswith("Z"):
-            value = value[:-1]
-        value = value.replace("T", " ")
-        return value[:26]
+        return to_mysql_datetime(value)
 
     return {
         "id": rep.get("id"),
@@ -354,15 +347,7 @@ def update_revenue_summary(rep_id: str, total_revenue_to_date: float, updated_at
 
     if _using_mysql():
         def parse_dt(value):
-            if not value:
-                return None
-            if isinstance(value, datetime):
-                return value.replace(tzinfo=None)
-            value = str(value)
-            if value.endswith("Z"):
-                value = value[:-1]
-            value = value.replace("T", " ")
-            return value[:26]
+            return to_mysql_datetime(value)
 
         try:
             mysql_client.execute(
@@ -404,5 +389,4 @@ def _generate_id() -> str:
     from time import time
 
     return str(int(time() * 1000))
-
 

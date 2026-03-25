@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from . import sales_rep_repository
+from ._mysql_datetime import to_mysql_datetime
 from ..utils.http import utc_now_iso as _now
 
 
@@ -162,15 +163,7 @@ def _to_db_params(record: Dict) -> Dict:
         return json.dumps(value)
 
     def parse_dt(value):
-        if not value:
-            return None
-        if isinstance(value, datetime):
-            return value.replace(tzinfo=None)
-        value = str(value)
-        if value.endswith("Z"):
-            value = value[:-1]
-        value = value.replace("T", " ")
-        return value[:26]
+        return to_mysql_datetime(value)
 
     return {
         "id": record.get("id"),
@@ -192,5 +185,4 @@ def _generate_id() -> str:
     from time import time
 
     return str(int(time() * 1000))
-
 

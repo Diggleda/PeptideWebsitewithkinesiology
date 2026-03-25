@@ -8,6 +8,7 @@ from ..services import get_config
 from ..database import mysql_client
 from .. import storage
 from ..utils.http import utc_now_iso as _now
+from ._mysql_datetime import to_mysql_datetime
 
 HOUSE_SALES_REP_ID = "house"
 DELETED_USER_ID = "0000000000000"
@@ -796,15 +797,7 @@ def _row_to_record(row: Optional[Dict]) -> Optional[Dict]:
 
 def _to_db_params(record: Dict) -> Dict:
     def parse_dt(value):
-        if not value:
-            return None
-        if isinstance(value, datetime):
-            return value.replace(tzinfo=None)
-        value = str(value)
-        if value.endswith("Z"):
-            value = value[:-1]
-        value = value.replace("T", " ")
-        return value[:26]
+        return to_mysql_datetime(value)
 
     return {
         "id": record.get("id"),
