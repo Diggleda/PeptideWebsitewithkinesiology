@@ -1388,6 +1388,38 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  getDatabaseVisualizer: async (options?: {
+    tableName?: string | null;
+    page?: number;
+    pageSize?: number;
+    sortColumn?: string | null;
+    sortDirection?: 'asc' | 'desc' | null;
+    search?: string | null;
+  }) => {
+    const params = new URLSearchParams();
+    if (options?.tableName) {
+      params.set('table', String(options.tableName));
+    }
+    if (typeof options?.page === 'number' && Number.isFinite(options.page) && options.page > 0) {
+      params.set('page', String(Math.floor(options.page)));
+    }
+    if (typeof options?.pageSize === 'number' && Number.isFinite(options.pageSize) && options.pageSize > 0) {
+      params.set('pageSize', String(Math.floor(options.pageSize)));
+    }
+    if (options?.sortColumn) {
+      params.set('sortColumn', String(options.sortColumn));
+    }
+    if (options?.sortDirection) {
+      params.set('sortDirection', options.sortDirection);
+    }
+    if (options?.search) {
+      params.set('search', String(options.search));
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetchWithAuth(`${API_BASE_URL}/settings/database-visualizer${query}`, {
+      method: 'GET',
+    });
+  },
   setSalesBySalesRepCsvDownloadedAt: async (downloadedAt: string) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
       method: 'PUT',

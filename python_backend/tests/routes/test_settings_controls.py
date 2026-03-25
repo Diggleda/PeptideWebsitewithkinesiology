@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import types
+from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
@@ -163,6 +164,121 @@ class TestSettingsControls(unittest.TestCase):
 
         self.assertEqual(normalized["betaServices"], ["shop", "crm", "research"])
         self.assertIn("betaServices", settings_service.DEFAULT_SETTINGS)
+
+    def test_admin_database_visualizer_route_returns_table_and_column_metadata(self):
+        settings = self.settings
+
+        def fake_fetch_all(query, params=None):
+            if "FROM information_schema.TABLES" in query:
+                return [
+                    {
+                        "table_name": "users",
+                        "engine": "InnoDB",
+                        "data_bytes": 4096,
+                        "index_bytes": 2048,
+                        "updated_at": datetime(2026, 3, 24, 12, 0, tzinfo=timezone.utc),
+                        "column_count": 3,
+                    }
+                ]
+            if "FROM information_schema.COLUMNS" in query:
+                return [
+                    {
+                        "column_name": "id",
+                        "column_type": "varchar(32)",
+                        "is_nullable": "NO",
+                        "column_key": "PRI",
+                        "column_default": None,
+                        "extra": "",
+                        "ordinal_position": 1,
+                    },
+                    {
+                        "column_name": "email",
+                        "column_type": "varchar(190)",
+                        "is_nullable": "NO",
+                        "column_key": "UNI",
+                        "column_default": None,
+                        "extra": "",
+                        "ordinal_position": 2,
+                    },
+                ]
+            if "FROM information_schema.STATISTICS" in query:
+                return [
+                    {
+                        "index_name": "PRIMARY",
+                        "non_unique": 0,
+                        "column_name": "id",
+                        "seq_in_index": 1,
+                    },
+                    {
+                        "index_name": "email",
+                        "non_unique": 0,
+                        "column_name": "email",
+                        "seq_in_index": 1,
+                    },
+                ]
+            if "FROM information_schema.KEY_COLUMN_USAGE" in query and "kcu.TABLE_NAME = %(table_name)s" in query:
+                return [
+                    {
+                        "constraint_name": "fk_users_sales_rep",
+                        "column_name": "salesRepId",
+                        "referenced_table_name": "sales_reps",
+                        "referenced_column_name": "id",
+                        "update_rule": "CASCADE",
+                        "delete_rule": "SET NULL",
+                    }
+                ]
+            if "FROM information_schema.KEY_COLUMN_USAGE" in query and "kcu.REFERENCED_TABLE_NAME = %(table_name)s" in query:
+                return [
+                    {
+                        "constraint_name": "fk_orders_user",
+                        "source_table_name": "orders",
+                        "source_column_name": "user_id",
+                        "referenced_column_name": "id",
+                        "update_rule": "CASCADE",
+                        "delete_rule": "RESTRICT",
+                    }
+                ]
+            if "SELECT *" in query and "FROM `users`" in query:
+                return [
+                    {
+                        "id": "user-1",
+                        "email": "doctor@example.com",
+                    }
+                ]
+            self.fail(f"Unexpected fetch_all query: {query}")
+
+        def fake_fetch_one(query, params=None):
+            if "SELECT COUNT(*) AS row_count FROM `users`" in query:
+                return {"row_count": 29}
+            if "SHOW CREATE TABLE `users`" in query:
+                return {
+                    "Table": "users",
+                    "Create Table": "CREATE TABLE `users` (`id` varchar(255) NOT NULL, PRIMARY KEY (`id`))",
+                }
+            self.fail(f"Unexpected fetch_one query: {query}")
+
+        fake_config = types.SimpleNamespace(mysql={"enabled": True, "database": "PepPro", "host": "127.0.0.1"})
+
+        with patch.object(settings, "get_config", return_value=fake_config), \
+            patch.object(settings.mysql_client, "fetch_all", side_effect=fake_fetch_all), \
+            patch.object(settings.mysql_client, "fetch_one", side_effect=fake_fetch_one):
+            with self.app.test_request_context("/api/settings/database-visualizer?table=users", method="GET"):
+                g.current_user = {"id": "admin-1", "role": "admin"}
+                response = self._make_response(settings.get_database_visualizer.__wrapped__())
+                payload = response.get_json()
+
+        self.assertTrue(payload["mysqlEnabled"])
+        self.assertEqual(payload["databaseName"], "PepPro")
+        self.assertEqual(payload["hostScope"], "local")
+        self.assertEqual(payload["tables"][0]["name"], "users")
+        self.assertEqual(payload["tables"][0]["rowCount"], 29)
+        self.assertEqual(payload["selectedTable"]["name"], "users")
+        self.assertEqual(payload["selectedTable"]["columns"][0]["name"], "id")
+        self.assertEqual(payload["selectedTable"]["indexes"][0]["name"], "PRIMARY")
+        self.assertEqual(payload["selectedTable"]["relationships"]["imports"][0]["referencedTable"], "sales_reps")
+        self.assertEqual(payload["selectedTable"]["relationships"]["exports"][0]["sourceTable"], "orders")
+        self.assertIn("CREATE TABLE `users`", payload["selectedTable"]["createStatement"])
+        self.assertEqual(payload["selectedTable"]["preview"]["rows"][0]["values"]["email"], "doctor@example.com")
 
 
 if __name__ == "__main__":

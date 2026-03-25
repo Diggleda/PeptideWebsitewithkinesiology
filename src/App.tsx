@@ -7087,10 +7087,83 @@ function MainApp() {
   const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>(
     () => getDefaultSalesBySalesRepPeriod().start,
   );
-  const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>(
-    () => getDefaultSalesBySalesRepPeriod().end,
-  );
-    const getClearedSalesDoctorCommissionWindow = () => {
+	  const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>(
+	    () => getDefaultSalesBySalesRepPeriod().end,
+	  );
+  type DatabaseVisualizerTableSummary = {
+    name: string;
+    rowCount: number;
+    columnCount: number;
+    engine: string | null;
+    dataBytes: number;
+    indexBytes: number;
+    updatedAt: string | null;
+  };
+  type DatabaseVisualizerColumn = {
+    name: string;
+    type: string;
+    nullable: boolean;
+    key: string | null;
+    defaultValue: string | null;
+    extra: string | null;
+    position: number;
+  };
+  type DatabaseVisualizerIndex = {
+    name: string;
+    unique: boolean;
+    columns: string[];
+  };
+  type DatabaseVisualizerRelationshipImport = {
+    constraintName: string | null;
+    columnName: string | null;
+    referencedTable: string | null;
+    referencedColumn: string | null;
+    updateRule: string | null;
+    deleteRule: string | null;
+  };
+  type DatabaseVisualizerRelationshipExport = {
+    constraintName: string | null;
+    sourceTable: string | null;
+    sourceColumn: string | null;
+    referencedColumn: string | null;
+    updateRule: string | null;
+    deleteRule: string | null;
+  };
+  type DatabaseVisualizerPreviewRow = {
+    rowNumber: number;
+    values: Record<string, string | number | boolean | null>;
+  };
+  type DatabaseVisualizerPreview = {
+    page: number;
+    pageSize: number;
+    totalRowCount: number;
+    filteredRowCount: number;
+    totalPages: number;
+    sortColumn: string | null;
+    sortDirection: "asc" | "desc";
+    searchTerm: string | null;
+    searchableColumns: string[];
+    rows: DatabaseVisualizerPreviewRow[];
+  };
+  type DatabaseVisualizerSelectedTable = DatabaseVisualizerTableSummary & {
+    columns: DatabaseVisualizerColumn[];
+    indexes: DatabaseVisualizerIndex[];
+    relationships: {
+      imports: DatabaseVisualizerRelationshipImport[];
+      exports: DatabaseVisualizerRelationshipExport[];
+    };
+    createStatement: string | null;
+    preview: DatabaseVisualizerPreview;
+  };
+  type DatabaseVisualizerPayload = {
+    mysqlEnabled: boolean;
+    databaseName: string | null;
+    hostScope: "local" | "remote";
+    refreshedAt: string | null;
+    tables: DatabaseVisualizerTableSummary[];
+    selectedTable: DatabaseVisualizerSelectedTable | null;
+  };
+	    const getClearedSalesDoctorCommissionWindow = () => {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -11697,10 +11770,10 @@ function MainApp() {
 	  const [settingsSupport, setSettingsSupport] = useState<{
 	    research: boolean;
 	  }>({ research: true });
-  const [settingsSaving, setSettingsSaving] = useState<{
-    shop: boolean;
-    patientLinks: boolean;
-    crm: boolean;
+	  const [settingsSaving, setSettingsSaving] = useState<{
+	    shop: boolean;
+	    patientLinks: boolean;
+	    crm: boolean;
     forum: boolean;
     research: boolean;
     testPaymentsOverride: boolean;
@@ -11711,12 +11784,436 @@ function MainApp() {
     crm: false,
     forum: false,
     research: false,
-	    testPaymentsOverride: false,
-	    receiveClientOrderUpdateEmails: false,
-	  });
+		    testPaymentsOverride: false,
+		    receiveClientOrderUpdateEmails: false,
+		  });
+  const [databaseVisualizer, setDatabaseVisualizer] = useState<DatabaseVisualizerPayload | null>(null);
+  const [databaseVisualizerLoading, setDatabaseVisualizerLoading] = useState(false);
+  const [databaseVisualizerError, setDatabaseVisualizerError] = useState<string | null>(null);
+  const [databaseVisualizerSelectedTableName, setDatabaseVisualizerSelectedTableName] = useState("");
+  const [databaseVisualizerTab, setDatabaseVisualizerTab] = useState<
+    "rows" | "columns" | "indexes" | "relationships" | "ddl"
+  >("rows");
+  const [databaseVisualizerTableFilter, setDatabaseVisualizerTableFilter] = useState("");
+  const [databaseVisualizerColumnFilter, setDatabaseVisualizerColumnFilter] = useState("");
+  const [databaseVisualizerSearchInput, setDatabaseVisualizerSearchInput] = useState("");
+  const [databaseVisualizerSearchTerm, setDatabaseVisualizerSearchTerm] = useState<string | null>(null);
+  const [databaseVisualizerPage, setDatabaseVisualizerPage] = useState(1);
+  const [databaseVisualizerPageSize, setDatabaseVisualizerPageSize] = useState(25);
+  const [databaseVisualizerSortColumn, setDatabaseVisualizerSortColumn] = useState<string | null>(null);
+  const [databaseVisualizerSortDirection, setDatabaseVisualizerSortDirection] = useState<"asc" | "desc">("asc");
+  const databaseVisualizerInFlightRef = useRef(false);
   const [betaServiceSaving, setBetaServiceSaving] = useState<
     Partial<Record<PortalBetaServiceKey, boolean>>
   >({});
+  const normalizeDatabaseVisualizerPayload = useCallback(
+    (payload: any): DatabaseVisualizerPayload => {
+      const tables = Array.isArray(payload?.tables)
+        ? payload.tables
+            .map((entry: any) => {
+              const name = String(entry?.name ?? "").trim();
+              if (!name) return null;
+              return {
+                name,
+                rowCount: Number.isFinite(Number(entry?.rowCount)) ? Number(entry.rowCount) : 0,
+                columnCount: Number.isFinite(Number(entry?.columnCount)) ? Number(entry.columnCount) : 0,
+                engine: typeof entry?.engine === "string" && entry.engine.trim() ? entry.engine.trim() : null,
+                dataBytes: Number.isFinite(Number(entry?.dataBytes)) ? Number(entry.dataBytes) : 0,
+                indexBytes: Number.isFinite(Number(entry?.indexBytes)) ? Number(entry.indexBytes) : 0,
+                updatedAt:
+                  typeof entry?.updatedAt === "string" && entry.updatedAt.trim()
+                    ? entry.updatedAt.trim()
+                    : null,
+              } satisfies DatabaseVisualizerTableSummary;
+            })
+            .filter((entry: DatabaseVisualizerTableSummary | null): entry is DatabaseVisualizerTableSummary => Boolean(entry))
+        : [];
+
+      const selectedRaw = payload?.selectedTable;
+      const selectedTable =
+        selectedRaw && typeof selectedRaw === "object" && typeof selectedRaw.name === "string"
+          ? ({
+              name: String(selectedRaw.name).trim(),
+              rowCount: Number.isFinite(Number(selectedRaw.rowCount)) ? Number(selectedRaw.rowCount) : 0,
+              columnCount: Number.isFinite(Number(selectedRaw.columnCount)) ? Number(selectedRaw.columnCount) : 0,
+              engine:
+                typeof selectedRaw.engine === "string" && selectedRaw.engine.trim()
+                  ? selectedRaw.engine.trim()
+                  : null,
+              dataBytes: Number.isFinite(Number(selectedRaw.dataBytes)) ? Number(selectedRaw.dataBytes) : 0,
+              indexBytes: Number.isFinite(Number(selectedRaw.indexBytes)) ? Number(selectedRaw.indexBytes) : 0,
+              updatedAt:
+                typeof selectedRaw.updatedAt === "string" && selectedRaw.updatedAt.trim()
+                  ? selectedRaw.updatedAt.trim()
+                  : null,
+              columns: Array.isArray(selectedRaw.columns)
+                ? selectedRaw.columns
+                    .map((column: any) => {
+                      const name = String(column?.name ?? "").trim();
+                      if (!name) return null;
+                      return {
+                        name,
+                        type: String(column?.type ?? "").trim(),
+                        nullable: Boolean(column?.nullable),
+                        key:
+                          typeof column?.key === "string" && column.key.trim()
+                            ? column.key.trim()
+                            : null,
+                        defaultValue:
+                          column?.defaultValue === null || column?.defaultValue === undefined
+                            ? null
+                            : String(column.defaultValue),
+                        extra:
+                          typeof column?.extra === "string" && column.extra.trim()
+                            ? column.extra.trim()
+                            : null,
+                        position: Number.isFinite(Number(column?.position)) ? Number(column.position) : 0,
+                      } satisfies DatabaseVisualizerColumn;
+                    })
+                    .filter((column: DatabaseVisualizerColumn | null): column is DatabaseVisualizerColumn => Boolean(column))
+                : [],
+              indexes: Array.isArray(selectedRaw.indexes)
+                ? selectedRaw.indexes
+                    .map((index: any) => {
+                      const name = String(index?.name ?? "").trim();
+                      if (!name) return null;
+                      const columns = Array.isArray(index?.columns)
+                        ? index.columns
+                            .map((column: any) => String(column ?? "").trim())
+                            .filter((column: string) => column.length > 0)
+                        : [];
+                      return {
+                        name,
+                        unique: Boolean(index?.unique),
+                        columns,
+                      } satisfies DatabaseVisualizerIndex;
+                    })
+                    .filter((index: DatabaseVisualizerIndex | null): index is DatabaseVisualizerIndex => Boolean(index))
+                : [],
+              relationships: {
+                imports: Array.isArray(selectedRaw.relationships?.imports)
+                  ? selectedRaw.relationships.imports
+                      .map((entry: any) => ({
+                        constraintName:
+                          typeof entry?.constraintName === "string" && entry.constraintName.trim()
+                            ? entry.constraintName.trim()
+                            : null,
+                        columnName:
+                          typeof entry?.columnName === "string" && entry.columnName.trim()
+                            ? entry.columnName.trim()
+                            : null,
+                        referencedTable:
+                          typeof entry?.referencedTable === "string" && entry.referencedTable.trim()
+                            ? entry.referencedTable.trim()
+                            : null,
+                        referencedColumn:
+                          typeof entry?.referencedColumn === "string" && entry.referencedColumn.trim()
+                            ? entry.referencedColumn.trim()
+                            : null,
+                        updateRule:
+                          typeof entry?.updateRule === "string" && entry.updateRule.trim()
+                            ? entry.updateRule.trim()
+                            : null,
+                        deleteRule:
+                          typeof entry?.deleteRule === "string" && entry.deleteRule.trim()
+                            ? entry.deleteRule.trim()
+                            : null,
+                      }))
+                  : [],
+                exports: Array.isArray(selectedRaw.relationships?.exports)
+                  ? selectedRaw.relationships.exports
+                      .map((entry: any) => ({
+                        constraintName:
+                          typeof entry?.constraintName === "string" && entry.constraintName.trim()
+                            ? entry.constraintName.trim()
+                            : null,
+                        sourceTable:
+                          typeof entry?.sourceTable === "string" && entry.sourceTable.trim()
+                            ? entry.sourceTable.trim()
+                            : null,
+                        sourceColumn:
+                          typeof entry?.sourceColumn === "string" && entry.sourceColumn.trim()
+                            ? entry.sourceColumn.trim()
+                            : null,
+                        referencedColumn:
+                          typeof entry?.referencedColumn === "string" && entry.referencedColumn.trim()
+                            ? entry.referencedColumn.trim()
+                            : null,
+                        updateRule:
+                          typeof entry?.updateRule === "string" && entry.updateRule.trim()
+                            ? entry.updateRule.trim()
+                            : null,
+                        deleteRule:
+                          typeof entry?.deleteRule === "string" && entry.deleteRule.trim()
+                            ? entry.deleteRule.trim()
+                            : null,
+                      }))
+                  : [],
+              },
+              createStatement:
+                typeof selectedRaw.createStatement === "string" && selectedRaw.createStatement.trim()
+                  ? selectedRaw.createStatement
+                  : null,
+              preview: {
+                page: Number.isFinite(Number(selectedRaw.preview?.page))
+                  ? Math.max(1, Number(selectedRaw.preview.page))
+                  : 1,
+                pageSize: Number.isFinite(Number(selectedRaw.preview?.pageSize))
+                  ? Math.max(1, Number(selectedRaw.preview.pageSize))
+                  : 25,
+                totalRowCount: Number.isFinite(Number(selectedRaw.preview?.totalRowCount))
+                  ? Math.max(0, Number(selectedRaw.preview.totalRowCount))
+                  : 0,
+                filteredRowCount: Number.isFinite(Number(selectedRaw.preview?.filteredRowCount))
+                  ? Math.max(0, Number(selectedRaw.preview.filteredRowCount))
+                  : 0,
+                totalPages: Number.isFinite(Number(selectedRaw.preview?.totalPages))
+                  ? Math.max(1, Number(selectedRaw.preview.totalPages))
+                  : 1,
+                sortColumn:
+                  typeof selectedRaw.preview?.sortColumn === "string" && selectedRaw.preview.sortColumn.trim()
+                    ? selectedRaw.preview.sortColumn.trim()
+                    : null,
+                sortDirection: selectedRaw.preview?.sortDirection === "desc" ? "desc" : "asc",
+                searchTerm:
+                  typeof selectedRaw.preview?.searchTerm === "string" && selectedRaw.preview.searchTerm.trim()
+                    ? selectedRaw.preview.searchTerm.trim()
+                    : null,
+                searchableColumns: Array.isArray(selectedRaw.preview?.searchableColumns)
+                  ? selectedRaw.preview.searchableColumns
+                      .map((column: any) => String(column ?? "").trim())
+                      .filter((column: string) => column.length > 0)
+                  : [],
+                rows: Array.isArray(selectedRaw.preview?.rows)
+                  ? selectedRaw.preview.rows
+                      .map((row: any) => {
+                        const rawValues =
+                          row?.values && typeof row.values === "object" ? row.values : {};
+                        const values = Object.fromEntries(
+                          Object.entries(rawValues).map(([key, value]) => [
+                            String(key),
+                            value === null ||
+                            typeof value === "string" ||
+                            typeof value === "number" ||
+                            typeof value === "boolean"
+                              ? value
+                              : JSON.stringify(value),
+                          ]),
+                        ) as Record<string, string | number | boolean | null>;
+                        return {
+                          rowNumber: Number.isFinite(Number(row?.rowNumber))
+                            ? Math.max(1, Number(row.rowNumber))
+                            : 0,
+                          values,
+                        } satisfies DatabaseVisualizerPreviewRow;
+                      })
+                  : [],
+              },
+            } satisfies DatabaseVisualizerSelectedTable)
+          : null;
+
+      return {
+        mysqlEnabled: Boolean(payload?.mysqlEnabled),
+        databaseName:
+          typeof payload?.databaseName === "string" && payload.databaseName.trim()
+            ? payload.databaseName.trim()
+            : null,
+        hostScope: payload?.hostScope === "remote" ? "remote" : "local",
+        refreshedAt:
+          typeof payload?.refreshedAt === "string" && payload.refreshedAt.trim()
+            ? payload.refreshedAt.trim()
+            : null,
+        tables,
+        selectedTable,
+      };
+    },
+    [],
+  );
+  const fetchDatabaseVisualizer = useCallback(
+    async (options?: {
+      tableName?: string | null;
+      page?: number;
+      pageSize?: number;
+      sortColumn?: string | null;
+      sortDirection?: "asc" | "desc" | null;
+      search?: string | null;
+      force?: boolean;
+    }) => {
+      if (!user || !isAdmin(user.role) || postLoginHold) {
+        setDatabaseVisualizer(null);
+        setDatabaseVisualizerLoading(false);
+        setDatabaseVisualizerError(null);
+        setDatabaseVisualizerSelectedTableName("");
+        setDatabaseVisualizerSearchInput("");
+        setDatabaseVisualizerSearchTerm(null);
+        setDatabaseVisualizerPage(1);
+        setDatabaseVisualizerPageSize(25);
+        setDatabaseVisualizerSortColumn(null);
+        setDatabaseVisualizerSortDirection("asc");
+        return;
+      }
+      if (databaseVisualizerInFlightRef.current && !options?.force) {
+        return;
+      }
+      databaseVisualizerInFlightRef.current = true;
+      setDatabaseVisualizerLoading(true);
+      setDatabaseVisualizerError(null);
+      try {
+        const requestedTableName =
+          typeof options?.tableName === "string"
+            ? options.tableName.trim()
+            : databaseVisualizerSelectedTableName.trim();
+        const requestedPage =
+          typeof options?.page === "number" && Number.isFinite(options.page) && options.page > 0
+            ? Math.floor(options.page)
+            : databaseVisualizerPage;
+        const requestedPageSize =
+          typeof options?.pageSize === "number" &&
+          Number.isFinite(options.pageSize) &&
+          options.pageSize > 0
+            ? Math.floor(options.pageSize)
+            : databaseVisualizerPageSize;
+        const requestedSortColumn =
+          typeof options?.sortColumn === "string" ? options.sortColumn.trim() : databaseVisualizerSortColumn;
+        const requestedSortDirection =
+          options?.sortDirection === "desc" || options?.sortDirection === "asc"
+            ? options.sortDirection
+            : databaseVisualizerSortDirection;
+        const requestedSearch =
+          options && Object.prototype.hasOwnProperty.call(options, "search")
+            ? (typeof options.search === "string" && options.search.trim() ? options.search.trim() : null)
+            : databaseVisualizerSearchTerm;
+        const payload = normalizeDatabaseVisualizerPayload(
+          await settingsAPI.getDatabaseVisualizer({
+            tableName: requestedTableName || undefined,
+            page: requestedPage,
+            pageSize: requestedPageSize,
+            sortColumn: requestedSortColumn || undefined,
+            sortDirection: requestedSortDirection,
+            search: requestedSearch || undefined,
+          }),
+        );
+        setDatabaseVisualizer(payload);
+        setDatabaseVisualizerSelectedTableName(payload.selectedTable?.name || "");
+        setDatabaseVisualizerPage(payload.selectedTable?.preview.page || requestedPage);
+        setDatabaseVisualizerPageSize(payload.selectedTable?.preview.pageSize || requestedPageSize);
+        setDatabaseVisualizerSortColumn(payload.selectedTable?.preview.sortColumn || null);
+        setDatabaseVisualizerSortDirection(payload.selectedTable?.preview.sortDirection || requestedSortDirection);
+        setDatabaseVisualizerSearchTerm(payload.selectedTable?.preview.searchTerm || null);
+        setDatabaseVisualizerSearchInput(payload.selectedTable?.preview.searchTerm || "");
+      } catch (error: any) {
+        setDatabaseVisualizerError(
+          typeof error?.message === "string"
+            ? error.message
+            : "Unable to load database visualizer right now.",
+        );
+      } finally {
+        setDatabaseVisualizerLoading(false);
+        databaseVisualizerInFlightRef.current = false;
+      }
+    },
+    [
+      databaseVisualizerPage,
+      databaseVisualizerPageSize,
+      databaseVisualizerSearchTerm,
+      databaseVisualizerSelectedTableName,
+      databaseVisualizerSortColumn,
+      databaseVisualizerSortDirection,
+      normalizeDatabaseVisualizerPayload,
+      postLoginHold,
+      user?.id,
+      user?.role,
+    ],
+  );
+  const handleDatabaseVisualizerTableSelect = useCallback(
+    (tableName: string) => {
+      const normalized = String(tableName || "").trim();
+      setDatabaseVisualizerSelectedTableName(normalized);
+      setDatabaseVisualizerColumnFilter("");
+      setDatabaseVisualizerPage(1);
+      setDatabaseVisualizerSearchInput("");
+      setDatabaseVisualizerSearchTerm(null);
+      setDatabaseVisualizerSortColumn(null);
+      setDatabaseVisualizerSortDirection("asc");
+      setDatabaseVisualizerTab("rows");
+      void fetchDatabaseVisualizer({
+        tableName: normalized,
+        page: 1,
+        search: null,
+        sortColumn: null,
+        sortDirection: "asc",
+        force: true,
+      });
+    },
+    [fetchDatabaseVisualizer],
+  );
+  const handleDatabaseVisualizerSearchSubmit = useCallback(() => {
+    const normalized = databaseVisualizerSearchInput.trim();
+    setDatabaseVisualizerPage(1);
+    setDatabaseVisualizerSearchTerm(normalized || null);
+    void fetchDatabaseVisualizer({
+      page: 1,
+      search: normalized || null,
+      force: true,
+    });
+  }, [databaseVisualizerSearchInput, fetchDatabaseVisualizer]);
+  const handleDatabaseVisualizerSearchClear = useCallback(() => {
+    setDatabaseVisualizerSearchInput("");
+    setDatabaseVisualizerSearchTerm(null);
+    setDatabaseVisualizerPage(1);
+    void fetchDatabaseVisualizer({
+      page: 1,
+      search: null,
+      force: true,
+    });
+  }, [fetchDatabaseVisualizer]);
+  const handleDatabaseVisualizerPageChange = useCallback(
+    (page: number) => {
+      const nextPage = Math.max(1, Math.floor(page));
+      setDatabaseVisualizerPage(nextPage);
+      void fetchDatabaseVisualizer({
+        page: nextPage,
+        force: true,
+      });
+    },
+    [fetchDatabaseVisualizer],
+  );
+  const handleDatabaseVisualizerPageSizeChange = useCallback(
+    (pageSize: number) => {
+      const nextPageSize = pageSize <= 25 ? 25 : pageSize <= 50 ? 50 : 100;
+      setDatabaseVisualizerPage(1);
+      setDatabaseVisualizerPageSize(nextPageSize);
+      void fetchDatabaseVisualizer({
+        page: 1,
+        pageSize: nextPageSize,
+        force: true,
+      });
+    },
+    [fetchDatabaseVisualizer],
+  );
+  const handleDatabaseVisualizerSortColumnChange = useCallback(
+    (columnName: string) => {
+      const normalized = String(columnName || "").trim();
+      setDatabaseVisualizerPage(1);
+      setDatabaseVisualizerSortColumn(normalized || null);
+      void fetchDatabaseVisualizer({
+        page: 1,
+        sortColumn: normalized || null,
+        force: true,
+      });
+    },
+    [fetchDatabaseVisualizer],
+  );
+  const handleDatabaseVisualizerSortDirectionToggle = useCallback(() => {
+    const nextDirection = databaseVisualizerSortDirection === "asc" ? "desc" : "asc";
+    setDatabaseVisualizerPage(1);
+    setDatabaseVisualizerSortDirection(nextDirection);
+    void fetchDatabaseVisualizer({
+      page: 1,
+      sortDirection: nextDirection,
+      force: true,
+    });
+  }, [databaseVisualizerSortDirection, fetchDatabaseVisualizer]);
   const handlePortalBetaToggle = useCallback(
     async (serviceKey: PortalBetaServiceKey, enabled: boolean) => {
       if (!isAdmin(user?.role)) {
@@ -12627,9 +13124,9 @@ function MainApp() {
     ],
   );
 
-  useEffect(() => {
-    if (!user || postLoginHold) {
-      setSalesRepHandDeliveryDoctors([]);
+	  useEffect(() => {
+	    if (!user || postLoginHold) {
+	      setSalesRepHandDeliveryDoctors([]);
       setSalesRepHandDeliveryLoading(false);
       setSalesRepHandDeliveryError(null);
       setSalesRepHandDeliverySavingByUserId({});
@@ -12647,17 +13144,45 @@ function MainApp() {
       return;
     }
     void fetchSalesRepHandDeliveryDoctors();
+	  }, [
+	    fetchSalesRepHandDeliveryDoctors,
+	    postLoginHold,
+	    salesDashboardTab,
+	    user?.id,
+	    user?.role,
+	  ]);
+  useEffect(() => {
+    if (!user || postLoginHold || !isAdmin(user.role)) {
+      setDatabaseVisualizer(null);
+      setDatabaseVisualizerLoading(false);
+      setDatabaseVisualizerError(null);
+      setDatabaseVisualizerSelectedTableName("");
+      setDatabaseVisualizerSearchInput("");
+      setDatabaseVisualizerSearchTerm(null);
+      setDatabaseVisualizerPage(1);
+      setDatabaseVisualizerPageSize(25);
+      setDatabaseVisualizerSortColumn(null);
+      setDatabaseVisualizerSortDirection("asc");
+      setDatabaseVisualizerTableFilter("");
+      setDatabaseVisualizerColumnFilter("");
+      setDatabaseVisualizerTab("rows");
+      return;
+    }
+    if (adminDashboardTab !== "maintenance") {
+      return;
+    }
+    void fetchDatabaseVisualizer();
   }, [
-    fetchSalesRepHandDeliveryDoctors,
+    adminDashboardTab,
+    fetchDatabaseVisualizer,
     postLoginHold,
-    salesDashboardTab,
     user?.id,
     user?.role,
   ]);
-
-	  useEffect(() => {
-	    liveClientsRef.current = liveClients;
-	  }, [liveClients]);
+	
+		  useEffect(() => {
+		    liveClientsRef.current = liveClients;
+		  }, [liveClients]);
 
 	  useEffect(() => {
 	    adminLiveUsersRef.current = adminLiveUsers;
@@ -16679,8 +17204,8 @@ function MainApp() {
     });
   }, []);
 
-  const formatCurrency = useCallback(
-    (amount?: number | null, currency = "USD") => {
+	  const formatCurrency = useCallback(
+	    (amount?: number | null, currency = "USD") => {
       if (amount === null || amount === undefined || Number.isNaN(amount)) {
         return "—";
       }
@@ -16693,10 +17218,26 @@ function MainApp() {
         return `$${amount.toFixed(2)}`;
       }
     },
-    [],
-  );
-
-  const formatThresholdRatio = useCallback((ratio?: number | null) => {
+	    [],
+	  );
+  const formatBytes = useCallback((bytes?: number | null) => {
+    if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) {
+      return "—";
+    }
+    if (bytes < 1024) {
+      return `${Math.round(bytes)} B`;
+    }
+    const units = ["KB", "MB", "GB", "TB"];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+  }, []);
+	
+	  const formatThresholdRatio = useCallback((ratio?: number | null) => {
     if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) {
       return "—";
     }
@@ -21156,9 +21697,9 @@ function MainApp() {
 	        </div>
 	      </div>
 	    );
-    const renderSalesRepHandDeliveryCard = () => {
-      if (!showSalesDashboardTabs) return null;
-      if (!isCurrentSalesRepLocalJurisdiction) return null;
+	    const renderSalesRepHandDeliveryCard = () => {
+	      if (!showSalesDashboardTabs) return null;
+	      if (!isCurrentSalesRepLocalJurisdiction) return null;
       return (
         <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
           <div className="border-b border-slate-200/60 pb-3">
@@ -21224,11 +21765,605 @@ function MainApp() {
               })}
             </div>
           )}
+	        </div>
+	      );
+	    };
+    const renderDatabaseVisualizerCard = () => {
+      if (!isAdmin(user?.role)) {
+        return null;
+      }
+
+      const payload = databaseVisualizer;
+      const selectedTable = payload?.selectedTable ?? null;
+      const selectedTableName = databaseVisualizerSelectedTableName || selectedTable?.name || "";
+      const totalRows = (payload?.tables || []).reduce((sum, table) => sum + (table.rowCount || 0), 0);
+      const normalizedTableFilter = databaseVisualizerTableFilter.trim().toLowerCase();
+      const visibleTables = (payload?.tables || []).filter((table) =>
+        normalizedTableFilter.length === 0
+          ? true
+          : table.name.toLowerCase().includes(normalizedTableFilter),
+      );
+      const tableCards = normalizedTableFilter.length === 0 ? payload?.tables || [] : visibleTables;
+      const normalizedColumnFilter = databaseVisualizerColumnFilter.trim().toLowerCase();
+      const visibleColumns = (selectedTable?.columns || []).filter((column) =>
+        normalizedColumnFilter.length === 0
+          ? true
+          : `${column.name} ${column.type} ${column.key || ""} ${column.extra || ""}`
+              .toLowerCase()
+              .includes(normalizedColumnFilter),
+      );
+      const preview = selectedTable?.preview || {
+        page: 1,
+        pageSize: databaseVisualizerPageSize,
+        totalRowCount: 0,
+        filteredRowCount: 0,
+        totalPages: 1,
+        sortColumn: null,
+        sortDirection: "asc" as const,
+        searchTerm: null,
+        searchableColumns: [],
+        rows: [],
+      };
+      const previewColumns = selectedTable?.columns.map((column) => column.name) || [];
+      const activeSortColumn =
+        databaseVisualizerSortColumn || preview.sortColumn || previewColumns[0] || "";
+      const relationshipCount =
+        (selectedTable?.relationships.imports.length || 0) +
+        (selectedTable?.relationships.exports.length || 0);
+      const detailTabs = [
+        { id: "rows" as const, label: "Rows" },
+        { id: "columns" as const, label: "Columns" },
+        { id: "indexes" as const, label: "Indexes" },
+        { id: "relationships" as const, label: "Relationships" },
+        { id: "ddl" as const, label: "DDL" },
+      ];
+      const formatPreviewValue = (value: string | number | boolean | null | undefined) => {
+        if (value === null || value === undefined) {
+          return "NULL";
+        }
+        if (typeof value === "boolean") {
+          return value ? "true" : "false";
+        }
+        return String(value);
+      };
+
+      return (
+        <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
+          <div className="border-b border-slate-200/60 pb-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h4 className="text-lg font-semibold text-slate-900">Database Visualizer</h4>
+                <p className="text-sm text-slate-600">
+                  Read-only database explorer for the live MySQL instance. Browse tables, preview rows, inspect keys, relationships, and DDL.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void fetchDatabaseVisualizer({ force: true })}
+                disabled={databaseVisualizerLoading}
+                className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
+                title="Refresh database visualizer"
+              >
+                {databaseVisualizerLoading ? "Refreshing…" : "Refresh"}
+              </Button>
+            </div>
+          </div>
+
+          {databaseVisualizerError ? (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+              {databaseVisualizerError}
+            </div>
+          ) : null}
+
+          {databaseVisualizerLoading && !payload ? (
+            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading live schema…</div>
+          ) : payload ? (
+            <div className="space-y-4 pt-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Database</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{payload.databaseName || "—"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Host Scope</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {payload.hostScope === "local" ? "Local VPS MySQL" : "Remote MySQL"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tables</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{payload.tables.length}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Rows Tracked</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{totalRows.toLocaleString()}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {payload.refreshedAt ? `Refreshed ${formatDateTime(payload.refreshedAt)}` : "Live snapshot"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Find Table
+                    </label>
+                    <input
+                      type="search"
+                      value={databaseVisualizerTableFilter}
+                      onChange={(event) => setDatabaseVisualizerTableFilter(event.target.value)}
+                      placeholder="Search tables..."
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[rgba(95,179,249,0.75)] focus:ring-2 focus:ring-[rgba(95,179,249,0.18)]"
+                    />
+                  </div>
+                  <select
+                    value={selectedTableName}
+                    onChange={(event) => handleDatabaseVisualizerTableSelect(event.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[rgba(95,179,249,0.75)] focus:ring-2 focus:ring-[rgba(95,179,249,0.18)]"
+                  >
+                    {(visibleTables.length > 0 ? visibleTables : payload.tables).map((table) => (
+                      <option key={table.name} value={table.name}>
+                        {table.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="sales-rep-table-wrapper admin-dashboard-list flex max-h-[28rem] flex-col gap-2">
+                    {tableCards.map((table) => {
+                      const isActive = table.name === selectedTableName;
+                      return (
+                        <button
+                          key={table.name}
+                          type="button"
+                          onClick={() => handleDatabaseVisualizerTableSelect(table.name)}
+                          className={clsx(
+                            "w-full rounded-xl border px-3 py-3 text-left transition",
+                            isActive
+                              ? "border-[rgba(95,179,249,0.65)] bg-[rgba(95,179,249,0.12)] shadow-sm"
+                              : "border-slate-200/80 bg-white/80 hover:border-[rgba(95,179,249,0.4)] hover:bg-white",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">{table.name}</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {table.columnCount.toLocaleString()} columns
+                              </p>
+                            </div>
+                            <div className="text-right text-xs text-slate-500">
+                              <div>{table.rowCount.toLocaleString()} rows</div>
+                              <div>{formatBytes((table.dataBytes || 0) + (table.indexBytes || 0))}</div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {tableCards.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 px-4 py-5 text-sm text-slate-500">
+                        No tables match that filter.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {selectedTable ? (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Selected Table</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTable.name}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Engine</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTable.engine || "—"}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Rows</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTable.rowCount.toLocaleString()}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Storage</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {formatBytes((selectedTable.dataBytes || 0) + (selectedTable.indexBytes || 0))}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {selectedTable.updatedAt ? `Updated ${formatDateTime(selectedTable.updatedAt)}` : "No update timestamp"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Preview</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {preview.filteredRowCount.toLocaleString()}
+                            {preview.filteredRowCount !== preview.totalRowCount
+                              ? ` of ${preview.totalRowCount.toLocaleString()}`
+                              : ""}{" "}
+                            rows
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            Page {preview.page} of {preview.totalPages}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Relationships</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{relationshipCount.toLocaleString()}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {selectedTable.relationships.imports.length.toLocaleString()} inbound •{" "}
+                            {selectedTable.relationships.exports.length.toLocaleString()} outbound
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {detailTabs.map((tab) => {
+                          const isActive = databaseVisualizerTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => setDatabaseVisualizerTab(tab.id)}
+                              className={clsx(
+                                "rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                                isActive
+                                  ? "border-[rgba(95,179,249,0.55)] bg-[rgba(95,179,249,0.12)] text-slate-900"
+                                  : "border-slate-200 bg-white/85 text-slate-600 hover:border-[rgba(95,179,249,0.4)] hover:text-slate-900",
+                              )}
+                            >
+                              {tab.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {databaseVisualizerTab === "rows" ? (
+                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
+                          <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                              <div>
+                                <h5 className="text-sm font-semibold text-slate-900">Rows Preview</h5>
+                                <p className="text-xs text-slate-500">
+                                  Read-only preview with pagination, sorting, and search across searchable columns.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  value={databaseVisualizerPageSize}
+                                  onChange={(event) =>
+                                    handleDatabaseVisualizerPageSizeChange(Number(event.target.value) || 25)
+                                  }
+                                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                                >
+                                  {[25, 50, 100].map((size) => (
+                                    <option key={size} value={size}>
+                                      {size} rows
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={activeSortColumn}
+                                  onChange={(event) => handleDatabaseVisualizerSortColumnChange(event.target.value)}
+                                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                                >
+                                  {previewColumns.map((columnName) => (
+                                    <option key={columnName} value={columnName}>
+                                      Sort by {columnName}
+                                    </option>
+                                  ))}
+                                </select>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleDatabaseVisualizerSortDirectionToggle}
+                                  className="header-home-button squircle-sm bg-white text-slate-900"
+                                >
+                                  {databaseVisualizerSortDirection === "asc" ? "Asc" : "Desc"}
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                              <input
+                                type="search"
+                                value={databaseVisualizerSearchInput}
+                                onChange={(event) => setDatabaseVisualizerSearchInput(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    handleDatabaseVisualizerSearchSubmit();
+                                  }
+                                }}
+                                placeholder={
+                                  preview.searchableColumns.length > 0
+                                    ? `Search ${preview.searchableColumns.slice(0, 3).join(", ")}${preview.searchableColumns.length > 3 ? "…" : ""}`
+                                    : "Search not available for this table"
+                                }
+                                disabled={preview.searchableColumns.length === 0}
+                                className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[rgba(95,179,249,0.75)] focus:ring-2 focus:ring-[rgba(95,179,249,0.18)] disabled:bg-slate-50 disabled:text-slate-400"
+                              />
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleDatabaseVisualizerSearchSubmit}
+                                  disabled={preview.searchableColumns.length === 0}
+                                  className="header-home-button squircle-sm bg-white text-slate-900"
+                                >
+                                  Search
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleDatabaseVisualizerSearchClear}
+                                  disabled={!databaseVisualizerSearchInput && !preview.searchTerm}
+                                  className="header-home-button squircle-sm bg-white text-slate-900"
+                                >
+                                  Clear
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                              <span>
+                                Showing page {preview.page} of {preview.totalPages} •{" "}
+                                {preview.filteredRowCount.toLocaleString()} matching rows
+                                {preview.filteredRowCount !== preview.totalRowCount
+                                  ? ` of ${preview.totalRowCount.toLocaleString()} total`
+                                  : ""}
+                              </span>
+                              <span>
+                                Sort: {preview.sortColumn || "—"} ({preview.sortDirection.toUpperCase()})
+                              </span>
+                            </div>
+                            <div className="sales-rep-table-wrapper admin-dashboard-list">
+                              {preview.rows.length === 0 ? (
+                                <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 px-4 py-8 text-sm text-slate-500">
+                                  {preview.searchTerm
+                                    ? "No rows matched that search."
+                                    : "No rows available for preview."}
+                                </div>
+                              ) : (
+                                <table className="min-w-full text-left text-sm">
+                                  <thead className="bg-slate-900/5 text-xs uppercase tracking-[0.18em] text-slate-500">
+                                    <tr>
+                                      <th className="px-3 py-2">#</th>
+                                      {previewColumns.map((columnName) => (
+                                        <th key={`${selectedTable.name}:${columnName}`} className="px-3 py-2">
+                                          {columnName}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-200/70 bg-white/60">
+                                    {preview.rows.map((row) => (
+                                      <tr key={`${selectedTable.name}:preview:${row.rowNumber}`}>
+                                        <td className="px-3 py-2 font-mono text-xs text-slate-500">{row.rowNumber}</td>
+                                        {previewColumns.map((columnName) => {
+                                          const cellValue = row.values[columnName];
+                                          const displayValue = formatPreviewValue(cellValue);
+                                          return (
+                                            <td
+                                              key={`${selectedTable.name}:${row.rowNumber}:${columnName}`}
+                                              className={clsx(
+                                                "max-w-[18rem] px-3 py-2 align-top text-xs",
+                                                cellValue === null ? "text-slate-400 italic" : "font-mono text-slate-700",
+                                              )}
+                                              title={displayValue}
+                                            >
+                                              <div className="max-w-[18rem] whitespace-pre-wrap break-words">
+                                                {displayValue}
+                                              </div>
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDatabaseVisualizerPageChange(preview.page - 1)}
+                                disabled={preview.page <= 1}
+                                className="header-home-button squircle-sm bg-white text-slate-900"
+                              >
+                                Previous
+                              </Button>
+                              <span className="text-xs text-slate-500">
+                                Page {preview.page} / {preview.totalPages}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDatabaseVisualizerPageChange(preview.page + 1)}
+                                disabled={preview.page >= preview.totalPages}
+                                className="header-home-button squircle-sm bg-white text-slate-900"
+                              >
+                                Next
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {databaseVisualizerTab === "columns" ? (
+                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
+                          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <h5 className="text-sm font-semibold text-slate-900">Columns</h5>
+                              <p className="text-xs text-slate-500">Live schema for the selected table.</p>
+                            </div>
+                            <input
+                              type="search"
+                              value={databaseVisualizerColumnFilter}
+                              onChange={(event) => setDatabaseVisualizerColumnFilter(event.target.value)}
+                              placeholder="Filter columns..."
+                              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 sm:max-w-xs"
+                            />
+                          </div>
+                          <div className="sales-rep-table-wrapper admin-dashboard-list">
+                            <table className="min-w-full text-left text-sm">
+                              <thead className="bg-slate-900/5 text-xs uppercase tracking-[0.18em] text-slate-500">
+                                <tr>
+                                  <th className="px-3 py-2">Column</th>
+                                  <th className="px-3 py-2">Type</th>
+                                  <th className="px-3 py-2">Null</th>
+                                  <th className="px-3 py-2">Key</th>
+                                  <th className="px-3 py-2">Default</th>
+                                  <th className="px-3 py-2">Extra</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200/70 bg-white/60">
+                                {visibleColumns.map((column) => (
+                                  <tr key={`${selectedTable.name}:${column.name}`}>
+                                    <td className="px-3 py-2 font-mono text-xs text-slate-900">{column.name}</td>
+                                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{column.type || "—"}</td>
+                                    <td className="px-3 py-2 text-xs text-slate-700">{column.nullable ? "YES" : "NO"}</td>
+                                    <td className="px-3 py-2 text-xs text-slate-700">{column.key || "—"}</td>
+                                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{column.defaultValue ?? "—"}</td>
+                                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{column.extra ?? "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {visibleColumns.length === 0 ? (
+                              <div className="px-3 py-4 text-sm text-slate-500">No columns match that filter.</div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {databaseVisualizerTab === "indexes" ? (
+                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                              <h5 className="text-sm font-semibold text-slate-900">Indexes</h5>
+                              <p className="text-xs text-slate-500">Grouped by index name and column order.</p>
+                            </div>
+                            <span className="rounded-full bg-slate-900/5 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                              {selectedTable.indexes.length.toLocaleString()} indexes
+                            </span>
+                          </div>
+                          {selectedTable.indexes.length === 0 ? (
+                            <p className="text-sm text-slate-500">No indexes reported for this table.</p>
+                          ) : (
+                            <div className="grid gap-3 lg:grid-cols-2">
+                              {selectedTable.indexes.map((index) => (
+                                <div
+                                  key={`${selectedTable.name}:${index.name}`}
+                                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700"
+                                >
+                                  <div className="font-semibold text-slate-900">
+                                    {index.name}
+                                    <span className="ml-2 text-[11px] font-medium text-slate-500">
+                                      {index.unique ? "UNIQUE" : "NON-UNIQUE"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 font-mono text-[11px] text-slate-600">
+                                    {index.columns.join(", ") || "—"}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {databaseVisualizerTab === "relationships" ? (
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
+                            <div className="mb-3">
+                              <h5 className="text-sm font-semibold text-slate-900">Imports</h5>
+                              <p className="text-xs text-slate-500">Foreign keys this table uses.</p>
+                            </div>
+                            {selectedTable.relationships.imports.length === 0 ? (
+                              <p className="text-sm text-slate-500">No imported relationships.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {selectedTable.relationships.imports.map((entry, index) => (
+                                  <div
+                                    key={`${selectedTable.name}:import:${entry.constraintName || index}`}
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-700"
+                                  >
+                                    <div className="font-semibold text-slate-900">{entry.constraintName || "Foreign key"}</div>
+                                    <div className="mt-1 font-mono text-[11px]">
+                                      {entry.columnName || "—"} → {entry.referencedTable || "—"}.{entry.referencedColumn || "—"}
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-slate-500">
+                                      On update: {entry.updateRule || "—"} • On delete: {entry.deleteRule || "—"}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
+                            <div className="mb-3">
+                              <h5 className="text-sm font-semibold text-slate-900">Exports</h5>
+                              <p className="text-xs text-slate-500">Other tables pointing at this table.</p>
+                            </div>
+                            {selectedTable.relationships.exports.length === 0 ? (
+                              <p className="text-sm text-slate-500">No exported relationships.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {selectedTable.relationships.exports.map((entry, index) => (
+                                  <div
+                                    key={`${selectedTable.name}:export:${entry.constraintName || index}`}
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-700"
+                                  >
+                                    <div className="font-semibold text-slate-900">{entry.constraintName || "Foreign key"}</div>
+                                    <div className="mt-1 font-mono text-[11px]">
+                                      {entry.sourceTable || "—"}.{entry.sourceColumn || "—"} → {selectedTable.name}.{entry.referencedColumn || "—"}
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-slate-500">
+                                      On update: {entry.updateRule || "—"} • On delete: {entry.deleteRule || "—"}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {databaseVisualizerTab === "ddl" ? (
+                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
+                          <div className="mb-3">
+                            <h5 className="text-sm font-semibold text-slate-900">DDL</h5>
+                            <p className="text-xs text-slate-500">`SHOW CREATE TABLE` output for the selected table.</p>
+                          </div>
+                          <div className="sales-rep-table-wrapper admin-dashboard-list">
+                            <pre className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 px-4 py-4 text-[12px] leading-6 text-slate-100">
+                              {selectedTable.createStatement || "No DDL returned for this table."}
+                            </pre>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200/80 bg-white/75 px-4 py-6 text-sm text-slate-500">
+                      No tables available to inspect.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="pt-4 px-4 py-3 text-sm text-slate-500">No schema snapshot available yet.</div>
+          )}
         </div>
       );
     };
-		
-		    return (
+			
+			    return (
           <div className="w-full space-y-3">
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
 		        <div className="flex flex-col gap-4">
@@ -22423,6 +23558,7 @@ function MainApp() {
 
 		              {adminDashboardTab === "maintenance" && (
                     <>
+                      {renderDatabaseVisualizerCard()}
 		                <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
                       <div className="border-b border-slate-200/60 pb-3">
                         <h4 className="text-lg font-semibold text-slate-900">Portal Controls</h4>
@@ -26734,12 +27870,12 @@ function MainApp() {
             )}
 	          </div>
 	          )}
-	          {showSalesDashboardTabs && isSalesSettingsActive && (
-	            <div className="space-y-4">
-	              {renderEmailControlsCard()}
+		          {showSalesDashboardTabs && isSalesSettingsActive && (
+		            <div className="space-y-4">
+		              {renderEmailControlsCard()}
                 {renderSalesRepHandDeliveryCard()}
-	            </div>
-	          )}
+		            </div>
+		          )}
 	        </div>
 	        {(isCrmSectionActive ||
 	          isYourSalesSectionActive ||

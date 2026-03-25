@@ -5,12 +5,14 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 import threading
 
 from flask import Blueprint, request, g
 
 from ..middleware.auth import require_auth
+from ..database import mysql_client
 from ..repositories import user_repository
 from ..repositories import sales_rep_repository
 from ..repositories import sales_prospect_repository
@@ -18,7 +20,7 @@ from ..services import get_config
 from ..services import auth_service
 from ..services import presence_service
 from ..services import settings_service  # type: ignore[attr-defined]
-from ..utils.http import handle_action, is_admin as _is_admin, require_admin as _require_admin
+from ..utils.http import handle_action, is_admin as _is_admin, require_admin as _require_admin, service_error
 
 blueprint = Blueprint("settings", __name__, url_prefix="/api/settings")
 
@@ -43,6 +45,409 @@ _LIVE_USERS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_USERS_LONGPOLL
 def _mysql_enabled() -> bool:
     config = get_config()
     return bool(getattr(config, "mysql", {}).get("enabled"))
+
+
+def _mysql_host_scope() -> str:
+    config = get_config()
+    host = str(getattr(config, "mysql", {}).get("host") or "").strip().lower()
+    return "local" if host in {"", "localhost", "127.0.0.1", "::1"} else "remote"
+
+
+def _mysql_database_name() -> str:
+    config = get_config()
+    return str(getattr(config, "mysql", {}).get("database") or "").strip()
+
+
+def _mysql_quote_identifier(value: object) -> str:
+    name = str(value or "").strip()
+    if not name or not re.fullmatch(r"[A-Za-z0-9_]+", name):
+        raise service_error("Invalid table name", 400)
+    return f"`{name}`"
+
+
+def _iso_utc_or_none(value: object) -> str | None:
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    if isinstance(value, str):
+        parsed = _parse_iso_datetime(value)
+        if parsed:
+            return parsed.isoformat().replace("+00:00", "Z")
+        raw = value.strip()
+        return raw or None
+    return None
+
+
+def _database_visualizer_page(raw: object) -> int:
+    try:
+        parsed = int(str(raw or "").strip() or "1")
+    except (TypeError, ValueError):
+        parsed = 1
+    return max(1, parsed)
+
+
+def _database_visualizer_page_size(raw: object) -> int:
+    try:
+        parsed = int(str(raw or "").strip() or "25")
+    except (TypeError, ValueError):
+        parsed = 25
+    if parsed <= 25:
+        return 25
+    if parsed <= 50:
+        return 50
+    return 100
+
+
+def _database_visualizer_sort_direction(raw: object) -> str:
+    return "desc" if str(raw or "").strip().lower() == "desc" else "asc"
+
+
+def _database_visualizer_search_term(raw: object) -> str | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    return value[:120]
+
+
+def _is_database_visualizer_binary_type(column_type: object) -> bool:
+    normalized = str(column_type or "").strip().lower()
+    return any(token in normalized for token in ("blob", "binary", "varbinary", "geometry"))
+
+
+def _is_database_visualizer_searchable_type(column_type: object) -> bool:
+    normalized = str(column_type or "").strip().lower()
+    if _is_database_visualizer_binary_type(normalized):
+        return False
+    return any(
+        token in normalized
+        for token in (
+            "char",
+            "text",
+            "enum",
+            "set",
+            "json",
+            "int",
+            "decimal",
+            "float",
+            "double",
+            "real",
+            "date",
+            "time",
+            "year",
+            "timestamp",
+            "bool",
+        )
+    )
+
+
+def _serialize_database_visualizer_value(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, datetime):
+        return _iso_utc_or_none(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"<binary {len(value)} bytes>"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    text = str(value)
+    if len(text) > 1000:
+        return f"{text[:1000]}…"
+    return text
+
+
+def _load_database_visualizer_payload(
+    requested_table: str | None = None,
+    *,
+    page: int = 1,
+    page_size: int = 25,
+    sort_column: str | None = None,
+    sort_direction: str = "asc",
+    search_term: str | None = None,
+) -> dict:
+    if not _mysql_enabled():
+        raise service_error("MySQL is not enabled", 503)
+
+    database_name = _mysql_database_name()
+    if not database_name:
+        raise service_error("MySQL database is not configured", 500)
+
+    table_rows = mysql_client.fetch_all(
+        """
+        SELECT
+            t.TABLE_NAME AS table_name,
+            t.ENGINE AS engine,
+            COALESCE(t.DATA_LENGTH, 0) AS data_bytes,
+            COALESCE(t.INDEX_LENGTH, 0) AS index_bytes,
+            t.UPDATE_TIME AS updated_at,
+            COUNT(c.COLUMN_NAME) AS column_count
+        FROM information_schema.TABLES t
+        LEFT JOIN information_schema.COLUMNS c
+            ON c.TABLE_SCHEMA = t.TABLE_SCHEMA
+           AND c.TABLE_NAME = t.TABLE_NAME
+        WHERE t.TABLE_SCHEMA = %(schema)s
+        GROUP BY t.TABLE_NAME, t.ENGINE, t.DATA_LENGTH, t.INDEX_LENGTH, t.UPDATE_TIME
+        ORDER BY t.TABLE_NAME ASC
+        """,
+        {"schema": database_name},
+    )
+
+    tables: list[dict] = []
+    table_lookup: dict[str, dict] = {}
+    for row in table_rows:
+        table_name = str(row.get("table_name") or "").strip()
+        if not table_name:
+            continue
+        count_row = mysql_client.fetch_one(
+            f"SELECT COUNT(*) AS row_count FROM {_mysql_quote_identifier(table_name)}"
+        ) or {}
+        summary = {
+            "name": table_name,
+            "rowCount": int(count_row.get("row_count") or 0),
+            "columnCount": int(row.get("column_count") or 0),
+            "engine": str(row.get("engine") or "").strip() or None,
+            "dataBytes": int(row.get("data_bytes") or 0),
+            "indexBytes": int(row.get("index_bytes") or 0),
+            "updatedAt": _iso_utc_or_none(row.get("updated_at")),
+        }
+        tables.append(summary)
+        table_lookup[table_name] = summary
+
+    selected_name = str(requested_table or "").strip()
+    if selected_name and selected_name not in table_lookup:
+        raise service_error("Unknown table", 404)
+    if not selected_name and tables:
+        selected_name = str(tables[0].get("name") or "")
+
+    selected_table = None
+    if selected_name:
+        column_rows = mysql_client.fetch_all(
+            """
+            SELECT
+                COLUMN_NAME AS column_name,
+                COLUMN_TYPE AS column_type,
+                IS_NULLABLE AS is_nullable,
+                COLUMN_KEY AS column_key,
+                COLUMN_DEFAULT AS column_default,
+                EXTRA AS extra,
+                ORDINAL_POSITION AS ordinal_position
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %(schema)s AND TABLE_NAME = %(table_name)s
+            ORDER BY ORDINAL_POSITION ASC
+            """,
+            {"schema": database_name, "table_name": selected_name},
+        )
+        selected_column_names = [
+            str(row.get("column_name") or "").strip()
+            for row in column_rows
+            if str(row.get("column_name") or "").strip()
+        ]
+        selected_column_set = set(selected_column_names)
+        index_rows = mysql_client.fetch_all(
+            """
+            SELECT
+                INDEX_NAME AS index_name,
+                NON_UNIQUE AS non_unique,
+                COLUMN_NAME AS column_name,
+                SEQ_IN_INDEX AS seq_in_index
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = %(schema)s AND TABLE_NAME = %(table_name)s
+            ORDER BY INDEX_NAME ASC, SEQ_IN_INDEX ASC
+            """,
+            {"schema": database_name, "table_name": selected_name},
+        )
+        imported_relationship_rows = mysql_client.fetch_all(
+            """
+            SELECT
+                kcu.CONSTRAINT_NAME AS constraint_name,
+                kcu.COLUMN_NAME AS column_name,
+                kcu.REFERENCED_TABLE_NAME AS referenced_table_name,
+                kcu.REFERENCED_COLUMN_NAME AS referenced_column_name,
+                rc.UPDATE_RULE AS update_rule,
+                rc.DELETE_RULE AS delete_rule
+            FROM information_schema.KEY_COLUMN_USAGE kcu
+            LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+                ON rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
+               AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+               AND rc.TABLE_NAME = kcu.TABLE_NAME
+            WHERE kcu.TABLE_SCHEMA = %(schema)s
+              AND kcu.TABLE_NAME = %(table_name)s
+              AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY kcu.CONSTRAINT_NAME ASC, kcu.ORDINAL_POSITION ASC
+            """,
+            {"schema": database_name, "table_name": selected_name},
+        )
+        exported_relationship_rows = mysql_client.fetch_all(
+            """
+            SELECT
+                kcu.CONSTRAINT_NAME AS constraint_name,
+                kcu.TABLE_NAME AS source_table_name,
+                kcu.COLUMN_NAME AS source_column_name,
+                kcu.REFERENCED_COLUMN_NAME AS referenced_column_name,
+                rc.UPDATE_RULE AS update_rule,
+                rc.DELETE_RULE AS delete_rule
+            FROM information_schema.KEY_COLUMN_USAGE kcu
+            LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+                ON rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
+               AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+               AND rc.TABLE_NAME = kcu.TABLE_NAME
+            WHERE kcu.TABLE_SCHEMA = %(schema)s
+              AND kcu.REFERENCED_TABLE_NAME = %(table_name)s
+              AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY kcu.TABLE_NAME ASC, kcu.CONSTRAINT_NAME ASC, kcu.ORDINAL_POSITION ASC
+            """,
+            {"schema": database_name, "table_name": selected_name},
+        )
+        show_create_row = mysql_client.fetch_one(
+            f"SHOW CREATE TABLE {_mysql_quote_identifier(selected_name)}"
+        ) or {}
+        index_map: dict[str, dict] = {}
+        for row in index_rows:
+            index_name = str(row.get("index_name") or "").strip()
+            if not index_name:
+                continue
+            bucket = index_map.setdefault(
+                index_name,
+                {
+                    "name": index_name,
+                    "unique": not bool(row.get("non_unique")),
+                    "columns": [],
+                },
+            )
+            column_name = str(row.get("column_name") or "").strip()
+            if column_name:
+                bucket["columns"].append(column_name)
+
+        searchable_columns = [
+            str(row.get("column_name") or "").strip()
+            for row in column_rows
+            if str(row.get("column_name") or "").strip()
+            and _is_database_visualizer_searchable_type(row.get("column_type"))
+        ]
+        primary_index = index_map.get("PRIMARY") or {}
+        default_sort_column = (
+            str((primary_index.get("columns") or [None])[0] or "").strip()
+            or (selected_column_names[0] if selected_column_names else "")
+        )
+        normalized_sort_column = str(sort_column or "").strip()
+        if normalized_sort_column not in selected_column_set:
+            normalized_sort_column = default_sort_column
+        normalized_sort_direction = sort_direction if sort_direction == "desc" else "asc"
+        preview_page = max(1, page)
+        preview_page_size = _database_visualizer_page_size(page_size)
+        preview_offset = (preview_page - 1) * preview_page_size
+        preview_where_sql = ""
+        preview_params: dict[str, object] = {}
+        if search_term and searchable_columns:
+            preview_params["search_term"] = f"%{search_term}%"
+            preview_where_sql = " WHERE " + " OR ".join(
+                [
+                    f"CAST({_mysql_quote_identifier(column_name)} AS CHAR) LIKE %(search_term)s"
+                    for column_name in searchable_columns
+                ]
+            )
+        preview_count_row = mysql_client.fetch_one(
+            f"SELECT COUNT(*) AS row_count FROM {_mysql_quote_identifier(selected_name)}{preview_where_sql}",
+            preview_params,
+        ) or {}
+        filtered_row_count = int(preview_count_row.get("row_count") or 0)
+        preview_total_pages = max(
+            1,
+            (filtered_row_count + preview_page_size - 1) // preview_page_size,
+        )
+        if preview_page > preview_total_pages:
+            preview_page = preview_total_pages
+            preview_offset = (preview_page - 1) * preview_page_size
+        preview_rows = mysql_client.fetch_all(
+            f"""
+            SELECT *
+            FROM {_mysql_quote_identifier(selected_name)}
+            {preview_where_sql}
+            ORDER BY {_mysql_quote_identifier(normalized_sort_column)} {normalized_sort_direction.upper()}
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            {
+                **preview_params,
+                "limit": preview_page_size,
+                "offset": preview_offset,
+            },
+        )
+        create_statement = None
+        for key, value in show_create_row.items():
+            if str(key).strip().lower().startswith("create"):
+                create_statement = str(value or "").strip() or None
+                break
+
+        selected_table = {
+            **table_lookup[selected_name],
+            "columns": [
+                {
+                    "name": str(row.get("column_name") or "").strip(),
+                    "type": str(row.get("column_type") or "").strip(),
+                    "nullable": str(row.get("is_nullable") or "").strip().upper() == "YES",
+                    "key": str(row.get("column_key") or "").strip() or None,
+                    "defaultValue": None if row.get("column_default") is None else str(row.get("column_default")),
+                    "extra": str(row.get("extra") or "").strip() or None,
+                    "position": int(row.get("ordinal_position") or 0),
+                }
+                for row in column_rows
+            ],
+            "indexes": list(index_map.values()),
+            "relationships": {
+                "imports": [
+                    {
+                        "constraintName": str(row.get("constraint_name") or "").strip() or None,
+                        "columnName": str(row.get("column_name") or "").strip() or None,
+                        "referencedTable": str(row.get("referenced_table_name") or "").strip() or None,
+                        "referencedColumn": str(row.get("referenced_column_name") or "").strip() or None,
+                        "updateRule": str(row.get("update_rule") or "").strip() or None,
+                        "deleteRule": str(row.get("delete_rule") or "").strip() or None,
+                    }
+                    for row in imported_relationship_rows
+                ],
+                "exports": [
+                    {
+                        "constraintName": str(row.get("constraint_name") or "").strip() or None,
+                        "sourceTable": str(row.get("source_table_name") or "").strip() or None,
+                        "sourceColumn": str(row.get("source_column_name") or "").strip() or None,
+                        "referencedColumn": str(row.get("referenced_column_name") or "").strip() or None,
+                        "updateRule": str(row.get("update_rule") or "").strip() or None,
+                        "deleteRule": str(row.get("delete_rule") or "").strip() or None,
+                    }
+                    for row in exported_relationship_rows
+                ],
+            },
+            "createStatement": create_statement,
+            "preview": {
+                "page": preview_page,
+                "pageSize": preview_page_size,
+                "totalRowCount": int(table_lookup[selected_name].get("rowCount") or 0),
+                "filteredRowCount": filtered_row_count,
+                "totalPages": preview_total_pages,
+                "sortColumn": normalized_sort_column or None,
+                "sortDirection": normalized_sort_direction,
+                "searchTerm": search_term,
+                "searchableColumns": searchable_columns,
+                "rows": [
+                    {
+                        "rowNumber": preview_offset + index + 1,
+                        "values": {
+                            column_name: _serialize_database_visualizer_value(row.get(column_name))
+                            for column_name in selected_column_names
+                        },
+                    }
+                    for index, row in enumerate(preview_rows)
+                ],
+            },
+        }
+
+    return {
+        "mysqlEnabled": True,
+        "databaseName": database_name,
+        "hostScope": _mysql_host_scope(),
+        "refreshedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "tables": tables,
+        "selectedTable": selected_table,
+    }
 
 def _is_sales_lead() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
@@ -786,6 +1191,24 @@ def get_crm():
             "crmEnabled": bool(settings.get("crmEnabled", True)),
             "mysqlEnabled": _mysql_enabled(),
         }
+
+    return handle_action(action)
+
+
+@blueprint.get("/database-visualizer")
+@require_auth
+def get_database_visualizer():
+    def action():
+        _require_admin()
+        table_name = request.args.get("table")
+        return _load_database_visualizer_payload(
+            table_name if isinstance(table_name, str) else None,
+            page=_database_visualizer_page(request.args.get("page")),
+            page_size=_database_visualizer_page_size(request.args.get("pageSize")),
+            sort_column=request.args.get("sortColumn"),
+            sort_direction=_database_visualizer_sort_direction(request.args.get("sortDirection")),
+            search_term=_database_visualizer_search_term(request.args.get("search")),
+        )
 
     return handle_action(action)
 
