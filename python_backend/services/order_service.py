@@ -4520,6 +4520,14 @@ def get_sales_by_rep(
             hinted_user = users_by_email.get(hinted_email) if hinted_email else None
             hinted_name = (hinted_user.get("name") or "").strip() if isinstance(hinted_user, dict) else ""
             hinted_user_email = (hinted_user.get("email") or "").strip() if isinstance(hinted_user, dict) else ""
+            preferred_role = _normalize_role(
+                (user_rec.get("role") if isinstance(user_rec, dict) else None)
+                or (legacy_user.get("role") if isinstance(legacy_user, dict) else None)
+                or (hinted_user.get("role") if isinstance(hinted_user, dict) else None)
+                or rep.get("role")
+                or rep_record.get("role")
+                or "sales_rep"
+            ) or "sales_rep"
             summary.append(
                 {
                     "salesRepId": rep_id,
@@ -4535,7 +4543,7 @@ def get_sales_by_rep(
                         str(rep_record.get("email") or "").strip() or None
                     ),
                     "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
-                    "role": _resolve_rep_record_role(rep_record if rep_record else rep),
+                    "role": preferred_role,
                     "isPartner": _normalize_bool(
                         rep_record.get("isPartner")
                         if isinstance(rep_record, dict) and "isPartner" in rep_record

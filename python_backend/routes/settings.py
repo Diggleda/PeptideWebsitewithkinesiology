@@ -1795,7 +1795,8 @@ def get_sales_rep_profile(sales_rep_id: str):
                 "status": rep.get("status"),
                 "role": _normalize_role(
                     (user_repository.find_by_email(str(rep.get("email"))) or {}).get("role")
-                    or ("sales_partner" if bool(rep.get("isPartner")) else rep.get("role"))
+                    or rep.get("role")
+                    or "sales_rep"
                 ),
                 "isPartner": bool(rep.get("isPartner")),
                 "allowedRetail": bool(rep.get("allowedRetail")),

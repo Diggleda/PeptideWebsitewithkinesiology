@@ -7663,11 +7663,7 @@ function MainApp() {
 					            id: resolvedRepId,
 					            name: repName || null,
 					            email: repEmail || null,
-					            role:
-					              normalizeRole(
-					                repProfile?.role ||
-					                  (repProfile?.isPartner ? "sales_partner" : "sales_rep"),
-					              ) || "sales_rep",
+					            role: normalizeRole(repProfile?.role || "sales_rep") || "sales_rep",
                       isPartner: coerceOptionalBoolean(
                         repProfile?.isPartner ?? repProfile?.is_partner,
                       ),
@@ -22930,10 +22926,7 @@ function MainApp() {
 		                                      name: rep.salesRepName,
 		                                      email: rep.salesRepEmail,
 		                                      role:
-		                                        normalizeRole(
-		                                          rep?.role ||
-		                                            (rep?.isPartner ? "sales_partner" : "sales_rep"),
-		                                        ) || "sales_rep",
+		                                        normalizeRole(rep?.role || "sales_rep") || "sales_rep",
                                         isPartner: rep?.isPartner ?? null,
                                         allowedRetail: rep?.allowedRetail ?? null,
 		                                    },
@@ -25179,10 +25172,7 @@ function MainApp() {
 			                                      name: rep.salesRepName,
 			                                      email: rep.salesRepEmail,
 			                                      role:
-			                                        normalizeRole(
-			                                          rep?.role ||
-			                                            (rep?.isPartner ? "sales_partner" : "sales_rep"),
-			                                        ) || "sales_rep",
+			                                        normalizeRole(rep?.role || "sales_rep") || "sales_rep",
                                           isPartner: rep?.isPartner ?? null,
                                           allowedRetail: rep?.allowedRetail ?? null,
 			                                    },
@@ -26148,7 +26138,7 @@ function MainApp() {
 						                                    key="role"
 						                                    className="whitespace-nowrap"
 						                                  >
-						                                    Role: {formatRoleLabel(row?.role, { isPartner: Boolean((row as any)?.isPartner) })}
+						                                    Role: {formatRoleLabel(row?.role)}
 						                                  </span>,
 						                                );
 						                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
@@ -28526,9 +28516,7 @@ function MainApp() {
           landingAccountRole === "rep" ||
           landingAccountRole === "test_rep"
         ) {
-          return landingAccountRole === "sales_partner"
-            ? `Sales Partner: ${rawName}`
-            : `Rep: ${rawName}`;
+          return `Rep: ${rawName}`;
         }
         return rawName;
       })();
@@ -30946,9 +30934,7 @@ function MainApp() {
                             );
                             const formatFlag = (value: boolean | null) =>
                               value === true ? "Yes" : value === false ? "No" : "—";
-                            const roleLabel = isAdmin(salesDoctorDetail.role)
-                              ? "Admin"
-                              : formatRoleLabel(salesDoctorDetail.role, { isPartner });
+                            const roleLabel = formatRoleLabel(salesDoctorDetail.role);
                             return (
                               <>
                                 <div className="text-sm font-normal text-slate-600">
@@ -31033,7 +31019,7 @@ function MainApp() {
 						                          const role = normalizeRole(
 						                            ownerProfile?.role || "sales_rep",
 						                          );
-						                          const ownerRoleLabel = formatRoleLabel(role);
+						                          const ownerRoleLabel = "Sales Rep";
 					                          const content = name || ownerId;
 					                          const resolved = Boolean(name);
 					                          const canOpen = Boolean(userId);
