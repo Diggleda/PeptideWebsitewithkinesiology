@@ -77,6 +77,9 @@ def _ensure_defaults(rep: Dict) -> Dict:
     normalized["isPartner"] = _normalize_bool(
         normalized.get("isPartner") if "isPartner" in normalized else normalized.get("is_partner")
     )
+    normalized["allowedRetail"] = _normalize_bool(
+        normalized.get("allowedRetail") if "allowedRetail" in normalized else normalized.get("allowed_retail")
+    )
     normalized["jurisdiction"] = _normalize_jurisdiction(
         normalized.get("jurisdiction") or normalized.get("Jurisdiction")
     )
@@ -198,6 +201,7 @@ def insert(rep: Dict) -> Dict:
                 sales_code,
                 role,
                 is_partner,
+                allowed_retail,
                 jurisdiction,
                 status,
                 referral_credits,
@@ -216,6 +220,7 @@ def insert(rep: Dict) -> Dict:
                 %(sales_code)s,
                 %(role)s,
                 %(is_partner)s,
+                %(allowed_retail)s,
                 %(jurisdiction)s,
                 %(status)s,
                 %(referral_credits)s,
@@ -233,6 +238,7 @@ def insert(rep: Dict) -> Dict:
                 sales_code = VALUES(sales_code),
                 role = VALUES(role),
                 is_partner = VALUES(is_partner),
+                allowed_retail = VALUES(allowed_retail),
                 jurisdiction = VALUES(jurisdiction),
                 status = VALUES(status),
                 referral_credits = VALUES(referral_credits),
@@ -272,6 +278,7 @@ def update(rep: Dict) -> Optional[Dict]:
                 sales_code = %(sales_code)s,
                 role = %(role)s,
                 is_partner = %(is_partner)s,
+                allowed_retail = %(allowed_retail)s,
                 jurisdiction = %(jurisdiction)s,
                 status = %(status)s,
                 referral_credits = %(referral_credits)s,
@@ -316,6 +323,7 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
             "initials": row.get("initials"),
             "salesCode": row.get("sales_code") or row.get("salesCode"),
             "isPartner": row.get("is_partner"),
+            "allowedRetail": row.get("allowed_retail"),
             "status": row.get("status"),
             "role": row.get("role"),
             "jurisdiction": row.get("jurisdiction"),
@@ -345,6 +353,7 @@ def _to_db_params(rep: Dict) -> Dict:
         "sales_code": rep.get("salesCode"),
         "role": rep.get("role"),
         "is_partner": 1 if _normalize_bool(rep.get("isPartner") if "isPartner" in rep else rep.get("is_partner")) else 0,
+        "allowed_retail": 1 if _normalize_bool(rep.get("allowedRetail") if "allowedRetail" in rep else rep.get("allowed_retail")) else 0,
         "jurisdiction": _normalize_jurisdiction(rep.get("jurisdiction")),
         "status": rep.get("status"),
         "referral_credits": float(rep.get("referralCredits") or 0),

@@ -80,32 +80,6 @@ function get_table_columns(PDO $pdo, string $table): array {
   return $cols;
 }
 
-/** Identify the live database target used by this webhook connection. */
-function get_db_identity(PDO $pdo): array {
-  try {
-    $stmt = $pdo->query('SELECT DATABASE() AS database_name, @@hostname AS server_hostname, @@port AS server_port');
-    $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
-    if (!is_array($row)) {
-      return [
-        'databaseName' => null,
-        'serverHostname' => null,
-        'serverPort' => null,
-      ];
-    }
-    return [
-      'databaseName' => isset($row['database_name']) ? (string)$row['database_name'] : null,
-      'serverHostname' => isset($row['server_hostname']) ? (string)$row['server_hostname'] : null,
-      'serverPort' => isset($row['server_port']) ? (int)$row['server_port'] : null,
-    ];
-  } catch (Throwable $e) {
-    return [
-      'databaseName' => null,
-      'serverHostname' => null,
-      'serverPort' => null,
-    ];
-  }
-}
-
 /** Ensure the sales_reps.is_partner column exists, attempting a self-healing migration when missing. */
 function ensure_sales_reps_is_partner_column(PDO $pdo): array {
   $cols = get_table_columns($pdo, 'sales_reps');
@@ -164,7 +138,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         PDO::ATTR_EMULATE_PREPARES => false,
       ]
     );
-    $dbIdentity = get_db_identity($pdo);
     $schemaState = ensure_sales_reps_is_partner_column($pdo);
     $salesRepsCols = $schemaState['columns'];
     $hasIsPartner = in_array('is_partner', $salesRepsCols, true);
@@ -173,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
       : (in_array('updated_at', $salesRepsCols, true) ? 'updated_at AS updatedAt' : 'NULL AS updatedAt');
     $isPartnerSelect = $hasIsPartner ? 'is_partner AS isPartner' : '0 AS isPartner';
     $q = $pdo->query('SELECT sales_code, initials, name, email, phone, territory, ' . $isPartnerSelect . ', ' . $updatedAtSelect . ' FROM sales_reps ORDER BY updatedAt DESC LIMIT 200');
-    respond(200, ['ok' => true, 'dbIdentity' => $dbIdentity, 'salesReps' => $q->fetchAll()]);
+    respond(200, ['ok' => true, 'salesReps' => $q->fetchAll()]);
   } catch (Throwable $e) {
     respond(500, ['ok' => false, 'error' => 'DB_ERROR', 'detail' => $e->getMessage()]);
   }
@@ -311,18 +284,15 @@ try {
       PDO::ATTR_EMULATE_PREPARES => false,
     ]
   );
-  $dbIdentity = get_db_identity($pdo);
 
   if (function_exists('set_time_limit')) @set_time_limit(60);
 
   try {
     $schemaState = ensure_sales_reps_is_partner_column($pdo);
     $salesRepsCols = $schemaState['columns'];
-    $isPartnerColumnAdded = (bool)($schemaState['added'] ?? false);
     $isPartnerColumnEnsureError = $schemaState['error'] ?? null;
   } catch (Throwable $e) {
     $salesRepsCols = [];
-    $isPartnerColumnAdded = false;
     $isPartnerColumnEnsureError = $e->getMessage();
   }
 
@@ -337,7 +307,6 @@ try {
       'ok' => false,
       'error' => 'MISSING_IS_PARTNER_COLUMN',
       'detail' => $isPartnerColumnEnsureError ?: 'Unable to ensure sales_reps.is_partner column',
-      'isPartnerColumnAdded' => $isPartnerColumnAdded,
     ]);
   }
 
@@ -415,20 +384,6 @@ try {
     $usersCols = [];
   }
   $hasUserSalesRepId = in_array('sales_rep_id', $usersCols, true);
-  $forceSalesRepPartnerUpdate = null;
-  $verifySalesRepPartnerState = null;
-  if ($hasIsPartner) {
-    $forceSalesRepPartnerUpdate = $pdo->prepare(
-      $hasSalesRepsId
-        ? 'UPDATE sales_reps SET is_partner = :is_partner WHERE id = :id'
-        : 'UPDATE sales_reps SET is_partner = :is_partner WHERE sales_code = :sales_code'
-    );
-    $verifySalesRepPartnerState = $pdo->prepare(
-      $hasSalesRepsId
-        ? 'SELECT id, sales_code, is_partner FROM sales_reps WHERE id = :id LIMIT 1'
-        : 'SELECT sales_code, is_partner FROM sales_reps WHERE sales_code = :sales_code LIMIT 1'
-    );
-  }
 
   // Optional user sync: only create/update as sales_rep when not already admin/test_doctor.
   $fetchUser = $pdo->prepare(
@@ -476,9 +431,6 @@ try {
     $rowIndex = (int)($rec['row_index'] ?? -1);
     $userId = null;
     $salesRepId = null;
-    $partnerUpdateCount = null;
-    $dbIsPartner = null;
-    $dbPartnerLookup = $hasSalesRepsId ? 'id' : 'sales_code';
 
     if ($hasSalesRepsId) {
       $candidateId = trim((string)($rec['id'] ?? ''));
@@ -544,26 +496,6 @@ try {
       if ($hasSalesRepsId) $params[':id'] = $salesRepId;
 
       $stmt->execute($params);
-      if ($hasIsPartner && $forceSalesRepPartnerUpdate) {
-        $partnerParams = [':is_partner' => $rec['is_partner']];
-        if ($hasSalesRepsId) {
-          $partnerParams[':id'] = $salesRepId;
-        } else {
-          $partnerParams[':sales_code'] = $rec['sales_code'];
-        }
-        $forceSalesRepPartnerUpdate->execute($partnerParams);
-        $partnerUpdateCount = $forceSalesRepPartnerUpdate->rowCount();
-      }
-      if ($hasIsPartner && $verifySalesRepPartnerState) {
-        $verifyParams = $hasSalesRepsId
-          ? [':id' => $salesRepId]
-          : [':sales_code' => $rec['sales_code']];
-        $verifySalesRepPartnerState->execute($verifyParams);
-        $dbRow = $verifySalesRepPartnerState->fetch(PDO::FETCH_ASSOC);
-        if (is_array($dbRow) && array_key_exists('is_partner', $dbRow)) {
-          $dbIsPartner = ((int)$dbRow['is_partner'] === 1);
-        }
-      }
       $stored++;
     } catch (Throwable $e) {
       // If we collided on a newly-generated ID, retry a few times.
@@ -689,10 +621,6 @@ try {
       'salesCode' => $rec['sales_code'],
       'status'    => 'upserted',
       'isPartner' => ((int)$rec['is_partner'] === 1),
-      'hasIsPartnerColumn' => $hasIsPartner,
-      'partnerUpdateCount' => $partnerUpdateCount,
-      'dbPartnerLookup' => $dbPartnerLookup,
-      'dbIsPartner' => $dbIsPartner,
       'salesRepId' => $salesRepId,
       'userId' => $userId,
     ];
@@ -704,12 +632,9 @@ try {
 
   respond(200, [
     'ok'                => true,
-    'dbIdentity'        => $dbIdentity,
     'received'          => count($body['salesReps']),
     'stored'            => $stored,
     'skipped'           => count($body['salesReps']) - count($clean),
-    'hasIsPartnerColumn' => $hasIsPartner,
-    'isPartnerColumnAdded' => $isPartnerColumnAdded,
     'errors'            => $errors,
     'deletedSalesCodes' => [],
     'deletionsDisabled' => $deletionsDisabled,

@@ -74,6 +74,7 @@ CREATE_TABLE_STATEMENTS = [
         sales_code VARCHAR(8) NULL UNIQUE,
         role VARCHAR(32) NOT NULL DEFAULT 'sales_rep',
         is_partner TINYINT(1) NOT NULL DEFAULT 0,
+        allowed_retail TINYINT(1) NOT NULL DEFAULT 0,
         jurisdiction VARCHAR(64) NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -531,6 +532,7 @@ def ensure_schema() -> None:
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS legacy_user_id VARCHAR(32) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'sales_rep'",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS is_partner TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS allowed_retail TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS jurisdiction VARCHAR(64) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_referrals INT NOT NULL DEFAULT 0",
@@ -702,6 +704,12 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("sales_reps", "is_partner"):
             mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN is_partner TINYINT(1) NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("sales_reps", "allowed_retail"):
+            mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN allowed_retail TINYINT(1) NOT NULL DEFAULT 0")
     except Exception:
         pass
 

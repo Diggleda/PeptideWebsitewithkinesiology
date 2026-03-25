@@ -76,6 +76,9 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
         sales_code = _sanitize_string(row.get("salesCode") or row.get("sales_code") or "", 8)
         sales_code = sales_code.upper() or None
         is_partner = _normalize_bool(row.get("isPartner") if "isPartner" in row else row.get("is_partner"))
+        allowed_retail = _normalize_bool(
+            row.get("allowedRetail") if "allowedRetail" in row else row.get("allowed_retail")
+        )
 
         user = user_repository.find_by_email(email)
 
@@ -90,6 +93,7 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
                 "initials": initials,
                 "salesCode": sales_code or existing.get("salesCode"),
                 "isPartner": is_partner,
+                "allowedRetail": allowed_retail,
                 "role": "sales_rep",
             }
             if user and not existing.get("legacyUserId"):
@@ -116,6 +120,7 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
                 "initials": initials,
                 "salesCode": sales_code,
                 "isPartner": is_partner,
+                "allowedRetail": allowed_retail,
                 "role": "sales_rep",
             }
             # Remove None ids so the repository can generate one only when unavoidable.

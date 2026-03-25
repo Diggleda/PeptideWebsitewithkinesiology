@@ -1,6 +1,14 @@
-const WEBHOOK_URL = 'https://port.peppro.net/api/integrations/google-sheets/sales-reps.php';
+const WEBHOOK_URL = 'https://api.peppro.net/api/integrations/google-sheets/sales-reps.php';
 const WEBHOOK_SECRET = 'wqEpTQeBJzrDBZV6Ao5CIU7EQZV5KJUD+kd1gdI1Stw=';
 const TIMEZONE = 'America/Indiana/Indianapolis';
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Run')
+    .addItem('Sync Reps', 'syncSalesReps')
+    .addItem('Gen Codes', 'generateUniqueCodes')
+    .addToUi();
+}
 
 function normalizedHeader_(value) {
   return String(value == null ? '' : value)
@@ -45,6 +53,7 @@ function syncSalesReps() {
     initials: findHeaderIndex_(headers, 'Initials', 5),
     salesCode: findHeaderIndex_(headers, 'Sales Code', 6),
     isPartner: findHeaderIndex_(headers, 'Is Partner', 7),
+    allowedRetail: findHeaderIndex_(headers, 'Allowed Retail?', 8),
   };
 
   Logger.log(`Resolved columns: ${JSON.stringify(idx)}`);
@@ -73,6 +82,7 @@ function syncSalesReps() {
       initials: toString(row[idx.initials]),
       salesCode,
       isPartner: toPartnerFlag_(row[idx.isPartner]),
+      allowedRetail: toPartnerFlag_(row[idx.allowedRetail]),
     });
 
     rowSalesCodes[r] = salesCode;
@@ -154,6 +164,6 @@ function syncSalesReps() {
   }
 
   if (rows.length > 0) {
-    sheet.getRange(2, 9, rows.length, 1).setValues(statusValues);
+    sheet.getRange(2, 10, rows.length, 1).setValues(statusValues);
   }
 }
