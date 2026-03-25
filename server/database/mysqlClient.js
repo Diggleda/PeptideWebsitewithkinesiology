@@ -36,12 +36,22 @@ const isEnabled = () => Boolean(env.mysql?.enabled);
 
 const verifyTlsNegotiated = async (activePool) => {
   if (!env.mysql?.ssl) {
-    return;
+    return true;
   }
   const [rows] = await activePool.query("SHOW SESSION STATUS LIKE 'Ssl_cipher'");
   const cipher = String(rows?.[0]?.Value || '').trim();
   if (cipher) {
-    return;
+    return true;
+  }
+  if (!env.mysql?.sslRequireNegotiated) {
+    logger.warn(
+      {
+        host: env.mysql.host,
+        port: env.mysql.port,
+      },
+      'MYSQL_SSL=true requested TLS, but the MySQL session did not negotiate TLS; continuing because MYSQL_SSL_ENFORCE is not enabled',
+    );
+    return false;
   }
   throw mysqlTlsError(
     "MYSQL_SSL=true was configured, but the MySQL session did not negotiate TLS "

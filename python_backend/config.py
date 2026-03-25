@@ -252,6 +252,7 @@ def load_config() -> AppConfig:
             # matches the node backend naming and some hosting panels.
             "connection_limit": _to_int(os.environ.get("MYSQL_POOL_SIZE") or os.environ.get("MYSQL_CONNECTION_LIMIT"), 8),
             "ssl": os.environ.get("MYSQL_SSL", "").lower() == "true",
+            "ssl_require_negotiated": _to_bool(os.environ.get("MYSQL_SSL_ENFORCE"), False),
             "timezone": os.environ.get("MYSQL_TIMEZONE", "Z"),
             "connect_timeout": _to_int(os.environ.get("MYSQL_CONNECT_TIMEOUT_SECONDS"), 5),
             "read_timeout": _to_int(os.environ.get("MYSQL_READ_TIMEOUT_SECONDS"), 15),

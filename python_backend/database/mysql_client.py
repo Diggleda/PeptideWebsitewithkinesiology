@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from queue import Empty, Queue
 from contextlib import contextmanager
@@ -15,6 +16,7 @@ _pool: Optional[Queue[pymysql.connections.Connection]] = None
 _pool_lock = threading.Lock()
 _pool_total = 0
 _RetryResult = TypeVar("_RetryResult")
+logger = logging.getLogger(__name__)
 
 
 class MySQLTlsRequiredError(RuntimeError):
@@ -89,6 +91,13 @@ def _assert_tls_negotiated(connection: pymysql.connections.Connection) -> None:
         cipher = str(row[1] or "").strip()
 
     if cipher:
+        return
+
+    if not bool(_config.mysql.get("ssl_require_negotiated")):
+        logger.warning(
+            "MYSQL_SSL=true requested TLS, but the MySQL session did not negotiate TLS; "
+            "continuing because MYSQL_SSL_ENFORCE is not enabled"
+        )
         return
 
     try:

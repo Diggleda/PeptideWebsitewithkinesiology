@@ -313,6 +313,7 @@ env.mysql = {
   database: process.env.MYSQL_DATABASE || 'peppro',
   connectionLimit: toNumber(process.env.MYSQL_CONNECTION_LIMIT, 8),
   ssl: process.env.MYSQL_SSL === 'true',
+  sslRequireNegotiated: process.env.MYSQL_SSL_ENFORCE === 'true',
   timezone: process.env.MYSQL_TIMEZONE || 'Z',
 };
 
