@@ -21,6 +21,7 @@ from ..services import auth_service
 from ..services import presence_service
 from ..services import settings_service  # type: ignore[attr-defined]
 from ..utils.http import handle_action, is_admin as _is_admin, require_admin as _require_admin, service_error
+from ..utils.crypto_envelope import decrypt_text
 
 blueprint = Blueprint("settings", __name__, url_prefix="/api/settings")
 
@@ -149,10 +150,33 @@ def _serialize_database_visualizer_value(value: object) -> object:
         return f"<binary {len(value)} bytes>"
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False)
-    text = str(value)
-    if len(text) > 1000:
-        return f"{text[:1000]}…"
-    return text
+    return str(value)
+
+
+def _serialize_database_visualizer_cell(value: object) -> dict[str, object]:
+    decrypted = False
+    normalized = value
+    original_text = None
+    if isinstance(value, str):
+        original_text = value
+    elif isinstance(value, (bytes, bytearray)):
+        try:
+            original_text = bytes(value).decode("utf-8")
+        except Exception:
+            original_text = None
+    if original_text is not None:
+        try:
+            decrypted_value = decrypt_text(value)
+        except Exception:
+            decrypted_value = None
+        else:
+            if decrypted_value is not None and decrypted_value != original_text:
+                normalized = decrypted_value
+                decrypted = True
+    return {
+        "value": _serialize_database_visualizer_value(normalized),
+        "decrypted": decrypted,
+    }
 
 
 def _load_database_visualizer_payload(
@@ -431,7 +455,7 @@ def _load_database_visualizer_payload(
                     {
                         "rowNumber": preview_offset + index + 1,
                         "values": {
-                            column_name: _serialize_database_visualizer_value(row.get(column_name))
+                            column_name: _serialize_database_visualizer_cell(row.get(column_name))
                             for column_name in selected_column_names
                         },
                     }

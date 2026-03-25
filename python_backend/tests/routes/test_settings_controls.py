@@ -242,7 +242,7 @@ class TestSettingsControls(unittest.TestCase):
                 return [
                     {
                         "id": "user-1",
-                        "email": "doctor@example.com",
+                        "email": '{"version":1,"wrapped_data_key":{"iv":"iv","ciphertext":"wrapped"},"iv":"cipher-iv","ciphertext":"ciphertext","aad":{"table":"users","field":"email"}}',
                     }
                 ]
             self.fail(f"Unexpected fetch_all query: {query}")
@@ -261,7 +261,12 @@ class TestSettingsControls(unittest.TestCase):
 
         with patch.object(settings, "get_config", return_value=fake_config), \
             patch.object(settings.mysql_client, "fetch_all", side_effect=fake_fetch_all), \
-            patch.object(settings.mysql_client, "fetch_one", side_effect=fake_fetch_one):
+            patch.object(settings.mysql_client, "fetch_one", side_effect=fake_fetch_one), \
+            patch.object(
+                settings,
+                "decrypt_text",
+                side_effect=lambda value, aad=None: "doctor@example.com" if isinstance(value, str) and '"wrapped_data_key"' in value else value,
+            ):
             with self.app.test_request_context("/api/settings/database-visualizer?table=users", method="GET"):
                 g.current_user = {"id": "admin-1", "role": "admin"}
                 response = self._make_response(settings.get_database_visualizer.__wrapped__())
@@ -278,7 +283,8 @@ class TestSettingsControls(unittest.TestCase):
         self.assertEqual(payload["selectedTable"]["relationships"]["imports"][0]["referencedTable"], "sales_reps")
         self.assertEqual(payload["selectedTable"]["relationships"]["exports"][0]["sourceTable"], "orders")
         self.assertIn("CREATE TABLE `users`", payload["selectedTable"]["createStatement"])
-        self.assertEqual(payload["selectedTable"]["preview"]["rows"][0]["values"]["email"], "doctor@example.com")
+        self.assertEqual(payload["selectedTable"]["preview"]["rows"][0]["values"]["email"]["value"], "doctor@example.com")
+        self.assertTrue(payload["selectedTable"]["preview"]["rows"][0]["values"]["email"]["decrypted"])
 
 
 if __name__ == "__main__":

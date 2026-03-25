@@ -7129,9 +7129,13 @@ function MainApp() {
     updateRule: string | null;
     deleteRule: string | null;
   };
+  type DatabaseVisualizerPreviewCell = {
+    value: string | number | boolean | null;
+    decrypted: boolean;
+  };
   type DatabaseVisualizerPreviewRow = {
     rowNumber: number;
-    values: Record<string, string | number | boolean | null>;
+    values: Record<string, DatabaseVisualizerPreviewCell>;
   };
   type DatabaseVisualizerPreview = {
     page: number;
@@ -11802,6 +11806,7 @@ function MainApp() {
   const [databaseVisualizerPageSize, setDatabaseVisualizerPageSize] = useState(25);
   const [databaseVisualizerSortColumn, setDatabaseVisualizerSortColumn] = useState<string | null>(null);
   const [databaseVisualizerSortDirection, setDatabaseVisualizerSortDirection] = useState<"asc" | "desc">("asc");
+  const [databaseVisualizerExpandedCells, setDatabaseVisualizerExpandedCells] = useState<Record<string, boolean>>({});
   const databaseVisualizerInFlightRef = useRef(false);
   const [betaServiceSaving, setBetaServiceSaving] = useState<
     Partial<Record<PortalBetaServiceKey, boolean>>
@@ -11990,16 +11995,27 @@ function MainApp() {
                         const rawValues =
                           row?.values && typeof row.values === "object" ? row.values : {};
                         const values = Object.fromEntries(
-                          Object.entries(rawValues).map(([key, value]) => [
-                            String(key),
-                            value === null ||
-                            typeof value === "string" ||
-                            typeof value === "number" ||
-                            typeof value === "boolean"
-                              ? value
-                              : JSON.stringify(value),
-                          ]),
-                        ) as Record<string, string | number | boolean | null>;
+                          Object.entries(rawValues).map(([key, rawCell]) => {
+                            const cell =
+                              rawCell && typeof rawCell === "object" && !Array.isArray(rawCell)
+                                ? (rawCell as { value?: unknown; decrypted?: unknown })
+                                : null;
+                            const value = cell ? cell.value : rawCell;
+                            return [
+                              String(key),
+                              {
+                                value:
+                                  value === null ||
+                                  typeof value === "string" ||
+                                  typeof value === "number" ||
+                                  typeof value === "boolean"
+                                    ? value
+                                    : JSON.stringify(value),
+                                decrypted: Boolean(cell?.decrypted),
+                              } satisfies DatabaseVisualizerPreviewCell,
+                            ];
+                          }),
+                        ) as Record<string, DatabaseVisualizerPreviewCell>;
                         return {
                           rowNumber: Number.isFinite(Number(row?.rowNumber))
                             ? Math.max(1, Number(row.rowNumber))
@@ -12050,6 +12066,7 @@ function MainApp() {
         setDatabaseVisualizerPageSize(25);
         setDatabaseVisualizerSortColumn(null);
         setDatabaseVisualizerSortDirection("asc");
+        setDatabaseVisualizerExpandedCells({});
         return;
       }
       if (databaseVisualizerInFlightRef.current && !options?.force) {
@@ -12101,6 +12118,7 @@ function MainApp() {
         setDatabaseVisualizerSortDirection(payload.selectedTable?.preview.sortDirection || requestedSortDirection);
         setDatabaseVisualizerSearchTerm(payload.selectedTable?.preview.searchTerm || null);
         setDatabaseVisualizerSearchInput(payload.selectedTable?.preview.searchTerm || "");
+        setDatabaseVisualizerExpandedCells({});
       } catch (error: any) {
         setDatabaseVisualizerError(
           typeof error?.message === "string"
@@ -12135,6 +12153,7 @@ function MainApp() {
       setDatabaseVisualizerSearchTerm(null);
       setDatabaseVisualizerSortColumn(null);
       setDatabaseVisualizerSortDirection("asc");
+      setDatabaseVisualizerExpandedCells({});
       setDatabaseVisualizerTab("rows");
       void fetchDatabaseVisualizer({
         tableName: normalized,
@@ -12214,6 +12233,16 @@ function MainApp() {
       force: true,
     });
   }, [databaseVisualizerSortDirection, fetchDatabaseVisualizer]);
+  const handleDatabaseVisualizerCellToggle = useCallback((cellKey: string) => {
+    const normalized = String(cellKey || "").trim();
+    if (!normalized) {
+      return;
+    }
+    setDatabaseVisualizerExpandedCells((prev) => ({
+      ...prev,
+      [normalized]: !prev[normalized],
+    }));
+  }, []);
   const handlePortalBetaToggle = useCallback(
     async (serviceKey: PortalBetaServiceKey, enabled: boolean) => {
       if (!isAdmin(user?.role)) {
@@ -21811,12 +21840,13 @@ function MainApp() {
         (selectedTable?.relationships.imports.length || 0) +
         (selectedTable?.relationships.exports.length || 0);
       const detailTabs = [
-        { id: "rows" as const, label: "Rows" },
-        { id: "columns" as const, label: "Columns" },
+        { id: "rows" as const, label: "Browse" },
+        { id: "columns" as const, label: "Structure" },
         { id: "indexes" as const, label: "Indexes" },
-        { id: "relationships" as const, label: "Relationships" },
-        { id: "ddl" as const, label: "DDL" },
+        { id: "relationships" as const, label: "Relations" },
+        { id: "ddl" as const, label: "SQL" },
       ];
+      const previewCellCharacterLimit = 180;
       const formatPreviewValue = (value: string | number | boolean | null | undefined) => {
         if (value === null || value === undefined) {
           return "NULL";
@@ -21826,92 +21856,74 @@ function MainApp() {
         }
         return String(value);
       };
+      const previewStart = preview.filteredRowCount === 0 ? 0 : (preview.page - 1) * preview.pageSize;
+      const previewEnd =
+        preview.filteredRowCount === 0
+          ? 0
+          : Math.min(preview.page * preview.pageSize, preview.filteredRowCount) - 1;
 
       return (
-        <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
-          <div className="border-b border-slate-200/60 pb-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h4 className="text-lg font-semibold text-slate-900">Database Visualizer</h4>
-                <p className="text-sm text-slate-600">
-                  Read-only database explorer for the live MySQL instance. Browse tables, preview rows, inspect keys, relationships, and DDL.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void fetchDatabaseVisualizer({ force: true })}
-                disabled={databaseVisualizerLoading}
-                className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
-                title="Refresh database visualizer"
-              >
-                {databaseVisualizerLoading ? "Refreshing…" : "Refresh"}
-              </Button>
+        <div className="mb-4 border border-[#b7b7b7] bg-[#f3f3f3] text-slate-900">
+          <div className="flex items-center justify-between border-b border-[#b7b7b7] bg-gradient-to-b from-[#f8f8f8] to-[#dddddd] px-4 py-3">
+            <div>
+              <h4 className="text-lg font-semibold text-slate-900">Database Visualizer</h4>
+              <p className="text-xs text-slate-600">
+                Read-only viewer for the live database.
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={() => void fetchDatabaseVisualizer({ force: true })}
+              disabled={databaseVisualizerLoading}
+              className="rounded border border-[#b7b7b7] bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 disabled:opacity-50"
+            >
+              {databaseVisualizerLoading ? "Refreshing…" : "Refresh"}
+            </button>
           </div>
 
           {databaseVisualizerError ? (
-            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+            <div className="border-b border-[#d9b86b] bg-[#fff4cc] px-4 py-2 text-sm text-[#7a4e00]">
               {databaseVisualizerError}
             </div>
           ) : null}
 
           {databaseVisualizerLoading && !payload ? (
-            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading live schema…</div>
+            <div className="px-4 py-3 text-sm text-slate-500">Loading live schema…</div>
           ) : payload ? (
-            <div className="space-y-4 pt-4">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Database</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{payload.databaseName || "—"}</p>
-                </div>
-                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Host Scope</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {payload.hostScope === "local" ? "Local VPS MySQL" : "Remote MySQL"}
+            <div
+              className="overflow-hidden"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "260px minmax(0, 1fr)",
+                alignItems: "start",
+              }}
+            >
+              <aside className="min-w-0 border-r border-[#b7b7b7] bg-[#eef1f4] text-left">
+                <div className="border-b border-[#c9c9c9] px-3 py-3">
+                  <p className="text-2xl font-semibold italic leading-none text-[#7d8fc9]">
+                    php<span className="text-[#f1a33c]">MyAdmin</span>
                   </p>
-                </div>
-                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tables</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{payload.tables.length}</p>
-                </div>
-                <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Rows Tracked</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{totalRows.toLocaleString()}</p>
+                  <p className="mt-2 text-xs text-slate-600">
+                    {payload.hostScope === "local" ? "localhost:3306" : "remote"} • {payload.databaseName || "PepPro"}
+                  </p>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    {payload.refreshedAt ? `Refreshed ${formatDateTime(payload.refreshedAt)}` : "Live snapshot"}
+                    {payload.refreshedAt ? `Refreshed ${formatDateTime(payload.refreshedAt)}` : "Live snapshot"} • {totalRows.toLocaleString()} rows tracked
                   </p>
                 </div>
-              </div>
-
-              <div className="grid gap-4 xl:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Find Table
-                    </label>
-                    <input
-                      type="search"
-                      value={databaseVisualizerTableFilter}
-                      onChange={(event) => setDatabaseVisualizerTableFilter(event.target.value)}
-                      placeholder="Search tables..."
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[rgba(95,179,249,0.75)] focus:ring-2 focus:ring-[rgba(95,179,249,0.18)]"
-                    />
+                <div className="border-b border-[#c9c9c9] px-3 py-3">
+                  <input
+                    type="search"
+                    value={databaseVisualizerTableFilter}
+                    onChange={(event) => setDatabaseVisualizerTableFilter(event.target.value)}
+                    placeholder="Search tables..."
+                    className="h-9 w-full rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900 outline-none"
+                  />
+                </div>
+                <div className="max-h-[48rem] overflow-y-auto px-2 py-2">
+                  <div className="mb-2 text-sm font-semibold italic text-slate-600">
+                    {payload.databaseName || "PepPro"}
                   </div>
-                  <select
-                    value={selectedTableName}
-                    onChange={(event) => handleDatabaseVisualizerTableSelect(event.target.value)}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[rgba(95,179,249,0.75)] focus:ring-2 focus:ring-[rgba(95,179,249,0.18)]"
-                  >
-                    {(visibleTables.length > 0 ? visibleTables : payload.tables).map((table) => (
-                      <option key={table.name} value={table.name}>
-                        {table.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div className="sales-rep-table-wrapper admin-dashboard-list flex max-h-[28rem] flex-col gap-2">
+                  <div className="space-y-0.5">
                     {tableCards.map((table) => {
                       const isActive = table.name === selectedTableName;
                       return (
@@ -21920,84 +21932,31 @@ function MainApp() {
                           type="button"
                           onClick={() => handleDatabaseVisualizerTableSelect(table.name)}
                           className={clsx(
-                            "w-full rounded-xl border px-3 py-3 text-left transition",
-                            isActive
-                              ? "border-[rgba(95,179,249,0.65)] bg-[rgba(95,179,249,0.12)] shadow-sm"
-                              : "border-slate-200/80 bg-white/80 hover:border-[rgba(95,179,249,0.4)] hover:bg-white",
+                            "flex w-full items-center justify-start gap-2 rounded-sm px-3 py-1.5 text-left text-sm",
+                            isActive ? "bg-[#d7dde3] text-slate-900" : "text-slate-800 hover:bg-[#e6eaee]",
                           )}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-slate-900">{table.name}</p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                {table.columnCount.toLocaleString()} columns
-                              </p>
-                            </div>
-                            <div className="text-right text-xs text-slate-500">
-                              <div>{table.rowCount.toLocaleString()} rows</div>
-                              <div>{formatBytes((table.dataBytes || 0) + (table.indexBytes || 0))}</div>
-                            </div>
-                          </div>
+                          <span className="text-slate-500">+</span>
+                          <span className="min-w-0 flex-1 truncate font-medium">{table.name}</span>
                         </button>
                       );
                     })}
                     {tableCards.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 px-4 py-5 text-sm text-slate-500">
-                        No tables match that filter.
-                      </div>
+                      <div className="px-3 py-3 text-sm text-slate-500">No tables match that filter.</div>
                     ) : null}
                   </div>
                 </div>
+              </aside>
 
-                <div className="space-y-4">
-                  {selectedTable ? (
-                    <>
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Selected Table</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTable.name}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Engine</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTable.engine || "—"}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Rows</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTable.rowCount.toLocaleString()}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Storage</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">
-                            {formatBytes((selectedTable.dataBytes || 0) + (selectedTable.indexBytes || 0))}
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {selectedTable.updatedAt ? `Updated ${formatDateTime(selectedTable.updatedAt)}` : "No update timestamp"}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Preview</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">
-                            {preview.filteredRowCount.toLocaleString()}
-                            {preview.filteredRowCount !== preview.totalRowCount
-                              ? ` of ${preview.totalRowCount.toLocaleString()}`
-                              : ""}{" "}
-                            rows
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            Page {preview.page} of {preview.totalPages}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Relationships</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{relationshipCount.toLocaleString()}</p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {selectedTable.relationships.imports.length.toLocaleString()} inbound •{" "}
-                            {selectedTable.relationships.exports.length.toLocaleString()} outbound
-                          </p>
-                        </div>
-                      </div>
+              <div className="min-w-0 overflow-hidden bg-[#f7f7f7]" style={{ minWidth: 0 }}>
+                {selectedTable ? (
+                  <>
+                    <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-white">
+                      Server: {payload.hostScope === "local" ? "localhost:3306" : "remote"} » Database: {payload.databaseName || "PepPro"} » Table: {selectedTable.name}
+                    </div>
 
-                      <div className="flex flex-wrap gap-2">
+                    <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#fbfbfb] to-[#d8d8d8] px-3 pt-1">
+                      <div className="flex flex-wrap gap-px">
                         {detailTabs.map((tab) => {
                           const isActive = databaseVisualizerTab === tab.id;
                           return (
@@ -22006,10 +21965,10 @@ function MainApp() {
                               type="button"
                               onClick={() => setDatabaseVisualizerTab(tab.id)}
                               className={clsx(
-                                "rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                                "border border-[#b7b7b7] border-b-0 px-4 py-2 text-sm font-semibold text-[#2d5f8b]",
                                 isActive
-                                  ? "border-[rgba(95,179,249,0.55)] bg-[rgba(95,179,249,0.12)] text-slate-900"
-                                  : "border-slate-200 bg-white/85 text-slate-600 hover:border-[rgba(95,179,249,0.4)] hover:text-slate-900",
+                                  ? "bg-[#f7f7f7]"
+                                  : "bg-gradient-to-b from-[#fafafa] to-[#dcdcdc]",
                               )}
                             >
                               {tab.label}
@@ -22017,54 +21976,39 @@ function MainApp() {
                           );
                         })}
                       </div>
+                    </div>
 
-                      {databaseVisualizerTab === "rows" ? (
-                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
-                          <div className="flex flex-col gap-3">
-                            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                              <div>
-                                <h5 className="text-sm font-semibold text-slate-900">Rows Preview</h5>
-                                <p className="text-xs text-slate-500">
-                                  Read-only preview with pagination, sorting, and search across searchable columns.
-                                </p>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <select
-                                  value={databaseVisualizerPageSize}
-                                  onChange={(event) =>
-                                    handleDatabaseVisualizerPageSizeChange(Number(event.target.value) || 25)
-                                  }
-                                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
-                                >
-                                  {[25, 50, 100].map((size) => (
-                                    <option key={size} value={size}>
-                                      {size} rows
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  value={activeSortColumn}
-                                  onChange={(event) => handleDatabaseVisualizerSortColumnChange(event.target.value)}
-                                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
-                                >
-                                  {previewColumns.map((columnName) => (
-                                    <option key={columnName} value={columnName}>
-                                      Sort by {columnName}
-                                    </option>
-                                  ))}
-                                </select>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={handleDatabaseVisualizerSortDirectionToggle}
-                                  className="header-home-button squircle-sm bg-white text-slate-900"
-                                >
-                                  {databaseVisualizerSortDirection === "asc" ? "Asc" : "Desc"}
-                                </Button>
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                    {databaseVisualizerTab === "rows" ? (
+                      <div className="space-y-3 p-3">
+                        <div className="border border-[#c5dc63] bg-[#eef8a0] px-4 py-2 text-sm text-[#334500]">
+                          Showing rows {previewStart} - {previewEnd} ({preview.filteredRowCount.toLocaleString()} total rows)
+                        </div>
+
+                        <div className="border border-[#c4cdd5] bg-[#dde6ef] px-4 py-2 font-mono text-sm text-[#224d79]">
+                          SELECT * FROM <span className="text-[#5d2ca0]">`{selectedTable.name}`</span>
+                        </div>
+
+                        <div className="rounded border border-[#c2c2c2] bg-gradient-to-b from-[#f0f0f0] to-[#d7d7d7] px-3 py-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                              <span>Number of rows:</span>
+                              <select
+                                value={databaseVisualizerPageSize}
+                                onChange={(event) =>
+                                  handleDatabaseVisualizerPageSizeChange(Number(event.target.value) || 25)
+                                }
+                                className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
+                              >
+                                {[25, 50, 100].map((size) => (
+                                  <option key={size} value={size}>
+                                    {size}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                              <span>Filter rows:</span>
                               <input
                                 type="search"
                                 value={databaseVisualizerSearchInput}
@@ -22075,289 +22019,325 @@ function MainApp() {
                                     handleDatabaseVisualizerSearchSubmit();
                                   }
                                 }}
-                                placeholder={
-                                  preview.searchableColumns.length > 0
-                                    ? `Search ${preview.searchableColumns.slice(0, 3).join(", ")}${preview.searchableColumns.length > 3 ? "…" : ""}`
-                                    : "Search not available for this table"
-                                }
+                                placeholder="Search this table"
                                 disabled={preview.searchableColumns.length === 0}
-                                className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[rgba(95,179,249,0.75)] focus:ring-2 focus:ring-[rgba(95,179,249,0.18)] disabled:bg-slate-50 disabled:text-slate-400"
+                                className="h-9 w-64 rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900 outline-none disabled:bg-slate-100"
                               />
-                              <div className="flex flex-wrap gap-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={handleDatabaseVisualizerSearchSubmit}
-                                  disabled={preview.searchableColumns.length === 0}
-                                  className="header-home-button squircle-sm bg-white text-slate-900"
-                                >
-                                  Search
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={handleDatabaseVisualizerSearchClear}
-                                  disabled={!databaseVisualizerSearchInput && !preview.searchTerm}
-                                  className="header-home-button squircle-sm bg-white text-slate-900"
-                                >
-                                  Clear
-                                </Button>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                              <span>
-                                Showing page {preview.page} of {preview.totalPages} •{" "}
-                                {preview.filteredRowCount.toLocaleString()} matching rows
-                                {preview.filteredRowCount !== preview.totalRowCount
-                                  ? ` of ${preview.totalRowCount.toLocaleString()} total`
-                                  : ""}
-                              </span>
-                              <span>
-                                Sort: {preview.sortColumn || "—"} ({preview.sortDirection.toUpperCase()})
-                              </span>
-                            </div>
-                            <div className="sales-rep-table-wrapper admin-dashboard-list">
-                              {preview.rows.length === 0 ? (
-                                <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 px-4 py-8 text-sm text-slate-500">
-                                  {preview.searchTerm
-                                    ? "No rows matched that search."
-                                    : "No rows available for preview."}
-                                </div>
-                              ) : (
-                                <table className="min-w-full text-left text-sm">
-                                  <thead className="bg-slate-900/5 text-xs uppercase tracking-[0.18em] text-slate-500">
-                                    <tr>
-                                      <th className="px-3 py-2">#</th>
-                                      {previewColumns.map((columnName) => (
-                                        <th key={`${selectedTable.name}:${columnName}`} className="px-3 py-2">
-                                          {columnName}
-                                        </th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-200/70 bg-white/60">
-                                    {preview.rows.map((row) => (
-                                      <tr key={`${selectedTable.name}:preview:${row.rowNumber}`}>
-                                        <td className="px-3 py-2 font-mono text-xs text-slate-500">{row.rowNumber}</td>
+                            </label>
+
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                              <span>Sort by key:</span>
+                              <select
+                                value={activeSortColumn}
+                                onChange={(event) => handleDatabaseVisualizerSortColumnChange(event.target.value)}
+                                className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
+                              >
+                                {previewColumns.map((columnName) => (
+                                  <option key={columnName} value={columnName}>
+                                    {columnName}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={handleDatabaseVisualizerSortDirectionToggle}
+                              className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900"
+                            >
+                              {databaseVisualizerSortDirection === "asc" ? "Asc" : "Desc"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDatabaseVisualizerSearchSubmit}
+                              disabled={preview.searchableColumns.length === 0}
+                              className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                            >
+                              Search
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDatabaseVisualizerSearchClear}
+                              disabled={!databaseVisualizerSearchInput && !preview.searchTerm}
+                              className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="overflow-hidden border border-[#c1c1c1] bg-white" style={{ minWidth: 0 }}>
+                          <div
+                            className="w-full"
+                            style={{
+                              overflowX: "auto",
+                              overflowY: "hidden",
+                              WebkitOverflowScrolling: "touch",
+                              scrollbarGutter: "stable both-edges",
+                              maxWidth: "100%",
+                            }}
+                          >
+                            <table className="text-left text-sm" style={{ width: "max-content", minWidth: "100%" }}>
+                              <thead className="bg-gradient-to-b from-[#f8f8f8] to-[#d1d1d1] text-[#2d5f8b]">
+                                <tr>
+                                  <th className="sticky left-0 z-[1] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap">
+                                    #
+                                  </th>
+                                  {previewColumns.map((columnName) => (
+                                    <th
+                                      key={`${selectedTable.name}:${columnName}`}
+                                      className="min-w-[10rem] border-b border-r border-[#c8c8c8] px-3 py-2 whitespace-nowrap"
+                                    >
+                                      {columnName}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {preview.rows.length === 0 ? (
+                                  <tr>
+                                    <td
+                                      colSpan={previewColumns.length + 1}
+                                      className="px-4 py-8 text-sm text-slate-500"
+                                    >
+                                      {preview.searchTerm
+                                        ? "No rows matched that search."
+                                        : "No rows available for preview."}
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  preview.rows.map((row, rowIndex) => {
+                                    const rowBgClass = rowIndex % 2 === 0 ? "bg-white" : "bg-[#e9e9e9]";
+                                    return (
+                                      <tr
+                                        key={`${selectedTable.name}:preview:${row.rowNumber}`}
+                                        className={rowBgClass}
+                                      >
+                                        <td className={clsx("sticky left-0 z-[1] border-b border-r border-[#d3d3d3] px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap", rowBgClass)}>
+                                          {row.rowNumber}
+                                        </td>
                                         {previewColumns.map((columnName) => {
-                                          const cellValue = row.values[columnName];
+                                          const cell = row.values[columnName] || {
+                                            value: null,
+                                            decrypted: false,
+                                          };
+                                          const cellValue = cell.value;
                                           const displayValue = formatPreviewValue(cellValue);
+                                          const cellKey = `${selectedTable.name}:${row.rowNumber}:${columnName}`;
+                                          const isExpanded = Boolean(databaseVisualizerExpandedCells[cellKey]);
+                                          const isLongValue = displayValue.length > previewCellCharacterLimit;
+                                          const visibleValue =
+                                            !isExpanded && isLongValue
+                                              ? `${displayValue.slice(0, previewCellCharacterLimit)}…`
+                                              : displayValue;
                                           return (
                                             <td
                                               key={`${selectedTable.name}:${row.rowNumber}:${columnName}`}
                                               className={clsx(
-                                                "max-w-[18rem] px-3 py-2 align-top text-xs",
-                                                cellValue === null ? "text-slate-400 italic" : "font-mono text-slate-700",
+                                                "border-b border-r border-[#d3d3d3] px-3 py-2 align-top text-xs",
+                                                cellValue === null ? "text-slate-400 italic" : "font-mono text-slate-800",
                                               )}
-                                              title={displayValue}
                                             >
-                                              <div className="max-w-[18rem] whitespace-pre-wrap break-words">
-                                                {displayValue}
+                                              <div
+                                                className={clsx(
+                                                  "inline-flex max-w-[26rem] items-start gap-2",
+                                                  isLongValue && "cursor-pointer",
+                                                )}
+                                                title={displayValue}
+                                                onDoubleClick={() => {
+                                                  if (isLongValue) {
+                                                    handleDatabaseVisualizerCellToggle(cellKey);
+                                                  }
+                                                }}
+                                              >
+                                                <span
+                                                  className={clsx(
+                                                    "min-w-0",
+                                                    isExpanded
+                                                      ? "whitespace-pre-wrap break-words"
+                                                      : "overflow-hidden text-ellipsis whitespace-nowrap",
+                                                  )}
+                                                >
+                                                  {visibleValue}
+                                                </span>
+                                                {cell.decrypted ? (
+                                                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                                                    decrypted
+                                                  </span>
+                                                ) : null}
                                               </div>
                                             </td>
                                           );
                                         })}
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDatabaseVisualizerPageChange(preview.page - 1)}
-                                disabled={preview.page <= 1}
-                                className="header-home-button squircle-sm bg-white text-slate-900"
-                              >
-                                Previous
-                              </Button>
-                              <span className="text-xs text-slate-500">
-                                Page {preview.page} / {preview.totalPages}
-                              </span>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDatabaseVisualizerPageChange(preview.page + 1)}
-                                disabled={preview.page >= preview.totalPages}
-                                className="header-home-button squircle-sm bg-white text-slate-900"
-                              >
-                                Next
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {databaseVisualizerTab === "columns" ? (
-                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
-                          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <h5 className="text-sm font-semibold text-slate-900">Columns</h5>
-                              <p className="text-xs text-slate-500">Live schema for the selected table.</p>
-                            </div>
-                            <input
-                              type="search"
-                              value={databaseVisualizerColumnFilter}
-                              onChange={(event) => setDatabaseVisualizerColumnFilter(event.target.value)}
-                              placeholder="Filter columns..."
-                              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 sm:max-w-xs"
-                            />
-                          </div>
-                          <div className="sales-rep-table-wrapper admin-dashboard-list">
-                            <table className="min-w-full text-left text-sm">
-                              <thead className="bg-slate-900/5 text-xs uppercase tracking-[0.18em] text-slate-500">
-                                <tr>
-                                  <th className="px-3 py-2">Column</th>
-                                  <th className="px-3 py-2">Type</th>
-                                  <th className="px-3 py-2">Null</th>
-                                  <th className="px-3 py-2">Key</th>
-                                  <th className="px-3 py-2">Default</th>
-                                  <th className="px-3 py-2">Extra</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-200/70 bg-white/60">
-                                {visibleColumns.map((column) => (
-                                  <tr key={`${selectedTable.name}:${column.name}`}>
-                                    <td className="px-3 py-2 font-mono text-xs text-slate-900">{column.name}</td>
-                                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{column.type || "—"}</td>
-                                    <td className="px-3 py-2 text-xs text-slate-700">{column.nullable ? "YES" : "NO"}</td>
-                                    <td className="px-3 py-2 text-xs text-slate-700">{column.key || "—"}</td>
-                                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{column.defaultValue ?? "—"}</td>
-                                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{column.extra ?? "—"}</td>
-                                  </tr>
-                                ))}
+                                    );
+                                  })
+                                )}
                               </tbody>
                             </table>
-                            {visibleColumns.length === 0 ? (
-                              <div className="px-3 py-4 text-sm text-slate-500">No columns match that filter.</div>
-                            ) : null}
                           </div>
                         </div>
-                      ) : null}
 
-                      {databaseVisualizerTab === "indexes" ? (
-                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <div>
-                              <h5 className="text-sm font-semibold text-slate-900">Indexes</h5>
-                              <p className="text-xs text-slate-500">Grouped by index name and column order.</p>
-                            </div>
-                            <span className="rounded-full bg-slate-900/5 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                              {selectedTable.indexes.length.toLocaleString()} indexes
-                            </span>
-                          </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDatabaseVisualizerPageChange(preview.page - 1)}
+                            disabled={preview.page <= 1}
+                            className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                          >
+                            Previous
+                          </button>
+                          <span className="text-xs text-slate-500">
+                            {selectedTable.rowCount.toLocaleString()} rows • {relationshipCount.toLocaleString()} relationships
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDatabaseVisualizerPageChange(preview.page + 1)}
+                            disabled={preview.page >= preview.totalPages}
+                            className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {databaseVisualizerTab === "columns" ? (
+                      <div className="space-y-3 p-3">
+                        <div className="rounded border border-[#c2c2c2] bg-gradient-to-b from-[#f0f0f0] to-[#d7d7d7] px-3 py-3">
+                          <input
+                            type="search"
+                            value={databaseVisualizerColumnFilter}
+                            onChange={(event) => setDatabaseVisualizerColumnFilter(event.target.value)}
+                            placeholder="Filter columns..."
+                            className="h-9 w-full max-w-xs rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
+                          />
+                        </div>
+                        <div className="overflow-hidden border border-[#c1c1c1] bg-white">
+                          <table className="min-w-full text-left text-sm">
+                            <thead className="bg-gradient-to-b from-[#f8f8f8] to-[#d1d1d1] text-[#2d5f8b]">
+                              <tr>
+                                <th className="border-b border-r border-[#c8c8c8] px-3 py-2">Column</th>
+                                <th className="border-b border-r border-[#c8c8c8] px-3 py-2">Type</th>
+                                <th className="border-b border-r border-[#c8c8c8] px-3 py-2">Null</th>
+                                <th className="border-b border-r border-[#c8c8c8] px-3 py-2">Key</th>
+                                <th className="border-b border-r border-[#c8c8c8] px-3 py-2">Default</th>
+                                <th className="border-b border-[#c8c8c8] px-3 py-2">Extra</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibleColumns.map((column, index) => (
+                                <tr key={`${selectedTable.name}:${column.name}`} className={index % 2 === 0 ? "bg-white" : "bg-[#e9e9e9]"}>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 font-mono text-xs text-slate-900">{column.name}</td>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 font-mono text-xs text-slate-700">{column.type || "—"}</td>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 text-xs text-slate-700">{column.nullable ? "YES" : "NO"}</td>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 text-xs text-slate-700">{column.key || "—"}</td>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 font-mono text-xs text-slate-700">{column.defaultValue ?? "—"}</td>
+                                  <td className="border-b border-[#d3d3d3] px-3 py-2 font-mono text-xs text-slate-700">{column.extra ?? "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {visibleColumns.length === 0 ? (
+                            <div className="px-3 py-4 text-sm text-slate-500">No columns match that filter.</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {databaseVisualizerTab === "indexes" ? (
+                      <div className="space-y-3 p-3">
+                        <div className="grid gap-3 lg:grid-cols-2">
                           {selectedTable.indexes.length === 0 ? (
-                            <p className="text-sm text-slate-500">No indexes reported for this table.</p>
+                            <div className="border border-[#c1c1c1] bg-white px-4 py-4 text-sm text-slate-500">
+                              No indexes reported for this table.
+                            </div>
                           ) : (
-                            <div className="grid gap-3 lg:grid-cols-2">
-                              {selectedTable.indexes.map((index) => (
+                            selectedTable.indexes.map((index) => (
+                              <div
+                                key={`${selectedTable.name}:${index.name}`}
+                                className="border border-[#c1c1c1] bg-white px-4 py-3 text-xs text-slate-700"
+                              >
+                                <div className="font-semibold text-slate-900">
+                                  {index.name}
+                                  <span className="ml-2 text-[11px] text-slate-500">
+                                    {index.unique ? "UNIQUE" : "NON-UNIQUE"}
+                                  </span>
+                                </div>
+                                <div className="mt-2 font-mono text-[11px] text-slate-600">
+                                  {index.columns.join(", ") || "—"}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {databaseVisualizerTab === "relationships" ? (
+                      <div className="grid gap-4 p-3 lg:grid-cols-2">
+                        <div className="border border-[#c1c1c1] bg-white p-4">
+                          <h5 className="text-sm font-semibold text-slate-900">Imports</h5>
+                          <p className="mb-3 text-xs text-slate-500">Foreign keys this table uses.</p>
+                          {selectedTable.relationships.imports.length === 0 ? (
+                            <p className="text-sm text-slate-500">No imported relationships.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {selectedTable.relationships.imports.map((entry, index) => (
                                 <div
-                                  key={`${selectedTable.name}:${index.name}`}
-                                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700"
+                                  key={`${selectedTable.name}:import:${entry.constraintName || index}`}
+                                  className="border border-[#d3d3d3] bg-[#f8f8f8] px-3 py-3 text-xs text-slate-700"
                                 >
-                                  <div className="font-semibold text-slate-900">
-                                    {index.name}
-                                    <span className="ml-2 text-[11px] font-medium text-slate-500">
-                                      {index.unique ? "UNIQUE" : "NON-UNIQUE"}
-                                    </span>
-                                  </div>
-                                  <div className="mt-2 font-mono text-[11px] text-slate-600">
-                                    {index.columns.join(", ") || "—"}
+                                  <div className="font-semibold text-slate-900">{entry.constraintName || "Foreign key"}</div>
+                                  <div className="mt-1 font-mono text-[11px]">
+                                    {entry.columnName || "—"} → {entry.referencedTable || "—"}.{entry.referencedColumn || "—"}
                                   </div>
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
-                      ) : null}
-
-                      {databaseVisualizerTab === "relationships" ? (
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
-                            <div className="mb-3">
-                              <h5 className="text-sm font-semibold text-slate-900">Imports</h5>
-                              <p className="text-xs text-slate-500">Foreign keys this table uses.</p>
-                            </div>
-                            {selectedTable.relationships.imports.length === 0 ? (
-                              <p className="text-sm text-slate-500">No imported relationships.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {selectedTable.relationships.imports.map((entry, index) => (
-                                  <div
-                                    key={`${selectedTable.name}:import:${entry.constraintName || index}`}
-                                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-700"
-                                  >
-                                    <div className="font-semibold text-slate-900">{entry.constraintName || "Foreign key"}</div>
-                                    <div className="mt-1 font-mono text-[11px]">
-                                      {entry.columnName || "—"} → {entry.referencedTable || "—"}.{entry.referencedColumn || "—"}
-                                    </div>
-                                    <div className="mt-1 text-[11px] text-slate-500">
-                                      On update: {entry.updateRule || "—"} • On delete: {entry.deleteRule || "—"}
-                                    </div>
+                        <div className="border border-[#c1c1c1] bg-white p-4">
+                          <h5 className="text-sm font-semibold text-slate-900">Exports</h5>
+                          <p className="mb-3 text-xs text-slate-500">Other tables pointing at this table.</p>
+                          {selectedTable.relationships.exports.length === 0 ? (
+                            <p className="text-sm text-slate-500">No exported relationships.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {selectedTable.relationships.exports.map((entry, index) => (
+                                <div
+                                  key={`${selectedTable.name}:export:${entry.constraintName || index}`}
+                                  className="border border-[#d3d3d3] bg-[#f8f8f8] px-3 py-3 text-xs text-slate-700"
+                                >
+                                  <div className="font-semibold text-slate-900">{entry.constraintName || "Foreign key"}</div>
+                                  <div className="mt-1 font-mono text-[11px]">
+                                    {entry.sourceTable || "—"}.{entry.sourceColumn || "—"} → {selectedTable.name}.{entry.referencedColumn || "—"}
                                   </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
-                            <div className="mb-3">
-                              <h5 className="text-sm font-semibold text-slate-900">Exports</h5>
-                              <p className="text-xs text-slate-500">Other tables pointing at this table.</p>
+                                </div>
+                              ))}
                             </div>
-                            {selectedTable.relationships.exports.length === 0 ? (
-                              <p className="text-sm text-slate-500">No exported relationships.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {selectedTable.relationships.exports.map((entry, index) => (
-                                  <div
-                                    key={`${selectedTable.name}:export:${entry.constraintName || index}`}
-                                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-700"
-                                  >
-                                    <div className="font-semibold text-slate-900">{entry.constraintName || "Foreign key"}</div>
-                                    <div className="mt-1 font-mono text-[11px]">
-                                      {entry.sourceTable || "—"}.{entry.sourceColumn || "—"} → {selectedTable.name}.{entry.referencedColumn || "—"}
-                                    </div>
-                                    <div className="mt-1 text-[11px] text-slate-500">
-                                      On update: {entry.updateRule || "—"} • On delete: {entry.deleteRule || "—"}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
-                      ) : null}
+                      </div>
+                    ) : null}
 
-                      {databaseVisualizerTab === "ddl" ? (
-                        <div className="rounded-xl border border-slate-200/80 bg-white/75 p-4">
-                          <div className="mb-3">
-                            <h5 className="text-sm font-semibold text-slate-900">DDL</h5>
-                            <p className="text-xs text-slate-500">`SHOW CREATE TABLE` output for the selected table.</p>
-                          </div>
-                          <div className="sales-rep-table-wrapper admin-dashboard-list">
-                            <pre className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 px-4 py-4 text-[12px] leading-6 text-slate-100">
-                              {selectedTable.createStatement || "No DDL returned for this table."}
-                            </pre>
-                          </div>
+                    {databaseVisualizerTab === "ddl" ? (
+                      <div className="p-3">
+                        <div className="overflow-hidden border border-[#c1c1c1] bg-white">
+                          <pre className="overflow-x-auto bg-slate-950 px-4 py-4 text-[12px] leading-6 text-slate-100">
+                            {selectedTable.createStatement || "No DDL returned for this table."}
+                          </pre>
                         </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <div className="rounded-xl border border-slate-200/80 bg-white/75 px-4 py-6 text-sm text-slate-500">
-                      No tables available to inspect.
-                    </div>
-                  )}
-                </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="px-4 py-6 text-sm text-slate-500">No tables available to inspect.</div>
+                )}
               </div>
             </div>
           ) : (
-            <div className="pt-4 px-4 py-3 text-sm text-slate-500">No schema snapshot available yet.</div>
+            <div className="px-4 py-3 text-sm text-slate-500">No schema snapshot available yet.</div>
           )}
         </div>
       );
