@@ -80,6 +80,33 @@ function get_table_columns(PDO $pdo, string $table): array {
   return $cols;
 }
 
+/** Ensure the sales_reps.is_partner column exists, attempting a self-healing migration when missing. */
+function ensure_sales_reps_is_partner_column(PDO $pdo): array {
+  $cols = get_table_columns($pdo, 'sales_reps');
+  $added = false;
+  $error = null;
+
+  if (!in_array('is_partner', $cols, true)) {
+    try {
+      $pdo->exec('ALTER TABLE sales_reps ADD COLUMN is_partner TINYINT(1) NOT NULL DEFAULT 0 AFTER role');
+      $added = true;
+    } catch (Throwable $e) {
+      $error = $e->getMessage();
+    }
+
+    $cols = get_table_columns($pdo, 'sales_reps');
+    if (in_array('is_partner', $cols, true)) {
+      $error = null;
+    }
+  }
+
+  return [
+    'columns' => $cols,
+    'added' => $added,
+    'error' => $error,
+  ];
+}
+
 /** Simple shared-secret auth (Authorization or X-WebHook-Signature). */
 function authorized(array $config): bool {
   $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
@@ -111,7 +138,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         PDO::ATTR_EMULATE_PREPARES => false,
       ]
     );
-    $salesRepsCols = get_table_columns($pdo, 'sales_reps');
+    $schemaState = ensure_sales_reps_is_partner_column($pdo);
+    $salesRepsCols = $schemaState['columns'];
     $hasIsPartner = in_array('is_partner', $salesRepsCols, true);
     $updatedAtSelect = in_array('updatedAt', $salesRepsCols, true)
       ? 'updatedAt'
@@ -258,19 +286,34 @@ try {
   );
 
   if (function_exists('set_time_limit')) @set_time_limit(60);
-  $pdo->beginTransaction();
 
-  $salesRepsCols = [];
   try {
-    $salesRepsCols = get_table_columns($pdo, 'sales_reps');
+    $schemaState = ensure_sales_reps_is_partner_column($pdo);
+    $salesRepsCols = $schemaState['columns'];
+    $isPartnerColumnAdded = (bool)($schemaState['added'] ?? false);
+    $isPartnerColumnEnsureError = $schemaState['error'] ?? null;
   } catch (Throwable $e) {
-    // If we can't introspect columns, continue with the legacy insert shape below.
+    $salesRepsCols = [];
+    $isPartnerColumnAdded = false;
+    $isPartnerColumnEnsureError = $e->getMessage();
   }
+
   $hasSalesRepsId = in_array('id', $salesRepsCols, true);
   $hasIsPartner = in_array('is_partner', $salesRepsCols, true);
   $hasUpdatedAtCamel = in_array('updatedAt', $salesRepsCols, true);
   $hasUpdatedAtSnake = in_array('updated_at', $salesRepsCols, true);
   $hasCreatedAtSnake = in_array('created_at', $salesRepsCols, true);
+
+  if (!$hasIsPartner) {
+    respond(500, [
+      'ok' => false,
+      'error' => 'MISSING_IS_PARTNER_COLUMN',
+      'detail' => $isPartnerColumnEnsureError ?: 'Unable to ensure sales_reps.is_partner column',
+      'isPartnerColumnAdded' => $isPartnerColumnAdded,
+    ]);
+  }
+
+  $pdo->beginTransaction();
 
   /**
    * IMPORTANT: deletions are intentionally disabled.
@@ -344,6 +387,20 @@ try {
     $usersCols = [];
   }
   $hasUserSalesRepId = in_array('sales_rep_id', $usersCols, true);
+  $forceSalesRepPartnerUpdate = null;
+  $verifySalesRepPartnerState = null;
+  if ($hasIsPartner) {
+    $forceSalesRepPartnerUpdate = $pdo->prepare(
+      $hasSalesRepsId
+        ? 'UPDATE sales_reps SET is_partner = :is_partner WHERE id = :id'
+        : 'UPDATE sales_reps SET is_partner = :is_partner WHERE sales_code = :sales_code'
+    );
+    $verifySalesRepPartnerState = $pdo->prepare(
+      $hasSalesRepsId
+        ? 'SELECT id, sales_code, is_partner FROM sales_reps WHERE id = :id LIMIT 1'
+        : 'SELECT sales_code, is_partner FROM sales_reps WHERE sales_code = :sales_code LIMIT 1'
+    );
+  }
 
   // Optional user sync: only create/update as sales_rep when not already admin/test_doctor.
   $fetchUser = $pdo->prepare(
@@ -391,6 +448,9 @@ try {
     $rowIndex = (int)($rec['row_index'] ?? -1);
     $userId = null;
     $salesRepId = null;
+    $partnerUpdateCount = null;
+    $dbIsPartner = null;
+    $dbPartnerLookup = $hasSalesRepsId ? 'id' : 'sales_code';
 
     if ($hasSalesRepsId) {
       $candidateId = trim((string)($rec['id'] ?? ''));
@@ -456,6 +516,26 @@ try {
       if ($hasSalesRepsId) $params[':id'] = $salesRepId;
 
       $stmt->execute($params);
+      if ($hasIsPartner && $forceSalesRepPartnerUpdate) {
+        $partnerParams = [':is_partner' => $rec['is_partner']];
+        if ($hasSalesRepsId) {
+          $partnerParams[':id'] = $salesRepId;
+        } else {
+          $partnerParams[':sales_code'] = $rec['sales_code'];
+        }
+        $forceSalesRepPartnerUpdate->execute($partnerParams);
+        $partnerUpdateCount = $forceSalesRepPartnerUpdate->rowCount();
+      }
+      if ($hasIsPartner && $verifySalesRepPartnerState) {
+        $verifyParams = $hasSalesRepsId
+          ? [':id' => $salesRepId]
+          : [':sales_code' => $rec['sales_code']];
+        $verifySalesRepPartnerState->execute($verifyParams);
+        $dbRow = $verifySalesRepPartnerState->fetch(PDO::FETCH_ASSOC);
+        if (is_array($dbRow) && array_key_exists('is_partner', $dbRow)) {
+          $dbIsPartner = ((int)$dbRow['is_partner'] === 1);
+        }
+      }
       $stored++;
     } catch (Throwable $e) {
       // If we collided on a newly-generated ID, retry a few times.
@@ -581,6 +661,10 @@ try {
       'salesCode' => $rec['sales_code'],
       'status'    => 'upserted',
       'isPartner' => ((int)$rec['is_partner'] === 1),
+      'hasIsPartnerColumn' => $hasIsPartner,
+      'partnerUpdateCount' => $partnerUpdateCount,
+      'dbPartnerLookup' => $dbPartnerLookup,
+      'dbIsPartner' => $dbIsPartner,
       'salesRepId' => $salesRepId,
       'userId' => $userId,
     ];
@@ -595,6 +679,8 @@ try {
     'received'          => count($body['salesReps']),
     'stored'            => $stored,
     'skipped'           => count($body['salesReps']) - count($clean),
+    'hasIsPartnerColumn' => $hasIsPartner,
+    'isPartnerColumnAdded' => $isPartnerColumnAdded,
     'errors'            => $errors,
     'deletedSalesCodes' => [],
     'deletionsDisabled' => $deletionsDisabled,

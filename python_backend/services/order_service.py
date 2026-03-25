@@ -3080,9 +3080,6 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
     if not isinstance(target_user, dict):
         raise _service_error("USER_NOT_FOUND", 404)
 
-    def _normalize_role(value: object) -> str:
-        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
-
     def _is_sales_actor_role(value: object) -> bool:
         return _normalize_role(value) in ("admin", "sales_rep", "sales_partner", "rep", "sales_lead", "saleslead")
 
@@ -5145,9 +5142,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         skipped_outside_period = 0
         unresolved_recipient_counts: Dict[str, int] = {}
         unresolved_recipient_examples: List[Dict[str, object]] = []
-
-        def _normalize_role(value: object) -> str:
-            return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
 
         def _normalize_rep_id(value: object) -> str:
             if value is None:

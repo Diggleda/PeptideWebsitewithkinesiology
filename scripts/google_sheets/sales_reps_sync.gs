@@ -2,6 +2,20 @@ const WEBHOOK_URL = 'https://port.peppro.net/api/integrations/google-sheets/sale
 const WEBHOOK_SECRET = 'wqEpTQeBJzrDBZV6Ao5CIU7EQZV5KJUD+kd1gdI1Stw=';
 const TIMEZONE = 'America/Indiana/Indianapolis';
 
+function normalizedHeader_(value) {
+  return String(value == null ? '' : value)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function findHeaderIndex_(headers, label, fallbackIndex) {
+  const target = normalizedHeader_(label);
+  const exactIndex = headers.findIndex((header) => normalizedHeader_(header) === target);
+  if (exactIndex >= 0) return exactIndex;
+  return fallbackIndex;
+}
+
 function toPartnerFlag_(value) {
   const normalized = value == null ? '' : String(value).trim().toLowerCase();
   return normalized === '1'
@@ -23,15 +37,17 @@ function syncSalesReps() {
   const hasAnyData = rows.map((row) => row.some((cell) => cell && String(cell).trim() !== ''));
 
   const idx = {
-    first: headers.indexOf('First Name'),
-    last: headers.indexOf('Last Name'),
-    email: headers.indexOf('Email'),
-    phone: headers.indexOf('Phone'),
-    territory: headers.indexOf('Territory'),
-    initials: headers.indexOf('Initials'),
-    salesCode: headers.indexOf('Sales Code'),
-    isPartner: headers.indexOf('Is Partner'),
+    first: findHeaderIndex_(headers, 'First Name', 0),
+    last: findHeaderIndex_(headers, 'Last Name', 1),
+    email: findHeaderIndex_(headers, 'Email', 2),
+    phone: findHeaderIndex_(headers, 'Phone', 3),
+    territory: findHeaderIndex_(headers, 'Territory', 4),
+    initials: findHeaderIndex_(headers, 'Initials', 5),
+    salesCode: findHeaderIndex_(headers, 'Sales Code', 6),
+    isPartner: findHeaderIndex_(headers, 'Is Partner', 7),
   };
+
+  Logger.log(`Resolved columns: ${JSON.stringify(idx)}`);
 
   const reps = [];
   const rowSalesCodes = [];
