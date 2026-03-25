@@ -362,7 +362,7 @@ const fetchSalesRepDirectory = async (repIds) => {
       return;
     }
     const user = userRepository.findById ? userRepository.findById(id) : null;
-    if (user && normalizeRole(user.role) === 'sales_rep') {
+    if (user && (normalizeRole(user.role) === 'sales_rep' || normalizeRole(user.role) === 'sales_partner')) {
       lookup.set(id, {
         id,
         name: user?.name || user?.email || null,
@@ -389,6 +389,7 @@ const canSelectRetailPricing = (role) => {
   const normalized = normalizeRole(role);
   return normalized === 'admin'
     || normalized === 'sales_rep'
+    || normalized === 'sales_partner'
     || normalized === 'rep'
     || normalized === 'sales_lead'
     || normalized === 'saleslead';
@@ -745,6 +746,7 @@ const buildBillingAddressFromUser = (user, fallbackAddress = null, options = {})
   const shouldUseRecipientName =
     normalizedRole === 'admin'
     || normalizedRole === 'sales_rep'
+    || normalizedRole === 'sales_partner'
     || normalizedRole === 'rep'
     || normalizedRole === 'sales_lead'
     || normalizedRole === 'saleslead';
@@ -2391,7 +2393,7 @@ const getOrdersForSalesRep = async (
     const role = normalizeRole(candidate.role);
     const isDoctorRole = role === 'doctor' || role === 'test_doctor';
     const includeSalesRepCustomers = includeAllDoctors && allowedRepIds.size === 0;
-    const isSalesRepCustomerRole = includeSalesRepCustomers && (role === 'sales_rep' || role === 'rep');
+    const isSalesRepCustomerRole = includeSalesRepCustomers && (role === 'sales_rep' || role === 'sales_partner' || role === 'rep');
     const leadType = String(candidate?.leadType || candidate?.lead_type || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     const isHouseContactUser = includeHouseContacts && (
       leadType === 'contact_form'
@@ -2778,7 +2780,7 @@ const getSalesByRep = async ({
     if (normalized.toLowerCase() === 'house') return '__house__';
     return normalized;
   };
-  const repLikeRoleSet = new Set(['sales_rep', 'rep', 'admin', 'sales_lead', 'saleslead', 'sales-lead']);
+  const repLikeRoleSet = new Set(['sales_rep', 'sales_partner', 'rep', 'admin', 'sales_lead', 'saleslead', 'sales-lead']);
   const repsFromUsers = users.filter((u) => repLikeRoleSet.has(normalizeRole(u.role)));
   const repsFromStore = Array.isArray(salesRepRepository?.getAll?.())
     ? salesRepRepository.getAll()
@@ -2823,7 +2825,7 @@ const getSalesByRep = async ({
     const repId = normalizeId(rep?.id || rep?.salesRepId);
     if (!repId) continue;
     const role = normalizeRole(rep?.role);
-    if (role && role !== 'sales_rep' && role !== 'rep') continue;
+    if (role && role !== 'sales_rep' && role !== 'sales_partner' && role !== 'rep') continue;
     repLookup.set(repId, {
       id: repId,
       name: rep?.name || rep?.email || 'Sales Rep',

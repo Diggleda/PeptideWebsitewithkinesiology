@@ -46,7 +46,7 @@ def _resolve_optional_actor() -> Dict[str, Any]:
         return {}
 
     role = str(payload.get("role") or "").strip().lower()
-    if role == "sales_rep":
+    if role in ("sales_rep", "sales_partner"):
         actor = sales_rep_repository.find_by_id(str(user_id))
         if actor:
             return actor

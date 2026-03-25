@@ -12,6 +12,14 @@ from ..utils.http import handle_action
 blueprint = Blueprint("referrals", __name__, url_prefix="/api/referrals")
 
 
+def _normalize_role(value) -> str:
+    return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
+
+
+def _is_sales_rep_like_role(value) -> bool:
+    return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "sales_lead", "admin")
+
+
 def _sanitize_string(value, max_length=190):
     if not isinstance(value, str):
         return ""
@@ -36,8 +44,8 @@ def _sanitize_phone(value):
 def _ensure_user():
     user_id = g.current_user.get("id")
     user = user_repository.find_by_id(user_id)
-    token_role = (g.current_user.get("role") or "").lower()
-    if not user and token_role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
+    token_role = _normalize_role(g.current_user.get("role"))
+    if not user and _is_sales_rep_like_role(token_role):
         rep = sales_rep_repository.find_by_id(user_id)
         if rep:
             return {**rep, "id": rep.get("id"), "role": token_role}
@@ -53,18 +61,12 @@ def _require_doctor(user):
 
 
 def _require_sales_rep(user):
-    role = (user.get("role") or "").lower()
-    token_role = (g.current_user.get("role") or "").lower()
+    role = _normalize_role(user.get("role"))
+    token_role = _normalize_role(g.current_user.get("role"))
     # Allow admins regardless of stored role, and allow explicit sales_rep/rep/sales_lead
     if token_role == "admin" or role == "admin":
         return
-    if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead") or token_role in (
-        "sales_rep",
-        "rep",
-        "sales_lead",
-        "saleslead",
-        "sales-lead",
-    ):
+    if _is_sales_rep_like_role(role) or _is_sales_rep_like_role(token_role):
         return
     raise _error("SALES_REP_ACCESS_REQUIRED", 403)
 
@@ -122,6 +124,7 @@ def doctor_summary():
                 "email": sales_rep.get("email"),
                 "phone": sales_rep.get("phone"),
                 "jurisdiction": sales_rep.get("jurisdiction"),
+                "isPartner": bool(sales_rep.get("isPartner")),
             }
             if sales_rep
             else None
@@ -251,10 +254,10 @@ def admin_sales_rep_by_id(sales_rep_id: str):
 
     def action():
         user = _ensure_user()
-        token_role = (g.current_user.get("role") or "").lower()
-        role = (user.get("role") or "").lower()
+        token_role = _normalize_role(g.current_user.get("role"))
+        role = _normalize_role(user.get("role"))
         is_admin_like = token_role == "admin" or role == "admin"
-        is_sales_lead = token_role in ("sales_lead", "saleslead", "sales-lead")
+        is_sales_lead = token_role in ("sales_lead", "saleslead", "sales_lead")
         if not (is_admin_like or is_sales_lead):
             raise _error("ADMIN_ACCESS_REQUIRED", 403)
 
@@ -282,7 +285,11 @@ def admin_sales_rep_by_id(sales_rep_id: str):
                 "id": rep.get("id"),
                 "name": rep.get("name"),
                 "email": rep.get("email"),
-                "role": rep.get("role"),
+                "role": _normalize_role(
+                    (candidate.get("role") if (candidate := user_repository.find_by_email(str(rep.get("email") or ""))) else None)
+                    or ("sales_partner" if bool(rep.get("isPartner")) else rep.get("role"))
+                ),
+                "isPartner": bool(rep.get("isPartner")),
                 "userId": resolved_user_id,
             }
         }
@@ -615,5 +622,4 @@ def _error(message, status):
     err = ValueError(message)
     setattr(err, "status", status)
     return err
-
 

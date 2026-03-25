@@ -121,6 +121,7 @@ const isRep = (role) => {
   const normalized = normalizeRole(role);
   return (
     normalized === 'sales_rep' ||
+    normalized === 'sales_partner' ||
     normalized === 'rep' ||
     normalized === 'sales_lead' ||
     normalized === 'saleslead'
@@ -369,7 +370,7 @@ const buildAccountIndex = () => {
   try {
     userRepository.getAll().forEach((user) => {
       const role = normalizeRole(user?.role);
-      if (role === 'admin' || role === 'sales_rep' || role === 'rep') {
+      if (role === 'admin' || role === 'sales_rep' || role === 'sales_partner' || role === 'rep') {
         return;
       }
       const email = normalizeEmail(user?.email);
@@ -623,7 +624,7 @@ const getDoctorSummary = (req, res, next) => {
       return;
     }
 
-    if (role === 'sales_rep' || role === 'rep') {
+    if (role === 'sales_rep' || role === 'sales_partner' || role === 'rep') {
       const salesRepId = req.user.salesRepId || req.user.id;
       const referrals = referralRepository.findBySalesRepId(salesRepId);
       const doctorIds = referrals.map((referral) => referral.referrerDoctorId).filter(Boolean);
@@ -1204,13 +1205,16 @@ const getSalesRepById = async (req, res, next) => {
     const byLegacy = legacyUserId ? userRepository.findById(legacyUserId) : null;
     const byEmail = rep?.email ? userRepository.findByEmail(rep.email) : null;
     const resolvedUserId = (byRepId?.id || byLegacy?.id || byEmail?.id || null);
+    const isPartner = Boolean(rep?.isPartner || rep?.is_partner);
+    const resolvedRole = normalizeRole(byRepId?.role || byLegacy?.role || byEmail?.role || (isPartner ? 'sales_partner' : rep?.role || 'sales_rep'));
 
     return res.status(200).json({
       salesRep: {
         id: normalizedRepId,
         name: rep?.name || null,
         email: rep?.email || null,
-        role: rep?.role || null,
+        role: resolvedRole,
+        isPartner,
         userId: resolvedUserId,
       },
     });

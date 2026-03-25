@@ -7,11 +7,27 @@ const normalizeEmail = (value) => {
   return String(value).trim().toLowerCase();
 };
 
+const normalizeBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'y'
+      || normalized === 'on';
+  }
+  return false;
+};
+
 const ensureDefaults = (record) => {
   if (!record || typeof record !== 'object') {
     return record;
   }
-  const role = (record.role || '').toLowerCase() === 'rep' ? 'sales_rep' : (record.role || null);
+  const rawRole = String(record.role || '').trim().toLowerCase();
+  const role = rawRole === 'rep' || rawRole === 'sales_partner' ? 'sales_rep' : (record.role || null);
+  const isPartner = normalizeBooleanFlag(record.isPartner ?? record.is_partner);
   return {
     id: record.id || record.salesRepId || null,
     name: record.name || null,
@@ -19,6 +35,7 @@ const ensureDefaults = (record) => {
     phone: record.phone || null,
     status: record.status || null,
     role,
+    isPartner,
     ...record,
   };
 };

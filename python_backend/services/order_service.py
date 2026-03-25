@@ -79,6 +79,42 @@ _ship_time_average_lock = threading.Lock()
 _ship_time_average_cache: Dict[str, object] = {"data": None, "expiresAtMs": 0}
 
 
+def _normalize_bool(value: Any) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return False
+    return str(value or "").strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+def _normalize_role(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _is_sales_rep_role(value: Any) -> bool:
+    return _normalize_role(value) in ("sales_rep", "sales_partner", "rep")
+
+
+def _is_sales_access_role(value: Any) -> bool:
+    return _normalize_role(value) in ("admin", "sales_rep", "sales_partner", "rep", "sales_lead", "saleslead")
+
+
+def _resolve_rep_record_role(rep: Dict | None) -> str:
+    if not isinstance(rep, dict):
+        return "sales_rep"
+    if _normalize_bool(rep.get("isPartner") if "isPartner" in rep else rep.get("is_partner")):
+        return "sales_partner"
+    normalized = _normalize_role(rep.get("role"))
+    if normalized == "sales_partner":
+        return "sales_partner"
+    if normalized in ("sales_rep", "rep"):
+        return "sales_rep"
+    return normalized or "sales_rep"
+
+
 def _normalize_contact_form_email(value: Any) -> str:
     return str(value or "").strip().lower()
 
@@ -748,8 +784,8 @@ def _compute_allowed_sales_rep_ids(
             email = (user.get("email") or "").strip().lower()
             if not email or email not in rep_email_candidates:
                 continue
-            role = (user.get("role") or "").lower()
-            if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+            role = _normalize_role(user.get("role"))
+            if _is_sales_access_role(role):
                 allowed_rep_ids.add(str(user.get("id")))
 
     return allowed_rep_ids
@@ -1045,7 +1081,7 @@ def _resolve_sales_rep_context(doctor: Dict) -> Dict[str, Optional[str]]:
     rep = sales_rep_repository.find_by_id(rep_id)
     if not rep:
         rep_user = user_repository.find_by_id(rep_id)
-        if rep_user and (rep_user.get("role") or "").lower() == "sales_rep":
+        if rep_user and _is_sales_rep_role(rep_user.get("role")):
             rep = {
                 "id": rep_user.get("id"),
                 "name": rep_user.get("name") or "Sales Rep",
@@ -1134,12 +1170,12 @@ def create_order(
         )
 
     settings = settings_service.get_settings()
-    role = str(user.get("role") or "").strip().lower()
+    role = _normalize_role(user.get("role"))
 
     normalized_pricing_mode = str(pricing_mode or "").strip().lower()
     if normalized_pricing_mode not in ("retail", "wholesale"):
         normalized_pricing_mode = "wholesale"
-    if role not in ("admin", "sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
+    if not _is_sales_access_role(role):
         normalized_pricing_mode = "wholesale"
 
     test_override_enabled = bool(settings.get("testPaymentsOverrideEnabled", False))
@@ -2073,8 +2109,8 @@ def update_order_notes(*, order_id: str, actor: Dict, notes: Optional[str]) -> D
     """
     if not order_id:
         raise _service_error("ORDER_ID_REQUIRED", 400)
-    actor_role = str(actor.get("role") or "").strip().lower()
-    if actor_role not in ("admin", "sales_rep", "rep"):
+    actor_role = _normalize_role(actor.get("role"))
+    if actor_role not in ("admin", "sales_rep", "sales_partner", "rep"):
         raise _service_error("SALES_REP_ACCESS_REQUIRED", 403)
 
     text = None
@@ -2135,8 +2171,8 @@ def update_order_fields(
     """
     if not order_id:
         raise _service_error("ORDER_ID_REQUIRED", 400)
-    actor_role = str(actor.get("role") or "").strip().lower()
-    if actor_role not in ("admin", "sales_rep", "rep"):
+    actor_role = _normalize_role(actor.get("role"))
+    if actor_role not in ("admin", "sales_rep", "sales_partner", "rep"):
         raise _service_error("SALES_REP_ACCESS_REQUIRED", 403)
 
     def _sanitize_optional_text(value: Optional[str], *, max_len: int) -> Optional[str]:
@@ -2255,9 +2291,9 @@ def get_orders_for_sales_rep(
 
     doctors = []
     for user in users:
-        role = (user.get("role") or "").lower()
+        role = _normalize_role(user.get("role"))
         is_doctor = role in ("doctor", "test_doctor")
-        is_sales_rep_customer = include_sales_rep_customers and role in ("sales_rep", "rep")
+        is_sales_rep_customer = include_sales_rep_customers and role in ("sales_rep", "sales_partner", "rep")
         lead_type = _normalize_lead_type(user.get("leadType") or user.get("lead_type"))
         is_house_contact_user = include_house_contacts and lead_type in (
             "contact_form",
@@ -2526,7 +2562,7 @@ def get_orders_for_sales_rep(
                 pass
             elif local_role in ("doctor", "test_doctor"):
                 pass
-            elif include_sales_rep_customers and local_role in ("sales_rep", "rep"):
+            elif include_sales_rep_customers and _is_sales_rep_role(local_role):
                 pass
             else:
                 continue
@@ -3020,8 +3056,8 @@ def get_on_hold_orders_for_sales_rep(
 
 
 def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, object]:
-    actor_role = str((actor or {}).get("role") or "").strip().lower()
-    if actor_role not in ("admin", "sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
+    actor_role = _normalize_role((actor or {}).get("role"))
+    if not _is_sales_access_role(actor_role):
         raise _service_error("SALES_REP_ACCESS_REQUIRED", 403)
 
     normalized_target_user_id = str(target_user_id or "").strip()
@@ -3048,7 +3084,7 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
         return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
 
     def _is_sales_actor_role(value: object) -> bool:
-        return _normalize_role(value) in ("admin", "sales_rep", "rep", "sales_lead", "saleslead")
+        return _normalize_role(value) in ("admin", "sales_rep", "sales_partner", "rep", "sales_lead", "saleslead")
 
     def _resolve_sales_rep_id(user: Dict) -> Optional[str]:
         candidates = [
@@ -3844,17 +3880,14 @@ def get_sales_by_rep(
 
     def _compute_summary() -> Dict[str, Any]:
         users = user_repository.get_all()
-        def _norm_role(value: object) -> str:
-            return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
-
-        rep_like_roles = {"sales_rep", "rep", "admin", "sales_lead", "saleslead", "sales-lead"}
-        reps = [u for u in users if _norm_role(u.get("role")) in rep_like_roles]
+        rep_like_roles = {"sales_rep", "sales_partner", "rep", "admin", "sales_lead", "saleslead"}
+        reps = [u for u in users if _normalize_role(u.get("role")) in rep_like_roles]
         rep_records_list = sales_rep_repository.get_all()
         rep_records = {str(rep.get("id")): rep for rep in rep_records_list if rep.get("id")}
         user_lookup = {str(u.get("id")): u for u in users if u.get("id")}
         rep_lookup_by_id: Dict[str, Dict] = {}
         for u in users:
-            if _norm_role(u.get("role")) not in rep_like_roles:
+            if _normalize_role(u.get("role")) not in rep_like_roles:
                 continue
             user_id = str(u.get("id") or "").strip()
             if not user_id:
@@ -3863,14 +3896,14 @@ def get_sales_by_rep(
                 "id": user_id,
                 "name": u.get("name") or u.get("email") or "Sales Rep",
                 "email": u.get("email"),
-                "role": _norm_role(u.get("role")) or "sales_rep",
+                "role": _normalize_role(u.get("role")) or "sales_rep",
             }
         for rep in rep_records_list:
             rep_id = str(rep.get("id") or "").strip()
             if not rep_id:
                 continue
-            rep_role = _norm_role(rep.get("role"))
-            if rep_role and rep_role not in ("sales_rep", "rep"):
+            rep_role = _resolve_rep_record_role(rep)
+            if rep_role and rep_role not in ("sales_rep", "sales_partner"):
                 continue
             rep_lookup_by_id.setdefault(
                 rep_id,
@@ -3895,7 +3928,7 @@ def get_sales_by_rep(
 
         # Allow resolving a rep by their `users.sales_rep_id` external key (common in MySQL deployments).
         for u in users:
-            if _norm_role(u.get("role")) not in rep_like_roles:
+            if _normalize_role(u.get("role")) not in rep_like_roles:
                 continue
             user_id = str(u.get("id") or "").strip()
             if user_id:
@@ -3940,7 +3973,7 @@ def get_sales_by_rep(
             if legacy_id:
                 alias_to_rep_id[legacy_id] = rep_id
         for u in users:
-            if _norm_role(u.get("role")) not in rep_like_roles:
+            if _normalize_role(u.get("role")) not in rep_like_roles:
                 continue
             email = _norm_email(u.get("email"))
             if not email:
@@ -4188,7 +4221,7 @@ def get_sales_by_rep(
                             rep_id = str(prospect_rep_by_doctor.get(str(user_match.get("id")), "") or "").strip()
                             if rep_id and debug:
                                 debug_counts["prospectDoctorId"] += 1
-                        if not rep_id and _norm_role(user_match.get("role")) in rep_like_roles:
+                        if not rep_id and _normalize_role(user_match.get("role")) in rep_like_roles:
                             rep_id = str(user_match.get("id") or "").strip()
                             if rep_id and debug:
                                 debug_counts["userIsRep"] += 1
@@ -4912,12 +4945,9 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
     try:
         users = user_repository.get_all()
-        def _norm_role(value: object) -> str:
-            return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
-
-        rep_like_roles = {"sales_rep", "rep", "sales_lead", "saleslead"}
-        admins = [u for u in users if _norm_role(u.get("role")) == "admin"]
-        reps = [u for u in users if _norm_role(u.get("role")) in rep_like_roles]
+        rep_like_roles = {"sales_rep", "sales_partner", "rep", "sales_lead", "saleslead"}
+        admins = [u for u in users if _normalize_role(u.get("role")) == "admin"]
+        reps = [u for u in users if _normalize_role(u.get("role")) in rep_like_roles]
         rep_records_list = sales_rep_repository.get_all()
         report_tz = _get_report_timezone()
 
@@ -4926,7 +4956,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
         rep_lookup_by_id: Dict[str, Dict[str, object]] = {}
         for u in users:
-            role = _norm_role(u.get("role"))
+            role = _normalize_role(u.get("role"))
             if role not in rep_like_roles and role != "admin":
                 continue
             user_id = str(u.get("id") or "").strip()
@@ -4945,8 +4975,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             rep_id = str(rep.get("id") or "").strip()
             if not rep_id:
                 continue
-            rep_role = _norm_role(rep.get("role"))
-            if rep_role and rep_role not in ("sales_rep", "rep"):
+            rep_role = _resolve_rep_record_role(rep)
+            if rep_role and rep_role not in ("sales_rep", "sales_partner"):
                 continue
             rep_lookup_by_id.setdefault(
                 rep_id,
@@ -5052,7 +5082,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             recipient_rows[str(rep_id)] = {
                 "id": str(rep_id),
                 "name": rep.get("name") or "Sales Rep",
-                "role": (rep.get("role") or "sales_rep"),
+                "role": _normalize_role(rep.get("role")) or "sales_rep",
                 "amount": 0.0,
             }
         for rep in rep_records_list:
@@ -5067,7 +5097,12 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             canonical = alias_to_rep_id.get(str(rep_id), str(rep_id))
             if canonical in recipient_rows:
                 continue
-            recipient_rows[canonical] = {"id": canonical, "name": rep.get("name") or "Sales Rep", "role": "sales_rep", "amount": 0.0}
+            recipient_rows[canonical] = {
+                "id": canonical,
+                "name": rep.get("name") or "Sales Rep",
+                "role": _resolve_rep_record_role(rep),
+                "amount": 0.0,
+            }
         for admin in admins:
             admin_id = admin.get("id")
             if not admin_id:
@@ -5094,7 +5129,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             seen_dev_recipient_ids.add(user_id)
             dev_commission_recipient_ids.append(user_id)
             if user_id not in recipient_rows:
-                role = _norm_role(user.get("role")) or "user"
+                role = _normalize_role(user.get("role")) or "user"
                 recipient_rows[user_id] = {
                     "id": user_id,
                     "name": user.get("name") or user.get("email") or "User",
@@ -5112,7 +5147,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         unresolved_recipient_examples: List[Dict[str, object]] = []
 
         def _normalize_role(value: object) -> str:
-            return _norm_role(value)
+            return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
 
         def _normalize_rep_id(value: object) -> str:
             if value is None:

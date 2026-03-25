@@ -516,14 +516,14 @@ def _public_user_profile(user: dict) -> dict:
     }
 
 def _normalize_role(value: object) -> str:
-    return str(value or "").strip().lower()
+    return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
 
 def _is_admin_role(role: str) -> bool:
     return _normalize_role(role) == "admin"
 
 def _is_sales_rep_role(role: str) -> bool:
     normalized = _normalize_role(role)
-    return normalized in ("sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "sales-lead")
+    return normalized in ("sales_rep", "sales_partner", "test_rep", "rep", "sales_lead", "saleslead", "sales-lead")
 
 def _is_sales_lead_role(role: str) -> bool:
     normalized = _normalize_role(role)
@@ -539,7 +539,7 @@ def _require_sales_rep_or_admin():
 
 def _normalize_hand_delivery_role(role: object) -> str:
     normalized = _normalize_role(role)
-    if normalized in ("saleslead", "sales-lead"):
+    if normalized in ("saleslead", "sales_lead"):
         return "sales_lead"
     if normalized == "rep":
         return "sales_rep"
@@ -548,7 +548,7 @@ def _normalize_hand_delivery_role(role: object) -> str:
 
 def _is_hand_delivery_role(role: str) -> bool:
     normalized = _normalize_hand_delivery_role(role)
-    return normalized in ("sales_rep", "sales_lead", "admin")
+    return normalized in ("sales_rep", "sales_partner", "sales_lead", "admin")
 
 
 def _get_delegate_links_doctors() -> list[dict]:
@@ -830,7 +830,7 @@ def _compute_allowed_sales_rep_ids(
             if not email or email not in rep_email_candidates:
                 continue
             role = (user.get("role") or "").lower()
-            if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+            if role in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
                 allowed.add(str(user.get("id")))
 
     return {value for value in allowed if str(value or "").strip()}
@@ -931,7 +931,7 @@ def _compute_live_clients_payload(
         if not isinstance(user, dict):
             continue
         user_role = _normalize_role(user.get("role"))
-        if user_role in ("admin", "sales_lead", "saleslead", "sales-lead"):
+        if user_role in ("admin", "sales_partner", "sales_lead", "saleslead", "sales-lead"):
             uid = str(user.get("id") or "").strip()
             if uid:
                 sales_actor_by_id[uid] = user
@@ -1777,7 +1777,11 @@ def get_sales_rep_profile(sales_rep_id: str):
                 "initials": rep.get("initials"),
                 "salesCode": rep.get("salesCode"),
                 "status": rep.get("status"),
-                "role": rep.get("role"),
+                "role": _normalize_role(
+                    (user_repository.find_by_email(str(rep.get("email"))) or {}).get("role")
+                    or ("sales_partner" if bool(rep.get("isPartner")) else rep.get("role"))
+                ),
+                "isPartner": bool(rep.get("isPartner")),
                 "jurisdiction": rep.get("jurisdiction"),
                 "userId": resolved_user_id,
             }

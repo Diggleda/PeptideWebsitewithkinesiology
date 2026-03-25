@@ -45,6 +45,27 @@ def _normalize_bool(value: Any) -> bool:
     return text in ("1", "true", "yes", "y", "on")
 
 
+def _normalize_role(value: Any) -> str:
+    return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
+
+
+def _is_sales_rep_account_role(value: Any) -> bool:
+    return _normalize_role(value) in ("sales_rep", "sales_partner")
+
+
+def _is_sales_rep_like_role(value: Any) -> bool:
+    return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "admin")
+
+
+def _resolve_sales_user_role(sales_rep: Optional[Dict]) -> str:
+    if not isinstance(sales_rep, dict):
+        return "sales_rep"
+    is_partner = _normalize_bool(
+        sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
+    )
+    return "sales_partner" if is_partner else "sales_rep"
+
+
 def _normalize_delegate_color(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -476,6 +497,7 @@ def _register_sales_rep_account(
 
     hashed_password = bcrypt.hashpw(raw_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    resolved_user_role = _resolve_sales_user_role(sales_rep)
 
     user_record = user_repository.find_by_email(email)
     if user_record and user_record.get("password"):
@@ -488,7 +510,7 @@ def _register_sales_rep_account(
                 **user_record,
                 "name": name,
                 "password": hashed_password,
-                "role": "sales_rep",
+                "role": resolved_user_role,
                 "status": "active",
                 "phone": phone or user_record.get("phone"),
                 "salesRepId": sales_rep.get("id"),
@@ -510,7 +532,7 @@ def _register_sales_rep_account(
                 "email": email,
                 "phone": phone or sales_rep.get("phone"),
                 "password": hashed_password,
-                "role": "sales_rep",
+                "role": resolved_user_role,
                 "status": "active",
                 "salesRepId": sales_rep.get("id"),
                 "referralCredits": sales_rep.get("referralCredits") or 0,
@@ -550,7 +572,7 @@ def _register_sales_rep_account(
         {
             "id": user_record["id"],
             "email": user_record.get("email"),
-            "role": "sales_rep",
+            "role": resolved_user_role,
             "sid": user_record.get("sessionId"),
         }
     )
@@ -561,7 +583,7 @@ def _register_sales_rep_account(
             "salesRepId": updated_sales_rep.get("id"),
             "legacyUserId": updated_sales_rep.get("legacyUserId"),
             "email": updated_sales_rep.get("email"),
-            "role": "sales_rep",
+            "role": resolved_user_role,
             "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         },
     )
@@ -624,11 +646,11 @@ def login(data: Dict) -> Dict:
 
 
 def logout(user_id: str, role: Optional[str] = None) -> Dict:
-    normalized_role = (role or "").strip().lower()
+    normalized_role = _normalize_role(role)
     new_session_id = _new_session_id()
     now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    if normalized_role == "sales_rep":
+    if _is_sales_rep_account_role(normalized_role):
         user = user_repository.find_by_id(user_id) if user_id else None
         if user:
             user_repository.update(
@@ -711,8 +733,8 @@ def get_profile(user_id: str, role: Optional[str] = None) -> Dict:
     if user:
         return _sanitize_user(user)
 
-    normalized_role = (role or "").strip().lower()
-    if normalized_role == "sales_rep":
+    normalized_role = _normalize_role(role)
+    if _is_sales_rep_account_role(normalized_role):
         rep = sales_rep_repository.find_by_id(user_id)
         if rep:
             return _sanitize_sales_rep(rep)
@@ -848,7 +870,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
 
     saved = user_repository.update(updated) or updated
     try:
-        role = (saved.get("role") or "").strip().lower()
+        role = _normalize_role(saved.get("role"))
         if role in ("doctor", "test_doctor"):
             sales_prospect_repository.sync_contact_for_doctor(
                 doctor_id=str(saved.get("id") or ""),
@@ -864,7 +886,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
                 phone=saved.get("phone"),
                 previous_email=user.get("email"),
             )
-        if role in ("sales_rep", "rep", "admin"):
+        if _is_sales_rep_like_role(role):
             rep = sales_rep_repository.find_by_id(str(saved.get("id") or "")) if saved.get("id") else None
             if not rep and saved.get("email"):
                 rep = sales_rep_repository.find_by_email(str(saved.get("email") or ""))
@@ -944,11 +966,11 @@ def _sanitize_user(user: Dict) -> Dict:
         # render "Representative" contact details reliably.
         if not sales_rep:
             rep_user = user_repository.find_by_id(str(rep_id))
-            if rep_user and (rep_user.get("role") or "").lower() in ("sales_rep", "rep", "admin"):
+            if rep_user and _is_sales_rep_like_role(rep_user.get("role")):
                 sales_rep = rep_user
     else:
-        role = (sanitized.get("role") or "").lower()
-        if role in ("admin", "sales_rep"):
+        role = _normalize_role(sanitized.get("role"))
+        if role in ("admin", "sales_rep", "sales_partner"):
             email = sanitized.get("email") or ""
             sales_rep = sales_rep_repository.find_by_email(email) if email else None
             if not sales_rep:
@@ -956,12 +978,16 @@ def _sanitize_user(user: Dict) -> Dict:
             if sales_rep and not rep_id:
                 sanitized["salesRepId"] = sales_rep.get("id") or sanitized.get("salesRepId")
     if sales_rep:
+        is_partner = _normalize_bool(
+            sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
+        )
         sanitized["salesRep"] = {
             "id": sales_rep.get("id"),
             "name": sales_rep.get("name"),
             "email": sales_rep.get("email"),
             "phone": sales_rep.get("phone"),
             "jurisdiction": sales_rep.get("jurisdiction"),
+            "isPartner": is_partner,
         }
         if not sanitized.get("referralCode"):
             sales_code = sales_rep.get("salesCode")
@@ -1016,7 +1042,10 @@ def _sanitize_sales_rep(rep: Dict) -> Dict:
     sanitized = dict(rep)
     sanitized.pop("password", None)
     sanitized.pop("sessionId", None)
-    sanitized.setdefault("role", "sales_rep")
+    sanitized["isPartner"] = _normalize_bool(
+        sanitized.get("isPartner") if "isPartner" in sanitized else sanitized.get("is_partner")
+    )
+    sanitized["role"] = "sales_partner" if sanitized["isPartner"] else "sales_rep"
     sanitized.setdefault("salesRepId", sanitized.get("id"))
     sanitized.setdefault("salesRep", None)
     if sanitized.get("salesCode") and not sanitized.get("referralCode"):
@@ -1403,6 +1432,7 @@ def reset_password(data: Dict) -> Dict:
             if not rep:
                 raise _not_found("USER_NOT_FOUND")
             new_session_id = _new_session_id()
+            resolved_user_role = _resolve_sales_user_role(rep)
             legacy_id = rep.get("legacyUserId")
             linked_user = None
             if legacy_id:
@@ -1417,7 +1447,7 @@ def reset_password(data: Dict) -> Dict:
                         **linked_user,
                         "password": hashed_password,
                         "mustResetPassword": False,
-                        "role": "sales_rep",
+                        "role": resolved_user_role,
                         "salesRepId": rep.get("id") or linked_user.get("salesRepId"),
                         "sessionId": new_session_id,
                     }
@@ -1432,7 +1462,7 @@ def reset_password(data: Dict) -> Dict:
                         "email": rep_email,
                         "phone": rep.get("phone"),
                         "password": hashed_password,
-                        "role": "sales_rep",
+                        "role": resolved_user_role,
                         "status": "active",
                         "salesRepId": rep.get("id"),
                         "mustResetPassword": False,

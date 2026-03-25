@@ -39,6 +39,7 @@ const ensureSalesRole = (req, context = 'seamless') => {
   const role = normalizeRole(user?.role || req.user?.role);
   const isSalesRep =
     role === 'sales_rep'
+    || role === 'sales_partner'
     || role === 'test_rep'
     || role === 'rep'
     || role === 'sales_lead'

@@ -26,6 +26,7 @@ const {
   setTaxesByStateCsvDownloadedAt,
   getProductsCommissionCsvDownloadedAt,
   setProductsCommissionCsvDownloadedAt,
+  getDatabaseVisualizerMockPayload,
 } = require('../services/settingsService');
 const { env } = require('../config/env');
 const mysqlClient = require('../database/mysqlClient');
@@ -49,7 +50,7 @@ const isSalesLead = (role) => {
 };
 const isSalesRep = (role) => {
   const normalized = normalizeRole(role);
-  return normalized === 'sales_rep' || normalized === 'test_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead';
+  return normalized === 'sales_rep' || normalized === 'sales_partner' || normalized === 'test_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead';
 };
 
 const requireAdmin = (req, res, next) => {
@@ -656,6 +657,8 @@ router.get('/sales-reps/:salesRepId', authenticate, requireAdminOrSalesLead, asy
     users.find((candidate) => String(candidate?.salesRepId || '').trim() === String(rep.id || rep.salesRepId || '').trim())
     || (rep?.email ? userRepository.findByEmail(rep.email) : null)
     || null;
+  const isPartner = Boolean(rep?.isPartner || rep?.is_partner);
+  const effectiveRole = normalizeRole(resolvedUser?.role || (isPartner ? 'sales_partner' : rep.role || 'sales_rep'));
 
   return res.json({
     salesRep: {
@@ -663,7 +666,8 @@ router.get('/sales-reps/:salesRepId', authenticate, requireAdminOrSalesLead, asy
       name: rep.name || null,
       email: rep.email || null,
       phone: rep.phone || null,
-      role: normalizeRole(rep.role || 'sales_rep'),
+      role: effectiveRole,
+      isPartner,
       userId: resolvedUser?.id ? String(resolvedUser.id) : null,
       salesRepId: String(rep.id || rep.salesRepId || salesRepId),
     },
@@ -675,7 +679,7 @@ router.get('/structure/hand-delivery', authenticate, requireAdmin, async (_req, 
   const rows = (users || [])
     .filter((candidate) => {
       const role = normalizeRole(candidate?.role);
-      return role === 'sales_rep' || role === 'rep' || role === 'sales_lead' || role === 'saleslead' || role === 'admin';
+      return role === 'sales_rep' || role === 'sales_partner' || role === 'rep' || role === 'sales_lead' || role === 'saleslead' || role === 'admin';
     })
     .map((candidate) => {
       const jurisdiction = String(candidate?.jurisdiction || '').trim().toLowerCase() || null;
@@ -1000,6 +1004,25 @@ const buildLiveUsersPayload = () => {
 
 router.get('/live-users', authenticate, requireAdminOrSalesLead, async (_req, res) => {
   res.json(buildLiveUsersPayload());
+});
+
+router.get('/database-visualizer', authenticate, requireAdmin, async (req, res) => {
+  if (mysqlClient.isEnabled()) {
+    return res.status(501).json({
+      error: 'Node database visualizer only exposes mock data right now. Use the Python backend for live schema browsing.',
+    });
+  }
+
+  return res.json(
+    getDatabaseVisualizerMockPayload({
+      tableName: req.query?.table,
+      page: req.query?.page,
+      pageSize: req.query?.pageSize,
+      sortColumn: req.query?.sortColumn,
+      sortDirection: req.query?.sortDirection,
+      searchTerm: req.query?.search,
+    }),
+  );
 });
 
 router.get('/live-users/longpoll', authenticate, requireAdminOrSalesLead, async (_req, res) => {

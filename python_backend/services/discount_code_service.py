@@ -44,6 +44,7 @@ def seed_defaults() -> None:
             "allowed_roles": [
                 "admin",
                 "sales_rep",
+                "sales_partner",
                 "test_rep",
                 "test_reps",
                 "sales_lead",
@@ -72,6 +73,8 @@ def _canonical_role(role: Optional[str]) -> str:
     normalized = _normalize_role(role)
     if normalized == "test_reps":
         return "test_rep"
+    if normalized == "sales_partner":
+        return "sales_partner"
     if normalized == "saleslead":
         return "sales_lead"
     if normalized == "sales-lead":

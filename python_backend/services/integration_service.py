@@ -38,6 +38,18 @@ def _normalize_initials(value: str, fallback_name: str) -> str:
     return fallback_cleaned[:6] or "XX"
 
 
+def _normalize_bool(value: Any) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return False
+    text = str(value or "").strip().lower()
+    return text in ("1", "true", "yes", "y", "on")
+
+
 def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
     config = get_config()
     secret = config.integrations.get("google_sheets_secret")
@@ -63,6 +75,7 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
         initials = _normalize_initials(row.get("initials") or row.get("codePrefix") or "", name)
         sales_code = _sanitize_string(row.get("salesCode") or row.get("sales_code") or "", 8)
         sales_code = sales_code.upper() or None
+        is_partner = _normalize_bool(row.get("isPartner") if "isPartner" in row else row.get("is_partner"))
 
         user = user_repository.find_by_email(email)
 
@@ -76,6 +89,8 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
                 "territory": territory or existing.get("territory"),
                 "initials": initials,
                 "salesCode": sales_code or existing.get("salesCode"),
+                "isPartner": is_partner,
+                "role": "sales_rep",
             }
             if user and not existing.get("legacyUserId"):
                 update_payload["legacyUserId"] = user.get("id")
@@ -100,14 +115,22 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
                 "territory": territory,
                 "initials": initials,
                 "salesCode": sales_code,
+                "isPartner": is_partner,
+                "role": "sales_rep",
             }
             # Remove None ids so the repository can generate one only when unavoidable.
             if not insert_payload.get("id"):
                 insert_payload.pop("id", None)
             sales_rep_repository.insert(insert_payload)
 
-        if user and user.get("role") != "sales_rep":
-            user_repository.update({**user, "role": "sales_rep"})
+        if user:
+            normalized_role = _normalize_role(user.get("role"))
+            protected_roles = {"admin", "test_doctor", "doctor"}
+            overwriteable_roles = {"", "sales_rep", "sales_partner", "rep", None}
+            if normalized_role not in protected_roles and normalized_role in overwriteable_roles:
+                next_role = "sales_partner" if is_partner else "sales_rep"
+                if normalized_role != next_role:
+                    user_repository.update({**user, "role": next_role})
 
         upserted += 1
 
@@ -134,7 +157,7 @@ def _normalize_role(value: Any) -> str:
 
 def _ensure_sales_role(current_user: Dict[str, Any]) -> None:
     role = _normalize_role((current_user or {}).get("role"))
-    if role not in ("sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "admin"):
+    if role not in ("sales_partner", "sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "admin"):
         raise _service_error("Sales role access required", 403)
 
 

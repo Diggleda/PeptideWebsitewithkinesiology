@@ -296,6 +296,7 @@ const normalizeRole = (role) => {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
+  if (normalized === 'sales_partner') return 'sales_partner';
   if (normalized === 'sales_rep') return 'sales_rep';
   if (normalized === 'rep') return 'rep';
   if (normalized === 'sales_lead' || normalized === 'saleslead') return 'sales_lead';

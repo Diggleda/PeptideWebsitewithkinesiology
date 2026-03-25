@@ -390,7 +390,7 @@ const getOrders = async (req, res, next) => {
 const getOrdersForSalesRep = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
-    if (role !== 'sales_rep' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
+    if (role !== 'sales_rep' && role !== 'sales_partner' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
       return res.status(403).json({ error: 'Sales rep access required' });
     }
     const requestedScope = typeof req.query?.scope === 'string' ? req.query.scope.toLowerCase() : '';
@@ -434,7 +434,7 @@ const getOrdersForSalesRep = async (req, res, next) => {
 const getSalesRepOrderDetail = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
-    if (role !== 'sales_rep' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
+    if (role !== 'sales_rep' && role !== 'sales_partner' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
       return res.status(403).json({ error: 'Sales rep access required' });
     }
     const { orderId } = req.params;
@@ -582,7 +582,7 @@ const getOnHoldOrdersForSalesRep = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
     const isSalesLeadRole = role === 'sales_lead' || role === 'saleslead' || role === 'sales-lead';
-    const isSalesRepRole = role === 'sales_rep' || role === 'test_rep' || role === 'rep';
+    const isSalesRepRole = role === 'sales_rep' || role === 'sales_partner' || role === 'test_rep' || role === 'rep';
     if (role !== 'admin' && !isSalesLeadRole && !isSalesRepRole) {
       return res.status(403).json({ error: 'Sales access required' });
     }
@@ -688,7 +688,7 @@ const downloadInvoice = async (req, res, next) => {
 
     const role = normalizeRole(req.user?.role);
     const userEmail = normalizeEmail(req.user?.email);
-    const isAdminLike = role === 'admin' || role === 'sales_rep' || role === 'rep';
+    const isAdminLike = role === 'admin' || role === 'sales_rep' || role === 'sales_partner' || role === 'rep';
 
     if (!wooCommerceClient?.fetchOrderById || !wooCommerceClient?.fetchOrdersByEmail) {
       return res.status(503).json({ error: 'Invoice service unavailable' });

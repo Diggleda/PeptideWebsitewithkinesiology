@@ -74,6 +74,29 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
   `
+    CREATE TABLE IF NOT EXISTS sales_reps (
+      id VARCHAR(32) PRIMARY KEY,
+      legacy_user_id VARCHAR(32) NULL,
+      name VARCHAR(190) NOT NULL,
+      email VARCHAR(190) NULL UNIQUE,
+      phone VARCHAR(32) NULL,
+      territory VARCHAR(120) NULL,
+      initials VARCHAR(10) NULL,
+      sales_code VARCHAR(8) NULL UNIQUE,
+      role VARCHAR(32) NOT NULL DEFAULT 'sales_rep',
+      is_partner TINYINT(1) NOT NULL DEFAULT 0,
+      jurisdiction VARCHAR(64) NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'active',
+      referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
+      total_referrals INT NOT NULL DEFAULT 0,
+      first_order_bonus_granted_at DATETIME NULL,
+      total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0,
+      total_revenue_updated_at DATETIME NULL,
+      created_at DATETIME NULL,
+      updated_at DATETIME NULL
+    ) CHARACTER SET utf8mb4
+  `,
+  `
     CREATE TABLE IF NOT EXISTS bugs_reported (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       user_id VARCHAR(64) NULL,
@@ -696,6 +719,41 @@ const ensureOrderColumns = async () => {
   }
 };
 
+const ensureSalesRepColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const columns = [
+    {
+      name: 'is_partner',
+      ddl: `
+        ALTER TABLE sales_reps
+        ADD COLUMN is_partner TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+  ];
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'sales_reps'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL sales_reps column added');
+      }
+    } catch (error) {
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL sales_reps column');
+    }
+  }
+};
+
 const ensureSalesProspectColumns = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -1059,6 +1117,7 @@ const ensureSchema = async () => {
     await mysqlClient.execute(statement);
   }
   await ensureUserColumns();
+  await ensureSalesRepColumns();
   await ensureOrderColumns();
   await ensureSalesProspectColumns();
   await ensureBugReportColumns();

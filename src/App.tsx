@@ -262,7 +262,7 @@ interface User {
     primaryTaxonomy?: string | null;
     organizationName?: string | null;
   } | null;
-  role: "doctor" | "sales_rep" | "admin" | "test_doctor" | string;
+  role: "doctor" | "sales_rep" | "sales_partner" | "admin" | "test_doctor" | string;
   salesRepId?: string | null;
   salesRep?: {
     id: string;
@@ -270,6 +270,7 @@ interface User {
     email?: string | null;
     phone?: string | null;
     jurisdiction?: string | null;
+    isPartner?: boolean | null;
   } | null;
   referrerDoctorId?: string | null;
   phone?: string | null;
@@ -346,17 +347,46 @@ const isSalesLead = (role?: string | null) => {
 };
 const isTestRep = (role?: string | null) =>
   normalizeRole(role) === "test_rep";
+const isSalesPartner = (role?: string | null, isPartner?: boolean | null) =>
+  Boolean(isPartner) || normalizeRole(role) === "sales_partner";
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return (
     normalized !== "admin" &&
-    (normalized === "sales_rep" ||
+    (normalized === "sales_partner" ||
+      normalized === "sales_rep" ||
       normalized === "test_rep" ||
       normalized === "rep" ||
       normalized === "sales_lead" ||
       normalized === "saleslead" ||
       normalized === "sales-lead")
   );
+};
+const formatRoleLabel = (
+  role?: string | null,
+  options?: { isPartner?: boolean | null },
+) => {
+  const normalized = normalizeRole(role);
+  if (isSalesPartner(normalized, options?.isPartner)) return "Sales Partner";
+  if (normalized === "admin") return "Admin";
+  if (
+    normalized === "sales_lead" ||
+    normalized === "saleslead" ||
+    normalized === "sales-lead"
+  ) {
+    return "Sales Lead";
+  }
+  if (
+    normalized === "sales_rep" ||
+    normalized === "test_rep" ||
+    normalized === "salesrep" ||
+    normalized === "rep"
+  ) {
+    return "Sales Rep";
+  }
+  if (normalized === "doctor") return "Doctor";
+  if (normalized === "test_doctor") return "Test Doctor";
+  return role ? String(role) : "—";
 };
 const isTestDoctor = (role?: string | null) =>
   normalizeRole(role) === "test_doctor";
@@ -6515,7 +6545,7 @@ function MainApp() {
     };
     rawAccounts.forEach((acct: any) => {
       const acctRole = normalizeRole(acct?.role);
-      if (acctRole === "admin" || acctRole === "sales_rep" || acctRole === "rep") {
+      if (acctRole === "admin" || acctRole === "sales_partner" || acctRole === "sales_rep" || acctRole === "rep") {
         return;
       }
       const emailValue =
@@ -6573,7 +6603,7 @@ function MainApp() {
 
     rawAccounts.forEach((acct: any) => {
       const acctRole = normalizeRole(acct?.role);
-      if (acctRole === "admin" || acctRole === "sales_rep" || acctRole === "rep") {
+      if (acctRole === "admin" || acctRole === "sales_partner" || acctRole === "sales_rep" || acctRole === "rep") {
         return;
       }
       const email = normalizeEmailIdentity(
@@ -7327,6 +7357,7 @@ function MainApp() {
 				    const targetIdRaw = String(salesDoctorDetail?.doctorId || "").trim();
 				    const targetSalesRepId = (() => {
 				      if (
+				        targetRole === "sales_partner" ||
 				        targetRole === "sales_rep" ||
 				        targetRole === "rep" ||
 				        targetRole === "sales_lead" ||
@@ -7340,6 +7371,7 @@ function MainApp() {
 				      return targetIdRaw;
 				    })();
 				    const isTargetProspectOwner =
+				      targetRole === "sales_partner" ||
 				      targetRole === "sales_rep" ||
 				      targetRole === "rep" ||
 				      targetRole === "sales_lead" ||
@@ -7600,16 +7632,20 @@ function MainApp() {
 				          typeof repProfile?.email === "string" ? repProfile.email.trim() : "";
 				        if (!repName && !repEmail) return;
 				        const repUserId = String(repProfile?.userId || "").trim() || null;
-				        setSalesDoctorOwnerRepProfiles((current) => ({
-				          ...current,
-				          [ownerId]: {
-				            id: resolvedRepId,
-				            name: repName || null,
-				            email: repEmail || null,
-				            role: "sales_rep",
-				            userId: repUserId,
-				          },
-				        }));
+					        setSalesDoctorOwnerRepProfiles((current) => ({
+					          ...current,
+					          [ownerId]: {
+					            id: resolvedRepId,
+					            name: repName || null,
+					            email: repEmail || null,
+					            role:
+					              normalizeRole(
+					                repProfile?.role ||
+					                  (repProfile?.isPartner ? "sales_partner" : "sales_rep"),
+					              ) || "sales_rep",
+					            userId: repUserId,
+					          },
+					        }));
 			      } catch {
 			        // ignore; UI will show ID fallback
 			      } finally {
@@ -9459,6 +9495,7 @@ function MainApp() {
           console.warn("[Admin] Failed to hydrate live user detail", error);
           const normalizedRole = normalizeRole(entryRole || entry?.role || "");
           const isSalesRepModal =
+            normalizedRole === "sales_partner" ||
             normalizedRole === "sales_rep" ||
             normalizedRole === "rep" ||
             normalizedRole === "sales_lead" ||
@@ -11808,6 +11845,70 @@ function MainApp() {
   const [databaseVisualizerSortDirection, setDatabaseVisualizerSortDirection] = useState<"asc" | "desc">("asc");
   const [databaseVisualizerExpandedCells, setDatabaseVisualizerExpandedCells] = useState<Record<string, boolean>>({});
   const databaseVisualizerInFlightRef = useRef(false);
+  const databaseVisualizerTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [databaseVisualizerTabIndicator, setDatabaseVisualizerTabIndicator] = useState<{
+    left: number;
+    width: number;
+    opacity: number;
+  }>({ left: 0, width: 0, opacity: 0 });
+  const updateDatabaseVisualizerTabIndicator = useCallback(() => {
+    const container = databaseVisualizerTabsContainerRef.current;
+    if (!container) return;
+    const activeBtn =
+      container.querySelector<HTMLButtonElement>(
+        `button[data-database-visualizer-tab="${databaseVisualizerTab}"]`,
+      ) || container.querySelector<HTMLButtonElement>("button[data-database-visualizer-tab]");
+    if (!activeBtn) return;
+    const inset = 8;
+    const scrollLeft = container.scrollLeft || 0;
+    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
+    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
+    setDatabaseVisualizerTabIndicator({ left, width, opacity: 1 });
+  }, [databaseVisualizerTab]);
+  const setDatabaseVisualizerTabsContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      databaseVisualizerTabsContainerRef.current = node;
+      if (!node) return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          updateDatabaseVisualizerTabIndicator();
+        });
+      });
+    },
+    [updateDatabaseVisualizerTabIndicator],
+  );
+  useLayoutEffect(() => {
+    if (!databaseVisualizer?.selectedTable) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        updateDatabaseVisualizerTabIndicator();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [databaseVisualizer?.selectedTable, databaseVisualizerTab, updateDatabaseVisualizerTabIndicator]);
+  useEffect(() => {
+    if (!databaseVisualizer?.selectedTable) return;
+    updateDatabaseVisualizerTabIndicator();
+    const onResize = () => updateDatabaseVisualizerTabIndicator();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [databaseVisualizer?.selectedTable, databaseVisualizerTab, updateDatabaseVisualizerTabIndicator]);
+  useEffect(() => {
+    if (!databaseVisualizer?.selectedTable) return;
+    const container = databaseVisualizerTabsContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      updateDatabaseVisualizerTabIndicator();
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, [databaseVisualizer?.selectedTable, updateDatabaseVisualizerTabIndicator]);
   const [betaServiceSaving, setBetaServiceSaving] = useState<
     Partial<Record<PortalBetaServiceKey, boolean>>
   >({});
@@ -12737,7 +12838,7 @@ function MainApp() {
 
   const shouldShowLocalHandDeliveryNotice = useMemo(() => {
     const role = normalizeRole(user?.role);
-    if (!["sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"].includes(role)) {
+    if (!["sales_partner", "sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"].includes(role)) {
       return false;
     }
 
@@ -21863,22 +21964,26 @@ function MainApp() {
           : Math.min(preview.page * preview.pageSize, preview.filteredRowCount) - 1;
 
       return (
-        <div className="mb-4 border border-[#b7b7b7] bg-[#f3f3f3] text-slate-900">
-          <div className="flex items-center justify-between border-b border-[#b7b7b7] bg-gradient-to-b from-[#f8f8f8] to-[#dddddd] px-4 py-3">
+        <div className="mb-4 sales-rep-leads-card sales-rep-combined-card database-visualizer-card text-slate-900">
+          <div className="database-visualizer-card__header flex items-center justify-between border-b border-slate-200/60 px-4 py-3">
             <div>
               <h4 className="text-lg font-semibold text-slate-900">Database Visualizer</h4>
               <p className="text-xs text-slate-600">
                 Read-only viewer for the live database.
               </p>
             </div>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
+              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
               onClick={() => void fetchDatabaseVisualizer({ force: true })}
               disabled={databaseVisualizerLoading}
-              className="rounded border border-[#b7b7b7] bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 disabled:opacity-50"
+              aria-busy={databaseVisualizerLoading}
+              title="Refresh"
             >
               {databaseVisualizerLoading ? "Refreshing…" : "Refresh"}
-            </button>
+            </Button>
           </div>
 
           {databaseVisualizerError ? (
@@ -21891,7 +21996,7 @@ function MainApp() {
             <div className="px-4 py-3 text-sm text-slate-500">Loading live schema…</div>
           ) : payload ? (
             <div
-              className="overflow-hidden"
+              className="database-visualizer-layout overflow-hidden"
               style={{
                 display: "flex",
                 alignItems: "stretch",
@@ -21899,58 +22004,61 @@ function MainApp() {
               }}
             >
               <aside
-                className="border-r border-[#b7b7b7] bg-[#eef1f4] text-left"
+                className="database-visualizer-sidebar border-r border-[#b7b7b7] bg-[#eef1f4] text-left"
                 style={{
-                  flex: "0 0 260px",
-                  width: 260,
-                  minWidth: 260,
+                  flex: "0 0 auto",
+                  width: "fit-content",
+                  minWidth: 0,
+                  maxWidth: 220,
                 }}
               >
-                <div className="border-b border-[#c9c9c9] px-3 py-3">
-                  <p className="text-2xl font-semibold italic leading-none text-[#7d8fc9]">
-                    php<span className="text-[#f1a33c]">MyAdmin</span>
-                  </p>
-                  <p className="mt-2 text-xs text-slate-600">
-                    {payload.hostScope === "local" ? "localhost:3306" : "remote"} • {payload.databaseName || "PepPro"}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    {payload.refreshedAt ? `Refreshed ${formatDateTime(payload.refreshedAt)}` : "Live snapshot"} • {totalRows.toLocaleString()} rows tracked
-                  </p>
-                </div>
-                <div className="border-b border-[#c9c9c9] px-3 py-3">
-                  <input
-                    type="search"
-                    value={databaseVisualizerTableFilter}
-                    onChange={(event) => setDatabaseVisualizerTableFilter(event.target.value)}
-                    placeholder="Search tables..."
-                    className="h-9 w-full rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900 outline-none"
-                  />
-                </div>
-                <div className="max-h-[48rem] overflow-y-auto px-2 py-2">
-                  <div className="mb-2 text-sm font-semibold italic text-slate-600">
-                    {payload.databaseName || "PepPro"}
+                <div className="flex min-w-0 max-w-full flex-col items-stretch">
+                  <div className="border-b border-[#c9c9c9] px-3 py-3">
+                    <p className="max-w-full truncate text-xs text-slate-600">
+                      {payload.hostScope === "local" ? "localhost:3306" : "remote"} • {payload.databaseName || "PepPro"}
+                    </p>
+                    <p className="mt-1 max-w-full truncate text-[11px] text-slate-500">
+                      {payload.refreshedAt ? `Refreshed ${formatDateTime(payload.refreshedAt)}` : "Live snapshot"} • {totalRows.toLocaleString()} rows tracked
+                    </p>
                   </div>
-                  <div className="space-y-0.5">
-                    {tableCards.map((table) => {
-                      const isActive = table.name === selectedTableName;
-                      return (
-                        <button
-                          key={table.name}
+                  <div className="border-b border-[#c9c9c9] px-3 py-3">
+                    <input
+                      type="search"
+                      value={databaseVisualizerTableFilter}
+                      onChange={(event) => setDatabaseVisualizerTableFilter(event.target.value)}
+                      placeholder="Search tables..."
+                      className="database-visualizer-search-field database-visualizer-search-field--tables h-9 w-full max-w-full border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900 outline-none"
+                    />
+                  </div>
+                  <div className="max-h-[48rem] overflow-x-auto overflow-y-auto px-2 py-2">
+                    <div className="mb-2 text-sm font-semibold italic text-slate-600">
+                      {payload.databaseName || "PepPro"}
+                    </div>
+                    <div className="flex flex-col items-start gap-1">
+                      {tableCards.map((table) => {
+                        const isActive = table.name === selectedTableName;
+                        return (
+                          <button
+                            key={table.name}
                           type="button"
                           onClick={() => handleDatabaseVisualizerTableSelect(table.name)}
                           className={clsx(
-                            "flex w-full items-center justify-start gap-2 rounded-sm px-3 py-1.5 text-left text-sm",
-                            isActive ? "bg-[#d7dde3] text-slate-900" : "text-slate-800 hover:bg-[#e6eaee]",
+                            "database-visualizer-table-button inline-flex w-max max-w-none items-center gap-1.5 px-3 py-1.5 text-left text-sm",
+                            isActive
+                              ? "database-visualizer-table-button--active text-slate-900"
+                              : "text-slate-800",
                           )}
+                          style={{ textAlign: "left" }}
                         >
-                          <span className="text-slate-500">+</span>
-                          <span className="min-w-0 flex-1 truncate font-medium">{table.name}</span>
+                          <span className="shrink-0 text-slate-500">+</span>
+                          <span className="text-left font-medium whitespace-nowrap">{table.name}</span>
                         </button>
                       );
                     })}
-                    {tableCards.length === 0 ? (
-                      <div className="px-3 py-3 text-sm text-slate-500">No tables match that filter.</div>
-                    ) : null}
+                      {tableCards.length === 0 ? (
+                        <div className="px-3 py-3 text-sm text-slate-500">No tables match that filter.</div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </aside>
@@ -21960,35 +22068,53 @@ function MainApp() {
                 style={{
                   flex: "1 1 0%",
                   minWidth: 0,
-                  width: "calc(100% - 260px)",
                 }}
               >
                 {selectedTable ? (
                   <>
-                    <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-white">
+                    <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-[rgb(95,179,249)]">
                       Server: {payload.hostScope === "local" ? "localhost:3306" : "remote"} » Database: {payload.databaseName || "PepPro"} » Table: {selectedTable.name}
                     </div>
 
-                    <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#fbfbfb] to-[#d8d8d8] px-3 pt-1">
-                      <div className="flex flex-wrap gap-px">
-                        {detailTabs.map((tab) => {
-                          const isActive = databaseVisualizerTab === tab.id;
-                          return (
-                            <button
-                              key={tab.id}
-                              type="button"
-                              onClick={() => setDatabaseVisualizerTab(tab.id)}
-                              className={clsx(
-                                "border border-[#b7b7b7] border-b-0 px-4 py-2 text-sm font-semibold text-[#2d5f8b]",
-                                isActive
-                                  ? "bg-[#f7f7f7]"
-                                  : "bg-gradient-to-b from-[#fafafa] to-[#dcdcdc]",
-                              )}
-                            >
-                              {tab.label}
-                            </button>
-                          );
-                        })}
+                    <div className="border-b border-slate-200/60 bg-white/70 px-3">
+                      <div className="relative w-full account-tab-shell database-visualizer-tab-shell">
+                        <div
+                          className="w-full account-tab-scroll-container"
+                          ref={setDatabaseVisualizerTabsContainerRef}
+                          onScroll={updateDatabaseVisualizerTabIndicator}
+                        >
+                          <div className="flex items-center gap-4 pb-0 account-tab-row">
+                            {detailTabs.map((tab) => {
+                              const isActive = databaseVisualizerTab === tab.id;
+                              return (
+                                <button
+                                  key={tab.id}
+                                  type="button"
+                                  className={clsx(
+                                    "relative inline-flex min-h-[2.25rem] items-center px-3 pb-0 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                    isActive && "text-slate-900",
+                                  )}
+                                  data-database-visualizer-tab={tab.id}
+                                  aria-pressed={isActive}
+                                  onClick={() => setDatabaseVisualizerTab(tab.id)}
+                                >
+                                  <span className="inline-flex items-center">
+                                    {tab.label}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <span
+                          aria-hidden="true"
+                          className="account-tab-underline-indicator"
+                          style={{
+                            left: databaseVisualizerTabIndicator.left,
+                            width: databaseVisualizerTabIndicator.width,
+                            opacity: databaseVisualizerTabIndicator.opacity,
+                          }}
+                        />
                       </div>
                     </div>
 
@@ -22002,16 +22128,16 @@ function MainApp() {
                           SELECT * FROM <span className="text-[#5d2ca0]">`{selectedTable.name}`</span>
                         </div>
 
-                        <div className="rounded border border-[#c2c2c2] bg-gradient-to-b from-[#f0f0f0] to-[#d7d7d7] px-3 py-3">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <div className="database-visualizer-controls-panel rounded border border-[#c2c2c2] bg-gradient-to-b from-[#f0f0f0] to-[#d7d7d7] px-3 py-3">
+                          <div className="database-visualizer-controls-row flex flex-wrap items-center gap-3">
+                            <label className="flex items-center gap-1 text-sm text-slate-700">
                               <span>Number of rows:</span>
                               <select
                                 value={databaseVisualizerPageSize}
                                 onChange={(event) =>
                                   handleDatabaseVisualizerPageSizeChange(Number(event.target.value) || 25)
                                 }
-                                className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
+                                className="database-visualizer-select-field h-9 border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
                               >
                                 {[25, 50, 100].map((size) => (
                                   <option key={size} value={size}>
@@ -22035,16 +22161,16 @@ function MainApp() {
                                 }}
                                 placeholder="Search this table"
                                 disabled={preview.searchableColumns.length === 0}
-                                className="h-9 w-64 rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900 outline-none disabled:bg-slate-100"
+                                className="database-visualizer-search-field h-9 w-64 border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900 outline-none disabled:bg-slate-100"
                               />
                             </label>
 
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                            <label className="flex items-center gap-1 text-sm text-slate-700">
                               <span>Sort by key:</span>
                               <select
                                 value={activeSortColumn}
                                 onChange={(event) => handleDatabaseVisualizerSortColumnChange(event.target.value)}
-                                className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
+                                className="database-visualizer-select-field h-9 border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
                               >
                                 {previewColumns.map((columnName) => (
                                   <option key={columnName} value={columnName}>
@@ -22057,7 +22183,7 @@ function MainApp() {
                             <button
                               type="button"
                               onClick={handleDatabaseVisualizerSortDirectionToggle}
-                              className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900"
+                              className="database-visualizer-button h-9 px-3 text-sm font-semibold"
                             >
                               {databaseVisualizerSortDirection === "asc" ? "Asc" : "Desc"}
                             </button>
@@ -22065,7 +22191,7 @@ function MainApp() {
                               type="button"
                               onClick={handleDatabaseVisualizerSearchSubmit}
                               disabled={preview.searchableColumns.length === 0}
-                              className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                              className="database-visualizer-button h-9 px-3 text-sm font-semibold disabled:opacity-50"
                             >
                               Search
                             </button>
@@ -22073,7 +22199,7 @@ function MainApp() {
                               type="button"
                               onClick={handleDatabaseVisualizerSearchClear}
                               disabled={!databaseVisualizerSearchInput && !preview.searchTerm}
-                              className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                              className="database-visualizer-button h-9 px-3 text-sm font-semibold disabled:opacity-50"
                             >
                               Clear
                             </button>
@@ -22207,18 +22333,18 @@ function MainApp() {
                             type="button"
                             onClick={() => handleDatabaseVisualizerPageChange(preview.page - 1)}
                             disabled={preview.page <= 1}
-                            className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                            className="database-visualizer-button h-9 px-3 text-sm font-semibold disabled:opacity-50"
                           >
                             Previous
                           </button>
-                          <span className="text-xs text-slate-500">
+                          <span className="database-visualizer-pagination-meta text-xs text-slate-500">
                             {selectedTable.rowCount.toLocaleString()} rows • {relationshipCount.toLocaleString()} relationships
                           </span>
                           <button
                             type="button"
                             onClick={() => handleDatabaseVisualizerPageChange(preview.page + 1)}
                             disabled={preview.page >= preview.totalPages}
-                            className="h-9 rounded border border-[#b7b7b7] bg-white px-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                            className="database-visualizer-button h-9 px-3 text-sm font-semibold disabled:opacity-50"
                           >
                             Next
                           </button>
@@ -22727,7 +22853,11 @@ function MainApp() {
 		                                        id: rep.salesRepUserId || rep.salesRepId,
 		                                        name: rep.salesRepName,
 		                                        email: rep.salesRepEmail,
-		                                        role: "sales_rep",
+		                                        role:
+		                                          normalizeRole(
+		                                            rep?.role ||
+		                                              (rep?.isPartner ? "sales_partner" : "sales_rep"),
+		                                          ) || "sales_rep",
 		                                      },
 		                                      {
 		                                        salesRepWholesaleRevenue: Number(rep.wholesaleRevenue || 0),
@@ -22887,6 +23017,7 @@ function MainApp() {
 		                      if (salesLeadLiveUsersRoleFilter === "sales_rep") {
 		                        if (
 		                          ![
+		                            "sales_partner",
 		                            "sales_rep",
                                     "test_rep",
 		                            "salesrep",
@@ -23007,7 +23138,7 @@ function MainApp() {
 		                                <option value="all">All</option>
 		                                <option value="admin">Admin</option>
 		                                <option value="sales_lead">Sales Lead</option>
-		                                <option value="sales_rep">Sales / Test Rep</option>
+		                                <option value="sales_rep">Sales / Partner / Test Rep</option>
 		                                <option value="doctor">Doctors</option>
 		                                <option value="test_doctor">Test doctors</option>
 		                              </select>
@@ -23066,6 +23197,15 @@ function MainApp() {
 		                              label: "Admin",
 		                              style: {
 		                                backgroundColor: "rgb(61,43,233)",
+		                                color: "#ffffff",
+		                              } as CSSProperties,
+		                            };
+		                          }
+		                          if (isSalesPartner(role, Boolean(entry?.isPartner))) {
+		                            return {
+		                              label: "Sales Partner",
+		                              style: {
+		                                backgroundColor: "rgb(129,221,228)",
 		                                color: "#ffffff",
 		                              } as CSSProperties,
 		                            };
@@ -24198,7 +24338,7 @@ function MainApp() {
 		                      const role = String(entry?.role || "").toLowerCase().trim();
 		                      if (adminLiveUsersRoleFilter !== "all") {
 		                        if (adminLiveUsersRoleFilter === "sales_rep") {
-		                          if (!["sales_rep", "test_rep", "salesrep", "rep"].includes(role)) {
+		                          if (!["sales_partner", "sales_rep", "test_rep", "salesrep", "rep"].includes(role)) {
 	                            return false;
 	                          }
 	                        } else if (adminLiveUsersRoleFilter === "sales_lead") {
@@ -24316,7 +24456,7 @@ function MainApp() {
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
-	                              <option value="sales_rep">Sales / Test Rep</option>
+	                              <option value="sales_rep">Sales / Partner / Test Rep</option>
 	                              <option value="sales_lead">Sales Lead</option>
 	                              <option value="doctor">Doctors</option>
 	                              <option value="test_doctor">Test doctors</option>
@@ -24349,6 +24489,15 @@ function MainApp() {
 		                                    } as CSSProperties,
 		                                  };
 		                                }
+				                                if (isSalesPartner(role, Boolean(entry?.isPartner))) {
+				                                  return {
+				                                    label: "Sales Partner",
+				                                    style: {
+				                                      backgroundColor: "rgb(129,221,228)",
+				                                      color: "#ffffff",
+				                                    } as CSSProperties,
+				                                  };
+				                                }
 				                                if (role === "sales_rep" || role === "test_rep" || role === "salesrep" || role === "rep") {
 				                                  return {
 				                                    label: "Sales Rep",
@@ -24951,7 +25100,11 @@ function MainApp() {
 			                                      id: rep.salesRepUserId || rep.salesRepId,
 			                                      name: rep.salesRepName,
 			                                      email: rep.salesRepEmail,
-			                                      role: "sales_rep",
+			                                      role:
+			                                        normalizeRole(
+			                                          rep?.role ||
+			                                            (rep?.isPartner ? "sales_partner" : "sales_rep"),
+			                                        ) || "sales_rep",
 			                                    },
 			                                    {
 		                                      salesRepWholesaleRevenue: Number(
@@ -25915,7 +26068,7 @@ function MainApp() {
 						                                    key="role"
 						                                    className="whitespace-nowrap"
 						                                  >
-						                                    Role: {row.role || "— "}
+						                                    Role: {formatRoleLabel(row?.role, { isPartner: Boolean((row as any)?.isPartner) })}
 						                                  </span>,
 						                                );
 						                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
@@ -28270,12 +28423,15 @@ function MainApp() {
           return `Lead: ${rawName}`;
         }
         if (
+          landingAccountRole === "sales_partner" ||
           landingAccountRole === "sales_rep" ||
           landingAccountRole === "salesrep" ||
           landingAccountRole === "rep" ||
           landingAccountRole === "test_rep"
         ) {
-          return `Rep: ${rawName}`;
+          return landingAccountRole === "sales_partner"
+            ? `Sales Partner: ${rawName}`
+            : `Rep: ${rawName}`;
         }
         return rawName;
       })();
@@ -30746,12 +30902,13 @@ function MainApp() {
 						                          const role = normalizeRole(
 						                            ownerProfile?.role || "sales_rep",
 						                          );
+						                          const ownerRoleLabel = formatRoleLabel(role);
 					                          const content = name || ownerId;
 					                          const resolved = Boolean(name);
 					                          const canOpen = Boolean(userId);
 					                          return (
 					                            <span>
-					                              <span className="text-slate-600">Sales Rep: </span>
+					                              <span className="text-slate-600">{ownerRoleLabel}: </span>
 					                              {canOpen ? (
 					                                <button
 					                                  type="button"

@@ -3846,6 +3846,66 @@ html {
   bottom: 12px;
 }
 
+.database-visualizer-tab-shell.account-tab-shell {
+  min-height: 2.2rem;
+}
+
+.database-visualizer-tab-shell .account-tab-row {
+  min-height: 1rem;
+  padding-top: 7px;
+  padding-bottom: -15px;
+}
+
+.database-visualizer-tab-shell .account-tab-underline-indicator {
+  bottom: 5px;
+}
+
+@media (max-width: 768px) {
+  .database-visualizer-sidebar {
+    max-width: 105px !important;
+  }
+
+  .database-visualizer-controls-panel {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.2rem;
+  }
+
+  .database-visualizer-controls-row {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    width: max-content;
+    min-width: max-content;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .database-visualizer-controls-row > * {
+    flex-shrink: 0;
+  }
+
+  .database-visualizer-layout {
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .database-visualizer-layout > aside,
+  .database-visualizer-layout > div {
+    flex-shrink: 0;
+  }
+
+  .database-visualizer-layout > div {
+    min-width: min(960px, calc(100vw - 2rem));
+  }
+
+  .database-visualizer-pagination-meta {
+    display: none;
+  }
+}
+
 .account-tab-scroll-container {
   overflow-x: auto;
   overflow-y: visible;
@@ -4221,6 +4281,85 @@ html {
   margin-left: auto;
   margin-right: auto;
   box-sizing: border-box;
+}
+
+.database-visualizer-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.database-visualizer-card__header {
+  background: transparent;
+}
+
+.database-visualizer-search-field,
+.database-visualizer-select-field {
+  border-radius: var(--squircle-sm, 12px) !important;
+}
+
+.database-visualizer-select-field {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.25rem;
+}
+
+.database-visualizer-search-field--tables {
+  margin-top: 0.2rem;
+  margin-bottom: 0.2rem;
+  width: 100%;
+  min-width: 2rem;
+}
+
+.database-visualizer-button,
+.database-visualizer-table-button {
+  box-shadow: none;
+  border-width: 2px;
+  border-color: rgb(95, 179, 249);
+  background-color: rgba(255, 255, 255, 0.95);
+  color: rgb(95, 179, 249);
+  border-radius: var(--squircle-sm, 12px);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.database-visualizer-button:hover,
+.database-visualizer-table-button:hover {
+  box-shadow: none;
+  background-color: rgb(95, 179, 249);
+  color: #ffffff;
+  border-color: rgb(95, 179, 249);
+  filter: none !important;
+  transform: none !important;
+}
+
+.database-visualizer-button:focus-visible,
+.database-visualizer-table-button:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background-color: rgb(95, 179, 249);
+  color: #ffffff;
+  border-color: rgb(95, 179, 249);
+  filter: none !important;
+  transform: none !important;
+}
+
+.database-visualizer-button:disabled,
+.database-visualizer-table-button:disabled {
+  cursor: not-allowed;
+}
+
+.database-visualizer-table-button {
+  border-width: 2px;
+}
+
+.database-visualizer-table-button--active {
+  box-shadow: none;
+  background-color: rgb(95, 179, 249);
+  color: #ffffff;
+  border-color: rgb(95, 179, 249);
 }
 
 .sales-rep-card-controls {

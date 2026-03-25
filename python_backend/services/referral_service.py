@@ -62,6 +62,14 @@ DELETED_USER_ID = "0000000000000"
 DELETED_USER_NAME = "Deleted"
 
 
+def _normalize_role(value: object) -> str:
+    return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
+
+
+def _is_sales_rep_like_role(value: object) -> bool:
+    return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "admin")
+
+
 def _has_woo_order_for_email(email: str) -> bool:
     normalized = _sanitize_email(email) or None
     if not normalized:
@@ -666,7 +674,7 @@ def _ensure_sales_rep(sales_rep_id: Optional[str]) -> Dict:
         return rep
 
     user = user_repository.find_by_id(sales_rep_id)
-    if user and user.get("role") == "sales_rep":
+    if user and _is_sales_rep_like_role(user.get("role")):
         return sales_rep_repository.insert(
             {
                 "id": sales_rep_id,
@@ -946,8 +954,8 @@ def _resolve_sales_rep_id(identifier: Optional[str]) -> Optional[str]:
     except Exception:
         user = None
     if user and isinstance(user, dict):
-        role = (user.get("role") or "").lower()
-        if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+        role = _normalize_role(user.get("role"))
+        if _is_sales_rep_like_role(role):
             rep_id = str(user.get("salesRepId") or "").strip()
             if rep_id:
                 return rep_id
@@ -989,7 +997,7 @@ def _resolve_user_id(identifier: Optional[str]) -> Optional[str]:
 
     user = user_repository.find_by_id(identifier)
     if user:
-        if (user.get("role") or "").lower() == "sales_rep" and user.get("salesRepId"):
+        if _is_sales_rep_like_role(user.get("role")) and user.get("salesRepId"):
             return user.get("salesRepId")
         return user.get("id")
 

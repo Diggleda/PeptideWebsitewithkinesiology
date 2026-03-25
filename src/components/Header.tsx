@@ -21,7 +21,7 @@ import {
   buildResearchSupplyLinkUrl,
 } from '../lib/researchSupplyLinks';
 
-const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
+const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
 const isSalesLead = (role?: string | null) => {
   const normalized = normalizeRole(role);
@@ -29,7 +29,7 @@ const isSalesLead = (role?: string | null) => {
 };
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
-  return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'test_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead' || normalized === 'sales-lead');
+  return normalized !== 'admin' && (normalized === 'sales_partner' || normalized === 'sales_rep' || normalized === 'test_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead');
 };
 const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);

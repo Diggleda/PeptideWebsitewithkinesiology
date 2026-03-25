@@ -50,6 +50,18 @@ def _normalize_jurisdiction(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _normalize_bool(value) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return False
+    text = str(value or "").strip().lower()
+    return text in ("1", "true", "yes", "y", "on")
+
+
 def _ensure_defaults(rep: Dict) -> Dict:
     normalized = dict(rep)
     normalized.setdefault("id", rep.get("id") or _generate_id())
@@ -62,12 +74,16 @@ def _ensure_defaults(rep: Dict) -> Dict:
     normalized.setdefault("phone", normalized.get("phone") or None)
     normalized.setdefault("territory", normalized.get("territory") or None)
     normalized["salesCode"] = _normalize_sales_code(normalized.get("salesCode") or normalized.get("sales_code"))
+    normalized["isPartner"] = _normalize_bool(
+        normalized.get("isPartner") if "isPartner" in normalized else normalized.get("is_partner")
+    )
     normalized["jurisdiction"] = _normalize_jurisdiction(
         normalized.get("jurisdiction") or normalized.get("Jurisdiction")
     )
     # Passwords are stored only in `users`; never persist them in `sales_reps`.
     normalized["password"] = None
-    normalized.setdefault("role", normalized.get("role") or "sales_rep")
+    raw_role = str(normalized.get("role") or "sales_rep").strip().lower()
+    normalized["role"] = "sales_rep" if raw_role in ("rep", "sales_partner") else (normalized.get("role") or "sales_rep")
     normalized["referralCredits"] = float(normalized.get("referralCredits") or 0)
     normalized["totalReferrals"] = int(normalized.get("totalReferrals") or 0)
     normalized["totalRevenueToDate"] = float(normalized.get("totalRevenueToDate") or normalized.get("total_revenue_to_date") or 0)
@@ -181,6 +197,7 @@ def insert(rep: Dict) -> Dict:
                 initials,
                 sales_code,
                 role,
+                is_partner,
                 jurisdiction,
                 status,
                 referral_credits,
@@ -198,6 +215,7 @@ def insert(rep: Dict) -> Dict:
                 %(initials)s,
                 %(sales_code)s,
                 %(role)s,
+                %(is_partner)s,
                 %(jurisdiction)s,
                 %(status)s,
                 %(referral_credits)s,
@@ -214,6 +232,7 @@ def insert(rep: Dict) -> Dict:
                 initials = VALUES(initials),
                 sales_code = VALUES(sales_code),
                 role = VALUES(role),
+                is_partner = VALUES(is_partner),
                 jurisdiction = VALUES(jurisdiction),
                 status = VALUES(status),
                 referral_credits = VALUES(referral_credits),
@@ -252,6 +271,7 @@ def update(rep: Dict) -> Optional[Dict]:
                 initials = %(initials)s,
                 sales_code = %(sales_code)s,
                 role = %(role)s,
+                is_partner = %(is_partner)s,
                 jurisdiction = %(jurisdiction)s,
                 status = %(status)s,
                 referral_credits = %(referral_credits)s,
@@ -295,6 +315,7 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
             "territory": row.get("territory"),
             "initials": row.get("initials"),
             "salesCode": row.get("sales_code") or row.get("salesCode"),
+            "isPartner": row.get("is_partner"),
             "status": row.get("status"),
             "role": row.get("role"),
             "jurisdiction": row.get("jurisdiction"),
@@ -323,6 +344,7 @@ def _to_db_params(rep: Dict) -> Dict:
         "initials": rep.get("initials"),
         "sales_code": rep.get("salesCode"),
         "role": rep.get("role"),
+        "is_partner": 1 if _normalize_bool(rep.get("isPartner") if "isPartner" in rep else rep.get("is_partner")) else 0,
         "jurisdiction": _normalize_jurisdiction(rep.get("jurisdiction")),
         "status": rep.get("status"),
         "referral_credits": float(rep.get("referralCredits") or 0),
@@ -389,4 +411,3 @@ def _generate_id() -> str:
     from time import time
 
     return str(int(time() * 1000))
-

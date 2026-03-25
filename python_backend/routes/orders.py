@@ -204,7 +204,7 @@ def list_orders():
 def list_orders_for_sales_rep():
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+        if role not in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
@@ -239,7 +239,7 @@ def list_orders_for_sales_rep():
 def list_on_hold_orders_for_sales_rep():
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+        if role not in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
@@ -268,7 +268,7 @@ def list_on_hold_orders_for_sales_rep():
 def get_sales_rep_order_detail(order_id: str):
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+        if role not in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
@@ -289,7 +289,7 @@ def get_sales_rep_order_detail(order_id: str):
 def get_sales_modal_detail(user_id: str):
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+        if role not in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
@@ -796,7 +796,7 @@ def patch_order(order_id: str):
     def action():
         actor = g.current_user or {}
         role = (actor.get("role") or "").lower()
-        if role not in ("admin", "sales_rep", "rep"):
+        if role not in ("admin", "sales_rep", "sales_partner", "rep"):
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
@@ -861,7 +861,7 @@ def download_invoice(order_id: str) -> Response:
             billing_email = (woo_order.get("billing") or {}).get("email") or ""
         billing_email = str(billing_email or "").strip().lower()
 
-        is_admin_like = role in ("admin", "sales_rep", "rep")
+        is_admin_like = role in ("admin", "sales_rep", "sales_partner", "rep")
         if not is_admin_like:
             # Avoid leaking existence of other customers' orders.
             if not user_email or not billing_email or user_email != billing_email:

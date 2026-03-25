@@ -111,7 +111,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         PDO::ATTR_EMULATE_PREPARES => false,
       ]
     );
-    $q = $pdo->query('SELECT sales_code, initials, name, email, phone, territory, updatedAt FROM sales_reps ORDER BY updatedAt DESC LIMIT 200');
+    $salesRepsCols = get_table_columns($pdo, 'sales_reps');
+    $hasIsPartner = in_array('is_partner', $salesRepsCols, true);
+    $updatedAtSelect = in_array('updatedAt', $salesRepsCols, true)
+      ? 'updatedAt'
+      : (in_array('updated_at', $salesRepsCols, true) ? 'updated_at AS updatedAt' : 'NULL AS updatedAt');
+    $isPartnerSelect = $hasIsPartner ? 'is_partner AS isPartner' : '0 AS isPartner';
+    $q = $pdo->query('SELECT sales_code, initials, name, email, phone, territory, ' . $isPartnerSelect . ', ' . $updatedAtSelect . ' FROM sales_reps ORDER BY updatedAt DESC LIMIT 200');
     respond(200, ['ok' => true, 'salesReps' => $q->fetchAll()]);
   } catch (Throwable $e) {
     respond(500, ['ok' => false, 'error' => 'DB_ERROR', 'detail' => $e->getMessage()]);
@@ -152,6 +158,13 @@ function derive_initials(string $initials, string $name, string $sales_code): st
   return str_pad($ini, 2, 'X');
 }
 
+function normalize_partner_flag($value): int {
+  if (is_bool($value)) return $value ? 1 : 0;
+  if (is_int($value) || is_float($value)) return ((float)$value !== 0.0) ? 1 : 0;
+  $normalized = strtolower(trim((string)$value));
+  return in_array($normalized, ['1', 'true', 'yes', 'y', 'on'], true) ? 1 : 0;
+}
+
 $clean   = [];
 $errors  = [];
 $results = [];
@@ -166,6 +179,7 @@ foreach ($body['salesReps'] as $i => $r) {
   // accept either salesCode or sales_code from the Sheet
   $sales_code = strtoupper(trim((string)($r['sales_code'] ?? $r['salesCode'] ?? '')));
   $initials   = derive_initials((string)($r['initials'] ?? ''), $name, $sales_code);
+  $is_partner = normalize_partner_flag($r['is_partner'] ?? $r['isPartner'] ?? 0);
 
   if ($name === '' && $email === '' && $sales_code === '') {
     $errors[] = "Row $i: empty record";
@@ -185,7 +199,7 @@ foreach ($body['salesReps'] as $i => $r) {
     }
   }
 
-  $clean[] = ['row_index' => $i] + compact('sales_code','initials','name','email','phone','territory');
+  $clean[] = ['row_index' => $i] + compact('sales_code','initials','name','email','phone','territory','is_partner');
 }
 
 if (!empty($duplicateEmails)) {
@@ -253,6 +267,7 @@ try {
     // If we can't introspect columns, continue with the legacy insert shape below.
   }
   $hasSalesRepsId = in_array('id', $salesRepsCols, true);
+  $hasIsPartner = in_array('is_partner', $salesRepsCols, true);
   $hasUpdatedAtCamel = in_array('updatedAt', $salesRepsCols, true);
   $hasUpdatedAtSnake = in_array('updated_at', $salesRepsCols, true);
   $hasCreatedAtSnake = in_array('created_at', $salesRepsCols, true);
@@ -288,6 +303,10 @@ try {
   $insertCols[] = 'email';      $valuesSql[] = ':email';
   $insertCols[] = 'phone';      $valuesSql[] = ':phone';
   $insertCols[] = 'territory';  $valuesSql[] = ':territory';
+  if ($hasIsPartner) {
+    $insertCols[] = 'is_partner';
+    $valuesSql[] = ':is_partner';
+  }
   if ($hasCreatedAtSnake) {
     $insertCols[] = 'created_at';
     $valuesSql[] = 'NOW()';
@@ -308,6 +327,7 @@ try {
     'phone = VALUES(phone)',
     'territory = VALUES(territory)',
   ];
+  if ($hasIsPartner) $updates[] = 'is_partner = VALUES(is_partner)';
   if ($hasUpdatedAtCamel) $updates[] = 'updatedAt = NOW()';
   if ($hasUpdatedAtSnake) $updates[] = 'updated_at = NOW()';
 
@@ -344,7 +364,7 @@ try {
            END,
            role = CASE
              WHEN TRIM(LOWER(users.role)) IN ("admin","test_doctor","doctor") THEN users.role
-             WHEN TRIM(LOWER(users.role)) NOT IN ("sales_rep","rep","") THEN users.role
+             WHEN TRIM(LOWER(users.role)) NOT IN ("sales_rep","sales_partner","rep","") THEN users.role
              ELSE VALUES(role)
            END'
       : 'INSERT INTO users (id, name, email, role, phone, status, created_at, last_login_at)
@@ -354,7 +374,7 @@ try {
            phone = VALUES(phone),
            role = CASE
              WHEN TRIM(LOWER(users.role)) IN ("admin","test_doctor","doctor") THEN users.role
-             WHEN TRIM(LOWER(users.role)) NOT IN ("sales_rep","rep","") THEN users.role
+             WHEN TRIM(LOWER(users.role)) NOT IN ("sales_rep","sales_partner","rep","") THEN users.role
              ELSE VALUES(role)
            END'
   );
@@ -432,6 +452,7 @@ try {
         ':phone'      => $rec['phone'],
         ':territory'  => $rec['territory'],
       ];
+      if ($hasIsPartner) $params[':is_partner'] = $rec['is_partner'];
       if ($hasSalesRepsId) $params[':id'] = $salesRepId;
 
       $stmt->execute($params);
@@ -492,11 +513,12 @@ try {
         $user = $fetchUser->fetch();
         $role = trim(strtolower((string)($user['role'] ?? '')));
         $protectedRoles = ['admin', 'test_doctor', 'doctor'];
-        $allowedOverwrite = ['', 'sales_rep', 'rep', null];
+        $allowedOverwrite = ['', 'sales_rep', 'sales_partner', 'rep', null];
         $candidateId = $user['id'] ?? bin2hex(random_bytes(16));
         $existingUserSalesRepId = $hasUserSalesRepId ? trim((string)($user['sales_rep_id'] ?? '')) : '';
         $shouldAttachSalesRepId = $hasUserSalesRepId && $salesRepId !== null && $salesRepId !== '' && $existingUserSalesRepId === '';
         $salesRepIdParam = $shouldAttachSalesRepId ? $salesRepId : null;
+        $syncedUserRole = ((int)$rec['is_partner'] === 1) ? 'sales_partner' : 'sales_rep';
 
         // If role is protected or a custom non-rep role, skip user sync entirely.
         if (in_array($role, $protectedRoles, true)) {
@@ -507,7 +529,7 @@ try {
             ':id' => $candidateId,
             ':name' => $rec['name'],
             ':email' => $rec['email'],
-            ':role' => $role ?: 'sales_rep',
+            ':role' => $role ?: $syncedUserRole,
             ':phone' => $rec['phone'],
             ':status' => 'active',
           ];
@@ -520,7 +542,7 @@ try {
             ':id' => $candidateId,
             ':name' => $rec['name'],
             ':email' => $rec['email'],
-            ':role' => 'sales_rep',
+            ':role' => $syncedUserRole,
             ':phone' => $rec['phone'],
             ':status' => 'active',
           ];
@@ -558,6 +580,7 @@ try {
     $results[] = [
       'salesCode' => $rec['sales_code'],
       'status'    => 'upserted',
+      'isPartner' => ((int)$rec['is_partner'] === 1),
       'salesRepId' => $salesRepId,
       'userId' => $userId,
     ];

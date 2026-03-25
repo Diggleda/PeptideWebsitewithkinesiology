@@ -227,7 +227,7 @@ def list_sales_tracking_users_for_admin() -> List[Dict]:
         return [
             user
             for user in _load()
-            if str(user.get("role") or "").strip().lower() in ("doctor", "test_doctor", "sales_rep", "rep")
+            if str(user.get("role") or "").strip().lower() in ("doctor", "test_doctor", "sales_rep", "sales_partner", "rep")
         ]
 
     rows = mysql_client.fetch_all(
@@ -252,7 +252,7 @@ def list_sales_tracking_users_for_admin() -> List[Dict]:
             office_country,
             profile_image_url
         FROM users
-        WHERE LOWER(COALESCE(role, '')) IN ('doctor', 'test_doctor', 'sales_rep', 'rep')
+        WHERE LOWER(COALESCE(role, '')) IN ('doctor', 'test_doctor', 'sales_rep', 'sales_partner', 'rep')
         """
     )
     return [_row_to_user(row) for row in rows or []]

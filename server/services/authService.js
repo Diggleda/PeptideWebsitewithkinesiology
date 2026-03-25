@@ -98,6 +98,7 @@ const normalizeRole = (role) => {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
+  if (normalized === 'sales_partner') return 'sales_partner';
   if (normalized === 'sales_rep') return 'sales_rep';
   if (normalized === 'rep') return 'rep';
   if (normalized === 'sales_lead' || normalized === 'saleslead') return 'sales_lead';
@@ -195,6 +196,7 @@ const sanitizeUser = (user) => {
       email: normalizeOptionalString(rep.email),
       phone: normalizeOptionalString(rep.phone),
       jurisdiction: normalizeOptionalString(rep.jurisdiction),
+      isPartner: normalizeBooleanFlag(rep.isPartner ?? rep.is_partner),
     };
   };
 
@@ -212,7 +214,7 @@ const sanitizeUser = (user) => {
       repRecord = salesRepRepository.findById(repId);
     }
 
-    if (!repRecord && (userRole === 'sales_rep' || userRole === 'rep' || userRole === 'sales_lead')) {
+    if (!repRecord && (userRole === 'sales_rep' || userRole === 'sales_partner' || userRole === 'rep' || userRole === 'sales_lead')) {
       repRecord = salesRepRepository.findByEmail(repEmailCandidate);
     }
 
@@ -479,7 +481,11 @@ const register = async ({
     }
   }
 
-  const role = isAdminEmail ? 'admin' : (isSalesRepEmail ? 'sales_rep' : 'doctor');
+  const role = isAdminEmail
+    ? 'admin'
+    : (isSalesRepEmail
+      ? (normalizeBooleanFlag(salesRepAccount?.isPartner ?? salesRepAccount?.is_partner) ? 'sales_partner' : 'sales_rep')
+      : 'doctor');
   const resolvedDoctorSalesRepId = role === 'doctor'
     ? resolveSalesRepIdFromReferralCode(normalizedCode)
     : null;
@@ -711,7 +717,7 @@ const updateProfile = async (userId, data) => {
   );
 
   const normalizedRole = normalizeRole(updated.role);
-  if (normalizedRole === 'sales_rep' && updated.salesRepId) {
+  if ((normalizedRole === 'sales_rep' || normalizedRole === 'sales_partner') && updated.salesRepId) {
     salesRepRepository.update({
       id: updated.salesRepId,
       phone: updated.phone,
