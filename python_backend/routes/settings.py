@@ -59,6 +59,20 @@ def _mysql_database_name() -> str:
     return str(getattr(config, "mysql", {}).get("database") or "").strip()
 
 
+def _mysql_host_name() -> str:
+    config = get_config()
+    return str(getattr(config, "mysql", {}).get("host") or "").strip()
+
+
+def _mysql_port_number() -> int | None:
+    config = get_config()
+    try:
+        port = int(getattr(config, "mysql", {}).get("port") or 0)
+    except (TypeError, ValueError):
+        return None
+    return port if port > 0 else None
+
+
 def _mysql_quote_identifier(value: object) -> str:
     name = str(value or "").strip()
     if not name or not re.fullmatch(r"[A-Za-z0-9_]+", name):
@@ -467,6 +481,8 @@ def _load_database_visualizer_payload(
     return {
         "mysqlEnabled": True,
         "databaseName": database_name,
+        "databaseHost": _mysql_host_name() or None,
+        "databasePort": _mysql_port_number(),
         "hostScope": _mysql_host_scope(),
         "refreshedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "tables": tables,

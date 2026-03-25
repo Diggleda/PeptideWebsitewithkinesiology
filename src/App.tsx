@@ -7192,6 +7192,8 @@ function MainApp() {
   type DatabaseVisualizerPayload = {
     mysqlEnabled: boolean;
     databaseName: string | null;
+    databaseHost: string | null;
+    databasePort: number | null;
     hostScope: "local" | "remote";
     refreshedAt: string | null;
     tables: DatabaseVisualizerTableSummary[];
@@ -12134,6 +12136,14 @@ function MainApp() {
         databaseName:
           typeof payload?.databaseName === "string" && payload.databaseName.trim()
             ? payload.databaseName.trim()
+            : null,
+        databaseHost:
+          typeof payload?.databaseHost === "string" && payload.databaseHost.trim()
+            ? payload.databaseHost.trim()
+            : null,
+        databasePort:
+          Number.isFinite(Number(payload?.databasePort)) && Number(payload.databasePort) > 0
+            ? Number(payload.databasePort)
             : null,
         hostScope: payload?.hostScope === "remote" ? "remote" : "local",
         refreshedAt:
@@ -22073,7 +22083,9 @@ function MainApp() {
                 {selectedTable ? (
                   <>
                     <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-[rgb(95,179,249)]">
-                      Server: {payload.hostScope === "local" ? "localhost:3306" : "remote"} » Database: {payload.databaseName || "PepPro"} » Table: {selectedTable.name}
+                      Server: {payload.databaseHost || (payload.hostScope === "local" ? "localhost" : "remote")}
+                      {payload.databasePort ? `:${payload.databasePort}` : ""}
+                      {" "}» Database: {payload.databaseName || "PepPro"} » Table: {selectedTable.name}
                     </div>
 
                     <div className="border-b border-slate-200/60 bg-white/70 px-3">

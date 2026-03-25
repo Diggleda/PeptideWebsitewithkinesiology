@@ -80,6 +80,32 @@ function get_table_columns(PDO $pdo, string $table): array {
   return $cols;
 }
 
+/** Identify the live database target used by this webhook connection. */
+function get_db_identity(PDO $pdo): array {
+  try {
+    $stmt = $pdo->query('SELECT DATABASE() AS database_name, @@hostname AS server_hostname, @@port AS server_port');
+    $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+    if (!is_array($row)) {
+      return [
+        'databaseName' => null,
+        'serverHostname' => null,
+        'serverPort' => null,
+      ];
+    }
+    return [
+      'databaseName' => isset($row['database_name']) ? (string)$row['database_name'] : null,
+      'serverHostname' => isset($row['server_hostname']) ? (string)$row['server_hostname'] : null,
+      'serverPort' => isset($row['server_port']) ? (int)$row['server_port'] : null,
+    ];
+  } catch (Throwable $e) {
+    return [
+      'databaseName' => null,
+      'serverHostname' => null,
+      'serverPort' => null,
+    ];
+  }
+}
+
 /** Ensure the sales_reps.is_partner column exists, attempting a self-healing migration when missing. */
 function ensure_sales_reps_is_partner_column(PDO $pdo): array {
   $cols = get_table_columns($pdo, 'sales_reps');
@@ -138,6 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         PDO::ATTR_EMULATE_PREPARES => false,
       ]
     );
+    $dbIdentity = get_db_identity($pdo);
     $schemaState = ensure_sales_reps_is_partner_column($pdo);
     $salesRepsCols = $schemaState['columns'];
     $hasIsPartner = in_array('is_partner', $salesRepsCols, true);
@@ -146,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
       : (in_array('updated_at', $salesRepsCols, true) ? 'updated_at AS updatedAt' : 'NULL AS updatedAt');
     $isPartnerSelect = $hasIsPartner ? 'is_partner AS isPartner' : '0 AS isPartner';
     $q = $pdo->query('SELECT sales_code, initials, name, email, phone, territory, ' . $isPartnerSelect . ', ' . $updatedAtSelect . ' FROM sales_reps ORDER BY updatedAt DESC LIMIT 200');
-    respond(200, ['ok' => true, 'salesReps' => $q->fetchAll()]);
+    respond(200, ['ok' => true, 'dbIdentity' => $dbIdentity, 'salesReps' => $q->fetchAll()]);
   } catch (Throwable $e) {
     respond(500, ['ok' => false, 'error' => 'DB_ERROR', 'detail' => $e->getMessage()]);
   }
@@ -284,6 +311,7 @@ try {
       PDO::ATTR_EMULATE_PREPARES => false,
     ]
   );
+  $dbIdentity = get_db_identity($pdo);
 
   if (function_exists('set_time_limit')) @set_time_limit(60);
 
@@ -676,6 +704,7 @@ try {
 
   respond(200, [
     'ok'                => true,
+    'dbIdentity'        => $dbIdentity,
     'received'          => count($body['salesReps']),
     'stored'            => $stored,
     'skipped'           => count($body['salesReps']) - count($clean),
