@@ -24,6 +24,16 @@ from python_backend.repositories import order_repository
 
 
 class TestOrderRepositoryShippedAt(unittest.TestCase):
+    def setUp(self):
+        self.encrypt_json_patcher = patch(
+            "python_backend.repositories.order_repository.encrypt_json",
+            side_effect=lambda value, aad=None: f"cipher:{aad['field']}" if value is not None else None,
+        )
+        self.encrypt_json_patcher.start()
+
+    def tearDown(self):
+        self.encrypt_json_patcher.stop()
+
     def test_to_db_params_uses_explicit_shipstation_ship_date(self):
         params = order_repository._to_db_params(
             {
@@ -107,6 +117,64 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
             )
 
         self.assertEqual(order["shippedAt"], "2026-03-05T00:00:00-08:00")
+
+    def test_to_db_params_encrypts_payload_and_shipping_address_inline(self):
+        params = order_repository._to_db_params(
+            {
+                "id": "order-6",
+                "userId": "user-6",
+                "shippingAddress": {"email": "doctor@example.com"},
+                "items": [],
+            }
+        )
+
+        self.assertEqual(params["shipping_address"], "cipher:shipping_address")
+        self.assertEqual(params["payload"], "cipher:payload")
+        self.assertEqual(order_repository.encrypt_json.call_args_list[0].kwargs["aad"]["record_ref"], "order-6")
+
+    @patch("python_backend.repositories.order_repository.decrypt_json")
+    def test_row_to_order_decrypts_inline_payload_and_shipping_address(self, mock_decrypt_json):
+        def fake_decrypt(value, aad=None):
+            if value == "cipher-payload":
+                return {
+                    "order": {
+                        "items": [{"name": "BPC-157"}],
+                        "handDelivery": True,
+                        "fulfillmentMethod": "hand_delivered",
+                    },
+                    "handDelivery": True,
+                }
+            if value == "cipher-address":
+                return {"email": "doctor@example.com"}
+            return None
+
+        mock_decrypt_json.side_effect = fake_decrypt
+
+        order = order_repository._row_to_order(
+            {
+                "id": "order-7",
+                "user_id": "user-7",
+                "pricing_mode": "wholesale",
+                "items": "[]",
+                "total": 0,
+                "items_subtotal": 0,
+                "shipping_total": 0,
+                "shipping_rate": "{}",
+                "integrations": "{}",
+                "shipping_address": "cipher-address",
+                "payload": "cipher-payload",
+                "tracking_number": None,
+                "shipped_at": None,
+                "physician_certified": 0,
+                "status": "pending",
+                "created_at": datetime(2026, 3, 1, 12, 0, 0),
+                "updated_at": datetime(2026, 3, 1, 12, 0, 0),
+            }
+        )
+
+        self.assertEqual(order["shippingAddress"], {"email": "doctor@example.com"})
+        self.assertEqual(order["items"], [{"name": "BPC-157"}])
+        self.assertTrue(order["handDelivery"])
 
 
 if __name__ == "__main__":

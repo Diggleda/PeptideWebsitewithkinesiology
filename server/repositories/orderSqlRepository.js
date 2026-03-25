@@ -252,6 +252,131 @@ const buildCommercePayload = (order, payloadOrder = {}) => {
   return sanitized;
 };
 
+const buildEncryptedOrderPayload = (order, createdAtRaw, orderPlacedAt, shippedAt) => ({
+  order: {
+    ...(order && typeof order === 'object' ? order : {}),
+    total: computeGrandTotal(order),
+    grandTotal: computeGrandTotal(order),
+    orderPlacedAt,
+    order_placed_at: orderPlacedAt,
+    shippedAt,
+    shipped_at: shippedAt,
+    createdAt: createdAtRaw,
+    created_at: createdAtRaw,
+  },
+  orders: {
+    created_at: createdAtRaw,
+  },
+  integrations: order?.integrationDetails || null,
+});
+
+const parseJson = (value, fallback = null) => {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch (_error) {
+    return fallback;
+  }
+};
+
+const readInlineJsonField = (row, tableName, fieldName) => {
+  const candidateTables = Array.from(new Set([tableName, 'orders', 'peppro_orders'].filter(Boolean)));
+  for (const candidateTable of candidateTables) {
+    const decoded = decryptJson(row?.[fieldName], {
+      aad: {
+        table: candidateTable,
+        record_ref: sanitizeString(row?.id) || 'pending',
+        field: fieldName,
+      },
+    });
+    if (decoded !== null && decoded !== undefined) {
+      return decoded;
+    }
+  }
+  const decoded = decryptJson(row?.[fieldName]);
+  if (decoded !== null && decoded !== undefined) {
+    return decoded;
+  }
+  return parseJson(row?.[fieldName], null);
+};
+
+const readEncryptedOrderPayload = (row, tableName = 'peppro_orders') => {
+  const legacy = decryptJson(row?.payload_encrypted, {
+    aad: {
+      table: 'peppro_orders',
+      record_ref: sanitizeString(row?.phi_payload_ref || row?.id) || 'pending',
+      field: 'payload',
+    },
+  });
+  if (legacy && typeof legacy === 'object') {
+    return legacy;
+  }
+  const inline = readInlineJsonField(row, tableName, 'payload');
+  if (inline && typeof inline === 'object') {
+    return inline;
+  }
+  return parseJson(row?.payload, {});
+};
+
+const normalizeOrderToken = (value) => {
+  const text = sanitizeString(value);
+  if (!text) return null;
+  return text.startsWith('#') ? text.slice(1) : text;
+};
+
+const extractWooOrderTokens = (order) => {
+  const candidates = [
+    order?.wooOrderNumber,
+    order?.woo_order_number,
+    order?.wooOrderId,
+    order?.woo_order_id,
+    order?.payload?.integrations?.wooCommerce?.response?.number,
+    order?.payload?.integrations?.wooCommerce?.wooOrderNumber,
+    order?.payload?.integrations?.woocommerce?.response?.number,
+    order?.payload?.integrations?.woocommerce?.wooOrderNumber,
+    order?.payload?.wooOrderNumber,
+    order?.payload?.woo_order_number,
+    order?.payload?.number,
+  ];
+  return new Set(candidates.map((value) => normalizeOrderToken(value)).filter(Boolean));
+};
+
+const extractBillingEmails = (order) => {
+  const candidates = [
+    order?.billingAddress?.email,
+    order?.billingAddress?.emailAddress,
+    order?.billing_address?.email,
+    order?.billing_address?.email_address,
+    order?.billing?.email,
+    order?.billing_email,
+    order?.billingEmail,
+    order?.payload?.order?.billing?.email,
+    order?.payload?.order?.billing_email,
+    order?.payload?.order?.billingEmail,
+    order?.payload?.order?.billingAddress?.email,
+    order?.payload?.order?.billingAddress?.emailAddress,
+    order?.payload?.order?.billing_address?.email,
+    order?.payload?.order?.billing_address?.email_address,
+  ];
+  return new Set(
+    candidates
+      .map((value) => sanitizeString(value)?.toLowerCase() || null)
+      .filter(Boolean),
+  );
+};
+
+const safeFetchAllCompat = async (query, params = {}) => {
+  try {
+    return await mysqlClient.fetchAll(query, params);
+  } catch (error) {
+    const code = error && typeof error === 'object' ? error.code : null;
+    if (code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR') {
+      return [];
+    }
+    throw error;
+  }
+};
+
 const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
   if (!mysqlClient.isEnabled()) {
     return {
@@ -299,31 +424,8 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     orderPlacedAt,
     shippedAt,
     paymentDetails: null,
-    payload: JSON.stringify({
-      order: buildCommercePayload(order),
-      orders: {
-        created_at: createdAtRawWithPst || createdAtRaw,
-      },
-      integrations: buildCommerceIntegrationDetails(order.integrationDetails),
-    }),
-    payloadEncrypted: encryptJson(
-      {
-        order: {
-          ...(order && typeof order === 'object' ? order : {}),
-          total: computeGrandTotal(order),
-          grandTotal: computeGrandTotal(order),
-          orderPlacedAt,
-          order_placed_at: orderPlacedAt,
-          shippedAt,
-          shipped_at: shippedAt,
-          createdAt: createdAtRawWithPst || createdAtRaw,
-          created_at: createdAtRawWithPst || createdAtRaw,
-        },
-        orders: {
-          created_at: createdAtRawWithPst || createdAtRaw,
-        },
-        integrations: order.integrationDetails,
-      },
+    payload: encryptJson(
+      buildEncryptedOrderPayload(order, createdAtRawWithPst || createdAtRaw, orderPlacedAt, shippedAt),
       {
         aad: {
           table: 'peppro_orders',
@@ -332,7 +434,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
         },
       },
     ),
-    phiPayloadRef: sanitizeString(order.id),
     createdAt: createdAtRaw,
     updatedAt: new Date().toISOString(),
   };
@@ -359,8 +460,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipped_at,
           \`Payment Details\`,
           payload,
-          payload_encrypted,
-          phi_payload_ref,
           created_at,
           updated_at
         ) VALUES (
@@ -382,8 +481,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :shippedAt,
           :paymentDetails,
           :payload,
-          :payloadEncrypted,
-          :phiPayloadRef,
           :createdAt,
           :updatedAt
         )
@@ -403,8 +500,6 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
           \`Payment Details\` = VALUES(\`Payment Details\`),
           payload = VALUES(payload),
-          payload_encrypted = VALUES(payload_encrypted),
-          phi_payload_ref = VALUES(phi_payload_ref),
           pricing_mode = VALUES(pricing_mode),
           updated_at = VALUES(updated_at)
       `,
@@ -425,28 +520,8 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
 
 const mapRowToOrder = (row, options = {}) => {
   if (!row) return null;
-  const parseJson = (value, fallback = null) => {
-    if (!value) return fallback;
-    try {
-      return JSON.parse(value);
-    } catch (_error) {
-      return fallback;
-    }
-  };
-
-  const payload = (() => {
-    const decrypted = decryptJson(row.payload_encrypted, {
-      aad: {
-        table: 'peppro_orders',
-        record_ref: sanitizeString(row.phi_payload_ref || row.id) || 'pending',
-        field: 'payload',
-      },
-    });
-    if (decrypted && typeof decrypted === 'object') {
-      return decrypted;
-    }
-    return parseJson(row.payload, {});
-  })();
+  const tableName = options?.source === 'mysql:orders' ? 'orders' : 'peppro_orders';
+  const payload = readEncryptedOrderPayload(row, tableName);
   // Node backend stores payload as `{ order: {...}, integrations: ... }`, while the Python backend
   // stores the order dict directly as the payload. Tolerate both.
   const payloadOrder = (() => {
@@ -565,6 +640,7 @@ const mapRowToOrder = (row, options = {}) => {
     shippingEstimate: payloadOrder.shippingEstimate || null,
     shippingAddress: payloadOrder.shippingAddress
       || payloadOrder.shipping_address
+      || readInlineJsonField(row, tableName, 'shipping_address')
       || null,
     billingAddress: payloadOrder.billingAddress
       || payloadOrder.billing_address
@@ -580,7 +656,6 @@ const mapRowToOrder = (row, options = {}) => {
     referralCode: payloadOrder.referralCode || null,
     taxTotal: payloadOrder.taxTotal ?? payloadOrder.tax_total ?? payloadOrder.totalTax ?? payloadOrder.total_tax ?? null,
     payload,
-    phiPayloadRef: sanitizeString(row.phi_payload_ref),
     source: options?.source || 'mysql',
   };
 
@@ -717,48 +792,37 @@ const fetchByWooOrderNumber = async (wooOrderNumber) => {
     }
   };
 
-  const jsonMatchPepPro = `
-    SELECT *
-    FROM peppro_orders
-    WHERE JSON_VALID(payload)
-      AND (
-        JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.wooOrderNumber')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.woo_order_number')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.response.number')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.wooOrderNumber')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.response.number')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.wooOrderNumber')) = :value
-      )
-    LIMIT 1
-  `;
-
-  const jsonMatchLegacy = `
-    SELECT *
-    FROM orders
-    WHERE JSON_VALID(payload)
-      AND (
-        JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.wooOrderNumber')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.woo_order_number')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.response.number')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.wooOrderNumber')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.response.number')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.wooOrderNumber')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.wooOrderNumber')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.woo_order_number')) = :value
-        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.number')) = :value
-      )
-    LIMIT 1
-  `;
-
-  const [pepproRow, legacyRow] = await Promise.all([
-    safeFetchOneCompat(jsonMatchPepPro, { value }),
-    safeFetchOneCompat(jsonMatchLegacy, { value }),
-  ]);
+  const numericValue = Number.parseInt(value, 10);
+  const directMatchPepPro = Number.isFinite(numericValue)
+    ? await safeFetchOneCompat('SELECT * FROM peppro_orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: numericValue })
+    : null;
+  const directMatchLegacy = await safeFetchOneCompat(
+    `
+      SELECT *
+      FROM orders
+      WHERE woo_order_number = :value OR woo_order_id = :value
+      LIMIT 1
+    `,
+    { value },
+  );
 
   const candidates = [];
-  if (pepproRow) candidates.push(mapRowToOrder(pepproRow, { source: 'mysql:peppro_orders' }));
-  if (legacyRow) candidates.push(mapRowToOrder(legacyRow, { source: 'mysql:orders' }));
-  return dedupeOrders(candidates)[0] || null;
+  if (directMatchPepPro) candidates.push(mapRowToOrder(directMatchPepPro, { source: 'mysql:peppro_orders' }));
+  if (directMatchLegacy) candidates.push(mapRowToOrder(directMatchLegacy, { source: 'mysql:orders' }));
+  const directMatch = dedupeOrders(candidates).find((order) => extractWooOrderTokens(order).has(value));
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const [pepproRows, legacyRows] = await Promise.all([
+    safeFetchAllCompat('SELECT * FROM peppro_orders ORDER BY COALESCE(updated_at, created_at) DESC'),
+    safeFetchAllCompat('SELECT * FROM orders ORDER BY COALESCE(updated_at, created_at) DESC'),
+  ]);
+  const orders = []
+    .concat((pepproRows || []).map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })))
+    .concat((legacyRows || []).map((row) => mapRowToOrder(row, { source: 'mysql:orders' })))
+    .filter(Boolean);
+  return dedupeOrders(orders).find((order) => extractWooOrderTokens(order).has(value)) || null;
 };
 
 const fetchByUserIds = async (userIds = []) => {
@@ -789,78 +853,20 @@ const fetchByBillingEmails = async (emails = []) => {
     ),
   );
   if (normalized.length === 0) return [];
-  const placeholders = normalized.map((_, idx) => `:email${idx}`).join(', ');
-  const params = normalized.reduce((acc, email, idx) => ({ ...acc, [`email${idx}`]: email }), {});
-  const pepproRows = await safeFetchAll(
-    `
-      SELECT *
-      FROM peppro_orders
-      WHERE JSON_VALID(payload)
-        AND (
-          LOWER(
-            JSON_UNQUOTE(
-              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing.email')
-            )
-          ) IN (${placeholders})
-          OR LOWER(
-            JSON_UNQUOTE(
-              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing_email')
-            )
-          ) IN (${placeholders})
-          OR LOWER(
-            JSON_UNQUOTE(
-              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billingEmail')
-            )
-          ) IN (${placeholders})
-          OR LOWER(
-            JSON_UNQUOTE(
-              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billingAddress.email')
-            )
-          ) IN (${placeholders})
-          OR LOWER(
-            JSON_UNQUOTE(
-              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing_address.email')
-            )
-          ) IN (${placeholders})
-          OR LOWER(
-            JSON_UNQUOTE(
-              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billingAddress.emailAddress')
-            )
-          ) IN (${placeholders})
-          OR LOWER(
-            JSON_UNQUOTE(
-              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing_address.email_address')
-            )
-          ) IN (${placeholders})
-        )
-    `,
-    params,
-  );
-
-  const legacyRows = await safeFetchAll(
-    `
-      SELECT *
-      FROM orders
-      WHERE JSON_VALID(payload)
-        AND (
-          LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing.email'))) IN (${placeholders})
-          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing_email'))) IN (${placeholders})
-          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billingEmail'))) IN (${placeholders})
-          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billingAddress.email'))) IN (${placeholders})
-          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing_address.email'))) IN (${placeholders})
-          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billingAddress.emailAddress'))) IN (${placeholders})
-          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing_address.email_address'))) IN (${placeholders})
-        )
-    `,
-    params,
-  );
+  const [pepproRows, legacyRows] = await Promise.all([
+    safeFetchAllCompat('SELECT * FROM peppro_orders ORDER BY COALESCE(updated_at, created_at) DESC'),
+    safeFetchAllCompat('SELECT * FROM orders ORDER BY COALESCE(updated_at, created_at) DESC'),
+  ]);
 
   const orders = []
     .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
     .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
     .filter(Boolean);
 
-  return dedupeOrders(orders);
+  return dedupeOrders(orders).filter((order) => {
+    const orderEmails = extractBillingEmails(order);
+    return normalized.some((email) => orderEmails.has(email));
+  });
 };
 
 const fetchByUserId = async (userId) => {

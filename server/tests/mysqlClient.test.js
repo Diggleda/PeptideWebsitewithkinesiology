@@ -45,7 +45,9 @@ const withFreshMysqlClient = async ({ envOverrides = {} }, run) => {
         createPool(config) {
           createPoolCalls.push(config);
           return {
+            query: async () => [[{ Variable_name: 'Ssl_cipher', Value: 'TLS_AES_256_GCM_SHA384' }], []],
             execute: async () => [[], []],
+            end: async () => {},
           };
         },
       };
@@ -74,4 +76,57 @@ test('configure passes an SSL object to the MySQL pool when MYSQL_SSL=true', asy
     assert.equal(createPoolCalls[0].host, 'db.example');
     assert.equal(createPoolCalls[0].database, 'peppr');
   });
+});
+
+test('configure rejects MySQL sessions that did not negotiate TLS', async () => {
+  const envSnapshot = { ...process.env };
+  const originalLoad = Module._load;
+
+  Object.assign(process.env, {
+    NODE_ENV: 'production',
+    LOG_LEVEL: 'silent',
+    JWT_SECRET: 'x'.repeat(64),
+    DATA_ENCRYPTION_KEY: 'enc-key',
+    FRONTEND_BASE_URL: 'https://prod.example',
+    MYSQL_ENABLED: 'true',
+    MYSQL_SSL: 'true',
+    MYSQL_HOST: 'db.example',
+    MYSQL_PORT: '3306',
+    MYSQL_USER: 'peppr',
+    MYSQL_PASSWORD: 'secret',
+    MYSQL_DATABASE: 'peppr',
+  });
+
+  clearModule('../config/env');
+  clearModule('../config/logger');
+  clearModule('../database/mysqlClient');
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'mysql2/promise') {
+      return {
+        createPool() {
+          return {
+            query: async () => [[{ Variable_name: 'Ssl_cipher', Value: '' }], []],
+            execute: async () => [[], []],
+            end: async () => {},
+          };
+        },
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    const mysqlClient = require('../database/mysqlClient');
+    await assert.rejects(
+      () => mysqlClient.configure(),
+      (error) => error && error.code === 'MYSQL_TLS_REQUIRED',
+    );
+  } finally {
+    Module._load = originalLoad;
+    restoreEnv(envSnapshot);
+    clearModule('../config/env');
+    clearModule('../config/logger');
+    clearModule('../database/mysqlClient');
+  }
 });

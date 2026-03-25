@@ -36,6 +36,16 @@ const ensureDefaults = (record) => {
   const assignedAt = record.assignedAt || record.assigned_at || null;
   const lastSyncedAt = record.lastSyncedAt || record.last_synced_at || null;
   const resolvedSourcePayload = (() => {
+    const decryptedInline = decryptJson(sourcePayloadJson, {
+      aad: {
+        table: 'sales_prospects',
+        record_ref: normalizeId(record.id) || 'pending',
+        field: 'source_payload_json',
+      },
+    });
+    if (decryptedInline && typeof decryptedInline === 'object') {
+      return decryptedInline;
+    }
     const decrypted = decryptJson(encryptedSourcePayload, {
       aad: {
         table: 'sales_prospects',
@@ -112,10 +122,6 @@ const toDbParams = (record) => {
     sourceSystem: record.sourceSystem || null,
     sourceExternalId: record.sourceExternalId || null,
     sourcePayloadJson:
-      record.sourcePayloadJson && typeof record.sourcePayloadJson === 'object'
-        ? null
-        : null,
-    sourcePayloadEncrypted:
       record.sourcePayloadJson && typeof record.sourcePayloadJson === 'object'
         ? encryptJson(record.sourcePayloadJson, {
           aad: {
@@ -492,7 +498,6 @@ const upsert = async (prospect) => {
 	          source_system,
 	          source_external_id,
 	          source_payload_json,
-	          source_payload_encrypted,
 	          assigned_by_rule_id,
 	          assigned_at,
 	          last_synced_at,
@@ -518,7 +523,6 @@ const upsert = async (prospect) => {
 	          :sourceSystem,
 	          :sourceExternalId,
 	          :sourcePayloadJson,
-	          :sourcePayloadEncrypted,
 	          :assignedByRuleId,
 	          :assignedAt,
 	          :lastSyncedAt,
@@ -547,7 +551,6 @@ const upsert = async (prospect) => {
 	          source_system = VALUES(source_system),
 	          source_external_id = VALUES(source_external_id),
 	          source_payload_json = VALUES(source_payload_json),
-	          source_payload_encrypted = VALUES(source_payload_encrypted),
 	          assigned_by_rule_id = VALUES(assigned_by_rule_id),
 	          assigned_at = VALUES(assigned_at),
 	          last_synced_at = VALUES(last_synced_at),

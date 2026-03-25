@@ -236,11 +236,20 @@ const normalizeEmail = (value) => {
 };
 
 const readContactFormField = (row, field) => {
-  const decrypted = decryptText(row?.[`${field}_encrypted`], {
+  const decrypted = decryptText(row?.[field], {
     aad: { table: 'contact_forms', field },
   });
   if (typeof decrypted === 'string' && decrypted.trim()) {
-    return decrypted.trim();
+    const text = decrypted.trim();
+    if (text !== '[ENCRYPTED]') {
+      return text;
+    }
+  }
+  const legacy = decryptText(row?.[`${field}_encrypted`], {
+    aad: { table: 'contact_forms', field },
+  });
+  if (typeof legacy === 'string' && legacy.trim()) {
+    return legacy.trim();
   }
   const value = row?.[field];
   if (value == null) {
@@ -849,7 +858,7 @@ const getDoctorLedger = (req, res, next) => {
 		      try {
 		        const rows = await mysqlClient.fetchAll(
 		          `
-		            SELECT id, name, email, phone, name_encrypted, email_encrypted, phone_encrypted, source, created_at, updated_at, createdAt, updatedAt
+		            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
 	            FROM contact_forms
 	            ORDER BY COALESCE(updated_at, updatedAt, created_at, createdAt) DESC
 	          `,
@@ -1570,11 +1579,9 @@ const createManualProspect = async (req, res, next) => {
               SELECT id
               FROM contact_forms
               WHERE email_blind_index = :emailBlindIndex
-                 OR LOWER(email) = :email
               LIMIT 1
             `,
             {
-              email: normalizedEmail,
               emailBlindIndex,
             },
           );

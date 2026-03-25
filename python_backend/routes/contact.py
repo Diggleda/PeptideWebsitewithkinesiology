@@ -11,7 +11,6 @@ from ..repositories import sales_rep_repository, sales_prospect_repository, user
 from ..utils.crypto_envelope import compute_blind_index, encrypt_text
 
 blueprint = Blueprint("contact", __name__, url_prefix="/api/contact")
-ENCRYPTED_PLACEHOLDER = "[ENCRYPTED]"
 
 
 @blueprint.route("", methods=["POST"], strict_slashes=False)
@@ -47,26 +46,22 @@ def submit_contact():
                 cur.execute(
                     """
                     INSERT INTO contact_forms (
-                        name, email, phone, name_encrypted, email_encrypted, phone_encrypted, email_blind_index, source
+                        name, email, phone, email_blind_index, source
                     )
                     VALUES (
-                        %(name)s, %(email)s, %(phone)s, %(name_encrypted)s, %(email_encrypted)s, %(phone_encrypted)s,
-                        %(email_blind_index)s, %(source)s
+                        %(name)s, %(email)s, %(phone)s, %(email_blind_index)s, %(source)s
                     )
                     """,
                     {
-                        "name": ENCRYPTED_PLACEHOLDER,
-                        "email": ENCRYPTED_PLACEHOLDER,
-                        "phone": None,
-                        "name_encrypted": encrypt_text(
+                        "name": encrypt_text(
                             record["name"],
                             aad={"table": "contact_forms", "field": "name"},
                         ),
-                        "email_encrypted": encrypt_text(
+                        "email": encrypt_text(
                             record["email"],
                             aad={"table": "contact_forms", "field": "email"},
                         ),
-                        "phone_encrypted": encrypt_text(
+                        "phone": encrypt_text(
                             record["phone"],
                             aad={"table": "contact_forms", "field": "phone"},
                         ) if record["phone"] else None,

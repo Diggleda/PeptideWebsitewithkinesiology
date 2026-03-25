@@ -1,6 +1,7 @@
 const { logger } = require('../config/logger');
 const mysqlClient = require('../database/mysqlClient');
 const userRepository = require('../repositories/userRepository');
+const { decryptJson, encryptJson } = require('../utils/cryptoEnvelope');
 const {
   orderStore,
   referralStore,
@@ -96,6 +97,62 @@ const rewriteSalesProspectStoreReferences = (targetId, replacementId) => {
   return { label: 'sales-prospects.json', changed };
 };
 
+const parseJson = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value));
+  } catch (_error) {
+    return null;
+  }
+};
+
+const candidateAads = ({ row, tableName, fieldName, recordRefFields = [] }) => {
+  const refs = [];
+  [...recordRefFields, 'id'].forEach((key) => {
+    const ref = normalizeId(row?.[key]) || 'pending';
+    if (!refs.includes(ref)) {
+      refs.push(ref);
+    }
+  });
+  if (refs.length === 0) {
+    refs.push('pending');
+  }
+  return refs.map((recordRef) => ({
+    table: tableName,
+    record_ref: recordRef,
+    field: fieldName,
+  }));
+};
+
+const readInlineJsonField = ({
+  row,
+  tableName,
+  fieldName,
+  legacyFields = [],
+  recordRefFields = [],
+}) => {
+  const aads = candidateAads({ row, tableName, fieldName, recordRefFields });
+  const values = [row?.[fieldName], ...legacyFields.map((field) => row?.[field])];
+  for (const value of values) {
+    for (const aad of aads) {
+      const decoded = decryptJson(value, { aad });
+      if (decoded !== null && decoded !== undefined) {
+        return [decoded, aad];
+      }
+    }
+    const decoded = decryptJson(value);
+    if (decoded !== null && decoded !== undefined) {
+      return [decoded, aads[0]];
+    }
+    const parsed = parseJson(value);
+    if (parsed !== null && parsed !== undefined) {
+      return [parsed, aads[0]];
+    }
+  }
+  return [null, aads[0]];
+};
+
 const executeMysql = async (query, params, label) => {
   try {
     const result = await mysqlClient.execute(query, params);
@@ -116,6 +173,56 @@ const executeMysql = async (query, params, label) => {
   }
 };
 
+const rewriteInlineJsonTableField = async ({
+  tableName,
+  fieldName,
+  label,
+  targetId,
+  replacementId,
+  legacyFields = [],
+  recordRefFields = [],
+}) => {
+  try {
+    const rows = await mysqlClient.fetchAll(`SELECT * FROM ${tableName}`);
+    let affectedRows = 0;
+    for (const row of rows || []) {
+      const id = normalizeId(row?.id);
+      if (!id) {
+        continue;
+      }
+      const [decoded, aad] = readInlineJsonField({
+        row,
+        tableName,
+        fieldName,
+        legacyFields,
+        recordRefFields,
+      });
+      if (decoded === null || decoded === undefined) {
+        continue;
+      }
+      const [updated, changed] = replaceIdDeep(decoded, targetId, replacementId);
+      if (!changed) {
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await mysqlClient.execute(
+        `UPDATE ${tableName} SET ${fieldName} = :value WHERE id = :id`,
+        {
+          id,
+          value: encryptJson(updated, { aad }),
+        },
+      );
+      affectedRows += 1;
+    }
+    return { label, ok: true, affectedRows };
+  } catch (error) {
+    if (error && IGNORED_MYSQL_CODES.has(error.code)) {
+      return { label, ok: true, affectedRows: 0 };
+    }
+    throw error;
+  }
+};
+
 const rewriteMysqlReferences = async (targetId, replacementId) => {
   if (!mysqlClient.isEnabled()) {
     return [];
@@ -131,16 +238,6 @@ const rewriteMysqlReferences = async (targetId, replacementId) => {
       label: 'orders.user_id',
       query: 'UPDATE orders SET user_id = :replacementId WHERE user_id = :targetId',
       params: { targetId, replacementId },
-    },
-    {
-      label: 'peppro_orders.payload',
-      query: 'UPDATE peppro_orders SET payload = REPLACE(payload, :targetId, :replacementId) WHERE payload LIKE :needle',
-      params: { targetId, replacementId, needle: `%${targetId}%` },
-    },
-    {
-      label: 'orders.payload',
-      query: 'UPDATE orders SET payload = REPLACE(payload, :targetId, :replacementId) WHERE payload LIKE :needle',
-      params: { targetId, replacementId, needle: `%${targetId}%` },
     },
     {
       label: 'sales_prospects.doctor_id',
@@ -175,6 +272,36 @@ const rewriteMysqlReferences = async (targetId, replacementId) => {
     // eslint-disable-next-line no-await-in-loop
     const result = await executeMysql(statement.query, statement.params, statement.label);
     results.push(result);
+    if (statement.label === 'peppro_orders.user_id') {
+      // eslint-disable-next-line no-await-in-loop
+      results.push(await rewriteInlineJsonTableField({
+        tableName: 'peppro_orders',
+        fieldName: 'payload',
+        label: 'peppro_orders.payload',
+        targetId,
+        replacementId,
+        legacyFields: ['payload_encrypted'],
+        recordRefFields: ['phi_payload_ref'],
+      }));
+    }
+    if (statement.label === 'orders.user_id') {
+      // eslint-disable-next-line no-await-in-loop
+      results.push(await rewriteInlineJsonTableField({
+        tableName: 'orders',
+        fieldName: 'payload',
+        label: 'orders.payload',
+        targetId,
+        replacementId,
+      }));
+      // eslint-disable-next-line no-await-in-loop
+      results.push(await rewriteInlineJsonTableField({
+        tableName: 'orders',
+        fieldName: 'shipping_address',
+        label: 'orders.shipping_address',
+        targetId,
+        replacementId,
+      }));
+    }
   }
   return results;
 };

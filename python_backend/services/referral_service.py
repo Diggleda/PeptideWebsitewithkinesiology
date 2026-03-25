@@ -120,6 +120,11 @@ def _contact_form_field_aad(field: str) -> Dict[str, str]:
 
 
 def _read_contact_form_field(row: Dict, field: str) -> Optional[str]:
+    decrypted = decrypt_text(row.get(field), aad=_contact_form_field_aad(field))
+    if isinstance(decrypted, str) and decrypted.strip():
+        text = decrypted.strip()
+        if text != "[ENCRYPTED]":
+            return text
     decrypted = decrypt_text(row.get(f"{field}_encrypted"), aad=_contact_form_field_aad(field))
     if isinstance(decrypted, str) and decrypted.strip():
         return decrypted.strip()
@@ -146,22 +151,16 @@ def _build_contact_form_email_lookup(emails: List[str]) -> Tuple[str, Dict[str, 
         return "", {}
 
     params: Dict[str, str] = {}
-    email_placeholders: List[str] = []
     blind_placeholders: List[str] = []
     for idx, email in enumerate(normalized):
-        params[f"email_{idx}"] = email
-        email_placeholders.append(f"%(email_{idx})s")
         blind_index = _contact_form_email_blind_index(email)
         if blind_index:
             params[f"blind_{idx}"] = blind_index
             blind_placeholders.append(f"%(blind_{idx})s")
 
-    clauses: List[str] = []
     if blind_placeholders:
-        clauses.append(f"email_blind_index IN ({', '.join(blind_placeholders)})")
-    if email_placeholders:
-        clauses.append(f"LOWER(email) IN ({', '.join(email_placeholders)})")
-    return " OR ".join(clauses), params
+        return f"email_blind_index IN ({', '.join(blind_placeholders)})", params
+    return "", {}
 
 
 def _is_deleted_user_identifier(value: Optional[str]) -> bool:
@@ -336,7 +335,7 @@ def _fetch_contact_form_ids_by_email(emails: List[str]) -> Dict[str, str]:
     try:
         rows = mysql_client.fetch_all(
             f"""
-            SELECT id, email, email_encrypted, created_at
+            SELECT id, email, created_at
             FROM contact_forms
             WHERE {where_clause}
             ORDER BY created_at ASC
@@ -1130,9 +1129,6 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     cf.name,
                     cf.email,
                     cf.phone,
-                    cf.name_encrypted,
-                    cf.email_encrypted,
-                    cf.phone_encrypted,
                     cf.source,
                     cf.created_at,
                     sp.doctor_id AS prospect_doctor_id,
@@ -1161,9 +1157,6 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     cf.name,
                     cf.email,
                     cf.phone,
-                    cf.name_encrypted,
-                    cf.email_encrypted,
-                    cf.phone_encrypted,
                     cf.source,
                     cf.created_at,
                     sp.sales_rep_id AS prospect_sales_rep_id,

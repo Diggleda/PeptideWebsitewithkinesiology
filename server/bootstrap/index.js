@@ -18,6 +18,9 @@ const configureMysql = async () => {
     await mysqlClient.configure();
     return true;
   } catch (error) {
+    if (error && error.code === 'MYSQL_TLS_REQUIRED') {
+      throw error;
+    }
     logger.error(
       { err: error, host: env.mysql.host, port: env.mysql.port },
       'MySQL unavailable, disabling MySQL integration for this run',

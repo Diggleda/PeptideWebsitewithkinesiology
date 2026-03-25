@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from ..services import get_config
 from ..database import mysql_client
 from .. import storage
+from ..utils.crypto_envelope import decrypt_json, encrypt_json
 
 HAND_DELIVERY_SERVICE_LABEL = "Hand Delivered"
 
@@ -104,6 +105,38 @@ def _get_store():
     if store is None:
         raise RuntimeError("order_store is not initialised")
     return store
+
+
+def _order_field_aad(order_id: object, field: str) -> Dict[str, str]:
+    return {
+        "table": "orders",
+        "record_ref": str(order_id or "pending"),
+        "field": field,
+    }
+
+
+def _parse_json(value, default):
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except Exception:
+        return default
+
+
+def _read_order_json_field(row: Dict, field: str, default):
+    try:
+        decrypted = decrypt_json(row.get(field), aad=_order_field_aad(row.get("id"), field))
+        if decrypted is not None:
+            return decrypted
+    except Exception:
+        try:
+            decrypted = decrypt_json(row.get(field))
+            if decrypted is not None:
+                return decrypted
+        except Exception:
+            pass
+    return _parse_json(row.get(field), default)
 
 
 def _load() -> List[Dict]:
@@ -243,14 +276,6 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             {"user_id": user_id},
         )
 
-    def parse_json(value, default=None):
-        if not value:
-            return default
-        try:
-            return json.loads(value)
-        except Exception:
-            return default
-
     def fmt_datetime(value):
         if not value:
             return None
@@ -260,13 +285,13 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
 
     result: List[Dict] = []
     for row in rows or []:
-        payload = parse_json(row.get("payload"), {}) if row.get("payload") is not None else {}
+        payload = _read_order_json_field(row, "payload", {}) if row.get("payload") is not None else {}
         if not isinstance(payload, dict):
             payload = {}
         result.append(
             {
                 "id": row.get("id"),
-                "items": parse_json(row.get("items"), []) if row.get("items") is not None else [],
+                "items": _parse_json(row.get("items"), []) if row.get("items") is not None else [],
                 # `total` is historically overloaded; treat it as "items subtotal" for UI overlays,
                 # but also surface `grandTotal` when we can.
                 "total": float(row.get("total") or 0),
@@ -296,7 +321,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 or ("hand_delivered" if bool(payload.get("handDelivery")) else "shipping"),
                 "status": row.get("status"),
                 "notes": row.get("notes") if row.get("notes") is not None else None,
-                "shippingAddress": parse_json(row.get("shipping_address")),
+                "shippingAddress": _read_order_json_field(row, "shipping_address", None),
                 "expectedShipmentWindow": row.get("expected_shipment_window") or None,
                 "shippingCarrier": row.get("shipping_carrier"),
                 "shippingService": row.get("shipping_service"),
@@ -708,10 +733,12 @@ def get_items_subtotal_lookup_by_woo(
     def parse_payload_items_subtotal(value: object) -> float:
         if not value:
             return 0.0
-        try:
-            payload = json.loads(value) if isinstance(value, str) else value
-        except Exception:
-            return 0.0
+        payload = decrypt_json(value)
+        if payload is None:
+            try:
+                payload = json.loads(value) if isinstance(value, str) else value
+            except Exception:
+                return 0.0
         if not isinstance(payload, dict):
             return 0.0
         # Python backend stores the order dict directly; tolerate nested shapes.
@@ -1076,14 +1103,6 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
     except Exception:
         local_tz = timezone.utc
 
-    def parse_json(value, default):
-        if not value:
-            return default
-        try:
-            return json.loads(value)
-        except Exception:
-            return default
-
     def fmt_datetime(value):
         if not value:
             return None
@@ -1096,19 +1115,19 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             return parsed.isoformat()
         return str(value)
 
-    payload = parse_json(row.get("payload"), {})
+    payload = _read_order_json_field(row, "payload", {})
     payload_order = payload.get("order") if isinstance(payload, dict) and isinstance(payload.get("order"), dict) else None
     order: Dict = {
         "id": row.get("id"),
         "userId": row.get("user_id"),
         "asDelegate": row.get("as_delegate"),
         "pricingMode": row.get("pricing_mode") or "wholesale",
-        "items": parse_json(row.get("items"), []),
+        "items": _parse_json(row.get("items"), []),
         "total": float(row.get("total") or 0),
         "itemsSubtotal": float(row.get("items_subtotal") or 0) if row.get("items_subtotal") is not None else None,
         "shippingTotal": float(row.get("shipping_total") or 0),
-        "shippingEstimate": parse_json(row.get("shipping_rate"), parse_json(row.get("integrations"), {}).get("shippingRate", {})),
-        "shippingAddress": parse_json(row.get("shipping_address"), None),
+        "shippingEstimate": _parse_json(row.get("shipping_rate"), _parse_json(row.get("integrations"), {}).get("shippingRate", {})),
+        "shippingAddress": _read_order_json_field(row, "shipping_address", None),
         "handDelivery": bool(payload.get("handDelivery")) if isinstance(payload, dict) else False,
         "fulfillmentMethod": row.get("fulfillment_method"),
         "shippingCarrier": row.get("shipping_carrier"),
@@ -1118,9 +1137,9 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),
         "status": row.get("status"),
-        "referrerBonus": parse_json(row.get("referrer_bonus"), None),
-        "firstOrderBonus": parse_json(row.get("first_order_bonus"), None),
-        "integrations": parse_json(row.get("integrations"), {}),
+        "referrerBonus": _parse_json(row.get("referrer_bonus"), None),
+        "firstOrderBonus": _parse_json(row.get("first_order_bonus"), None),
+        "integrations": _parse_json(row.get("integrations"), {}),
         "expectedShipmentWindow": row.get("expected_shipment_window") or None,
         "notes": row.get("notes") if row.get("notes") is not None else None,
         "wooOrderId": row.get("woo_order_id") or None,
@@ -1354,8 +1373,11 @@ def _to_db_params(order: Dict) -> Dict:
         "shipping_rate": serialize_json(order.get("shippingEstimate")),
         "expected_shipment_window": (order.get("expectedShipmentWindow") or None),
         "notes": order.get("notes") if order.get("notes") is not None else None,
-        "shipping_address": serialize_json(order.get("shippingAddress")),
-        "payload": serialize_json(order),
+        "shipping_address": encrypt_json(
+            order.get("shippingAddress"),
+            aad=_order_field_aad(order.get("id"), "shipping_address"),
+        ),
+        "payload": encrypt_json(order, aad=_order_field_aad(order.get("id"), "payload")),
         "created_at": parse_dt(order.get("createdAt")),
         "updated_at": parse_dt(order.get("updatedAt") or datetime.now(timezone.utc)),
     }

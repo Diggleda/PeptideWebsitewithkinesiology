@@ -28,22 +28,21 @@ router.post('/', authenticateOptional, async (req, res) => {
     await mysqlClient.execute(
       `
         INSERT INTO bugs_reported (
-          user_id, name, email, report, name_encrypted, email_encrypted, report_encrypted
+          user_id, name, email, report
         )
         VALUES (
-          :userId, NULL, NULL, :reportPlaceholder, :nameEncrypted, :emailEncrypted, :reportEncrypted
+          :userId, :name, :email, :report
         )
       `,
       {
         userId,
-        reportPlaceholder: '[ENCRYPTED]',
-        nameEncrypted: name
+        name: name
           ? encryptText(name, { aad: { table: 'bugs_reported', field: 'name' } })
           : null,
-        emailEncrypted: email
+        email: email
           ? encryptText(email, { aad: { table: 'bugs_reported', field: 'email' } })
           : null,
-        reportEncrypted: encryptText(report, { aad: { table: 'bugs_reported', field: 'report' } }),
+        report: encryptText(report, { aad: { table: 'bugs_reported', field: 'report' } }),
       },
     );
     return res.status(200).json({ status: 'ok' });

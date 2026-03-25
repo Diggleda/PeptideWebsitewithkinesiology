@@ -11,17 +11,19 @@ logger = logging.getLogger(__name__)
 
 
 def init_database(config: AppConfig) -> None:
-  global _CONFIGURED
-  if _CONFIGURED:
-    return
+    global _CONFIGURED
+    if _CONFIGURED:
+        return
 
-  if config.mysql.get("enabled"):
+    if config.mysql.get("enabled"):
         mysql_client.configure(config)
         try:
             mysql_schema.ensure_schema()
+        except mysql_client.MySQLTlsRequiredError:
+            raise
         except Exception:
             # Do not block the app from starting if MySQL is unavailable.
             logger.exception("MySQL init failed; continuing with MySQL disabled")
             config.mysql["enabled"] = False
 
-  _CONFIGURED = True
+    _CONFIGURED = True

@@ -40,7 +40,12 @@ class MysqlClientSslTests(unittest.TestCase):
     def test_create_connection_enables_ssl_when_configured(self) -> None:
         self._configure(True)
 
-        with patch.object(mysql_client.pymysql, "connect", return_value=object()) as connect:
+        fake_cursor = unittest.mock.Mock()
+        fake_cursor.fetchone.return_value = {"Value": "TLS_AES_256_GCM_SHA384"}
+        fake_connection = unittest.mock.Mock()
+        fake_connection.cursor.return_value = fake_cursor
+
+        with patch.object(mysql_client.pymysql, "connect", return_value=fake_connection) as connect:
             mysql_client._create_connection()
 
         self.assertEqual(connect.call_args.kwargs["ssl"], {})
@@ -52,6 +57,20 @@ class MysqlClientSslTests(unittest.TestCase):
             mysql_client._create_connection()
 
         self.assertIsNone(connect.call_args.kwargs["ssl"])
+
+    def test_create_connection_raises_when_tls_not_negotiated(self) -> None:
+        self._configure(True)
+
+        fake_cursor = unittest.mock.Mock()
+        fake_cursor.fetchone.return_value = {"Value": ""}
+        fake_connection = unittest.mock.Mock()
+        fake_connection.cursor.return_value = fake_cursor
+
+        with patch.object(mysql_client.pymysql, "connect", return_value=fake_connection):
+            with self.assertRaises(mysql_client.MySQLTlsRequiredError):
+                mysql_client._create_connection()
+
+        fake_connection.close.assert_called_once()
 
 
 if __name__ == "__main__":

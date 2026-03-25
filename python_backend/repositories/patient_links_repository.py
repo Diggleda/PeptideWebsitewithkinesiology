@@ -131,13 +131,17 @@ def _decrypt_field(
     row: Dict[str, Any],
     *,
     field_name: str,
-    encrypted_key: str,
+    encrypted_key: Optional[str] = None,
     legacy_keys: List[str],
 ) -> Optional[str]:
     token_hash = str(row.get("token") or "").strip() or None
-    decrypted = decrypt_text(row.get(encrypted_key), aad=_field_aad(token_hash, field_name))
+    decrypted = decrypt_text(row.get(field_name), aad=_field_aad(token_hash, field_name))
     if decrypted:
         return decrypted
+    if encrypted_key:
+        decrypted = decrypt_text(row.get(encrypted_key), aad=_field_aad(token_hash, field_name))
+        if decrypted:
+            return decrypted
     for legacy_key in legacy_keys:
         legacy_value = row.get(legacy_key)
         if legacy_value not in (None, ""):
@@ -149,13 +153,17 @@ def _decrypt_json_field(
     row: Dict[str, Any],
     *,
     field_name: str,
-    encrypted_key: str,
+    encrypted_key: Optional[str] = None,
     legacy_key: str,
 ) -> Any:
     token_hash = str(row.get("token") or "").strip() or None
-    decrypted = decrypt_json(row.get(encrypted_key), aad=_field_aad(token_hash, field_name))
+    decrypted = decrypt_json(row.get(legacy_key), aad=_field_aad(token_hash, field_name))
     if decrypted is not None:
         return decrypted
+    if encrypted_key:
+        decrypted = decrypt_json(row.get(encrypted_key), aad=_field_aad(token_hash, field_name))
+        if decrypted is not None:
+            return decrypted
     return _parse_json(row.get(legacy_key))
 
 
@@ -356,29 +364,22 @@ def create_link(
             "token_ciphertext": token_ciphertext,
             "token_hint": raw_token.split("-")[0],
             "doctor_id": doctor_id,
-            "patient_id": None,
-            "patient_id_encrypted": _encrypt_field(token_hash, "patient_id", subject_label_value),
-            "reference_label": None,
-            "reference_label_encrypted": _encrypt_field(
+            "patient_id": _encrypt_field(token_hash, "patient_id", subject_label_value),
+            "reference_label": _encrypt_field(
                 token_hash, "reference_label", patient_reference_value or study_label_value
             ),
-            "subject_label": None,
-            "subject_label_encrypted": _encrypt_field(token_hash, "subject_label", subject_label_value),
-            "study_label": None,
-            "study_label_encrypted": _encrypt_field(token_hash, "study_label", study_label_value),
-            "patient_reference": None,
-            "patient_reference_encrypted": _encrypt_field(token_hash, "patient_reference", patient_reference_value),
+            "subject_label": _encrypt_field(token_hash, "subject_label", subject_label_value),
+            "study_label": _encrypt_field(token_hash, "study_label", study_label_value),
+            "patient_reference": _encrypt_field(token_hash, "patient_reference", patient_reference_value),
             "created_at": now.replace(tzinfo=None),
             "expires_at": expires.replace(tzinfo=None),
             "markup_percent": float(markup_percent or 0.0),
-            "instructions": None,
-            "instructions_encrypted": _encrypt_field(token_hash, "instructions", instructions_value),
+            "instructions": _encrypt_field(token_hash, "instructions", instructions_value),
             "allowed_products_json": _serialize_json(allowed_products_value),
             "usage_limit": usage_limit_value,
             "status": "active",
             "payment_method": payment_method_value,
-            "payment_instructions": None,
-            "payment_instructions_encrypted": _encrypt_field(
+            "payment_instructions": _encrypt_field(
                 token_hash, "payment_instructions", payment_instructions_value
             ),
             "physician_certified": physician_certified_value,
@@ -388,25 +389,25 @@ def create_link(
                 """
                 INSERT INTO patient_links (
                     token, token_version, token_ciphertext, token_hint,
-                    doctor_id, patient_id, patient_id_encrypted,
-                    reference_label, reference_label_encrypted,
-                    subject_label, subject_label_encrypted,
-                    study_label, study_label_encrypted,
-                    patient_reference, patient_reference_encrypted,
-                    created_at, expires_at, markup_percent, instructions, instructions_encrypted, allowed_products_json,
+                    doctor_id, patient_id,
+                    reference_label,
+                    subject_label,
+                    study_label,
+                    patient_reference,
+                    created_at, expires_at, markup_percent, instructions, allowed_products_json,
                     usage_limit, usage_count, open_count, status,
-                    payment_method, payment_instructions, payment_instructions_encrypted, physician_certified
+                    payment_method, payment_instructions, physician_certified
                 )
                 VALUES (
                     %(token)s, %(token_version)s, %(token_ciphertext)s, %(token_hint)s,
-                    %(doctor_id)s, %(patient_id)s, %(patient_id_encrypted)s,
-                    %(reference_label)s, %(reference_label_encrypted)s,
-                    %(subject_label)s, %(subject_label_encrypted)s,
-                    %(study_label)s, %(study_label_encrypted)s,
-                    %(patient_reference)s, %(patient_reference_encrypted)s,
-                    %(created_at)s, %(expires_at)s, %(markup_percent)s, %(instructions)s, %(instructions_encrypted)s, %(allowed_products_json)s,
+                    %(doctor_id)s, %(patient_id)s,
+                    %(reference_label)s,
+                    %(subject_label)s,
+                    %(study_label)s,
+                    %(patient_reference)s,
+                    %(created_at)s, %(expires_at)s, %(markup_percent)s, %(instructions)s, %(allowed_products_json)s,
                     %(usage_limit)s, 0, 0, %(status)s,
-                    %(payment_method)s, %(payment_instructions)s, %(payment_instructions_encrypted)s, %(physician_certified)s
+                    %(payment_method)s, %(payment_instructions)s, %(physician_certified)s
                 )
                 """,
                 params,
@@ -556,34 +557,30 @@ def update_link(
         subject_label_value = _normalize_optional_text(next_subject_label)
         updates.extend(
             [
-                "subject_label = NULL",
-                "patient_id = NULL",
-                "subject_label_encrypted = %(subject_label_encrypted)s",
-                "patient_id_encrypted = %(patient_id_encrypted)s",
+                "subject_label = %(subject_label)s",
+                "patient_id = %(patient_id)s",
             ]
         )
-        params["subject_label_encrypted"] = _encrypt_field(token_hash, "subject_label", subject_label_value)
-        params["patient_id_encrypted"] = _encrypt_field(token_hash, "patient_id", subject_label_value)
+        params["subject_label"] = _encrypt_field(token_hash, "subject_label", subject_label_value)
+        params["patient_id"] = _encrypt_field(token_hash, "patient_id", subject_label_value)
 
     if study_label is not None:
         study_label_value = _normalize_optional_text(study_label)
-        updates.extend(["study_label = NULL", "study_label_encrypted = %(study_label_encrypted)s"])
-        params["study_label_encrypted"] = _encrypt_field(token_hash, "study_label", study_label_value)
+        updates.append("study_label = %(study_label)s")
+        params["study_label"] = _encrypt_field(token_hash, "study_label", study_label_value)
 
     if next_patient_reference is not None:
         patient_reference_value = _normalize_optional_text(next_patient_reference)
         updates.extend(
             [
-                "patient_reference = NULL",
-                "reference_label = NULL",
-                "patient_reference_encrypted = %(patient_reference_encrypted)s",
-                "reference_label_encrypted = %(reference_label_encrypted)s",
+                "patient_reference = %(patient_reference)s",
+                "reference_label = %(reference_label)s",
             ]
         )
-        params["patient_reference_encrypted"] = _encrypt_field(
+        params["patient_reference"] = _encrypt_field(
             token_hash, "patient_reference", patient_reference_value
         )
-        params["reference_label_encrypted"] = _encrypt_field(
+        params["reference_label"] = _encrypt_field(
             token_hash, "reference_label", patient_reference_value
         )
 
@@ -606,23 +603,18 @@ def update_link(
         updates.append("payment_method = %(payment_method)s")
 
     if payment_instructions is not None:
-        params["payment_instructions_encrypted"] = _encrypt_field(
+        params["payment_instructions"] = _encrypt_field(
             token_hash,
             "payment_instructions",
             _normalize_optional_text(payment_instructions, max_len=4000),
         )
-        updates.extend(
-            [
-                "payment_instructions = NULL",
-                "payment_instructions_encrypted = %(payment_instructions_encrypted)s",
-            ]
-        )
+        updates.append("payment_instructions = %(payment_instructions)s")
 
     if instructions is not None:
-        params["instructions_encrypted"] = _encrypt_field(
+        params["instructions"] = _encrypt_field(
             token_hash, "instructions", _normalize_optional_text(instructions, max_len=4000)
         )
-        updates.extend(["instructions = NULL", "instructions_encrypted = %(instructions_encrypted)s"])
+        updates.append("instructions = %(instructions)s")
 
     if allowed_products is not None:
         params["allowed_products_json"] = _serialize_json(_normalize_allowed_products(allowed_products))
@@ -789,12 +781,9 @@ def store_delegate_payload(
             """
             UPDATE patient_links
             SET
-                delegate_cart_json = NULL,
-                delegate_shipping_json = NULL,
-                delegate_payment_json = NULL,
-                delegate_cart_encrypted = %(cart)s,
-                delegate_shipping_encrypted = %(shipping)s,
-                delegate_payment_encrypted = %(payment)s,
+                delegate_cart_json = %(cart)s,
+                delegate_shipping_json = %(shipping)s,
+                delegate_payment_json = %(payment)s,
                 delegate_shared_at = %(shared_at)s,
                 delegate_order_id = COALESCE(%(order_id)s, delegate_order_id),
                 delegate_review_status = 'pending',
@@ -864,8 +853,7 @@ def set_delegate_review_status(
                 delegate_review_status = %(status)s,
                 delegate_reviewed_at = %(reviewed_at)s,
                 delegate_review_order_id = %(order_id)s,
-                delegate_review_notes = NULL,
-                delegate_review_notes_encrypted = %(notes)s
+                delegate_review_notes = %(notes)s
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
               AND expires_at > UTC_TIMESTAMP()

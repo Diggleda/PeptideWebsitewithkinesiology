@@ -51,8 +51,6 @@ const STATEMENTS = [
         GENERATED ALWAYS AS (LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')))
         STORED,
       payload LONGTEXT NULL,
-      payload_encrypted LONGTEXT NULL,
-      phi_payload_ref VARCHAR(64) NULL,
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
       INDEX idx_peppro_orders_user (user_id),
@@ -65,16 +63,12 @@ const STATEMENTS = [
   `
     CREATE TABLE IF NOT EXISTS contact_forms (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      phone VARCHAR(64) NULL,
-      name_encrypted LONGTEXT NULL,
-      email_encrypted LONGTEXT NULL,
-      phone_encrypted LONGTEXT NULL,
+      name LONGTEXT NOT NULL,
+      email LONGTEXT NOT NULL,
+      phone LONGTEXT NULL,
       email_blind_index CHAR(64) NULL,
       source VARCHAR(255) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_contact_forms_email (email),
       INDEX idx_contact_forms_email_blind (email_blind_index),
       INDEX idx_contact_forms_created_at (created_at)
     ) CHARACTER SET utf8mb4
@@ -83,12 +77,9 @@ const STATEMENTS = [
     CREATE TABLE IF NOT EXISTS bugs_reported (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       user_id VARCHAR(64) NULL,
-      name VARCHAR(255) NULL,
-      email VARCHAR(255) NULL,
+      name LONGTEXT NULL,
+      email LONGTEXT NULL,
       report LONGTEXT NOT NULL,
-      name_encrypted LONGTEXT NULL,
-      email_encrypted LONGTEXT NULL,
-      report_encrypted LONGTEXT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
   `,
@@ -102,7 +93,6 @@ const STATEMENTS = [
       source_system VARCHAR(32) NULL,
       source_external_id VARCHAR(128) NULL,
       source_payload_json LONGTEXT NULL,
-      source_payload_encrypted LONGTEXT NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'pending',
       notes LONGTEXT NULL,
       is_manual TINYINT(1) NOT NULL DEFAULT 0,
@@ -267,6 +257,106 @@ const ensureIndex = async (tableName, indexName, ddl) => {
     logger.error(
       { err: error, table: tableName, index: indexName },
       'Failed to ensure MySQL index',
+    );
+  }
+};
+
+const dropIndexIfExists = async (tableName, indexName) => {
+  try {
+    const existing = await mysqlClient.fetchOne(
+      `
+        SELECT INDEX_NAME
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :tableName
+          AND INDEX_NAME = :indexName
+        LIMIT 1
+      `,
+      { tableName, indexName },
+    );
+    if (existing) {
+      await mysqlClient.execute(`ALTER TABLE ${tableName} DROP INDEX ${indexName}`);
+      logger.info({ table: tableName, index: indexName }, 'MySQL index dropped');
+    }
+  } catch (error) {
+    logger.error(
+      { err: error, table: tableName, index: indexName },
+      'Failed to drop MySQL index',
+    );
+  }
+};
+
+const dropColumnIfExists = async (tableName, columnName) => {
+  try {
+    const existing = await mysqlClient.fetchOne(
+      `
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :tableName
+          AND COLUMN_NAME = :columnName
+        LIMIT 1
+      `,
+      { tableName, columnName },
+    );
+    if (existing) {
+      await mysqlClient.execute(`ALTER TABLE ${tableName} DROP COLUMN ${columnName}`);
+      logger.info({ table: tableName, column: columnName }, 'MySQL column dropped');
+    }
+  } catch (error) {
+    logger.error(
+      { err: error, table: tableName, column: columnName },
+      'Failed to drop MySQL column',
+    );
+  }
+};
+
+const copyLegacyCiphertext = async ({ tableName, baseColumn, legacyColumn, placeholder = null }) => {
+  try {
+    const baseExists = await mysqlClient.fetchOne(
+      `
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :tableName
+          AND COLUMN_NAME = :columnName
+        LIMIT 1
+      `,
+      { tableName, columnName: baseColumn },
+    );
+    const legacyExists = await mysqlClient.fetchOne(
+      `
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :tableName
+          AND COLUMN_NAME = :columnName
+        LIMIT 1
+      `,
+      { tableName, columnName: legacyColumn },
+    );
+    if (!baseExists || !legacyExists) {
+      return;
+    }
+    const params = {};
+    let condition = `(${baseColumn} IS NULL OR ${baseColumn} = '')`;
+    if (placeholder !== null) {
+      params.placeholder = placeholder;
+      condition = `(${baseColumn} IS NULL OR ${baseColumn} = '' OR ${baseColumn} = :placeholder)`;
+    }
+    await mysqlClient.execute(
+      `
+        UPDATE ${tableName}
+        SET ${baseColumn} = ${legacyColumn}
+        WHERE ${legacyColumn} IS NOT NULL
+          AND ${condition}
+      `,
+      params,
+    );
+  } catch (error) {
+    logger.error(
+      { err: error, table: tableName, baseColumn, legacyColumn },
+      'Failed to migrate legacy ciphertext inline',
     );
   }
 };
@@ -546,20 +636,6 @@ const ensureOrderColumns = async () => {
         ADD COLUMN shipped_at DATETIME NULL AFTER order_placed_at
       `,
     },
-    {
-      name: 'payload_encrypted',
-      ddl: `
-        ALTER TABLE peppro_orders
-        ADD COLUMN payload_encrypted LONGTEXT NULL AFTER payload
-      `,
-    },
-    {
-      name: 'phi_payload_ref',
-      ddl: `
-        ALTER TABLE peppro_orders
-        ADD COLUMN phi_payload_ref VARCHAR(64) NULL AFTER payload_encrypted
-      `,
-    },
   ];
   for (const column of columns) {
     try {
@@ -591,6 +667,13 @@ const ensureOrderColumns = async () => {
     'idx_peppro_orders_status_norm_created',
     'ALTER TABLE peppro_orders ADD INDEX idx_peppro_orders_status_norm_created (status_normalized, created_at)',
   );
+  await copyLegacyCiphertext({
+    tableName: 'peppro_orders',
+    baseColumn: 'payload',
+    legacyColumn: 'payload_encrypted',
+  });
+  await dropColumnIfExists('peppro_orders', 'payload_encrypted');
+  await dropColumnIfExists('peppro_orders', 'phi_payload_ref');
   for (const columnName of ['pickup_ready_notice', 'pickup_location']) {
     try {
       const existing = await mysqlClient.fetchOne(
@@ -637,13 +720,6 @@ const ensureSalesProspectColumns = async () => {
       ddl: `
         ALTER TABLE sales_prospects
         ADD COLUMN source_payload_json LONGTEXT NULL
-      `,
-    },
-    {
-      name: 'source_payload_encrypted',
-      ddl: `
-        ALTER TABLE sales_prospects
-        ADD COLUMN source_payload_encrypted LONGTEXT NULL
       `,
     },
     {
@@ -752,6 +828,12 @@ const ensureSalesProspectColumns = async () => {
     'idx_sales_prospects_contact_form_id',
     'ALTER TABLE sales_prospects ADD INDEX idx_sales_prospects_contact_form_id (contact_form_id)',
   );
+  await copyLegacyCiphertext({
+    tableName: 'sales_prospects',
+    baseColumn: 'source_payload_json',
+    legacyColumn: 'source_payload_encrypted',
+  });
+  await dropColumnIfExists('sales_prospects', 'source_payload_encrypted');
 };
 
 const ensureBugReportColumns = async () => {
@@ -770,35 +852,14 @@ const ensureBugReportColumns = async () => {
       name: 'name',
       ddl: `
         ALTER TABLE bugs_reported
-        ADD COLUMN name VARCHAR(255) NULL AFTER user_id
+        ADD COLUMN name LONGTEXT NULL AFTER user_id
       `,
     },
     {
       name: 'email',
       ddl: `
         ALTER TABLE bugs_reported
-        ADD COLUMN email VARCHAR(255) NULL AFTER name
-      `,
-    },
-    {
-      name: 'name_encrypted',
-      ddl: `
-        ALTER TABLE bugs_reported
-        ADD COLUMN name_encrypted LONGTEXT NULL AFTER name
-      `,
-    },
-    {
-      name: 'email_encrypted',
-      ddl: `
-        ALTER TABLE bugs_reported
-        ADD COLUMN email_encrypted LONGTEXT NULL AFTER email
-      `,
-    },
-    {
-      name: 'report_encrypted',
-      ddl: `
-        ALTER TABLE bugs_reported
-        ADD COLUMN report_encrypted LONGTEXT NULL AFTER report
+        ADD COLUMN email LONGTEXT NULL AFTER name
       `,
     },
   ];
@@ -822,6 +883,31 @@ const ensureBugReportColumns = async () => {
       logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL bugs_reported column');
     }
   }
+  try {
+    await mysqlClient.execute('ALTER TABLE bugs_reported MODIFY COLUMN name LONGTEXT NULL');
+    await mysqlClient.execute('ALTER TABLE bugs_reported MODIFY COLUMN email LONGTEXT NULL');
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to widen bugs_reported inline ciphertext columns');
+  }
+  await copyLegacyCiphertext({
+    tableName: 'bugs_reported',
+    baseColumn: 'name',
+    legacyColumn: 'name_encrypted',
+  });
+  await copyLegacyCiphertext({
+    tableName: 'bugs_reported',
+    baseColumn: 'email',
+    legacyColumn: 'email_encrypted',
+  });
+  await copyLegacyCiphertext({
+    tableName: 'bugs_reported',
+    baseColumn: 'report',
+    legacyColumn: 'report_encrypted',
+    placeholder: '[ENCRYPTED]',
+  });
+  await dropColumnIfExists('bugs_reported', 'name_encrypted');
+  await dropColumnIfExists('bugs_reported', 'email_encrypted');
+  await dropColumnIfExists('bugs_reported', 'report_encrypted');
 };
 
 const ensureTaxTrackingColumns = async () => {
@@ -901,18 +987,6 @@ const ensureContactFormIndexes = async () => {
   }
   const columns = [
     {
-      name: 'name_encrypted',
-      ddl: 'ALTER TABLE contact_forms ADD COLUMN name_encrypted LONGTEXT NULL',
-    },
-    {
-      name: 'email_encrypted',
-      ddl: 'ALTER TABLE contact_forms ADD COLUMN email_encrypted LONGTEXT NULL',
-    },
-    {
-      name: 'phone_encrypted',
-      ddl: 'ALTER TABLE contact_forms ADD COLUMN phone_encrypted LONGTEXT NULL',
-    },
-    {
       name: 'email_blind_index',
       ddl: 'ALTER TABLE contact_forms ADD COLUMN email_blind_index CHAR(64) NULL',
     },
@@ -937,11 +1011,34 @@ const ensureContactFormIndexes = async () => {
       logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL contact_forms column');
     }
   }
-  await ensureIndex(
-    'contact_forms',
-    'idx_contact_forms_email',
-    'ALTER TABLE contact_forms ADD INDEX idx_contact_forms_email (email)',
-  );
+  try {
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL');
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to widen contact_forms inline ciphertext columns');
+  }
+  await dropIndexIfExists('contact_forms', 'idx_contact_forms_email');
+  await copyLegacyCiphertext({
+    tableName: 'contact_forms',
+    baseColumn: 'name',
+    legacyColumn: 'name_encrypted',
+    placeholder: '[ENCRYPTED]',
+  });
+  await copyLegacyCiphertext({
+    tableName: 'contact_forms',
+    baseColumn: 'email',
+    legacyColumn: 'email_encrypted',
+    placeholder: '[ENCRYPTED]',
+  });
+  await copyLegacyCiphertext({
+    tableName: 'contact_forms',
+    baseColumn: 'phone',
+    legacyColumn: 'phone_encrypted',
+  });
+  await dropColumnIfExists('contact_forms', 'name_encrypted');
+  await dropColumnIfExists('contact_forms', 'email_encrypted');
+  await dropColumnIfExists('contact_forms', 'phone_encrypted');
   await ensureIndex(
     'contact_forms',
     'idx_contact_forms_email_blind',

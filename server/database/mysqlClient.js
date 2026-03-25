@@ -5,6 +5,12 @@ let pool = null;
 let loggedDisabled = false;
 let mysqlModule = null;
 
+const mysqlTlsError = (message) => {
+  const error = new Error(message);
+  error.code = 'MYSQL_TLS_REQUIRED';
+  return error;
+};
+
 const getMysqlModule = () => {
   if (!mysqlModule) {
     // Lazily require mysql2 so local/dev runs with MYSQL disabled do not pay
@@ -27,6 +33,21 @@ const logDisabledOnce = () => {
 };
 
 const isEnabled = () => Boolean(env.mysql?.enabled);
+
+const verifyTlsNegotiated = async (activePool) => {
+  if (!env.mysql?.ssl) {
+    return;
+  }
+  const [rows] = await activePool.query("SHOW SESSION STATUS LIKE 'Ssl_cipher'");
+  const cipher = String(rows?.[0]?.Value || '').trim();
+  if (cipher) {
+    return;
+  }
+  throw mysqlTlsError(
+    "MYSQL_SSL=true was configured, but the MySQL session did not negotiate TLS "
+    + "(SHOW SESSION STATUS LIKE 'Ssl_cipher' returned empty).",
+  );
+};
 
 const configure = async () => {
   if (!isEnabled()) {
@@ -51,6 +72,17 @@ const configure = async () => {
     timezone: env.mysql.timezone || 'Z',
     ssl: env.mysql.ssl ? {} : undefined,
   });
+  try {
+    await verifyTlsNegotiated(pool);
+  } catch (error) {
+    try {
+      await pool.end();
+    } catch (_closeError) {
+      // ignore close failures on startup validation
+    }
+    pool = null;
+    throw error;
+  }
   logger.info(
     {
       host: env.mysql.host,

@@ -139,8 +139,7 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
                 return [
                     {
                         "id": 7,
-                        "email": "[ENCRYPTED]",
-                        "email_encrypted": "cipher-email",
+                        "email": "cipher-email",
                         "created_at": "2026-03-24T00:00:00Z",
                     }
                 ]
@@ -154,7 +153,6 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
 
             self.assertEqual(mapping, {"doctor@example.com": "contact_form:7"})
             self.assertIn("email_blind_index IN", captured["query"])
-            self.assertEqual(captured["params"]["email_0"], "doctor@example.com")
             self.assertEqual(captured["params"]["blind_0"], "idx:doctor@example.com")
         finally:
             service.mysql_client.fetch_all = original_fetch_all
@@ -176,12 +174,9 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
                 return [
                     {
                         "id": 7,
-                        "name": "[ENCRYPTED]",
-                        "email": "[ENCRYPTED]",
-                        "phone": None,
-                        "name_encrypted": "cipher-name",
-                        "email_encrypted": "cipher-email",
-                        "phone_encrypted": "cipher-phone",
+                        "name": "cipher-name",
+                        "email": "cipher-email",
+                        "phone": "cipher-phone",
                         "source": "WEB",
                         "created_at": "2026-03-24T00:00:00Z",
                         "prospect_sales_rep_id": None,
@@ -241,8 +236,8 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
             def fake_fetch_all(query, _params=None):
                 if "FROM contact_forms" in query:
                     return [
-                        {"email": "[ENCRYPTED]", "email_encrypted": "cipher-email"},
-                        {"email": "plaintext@example.com", "email_encrypted": None},
+                        {"email": "cipher-email"},
+                        {"email": "plaintext@example.com"},
                     ]
                 if "FROM contact_form" in query:
                     return [{"email": "legacy@example.com"}]

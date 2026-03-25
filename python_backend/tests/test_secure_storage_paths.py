@@ -72,7 +72,7 @@ class SecureStorageWriteTests(unittest.TestCase):
     def _make_response(self, result):
         return self.app.make_response(result)
 
-    def test_contact_form_insert_uses_encrypted_columns_and_placeholders(self) -> None:
+    def test_contact_form_insert_stores_ciphertext_inline_in_existing_columns(self) -> None:
         cursor = _FakeCursor(lastrowid=321)
 
         def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
@@ -104,12 +104,12 @@ class SecureStorageWriteTests(unittest.TestCase):
         self.assertEqual(len(cursor.calls), 1)
 
         _query, params = cursor.calls[0]
-        self.assertEqual(params["name"], self.contact.ENCRYPTED_PLACEHOLDER)
-        self.assertEqual(params["email"], self.contact.ENCRYPTED_PLACEHOLDER)
-        self.assertIsNone(params["phone"])
-        self.assertEqual(params["name_encrypted"], "cipher:name:Dr. Jane Example")
-        self.assertEqual(params["email_encrypted"], "cipher:email:Doctor@Example.com")
-        self.assertEqual(params["phone_encrypted"], "cipher:phone:555-0100")
+        self.assertEqual(params["name"], "cipher:name:Dr. Jane Example")
+        self.assertEqual(params["email"], "cipher:email:Doctor@Example.com")
+        self.assertEqual(params["phone"], "cipher:phone:555-0100")
+        self.assertNotIn("name_encrypted", params)
+        self.assertNotIn("email_encrypted", params)
+        self.assertNotIn("phone_encrypted", params)
         self.assertEqual(params["email_blind_index"], "blind:doctor@example.com")
         self.assertEqual(params["source"], "PEPPR7")
 
@@ -127,7 +127,7 @@ class SecureStorageWriteTests(unittest.TestCase):
             source="contact_form:321",
         )
 
-    def test_bug_report_insert_uses_encrypted_columns_and_placeholder_report(self) -> None:
+    def test_bug_report_insert_stores_ciphertext_inline_in_existing_columns(self) -> None:
         cursor = _FakeCursor()
 
         def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
@@ -158,13 +158,12 @@ class SecureStorageWriteTests(unittest.TestCase):
         query, params = cursor.calls[0]
         self.assertIn("INSERT INTO bugs_reported", query)
         self.assertEqual(params["user_id"], "doctor-5")
-        self.assertEqual(params["report_placeholder"], "[ENCRYPTED]")
-        self.assertEqual(params["name_encrypted"], "cipher:name:Dr. Jane Example")
-        self.assertEqual(params["email_encrypted"], "cipher:email:doctor@example.com")
-        self.assertEqual(
-            params["report_encrypted"],
-            "cipher:report:Unable to access patient order details.",
-        )
+        self.assertEqual(params["name"], "cipher:name:Dr. Jane Example")
+        self.assertEqual(params["email"], "cipher:email:doctor@example.com")
+        self.assertEqual(params["report"], "cipher:report:Unable to access patient order details.")
+        self.assertNotIn("name_encrypted", params)
+        self.assertNotIn("email_encrypted", params)
+        self.assertNotIn("report_encrypted", params)
         track_event.assert_called_once_with(
             "issue_reported",
             actor={
@@ -177,7 +176,7 @@ class SecureStorageWriteTests(unittest.TestCase):
 
 
 class PatientLinkEncryptionTests(unittest.TestCase):
-    def test_create_link_clears_plaintext_sensitive_fields_before_insert(self) -> None:
+    def test_create_link_stores_ciphertext_inline_in_existing_columns(self) -> None:
         calls: List[Tuple[str, Dict[str, Any]]] = []
 
         def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
@@ -212,23 +211,23 @@ class PatientLinkEncryptionTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
         _query, params = calls[0]
-        self.assertEqual(params["patient_id"], None)
-        self.assertEqual(params["reference_label"], None)
-        self.assertEqual(params["subject_label"], None)
-        self.assertEqual(params["study_label"], None)
-        self.assertEqual(params["patient_reference"], None)
-        self.assertEqual(params["instructions"], None)
-        self.assertEqual(params["payment_instructions"], None)
-        self.assertEqual(params["patient_id_encrypted"], "cipher:patient_id:PAT-123")
-        self.assertEqual(params["reference_label_encrypted"], "cipher:reference_label:REF-7")
-        self.assertEqual(params["subject_label_encrypted"], "cipher:subject_label:PAT-123")
-        self.assertEqual(params["study_label_encrypted"], "cipher:study_label:Study A")
-        self.assertEqual(params["patient_reference_encrypted"], "cipher:patient_reference:REF-7")
-        self.assertEqual(params["instructions_encrypted"], "cipher:instructions:Use nightly")
+        self.assertEqual(params["patient_id"], "cipher:patient_id:PAT-123")
+        self.assertEqual(params["reference_label"], "cipher:reference_label:REF-7")
+        self.assertEqual(params["subject_label"], "cipher:subject_label:PAT-123")
+        self.assertEqual(params["study_label"], "cipher:study_label:Study A")
+        self.assertEqual(params["patient_reference"], "cipher:patient_reference:REF-7")
+        self.assertEqual(params["instructions"], "cipher:instructions:Use nightly")
         self.assertEqual(
-            params["payment_instructions_encrypted"],
+            params["payment_instructions"],
             "cipher:payment_instructions:Pay by Friday",
         )
+        self.assertNotIn("patient_id_encrypted", params)
+        self.assertNotIn("reference_label_encrypted", params)
+        self.assertNotIn("subject_label_encrypted", params)
+        self.assertNotIn("study_label_encrypted", params)
+        self.assertNotIn("patient_reference_encrypted", params)
+        self.assertNotIn("instructions_encrypted", params)
+        self.assertNotIn("payment_instructions_encrypted", params)
         self.assertEqual(params["token_ciphertext"], "cipher:token:token-1234")
 
 

@@ -7,7 +7,26 @@ const salesProspectRepository = require('../repositories/salesProspectRepository
 const { computeBlindIndex, decryptText, encryptText } = require('../utils/cryptoEnvelope');
 
 const router = express.Router();
-const ENCRYPTED_PLACEHOLDER = '[ENCRYPTED]';
+
+const readContactField = (row, field) => {
+  const decrypted = decryptText(row?.[field], { aad: { table: 'contact_forms', field } });
+  if (typeof decrypted === 'string' && decrypted.trim()) {
+    const text = decrypted.trim();
+    if (text !== '[ENCRYPTED]') {
+      return text;
+    }
+  }
+  const legacy = decryptText(row?.[`${field}_encrypted`], { aad: { table: 'contact_forms', field } });
+  if (typeof legacy === 'string' && legacy.trim()) {
+    return legacy.trim();
+  }
+  const value = row?.[field];
+  if (value == null) {
+    return null;
+  }
+  const text = String(value).trim();
+  return text && text !== '[ENCRYPTED]' ? text : null;
+};
 
 router.get('/', ensureAdmin, async (req, res) => {
   if (!mysqlClient.isEnabled()) {
@@ -17,7 +36,7 @@ router.get('/', ensureAdmin, async (req, res) => {
   try {
     const submissions = await mysqlClient.fetchAll(
       `
-        SELECT id, name, email, phone, name_encrypted, email_encrypted, phone_encrypted, source, created_at
+        SELECT id, name, email, phone, source, created_at
         FROM contact_forms
         ORDER BY created_at DESC
       `,
@@ -25,9 +44,9 @@ router.get('/', ensureAdmin, async (req, res) => {
     return res.status(200).json(
       (submissions || []).map((row) => ({
         ...row,
-        name: decryptText(row.name_encrypted) || row.name || null,
-        email: decryptText(row.email_encrypted) || row.email || null,
-        phone: decryptText(row.phone_encrypted) || row.phone || null,
+        name: readContactField(row, 'name'),
+        email: readContactField(row, 'email'),
+        phone: readContactField(row, 'phone'),
       })),
     );
   } catch (error) {
@@ -53,20 +72,17 @@ router.post('/', async (req, res) => {
     const result = await mysqlClient.execute(
       `
         INSERT INTO contact_forms (
-          name, email, phone, name_encrypted, email_encrypted, phone_encrypted, email_blind_index, source
+          name, email, phone, email_blind_index, source
         )
         VALUES (
-          :name, :email, :phone, :nameEncrypted, :emailEncrypted, :phoneEncrypted, :emailBlindIndex, :source
+          :name, :email, :phone, :emailBlindIndex, :source
         )
       `,
       {
         ...trimmed,
-        name: ENCRYPTED_PLACEHOLDER,
-        email: ENCRYPTED_PLACEHOLDER,
-        phone: null,
-        nameEncrypted: encryptText(trimmed.name, { aad: { table: 'contact_forms', field: 'name' } }),
-        emailEncrypted: encryptText(trimmed.email, { aad: { table: 'contact_forms', field: 'email' } }),
-        phoneEncrypted: trimmed.phone
+        name: encryptText(trimmed.name, { aad: { table: 'contact_forms', field: 'name' } }),
+        email: encryptText(trimmed.email, { aad: { table: 'contact_forms', field: 'email' } }),
+        phone: trimmed.phone
           ? encryptText(trimmed.phone, { aad: { table: 'contact_forms', field: 'phone' } })
           : null,
         emailBlindIndex: computeBlindIndex(trimmed.email.toLowerCase(), {

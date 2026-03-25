@@ -86,6 +86,14 @@ def _normalize_contact_form_email(value: Any) -> str:
 def _read_contact_form_email(row: Dict[str, Any], *, table: str) -> Optional[str]:
     if table == "contact_forms":
         decrypted = decrypt_text(
+            row.get("email"),
+            aad={"table": "contact_forms", "field": "email"},
+        )
+        if isinstance(decrypted, str) and decrypted.strip():
+            text = decrypted.strip()
+            if text != "[ENCRYPTED]":
+                return text
+        decrypted = decrypt_text(
             row.get("email_encrypted"),
             aad={"table": "contact_forms", "field": "email"},
         )
@@ -112,7 +120,7 @@ def _load_contact_form_emails_from_mysql() -> set[str]:
         for table in ("contact_form", "contact_forms"):
             try:
                 query = (
-                    "SELECT DISTINCT email, email_encrypted FROM contact_forms"
+                    "SELECT DISTINCT email FROM contact_forms"
                     if table == "contact_forms"
                     else f"SELECT DISTINCT email FROM {table}"
                 )

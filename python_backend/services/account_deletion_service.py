@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Tuple
 
@@ -8,6 +9,7 @@ import pymysql
 from .. import storage
 from ..database import mysql_client
 from ..repositories import user_repository
+from ..utils.crypto_envelope import decrypt_json, encrypt_json
 from . import get_config
 
 
@@ -77,11 +79,134 @@ def _execute_mysql(query: str, params: Dict[str, Any], label: str) -> Dict[str, 
         raise
 
 
+def _parse_json_value(value: Any) -> Any:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
+
+
+def _candidate_aads(row: Dict[str, Any], *, table_name: str, field_name: str, record_ref_fields: List[str]) -> List[Dict[str, str]]:
+    candidates: List[Dict[str, str]] = []
+    seen: set[str] = set()
+    for key in [*record_ref_fields, "id"]:
+        ref = str(row.get(key) or "").strip() or "pending"
+        if ref in seen:
+            continue
+        seen.add(ref)
+        candidates.append({"table": table_name, "record_ref": ref, "field": field_name})
+    if not candidates:
+        candidates.append({"table": table_name, "record_ref": "pending", "field": field_name})
+    return candidates
+
+
+def _read_mysql_json_field(
+    row: Dict[str, Any],
+    *,
+    table_name: str,
+    field_name: str,
+    legacy_fields: List[str] | None = None,
+    record_ref_fields: List[str] | None = None,
+) -> tuple[Any, Dict[str, str]]:
+    legacy_fields = legacy_fields or []
+    record_ref_fields = record_ref_fields or []
+    aads = _candidate_aads(
+        row,
+        table_name=table_name,
+        field_name=field_name,
+        record_ref_fields=record_ref_fields,
+    )
+
+    field_values = [row.get(field_name)]
+    field_values.extend(row.get(field) for field in legacy_fields)
+    for value in field_values:
+        for aad in aads:
+            try:
+                decoded = decrypt_json(value, aad=aad)
+            except Exception:
+                decoded = None
+            if decoded is not None:
+                return decoded, aad
+        try:
+            decoded = decrypt_json(value)
+        except Exception:
+            decoded = None
+        if decoded is not None:
+            return decoded, aads[0]
+        decoded = _parse_json_value(value)
+        if decoded is not None:
+            return decoded, aads[0]
+
+    return None, aads[0]
+
+
+def _rewrite_mysql_json_field(
+    *,
+    table_name: str,
+    field_name: str,
+    label: str,
+    target_id: str,
+    replacement_id: str,
+    legacy_fields: List[str] | None = None,
+    record_ref_fields: List[str] | None = None,
+) -> Dict[str, Any]:
+    try:
+        rows = mysql_client.fetch_all(f"SELECT * FROM {table_name}")
+    except pymysql.MySQLError as exc:
+        code = exc.args[0] if exc.args else None
+        if isinstance(code, int) and code in _IGNORED_MYSQL_CODES:
+            return {"label": label, "ok": True, "affectedRows": 0, "ignored": True}
+        raise
+
+    affected = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = _normalize_id(row.get("id"))
+        if not row_id:
+            continue
+        decoded, aad = _read_mysql_json_field(
+            row,
+            table_name=table_name,
+            field_name=field_name,
+            legacy_fields=legacy_fields,
+            record_ref_fields=record_ref_fields,
+        )
+        if decoded is None:
+            continue
+        updated, changed = _replace_id_deep(decoded, target_id, replacement_id)
+        if not changed:
+            continue
+        mysql_client.execute(
+            f"UPDATE {table_name} SET {field_name} = %(value)s WHERE id = %(id)s",
+            {
+                "id": row_id,
+                "value": encrypt_json(updated, aad=aad),
+            },
+        )
+        affected += 1
+
+    return {"label": label, "ok": True, "affectedRows": affected}
+
+
 def _rewrite_mysql_references(target_id: str, replacement_id: str) -> List[Dict[str, Any]]:
     if not bool(get_config().mysql.get("enabled")):
         return []
 
-    params_base = {"target_id": target_id, "replacement_id": replacement_id, "needle": f"%{target_id}%"}
     statements = [
         (
             "orders.user_id",
@@ -89,24 +214,9 @@ def _rewrite_mysql_references(target_id: str, replacement_id: str) -> List[Dict[
             {"target_id": target_id, "replacement_id": replacement_id},
         ),
         (
-            "orders.payload",
-            "UPDATE orders SET payload = REPLACE(payload, %(target_id)s, %(replacement_id)s) WHERE payload LIKE %(needle)s",
-            params_base,
-        ),
-        (
-            "orders.shipping_address",
-            "UPDATE orders SET shipping_address = REPLACE(shipping_address, %(target_id)s, %(replacement_id)s) WHERE shipping_address LIKE %(needle)s",
-            params_base,
-        ),
-        (
             "peppro_orders.user_id",
             "UPDATE peppro_orders SET user_id = %(replacement_id)s WHERE user_id = %(target_id)s",
             {"target_id": target_id, "replacement_id": replacement_id},
-        ),
-        (
-            "peppro_orders.payload",
-            "UPDATE peppro_orders SET payload = REPLACE(payload, %(target_id)s, %(replacement_id)s) WHERE payload LIKE %(needle)s",
-            params_base,
         ),
         (
             "referrals.referrer_doctor_id",
@@ -188,6 +298,37 @@ def _rewrite_mysql_references(target_id: str, replacement_id: str) -> List[Dict[
     results: List[Dict[str, Any]] = []
     for label, query, params in statements:
         results.append(_execute_mysql(query, params, label))
+        if label == "orders.user_id":
+            results.append(
+                _rewrite_mysql_json_field(
+                    table_name="orders",
+                    field_name="payload",
+                    label="orders.payload",
+                    target_id=target_id,
+                    replacement_id=replacement_id,
+                )
+            )
+            results.append(
+                _rewrite_mysql_json_field(
+                    table_name="orders",
+                    field_name="shipping_address",
+                    label="orders.shipping_address",
+                    target_id=target_id,
+                    replacement_id=replacement_id,
+                )
+            )
+        if label == "peppro_orders.user_id":
+            results.append(
+                _rewrite_mysql_json_field(
+                    table_name="peppro_orders",
+                    field_name="payload",
+                    label="peppro_orders.payload",
+                    target_id=target_id,
+                    replacement_id=replacement_id,
+                    legacy_fields=["payload_encrypted"],
+                    record_ref_fields=["phi_payload_ref"],
+                )
+            )
     return results
 
 

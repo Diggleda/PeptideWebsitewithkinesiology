@@ -17,6 +17,10 @@ _pool_total = 0
 _RetryResult = TypeVar("_RetryResult")
 
 
+class MySQLTlsRequiredError(RuntimeError):
+    """Raised when MYSQL_SSL=true is configured but the server did not negotiate TLS."""
+
+
 def is_enabled() -> bool:
     return bool(_config and _config.mysql.get("enabled"))
 
@@ -49,7 +53,7 @@ def _create_connection() -> pymysql.connections.Connection:
     if not ssl_disabled:
         ssl_params = {}
 
-    return pymysql.connect(
+    connection = pymysql.connect(
         host=mysql_config.get("host"),
         port=int(mysql_config.get("port", 3306)),
         user=mysql_config.get("user"),
@@ -62,6 +66,38 @@ def _create_connection() -> pymysql.connections.Connection:
         connect_timeout=max(1, int(mysql_config.get("connect_timeout", 5) or 5)),
         read_timeout=max(1, int(mysql_config.get("read_timeout", 15) or 15)),
         write_timeout=max(1, int(mysql_config.get("write_timeout", 15) or 15)),
+    )
+    _assert_tls_negotiated(connection)
+    return connection
+
+
+def _assert_tls_negotiated(connection: pymysql.connections.Connection) -> None:
+    if not _config or not _config.mysql.get("ssl"):
+        return
+
+    cur = connection.cursor()
+    try:
+        cur.execute("SHOW SESSION STATUS LIKE 'Ssl_cipher'")
+        row = cur.fetchone() or {}
+    finally:
+        cur.close()
+
+    cipher = ""
+    if isinstance(row, dict):
+        cipher = str(row.get("Value") or "").strip()
+    elif isinstance(row, (tuple, list)) and len(row) >= 2:
+        cipher = str(row[1] or "").strip()
+
+    if cipher:
+        return
+
+    try:
+        connection.close()
+    except Exception:
+        pass
+    raise MySQLTlsRequiredError(
+        "MYSQL_SSL=true was configured, but the MySQL session did not negotiate TLS "
+        "(SHOW SESSION STATUS LIKE 'Ssl_cipher' returned empty)."
     )
 
 

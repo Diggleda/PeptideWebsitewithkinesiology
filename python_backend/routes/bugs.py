@@ -88,24 +88,23 @@ def submit_bug_report():
                 cur.execute(
                     """
                     INSERT INTO bugs_reported (
-                        user_id, name, email, report, name_encrypted, email_encrypted, report_encrypted
+                        user_id, name, email, report
                     )
                     VALUES (
-                        %(user_id)s, NULL, NULL, %(report_placeholder)s, %(name_encrypted)s, %(email_encrypted)s, %(report_encrypted)s
+                        %(user_id)s, %(name)s, %(email)s, %(report)s
                     )
                     """,
                     {
                         "user_id": record["userId"],
-                        "report_placeholder": "[ENCRYPTED]",
-                        "name_encrypted": encrypt_text(
+                        "name": encrypt_text(
                             record["name"],
                             aad={"table": "bugs_reported", "field": "name"},
                         ) if record["name"] else None,
-                        "email_encrypted": encrypt_text(
+                        "email": encrypt_text(
                             record["email"],
                             aad={"table": "bugs_reported", "field": "email"},
                         ) if record["email"] else None,
-                        "report_encrypted": encrypt_text(
+                        "report": encrypt_text(
                             record["report"],
                             aad={"table": "bugs_reported", "field": "report"},
                         ),
