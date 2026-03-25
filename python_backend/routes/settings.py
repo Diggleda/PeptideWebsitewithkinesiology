@@ -1798,6 +1798,7 @@ def get_sales_rep_profile(sales_rep_id: str):
                     or ("sales_partner" if bool(rep.get("isPartner")) else rep.get("role"))
                 ),
                 "isPartner": bool(rep.get("isPartner")),
+                "allowedRetail": bool(rep.get("allowedRetail")),
                 "jurisdiction": rep.get("jurisdiction"),
                 "userId": resolved_user_id,
             }

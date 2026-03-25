@@ -271,6 +271,7 @@ interface User {
     phone?: string | null;
     jurisdiction?: string | null;
     isPartner?: boolean | null;
+    allowedRetail?: boolean | null;
   } | null;
   referrerDoctorId?: string | null;
   phone?: string | null;
@@ -349,6 +350,19 @@ const isTestRep = (role?: string | null) =>
   normalizeRole(role) === "test_rep";
 const isSalesPartner = (role?: string | null, isPartner?: boolean | null) =>
   Boolean(isPartner) || normalizeRole(role) === "sales_partner";
+const coerceOptionalBoolean = (value: unknown): boolean | null => {
+  if (value === true || value === false) return value;
+  if (value == null) return null;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return value !== 0;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return null;
+};
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return (
@@ -4006,9 +4020,12 @@ function MainApp() {
   const adminReportsCalendarRef = useRef<HTMLDivElement | null>(null);
   const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
   const [loginContext, setLoginContext] = useState<"checkout" | null>(null);
+  const currentSalesActorAllowedRetail =
+    coerceOptionalBoolean(user?.salesRep?.allowedRetail) === true;
   const canUseRetailPricing = Boolean(
-    user && (isRep(user.role) || isAdmin(user.role)),
+    user && (isAdmin(user.role) || (isRep(user.role) && currentSalesActorAllowedRetail)),
   );
+  const canSeeRetailRevenueInSalesDashboard = canUseRetailPricing;
   const [landingAuthMode, setLandingAuthMode] = useState<
     "login" | "signup" | "forgot" | "reset"
   >(getInitialLandingMode);
@@ -7066,6 +7083,8 @@ function MainApp() {
 				    salesRevenue?: number | null;
 				    salesWholesaleRevenue?: number | null;
 				    salesRetailRevenue?: number | null;
+            isPartner?: boolean | null;
+            allowedRetail?: boolean | null;
 			    orderQuantity?: number | null;
           salesOrderCount?: number | null;
 			    totalOrderValue?: number | null;
@@ -7232,6 +7251,8 @@ function MainApp() {
 		        name: string | null;
 		        email: string | null;
 		        role: string | null;
+            isPartner?: boolean | null;
+            allowedRetail?: boolean | null;
 		        userId?: string | null;
 		      }
 		    >
@@ -7616,6 +7637,8 @@ function MainApp() {
 			              name: localName || null,
 			              email: localEmail || null,
 			              role: "sales_rep",
+                    isPartner: null,
+                    allowedRetail: null,
 			              userId: null,
 			            },
 			          }));
@@ -7645,6 +7668,12 @@ function MainApp() {
 					                repProfile?.role ||
 					                  (repProfile?.isPartner ? "sales_partner" : "sales_rep"),
 					              ) || "sales_rep",
+                      isPartner: coerceOptionalBoolean(
+                        repProfile?.isPartner ?? repProfile?.is_partner,
+                      ),
+                      allowedRetail: coerceOptionalBoolean(
+                        repProfile?.allowedRetail ?? repProfile?.allowed_retail,
+                      ),
 					            userId: repUserId,
 					          },
 					        }));
@@ -8928,6 +8957,12 @@ function MainApp() {
 	        salesRevenue: bucket.salesRevenue ?? null,
 	        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
 	        salesRetailRevenue: bucket.salesRetailRevenue ?? null,
+          isPartner: coerceOptionalBoolean(
+            (bucket as any)?.isPartner ?? (bucket as any)?.is_partner,
+          ),
+          allowedRetail: coerceOptionalBoolean(
+            (bucket as any)?.allowedRetail ?? (bucket as any)?.allowed_retail,
+          ),
 	        orderQuantity: bucket.orderQuantity ?? null,
 	        totalOrderValue: bucket.totalOrderValue ?? null,
 	        orders: bucket.orders,
@@ -9060,6 +9095,10 @@ function MainApp() {
           total: 0,
           salesWholesaleRevenue,
           salesRetailRevenue,
+          isPartner: coerceOptionalBoolean(entry?.isPartner ?? entry?.is_partner),
+          allowedRetail: coerceOptionalBoolean(
+            entry?.allowedRetail ?? entry?.allowed_retail,
+          ),
         },
         entryRole || "doctor",
       );
@@ -9474,6 +9513,18 @@ function MainApp() {
                 Number.isFinite(modalResp.salesRetailRevenue)
                   ? modalResp.salesRetailRevenue
                   : immediateSalesRetailRevenue,
+              isPartner: coerceOptionalBoolean(
+                profile?.isPartner ??
+                  profile?.is_partner ??
+                  entry?.isPartner ??
+                  entry?.is_partner,
+              ),
+              allowedRetail: coerceOptionalBoolean(
+                profile?.allowedRetail ??
+                  profile?.allowed_retail ??
+                  entry?.allowedRetail ??
+                  entry?.allowed_retail,
+              ),
               orderQuantity:
                 typeof modalResp?.orderQuantity === "number" && Number.isFinite(modalResp.orderQuantity)
                   ? modalResp.orderQuantity
@@ -9953,6 +10004,9 @@ function MainApp() {
 	      salesRepUserId?: string | null;
 	      salesRepName: string;
 	      salesRepEmail: string | null;
+        role?: string | null;
+        isPartner?: boolean | null;
+        allowedRetail?: boolean | null;
 	      totalOrders: number;
 	      totalRevenue: number;
 	      wholesaleRevenue?: number;
@@ -11086,6 +11140,10 @@ function MainApp() {
 	            (Number.isFinite(wholesaleRevenue) ? wholesaleRevenue : 0) +
 	              (Number.isFinite(retailRevenue) ? retailRevenue : 0),
 	        );
+          const isPartner = coerceOptionalBoolean(rep?.isPartner ?? rep?.is_partner);
+          const allowedRetail = coerceOptionalBoolean(
+            rep?.allowedRetail ?? rep?.allowed_retail,
+          );
 	        return {
 	          ...rep,
 	          salesRepId,
@@ -11099,6 +11157,12 @@ function MainApp() {
 	            rep?.salesRepEmail ??
 	            rep?.sales_rep_email ??
 	            null,
+            role:
+              typeof rep?.role === "string" && rep.role.trim().length > 0
+                ? rep.role
+                : null,
+            isPartner,
+            allowedRetail,
 	          totalOrders: Number.isFinite(totalOrders) ? totalOrders : 0,
 	          totalRevenue: Number.isFinite(totalRevenue) ? totalRevenue : 0,
 	          wholesaleRevenue: Number.isFinite(wholesaleRevenue) ? wholesaleRevenue : 0,
@@ -22863,18 +22927,20 @@ function MainApp() {
 		                                    openLiveUserDetail(
 		                                      {
 		                                        id: rep.salesRepUserId || rep.salesRepId,
-		                                        name: rep.salesRepName,
-		                                        email: rep.salesRepEmail,
-		                                        role:
-		                                          normalizeRole(
-		                                            rep?.role ||
-		                                              (rep?.isPartner ? "sales_partner" : "sales_rep"),
-		                                          ) || "sales_rep",
-		                                      },
-		                                      {
-		                                        salesRepWholesaleRevenue: Number(rep.wholesaleRevenue || 0),
-		                                        salesRepRetailRevenue: Number(rep.retailRevenue || 0),
-		                                      },
+		                                      name: rep.salesRepName,
+		                                      email: rep.salesRepEmail,
+		                                      role:
+		                                        normalizeRole(
+		                                          rep?.role ||
+		                                            (rep?.isPartner ? "sales_partner" : "sales_rep"),
+		                                        ) || "sales_rep",
+                                        isPartner: rep?.isPartner ?? null,
+                                        allowedRetail: rep?.allowedRetail ?? null,
+		                                    },
+		                                    {
+		                                      salesRepWholesaleRevenue: Number(rep.wholesaleRevenue || 0),
+		                                      salesRepRetailRevenue: Number(rep.retailRevenue || 0),
+		                                    },
 		                                    )
 		                                  }
 		                                  title="Open sales rep details"
@@ -25117,6 +25183,8 @@ function MainApp() {
 			                                          rep?.role ||
 			                                            (rep?.isPartner ? "sales_partner" : "sales_rep"),
 			                                        ) || "sales_rep",
+                                          isPartner: rep?.isPartner ?? null,
+                                          allowedRetail: rep?.allowedRetail ?? null,
 			                                    },
 			                                    {
 		                                      salesRepWholesaleRevenue: Number(
@@ -26532,12 +26600,14 @@ function MainApp() {
                               {formatCurrency(salesTrackingSummary?.wholesaleRevenue ?? 0)}
                             </p>
                           </div>
-                          <div className="sales-metric-pill">
-                            <p className="sales-metric-label">Retail Revenue</p>
-                            <p className="sales-metric-value">
-                              {formatCurrency(salesTrackingSummary?.retailRevenue ?? 0)}
-                            </p>
-                          </div>
+                          {canSeeRetailRevenueInSalesDashboard && (
+                            <div className="sales-metric-pill">
+                              <p className="sales-metric-label">Retail Revenue</p>
+                              <p className="sales-metric-value">
+                                {formatCurrency(salesTrackingSummary?.retailRevenue ?? 0)}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -26717,17 +26787,32 @@ function MainApp() {
                                   </div>
                                 </button>
                                 <div className="text-right">
-                                  <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">
-                                    Wholesale / Retail
-                                  </p>
-                                  <div className="space-y-0.5">
-                                    <p className="text-sm font-semibold text-slate-900">
-                                      W: {formatCurrency(wholesaleForRow)}
-                                    </p>
-                                    <p className="text-sm font-semibold text-slate-900">
-                                      R: {formatCurrency(retailForRow)}
-                                    </p>
-                                  </div>
+                                  {canSeeRetailRevenueInSalesDashboard ? (
+                                    <>
+                                      <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">
+                                        Wholesale / Retail
+                                      </p>
+                                      <div className="space-y-0.5">
+                                        <p className="text-sm font-semibold text-slate-900">
+                                          W: {formatCurrency(wholesaleForRow)}
+                                        </p>
+                                        <p className="text-sm font-semibold text-slate-900">
+                                          R: {formatCurrency(retailForRow)}
+                                        </p>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">
+                                        Wholesale Revenue
+                                      </p>
+                                      <div className="space-y-0.5">
+                                        <p className="text-sm font-semibold text-slate-900">
+                                          W: {formatCurrency(wholesaleForRow)}
+                                        </p>
+                                      </div>
+                                    </>
+                                  )}
                                   <p className="text-xs text-slate-500">
                                     {bucket.orders.length} order
                                     {bucket.orders.length === 1 ? "" : "s"}
@@ -30844,6 +30929,40 @@ function MainApp() {
 				                      "—"
 				                    )}
 				                  </div>
+                          {(() => {
+                            const viewerCanSeeSalesFlags = Boolean(
+                              isAdmin(user?.role) || isSalesLead(user?.role),
+                            );
+                            const targetIsSalesActor =
+                              isRep(salesDoctorDetail.role) ||
+                              isSalesLead(salesDoctorDetail.role) ||
+                              isAdmin(salesDoctorDetail.role);
+                            if (!viewerCanSeeSalesFlags || !targetIsSalesActor) return null;
+                            const isPartner = coerceOptionalBoolean(
+                              salesDoctorDetail.isPartner,
+                            );
+                            const allowedRetail = coerceOptionalBoolean(
+                              salesDoctorDetail.allowedRetail,
+                            );
+                            const formatFlag = (value: boolean | null) =>
+                              value === true ? "Yes" : value === false ? "No" : "—";
+                            const roleLabel = isAdmin(salesDoctorDetail.role)
+                              ? "Admin"
+                              : formatRoleLabel(salesDoctorDetail.role, { isPartner });
+                            return (
+                              <>
+                                <div className="text-sm font-normal text-slate-600">
+                                  Role: {roleLabel}
+                                </div>
+                                <div className="text-sm font-normal text-slate-600">
+                                  Sales Partner: {formatFlag(isPartner)}
+                                </div>
+                                <div className="text-sm font-normal text-slate-600">
+                                  Allowed Retail: {formatFlag(allowedRetail)}
+                                </div>
+                              </>
+                            );
+                          })()}
                           {salesDoctorDetail.leadTypeLabel ? (
                             <div className="text-sm font-normal text-slate-600">
                               Lead Type: {salesDoctorDetail.leadTypeLabel}
@@ -30930,6 +31049,8 @@ function MainApp() {
 					                                      name: name || undefined,
 					                                      email: email || undefined,
 					                                      role: role || "sales_rep",
+                                          isPartner: ownerProfile?.isPartner ?? null,
+                                          allowedRetail: ownerProfile?.allowedRetail ?? null,
 					                                    })
 					                                  }
 					                                  className="text-slate-600 hover:underline"

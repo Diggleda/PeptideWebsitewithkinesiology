@@ -54,7 +54,15 @@ def _is_sales_rep_account_role(value: Any) -> bool:
 
 
 def _is_sales_rep_like_role(value: Any) -> bool:
-    return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "admin")
+    return _normalize_role(value) in (
+        "sales_rep",
+        "sales_partner",
+        "rep",
+        "admin",
+        "sales_lead",
+        "saleslead",
+        "test_rep",
+    )
 
 
 def _resolve_sales_user_role(sales_rep: Optional[Dict]) -> str:
@@ -970,7 +978,7 @@ def _sanitize_user(user: Dict) -> Dict:
                 sales_rep = rep_user
     else:
         role = _normalize_role(sanitized.get("role"))
-        if role in ("admin", "sales_rep", "sales_partner"):
+        if _is_sales_rep_like_role(role):
             email = sanitized.get("email") or ""
             sales_rep = sales_rep_repository.find_by_email(email) if email else None
             if not sales_rep:
@@ -981,6 +989,9 @@ def _sanitize_user(user: Dict) -> Dict:
         is_partner = _normalize_bool(
             sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
         )
+        allowed_retail = _normalize_bool(
+            sales_rep.get("allowedRetail") if "allowedRetail" in sales_rep else sales_rep.get("allowed_retail")
+        )
         sanitized["salesRep"] = {
             "id": sales_rep.get("id"),
             "name": sales_rep.get("name"),
@@ -988,6 +999,7 @@ def _sanitize_user(user: Dict) -> Dict:
             "phone": sales_rep.get("phone"),
             "jurisdiction": sales_rep.get("jurisdiction"),
             "isPartner": is_partner,
+            "allowedRetail": allowed_retail,
         }
         if not sanitized.get("referralCode"):
             sales_code = sales_rep.get("salesCode")
@@ -1044,6 +1056,9 @@ def _sanitize_sales_rep(rep: Dict) -> Dict:
     sanitized.pop("sessionId", None)
     sanitized["isPartner"] = _normalize_bool(
         sanitized.get("isPartner") if "isPartner" in sanitized else sanitized.get("is_partner")
+    )
+    sanitized["allowedRetail"] = _normalize_bool(
+        sanitized.get("allowedRetail") if "allowedRetail" in sanitized else sanitized.get("allowed_retail")
     )
     sanitized["role"] = "sales_partner" if sanitized["isPartner"] else "sales_rep"
     sanitized.setdefault("salesRepId", sanitized.get("id"))

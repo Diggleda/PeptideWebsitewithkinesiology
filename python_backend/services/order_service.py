@@ -115,6 +115,49 @@ def _resolve_rep_record_role(rep: Dict | None) -> str:
     return normalized or "sales_rep"
 
 
+def _resolve_sales_rep_record_for_user(
+    user: Dict | None,
+    rep_records: Dict[str, Dict] | None = None,
+) -> Dict | None:
+    if not isinstance(user, dict):
+        return None
+
+    records = rep_records
+    if records is None:
+        records = {
+            str(rep.get("id")): rep
+            for rep in sales_rep_repository.get_all()
+            if isinstance(rep, dict) and rep.get("id") is not None
+        }
+
+    for candidate in (
+        user.get("salesRepId"),
+        user.get("sales_rep_id"),
+        user.get("ownerSalesRepId"),
+        user.get("owner_sales_rep_id"),
+        user.get("id"),
+    ):
+        normalized = str(candidate or "").strip()
+        if normalized and normalized in records:
+            return records[normalized]
+
+    user_id = str(user.get("id") or "").strip()
+    if user_id:
+        for rep in records.values():
+            legacy_user_id = str(rep.get("legacyUserId") or rep.get("legacy_user_id") or "").strip()
+            if legacy_user_id and legacy_user_id == user_id:
+                return rep
+
+    email = str(user.get("email") or "").strip().lower()
+    if email:
+        for rep in records.values():
+            rep_email = str(rep.get("email") or "").strip().lower()
+            if rep_email and rep_email == email:
+                return rep
+
+    return None
+
+
 def _normalize_contact_form_email(value: Any) -> str:
     return str(value or "").strip().lower()
 
@@ -1171,11 +1214,24 @@ def create_order(
 
     settings = settings_service.get_settings()
     role = _normalize_role(user.get("role"))
+    sales_actor_rep_record = (
+        _resolve_sales_rep_record_for_user(user) if _is_sales_access_role(role) and role != "admin" else None
+    )
+    sales_actor_can_use_retail = bool(
+        role == "admin"
+        or _normalize_bool(
+            (sales_actor_rep_record or {}).get("allowedRetail")
+            if isinstance(sales_actor_rep_record, dict)
+            else False
+        )
+    )
 
     normalized_pricing_mode = str(pricing_mode or "").strip().lower()
     if normalized_pricing_mode not in ("retail", "wholesale"):
         normalized_pricing_mode = "wholesale"
     if not _is_sales_access_role(role):
+        normalized_pricing_mode = "wholesale"
+    elif normalized_pricing_mode == "retail" and not sales_actor_can_use_retail:
         normalized_pricing_mode = "wholesale"
 
     test_override_enabled = bool(settings.get("testPaymentsOverrideEnabled", False))
@@ -3154,6 +3210,12 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
         if target_is_sales_actor
         else ({target_sales_rep_id} if target_sales_rep_id else set())
     )
+    target_sales_rep_record = _resolve_sales_rep_record_for_user(target_user, rep_records)
+    if not target_sales_rep_record and target_allowed_rep_ids:
+        target_sales_rep_record = next(
+            (rep_records.get(rep_id) for rep_id in target_allowed_rep_ids if rep_id in rep_records),
+            None,
+        )
 
     if actor_role != "admin":
         if target_is_sales_actor:
@@ -3268,6 +3330,20 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             "role": target_user.get("role"),
             "profileImageUrl": target_user.get("profileImageUrl"),
             "salesRepId": target_sales_rep_id,
+            "isPartner": _normalize_bool(
+                target_sales_rep_record.get("isPartner")
+                if isinstance(target_sales_rep_record, dict) and "isPartner" in target_sales_rep_record
+                else (target_sales_rep_record or {}).get("is_partner")
+            )
+            if isinstance(target_sales_rep_record, dict)
+            else None,
+            "allowedRetail": _normalize_bool(
+                target_sales_rep_record.get("allowedRetail")
+                if isinstance(target_sales_rep_record, dict) and "allowedRetail" in target_sales_rep_record
+                else (target_sales_rep_record or {}).get("allowed_retail")
+            )
+            if isinstance(target_sales_rep_record, dict)
+            else None,
             "officeAddressLine1": target_user.get("officeAddressLine1"),
             "officeAddressLine2": target_user.get("officeAddressLine2"),
             "officeCity": target_user.get("officeCity"),
@@ -4459,6 +4535,27 @@ def get_sales_by_rep(
                         str(rep_record.get("email") or "").strip() or None
                     ),
                     "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
+                    "role": _resolve_rep_record_role(rep_record if rep_record else rep),
+                    "isPartner": _normalize_bool(
+                        rep_record.get("isPartner")
+                        if isinstance(rep_record, dict) and "isPartner" in rep_record
+                        else rep_record.get("is_partner")
+                    )
+                    if isinstance(rep_record, dict)
+                    else _normalize_bool(
+                        rep.get("isPartner") if isinstance(rep, dict) and "isPartner" in rep else rep.get("is_partner")
+                    ),
+                    "allowedRetail": _normalize_bool(
+                        rep_record.get("allowedRetail")
+                        if isinstance(rep_record, dict) and "allowedRetail" in rep_record
+                        else rep_record.get("allowed_retail")
+                    )
+                    if isinstance(rep_record, dict)
+                    else _normalize_bool(
+                        rep.get("allowedRetail")
+                        if isinstance(rep, dict) and "allowedRetail" in rep
+                        else rep.get("allowed_retail")
+                    ),
                     "totalOrders": int(totals["totalOrders"]),
                     "totalRevenue": float(totals["totalRevenue"]),
                     "wholesaleRevenue": float(totals.get("wholesaleRevenue") or 0.0),
