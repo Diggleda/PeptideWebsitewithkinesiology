@@ -6,7 +6,7 @@ from flask import Blueprint, g, request, send_file
 
 from ..middleware.auth import require_auth
 from ..repositories import referral_code_repository, referral_repository, sales_prospect_repository, user_repository, sales_rep_repository
-from ..services import referral_service
+from ..services import referral_service, auth_service
 from ..utils.http import handle_action
 
 blueprint = Blueprint("referrals", __name__, url_prefix="/api/referrals")
@@ -48,6 +48,24 @@ def _normalize_bool(value) -> bool:
         return value != 0
     normalized = str(value or "").strip().lower()
     return normalized in ("1", "true", "yes", "y", "on")
+
+
+def _build_sales_rep_payload(rep):
+    if not rep or not isinstance(rep, dict):
+        return None
+    return {
+        "id": str(rep.get("id") or "").strip() or None,
+        "name": rep.get("name"),
+        "email": rep.get("email"),
+        "phone": rep.get("phone"),
+        "jurisdiction": rep.get("jurisdiction"),
+        "isPartner": _normalize_bool(
+            rep.get("isPartner") if "isPartner" in rep else rep.get("is_partner")
+        ),
+        "allowedRetail": _normalize_bool(
+            rep.get("allowedRetail") if "allowedRetail" in rep else rep.get("allowed_retail")
+        ),
+    }
 
 
 def _ensure_user():
@@ -126,23 +144,7 @@ def doctor_summary():
         referrals = referral_service.list_referrals_for_doctor(user["id"])
         sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip() or None
         sales_rep = sales_rep_repository.find_by_id(sales_rep_id) if sales_rep_id else None
-        sales_rep_payload = (
-            {
-                "id": str(sales_rep.get("id") or sales_rep_id or "").strip() or None,
-                "name": sales_rep.get("name"),
-                "email": sales_rep.get("email"),
-                "phone": sales_rep.get("phone"),
-                "jurisdiction": sales_rep.get("jurisdiction"),
-                "isPartner": _normalize_bool(
-                    sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
-                ),
-                "allowedRetail": _normalize_bool(
-                    sales_rep.get("allowedRetail") if "allowedRetail" in sales_rep else sales_rep.get("allowed_retail")
-                ),
-            }
-            if sales_rep
-            else None
-        )
+        sales_rep_payload = _build_sales_rep_payload(sales_rep)
         return {
             "credits": credits,
             "referrals": referrals,
@@ -249,12 +251,22 @@ def admin_dashboard():
                 ]
             except Exception:
                 sales_reps = None
+        current_sales_rep_payload = None
+        try:
+            current_sales_rep_payload = _build_sales_rep_payload(
+                auth_service._resolve_sales_rep_record_for_user(user)  # pylint: disable=protected-access
+            )
+        except Exception:
+            current_sales_rep_payload = None
         return {
             "version": "python_backend",
             "referrals": referrals,
             "codes": codes,
             "users": users,
             "salesReps": sales_reps,
+            "currentSalesRep": current_sales_rep_payload,
+            "currentSalesRepId": current_sales_rep_payload.get("id") if current_sales_rep_payload else None,
+            "currentSalesRepAllowedRetail": current_sales_rep_payload.get("allowedRetail") if current_sales_rep_payload else None,
             "statuses": referral_service.get_referral_status_choices(),
             "referralCreditAmount": referral_service.get_referral_credit_amount(),
         }

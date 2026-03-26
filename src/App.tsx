@@ -4091,18 +4091,93 @@ function MainApp() {
 
     let cancelled = false;
     setCheckoutUserSyncPending(true);
-    if (isRep(user?.role) && !isAdmin(user?.role)) {
+    const shouldRefreshRepDashboard =
+      Boolean(user?.role) && isRep(user?.role) && !isAdmin(user?.role);
+    if (shouldRefreshRepDashboard) {
       setCheckoutPricingMode("wholesale");
     }
-    void authAPI
-      .getCurrentUser()
-      .then((current) => {
+    void Promise.all([
+      authAPI.getCurrentUser(),
+      shouldRefreshRepDashboard
+        ? referralAPI
+            .getSalesRepDashboard({
+              salesRepId: user?.salesRepId || user?.id,
+              scope: "mine",
+            })
+            .catch(() => null)
+        : Promise.resolve(null),
+    ])
+      .then(([current, dashboard]) => {
         if (cancelled || !current) {
           return;
         }
+        const dashboardAny = dashboard && typeof dashboard === "object"
+          ? (dashboard as any)
+          : null;
+        const currentDashboardSalesRep =
+          dashboardAny?.currentSalesRep && typeof dashboardAny.currentSalesRep === "object"
+            ? (dashboardAny.currentSalesRep as any)
+            : dashboardAny?.salesRep && typeof dashboardAny.salesRep === "object"
+              ? (dashboardAny.salesRep as any)
+              : null;
+        const mergedCurrentUser = (() => {
+          if (!currentDashboardSalesRep) {
+            return current as User;
+          }
+          const nextSalesRepId =
+            String(
+              currentDashboardSalesRep.id ||
+                dashboardAny?.currentSalesRepId ||
+                (current as any)?.salesRepId ||
+                "",
+            ).trim() || (current as any)?.salesRepId || null;
+          return {
+            ...(current as User),
+            salesRepId: nextSalesRepId,
+            salesRep: {
+              id:
+                String(
+                  currentDashboardSalesRep.id ||
+                    (current as any)?.salesRep?.id ||
+                    nextSalesRepId ||
+                    "",
+                ).trim() || null,
+              name:
+                typeof currentDashboardSalesRep.name === "string"
+                  ? currentDashboardSalesRep.name
+                  : (current as any)?.salesRep?.name || null,
+              email:
+                typeof currentDashboardSalesRep.email === "string"
+                  ? currentDashboardSalesRep.email
+                  : (current as any)?.salesRep?.email || null,
+              phone:
+                typeof currentDashboardSalesRep.phone === "string"
+                  ? currentDashboardSalesRep.phone
+                  : (current as any)?.salesRep?.phone || null,
+              jurisdiction:
+                typeof currentDashboardSalesRep.jurisdiction === "string"
+                  ? currentDashboardSalesRep.jurisdiction
+                  : (current as any)?.salesRep?.jurisdiction || null,
+              isPartner: coerceOptionalBoolean(
+                currentDashboardSalesRep.isPartner ??
+                  currentDashboardSalesRep.is_partner ??
+                  (current as any)?.salesRep?.isPartner,
+              ),
+              allowedRetail: coerceOptionalBoolean(
+                currentDashboardSalesRep.allowedRetail ??
+                  currentDashboardSalesRep.allowed_retail ??
+                  dashboardAny?.currentSalesRepAllowedRetail ??
+                  (current as any)?.salesRep?.allowedRetail,
+              ),
+            },
+          } as User;
+        })();
+        if (dashboardAny) {
+          setSalesRepDashboard(dashboardAny);
+        }
         setUser((previous) => ({
           ...(previous || {}),
-          ...(current as User),
+          ...mergedCurrentUser,
         }));
       })
       .catch(() => undefined)
@@ -4116,7 +4191,7 @@ function MainApp() {
       cancelled = true;
       setCheckoutUserSyncPending(false);
     };
-  }, [checkoutOpen, user?.id, user?.role]);
+  }, [checkoutOpen, user?.id, user?.role, user?.salesRepId]);
 
   useEffect(() => {
     if (showResearchTermsAgreementModal) {
@@ -16991,6 +17066,80 @@ function MainApp() {
 	            scope: scopeAll ? "all" : "mine",
 	          });
 	          setSalesRepDashboard(dashboard);
+            const dashboardAny = dashboard && typeof dashboard === "object"
+              ? (dashboard as any)
+              : null;
+            const currentDashboardSalesRep =
+              dashboardAny?.currentSalesRep && typeof dashboardAny.currentSalesRep === "object"
+                ? (dashboardAny.currentSalesRep as any)
+                : dashboardAny?.salesRep && typeof dashboardAny.salesRep === "object"
+                  ? (dashboardAny.salesRep as any)
+                  : null;
+            if (currentDashboardSalesRep) {
+              setUser((previous) => {
+                if (!previous) {
+                  return previous;
+                }
+                const nextSalesRepId =
+                  String(
+                    currentDashboardSalesRep.id ||
+                      dashboardAny?.currentSalesRepId ||
+                      previous.salesRepId ||
+                      "",
+                  ).trim() || previous.salesRepId || null;
+                const nextSalesRep = {
+                  id:
+                    String(
+                      currentDashboardSalesRep.id ||
+                        previous?.salesRep?.id ||
+                        nextSalesRepId ||
+                        "",
+                    ).trim() || null,
+                  name:
+                    typeof currentDashboardSalesRep.name === "string"
+                      ? currentDashboardSalesRep.name
+                      : previous?.salesRep?.name || null,
+                  email:
+                    typeof currentDashboardSalesRep.email === "string"
+                      ? currentDashboardSalesRep.email
+                      : previous?.salesRep?.email || null,
+                  phone:
+                    typeof currentDashboardSalesRep.phone === "string"
+                      ? currentDashboardSalesRep.phone
+                      : previous?.salesRep?.phone || null,
+                  jurisdiction:
+                    typeof currentDashboardSalesRep.jurisdiction === "string"
+                      ? currentDashboardSalesRep.jurisdiction
+                      : previous?.salesRep?.jurisdiction || null,
+                  isPartner: coerceOptionalBoolean(
+                    currentDashboardSalesRep.isPartner ??
+                      currentDashboardSalesRep.is_partner ??
+                      previous?.salesRep?.isPartner,
+                  ),
+                  allowedRetail: coerceOptionalBoolean(
+                    currentDashboardSalesRep.allowedRetail ??
+                      currentDashboardSalesRep.allowed_retail ??
+                      dashboardAny?.currentSalesRepAllowedRetail ??
+                      previous?.salesRep?.allowedRetail,
+                  ),
+                };
+                const prevRepId = String(previous?.salesRepId || previous?.salesRep?.id || "").trim();
+                const nextRepId = String(nextSalesRepId || nextSalesRep.id || "").trim();
+                const prevAllowedRetail = coerceOptionalBoolean(previous?.salesRep?.allowedRetail);
+                const nextAllowedRetail = coerceOptionalBoolean(nextSalesRep.allowedRetail);
+                if (
+                  prevRepId === nextRepId &&
+                  prevAllowedRetail === nextAllowedRetail
+                ) {
+                  return previous;
+                }
+                return {
+                  ...previous,
+                  salesRepId: nextSalesRepId,
+                  salesRep: nextSalesRep,
+                };
+              });
+            }
         }
       } catch (error: any) {
         const status = typeof error?.status === "number" ? error.status : null;
