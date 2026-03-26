@@ -74,6 +74,27 @@ def _resolve_sales_user_role(sales_rep: Optional[Dict]) -> str:
     return "sales_partner" if is_partner else "sales_rep"
 
 
+def _build_sales_rep_summary(sales_rep: Optional[Dict]) -> Optional[Dict]:
+    if not isinstance(sales_rep, dict):
+        return None
+
+    is_partner = _normalize_bool(
+        sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
+    )
+    allowed_retail = _normalize_bool(
+        sales_rep.get("allowedRetail") if "allowedRetail" in sales_rep else sales_rep.get("allowed_retail")
+    )
+    return {
+        "id": sales_rep.get("id"),
+        "name": sales_rep.get("name"),
+        "email": sales_rep.get("email"),
+        "phone": sales_rep.get("phone"),
+        "jurisdiction": sales_rep.get("jurisdiction"),
+        "isPartner": is_partner,
+        "allowedRetail": allowed_retail,
+    }
+
+
 def _normalize_delegate_color(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -229,6 +250,41 @@ def _resolve_sales_rep_id_for_prospect(identifier: Optional[str]) -> Optional[st
                 return rid
 
     return candidate
+
+
+def _resolve_sales_rep_record_for_user(user: Optional[Dict]) -> Optional[Dict]:
+    if not isinstance(user, dict):
+        return None
+
+    candidates = (
+        user.get("salesRepId"),
+        user.get("sales_rep_id"),
+        user.get("ownerSalesRepId"),
+        user.get("owner_sales_rep_id"),
+        user.get("id"),
+        user.get("email"),
+    )
+    for candidate in candidates:
+        resolved_id = _resolve_sales_rep_id_for_prospect(candidate)
+        if not resolved_id:
+            continue
+        try:
+            rep = sales_rep_repository.find_by_id(resolved_id)
+        except Exception:
+            rep = None
+        if isinstance(rep, dict) and rep.get("id"):
+            return rep
+
+    email = _normalize_email(str(user.get("email") or ""))
+    if email:
+        try:
+            rep = sales_rep_repository.find_by_email(email)
+        except Exception:
+            rep = None
+        if isinstance(rep, dict) and rep.get("id"):
+            return rep
+
+    return None
 
 def _ensure_converted_sales_prospect_for_doctor(user: Dict) -> None:
     """
@@ -966,41 +1022,18 @@ def _sanitize_user(user: Dict) -> Dict:
         else sanitized.get("delegate_opt_in")
     )
     rep_id = sanitized.get("salesRepId")
-    sales_rep = None
-    if rep_id:
-        sales_rep = sales_rep_repository.find_by_id(rep_id)
+    sales_rep = _resolve_sales_rep_record_for_user(sanitized)
+    if not sales_rep and rep_id:
         # Some environments store the sales rep in the main `users` table (role=sales_rep),
         # while doctors reference that id. Fall back to `user_repository` so the UI can
         # render "Representative" contact details reliably.
-        if not sales_rep:
-            rep_user = user_repository.find_by_id(str(rep_id))
-            if rep_user and _is_sales_rep_like_role(rep_user.get("role")):
-                sales_rep = rep_user
-    else:
-        role = _normalize_role(sanitized.get("role"))
-        if _is_sales_rep_like_role(role):
-            email = sanitized.get("email") or ""
-            sales_rep = sales_rep_repository.find_by_email(email) if email else None
-            if not sales_rep:
-                sales_rep = sales_rep_repository.find_by_id(sanitized.get("id"))
-            if sales_rep and not rep_id:
-                sanitized["salesRepId"] = sales_rep.get("id") or sanitized.get("salesRepId")
+        rep_user = user_repository.find_by_id(str(rep_id))
+        if rep_user and _is_sales_rep_like_role(rep_user.get("role")):
+            sales_rep = rep_user
+    if sales_rep and sales_rep.get("id"):
+        sanitized["salesRepId"] = sales_rep.get("id") or sanitized.get("salesRepId")
     if sales_rep:
-        is_partner = _normalize_bool(
-            sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
-        )
-        allowed_retail = _normalize_bool(
-            sales_rep.get("allowedRetail") if "allowedRetail" in sales_rep else sales_rep.get("allowed_retail")
-        )
-        sanitized["salesRep"] = {
-            "id": sales_rep.get("id"),
-            "name": sales_rep.get("name"),
-            "email": sales_rep.get("email"),
-            "phone": sales_rep.get("phone"),
-            "jurisdiction": sales_rep.get("jurisdiction"),
-            "isPartner": is_partner,
-            "allowedRetail": allowed_retail,
-        }
+        sanitized["salesRep"] = _build_sales_rep_summary(sales_rep)
         if not sanitized.get("referralCode"):
             sales_code = sales_rep.get("salesCode")
             if sales_code:
@@ -1062,7 +1095,7 @@ def _sanitize_sales_rep(rep: Dict) -> Dict:
     )
     sanitized["role"] = "sales_partner" if sanitized["isPartner"] else "sales_rep"
     sanitized.setdefault("salesRepId", sanitized.get("id"))
-    sanitized.setdefault("salesRep", None)
+    sanitized["salesRep"] = _build_sales_rep_summary(sanitized)
     if sanitized.get("salesCode") and not sanitized.get("referralCode"):
         sanitized["referralCode"] = sanitized.get("salesCode")
     return sanitized

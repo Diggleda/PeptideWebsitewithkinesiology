@@ -48,6 +48,18 @@ def _mysql_enabled() -> bool:
     return bool(getattr(config, "mysql", {}).get("enabled"))
 
 
+def _normalize_bool(value: object) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return False
+    text = str(value or "").strip().lower()
+    return text in ("1", "true", "yes", "y", "on")
+
+
 def _mysql_host_scope() -> str:
     config = get_config()
     host = str(getattr(config, "mysql", {}).get("host") or "").strip().lower()
@@ -1798,8 +1810,8 @@ def get_sales_rep_profile(sales_rep_id: str):
                     or rep.get("role")
                     or "sales_rep"
                 ),
-                "isPartner": bool(rep.get("isPartner")),
-                "allowedRetail": bool(rep.get("allowedRetail")),
+                "isPartner": _normalize_bool(rep.get("isPartner")),
+                "allowedRetail": _normalize_bool(rep.get("allowedRetail")),
                 "jurisdiction": rep.get("jurisdiction"),
                 "userId": resolved_user_id,
             }

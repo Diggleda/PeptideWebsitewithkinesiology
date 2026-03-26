@@ -367,16 +367,13 @@ const resolveSalesActorAllowedRetail = (
   candidate:
     | {
         salesRep?: { allowedRetail?: unknown } | null;
-        allowedRetail?: unknown;
       }
     | null
     | undefined,
 ) =>
   coerceOptionalBoolean(
     candidate?.salesRep?.allowedRetail ??
-      (candidate?.salesRep as any)?.allowed_retail ??
-      candidate?.allowedRetail ??
-      (candidate as any)?.allowed_retail,
+      (candidate?.salesRep as any)?.allowed_retail,
   ) === true;
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
@@ -3955,6 +3952,7 @@ function MainApp() {
   const [proposalShippingRate, setProposalShippingRate] = useState<AccountShippingEstimate | null>(null);
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
+  const [checkoutUserSyncPending, setCheckoutUserSyncPending] = useState(false);
   const initialDelegateToken = (() => {
     if (typeof window === "undefined") return null;
     return readDelegateTokenFromLocation(window.location);
@@ -4039,6 +4037,14 @@ function MainApp() {
   const canUseRetailPricing = Boolean(
     user && (isAdmin(user.role) || (isRep(user.role) && currentSalesActorAllowedRetail)),
   );
+  const checkoutRetailPermissionPending = Boolean(
+    user?.role && isRep(user.role) && !isAdmin(user.role) && checkoutUserSyncPending,
+  );
+  const effectiveCanUseRetailPricing =
+    canUseRetailPricing && !checkoutRetailPermissionPending;
+  const effectiveCheckoutPricingMode: PricingMode = effectiveCanUseRetailPricing
+    ? checkoutPricingMode
+    : "wholesale";
   const canSeeRetailRevenueInSalesDashboard = canUseRetailPricing;
   const [landingAuthMode, setLandingAuthMode] = useState<
     "login" | "signup" | "forgot" | "reset"
@@ -4076,6 +4082,41 @@ function MainApp() {
       setCheckoutPricingMode("wholesale");
     }
   }, [canUseRetailPricing, checkoutPricingMode]);
+
+  useLayoutEffect(() => {
+    if (!checkoutOpen || !user?.id || !hasAuthToken()) {
+      setCheckoutUserSyncPending(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckoutUserSyncPending(true);
+    if (isRep(user?.role) && !isAdmin(user?.role)) {
+      setCheckoutPricingMode("wholesale");
+    }
+    void authAPI
+      .getCurrentUser()
+      .then((current) => {
+        if (cancelled || !current) {
+          return;
+        }
+        setUser((previous) => ({
+          ...(previous || {}),
+          ...(current as User),
+        }));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setCheckoutUserSyncPending(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      setCheckoutUserSyncPending(false);
+    };
+  }, [checkoutOpen, user?.id, user?.role]);
 
   useEffect(() => {
     if (showResearchTermsAgreementModal) {
@@ -12969,7 +13010,7 @@ function MainApp() {
 
 	  useEffect(() => {
 	    const canFetchSqlProfileImages =
-        Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role) || isRep(user?.role));
+        Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
     if (!canFetchSqlProfileImages) {
       return;
     }
@@ -20078,7 +20119,7 @@ function MainApp() {
             const resolvedVariantId = variant?.wooId ?? variant?.id ?? null;
             const resolvedSku = (variant?.sku || product.sku || "").trim() || null;
             const unitPrice = computeUnitPrice(product, variant ?? null, quantity, {
-              pricingMode: checkoutPricingMode,
+              pricingMode: effectiveCheckoutPricingMode,
               markupPercent: delegatePricingMarkupPercent,
             });
             const unitWeightOz = variant?.weightOz ?? product.weightOz ?? null;
@@ -20184,7 +20225,7 @@ function MainApp() {
 	        },
 	        taxTotal,
 	        options?.paymentMethod ?? null,
-	        checkoutPricingMode,
+	        effectiveCheckoutPricingMode,
 	      );
 	      try {
 	        const created = response?.order as any;
@@ -30698,9 +30739,11 @@ function MainApp() {
 	        }
           defaultShippingRate={isDelegateMode ? null : proposalShippingRate}
         availableCredits={isDelegateMode ? 0 : availableReferralCredits}
-        pricingMode={checkoutPricingMode}
+        pricingMode={effectiveCheckoutPricingMode}
         onPricingModeChange={setCheckoutPricingMode}
-	        showRetailPricingToggle={Boolean(canUseRetailPricing && !isDelegateMode)}
+	        showRetailPricingToggle={Boolean(
+            effectiveCanUseRetailPricing && !isDelegateMode,
+          )}
 	      />
 
 	      <Dialog
