@@ -41,6 +41,15 @@ def _sanitize_phone(value):
     return cleaned[:32] if cleaned else None
 
 
+def _normalize_bool(value) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    normalized = str(value or "").strip().lower()
+    return normalized in ("1", "true", "yes", "y", "on")
+
+
 def _ensure_user():
     user_id = g.current_user.get("id")
     user = user_repository.find_by_id(user_id)
@@ -124,7 +133,12 @@ def doctor_summary():
                 "email": sales_rep.get("email"),
                 "phone": sales_rep.get("phone"),
                 "jurisdiction": sales_rep.get("jurisdiction"),
-                "isPartner": bool(sales_rep.get("isPartner")),
+                "isPartner": _normalize_bool(
+                    sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
+                ),
+                "allowedRetail": _normalize_bool(
+                    sales_rep.get("allowedRetail") if "allowedRetail" in sales_rep else sales_rep.get("allowed_retail")
+                ),
             }
             if sales_rep
             else None
@@ -134,6 +148,7 @@ def doctor_summary():
             "referrals": referrals,
             "salesRepId": sales_rep_id,
             "salesRepJurisdiction": sales_rep_payload.get("jurisdiction") if sales_rep_payload else None,
+            "salesRepAllowedRetail": sales_rep_payload.get("allowedRetail") if sales_rep_payload else None,
             "salesRep": sales_rep_payload,
         }
 
@@ -289,7 +304,12 @@ def admin_sales_rep_by_id(sales_rep_id: str):
                     (candidate.get("role") if (candidate := user_repository.find_by_email(str(rep.get("email") or ""))) else None)
                     or ("sales_partner" if bool(rep.get("isPartner")) else rep.get("role"))
                 ),
-                "isPartner": bool(rep.get("isPartner")),
+                "isPartner": _normalize_bool(
+                    rep.get("isPartner") if "isPartner" in rep else rep.get("is_partner")
+                ),
+                "allowedRetail": _normalize_bool(
+                    rep.get("allowedRetail") if "allowedRetail" in rep else rep.get("allowed_retail")
+                ),
                 "userId": resolved_user_id,
             }
         }
@@ -622,4 +642,3 @@ def _error(message, status):
     err = ValueError(message)
     setattr(err, "status", status)
     return err
-

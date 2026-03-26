@@ -197,6 +197,7 @@ const sanitizeUser = (user) => {
       phone: normalizeOptionalString(rep.phone),
       jurisdiction: normalizeOptionalString(rep.jurisdiction),
       isPartner: normalizeBooleanFlag(rep.isPartner ?? rep.is_partner),
+      allowedRetail: normalizeBooleanFlag(rep.allowedRetail ?? rep.allowed_retail),
     };
   };
 

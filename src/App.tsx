@@ -363,6 +363,21 @@ const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
   return null;
 };
+const resolveSalesActorAllowedRetail = (
+  candidate:
+    | {
+        salesRep?: { allowedRetail?: unknown } | null;
+        allowedRetail?: unknown;
+      }
+    | null
+    | undefined,
+) =>
+  coerceOptionalBoolean(
+    candidate?.salesRep?.allowedRetail ??
+      (candidate?.salesRep as any)?.allowed_retail ??
+      candidate?.allowedRetail ??
+      (candidate as any)?.allowed_retail,
+  ) === true;
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return (
@@ -4020,8 +4035,7 @@ function MainApp() {
   const adminReportsCalendarRef = useRef<HTMLDivElement | null>(null);
   const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
   const [loginContext, setLoginContext] = useState<"checkout" | null>(null);
-  const currentSalesActorAllowedRetail =
-    coerceOptionalBoolean(user?.salesRep?.allowedRetail) === true;
+  const currentSalesActorAllowedRetail = resolveSalesActorAllowedRetail(user);
   const canUseRetailPricing = Boolean(
     user && (isAdmin(user.role) || (isRep(user.role) && currentSalesActorAllowedRetail)),
   );
@@ -12880,6 +12894,7 @@ function MainApp() {
 	  const [adminHandDeliveryUsers, setAdminHandDeliveryUsers] = useState<
 	    HandDeliveryEntry[]
 	  >([]);
+	  const [adminHandDeliverySectionOpen, setAdminHandDeliverySectionOpen] = useState(false);
 	  const [adminHandDeliveryLoading, setAdminHandDeliveryLoading] = useState(false);
 	  const [adminHandDeliveryError, setAdminHandDeliveryError] = useState<string | null>(null);
 	  const [adminHandDeliverySavingByUserId, setAdminHandDeliverySavingByUserId] = useState<
@@ -16893,6 +16908,16 @@ function MainApp() {
                       : typeof response?.salesRepJurisdiction === "string"
                         ? response.salesRepJurisdiction
                         : previous?.salesRep?.jurisdiction || null,
+                  isPartner: coerceOptionalBoolean(
+                    (response.salesRep as any)?.isPartner ??
+                      (response.salesRep as any)?.is_partner ??
+                      previous?.salesRep?.isPartner,
+                  ),
+                  allowedRetail: coerceOptionalBoolean(
+                    (response.salesRep as any)?.allowedRetail ??
+                      (response.salesRep as any)?.allowed_retail ??
+                      previous?.salesRep?.allowedRetail,
+                  ),
                 }
               : previous?.salesRep || null;
             const nextCredits = normalizedCredits.availableCredits;
@@ -19152,10 +19177,13 @@ function MainApp() {
 	            }
 	            const prevRepJurisdiction = String(previous?.salesRep?.jurisdiction || "").trim().toLowerCase();
 	            const nextRepJurisdiction = String((current as any)?.salesRep?.jurisdiction || "").trim().toLowerCase();
+	            const prevRepAllowedRetail = resolveSalesActorAllowedRetail(previous);
+	            const nextRepAllowedRetail = resolveSalesActorAllowedRetail(current as any);
 	            const prevRepId = String(previous?.salesRepId || "").trim();
 	            const nextRepId = String((current as any)?.salesRepId || "").trim();
 	            if (
 	              prevRepJurisdiction === nextRepJurisdiction &&
+	              prevRepAllowedRetail === nextRepAllowedRetail &&
 	              prevRepId === nextRepId &&
 	              previous.email === (current as any)?.email &&
 	              previous.role === (current as any)?.role
@@ -24183,6 +24211,27 @@ function MainApp() {
 	                {adminDashboardTab === "structure" && (
 	                  <section className="w-full min-w-0">
 	                    <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setAdminHandDeliverySectionOpen((prev) => !prev)}
+                          aria-expanded={adminHandDeliverySectionOpen}
+                          aria-controls="admin-hand-delivery-structure-panel"
+                          className="flex min-w-0 flex-1 items-center gap-0 text-left"
+                        >
+                          <div className="sales-doctor-chevron">
+                            <ChevronRight
+                              className="h-4 w-4 text-slate-500"
+                              aria-hidden="true"
+                              style={{
+                                transform: adminHandDeliverySectionOpen
+                                  ? "rotate(90deg)"
+                                  : "rotate(0deg)",
+                                transition:
+                                  "transform 0.32s cubic-bezier(0.42, 0, 0.38, 1)",
+                                transformOrigin: "center",
+                              }}
+                            />
+                          </div>
 	                      <div className="min-w-0 flex-1 pr-2">
 	                        <h4 className="text-lg font-semibold text-slate-900">
 	                          Hand Delivery
@@ -24191,6 +24240,7 @@ function MainApp() {
 	                          Sales reps who have a local jurisdiction to the PepPro facility.
 	                        </p>
 	                      </div>
+                        </button>
 	                      <Button
 	                        type="button"
 	                        variant="outline"
@@ -24203,51 +24253,55 @@ function MainApp() {
 	                        {adminHandDeliveryLoading ? "Refreshing…" : "Refresh"}
 	                      </Button>
 	                    </div>
-                      <div className="py-2">
-                        <div className="lead-panel-divider" />
-                      </div>
+                      {adminHandDeliverySectionOpen && (
+                        <div id="admin-hand-delivery-structure-panel">
+                          <div className="py-2">
+                            <div className="lead-panel-divider" />
+                          </div>
 
-	                    {adminHandDeliveryError && (
-	                      <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
-	                        {adminHandDeliveryError}
-	                      </div>
-	                    )}
+	                        {adminHandDeliveryError && (
+	                          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
+	                            {adminHandDeliveryError}
+	                          </div>
+	                        )}
 
-	                    {adminHandDeliveryLoading ? (
-	                      <div className="px-4 py-3 text-sm text-slate-500">
-	                        Loading users…
-	                      </div>
-	                    ) : adminHandDeliveryUsers.length === 0 ? (
-	                      <div className="px-4 py-3 text-sm text-slate-500">
-	                        No sales reps, sales leads, or admins found.
-	                      </div>
-	                    ) : (
-	                      <div className="flex w-full min-w-0 flex-col gap-2">
-	                        {adminHandDeliveryUsers.map((entry) => {
-	                          const saving = Boolean(adminHandDeliverySavingByUserId[entry.userId]);
-	                          return (
-	                            <label
-	                              key={entry.userId}
-	                              className="inline-flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 text-sm text-slate-800"
-	                            >
-	                              <span className="truncate">{entry.name}</span>
-	                              <input
-	                                type="checkbox"
-	                                className="brand-checkbox"
-	                                checked={entry.isLocal}
-	                                disabled={saving}
-	                                onChange={(event) =>
-	                                  void handleAdminHandDeliveryToggle(
-	                                    entry,
-	                                    event.target.checked,
-	                                  )
-	                                }
-	                              />
-	                            </label>
-	                          );
-	                        })}
-	                      </div>
-	                    )}
+	                        {adminHandDeliveryLoading ? (
+	                          <div className="px-4 py-3 text-sm text-slate-500">
+	                            Loading users…
+	                          </div>
+	                        ) : adminHandDeliveryUsers.length === 0 ? (
+	                          <div className="px-4 py-3 text-sm text-slate-500">
+	                            No sales reps, sales leads, or admins found.
+	                          </div>
+	                        ) : (
+	                          <div className="flex w-full min-w-0 flex-col gap-2">
+	                            {adminHandDeliveryUsers.map((entry) => {
+	                              const saving = Boolean(adminHandDeliverySavingByUserId[entry.userId]);
+	                              return (
+	                                <label
+	                                  key={entry.userId}
+	                                  className="inline-flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 text-sm text-slate-800"
+	                                >
+	                                  <span className="truncate">{entry.name}</span>
+	                                  <input
+	                                    type="checkbox"
+	                                    className="brand-checkbox"
+	                                    checked={entry.isLocal}
+	                                    disabled={saving}
+	                                    onChange={(event) =>
+	                                      void handleAdminHandDeliveryToggle(
+	                                        entry,
+	                                        event.target.checked,
+	                                      )
+	                                    }
+	                                  />
+	                                </label>
+	                              );
+	                            })}
+	                          </div>
+	                        )}
+                        </div>
+                      )}
 	                  </section>
 	                )}
 
@@ -30926,9 +30980,6 @@ function MainApp() {
                               isSalesLead(salesDoctorDetail.role) ||
                               isAdmin(salesDoctorDetail.role);
                             if (!viewerCanSeeSalesFlags || !targetIsSalesActor) return null;
-                            const isPartner = coerceOptionalBoolean(
-                              salesDoctorDetail.isPartner,
-                            );
                             const allowedRetail = coerceOptionalBoolean(
                               salesDoctorDetail.allowedRetail,
                             );
@@ -30939,9 +30990,6 @@ function MainApp() {
                               <>
                                 <div className="text-sm font-normal text-slate-600">
                                   Role: {roleLabel}
-                                </div>
-                                <div className="text-sm font-normal text-slate-600">
-                                  Sales Partner: {formatFlag(isPartner)}
                                 </div>
                                 <div className="text-sm font-normal text-slate-600">
                                   Allowed Retail: {formatFlag(allowedRetail)}

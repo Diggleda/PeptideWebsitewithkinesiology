@@ -385,14 +385,67 @@ const normalizePricingMode = (value) => {
   return 'wholesale';
 };
 
-const canSelectRetailPricing = (role) => {
-  const normalized = normalizeRole(role);
-  return normalized === 'admin'
-    || normalized === 'sales_rep'
-    || normalized === 'sales_partner'
-    || normalized === 'rep'
-    || normalized === 'sales_lead'
-    || normalized === 'saleslead';
+const resolveSalesRepRecordForUser = (user) => {
+  if (!user || typeof user !== 'object') return null;
+
+  const candidateIds = [
+    user?.salesRep?.id,
+    user?.salesRepId,
+    user?.sales_rep_id,
+    user?.id,
+  ];
+  for (const candidateId of candidateIds) {
+    const normalizedId = normalizeId(candidateId);
+    if (!normalizedId) continue;
+    const record = salesRepRepository.findById(normalizedId);
+    if (record) {
+      return record;
+    }
+  }
+
+  const candidateEmails = [
+    user?.salesRep?.email,
+    user?.email,
+  ];
+  for (const candidateEmail of candidateEmails) {
+    const normalizedCandidateEmail = normalizeEmail(candidateEmail);
+    if (!normalizedCandidateEmail) continue;
+    const record = salesRepRepository.findByEmail(normalizedCandidateEmail);
+    if (record) {
+      return record;
+    }
+  }
+
+  return null;
+};
+
+const canSelectRetailPricing = (user) => {
+  const normalized = normalizeRole(user?.role);
+  if (normalized === 'admin') {
+    return true;
+  }
+  if (
+    normalized !== 'sales_rep'
+    && normalized !== 'sales_partner'
+    && normalized !== 'rep'
+    && normalized !== 'sales_lead'
+    && normalized !== 'saleslead'
+  ) {
+    return false;
+  }
+
+  const embeddedAllowedRetail = normalizeBooleanish(
+    user?.salesRep?.allowedRetail
+      ?? user?.salesRep?.allowed_retail
+      ?? user?.allowedRetail
+      ?? user?.allowed_retail,
+  );
+  if (embeddedAllowedRetail) {
+    return true;
+  }
+
+  const repRecord = resolveSalesRepRecordForUser(user);
+  return normalizeBooleanish(repRecord?.allowedRetail ?? repRecord?.allowed_retail);
 };
 
 const syncUserPermitFromSource = (user, permitSource) => {
@@ -1282,7 +1335,7 @@ const createOrderInternal = async ({
   }
 
   const requestedPricingMode = normalizePricingMode(pricingMode);
-  const effectivePricingMode = canSelectRetailPricing(user.role) ? requestedPricingMode : 'wholesale';
+  const effectivePricingMode = canSelectRetailPricing(user) ? requestedPricingMode : 'wholesale';
 
   const taxExempt = await isUserTaxExemptForCheckout(user);
   const shippingData = resolveCheckoutShippingData({
