@@ -50,9 +50,14 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, LegalDocumentContent> = {
 interface LegalFooterProps {
   variant?: 'full' | 'ctaOnly';
   showContactCTA?: boolean;
+  hostOnly?: boolean;
 }
 
-export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFooterProps) {
+export function LegalFooter({
+  variant = 'full',
+  showContactCTA = true,
+  hostOnly = false,
+}: LegalFooterProps) {
   const [activeDocument, setActiveDocument] = useState<LegalDocumentKey | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -336,88 +341,89 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
 
   return (
     <>
-      <footer className="relative z-10 mt-10 sm:mt-24 glass-strong">
-        <div className="w-full px-4 sm:px-8 pt-6 pb-6 sm:pt-12 sm:pb-10">
-          {variant === 'ctaOnly' ? (
-            <div className="flex flex-col items-center justify-center gap-6 pt-10 pb-10">
-              <div className="flex flex-col items-center justify-center gap-3">
-                <p className="mt-7 pt-4 text-m font-medium text-slate-900">Want to join the physician network?</p>
-                {showContactCTA ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.dispatchEvent(new Event('peppro:close-dialogs'));
-                      handleContactOpen();
-                    }}
-                    className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
-                    style={{ backgroundColor: 'rgb(95, 179, 249)' }}
-                  >
-                    Contact a Representative
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.dispatchEvent(new Event('peppro:close-dialogs'));
-                      handleBugOpen();
-                    }}
-                    className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
-                    style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
-                  >
-                    Report a bug
-                  </button>
-                )}
-              </div>
-
-              <div className="w-full max-w-5xl mx-auto flex flex-col items-center gap-3 text-center">
-                <div className="text-xs text-slate-600 space-y-1">
-                  <p className="font-semibold text-slate-900">PepPro</p>
-                  <p>DBA: {MERCHANT_IDENTITY.dba}</p>
-                  <p>Legal Entity: {MERCHANT_IDENTITY.legalEntity}</p>
-                  <p>Address: {MERCHANT_IDENTITY.address}</p>
-                  <p>Phone: {MERCHANT_IDENTITY.phone}</p>
-                  <p>
-                    {' '}
-                    <a className="text-[rgb(95,179,249)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>
-                      {MERCHANT_IDENTITY.email}
-                    </a>
-                  </p>
-                  <p>{MERCHANT_IDENTITY.businessHours}</p>
-                </div>
-                <nav className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
-                  <button
-                    type="button"
-                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
-                    onClick={() => handleLinkClick('contact')}
-                  >
-                    Contact
-                  </button>
-                  <button
-                    type="button"
-                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
-                    onClick={() => handleLinkClick('returns')}
-                  >
-                    Returns & Refunds
-                  </button>
-                  {legalLinks.map((link) => (
+      {!hostOnly && (
+        <footer className="relative z-10 mt-10 sm:mt-24 glass-strong">
+          <div className="w-full px-4 sm:px-8 pt-6 pb-6 sm:pt-12 sm:pb-10">
+            {variant === 'ctaOnly' ? (
+              <div className="flex flex-col items-center justify-center gap-6 pt-10 pb-10">
+                <div className="flex flex-col items-center justify-center gap-3">
+                  <p className="mt-7 pt-4 text-m font-medium text-slate-900">Want to join the physician network?</p>
+                  {showContactCTA ? (
                     <button
-                      key={link.key}
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(new Event('peppro:close-dialogs'));
+                        handleContactOpen();
+                      }}
+                      className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
+                      style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                    >
+                      Contact a Representative
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(new Event('peppro:close-dialogs'));
+                        handleBugOpen();
+                      }}
+                      className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
+                      style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
+                    >
+                      Report a bug
+                    </button>
+                  )}
+                </div>
+
+                <div className="w-full max-w-5xl mx-auto flex flex-col items-center gap-3 text-center">
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <p className="font-semibold text-slate-900">PepPro</p>
+                    <p>DBA: {MERCHANT_IDENTITY.dba}</p>
+                    <p>Legal Entity: {MERCHANT_IDENTITY.legalEntity}</p>
+                    <p>Address: {MERCHANT_IDENTITY.address}</p>
+                    <p>Phone: {MERCHANT_IDENTITY.phone}</p>
+                    <p>
+                      {' '}
+                      <a className="text-[rgb(95,179,249)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>
+                        {MERCHANT_IDENTITY.email}
+                      </a>
+                    </p>
+                    <p>{MERCHANT_IDENTITY.businessHours}</p>
+                  </div>
+                  <nav className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
+                    <button
                       type="button"
                       className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
-                      onClick={() => handleLinkClick(link.key)}
+                      onClick={() => handleLinkClick('contact')}
                     >
-                      {link.label}
+                      Contact
                     </button>
-                  ))}
-                </nav>
-                <p className="text-xs text-slate-600">
-                  {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@peppro.net
-                </p>
-                <p className="text-xs text-slate-600">640 S Grand Ave, Santa Ana, Ca 92705, Unit #107</p>
+                    <button
+                      type="button"
+                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                      onClick={() => handleLinkClick('returns')}
+                    >
+                      Returns & Refunds
+                    </button>
+                    {legalLinks.map((link) => (
+                      <button
+                        key={link.key}
+                        type="button"
+                        className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                        onClick={() => handleLinkClick(link.key)}
+                      >
+                        {link.label}
+                      </button>
+                    ))}
+                  </nav>
+                  <p className="text-xs text-slate-600">
+                    {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@peppro.net
+                  </p>
+                  <p className="text-xs text-slate-600">640 S Grand Ave, Santa Ana, Ca 92705, Unit #107</p>
+                </div>
               </div>
-            </div>
-          ) : (
-          <div className="legal-footer-layout gap-4 items-start text-center lg:text-left lg:items-start lg:justify-items-start">
+            ) : (
+            <div className="legal-footer-layout gap-4 items-start text-center lg:text-left lg:items-start lg:justify-items-start">
             {/* Contact CTA - top on mobile, right on desktop */}
             {showContactCTA && (
               <div className="legal-contact flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0">
@@ -498,10 +504,11 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
               <p className="text-xs leading-snug break-words text-slate-600">640 S Grand Ave, Santa Ana, Ca 92705, Unit #107</p>
 
             </div>
+            </div>
+            )}
           </div>
-          )}
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {selectedDocument && createPortal(
         <div

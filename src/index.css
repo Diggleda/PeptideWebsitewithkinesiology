@@ -55,6 +55,7 @@ body.non-login-bg::before {
 /* Login page: reduce whiteness at the top for better depth */
 body.login-view::before {
   background-image:
+    linear-gradient(180deg, rgba(95,179,249,0.012) 0%, rgba(95,179,249,0.016) 22%, rgba(95,179,249,0.075) 100%),
     linear-gradient(180deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.01) 20%, rgba(255,255,255,0.14) 100%),
     url('/leafTexture.jpg'),
     url("data:image/svg+xml;utf8,\
@@ -72,9 +73,9 @@ body.login-view::before {
   <rect width='100%' height='100%' fill='url(%23p)'/>\
   <rect width='100%' height='100%' fill='url(%23g)'/>\
 </svg>");
-  background-size: cover, cover, 800px 800px;
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-position: center, center, center;
+  background-size: cover, cover, cover, 800px 800px;
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+  background-position: center, center, center, center;
   min-height: 100vh;
   min-height: 100dvh;
   opacity: 0.08;

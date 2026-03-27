@@ -185,6 +185,27 @@ def update_me():
     return handle_action(lambda: auth_service.update_profile(user_id, payload))
 
 
+@blueprint.post("/me/reseller-permit")
+@require_auth
+def upload_me_reseller_permit():
+    user_id = g.current_user.get("id")
+
+    def action():
+        incoming = request.files.get("file") if request.files else None
+        if incoming is None:
+            err = ValueError("No file provided")
+            setattr(err, "status", 400)
+            raise err
+        content = incoming.read() if hasattr(incoming, "read") else b""
+        return auth_service.upload_reseller_permit(
+            user_id,
+            filename=getattr(incoming, "filename", "") or "",
+            content=content or b"",
+        )
+
+    return handle_action(action)
+
+
 @blueprint.put("/me/cart")
 @require_auth
 def update_me_cart():

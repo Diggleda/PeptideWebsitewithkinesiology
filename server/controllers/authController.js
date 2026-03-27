@@ -4,6 +4,7 @@ const { logger } = require('../config/logger');
 const jwt = require('jsonwebtoken');
 const { env } = require('../config/env');
 const userRepository = require('../repositories/userRepository');
+const { parseMultipartSingleFile } = require('../utils/multipart');
 
 const register = async (req, res, next) => {
   try {
@@ -65,6 +66,19 @@ const updateProfile = async (req, res, next) => {
       );
     }
     const updated = await authService.updateProfile(req.user.id, req.body || {});
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const uploadResellerPermit = async (req, res, next) => {
+  try {
+    const parsed = await parseMultipartSingleFile(req, {
+      fieldName: 'file',
+      maxBytes: 25 * 1024 * 1024,
+    });
+    const updated = await authService.uploadResellerPermit(req.user.id, parsed);
     res.json(updated);
   } catch (error) {
     next(error);
@@ -178,6 +192,7 @@ module.exports = {
   getProfile,
   verifyNpi,
   updateProfile,
+  uploadResellerPermit,
   updateCart,
   deleteAccount,
   logout,

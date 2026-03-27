@@ -6,6 +6,7 @@ import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import bcrypt
@@ -43,6 +44,35 @@ def _normalize_bool(value: Any) -> bool:
             return False
     text = str(value or "").strip().lower()
     return text in ("1", "true", "yes", "y", "on")
+
+
+_DOCTOR_PROFILE_FIELD_LIMITS = {
+    "greaterArea": 190,
+    "studyFocus": 190,
+    "bio": 1000,
+}
+
+_RESELLER_PERMIT_ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".heic",
+    ".gif",
+}
+
+
+def _normalize_profile_text(value: Any, field: str) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    limit = _DOCTOR_PROFILE_FIELD_LIMITS[field]
+    if len(text) > limit:
+        raise _bad_request(f"{field.upper()}_TOO_LONG")
+    return text
 
 
 def _normalize_role(value: Any) -> str:
@@ -511,6 +541,11 @@ def register(data: Dict) -> Dict:
             "npiCheckError": None,
             "researchTermsAgreement": False,
             "delegateOptIn": False,
+            "profileOnboarding": False,
+            "resellerPermitOnboardingPresented": False,
+            "greaterArea": None,
+            "studyFocus": None,
+            "bio": None,
             "sessionId": _new_session_id(),
         }
     )
@@ -902,6 +937,31 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         if "delegateOptIn" in data
         else _normalize_bool(user.get("delegateOptIn"))
     )
+    profile_onboarding = (
+        _normalize_bool(data.get("profileOnboarding"))
+        if "profileOnboarding" in data
+        else _normalize_bool(user.get("profileOnboarding"))
+    )
+    reseller_permit_onboarding_presented = (
+        _normalize_bool(data.get("resellerPermitOnboardingPresented"))
+        if "resellerPermitOnboardingPresented" in data
+        else _normalize_bool(user.get("resellerPermitOnboardingPresented"))
+    )
+    greater_area = (
+        _normalize_profile_text(data.get("greaterArea"), "greaterArea")
+        if "greaterArea" in data
+        else _normalize_profile_text(user.get("greaterArea"), "greaterArea")
+    )
+    study_focus = (
+        _normalize_profile_text(data.get("studyFocus"), "studyFocus")
+        if "studyFocus" in data
+        else _normalize_profile_text(user.get("studyFocus"), "studyFocus")
+    )
+    bio = (
+        _normalize_profile_text(data.get("bio"), "bio")
+        if "bio" in data
+        else _normalize_profile_text(user.get("bio"), "bio")
+    )
 
     if email and email != user.get("email"):
         existing = user_repository.find_by_email(email)
@@ -920,6 +980,11 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "receiveClientOrderUpdateEmails": receive_client_order_update_emails,
         "researchTermsAgreement": research_terms_agreement,
         "delegateOptIn": delegate_opt_in,
+        "profileOnboarding": profile_onboarding,
+        "resellerPermitOnboardingPresented": reseller_permit_onboarding_presented,
+        "greaterArea": greater_area,
+        "studyFocus": study_focus,
+        "bio": bio,
         **shipping_fields,
     }
 
@@ -975,6 +1040,48 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     return _sanitize_user(saved)
 
 
+def upload_reseller_permit(user_id: str, *, filename: str, content: bytes) -> Dict:
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _not_found("User not found")
+    if not content:
+        raise _bad_request("No file provided")
+    if len(content) > 25 * 1024 * 1024:
+        err = _bad_request("FILE_TOO_LARGE")
+        setattr(err, "status", 413)
+        raise err
+
+    ext = Path(str(filename or "")).suffix.lower()
+    if ext not in _RESELLER_PERMIT_ALLOWED_EXTENSIONS:
+        raise _bad_request("Invalid file type")
+
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", Path(filename or "reseller_permit").name)[:160]
+    safe_name = safe_name or "reseller_permit"
+
+    cfg = get_config()
+    data_dir = Path(str(getattr(cfg, "data_dir", "server-data")))
+    upload_dir = data_dir / "uploads" / "reseller-permits"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    stored_name = f"reseller_permit_{int(time.time() * 1000)}_{secrets.token_hex(8)}{ext}"
+    stored_path = upload_dir / stored_name
+    stored_path.write_bytes(content)
+
+    next_user = {
+        **user,
+        "isTaxExempt": True,
+        "taxExemptSource": "RESELLER_PERMIT",
+        "taxExemptReason": "Reseller permit on file",
+        "resellerPermitOnboardingPresented": True,
+        "resellerPermitFilePath": str((Path("uploads") / "reseller-permits" / stored_name).as_posix()),
+        "resellerPermitFileName": safe_name,
+        "resellerPermitUploadedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    saved = user_repository.update(next_user) or next_user
+    _delete_reseller_permit_file(user)
+    return _sanitize_user(saved)
+
+
 def update_cart(user_id: str, cart: Any) -> Dict:
     user = user_repository.find_by_id(user_id)
     if not user:
@@ -1020,6 +1127,16 @@ def _sanitize_user(user: Dict) -> Dict:
         sanitized.get("delegateOptIn")
         if "delegateOptIn" in sanitized
         else sanitized.get("delegate_opt_in")
+    )
+    sanitized["profileOnboarding"] = _normalize_bool(
+        sanitized.get("profileOnboarding")
+        if "profileOnboarding" in sanitized
+        else sanitized.get("profile_onboarding")
+    )
+    sanitized["resellerPermitOnboardingPresented"] = _normalize_bool(
+        sanitized.get("resellerPermitOnboardingPresented")
+        if "resellerPermitOnboardingPresented" in sanitized
+        else sanitized.get("reseller_permit_onboarding_presented")
     )
     rep_id = sanitized.get("salesRepId")
     sales_rep = _resolve_sales_rep_record_for_user(sanitized)
@@ -1081,6 +1198,23 @@ def _sanitize_user(user: Dict) -> Dict:
     except Exception:
         pass
     return sanitized
+
+
+def _delete_reseller_permit_file(user: Optional[Dict]) -> None:
+    try:
+        if not user or not user.get("resellerPermitFilePath"):
+            return
+        cfg = get_config()
+        data_dir = Path(str(getattr(cfg, "data_dir", "server-data")))
+        relative_path = str(user.get("resellerPermitFilePath") or "").lstrip("/\\")
+        abs_path = (data_dir / relative_path).resolve()
+        allowed_root = (data_dir / "uploads" / "reseller-permits").resolve()
+        if not str(abs_path).startswith(str(allowed_root)):
+            return
+        if abs_path.exists():
+            abs_path.unlink()
+    except Exception:
+        return
 
 
 def _sanitize_sales_rep(rep: Dict) -> Dict:

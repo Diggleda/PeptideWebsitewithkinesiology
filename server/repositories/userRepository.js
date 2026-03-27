@@ -17,6 +17,12 @@ const DIRECT_SHIPPING_FIELDS = [
   'officePostalCode',
 ];
 
+const DOCTOR_PROFILE_TEXT_FIELDS = [
+  'greaterArea',
+  'studyFocus',
+  'bio',
+];
+
 const normalizeOptionalString = (value) => {
   if (value == null) {
     return null;
@@ -122,6 +128,11 @@ const syncDirectShippingToSql = (user) => {
     state: user.officeState,
     postalCode: user.officePostalCode,
     profileImageUrl: user.profileImageUrl,
+    profileOnboarding: user.profileOnboarding ? 1 : 0,
+    resellerPermitOnboardingPresented: user.resellerPermitOnboardingPresented ? 1 : 0,
+    greaterArea: user.greaterArea || null,
+    studyFocus: user.studyFocus || null,
+    bio: user.bio || null,
     delegateLogoUrl: user.delegateLogoUrl || null,
     delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
     delegateLinksEnabled: user.delegateLinksEnabled ? 1 : 0,
@@ -173,6 +184,11 @@ const syncDirectShippingToSql = (user) => {
           office_state,
           office_postal_code,
           profile_image_url,
+          profile_onboarding,
+          reseller_permit_onboarding_presented,
+          greater_area,
+          study_focus,
+          bio,
           delegate_logo_url,
           delegate_secondary_color,
           delegate_links_enabled,
@@ -206,6 +222,11 @@ const syncDirectShippingToSql = (user) => {
           :state,
           :postalCode,
           :profileImageUrl,
+          :profileOnboarding,
+          :resellerPermitOnboardingPresented,
+          :greaterArea,
+          :studyFocus,
+          :bio,
           :delegateLogoUrl,
           :delegateSecondaryColor,
           :delegateLinksEnabled,
@@ -239,6 +260,11 @@ const syncDirectShippingToSql = (user) => {
           office_state = VALUES(office_state),
           office_postal_code = VALUES(office_postal_code),
           profile_image_url = VALUES(profile_image_url),
+          profile_onboarding = VALUES(profile_onboarding),
+          reseller_permit_onboarding_presented = VALUES(reseller_permit_onboarding_presented),
+          greater_area = VALUES(greater_area),
+          study_focus = VALUES(study_focus),
+          bio = VALUES(bio),
           delegate_logo_url = VALUES(delegate_logo_url),
           delegate_secondary_color = VALUES(delegate_secondary_color),
           delegate_links_enabled = VALUES(delegate_links_enabled),
@@ -368,6 +394,15 @@ const ensureUserDefaults = (user) => {
   } else {
     normalized.resellerPermitFilePath = normalizeOptionalString(normalized.resellerPermitFilePath);
   }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitOnboardingPresented')) {
+    normalized.resellerPermitOnboardingPresented = normalizeBooleanFlag(
+      normalized.reseller_permit_onboarding_presented,
+    );
+  } else {
+    normalized.resellerPermitOnboardingPresented = normalizeBooleanFlag(
+      normalized.resellerPermitOnboardingPresented,
+    );
+  }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitFileName')) {
     normalized.resellerPermitFileName = null;
   } else {
@@ -386,6 +421,13 @@ const ensureUserDefaults = (user) => {
   } else {
     normalized.profileImageUrl = normalizeOptionalString(normalized.profileImageUrl);
   }
+  DOCTOR_PROFILE_TEXT_FIELDS.forEach((field) => {
+    if (!Object.prototype.hasOwnProperty.call(normalized, field)) {
+      normalized[field] = null;
+    } else {
+      normalized[field] = normalizeOptionalString(normalized[field]);
+    }
+  });
   if (!Object.prototype.hasOwnProperty.call(normalized, 'cart')) {
     normalized.cart = [];
   } else {
@@ -423,9 +465,17 @@ const ensureUserDefaults = (user) => {
   } else {
     normalized.delegateOptIn = normalizeBooleanFlag(normalized.delegateOptIn);
   }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'profileOnboarding')) {
+    normalized.profileOnboarding = normalizeBooleanFlag(normalized.profile_onboarding);
+  } else {
+    normalized.profileOnboarding = normalizeBooleanFlag(normalized.profileOnboarding);
+  }
   normalized.delegate_links_enabled = normalized.delegateLinksEnabled ? 1 : 0;
   normalized.research_terms_agreement = normalized.researchTermsAgreement ? 1 : 0;
   normalized.delegate_opt_in = normalized.delegateOptIn ? 1 : 0;
+  normalized.profile_onboarding = normalized.profileOnboarding ? 1 : 0;
+  normalized.reseller_permit_onboarding_presented =
+    normalized.resellerPermitOnboardingPresented ? 1 : 0;
   normalized.hand_delivered = normalized.handDelivered ? 1 : 0;
   DIRECT_SHIPPING_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {
@@ -449,7 +499,24 @@ const loadUsers = ({ forWrite = false } = {}) => {
     const lastLoginChanged = candidate.lastLoginAt !== user.lastLoginAt;
     const creditsChanged = candidate.referralCredits !== user.referralCredits;
     const totalRefsChanged = candidate.totalReferrals !== user.totalReferrals;
-    if (roleChanged || visitsChanged || lastLoginChanged || creditsChanged || totalRefsChanged) {
+    const profileOnboardingChanged = candidate.profileOnboarding !== user.profileOnboarding;
+    const resellerPermitOnboardingPresentedChanged =
+      candidate.resellerPermitOnboardingPresented !== user.resellerPermitOnboardingPresented;
+    const greaterAreaChanged = candidate.greaterArea !== user.greaterArea;
+    const studyFocusChanged = candidate.studyFocus !== user.studyFocus;
+    const bioChanged = candidate.bio !== user.bio;
+    if (
+      roleChanged
+      || visitsChanged
+      || lastLoginChanged
+      || creditsChanged
+      || totalRefsChanged
+      || profileOnboardingChanged
+      || resellerPermitOnboardingPresentedChanged
+      || greaterAreaChanged
+      || studyFocusChanged
+      || bioChanged
+    ) {
       changed = true;
     }
     return candidate;

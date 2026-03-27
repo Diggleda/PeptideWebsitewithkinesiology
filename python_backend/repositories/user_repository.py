@@ -98,6 +98,9 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized["officePostalCode"] = (normalized.get("officePostalCode") or None)
     normalized["officeCountry"] = (normalized.get("officeCountry") or None)
     normalized.setdefault("profileImageUrl", None)
+    normalized["greaterArea"] = (normalized.get("greaterArea") or None)
+    normalized["studyFocus"] = (normalized.get("studyFocus") or None)
+    normalized["bio"] = (normalized.get("bio") or None)
     normalized.setdefault("delegateLogoUrl", normalized.get("delegateLogoUrl") or None)
     normalized.setdefault("delegateSecondaryColor", normalized.get("delegateSecondaryColor") or None)
     if "delegateLinksEnabled" in normalized:
@@ -112,8 +115,24 @@ def _ensure_defaults(user: Dict) -> Dict:
         normalized["delegateOptIn"] = _normalize_bool(normalized.get("delegateOptIn"))
     else:
         normalized["delegateOptIn"] = _normalize_bool(normalized.get("delegate_opt_in"))
+    if "profileOnboarding" in normalized:
+        normalized["profileOnboarding"] = _normalize_bool(normalized.get("profileOnboarding"))
+    else:
+        normalized["profileOnboarding"] = _normalize_bool(normalized.get("profile_onboarding"))
+    if "resellerPermitOnboardingPresented" in normalized:
+        normalized["resellerPermitOnboardingPresented"] = _normalize_bool(
+            normalized.get("resellerPermitOnboardingPresented")
+        )
+    else:
+        normalized["resellerPermitOnboardingPresented"] = _normalize_bool(
+            normalized.get("reseller_permit_onboarding_presented")
+        )
     normalized["research_terms_agreement"] = 1 if normalized.get("researchTermsAgreement") else 0
     normalized["delegate_opt_in"] = 1 if normalized.get("delegateOptIn") else 0
+    normalized["profile_onboarding"] = 1 if normalized.get("profileOnboarding") else 0
+    normalized["reseller_permit_onboarding_presented"] = (
+        1 if normalized.get("resellerPermitOnboardingPresented") else 0
+    )
     normalized.setdefault("zelleContact", normalized.get("zelleContact") or None)
     cart = normalized.get("cart")
     if isinstance(cart, str):
@@ -592,7 +611,8 @@ def _mysql_insert(user: Dict) -> Dict:
             last_seen_at, last_interaction_at,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
-            office_postal_code, office_country, profile_image_url, delegate_logo_url, zelle_contact, cart, downloads,
+            office_postal_code, office_country, profile_image_url, profile_onboarding, greater_area, study_focus, bio, delegate_logo_url, zelle_contact, cart, downloads,
+            reseller_permit_onboarding_presented,
             delegate_secondary_color, delegate_links_enabled,
             research_terms_agreement, delegate_opt_in,
             referral_credits, total_referrals, visits,
@@ -608,7 +628,8 @@ def _mysql_insert(user: Dict) -> Dict:
             %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
-            %(profile_image_url)s, %(delegate_logo_url)s, %(zelle_contact)s, %(cart)s, %(downloads)s, %(delegate_secondary_color)s, %(delegate_links_enabled)s, %(research_terms_agreement)s, %(delegate_opt_in)s,
+            %(profile_image_url)s, %(profile_onboarding)s, %(greater_area)s, %(study_focus)s, %(bio)s, %(delegate_logo_url)s, %(zelle_contact)s, %(cart)s, %(downloads)s,
+            %(reseller_permit_onboarding_presented)s, %(delegate_secondary_color)s, %(delegate_links_enabled)s, %(research_terms_agreement)s, %(delegate_opt_in)s,
             %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(receive_client_order_update_emails)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
@@ -642,10 +663,15 @@ def _mysql_insert(user: Dict) -> Dict:
             office_postal_code = VALUES(office_postal_code),
             office_country = VALUES(office_country),
             profile_image_url = VALUES(profile_image_url),
+            profile_onboarding = VALUES(profile_onboarding),
+            greater_area = VALUES(greater_area),
+            study_focus = VALUES(study_focus),
+            bio = VALUES(bio),
             delegate_logo_url = VALUES(delegate_logo_url),
             zelle_contact = VALUES(zelle_contact),
             cart = VALUES(cart),
             downloads = VALUES(downloads),
+            reseller_permit_onboarding_presented = VALUES(reseller_permit_onboarding_presented),
             delegate_secondary_color = VALUES(delegate_secondary_color),
             delegate_links_enabled = VALUES(delegate_links_enabled),
             research_terms_agreement = VALUES(research_terms_agreement),
@@ -712,6 +738,11 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             office_postal_code = %(office_postal_code)s,
             office_country = %(office_country)s,
             profile_image_url = %(profile_image_url)s,
+            profile_onboarding = %(profile_onboarding)s,
+            reseller_permit_onboarding_presented = %(reseller_permit_onboarding_presented)s,
+            greater_area = %(greater_area)s,
+            study_focus = %(study_focus)s,
+            bio = %(bio)s,
             delegate_logo_url = %(delegate_logo_url)s,
             zelle_contact = %(zelle_contact)s,
             cart = %(cart)s,
@@ -798,6 +829,11 @@ def _row_to_user(row: Dict) -> Dict:
             "officePostalCode": row.get("office_postal_code"),
             "officeCountry": row.get("office_country"),
             "profileImageUrl": row.get("profile_image_url"),
+            "profileOnboarding": bool(row.get("profile_onboarding")),
+            "resellerPermitOnboardingPresented": bool(row.get("reseller_permit_onboarding_presented")),
+            "greaterArea": row.get("greater_area"),
+            "studyFocus": row.get("study_focus"),
+            "bio": row.get("bio"),
             "delegateLogoUrl": row.get("delegate_logo_url"),
             "delegateSecondaryColor": row.get("delegate_secondary_color"),
             "delegateLinksEnabled": bool(row.get("delegate_links_enabled")),
@@ -861,6 +897,13 @@ def _to_db_params(user: Dict) -> Dict:
         "office_postal_code": user.get("officePostalCode"),
         "office_country": user.get("officeCountry"),
         "profile_image_url": user.get("profileImageUrl"),
+        "profile_onboarding": 1 if _normalize_bool(user.get("profileOnboarding")) else 0,
+        "reseller_permit_onboarding_presented": (
+            1 if _normalize_bool(user.get("resellerPermitOnboardingPresented")) else 0
+        ),
+        "greater_area": user.get("greaterArea"),
+        "study_focus": user.get("studyFocus"),
+        "bio": user.get("bio"),
         "delegate_logo_url": user.get("delegateLogoUrl"),
         "delegate_secondary_color": user.get("delegateSecondaryColor"),
         "delegate_links_enabled": 1 if _normalize_bool(user.get("delegateLinksEnabled")) else 0,

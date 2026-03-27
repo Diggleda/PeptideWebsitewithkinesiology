@@ -842,6 +842,18 @@ export type UpdateProfilePayload = {
   name?: string;
   email?: string;
   phone?: string;
+  profileImageUrl?: string | null;
+  profileOnboarding?: boolean;
+  resellerPermitOnboardingPresented?: boolean;
+  isTaxExempt?: boolean;
+  taxExemptSource?: string | null;
+  taxExemptReason?: string | null;
+  resellerPermitFilePath?: string | null;
+  resellerPermitFileName?: string | null;
+  resellerPermitUploadedAt?: string | null;
+  greaterArea?: string | null;
+  studyFocus?: string | null;
+  bio?: string | null;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
   officeAddressLine1?: string | null;
@@ -985,6 +997,15 @@ export const authAPI = {
     return fetchWithAuth(`${API_BASE_URL}/auth/me`, {
       method: 'PUT',
       body: JSON.stringify(payload),
+    });
+  },
+
+  uploadResellerPermit: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetchWithAuthForm(`${API_BASE_URL}/auth/me/reseller-permit`, {
+      method: 'POST',
+      body: formData,
     });
   },
 

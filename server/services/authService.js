@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const userRepository = require('../repositories/userRepository');
@@ -36,6 +39,28 @@ const DIRECT_SHIPPING_FIELDS = [
   'officeState',
   'officePostalCode',
 ];
+
+const DOCTOR_PROFILE_FIELD_LIMITS = {
+  greaterArea: 190,
+  studyFocus: 190,
+  bio: 1000,
+};
+
+const RESELLER_PERMIT_ALLOWED_EXTENSIONS = new Set([
+  '.pdf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.heic',
+  '.gif',
+]);
+
+const RESELLER_PERMIT_UPLOAD_DIR = path.join(
+  env.dataDir,
+  'uploads',
+  'reseller-permits',
+);
 
 const supportsHrtimeBigint = typeof process.hrtime === 'function'
   && typeof process.hrtime.bigint === 'function';
@@ -90,6 +115,34 @@ const normalizeOptionalString = (value) => {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const deleteStoredResellerPermitFile = async (user) => {
+  const relativePath = normalizeOptionalString(user?.resellerPermitFilePath);
+  if (!relativePath) {
+    return;
+  }
+  try {
+    const absolutePath = path.resolve(env.dataDir, relativePath);
+    const allowedRoot = path.resolve(RESELLER_PERMIT_UPLOAD_DIR);
+    if (!absolutePath.startsWith(`${allowedRoot}${path.sep}`) && absolutePath !== allowedRoot) {
+      return;
+    }
+    await fs.promises.unlink(absolutePath).catch((error) => {
+      if (error && error.code !== 'ENOENT') {
+        throw error;
+      }
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        userId: user?.id || null,
+        resellerPermitFilePath: user?.resellerPermitFilePath || null,
+        error: error?.message || String(error),
+      },
+      'Failed to remove stored reseller permit file',
+    );
+  }
 };
 
 const normalizeRole = (role) => {
@@ -230,6 +283,27 @@ const sanitizeUser = (user) => {
   return {
     ...rest,
     profileImageUrl: normalizeOptionalString(user.profileImageUrl),
+    profileOnboarding: normalizeBooleanFlag(
+      user.profileOnboarding ?? user.profile_onboarding,
+    ),
+    resellerPermitOnboardingPresented: normalizeBooleanFlag(
+      user.resellerPermitOnboardingPresented ?? user.reseller_permit_onboarding_presented,
+    ),
+    isTaxExempt: normalizeBooleanFlag(user.isTaxExempt ?? user.is_tax_exempt),
+    taxExemptSource: normalizeOptionalString(user.taxExemptSource ?? user.tax_exempt_source),
+    taxExemptReason: normalizeOptionalString(user.taxExemptReason ?? user.tax_exempt_reason),
+    resellerPermitFilePath: normalizeOptionalString(
+      user.resellerPermitFilePath ?? user.reseller_permit_file_path,
+    ),
+    resellerPermitFileName: normalizeOptionalString(
+      user.resellerPermitFileName ?? user.reseller_permit_file_name,
+    ),
+    resellerPermitUploadedAt: normalizeOptionalString(
+      user.resellerPermitUploadedAt ?? user.reseller_permit_uploaded_at,
+    ),
+    greaterArea: normalizeOptionalString(user.greaterArea),
+    studyFocus: normalizeOptionalString(user.studyFocus),
+    bio: normalizeOptionalString(user.bio),
     delegateLogoUrl: normalizeOptionalString(user.delegateLogoUrl),
     delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
     cart: normalizeCartItems(user.cart),
@@ -326,6 +400,14 @@ const createError = (message, status = 400) => {
   const error = new Error(message);
   error.status = status;
   return error;
+};
+
+const normalizeDoctorProfileTextField = (field, value) => {
+  const normalized = normalizeOptionalString(value);
+  if (normalized && normalized.length > DOCTOR_PROFILE_FIELD_LIMITS[field]) {
+    throw createError(`${String(field).toUpperCase()}_TOO_LONG`, 400);
+  }
+  return normalized;
 };
 
 const isPhysicianTaxonomy = (value) => {
@@ -521,6 +603,11 @@ const register = async ({
     taxExemptReason,
     researchTermsAgreement: false,
     delegateOptIn: false,
+    profileOnboarding: false,
+    resellerPermitOnboardingPresented: false,
+    greaterArea: null,
+    studyFocus: null,
+    bio: null,
     npiVerification: npiVerification
       ? {
         name: npiVerification.name,
@@ -704,6 +791,19 @@ const updateProfile = async (userId, data) => {
   if (Object.prototype.hasOwnProperty.call(data, 'delegateOptIn')) {
     next.delegateOptIn = normalizeBooleanFlag(data.delegateOptIn);
   }
+  if (Object.prototype.hasOwnProperty.call(data, 'profileOnboarding')) {
+    next.profileOnboarding = normalizeBooleanFlag(data.profileOnboarding);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'resellerPermitOnboardingPresented')) {
+    next.resellerPermitOnboardingPresented = normalizeBooleanFlag(
+      data.resellerPermitOnboardingPresented,
+    );
+  }
+  ['greaterArea', 'studyFocus', 'bio'].forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(data, field)) {
+      next[field] = normalizeDoctorProfileTextField(field, data[field]);
+    }
+  });
   const updated = userRepository.update(next) || next;
   logger.debug(
     {
@@ -728,6 +828,46 @@ const updateProfile = async (userId, data) => {
   return sanitizeUser(updated);
 };
 
+const uploadResellerPermit = async (userId, parsed) => {
+  const user = userRepository.findById(userId);
+  if (!user) {
+    throw createError('User not found', 404);
+  }
+
+  const fileBuffer = Buffer.isBuffer(parsed?.buffer) ? parsed.buffer : null;
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw createError('No file provided', 400);
+  }
+
+  const ext = path.extname(String(parsed?.filename || '')).toLowerCase();
+  if (!RESELLER_PERMIT_ALLOWED_EXTENSIONS.has(ext)) {
+    throw createError('Invalid file type', 400);
+  }
+
+  const safeOriginal = path
+    .basename(String(parsed?.filename || 'reseller_permit'))
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .slice(0, 160) || 'reseller_permit';
+  const storedName = `reseller_permit_${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
+  await fs.promises.mkdir(RESELLER_PERMIT_UPLOAD_DIR, { recursive: true });
+  const storedPath = path.join(RESELLER_PERMIT_UPLOAD_DIR, storedName);
+  await fs.promises.writeFile(storedPath, fileBuffer);
+
+  const next = {
+    ...user,
+    resellerPermitOnboardingPresented: true,
+    isTaxExempt: true,
+    taxExemptSource: 'RESELLER_PERMIT',
+    taxExemptReason: 'Reseller permit on file',
+    resellerPermitFilePath: path.posix.join('uploads', 'reseller-permits', storedName),
+    resellerPermitFileName: safeOriginal,
+    resellerPermitUploadedAt: new Date().toISOString(),
+  };
+  const updated = userRepository.update(next) || next;
+  await deleteStoredResellerPermitFile(user);
+  return sanitizeUser(updated);
+};
+
 const updateCart = async (userId, cart) => {
   const user = userRepository.findById(userId);
   if (!user) {
@@ -740,7 +880,6 @@ const updateCart = async (userId, cart) => {
   return sanitizeUser(updated);
 };
 
-const crypto = require('crypto');
 const emailService = require('./emailService');
 
 // In-memory store for password reset tokens.
@@ -835,6 +974,7 @@ module.exports = {
   checkEmail,
   getProfile,
   updateProfile,
+  uploadResellerPermit,
   updateCart,
   sanitizeUser,
   sanitizeUserForAuthResponse,

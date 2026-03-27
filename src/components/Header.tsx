@@ -15,6 +15,7 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
+import { DoctorProfileForm } from './DoctorProfileForm';
 import delegateLinkBetaImage1 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage1.png';
 import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage2.png';
 import {
@@ -303,6 +304,14 @@ interface HeaderUser {
   id?: string;
   name: string;
   profileImageUrl?: string | null;
+  profileOnboarding?: boolean;
+  resellerPermitOnboardingPresented?: boolean;
+  resellerPermitFilePath?: string | null;
+  resellerPermitFileName?: string | null;
+  resellerPermitUploadedAt?: string | null;
+  greaterArea?: string | null;
+  studyFocus?: string | null;
+  bio?: string | null;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
   zelleContact?: string | null;
@@ -1353,9 +1362,11 @@ export function Header({
   const searchQueryRef = useRef('');
   const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const resellerPermitInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadPercent, setAvatarUploadPercent] = useState(0);
   const [showAvatarControls, setShowAvatarControls] = useState(false);
+  const [resellerPermitUploading, setResellerPermitUploading] = useState(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -1958,6 +1969,7 @@ export function Header({
   const accountRole = localUser?.role ?? user?.role ?? null;
   const accountIsAdmin = isAdmin(accountRole);
   const accountIsSalesRep = isRep(accountRole) || isSalesLead(accountRole);
+  const accountIsDoctor = isDoctorRole(accountRole);
   const headerDisplayName = localUser
     ? accountIsAdmin
       ? `Admin: ${localUser.name}`
@@ -4318,6 +4330,49 @@ export function Header({
     [setLocalUser, onUserUpdated, localUser],
   );
 
+  const handleAccountResellerPermitUpload = useCallback(
+    async (file: File | null) => {
+      if (!file || resellerPermitUploading) {
+        return;
+      }
+
+      const maxBytes = 25 * 1024 * 1024;
+      if (file.size > maxBytes) {
+        toast.error('Upload too large. Please choose a file 25MB or smaller.');
+        if (resellerPermitInputRef.current) {
+          resellerPermitInputRef.current.value = '';
+        }
+        return;
+      }
+
+      setResellerPermitUploading(true);
+      try {
+        const api = await import('../services/api');
+        const updated = await api.authAPI.uploadResellerPermit(file);
+        const nextUserState: HeaderUser = {
+          ...(localUser || {}),
+          ...(updated || {}),
+          resellerPermitOnboardingPresented: true,
+        };
+        setLocalUser(nextUserState);
+        onUserUpdated?.(nextUserState);
+        toast.success('Reseller permit uploaded.');
+      } catch (error: any) {
+        const message =
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message.trim()
+            : 'Unable to upload your reseller permit right now.';
+        toast.error(message);
+      } finally {
+        setResellerPermitUploading(false);
+        if (resellerPermitInputRef.current) {
+          resellerPermitInputRef.current.value = '';
+        }
+      }
+    },
+    [localUser, onUserUpdated, resellerPermitUploading],
+  );
+
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
   const [delegateSecondaryColorSaving, setDelegateSecondaryColorSaving] = useState(false);
@@ -4489,220 +4544,267 @@ export function Header({
     { key: 'officeState', label: 'State', autoComplete: 'shipping address-level1' },
     { key: 'officePostalCode', label: 'Postal Code', autoComplete: 'shipping postal-code' },
   ];
+  const accountResellerPermitFileName =
+    typeof localUser?.resellerPermitFileName === 'string'
+      ? localUser.resellerPermitFileName.trim()
+      : '';
+  const accountResellerPermitUploadedLabel = useMemo(() => {
+    const raw = typeof localUser?.resellerPermitUploadedAt === 'string'
+      ? localUser.resellerPermitUploadedAt.trim()
+      : '';
+    if (!raw) {
+      return '';
+    }
+    const parsed = parseBackendTimestamp(raw);
+    if (!parsed) {
+      return '';
+    }
+    return parsed.toLocaleDateString();
+  }, [localUser?.resellerPermitUploadedAt]);
 
   const accountInfoPanel = localUser ? (
     <div className="space-y-4">
-      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800">Contact Info</h2>
-          <p className="text-sm text-slate-600">Manage your account and shipping information below.</p>
+      {accountIsDoctor ? (
+        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+          <DoctorProfileForm
+            user={localUser}
+            title="Physician Profile"
+            description="Manage the profile used for your research platform account."
+            submitLabel="Save profile"
+            submittingLabel="Saving profile…"
+            onSubmit={async (payload) => {
+              await saveProfileField('Doctor profile', {
+                ...payload,
+                profileOnboarding: true,
+              });
+            }}
+          />
         </div>
+      ) : (
+        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">Contact Info</h2>
+            <p className="text-sm text-slate-600">Manage your account and shipping information below.</p>
+          </div>
 
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start pt-2">
-          <div className="flex flex-col gap-3 sm:min-w-[220px] sm:max-w-[260px]">
-            <div className="avatar-shell" onClick={() => avatarInputRef.current?.click()}>
-              {renderAvatar(72)}
-              <button
-                type="button"
-                className="avatar-edit-badge"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowAvatarControls((prev) => !prev);
-                }}
-                aria-label="Edit profile photo"
-              >
-                <Pencil className="h-3 w-3" />
-              </button>
-            </div>
-
-            {showAvatarControls && (
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-slate-800">Profile photo</p>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="header-home-button squircle-sm bg-white text-slate-900"
-                    disabled={avatarUploading}
-                    onClick={() => avatarInputRef.current?.click()}
-                  >
-                    {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="squircle-sm"
-                    disabled={avatarUploading || !profileImageUrl}
-                    onClick={() => {
-                      void (async () => {
-                        try {
-                          await saveProfileField('Profile photo', { profileImageUrl: null });
-                          if (avatarInputRef.current) {
-                            avatarInputRef.current.value = '';
-                          }
-                        } catch {
-                          // Error toast is handled by saveProfileField.
-                        }
-                      })();
-                    }}
-                  >
-                    Remove
-                  </Button>
-                  <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
-                </div>
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-start pt-2">
+            <div className="flex flex-col gap-3 sm:min-w-[220px] sm:max-w-[260px]">
+              <div className="avatar-shell" onClick={() => avatarInputRef.current?.click()}>
+                {renderAvatar(72)}
+                <button
+                  type="button"
+                  className="avatar-edit-badge"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowAvatarControls((prev) => !prev);
+                  }}
+                  aria-label="Edit profile photo"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
               </div>
-            )}
 
-            <input
-              type="file"
-              accept="image/*"
-              ref={avatarInputRef}
-              className="hidden"
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                const maxBytes = 50 * 1024 * 1024; // 50MB limit
-                if (file.size > maxBytes) {
-                  toast.error('Upload too large. Please choose an image 50MB or smaller.');
-                  if (avatarInputRef.current) {
-                    avatarInputRef.current.value = '';
+              {showAvatarControls && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-800">Profile photo</p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="header-home-button squircle-sm bg-white text-slate-900"
+                      disabled={avatarUploading}
+                      onClick={() => avatarInputRef.current?.click()}
+                    >
+                      {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="squircle-sm"
+                      disabled={avatarUploading || !profileImageUrl}
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            await saveProfileField('Profile photo', { profileImageUrl: null });
+                            if (avatarInputRef.current) {
+                              avatarInputRef.current.value = '';
+                            }
+                          } catch {
+                            // Error toast is handled by saveProfileField.
+                          }
+                        })();
+                      }}
+                    >
+                      Remove
+                    </Button>
+                    <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
+                  </div>
+                </div>
+              )}
+
+              <input
+                type="file"
+                accept="image/*"
+                ref={avatarInputRef}
+                className="hidden"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  const maxBytes = 50 * 1024 * 1024;
+                  if (file.size > maxBytes) {
+                    toast.error('Upload too large. Please choose an image 50MB or smaller.');
+                    if (avatarInputRef.current) {
+                      avatarInputRef.current.value = '';
+                    }
+                    return;
                   }
-                  return;
-                }
-                setAvatarUploading(true);
-                setAvatarUploadPercent(8);
-                let uploadTicker: number | null = null;
-                try {
-                  console.info('[Profile] Compressing image before upload', { sizeBytes: file.size, name: file.name });
-                  const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
-                  setAvatarUploadPercent(55);
-
+                  setAvatarUploading(true);
+                  setAvatarUploadPercent(8);
+                  let uploadTicker: number | null = null;
                   try {
-                    // Lightweight client-side heuristic: if the browser supports FaceDetector and
-                    // no faces are detected, warn the user before uploading.
-                    const FaceDetectorCtor = (window as any)?.FaceDetector;
-                    if (FaceDetectorCtor) {
-                      const img = new Image();
-                      img.decoding = 'async';
-                      await new Promise<void>((resolve, reject) => {
-                        img.onload = () => resolve();
-                        img.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
-                        img.src = dataUrl;
-                      });
-                      const detector = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 3 });
-                      const faces = await detector.detect(img);
-                      if (!faces || faces.length === 0) {
+                    console.info('[Profile] Compressing image before upload', { sizeBytes: file.size, name: file.name });
+                    const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
+                    setAvatarUploadPercent(55);
+
+                    try {
+                      const FaceDetectorCtor = (window as any)?.FaceDetector;
+                      if (FaceDetectorCtor) {
+                        const img = new Image();
+                        img.decoding = 'async';
+                        await new Promise<void>((resolve, reject) => {
+                          img.onload = () => resolve();
+                          img.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
+                          img.src = dataUrl;
+                        });
+                        const detector = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 3 });
+                        const faces = await detector.detect(img);
+                        if (!faces || faces.length === 0) {
+                          const proceed = window.confirm(
+                            'No face was detected in this image. If this is intentional, you can continue.\n\nContinue uploading?',
+                          );
+                          if (!proceed) {
+                            toast.error('Upload canceled.');
+                            return;
+                          }
+                        }
+                      }
+                    } catch {
+                      // ignore
+                    }
+
+                    try {
+                      const { moderationAPI } = await import('../services/api');
+                      const resp = await moderationAPI.checkImage({ dataUrl, purpose: 'profile_photo' });
+                      if (resp?.flagged) {
                         const proceed = window.confirm(
-                          'No face was detected in this image. If this is intentional, you can continue.\n\nContinue uploading?',
+                          'This image may contain inappropriate content. Please choose a different image.\n\nContinue anyway?',
                         );
                         if (!proceed) {
                           toast.error('Upload canceled.');
                           return;
                         }
                       }
+                    } catch {
+                      // Soft-fail moderation checks; never block uploads if moderation is unavailable.
                     }
-                  } catch {
-                    // ignore
-                  }
 
-                  try {
-                    const { moderationAPI } = await import('../services/api');
-                    const resp = await moderationAPI.checkImage({ dataUrl, purpose: 'profile_photo' });
-                    if (resp?.flagged) {
-                      const proceed = window.confirm(
-                        'This image may contain inappropriate content. Please choose a different image.\n\nContinue anyway?',
-                      );
-                      if (!proceed) {
-                        toast.error('Upload canceled.');
-                        return;
-                      }
+                    const startProgress = 60;
+                    const targetProgress = 95;
+                    let current = startProgress;
+                    uploadTicker = window.setInterval(() => {
+                      current = Math.min(targetProgress, current + 2);
+                      setAvatarUploadPercent(current);
+                    }, 120);
+
+                    await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
+                    setAvatarUploadPercent(100);
+                    setShowAvatarControls(false);
+                  } catch (error: any) {
+                    const message = typeof error?.message === 'string' ? error.message : 'Upload failed';
+                    console.error('[Profile] Upload failed', { message, error });
+                  } finally {
+                    if (uploadTicker) {
+                      window.clearInterval(uploadTicker);
                     }
-                  } catch {
-                    // Soft-fail moderation checks; never block uploads if moderation is unavailable.
+                    setAvatarUploading(false);
+                    setAvatarUploadPercent(0);
+                    if (avatarInputRef.current) {
+                      avatarInputRef.current.value = '';
+                    }
                   }
-
-                  // Simulated progress while request is in-flight
-                  const startProgress = 60;
-                  const targetProgress = 95;
-                  let current = startProgress;
-                  uploadTicker = window.setInterval(() => {
-                    current = Math.min(targetProgress, current + 2);
-                    setAvatarUploadPercent(current);
-                  }, 120);
-
-                  await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
-                  setAvatarUploadPercent(100);
-                  setShowAvatarControls(false);
-                } catch (error: any) {
-                  // saveProfileField already emits canonical upload/update toasts.
-                  const message = typeof error?.message === 'string' ? error.message : 'Upload failed';
-                  console.error('[Profile] Upload failed', { message, error });
-                } finally {
-                  if (uploadTicker) {
-                    window.clearInterval(uploadTicker);
-                  }
-                  setAvatarUploading(false);
-                  setAvatarUploadPercent(0);
-                  if (avatarInputRef.current) {
-                    avatarInputRef.current.value = '';
-                  }
-                }
-              }}
-            />
-          </div>
-
-          {canShowReferralCode && primaryReferralCode && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Referral Code</label>
-              <div
-                className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800"
-              >
-                <span className="tracking-[0.16em] uppercase">
-                  {primaryReferralCode}
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="squircle-sm text-xs"
-                  onClick={handleCopyReferralCode}
-                >
-                  Copy
-                </Button>
-              </div>
-              <p className="text-xs text-slate-500">
-                Share this code with physicians to link them to your account. Editing is disabled for security.
-              </p>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-3 sm:flex-1">
-            {identityFields.map(({ key, label, type, autoComplete }) => (
-              <EditableRow
-                key={key}
-                label={label}
-                value={(localUser?.[key] as string | null) || ''}
-                type={type || 'text'}
-                autoComplete={autoComplete}
-                onSave={async (next) => {
-                  await saveProfileField(label, { [key]: next });
                 }}
               />
-            ))}
+            </div>
+
+            {canShowReferralCode && primaryReferralCode && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Referral Code</label>
+                <div
+                  className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800"
+                >
+                  <span className="tracking-[0.16em] uppercase">
+                    {primaryReferralCode}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="squircle-sm text-xs"
+                    onClick={handleCopyReferralCode}
+                  >
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Share this code with physicians to link them to your account. Editing is disabled for security.
+                </p>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 sm:flex-1">
+              {identityFields.map(({ key, label, type, autoComplete }) => (
+                <EditableRow
+                  key={key}
+                  label={label}
+                  value={(localUser?.[key] as string | null) || ''}
+                  type={type || 'text'}
+                  autoComplete={autoComplete}
+                  onSave={async (next) => {
+                    await saveProfileField(label, { [key]: next });
+                  }}
+                />
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-800">Direct Shipping</h3>
-          <p className="text-sm text-slate-600">Update the address where orders should ship.</p>
+          <h3 className="text-base font-semibold text-slate-800">
+            {accountIsDoctor ? 'Contact & Shipping' : 'Direct Shipping'}
+          </h3>
+          <p className="text-sm text-slate-600">
+            {accountIsDoctor
+              ? 'Update your phone number and the address where orders should ship.'
+              : 'Update the address where orders should ship.'}
+          </p>
         </div>
 
         <div className="grid gap-3">
+          {accountIsDoctor && (
+            <EditableRow
+              label="Phone"
+              value={(localUser?.phone as string | null) || ''}
+              autoComplete="tel"
+              onSave={async (next) => {
+                await saveProfileField('Phone', { phone: next });
+              }}
+            />
+          )}
           {directShippingFields.map(({ key, label, autoComplete }) => (
             <EditableRow
               key={key}
@@ -4716,6 +4818,45 @@ export function Header({
           ))}
         </div>
       </div>
+
+      {accountIsDoctor && (
+        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">Reseller Permit</h3>
+            <p className="text-sm text-slate-600">
+              Upload an applicable resellers permit for tax exception.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <Input
+              ref={resellerPermitInputRef}
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.gif"
+              className="bg-slate-100 file:mr-4 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900"
+              disabled={resellerPermitUploading}
+              onChange={(event) => {
+                void handleAccountResellerPermitUpload(event.target.files?.[0] || null);
+              }}
+            />
+            <p className="text-xs text-slate-500">
+              Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
+            </p>
+            {accountResellerPermitFileName && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <span className="font-medium text-slate-900">On file:</span>{' '}
+                {accountResellerPermitFileName}
+                {accountResellerPermitUploadedLabel
+                  ? ` • Uploaded ${accountResellerPermitUploadedLabel}`
+                  : ''}
+              </div>
+            )}
+            {resellerPermitUploading && (
+              <p className="text-sm text-slate-600">Uploading reseller permit…</p>
+            )}
+          </div>
+        </div>
+      )}
 
 	      <div className="pt-1">
 	        <button

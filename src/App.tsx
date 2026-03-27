@@ -17,6 +17,7 @@ import { withStaticAssetStamp } from "./lib/assetUrl";
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
+import { DoctorProfileForm } from "./components/DoctorProfileForm";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
 import { ImageWithFallback } from "./components/ImageWithFallback";
@@ -249,6 +250,17 @@ interface User {
   name: string;
   email: string;
   profileImageUrl?: string | null;
+  profileOnboarding?: boolean;
+  resellerPermitOnboardingPresented?: boolean;
+  isTaxExempt?: boolean;
+  taxExemptSource?: string | null;
+  taxExemptReason?: string | null;
+  resellerPermitFilePath?: string | null;
+  resellerPermitFileName?: string | null;
+  resellerPermitUploadedAt?: string | null;
+  greaterArea?: string | null;
+  studyFocus?: string | null;
+  bio?: string | null;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
   hasPasskeys?: boolean;
@@ -4053,11 +4065,173 @@ function MainApp() {
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [researchTermsSubmitting, setResearchTermsSubmitting] = useState(false);
   const [researchTermsError, setResearchTermsError] = useState("");
+  const [doctorProfileGateReady, setDoctorProfileGateReady] = useState(true);
+  const [doctorProfileBuilderDismissed, setDoctorProfileBuilderDismissed] =
+    useState(false);
+  const [doctorResellerPermitPromptOpen, setDoctorResellerPermitPromptOpen] =
+    useState(false);
+  const [
+    doctorResellerPermitPromptHandledThisSession,
+    setDoctorResellerPermitPromptHandledThisSession,
+  ] = useState(false);
+  const [doctorResellerPermitFile, setDoctorResellerPermitFile] =
+    useState<File | null>(null);
+  const [doctorResellerPermitSubmitting, setDoctorResellerPermitSubmitting] =
+    useState(false);
+  const [doctorResellerPermitError, setDoctorResellerPermitError] =
+    useState("");
   const [researchTermsLegalModalOpen, setResearchTermsLegalModalOpen] =
     useState(false);
+  const doctorResellerPermitInputRef = useRef<HTMLInputElement | null>(null);
+  const doctorProfileGateRefreshSeqRef = useRef(0);
   const showResearchTermsAgreementModal = Boolean(
     user && isDoctorRole(user.role) && !user.researchTermsAgreement,
   );
+  const showDoctorProfileBuilderModal = Boolean(
+    user &&
+      isDoctorRole(user.role) &&
+      user.researchTermsAgreement === true &&
+      doctorProfileGateReady &&
+      user.profileOnboarding !== true &&
+      !doctorProfileBuilderDismissed,
+  );
+  const shouldPromptForDoctorResellerPermit = Boolean(
+    user &&
+      isDoctorRole(user.role) &&
+      doctorProfileGateReady &&
+      user.researchTermsAgreement === true &&
+      user.profileOnboarding === true &&
+      !user.resellerPermitFilePath &&
+      user.resellerPermitOnboardingPresented !== true,
+  );
+  const showDoctorResellerPermitModal = Boolean(
+    user &&
+      isDoctorRole(user.role) &&
+      doctorResellerPermitPromptOpen,
+  );
+  const showDoctorGatingModal =
+    showResearchTermsAgreementModal
+    || showDoctorProfileBuilderModal
+    || showDoctorResellerPermitModal;
+  const doctorGatingModalViewportInset = "clamp(1rem, 4vh, 2.25rem)";
+  const doctorGatingModalViewportInsetDouble = "clamp(2rem, 8vh, 4.5rem)";
+  const doctorGatingModalContainerClassName =
+    "fixed inset-0 z-[10000] flex items-start justify-center overflow-y-auto px-3 sm:px-4";
+  const doctorGatingModalContainerStyle: CSSProperties = {
+    paddingTop: doctorGatingModalViewportInset,
+    paddingBottom: doctorGatingModalViewportInset,
+  };
+  const doctorGatingModalOverlayClassName = "bg-slate-950/40 z-[9000]";
+  const doctorGatingModalLogo = (
+    <div className="mb-6 flex justify-center">
+      <div className="brand-logo">
+        <img
+          src={withStaticAssetStamp("/PepPro_fulllogo.png")}
+          alt="PepPro"
+          style={{
+            display: "block",
+            width: "auto",
+            height: "auto",
+            maxWidth: "min(220px, 52vw)",
+            maxHeight: "64px",
+            objectFit: "contain",
+          }}
+        />
+      </div>
+    </div>
+  );
+  const doctorGatingModalContentStyle: CSSProperties = {
+    width: "min(var(--container-2xl, 42rem), calc(100vw - 1.5rem))",
+    maxWidth: "calc(100vw - 1.5rem)",
+    maxHeight: `calc(var(--viewport-height, 100dvh) - ${doctorGatingModalViewportInsetDouble})`,
+    marginTop: "auto",
+    marginBottom: "auto",
+    marginLeft: 0,
+    marginRight: 0,
+    animation: "none",
+  };
+
+  useEffect(() => {
+    if (!user?.id) {
+      doctorProfileGateRefreshSeqRef.current += 1;
+      setDoctorProfileGateReady(true);
+    }
+    setDoctorProfileBuilderDismissed(false);
+    setDoctorResellerPermitPromptOpen(false);
+    setDoctorResellerPermitPromptHandledThisSession(false);
+    setDoctorResellerPermitFile(null);
+    setDoctorResellerPermitError("");
+    setDoctorResellerPermitSubmitting(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (
+      !shouldPromptForDoctorResellerPermit ||
+      showResearchTermsAgreementModal ||
+      showDoctorProfileBuilderModal ||
+      doctorResellerPermitPromptHandledThisSession
+    ) {
+      return;
+    }
+
+    setDoctorResellerPermitPromptOpen(true);
+    setDoctorResellerPermitPromptHandledThisSession(true);
+    setDoctorResellerPermitFile(null);
+    setDoctorResellerPermitError("");
+    if (doctorResellerPermitInputRef.current) {
+      doctorResellerPermitInputRef.current.value = "";
+    }
+
+    if (user?.resellerPermitOnboardingPresented === true) {
+      return;
+    }
+
+    void authAPI
+      .updateMe({ resellerPermitOnboardingPresented: true })
+      .then((updated) => {
+        setUser((previous) => ({
+          ...(previous || {}),
+          ...((updated || {}) as User),
+          resellerPermitFilePath:
+            ((updated || {}) as User).resellerPermitFilePath
+            ?? previous?.resellerPermitFilePath
+            ?? null,
+          resellerPermitFileName:
+            ((updated || {}) as User).resellerPermitFileName
+            ?? previous?.resellerPermitFileName
+            ?? null,
+          resellerPermitUploadedAt:
+            ((updated || {}) as User).resellerPermitUploadedAt
+            ?? previous?.resellerPermitUploadedAt
+            ?? null,
+          isTaxExempt:
+            ((updated || {}) as User).isTaxExempt
+            ?? previous?.isTaxExempt
+            ?? false,
+          taxExemptSource:
+            ((updated || {}) as User).taxExemptSource
+            ?? previous?.taxExemptSource
+            ?? null,
+          taxExemptReason:
+            ((updated || {}) as User).taxExemptReason
+            ?? previous?.taxExemptReason
+            ?? null,
+          resellerPermitOnboardingPresented: true,
+        }));
+      })
+      .catch((error) => {
+        console.warn(
+          "[App] Failed to persist reseller permit presentation state",
+          error,
+        );
+      });
+  }, [
+    doctorResellerPermitPromptHandledThisSession,
+    shouldPromptForDoctorResellerPermit,
+    showDoctorProfileBuilderModal,
+    showResearchTermsAgreementModal,
+    user,
+  ]);
 
   useEffect(() => {
     if (!activeDelegationProposal) {
@@ -5760,8 +5934,12 @@ function MainApp() {
   }, [postLoginHold, user?.id, shouldAnimateInfoFocus]);
 
   const applyLoginSuccessState = useCallback((nextUser: User) => {
+    const gateRefreshSeq = ++doctorProfileGateRefreshSeqRef.current;
+    const shouldHoldDoctorProfileGate = isDoctorRole(nextUser.role);
     forcedLogoutAtRef.current = 0;
     forcedLogoutReasonRef.current = null;
+    setDoctorProfileGateReady(!shouldHoldDoctorProfileGate);
+    setDoctorProfileBuilderDismissed(false);
     setUser(nextUser);
     setPostLoginHold(true);
     setShouldAnimateInfoFocus(true);
@@ -5780,13 +5958,20 @@ function MainApp() {
     void authAPI
       .getCurrentUser()
       .then((current) => {
-        if (!current) return;
+        if (!current || doctorProfileGateRefreshSeqRef.current !== gateRefreshSeq) {
+          return;
+        }
         setUser((previous) => ({
           ...(previous || {}),
           ...(current as User),
         }));
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (doctorProfileGateRefreshSeqRef.current === gateRefreshSeq) {
+          setDoctorProfileGateReady(true);
+        }
+      });
   }, []);
 
   const openResearchTermsLegalDocument = useCallback(
@@ -5822,6 +6007,89 @@ function MainApp() {
       setResearchTermsSubmitting(false);
     }
   }, [researchTermsSubmitting, user]);
+
+  const handleCompleteDoctorProfileOnboarding = useCallback(
+    async (payload: {
+      name: string;
+      email: string;
+      profileImageUrl: string | null;
+      greaterArea: string | null;
+      studyFocus: string | null;
+      bio: string | null;
+    }) => {
+      if (!user || !isDoctorRole(user.role)) {
+        return;
+      }
+      const updated = (await authAPI.updateMe({
+        ...payload,
+        profileOnboarding: true,
+      })) as User;
+      setUser((previous) => ({
+        ...(previous || {}),
+        ...updated,
+        profileOnboarding: true,
+      }));
+      setDoctorProfileBuilderDismissed(false);
+      setDoctorResellerPermitFile(null);
+      setDoctorResellerPermitError("");
+      if (doctorResellerPermitInputRef.current) {
+        doctorResellerPermitInputRef.current.value = "";
+      }
+      setDoctorResellerPermitPromptOpen(false);
+    },
+    [user],
+  );
+
+  const handleSkipDoctorResellerPermit = useCallback(() => {
+    setDoctorResellerPermitPromptOpen(false);
+    setDoctorResellerPermitFile(null);
+    setDoctorResellerPermitError("");
+    setDoctorResellerPermitSubmitting(false);
+    if (doctorResellerPermitInputRef.current) {
+      doctorResellerPermitInputRef.current.value = "";
+    }
+  }, []);
+
+  const handleUploadDoctorResellerPermit = useCallback(async () => {
+    if (
+      !user ||
+      !isDoctorRole(user.role) ||
+      !doctorResellerPermitFile ||
+      doctorResellerPermitSubmitting
+    ) {
+      return;
+    }
+
+    setDoctorResellerPermitSubmitting(true);
+    setDoctorResellerPermitError("");
+    try {
+      const updated = (await authAPI.uploadResellerPermit(
+        doctorResellerPermitFile,
+      )) as User;
+      setUser((previous) => ({
+        ...(previous || {}),
+        ...updated,
+      }));
+      setDoctorResellerPermitPromptOpen(false);
+      setDoctorResellerPermitFile(null);
+      if (doctorResellerPermitInputRef.current) {
+        doctorResellerPermitInputRef.current.value = "";
+      }
+      toast.success("Reseller permit uploaded.");
+    } catch (error: any) {
+      setDoctorResellerPermitError(
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message.trim()
+          : "Unable to upload your reseller permit right now.",
+      );
+    } finally {
+      setDoctorResellerPermitSubmitting(false);
+    }
+  }, [
+    doctorResellerPermitFile,
+    doctorResellerPermitSubmitting,
+    user,
+  ]);
 
   const performPasskeyLogin = useCallback(
     async (options?: {
@@ -18881,15 +19149,9 @@ function MainApp() {
         code: normalizedCode,
         npiNumber: normalizedNpi || undefined,
       });
-      setUser(user);
-      setPostLoginHold(true);
-      setIsReturningUser(false);
+      applyLoginSuccessState(user);
       // toast.success(`Welcome to PepPro, ${user.name}!`);
       console.debug("[Auth] Create account success", { userId: user.id });
-      setLoginContext(null);
-      setShowLandingLoginPassword(false);
-      setShowLandingSignupPassword(false);
-      setShowLandingSignupConfirm(false);
       return { status: "success" };
     } catch (error: any) {
       const status = error?.status ?? "unknown";
@@ -28833,7 +29095,6 @@ function MainApp() {
           : {}),
       }}
     >
-      {/* Ambient background texture */}
       <div
         aria-hidden="true"
         style={{
@@ -28857,7 +29118,8 @@ function MainApp() {
       {infoFocusActive &&
         postLoginHold &&
         user &&
-        !showResearchTermsAgreementModal && (
+        !showResearchTermsAgreementModal &&
+        !showDoctorGatingModal && (
         <div className="info-focus-overlay" aria-hidden="true" />
       )}
       <Dialog
@@ -28871,15 +29133,19 @@ function MainApp() {
       >
         <DialogContent
           hideCloseButton
-          className="max-w-2xl max-h-[calc(var(--viewport-height,100dvh)-1rem)] overflow-y-auto overscroll-contain"
-          containerClassName="research-terms-modal-container fixed inset-0 z-[10000] flex items-start justify-center overflow-y-auto px-3 pt-3 pb-6 sm:pt-6"
+          className="max-w-2xl overflow-y-auto overscroll-contain"
+          overlayClassName={doctorGatingModalOverlayClassName}
+          containerClassName={doctorGatingModalContainerClassName}
+          containerStyle={doctorGatingModalContainerStyle}
+          style={doctorGatingModalContentStyle}
           trapFocus={!researchTermsLegalModalOpen}
           onEscapeKeyDown={(event) => event.preventDefault()}
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
+          {doctorGatingModalLogo}
           <DialogHeader className="gap-0">
-            <DialogTitle>Research Participation Agreement</DialogTitle>
+            <DialogTitle>Research Contribution Agreement</DialogTitle>
             <DialogDescription className="text-muted-foreground mb-3 text-sm">
               Physician acknowledgment required before continuing.
             </DialogDescription>
@@ -28887,45 +29153,50 @@ function MainApp() {
           <div className="space-y-4 text-sm leading-relaxed text-slate-700">
             <p>
               By proceeding, you agree to join the PepPro research network
-              and, at your discretion, contribute your time, expertise, and
-              de-identified, anonymized patient outcome data in compliance
-              with applicable privacy laws and professional obligations.
+              where, at your discretion, you contribute your time,
+              expertise, and de-identified, anonymized patient outcome data
+              constructively, and with integrity, to advance healthcare. You
+              agree to these terms in compliance with applicable privacy laws
+              and professional obligations.
             </p>
-            <p>
-              Continuing also confirms your acceptance of PepPro&apos;s Terms
-              of Service, Privacy Policy, Shipping Policy, and any
-              applicable research network requirements.
-            </p>
-            <div className="rounded-2xl border border-[rgba(95,179,249,0.28)] bg-[rgba(255,255,255,0.82)] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[rgb(95,179,249)]">
-                Review
-              </p>
-              <div className="mt-3 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full min-w-0 whitespace-normal text-center border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
-                  onClick={() => openResearchTermsLegalDocument("terms")}
-                >
-                  Terms of Service
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full min-w-0 whitespace-normal text-center border-[rgba(95,179,249,0.35)] bg-white text-slate-900"
-                  onClick={() => openResearchTermsLegalDocument("privacy")}
-                >
-                  Privacy Policy
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full min-w-0 whitespace-normal text-center border-[rgba(95,179,249,0.35)] bg-white text-slate-900 sm:col-span-2"
-                  onClick={() => openResearchTermsLegalDocument("shipping")}
-                >
-                  Shipping Policy
-                </Button>
-              </div>
+            <div className="text-sm leading-snug text-slate-700">
+              Continuing also confirms your acceptance of PepPro&apos;s{" "}
+              <button
+                type="button"
+                className="legal-inline-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openResearchTermsLegalDocument("terms");
+                }}
+              >
+                Terms of Service
+              </button>
+              {", "}
+              <button
+                type="button"
+                className="legal-inline-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openResearchTermsLegalDocument("shipping");
+                }}
+              >
+                Shipping Policy
+              </button>
+              {", and "}
+              <button
+                type="button"
+                className="legal-inline-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openResearchTermsLegalDocument("privacy");
+                }}
+              >
+                Privacy Policy
+              </button>
+              .
             </div>
             {researchTermsError && (
               <p className="text-sm text-red-600" role="alert">
@@ -28956,7 +29227,129 @@ function MainApp() {
           </div>
         </DialogContent>
       </Dialog>
-		      <div className="relative z-10 flex flex-1 flex-col">
+      <Dialog
+        open={showDoctorProfileBuilderModal}
+        modal
+        onOpenChange={(open) => {
+          if (!open && showDoctorProfileBuilderModal) {
+            return;
+          }
+        }}
+      >
+        <DialogContent
+          hideCloseButton
+          className="max-w-2xl overflow-y-auto overscroll-contain"
+          overlayClassName={doctorGatingModalOverlayClassName}
+          containerClassName={doctorGatingModalContainerClassName}
+          containerStyle={doctorGatingModalContainerStyle}
+          style={doctorGatingModalContentStyle}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          {doctorGatingModalLogo}
+          <DialogHeader className="gap-0">
+            <DialogTitle>Complete Your Profile</DialogTitle>
+            <DialogDescription className="text-muted-foreground mb-3 text-sm">
+              Add the profile details used for your research platform account.
+            </DialogDescription>
+          </DialogHeader>
+          <DoctorProfileForm
+            user={user}
+            avatarStyle="compact-circle"
+            preActionsNote={'By clicking "Save and continue" you allow your profile to be visible to the PepPro network, and understand that these details are able to be toggled and modified by you within your account settings at anytime.'}
+            submitLabel="Save and Continue"
+            submittingLabel="Saving profile…"
+            skipLabel="Skip for now"
+            onSubmit={handleCompleteDoctorProfileOnboarding}
+            onSkip={() => setDoctorProfileBuilderDismissed(true)}
+          />
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={showDoctorResellerPermitModal}
+        modal
+        onOpenChange={(open) => {
+          if (!open && showDoctorResellerPermitModal) {
+            return;
+          }
+        }}
+      >
+        <DialogContent
+          hideCloseButton
+          className="max-w-2xl overflow-y-auto overscroll-contain"
+          overlayClassName={doctorGatingModalOverlayClassName}
+          containerClassName={doctorGatingModalContainerClassName}
+          containerStyle={doctorGatingModalContainerStyle}
+          style={doctorGatingModalContentStyle}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          {doctorGatingModalLogo}
+          <DialogHeader className="gap-0">
+            <DialogTitle>Reseller Permit</DialogTitle>
+            <DialogDescription className="text-muted-foreground mb-3 text-sm">
+              Upload an applicable resellers permit for tax exception.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <Input
+                id="doctor-reseller-permit-upload"
+                ref={doctorResellerPermitInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.gif"
+                className="bg-slate-100 file:mr-4 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900"
+                onChange={(event) => {
+                  const nextFile = event.target.files?.[0] || null;
+                  setDoctorResellerPermitFile(nextFile);
+                  setDoctorResellerPermitError("");
+                }}
+              />
+              <p className="text-xs text-slate-500">
+                Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
+              </p>
+            </div>
+            {doctorResellerPermitFile && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                Selected file: {doctorResellerPermitFile.name}
+              </div>
+            )}
+            {doctorResellerPermitError && (
+              <p className="text-sm text-red-600" role="alert">
+                {doctorResellerPermitError}
+              </p>
+            )}
+            <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-slate-300 bg-white text-slate-900"
+                onClick={handleSkipDoctorResellerPermit}
+                disabled={doctorResellerPermitSubmitting}
+              >
+                Skip for now
+              </Button>
+              <Button
+                type="button"
+                className="header-home-button min-w-[220px]"
+                onClick={() => void handleUploadDoctorResellerPermit()}
+                disabled={!doctorResellerPermitFile || doctorResellerPermitSubmitting}
+              >
+                {doctorResellerPermitSubmitting
+                  ? "Uploading permit…"
+                  : "Upload and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {showDoctorGatingModal && (
+        <LegalFooter hostOnly showContactCTA={false} variant="full" />
+      )}
+	      {!showDoctorGatingModal && (
+	      <div className="relative z-10 flex flex-1 flex-col">
 		        {/* Header */}
 			        {user && !isDelegateMode && (
 			          <div style={{ display: postLoginHold ? "none" : undefined }}>
@@ -30820,8 +31213,9 @@ function MainApp() {
 	        <LegalFooter showContactCTA variant="full" />
 	      )}
       </div>
+      )}
 
-      {/* Checkout Modal */}
+	      {/* Checkout Modal */}
 	      <CheckoutModal
 	        isOpen={checkoutOpen}
 	        onClose={() => setCheckoutOpen(false)}

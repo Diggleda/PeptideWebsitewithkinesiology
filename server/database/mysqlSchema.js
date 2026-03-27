@@ -480,6 +480,41 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'profile_onboarding',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN profile_onboarding TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
+      name: 'reseller_permit_onboarding_presented',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN reseller_permit_onboarding_presented TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
+      name: 'greater_area',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN greater_area VARCHAR(190) NULL
+      `,
+    },
+    {
+      name: 'study_focus',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN study_focus VARCHAR(190) NULL
+      `,
+    },
+    {
+      name: 'bio',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN bio TEXT NULL
+      `,
+    },
+    {
       name: 'delegate_logo_url',
       ddl: `
         ALTER TABLE users
