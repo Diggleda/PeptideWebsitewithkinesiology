@@ -9,7 +9,7 @@ import re
 import time
 import threading
 
-from flask import Blueprint, request, g
+from flask import Blueprint, Response, request, g
 
 from ..middleware.auth import require_auth
 from ..database import mysql_client
@@ -1003,7 +1003,6 @@ def _compute_live_clients_payload(
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": _normalize_role(user.get("role")) or "unknown",
-                "profileImageUrl": user.get("profileImageUrl") or None,
                 **snapshot,
             }
         )
@@ -1026,7 +1025,6 @@ def _compute_live_clients_payload(
             "lastLoginAt": entry.get("lastLoginAt") or None,
             "lastSeenAt": entry.get("lastSeenAt") or None,
             "lastInteractionAt": entry.get("lastInteractionAt") or None,
-            "profileImageUrl": entry.get("profileImageUrl") or None,
         }
         for entry in clients
     ]
@@ -1103,7 +1101,6 @@ def _compute_live_users_payload() -> dict:
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": normalize_user_role(user.get("role")),
-                "profileImageUrl": user.get("profileImageUrl") or None,
                 **snapshot,
             }
         )
@@ -1124,7 +1121,6 @@ def _compute_live_users_payload() -> dict:
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
             "lastLoginAt": entry.get("lastLoginAt") or None,
-            "profileImageUrl": entry.get("profileImageUrl") or None,
         }
         for entry in entries
     ]
@@ -1562,7 +1558,7 @@ def longpoll_live_clients():
                 if not etag or etag != client_etag:
                     return payload
 
-            return payload
+            return Response(status=204)
         finally:
             try:
                 _LIVE_CLIENTS_LONGPOLL_SEMAPHORE.release()
@@ -1615,7 +1611,7 @@ def longpoll_live_users():
                 if not etag or etag != client_etag:
                     return payload
 
-            return payload
+            return Response(status=204)
         finally:
             try:
                 _LIVE_USERS_LONGPOLL_SEMAPHORE.release()
@@ -1667,7 +1663,9 @@ def get_user_profile(user_id: str):
 @require_auth
 def get_user_profiles():
     def action():
-        _require_admin_or_sales_lead()
+        current_user = getattr(g, "current_user", None) or {}
+        current_role = _normalize_role(current_user.get("role"))
+        _require_sales_rep_or_admin()
         raw_ids = str(request.args.get("ids") or "").strip()
         if not raw_ids:
             err = RuntimeError("ids is required")
@@ -1685,8 +1683,28 @@ def get_user_profiles():
             if len(requested_ids) >= 100:
                 break
 
+        visible_user_ids: set[str] | None = None
+        if not (_is_admin_role(current_role) or _is_sales_lead_role(current_role)):
+            base_owner_id = str(current_user.get("id") or "").strip()
+            if not base_owner_id:
+                err = RuntimeError("salesRepId is required")
+                setattr(err, "status", 400)
+                raise err
+            strict_assignment = _is_sales_rep_role(current_role) and not _is_sales_lead_role(current_role)
+            payload = _compute_live_clients_payload(
+                target_sales_rep_id=base_owner_id,
+                strict_assignment=strict_assignment,
+            )
+            visible_user_ids = {
+                str(entry.get("id") or "").strip()
+                for entry in (payload.get("clients") or [])
+                if isinstance(entry, dict) and str(entry.get("id") or "").strip()
+            }
+
         users: list[dict] = []
         for target_id in requested_ids:
+            if visible_user_ids is not None and target_id not in visible_user_ids:
+                continue
             user = user_repository.find_by_id(target_id)
             if not user:
                 continue

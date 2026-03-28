@@ -4573,7 +4573,7 @@ export function Header({
             submitLabel="Save profile"
             submittingLabel="Saving profile…"
             onSubmit={async (payload) => {
-              await saveProfileField('Doctor profile', {
+              await saveProfileField('Physician profile', {
                 ...payload,
                 profileOnboarding: true,
               });

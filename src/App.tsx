@@ -7475,6 +7475,9 @@ function MainApp() {
 				    name: string;
 				    email?: string | null;
 			    avatar?: string | null;
+            greaterArea?: string | null;
+            studyFocus?: string | null;
+            bio?: string | null;
             prospectNotes?: string | null;
 				    revenue: number;
 				    personalRevenue?: number | null;
@@ -9340,6 +9343,18 @@ function MainApp() {
 	        name: bucket.doctorName,
 	        email: bucket.doctorEmail,
 	        avatar: bucket.doctorAvatar ?? null,
+            greaterArea:
+              typeof (bucket as any)?.greaterArea === "string"
+                ? (bucket as any).greaterArea
+                : null,
+            studyFocus:
+              typeof (bucket as any)?.studyFocus === "string"
+                ? (bucket as any).studyFocus
+                : null,
+            bio:
+              typeof (bucket as any)?.bio === "string"
+                ? (bucket as any).bio
+                : null,
             prospectNotes:
               typeof (bucket as any)?.prospectNotes === "string"
                 ? (bucket as any).prospectNotes
@@ -9442,7 +9457,12 @@ function MainApp() {
         ),
       );
 
-      const avatarUrl = entry?.profileImageUrl || null;
+      const avatarUrl =
+        livePresenceProfileImageByUserId[id]?.value ||
+        (typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
+          ? entry.profileImageUrl.trim()
+          : null) ||
+        null;
       const displayName = entry?.name || entry?.email || "User";
       const entryRole = normalizeRole(entry?.role);
       const entryIsSalesActor = isRep(entryRole) || isAdmin(entryRole);
@@ -9464,6 +9484,11 @@ function MainApp() {
           doctorName: displayName,
           doctorEmail: entry?.email || null,
           doctorAvatar: avatarUrl,
+          greaterArea:
+            typeof entry?.greaterArea === "string" ? entry.greaterArea : null,
+          studyFocus:
+            typeof entry?.studyFocus === "string" ? entry.studyFocus : null,
+          bio: typeof entry?.bio === "string" ? entry.bio : null,
           doctorPhone: null,
           doctorAddress: null,
           ownerSalesRepId:
@@ -9604,6 +9629,24 @@ function MainApp() {
 	                doctorName,
 	                doctorEmail: doctorFromList?.email || entry?.email || null,
 	                doctorAvatar: doctorFromList?.profileImageUrl || doctorFromList?.profile_image_url || avatarUrl,
+                  greaterArea:
+                    typeof doctorFromList?.greaterArea === "string"
+                      ? doctorFromList.greaterArea
+                      : typeof entry?.greaterArea === "string"
+                        ? entry.greaterArea
+                        : null,
+                  studyFocus:
+                    typeof doctorFromList?.studyFocus === "string"
+                      ? doctorFromList.studyFocus
+                      : typeof entry?.studyFocus === "string"
+                        ? entry.studyFocus
+                        : null,
+                  bio:
+                    typeof doctorFromList?.bio === "string"
+                      ? doctorFromList.bio
+                      : typeof entry?.bio === "string"
+                        ? entry.bio
+                        : null,
 	                doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
 	                doctorAddress,
 	                addressOrigin: doctorAddress ? "user" : null,
@@ -9718,6 +9761,24 @@ function MainApp() {
                 refreshedDoctorFromList?.profileImageUrl ||
                 refreshedDoctorFromList?.profile_image_url ||
                 avatarUrl,
+              greaterArea:
+                typeof refreshedDoctorFromList?.greaterArea === "string"
+                  ? refreshedDoctorFromList.greaterArea
+                  : typeof entry?.greaterArea === "string"
+                    ? entry.greaterArea
+                  : null,
+              studyFocus:
+                typeof refreshedDoctorFromList?.studyFocus === "string"
+                  ? refreshedDoctorFromList.studyFocus
+                  : typeof entry?.studyFocus === "string"
+                    ? entry.studyFocus
+                  : null,
+              bio:
+                typeof refreshedDoctorFromList?.bio === "string"
+                  ? refreshedDoctorFromList.bio
+                  : typeof entry?.bio === "string"
+                    ? entry.bio
+                  : null,
               phone:
                 refreshedDoctorFromList?.phone ||
                 refreshedDoctorFromList?.phoneNumber ||
@@ -9856,6 +9917,11 @@ function MainApp() {
               doctorName: profile?.name || displayName,
               doctorEmail: profile?.email || entry?.email || null,
               doctorAvatar: profile?.profileImageUrl || avatarUrl,
+              greaterArea:
+                typeof profile?.greaterArea === "string" ? profile.greaterArea : null,
+              studyFocus:
+                typeof profile?.studyFocus === "string" ? profile.studyFocus : null,
+              bio: typeof profile?.bio === "string" ? profile.bio : null,
               doctorPhone: profile?.phone || null,
               doctorAddress: address,
               addressOrigin: address ? "user" : null,
@@ -9964,6 +10030,7 @@ function MainApp() {
       })();
     },
     [
+      livePresenceProfileImageByUserId,
       mergeSalesDoctorDetail,
       openSalesDoctorDetail,
       salesTrackingDoctors,
@@ -12935,7 +13002,7 @@ function MainApp() {
         );
       } catch (error) {
         console.warn("[Settings] Failed to update Delegate Links doctors", error);
-        toast.error("Unable to update Delegate Links doctors right now.");
+        toast.error("Unable to update Delegate Links physicians right now.");
         setPatientLinksDoctorUserIds(previousDoctorUserIds);
       } finally {
         setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
@@ -13069,7 +13136,7 @@ function MainApp() {
       );
     } catch (error) {
       console.warn("[Settings] Failed to bulk update Delegate Links doctors", error);
-      toast.error("Unable to update Delegate Links doctors right now.");
+      toast.error("Unable to update Delegate Links physicians right now.");
       setPatientLinksDoctorUserIds(previousDoctorUserIds);
     } finally {
       setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
@@ -13191,6 +13258,19 @@ function MainApp() {
 		    return () => window.clearInterval(id);
 		  }, [user?.role]);
 
+  const sanitizePresenceSnapshotItems = useCallback((items: any[]) => {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+    return items.map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return entry;
+      }
+      const { profileImageUrl: _profileImageUrl, ...rest } = entry as Record<string, any>;
+      return rest;
+    });
+  }, []);
+
   const readPresenceSnapshot = useCallback((storageKey: string | null) => {
     if (!storageKey || typeof window === "undefined") return null;
     try {
@@ -13203,11 +13283,11 @@ function MainApp() {
           ? parsed.updatedAt
           : null;
       if (!items || !updatedAt) return null;
-      return { items, updatedAt };
+      return { items: sanitizePresenceSnapshotItems(items as any[]), updatedAt };
     } catch {
       return null;
     }
-  }, []);
+  }, [sanitizePresenceSnapshotItems]);
 
   const writePresenceSnapshot = useCallback((storageKey: string | null, items: any[]) => {
     if (!storageKey || typeof window === "undefined") return;
@@ -13215,14 +13295,14 @@ function MainApp() {
       window.sessionStorage.setItem(
         storageKey,
         JSON.stringify({
-          items,
+          items: sanitizePresenceSnapshotItems(items),
           updatedAt: Date.now(),
         }),
       );
     } catch {
       // ignore
     }
-  }, []);
+  }, [sanitizePresenceSnapshotItems]);
 
 	  const [liveClients, setLiveClients] = useState<any[]>([]);
 		  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
@@ -13260,12 +13340,12 @@ function MainApp() {
     const role = normalizeRole(user?.role || "");
     const ownerId = String(user?.salesRepId || user?.id || "").trim();
     if (!role || !ownerId) return null;
-    return `peppro:presence:v1:live-clients:${role}:${ownerId}`;
+    return `peppro:presence:v2:live-clients:${role}:${ownerId}`;
   }, [user?.id, user?.role, user?.salesRepId]);
   const adminLiveUsersPresenceCacheKey = useMemo(() => {
     const ownerId = String(user?.id || "").trim();
     if (!ownerId) return null;
-    return `peppro:presence:v1:admin-live-users:${ownerId}`;
+    return `peppro:presence:v2:admin-live-users:${ownerId}`;
   }, [user?.id]);
 	  type HandDeliveryEntry = {
 	    userId: string;
@@ -13353,7 +13433,7 @@ function MainApp() {
 
 	  useEffect(() => {
 	    const canFetchSqlProfileImages =
-        Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
+        Boolean(user?.role) && (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role));
     if (!canFetchSqlProfileImages) {
       return;
     }
@@ -13369,11 +13449,6 @@ function MainApp() {
 	          .map((entry: any) => {
             const userId = String(entry?.id || "").trim();
             if (!userId) return null;
-	            const existingAvatar =
-	              typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
-	                ? entry.profileImageUrl.trim()
-	                : null;
-	            if (existingAvatar) return null;
               const cachedEntry = livePresenceProfileImageByUserId[userId];
               if (cachedEntry) {
                 if (cachedEntry.value) return null;
@@ -13432,13 +13507,6 @@ function MainApp() {
 
   const resolveLivePresenceAvatarUrl = useCallback(
     (entry: any) => {
-      const inlineAvatar =
-        typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
-          ? entry.profileImageUrl.trim()
-          : null;
-      if (inlineAvatar) {
-        return inlineAvatar;
-      }
       const userId = String(entry?.id || "").trim();
 	      if (!userId) {
 	        return null;
@@ -13998,6 +14066,11 @@ function MainApp() {
 			            // eslint-disable-next-line no-await-in-loop
 			            await sleep(minLoopMs - elapsedMs);
 			          }
+                if (!payload) {
+                  setLiveClientsError(null);
+                  liveClientsRetryDelayMsRef.current = 1000;
+                  continue;
+                }
 			          liveClientsEtagRef.current =
 			            typeof payload?.etag === "string" ? payload.etag : null;
 			          const raw = isSalesLeadRole
@@ -14148,6 +14221,11 @@ function MainApp() {
 		            // eslint-disable-next-line no-await-in-loop
 		            await sleep(minLoopMs - elapsedMs);
 		          }
+              if (!payload) {
+                setAdminLiveUsersError(null);
+                adminLiveUsersRetryDelayMsRef.current = 1000;
+                continue;
+              }
 		          adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 		          const users = Array.isArray(payload?.users) ? payload.users : [];
 		          setAdminLiveUsers(users);
@@ -32387,7 +32465,7 @@ function MainApp() {
                 );
               })()}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-slate-700">
                     Contact
@@ -32499,6 +32577,29 @@ function MainApp() {
                     );
                   })()}
                 </div>
+                {isDoctorRole(salesDoctorDetail.role) ? (
+                  <div className="space-y-2 sm:col-span-2 xl:col-span-1">
+                    <p className="text-sm font-semibold text-slate-700">
+                      Physician Profile
+                    </p>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
+                      <div>
+                        <span className="font-semibold text-slate-800">Greater Area: </span>
+                        <span>{salesDoctorDetail.greaterArea || "Unavailable"}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-800">Study Focus: </span>
+                        <span>{salesDoctorDetail.studyFocus || "Unavailable"}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="font-semibold text-slate-800">Bio</div>
+                        <div className="whitespace-pre-line">
+                          {salesDoctorDetail.bio || "Unavailable"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
 	              {!(isAdmin(user?.role) || isRep(user?.role)) &&

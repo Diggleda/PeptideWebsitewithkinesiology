@@ -319,7 +319,7 @@ export function DoctorProfileForm({
       setError(
         typeof submitError?.message === 'string' && submitError.message.trim()
           ? submitError.message.trim()
-          : 'Unable to save the doctor profile right now.',
+          : 'Unable to save the physician profile right now.',
       );
     } finally {
       setSaving(false);
