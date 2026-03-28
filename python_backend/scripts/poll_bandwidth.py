@@ -74,6 +74,14 @@ class AggregateBucket:
             return None
         return self.duration_ms_total / float(self.duration_count)
 
+    @property
+    def error_count(self) -> int:
+        total = 0
+        for status, count in self.status_counts.items():
+            if int(status) >= 400:
+                total += count
+        return total
+
 
 def _parse_byte_value(raw: str) -> int | None:
     value = int(raw)
@@ -150,6 +158,20 @@ def _aggregate_by_client(entries: Iterable[RequestLogEntry]) -> list[AggregateBu
     return list(buckets.values())
 
 
+def _aggregate_errors_by_route(entries: Iterable[RequestLogEntry]) -> list[AggregateBucket]:
+    buckets: dict[str, AggregateBucket] = {}
+    for entry in entries:
+        if entry.status < 400:
+            continue
+        label = f"{entry.method} {entry.route or entry.path}"
+        bucket = buckets.get(label)
+        if bucket is None:
+            bucket = AggregateBucket(label=label)
+            buckets[label] = bucket
+        bucket.add(entry)
+    return list(buckets.values())
+
+
 def build_report(entries: Iterable[RequestLogEntry], *, include_health: bool = False) -> dict[str, object]:
     filtered: list[RequestLogEntry] = []
     for entry in entries:
@@ -165,10 +187,15 @@ def build_report(entries: Iterable[RequestLogEntry], *, include_health: bool = F
 
     routes = sorted(_aggregate_by_route(filtered), key=lambda bucket: (-bucket.resp_bytes, -bucket.count, bucket.label))
     clients = sorted(_aggregate_by_client(filtered), key=lambda bucket: (-bucket.resp_bytes, -bucket.count, bucket.label))
+    error_routes = sorted(
+        _aggregate_errors_by_route(filtered),
+        key=lambda bucket: (-bucket.error_count, -bucket.resp_bytes, bucket.label),
+    )
     return {
         "totals": totals,
         "routes": routes,
         "clients": clients,
+        "error_routes": error_routes,
         "response_types": response_types,
         "entries": filtered,
     }
@@ -211,6 +238,19 @@ def _render_bucket_lines(buckets: Sequence[AggregateBucket], *, limit: int, show
         lines.append(
             f"  {index}. {bucket.label} | out {_human_bytes(bucket.resp_bytes)} | in {_human_bytes(bucket.req_bytes)} | "
             f"{bucket.count} req | avg {avg_resp} | avg {avg_duration} | statuses {_format_counter(bucket.status_counts)}{sample_suffix}"
+        )
+    return lines
+
+
+def _render_error_bucket_lines(buckets: Sequence[AggregateBucket], *, limit: int) -> list[str]:
+    lines: list[str] = []
+    if not buckets:
+        return ["  none"]
+    for index, bucket in enumerate(buckets[:limit], start=1):
+        avg_duration = f"{bucket.avg_duration_ms:.1f} ms" if bucket.avg_duration_ms is not None else "n/a"
+        lines.append(
+            f"  {index}. {bucket.label} | errors {bucket.error_count}/{bucket.count} | "
+            f"statuses {_format_counter(bucket.status_counts)} | out {_human_bytes(bucket.resp_bytes)} | avg {avg_duration}"
         )
     return lines
 
@@ -303,9 +343,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     assert isinstance(totals, AggregateBucket)
     routes = report["routes"]
     clients = report["clients"]
+    error_routes = report["error_routes"]
     response_types = report["response_types"]
     assert isinstance(routes, list)
     assert isinstance(clients, list)
+    assert isinstance(error_routes, list)
     assert isinstance(response_types, Counter)
 
     avg_response = totals.avg_resp_bytes if totals.count > 0 else 0.0
@@ -323,6 +365,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print("\nTop clients by egress")
     for line in _render_bucket_lines(clients, limit=max(1, args.limit)):
+        print(line)
+
+    print("\nRoutes with errors")
+    for line in _render_error_bucket_lines(error_routes, limit=max(1, args.limit)):
         print(line)
 
     print("\nTop response types")

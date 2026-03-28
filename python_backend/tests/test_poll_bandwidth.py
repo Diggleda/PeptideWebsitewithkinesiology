@@ -70,6 +70,11 @@ class TestPollBandwidth(unittest.TestCase):
                     "status=201 duration_ms=80.0 req_bytes=512 resp_bytes=256 "
                     "client_ip=198.51.100.20 resp_type=application/json"
                 ),
+                parse(
+                    "HTTP method=GET path=/api/auth/me route=/api/auth/me "
+                    "status=502 duration_ms=150.0 req_bytes=0 resp_bytes=128 "
+                    "client_ip=203.0.113.10 resp_type=application/json"
+                ),
             ],
             include_health=False,
         )
@@ -77,16 +82,19 @@ class TestPollBandwidth(unittest.TestCase):
         totals = report["totals"]
         routes = report["routes"]
         clients = report["clients"]
+        error_routes = report["error_routes"]
 
-        self.assertEqual(totals.count, 3)
+        self.assertEqual(totals.count, 4)
         self.assertEqual(totals.req_bytes, 512)
-        self.assertEqual(totals.resp_bytes, 6400)
+        self.assertEqual(totals.resp_bytes, 6528)
         self.assertEqual(routes[0].label, "GET /api/orders/<order_id>")
         self.assertEqual(routes[0].count, 2)
         self.assertEqual(routes[0].resp_bytes, 6144)
         self.assertEqual(clients[0].label, "203.0.113.10")
-        self.assertEqual(clients[0].count, 2)
-        self.assertEqual(clients[0].resp_bytes, 6144)
+        self.assertEqual(clients[0].count, 3)
+        self.assertEqual(clients[0].resp_bytes, 6272)
+        self.assertEqual(error_routes[0].label, "GET /api/auth/me")
+        self.assertEqual(error_routes[0].error_count, 1)
 
     def test_diagnose_log_window_detects_legacy_http_lines(self):
         hints = self.module.diagnose_log_window(
