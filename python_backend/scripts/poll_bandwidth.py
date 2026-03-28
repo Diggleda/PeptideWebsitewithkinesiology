@@ -22,6 +22,9 @@ _HTTP_LOG_PATTERN = re.compile(
     r"client_ip=(?P<client_ip>\S+) "
     r"resp_type=(?P<resp_type>\S+)"
 )
+_LEGACY_HTTP_LOG_PATTERN = re.compile(
+    r"HTTP\s+[A-Z]+\s+\S+\s+->\s+\d{3}\s+\(-?\d+(?:\.\d+)?\s+ms\)"
+)
 
 
 @dataclass(frozen=True)
@@ -221,6 +224,42 @@ def _render_response_types(counter: Counter[str], *, limit: int) -> list[str]:
     return lines
 
 
+def diagnose_log_window(lines: Sequence[str]) -> list[str]:
+    parsed = 0
+    legacy = 0
+    httpish = 0
+    for line in lines:
+        if _HTTP_LOG_PATTERN.search(line):
+            parsed += 1
+            continue
+        if _LEGACY_HTTP_LOG_PATTERN.search(line):
+            legacy += 1
+            httpish += 1
+            continue
+        if "HTTP " in line and "/api/" in line:
+            httpish += 1
+
+    hints: list[str] = []
+    if parsed > 0:
+        return hints
+    if legacy > 0:
+        hints.append(
+            f"Found {legacy} legacy HTTP log line(s). The service is probably still running the old request logger, so deploy/restart the backend before using this report."
+        )
+    elif httpish > 0:
+        hints.append(
+            f"Found {httpish} HTTP-like line(s), but none matched the new bandwidth format. Inspect the raw journal output to confirm the service log format."
+        )
+    else:
+        hints.append(
+            "No API request log lines were found in journald for that window. Either traffic was truly zero, LOG_LEVEL is above INFO, or requests are not reaching the Flask app."
+        )
+    hints.append(
+        'Inspect raw logs with: journalctl -u peppr-api.service --since "15 minutes ago" --no-pager -o cat | tail -n 50'
+    )
+    return hints
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Summarize PepPro backend request bandwidth from journald logs."
@@ -291,6 +330,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(line)
 
     if totals.count == 0:
+        hints = diagnose_log_window(lines)
+        if hints:
+            print("\nDiagnostics")
+            for hint in hints:
+                print(f"  - {hint}")
         print("\nNo matching request log entries were found in that window.")
     return 0
 

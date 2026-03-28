@@ -88,6 +88,16 @@ class TestPollBandwidth(unittest.TestCase):
         self.assertEqual(clients[0].count, 2)
         self.assertEqual(clients[0].resp_bytes, 6144)
 
+    def test_diagnose_log_window_detects_legacy_http_lines(self):
+        hints = self.module.diagnose_log_window(
+            [
+                "2026-03-27 11:40:00,000 INFO peppro.http :: HTTP GET /api/orders -> 200 (12.0 ms)",
+            ]
+        )
+
+        self.assertTrue(hints)
+        self.assertIn("legacy HTTP log line", hints[0])
+
 
 if __name__ == "__main__":
     unittest.main()
