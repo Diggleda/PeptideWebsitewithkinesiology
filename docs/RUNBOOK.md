@@ -5,6 +5,15 @@
 - API: `curl -fsS http://localhost:3001/api/health | jq`
 - Diagnostics: `curl -fsS http://localhost:3001/api/help | jq`
 
+## Bandwidth checks
+
+- Summarize the last 15 minutes of backend traffic on the VPS:
+  - `python3 python_backend/scripts/poll_bandwidth.py --since "15 minutes ago"`
+- Poll it every 30 seconds while investigating a spike:
+  - `watch -n 30 'python3 python_backend/scripts/poll_bandwidth.py --since "15 minutes ago"'`
+- If journald access is restricted for your user, rerun with `sudo`.
+- The report excludes `/api/health` and `/api/help` by default so diagnostics traffic does not skew the totals.
+
 ## Common incidents
 
 ### API is down / returning 5xx
@@ -38,4 +47,3 @@
 
 - JSON stores are written atomically and any unrecoverable corruption is moved aside as `*.corrupt.<timestamp>` under `DATA_DIR`.
 - Treat `server-data/` as production data: back it up and test restores.
-

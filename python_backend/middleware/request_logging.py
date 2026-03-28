@@ -11,6 +11,56 @@ def _should_track(path: str) -> bool:
     return path.startswith("/api")
 
 
+def _best_client_ip() -> str:
+    raw = (
+        request.headers.get("CF-Connecting-IP")
+        or request.headers.get("X-Forwarded-For")
+        or request.remote_addr
+        or "unknown"
+    )
+    return raw.split(",")[0].strip() if raw else "unknown"
+
+
+def _route_label() -> str:
+    rule = getattr(request, "url_rule", None)
+    value = getattr(rule, "rule", None) or request.path or "unknown"
+    return str(value).strip() or "unknown"
+
+
+def _request_bytes() -> int | None:
+    value = request.content_length
+    if isinstance(value, int):
+        return max(0, value)
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return 0
+    return None
+
+
+def _response_bytes(response) -> int | None:
+    value = getattr(response, "content_length", None)
+    if isinstance(value, int):
+        return max(0, value)
+    try:
+        calculated = response.calculate_content_length()
+    except Exception:
+        calculated = None
+    if isinstance(calculated, int):
+        return max(0, calculated)
+    try:
+        if not getattr(response, "is_streamed", False):
+            payload = response.get_data()
+            if isinstance(payload, (bytes, bytearray)):
+                return len(payload)
+    except Exception:
+        return None
+    return None
+
+
+def _response_type(response) -> str:
+    value = getattr(response, "mimetype", None) or getattr(response, "content_type", None) or "unknown"
+    return str(value).strip().replace(" ", "_") or "unknown"
+
+
 def init_request_logging(app: Flask) -> None:
     """
     Attach basic request/response logging for API routes.
@@ -29,12 +79,19 @@ def init_request_logging(app: Flask) -> None:
             duration_ms = None
             if isinstance(started, float):
                 duration_ms = (time.perf_counter() - started) * 1000
+            req_bytes = _request_bytes()
+            resp_bytes = _response_bytes(response)
             logger.info(
-                "HTTP %s %s -> %s (%.1f ms)",
+                "HTTP method=%s path=%s route=%s status=%s duration_ms=%.1f req_bytes=%s resp_bytes=%s client_ip=%s resp_type=%s",
                 request.method,
                 request.path,
+                _route_label(),
                 response.status_code,
                 duration_ms or -1,
+                req_bytes if req_bytes is not None else -1,
+                resp_bytes if resp_bytes is not None else -1,
+                _best_client_ip(),
+                _response_type(response),
             )
         return response
 
