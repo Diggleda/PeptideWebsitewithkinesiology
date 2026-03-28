@@ -9458,7 +9458,6 @@ function MainApp() {
       );
 
       const avatarUrl =
-        livePresenceProfileImageByUserId[id]?.value ||
         (typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
           ? entry.profileImageUrl.trim()
           : null) ||
@@ -9812,13 +9811,59 @@ function MainApp() {
 	      (async () => {
 	        try {
           const modalResp = (await ordersAPI.getSalesModalDetail(id)) as any;
-          const profile = (modalResp as any)?.user || null;
+          let profile = (modalResp as any)?.user || null;
           if (!profile) {
             throw new Error("ADMIN_USER_RESOLUTION_FAILED");
           }
 
           const resolvedUserId = String(profile?.id || id || "").trim() || id;
           const roleFromProfile = normalizeRole(profile?.role || entryRole || "doctor");
+          const profileNeedsSupplementalFields =
+            isDoctorRole(profile?.role || roleFromProfile || entryRole || "doctor") &&
+            !(
+              (typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0) ||
+              (typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0) ||
+              (typeof profile?.bio === "string" && profile.bio.trim().length > 0)
+            );
+          if (
+            profileNeedsSupplementalFields &&
+            resolvedUserId &&
+            (isAdmin(user?.role) || isSalesLead(user?.role))
+          ) {
+            try {
+              const supplementalResp = (await settingsAPI.getAdminUserProfile(resolvedUserId)) as any;
+              const supplementalProfile =
+                supplementalResp && typeof supplementalResp === "object"
+                  ? ((supplementalResp as any).user || supplementalResp)
+                  : null;
+              if (supplementalProfile && typeof supplementalProfile === "object") {
+                profile = {
+                  ...supplementalProfile,
+                  ...profile,
+                  greaterArea:
+                    typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0
+                      ? profile.greaterArea
+                      : typeof supplementalProfile?.greaterArea === "string"
+                        ? supplementalProfile.greaterArea
+                        : null,
+                  studyFocus:
+                    typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0
+                      ? profile.studyFocus
+                      : typeof supplementalProfile?.studyFocus === "string"
+                        ? supplementalProfile.studyFocus
+                        : null,
+                  bio:
+                    typeof profile?.bio === "string" && profile.bio.trim().length > 0
+                      ? profile.bio
+                      : typeof supplementalProfile?.bio === "string"
+                        ? supplementalProfile.bio
+                        : null,
+                };
+              }
+            } catch (supplementalError) {
+              console.warn("[Admin] Failed to load supplemental user profile fields", supplementalError);
+            }
+          }
           const profileNameKey =
             typeof profile?.name === "string" && profile.name.trim()
               ? profile.name.trim().toLowerCase()
@@ -10030,7 +10075,6 @@ function MainApp() {
       })();
     },
     [
-      livePresenceProfileImageByUserId,
       mergeSalesDoctorDetail,
       openSalesDoctorDetail,
       salesTrackingDoctors,
@@ -32398,10 +32442,7 @@ function MainApp() {
                             sideOffset={8}
                             className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
                           >
-                            <div className="text-sm font-semibold text-slate-800">
-                              User modal timeframe
-                            </div>
-                            <div className="mt-2">
+                            <div>
                               <DayPicker
                                 mode="range"
                                 numberOfMonths={1}
@@ -32689,10 +32730,7 @@ function MainApp() {
                             sideOffset={8}
                             className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
                           >
-                            <div className="text-sm font-semibold text-slate-800">
-                              User modal timeframe
-                            </div>
-                            <div className="mt-2">
+                            <div>
                               <DayPicker
                                 mode="range"
                                 numberOfMonths={1}
@@ -32872,10 +32910,7 @@ function MainApp() {
                                     sideOffset={8}
                                     className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
                                   >
-                                    <div className="text-sm font-semibold text-slate-800">
-                                      User modal timeframe
-                                    </div>
-                                    <div className="mt-2">
+                                    <div>
                                       <DayPicker
                                         mode="range"
                                         numberOfMonths={1}
