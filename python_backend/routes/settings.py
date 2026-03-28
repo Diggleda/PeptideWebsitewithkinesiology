@@ -1719,6 +1719,9 @@ def get_user_profiles():
                     "email": profile.get("email"),
                     "role": profile.get("role"),
                     "profileImageUrl": profile.get("profileImageUrl"),
+                    "greaterArea": profile.get("greaterArea"),
+                    "studyFocus": profile.get("studyFocus"),
+                    "bio": profile.get("bio"),
                 }
             )
 

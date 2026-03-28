@@ -13361,6 +13361,9 @@ function MainApp() {
 	  const [salesLeadLiveUsersRoleFilter, setSalesLeadLiveUsersRoleFilter] = useState<string>("all");
   type LivePresenceProfileImageCacheEntry = {
     value: string | null;
+    greaterArea?: string | null;
+    studyFocus?: string | null;
+    bio?: string | null;
     fetchedAt: number;
   };
   const LIVE_PRESENCE_NULL_AVATAR_RETRY_MS = 120_000;
@@ -13493,9 +13496,23 @@ function MainApp() {
 	          .map((entry: any) => {
             const userId = String(entry?.id || "").trim();
             if (!userId) return null;
+              const entryHasAvatar =
+                typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0;
+              const entryHasSupplementalFields =
+                (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0) ||
+                (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0) ||
+                (typeof entry?.bio === "string" && entry.bio.trim().length > 0);
               const cachedEntry = livePresenceProfileImageByUserId[userId];
               if (cachedEntry) {
-                if (cachedEntry.value) return null;
+                const cachedHasAvatar =
+                  typeof cachedEntry.value === "string" && cachedEntry.value.trim().length > 0;
+                const cachedHasSupplementalFields =
+                  (typeof cachedEntry.greaterArea === "string" && cachedEntry.greaterArea.trim().length > 0) ||
+                  (typeof cachedEntry.studyFocus === "string" && cachedEntry.studyFocus.trim().length > 0) ||
+                  (typeof cachedEntry.bio === "string" && cachedEntry.bio.trim().length > 0);
+                if ((entryHasAvatar || cachedHasAvatar) && (entryHasSupplementalFields || cachedHasSupplementalFields)) {
+                  return null;
+                }
                 if ((now - cachedEntry.fetchedAt) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS) {
                   return null;
                 }
@@ -13522,21 +13539,91 @@ function MainApp() {
 	        const users = Array.isArray(payload?.users) ? payload.users : [];
           const fetchedAt = Date.now();
 	        const nextById: Record<string, LivePresenceProfileImageCacheEntry> = {};
+          const supplementalById = new Map<
+            string,
+            {
+              profileImageUrl: string | null;
+              greaterArea: string | null;
+              studyFocus: string | null;
+              bio: string | null;
+            }
+          >();
 	        batchIds.forEach((userId) => {
 	          nextById[userId] = { value: null, fetchedAt };
 	        });
 	        users.forEach((profile: any) => {
 	          const userId = String(profile?.id || "").trim();
 	          if (!userId) return;
+            const profileImageUrl =
+              typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
+                ? profile.profileImageUrl.trim()
+                : null;
+            const greaterArea =
+              typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0
+                ? profile.greaterArea.trim()
+                : null;
+            const studyFocus =
+              typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0
+                ? profile.studyFocus.trim()
+                : null;
+            const bio =
+              typeof profile?.bio === "string" && profile.bio.trim().length > 0
+                ? profile.bio.trim()
+                : null;
+            supplementalById.set(userId, {
+              profileImageUrl,
+              greaterArea,
+              studyFocus,
+              bio,
+            });
 	          nextById[userId] = {
-                value:
-                  typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
-                    ? profile.profileImageUrl.trim()
-                    : null,
+                value: profileImageUrl,
+                greaterArea,
+                studyFocus,
+                bio,
                 fetchedAt,
               };
 	        });
 	        setLivePresenceProfileImageByUserId((current) => ({ ...current, ...nextById }));
+          const mergeSupplementalEntry = (entry: any) => {
+            const userId = String(entry?.id || "").trim();
+            if (!userId) return entry;
+            const supplemental = supplementalById.get(userId);
+            if (!supplemental) return entry;
+            return {
+              ...entry,
+              profileImageUrl:
+                (typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
+                  ? entry.profileImageUrl
+                  : supplemental.profileImageUrl) || null,
+              greaterArea:
+                (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0
+                  ? entry.greaterArea
+                  : supplemental.greaterArea) || null,
+              studyFocus:
+                (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0
+                  ? entry.studyFocus
+                  : supplemental.studyFocus) || null,
+              bio:
+                (typeof entry?.bio === "string" && entry.bio.trim().length > 0
+                  ? entry.bio
+                  : supplemental.bio) || null,
+            };
+          };
+          setLiveClients((current) => current.map(mergeSupplementalEntry));
+          setAdminLiveUsers((current) => current.map(mergeSupplementalEntry));
+          setSalesDoctorDetail((current) => {
+            if (!current) return current;
+            const supplemental = supplementalById.get(String(current.doctorId || "").trim());
+            if (!supplemental) return current;
+            return {
+              ...current,
+              avatar: current.avatar || supplemental.profileImageUrl || null,
+              greaterArea: current.greaterArea || supplemental.greaterArea || null,
+              studyFocus: current.studyFocus || supplemental.studyFocus || null,
+              bio: current.bio || supplemental.bio || null,
+            };
+          });
 	      } catch {
 	        if (cancelled) return;
       } finally {
