@@ -940,6 +940,9 @@ const buildLiveUsersPayload = () => {
       email: user.email || null,
       role: normalizeUserRole(user.role),
       profileImageUrl: user.profileImageUrl || null,
+      greaterArea: user.greaterArea || null,
+      studyFocus: user.studyFocus || null,
+      bio: user.bio || null,
       ...snapshot,
     };
   });
@@ -987,6 +990,9 @@ const buildLiveUsersPayload = () => {
     isIdle: Boolean(entry.isIdle),
     lastLoginAt: entry.lastLoginAt || null,
     profileImageUrl: entry.profileImageUrl || null,
+    greaterArea: entry.greaterArea || null,
+    studyFocus: entry.studyFocus || null,
+    bio: entry.bio || null,
   }));
   sig.sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
   const etag = crypto
@@ -1337,6 +1343,9 @@ router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, re
           email: doctor.email || null,
           role: normalizeRole(doctor.role),
           profileImageUrl: doctor.profileImageUrl || null,
+          greaterArea: doctor.greaterArea || null,
+          studyFocus: doctor.studyFocus || null,
+          bio: doctor.bio || null,
           ...snapshot,
         };
       })

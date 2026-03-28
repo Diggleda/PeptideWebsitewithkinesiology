@@ -60,6 +60,7 @@ To deploy the same static frontend bundle to multiple domains (e.g. `peppro.net`
 
 - Prefer serving the API under `/api` on the **same origin** as the frontend.
 - Leave `VITE_API_URL` unset at build time (so the app uses `window.location.origin + "/api"` in production).
+- Put production frontend-only build variables in `.env.frontend.production`, not `.env.production`.
 
 If you explicitly need a cross-origin API base in production, set `VITE_ALLOW_CROSS_ORIGIN_API=true`.
 

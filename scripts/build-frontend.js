@@ -4,11 +4,11 @@ const path = require("path");
 const dotenv = require("dotenv");
 
 const repoRoot = process.cwd();
-const productionEnvPath = path.join(repoRoot, ".env.production");
-let productionEnv = {};
+const frontendProductionEnvPath = path.join(repoRoot, ".env.frontend.production");
+let frontendProductionEnv = {};
 
-if (fs.existsSync(productionEnvPath)) {
-  productionEnv = dotenv.parse(fs.readFileSync(productionEnvPath));
+if (fs.existsSync(frontendProductionEnvPath)) {
+  frontendProductionEnv = dotenv.parse(fs.readFileSync(frontendProductionEnvPath));
 }
 
 const stamp =
@@ -20,14 +20,17 @@ const env = {
   NODE_ENV: "production",
   FRONTEND_BUILD: process.env.FRONTEND_BUILD || stamp,
   VITE_FRONTEND_BUILD_ID: process.env.VITE_FRONTEND_BUILD_ID || stamp,
-  // Prevent local dev env files like `.env.local` from leaking cross-origin API targets
-  // into production bundles unless the build caller explicitly exports them.
+  // Keep frontend production build inputs isolated from backend/runtime env files.
+  // The bundle should use `.env.frontend.production` or explicit shell exports only.
   VITE_API_URL: Object.prototype.hasOwnProperty.call(process.env, "VITE_API_URL")
     ? process.env.VITE_API_URL
-    : (productionEnv.VITE_API_URL || ""),
+    : (frontendProductionEnv.VITE_API_URL || ""),
   VITE_ALLOW_CROSS_ORIGIN_API: Object.prototype.hasOwnProperty.call(process.env, "VITE_ALLOW_CROSS_ORIGIN_API")
     ? process.env.VITE_ALLOW_CROSS_ORIGIN_API
-    : (productionEnv.VITE_ALLOW_CROSS_ORIGIN_API || ""),
+    : (frontendProductionEnv.VITE_ALLOW_CROSS_ORIGIN_API || ""),
+  VITE_WOO_DISABLED: Object.prototype.hasOwnProperty.call(process.env, "VITE_WOO_DISABLED")
+    ? process.env.VITE_WOO_DISABLED
+    : (frontendProductionEnv.VITE_WOO_DISABLED || ""),
 };
 
 const viteBin =

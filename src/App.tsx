@@ -1114,6 +1114,52 @@ const normalizeWooImageUrl = (value?: string | null): string | null => {
   }
 };
 
+const normalizeProfileAvatarUrl = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  let candidate = value.trim();
+  if (!candidate || candidate === WOO_PLACEHOLDER_IMAGE) {
+    return null;
+  }
+  if (/^(data|blob):/i.test(candidate)) {
+    return candidate;
+  }
+  if (candidate.startsWith("//")) {
+    candidate = `https:${candidate}`;
+  }
+  if (candidate.startsWith("/")) {
+    return candidate;
+  }
+  if (/^https?:\/\//i.test(candidate)) {
+    try {
+      const parsed = new URL(candidate);
+      const shouldUseWooProxy =
+        parsed.hostname === "shop.peppro.net" || /\/wp-content\//i.test(parsed.pathname);
+      if (shouldUseWooProxy) {
+        return normalizeWooImageUrl(candidate);
+      }
+      parsed.protocol = "https:";
+      parsed.pathname = parsed.pathname
+        .split("/")
+        .map((segment) => encodeURIComponent(decodeURIComponent(segment)))
+        .join("/");
+      return parsed.toString();
+    } catch {
+      return candidate;
+    }
+  }
+  try {
+    const base =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "https://peppro.net";
+    return new URL(candidate, base).toString();
+  } catch {
+    return candidate;
+  }
+};
+
 const RESET_PASSWORD_ROUTE = "/reset-password";
 
 const normalizePathname = (pathname?: string | null) => {
@@ -9523,6 +9569,70 @@ function MainApp() {
       setSalesDoctorDetailLoading(false);
       setSalesDoctorDetailHydrating(true);
 
+      const shouldFetchSupplementalProfile =
+        Boolean(id) &&
+        (
+          !avatarUrl ||
+          (
+            isDoctorRole(entryRole || "doctor") &&
+            !(
+              (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0) ||
+              (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0) ||
+              (typeof entry?.bio === "string" && entry.bio.trim().length > 0)
+            )
+          )
+        );
+
+      if (shouldFetchSupplementalProfile && (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role))) {
+        void (async () => {
+          try {
+            const supplementalResp = (await settingsAPI.getAdminUserProfiles([id])) as any;
+            const supplementalProfile = Array.isArray(supplementalResp?.users)
+              ? supplementalResp.users.find((candidate: any) => String(candidate?.id || "").trim() === id) || null
+              : null;
+            if (!supplementalProfile) {
+              return;
+            }
+            const supplementalAvatar =
+              typeof supplementalProfile?.profileImageUrl === "string" && supplementalProfile.profileImageUrl.trim().length > 0
+                ? supplementalProfile.profileImageUrl.trim()
+                : null;
+            const supplementalGreaterArea =
+              typeof supplementalProfile?.greaterArea === "string" && supplementalProfile.greaterArea.trim().length > 0
+                ? supplementalProfile.greaterArea.trim()
+                : null;
+            const supplementalStudyFocus =
+              typeof supplementalProfile?.studyFocus === "string" && supplementalProfile.studyFocus.trim().length > 0
+                ? supplementalProfile.studyFocus.trim()
+                : null;
+            const supplementalBio =
+              typeof supplementalProfile?.bio === "string" && supplementalProfile.bio.trim().length > 0
+                ? supplementalProfile.bio.trim()
+                : null;
+
+            setLivePresenceProfileImageByUserId((current) => ({
+              ...current,
+              [id]: {
+                value: supplementalAvatar,
+                greaterArea: supplementalGreaterArea,
+                studyFocus: supplementalStudyFocus,
+                bio: supplementalBio,
+                fetchedAt: Date.now(),
+              },
+            }));
+
+            mergeSalesDoctorDetail(requestId, {
+              avatar: supplementalAvatar,
+              greaterArea: supplementalGreaterArea,
+              studyFocus: supplementalStudyFocus,
+              bio: supplementalBio,
+            });
+          } catch (supplementalError) {
+            console.warn("[Live User] Failed to load supplemental modal profile", supplementalError);
+          }
+        })();
+      }
+
 	      if (!isAdmin(user?.role) && !isSalesLead(user?.role)) {
 	        (async () => {
 	          try {
@@ -13373,8 +13483,8 @@ function MainApp() {
   const livePresenceProfileImageRequestIdsRef = useRef<Set<string>>(new Set());
 
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
-	  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
-	  const [adminLiveUsersError, setAdminLiveUsersError] = useState<string | null>(null);
+  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
+  const [adminLiveUsersError, setAdminLiveUsersError] = useState<string | null>(null);
   const [adminLiveUsersUsingCachedSnapshot, setAdminLiveUsersUsingCachedSnapshot] = useState(false);
   const adminLiveUsersInitialLoadDoneRef = useRef(false);
 	  const adminLiveUsersEtagRef = useRef<string | null>(null);
@@ -13431,6 +13541,9 @@ function MainApp() {
   >({});
   const salesRepHandDeliveryInFlightRef = useRef(false);
   const salesRepHandDeliveryLastFetchedAtRef = useRef<number>(0);
+  const [brokenLivePresenceAvatarKeys, setBrokenLivePresenceAvatarKeys] = useState<
+    Record<string, true>
+  >({});
 
   const shouldShowLocalHandDeliveryNotice = useMemo(() => {
     const role = normalizeRole(user?.role);
@@ -13638,16 +13751,44 @@ function MainApp() {
 
   const resolveLivePresenceAvatarUrl = useCallback(
     (entry: any) => {
-      const userId = String(entry?.id || "").trim();
-	      if (!userId) {
-	        return null;
-	      }
-	      return livePresenceProfileImageByUserId[userId]?.value ?? null;
-	    },
-	    [livePresenceProfileImageByUserId],
-	  );
+      const userId = String(entry?.id || entry?.userId || "").trim();
+      if (!userId) {
+        return null;
+      }
+      const cachedValue = normalizeProfileAvatarUrl(livePresenceProfileImageByUserId[userId]?.value ?? null);
+      const entryValue = normalizeProfileAvatarUrl(
+        entry?.profileImageUrl ||
+          entry?.profile_image_url ||
+          entry?.avatar ||
+          entry?.avatarUrl ||
+          entry?._avatarUrl ||
+          null,
+      );
+      const resolved = cachedValue || entryValue;
+      if (!resolved) {
+        return null;
+      }
+      return brokenLivePresenceAvatarKeys[`${userId}:${resolved}`] ? null : resolved;
+    },
+    [brokenLivePresenceAvatarKeys, livePresenceProfileImageByUserId],
+  );
 
-	  const normalizeHandDeliveryEntry = useCallback(
+  const markLivePresenceAvatarBroken = useCallback((entry: any, src?: string | null) => {
+    const userId = String(entry?.id || entry?.userId || "").trim();
+    const normalizedSrc = normalizeProfileAvatarUrl(src ?? null);
+    if (!userId || !normalizedSrc) {
+      return;
+    }
+    const key = `${userId}:${normalizedSrc}`;
+    setBrokenLivePresenceAvatarKeys((current) => {
+      if (current[key]) {
+        return current;
+      }
+      return { ...current, [key]: true };
+    });
+  }, []);
+
+  const normalizeHandDeliveryEntry = useCallback(
 	    (entry: any): HandDeliveryEntry | null => {
 	      const userId = String(entry?.userId ?? entry?.id ?? "").trim();
 	      if (!userId) return null;
@@ -24056,6 +24197,10 @@ function MainApp() {
 		                                        className="h-full w-full object-cover"
 		                                        loading="lazy"
 		                                        decoding="async"
+                                            referrerPolicy="no-referrer"
+                                            onError={() => {
+                                              markLivePresenceAvatarBroken(entry, avatarUrl);
+                                            }}
 		                                      />
 		                                    ) : (
 		                                      <span className="text-[11px] font-semibold text-slate-600">
@@ -25400,6 +25545,10 @@ function MainApp() {
                                             className="h-full w-full object-cover"
                                             loading="lazy"
                                             decoding="async"
+                                            referrerPolicy="no-referrer"
+                                            onError={() => {
+                                              markLivePresenceAvatarBroken(entry, avatarUrl);
+                                            }}
                                           />
                                         ) : (
 	                                          <span className="text-[11px] font-semibold text-slate-600">
