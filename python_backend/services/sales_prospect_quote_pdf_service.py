@@ -25,7 +25,7 @@ from .invoice_service import _build_simple_text_pdf
 
 logger = logging.getLogger(__name__)
 
-_PDF_BRIDGE_TIMEOUT_SECONDS = max(5.0, min(float(os.environ.get("QUOTE_PDF_BRIDGE_TIMEOUT_SECONDS", "15").strip() or 15), 120.0))
+_PDF_BRIDGE_TIMEOUT_SECONDS = max(5.0, min(float(os.environ.get("QUOTE_PDF_BRIDGE_TIMEOUT_SECONDS", "45").strip() or 45), 180.0))
 _BROWSER_PDF_TIMEOUT_SECONDS = max(10.0, min(float(os.environ.get("QUOTE_PDF_BROWSER_TIMEOUT_SECONDS", "90").strip() or 90), 180.0))
 _REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS = 3.5
 _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS = 45
@@ -149,6 +149,21 @@ def _find_playwright_browsers_path() -> Optional[str]:
         except Exception:
             continue
     return None
+
+
+def _iter_playwright_browser_executables() -> List[str]:
+    browsers_path = _find_playwright_browsers_path()
+    if not browsers_path:
+        return []
+
+    return _iter_existing_paths(
+        [
+            os.path.join(browsers_path, "chromium-*", "chrome-linux64", "chrome"),
+            os.path.join(browsers_path, "chromium-*", "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
+            os.path.join(browsers_path, "chromium_headless_shell-*", "chrome-headless-shell-linux64", "chrome-headless-shell"),
+            os.path.join(browsers_path, "chromium_headless_shell-*", "chrome-headless-shell-mac", "chrome-headless-shell"),
+        ]
+    )
 
 
 def _allow_text_fallback() -> bool:
@@ -604,6 +619,7 @@ def _find_chromium_binary() -> Optional[str]:
         shutil.which("google-chrome"),
         shutil.which("chromium-browser"),
         shutil.which("chromium"),
+        *_iter_playwright_browser_executables(),
         *_iter_existing_paths(
             [
                 "/usr/bin/google-chrome-stable",
