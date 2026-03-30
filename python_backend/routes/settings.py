@@ -528,6 +528,9 @@ def _public_user_profile(user: dict) -> dict:
         "greaterArea": user.get("greaterArea") or None,
         "studyFocus": user.get("studyFocus") or None,
         "bio": user.get("bio") or None,
+        "resellerPermitFilePath": user.get("resellerPermitFilePath") or None,
+        "resellerPermitFileName": user.get("resellerPermitFileName") or None,
+        "resellerPermitUploadedAt": user.get("resellerPermitUploadedAt") or None,
         "phone": user.get("phone") or None,
         "officeAddressLine1": user.get("officeAddressLine1") or None,
         "officeAddressLine2": user.get("officeAddressLine2") or None,
@@ -1738,6 +1741,9 @@ def get_user_profiles():
                     "greaterArea": profile.get("greaterArea"),
                     "studyFocus": profile.get("studyFocus"),
                     "bio": profile.get("bio"),
+                    "resellerPermitFilePath": profile.get("resellerPermitFilePath"),
+                    "resellerPermitFileName": profile.get("resellerPermitFileName"),
+                    "resellerPermitUploadedAt": profile.get("resellerPermitUploadedAt"),
                 }
             )
 

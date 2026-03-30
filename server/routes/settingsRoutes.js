@@ -151,6 +151,9 @@ const serializeUserProfile = (user) => {
     role: normalizeRole(user.role || ''),
     status: user.status || null,
     profileImageUrl: user.profileImageUrl || null,
+    greaterArea: user.greaterArea || null,
+    studyFocus: user.studyFocus || null,
+    bio: user.bio || null,
     salesRepId: user.salesRepId || null,
     officeAddressLine1: user.officeAddressLine1 || null,
     officeAddressLine2: user.officeAddressLine2 || null,
@@ -161,6 +164,9 @@ const serializeUserProfile = (user) => {
     handDelivered: Boolean(user.handDelivered || user.hand_delivered),
     receiveClientOrderUpdateEmails: Boolean(user.receiveClientOrderUpdateEmails),
     devCommission: Boolean(user.devCommission),
+    resellerPermitFilePath: user.resellerPermitFilePath || null,
+    resellerPermitFileName: user.resellerPermitFileName || null,
+    resellerPermitUploadedAt: user.resellerPermitUploadedAt || null,
     lastSeenAt: user.lastSeenAt || null,
     lastInteractionAt: user.lastInteractionAt || null,
     lastLoginAt: user.lastLoginAt || null,
@@ -572,6 +578,12 @@ router.get('/users', authenticate, requireAdminOrSalesLead, async (req, res) => 
         email: profile.email,
         role: profile.role,
         profileImageUrl: profile.profileImageUrl || null,
+        greaterArea: profile.greaterArea || null,
+        studyFocus: profile.studyFocus || null,
+        bio: profile.bio || null,
+        resellerPermitFilePath: profile.resellerPermitFilePath || null,
+        resellerPermitFileName: profile.resellerPermitFileName || null,
+        resellerPermitUploadedAt: profile.resellerPermitUploadedAt || null,
       };
     });
 

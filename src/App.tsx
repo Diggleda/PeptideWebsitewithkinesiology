@@ -446,17 +446,85 @@ const isDoctorRole = (role?: string | null) => {
 
 const noop = () => {};
 
+const hasUploadedResellerPermit = (value: unknown): boolean => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as {
+    resellerPermitFilePath?: unknown;
+    resellerPermitFileName?: unknown;
+    resellerPermitUploadedAt?: unknown;
+  };
+  return [
+    record.resellerPermitFilePath,
+    record.resellerPermitFileName,
+    record.resellerPermitUploadedAt,
+  ].some((field) => typeof field === "string" && field.trim().length > 0);
+};
+
+const isLikelyMobileBrowser = () => {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  const ua = String(navigator.userAgent || "");
+  const platform = String(navigator.platform || "");
+  const maxTouchPoints = Number((navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints || 0);
+  const isIOS =
+    /iPad|iPhone|iPod/i.test(ua) ||
+    (platform === "MacIntel" && maxTouchPoints > 1);
+  return isIOS || /Android/i.test(ua);
+};
+
+const openPendingMobilePdfWindow = () => {
+  if (typeof window === "undefined" || !isLikelyMobileBrowser()) {
+    return null;
+  }
+  const previewWindow = window.open("", "_blank");
+  if (!previewWindow) {
+    return null;
+  }
+  try {
+    previewWindow.document.title = "Preparing PDF";
+    previewWindow.document.body.innerHTML =
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif; padding: 24px; color: #0f172a;">Preparing PDF...</div>';
+  } catch {
+    // Ignore cross-browser document write failures.
+  }
+  return previewWindow;
+};
+
 const triggerBrowserDownload = (
   blob: Blob,
   filename: string,
-  options: { forceMimeType?: string } = {},
+  options: { forceMimeType?: string; targetWindow?: Window | null } = {},
 ) => {
-  const downloadBlob = options.forceMimeType
-    ? new Blob([blob], { type: options.forceMimeType })
+  const isPdfLikeDownload =
+    /\.pdf$/i.test(filename) || /pdf/i.test(String(blob.type || ""));
+  const isMobilePdfDownload =
+    isPdfLikeDownload && isLikelyMobileBrowser();
+  const forceMimeType =
+    isMobilePdfDownload
+      ? undefined
+      : options.forceMimeType;
+  const downloadBlob = forceMimeType
+    ? new Blob([blob], { type: forceMimeType })
     : blob;
   const url = URL.createObjectURL(downloadBlob);
+  if (isMobilePdfDownload && options.targetWindow && !options.targetWindow.closed) {
+    try {
+      options.targetWindow.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return;
+    } catch {
+      // Fall through to the anchor-based fallback.
+    }
+  }
   const anchor = document.createElement("a");
   anchor.href = url;
+  anchor.rel = "noopener noreferrer";
+  if (isMobilePdfDownload) {
+    anchor.target = "_blank";
+  }
   anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
@@ -7589,11 +7657,12 @@ function MainApp() {
 		    ownerSalesRepId?: string | null;
 		    ownerSalesRepName?: string | null;
 	    ownerSalesRepEmail?: string | null;
+      hasResellerPermitUploaded?: boolean | null;
 	    isOnline?: boolean | null;
 	    isIdle?: boolean | null;
 	    idleMinutes?: number | null;
 	    lastSeenAt?: string | null;
-	    lastInteractionAt?: string | null;
+        lastInteractionAt?: string | null;
     lastLoginAt?: string | null;
 		  } | null>(null);
       const [salesDoctorDetailStack, setSalesDoctorDetailStack] = useState<
@@ -9479,6 +9548,7 @@ function MainApp() {
 	        ownerSalesRepId: bucket.ownerSalesRepId ?? null,
 	        ownerSalesRepName: (bucket as any).ownerSalesRepName ?? null,
 	        ownerSalesRepEmail: (bucket as any).ownerSalesRepEmail ?? null,
+          hasResellerPermitUploaded: hasUploadedResellerPermit(bucket),
 	        isOnline: presence?.isOnline ?? null,
 	        isIdle: presence?.isIdle ?? null,
 	        idleMinutes: presence?.idleMinutes ?? null,
@@ -9583,6 +9653,7 @@ function MainApp() {
             entry?.assignedSalesRepId ||
             entry?.assigned_sales_rep_id ||
             null,
+          hasResellerPermitUploaded: hasUploadedResellerPermit(entry),
           isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
           isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
           idleMinutes:
@@ -9617,7 +9688,8 @@ function MainApp() {
             !(
               (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0) ||
               (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0) ||
-              (typeof entry?.bio === "string" && entry.bio.trim().length > 0)
+              (typeof entry?.bio === "string" && entry.bio.trim().length > 0) ||
+              hasUploadedResellerPermit(entry)
             )
           )
         );
@@ -9648,6 +9720,8 @@ function MainApp() {
               typeof supplementalProfile?.bio === "string" && supplementalProfile.bio.trim().length > 0
                 ? supplementalProfile.bio.trim()
                 : null;
+            const supplementalHasResellerPermitUploaded =
+              hasUploadedResellerPermit(supplementalProfile);
 
             setLivePresenceProfileImageByUserId((current) => ({
               ...current,
@@ -9656,6 +9730,7 @@ function MainApp() {
                 greaterArea: supplementalGreaterArea,
                 studyFocus: supplementalStudyFocus,
                 bio: supplementalBio,
+                hasResellerPermitUploaded: supplementalHasResellerPermitUploaded,
                 fetchedAt: Date.now(),
               },
             }));
@@ -9665,6 +9740,7 @@ function MainApp() {
               greaterArea: supplementalGreaterArea,
               studyFocus: supplementalStudyFocus,
               bio: supplementalBio,
+              hasResellerPermitUploaded: supplementalHasResellerPermitUploaded,
             });
           } catch (supplementalError) {
             console.warn("[Live User] Failed to load supplemental modal profile", supplementalError);
@@ -9804,6 +9880,9 @@ function MainApp() {
 	                  doctorFromList?.salesRepId ||
                   doctorFromList?.sales_rep_id ||
                   null,
+                hasResellerPermitUploaded: hasUploadedResellerPermit(
+                  doctorFromList || entry,
+                ),
                 isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
                 isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
                 idleMinutes:
@@ -9940,6 +10019,9 @@ function MainApp() {
                 refreshedDoctorFromList?.salesRepId ||
                 refreshedDoctorFromList?.sales_rep_id ||
                 null,
+              hasResellerPermitUploaded: hasUploadedResellerPermit(
+                refreshedDoctorFromList || entry,
+              ),
               orders: refreshedDoctorOrders,
               total: refreshedTotalOrderValue,
               orderQuantity: refreshedOrderQuantity,
@@ -9972,7 +10054,8 @@ function MainApp() {
             !(
               (typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0) ||
               (typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0) ||
-              (typeof profile?.bio === "string" && profile.bio.trim().length > 0)
+              (typeof profile?.bio === "string" && profile.bio.trim().length > 0) ||
+              hasUploadedResellerPermit(profile)
             );
           if (
             profileNeedsSupplementalFields &&
@@ -10006,6 +10089,30 @@ function MainApp() {
                       ? profile.bio
                       : typeof supplementalProfile?.bio === "string"
                         ? supplementalProfile.bio
+                        : null,
+                  resellerPermitFilePath:
+                    typeof profile?.resellerPermitFilePath === "string" &&
+                    profile.resellerPermitFilePath.trim().length > 0
+                      ? profile.resellerPermitFilePath
+                      : typeof supplementalProfile?.resellerPermitFilePath === "string" &&
+                          supplementalProfile.resellerPermitFilePath.trim().length > 0
+                        ? supplementalProfile.resellerPermitFilePath
+                        : null,
+                  resellerPermitFileName:
+                    typeof profile?.resellerPermitFileName === "string" &&
+                    profile.resellerPermitFileName.trim().length > 0
+                      ? profile.resellerPermitFileName
+                      : typeof supplementalProfile?.resellerPermitFileName === "string" &&
+                          supplementalProfile.resellerPermitFileName.trim().length > 0
+                        ? supplementalProfile.resellerPermitFileName
+                        : null,
+                  resellerPermitUploadedAt:
+                    typeof profile?.resellerPermitUploadedAt === "string" &&
+                    profile.resellerPermitUploadedAt.trim().length > 0
+                      ? profile.resellerPermitUploadedAt
+                      : typeof supplementalProfile?.resellerPermitUploadedAt === "string" &&
+                          supplementalProfile.resellerPermitUploadedAt.trim().length > 0
+                        ? supplementalProfile.resellerPermitUploadedAt
                         : null,
                 };
               }
@@ -10126,6 +10233,7 @@ function MainApp() {
                 entry?.ownerSalesRepId ||
                 entry?.owner_sales_rep_id ||
                 null,
+              hasResellerPermitUploaded: hasUploadedResellerPermit(profile),
               isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
               isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
               idleMinutes:
@@ -13515,6 +13623,7 @@ function MainApp() {
     greaterArea?: string | null;
     studyFocus?: string | null;
     bio?: string | null;
+    hasResellerPermitUploaded?: boolean | null;
     fetchedAt: number;
   };
   const LIVE_PRESENCE_NULL_AVATAR_RETRY_MS = 120_000;
@@ -13656,6 +13765,7 @@ function MainApp() {
                 (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0) ||
                 (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0) ||
                 (typeof entry?.bio === "string" && entry.bio.trim().length > 0);
+              const entryHasPermit = hasUploadedResellerPermit(entry);
               const cachedEntry = livePresenceProfileImageByUserId[userId];
               if (cachedEntry) {
                 const cachedHasAvatar =
@@ -13664,7 +13774,12 @@ function MainApp() {
                   (typeof cachedEntry.greaterArea === "string" && cachedEntry.greaterArea.trim().length > 0) ||
                   (typeof cachedEntry.studyFocus === "string" && cachedEntry.studyFocus.trim().length > 0) ||
                   (typeof cachedEntry.bio === "string" && cachedEntry.bio.trim().length > 0);
-                if ((entryHasAvatar || cachedHasAvatar) && (entryHasSupplementalFields || cachedHasSupplementalFields)) {
+                const cachedHasPermit = cachedEntry.hasResellerPermitUploaded === true;
+                if (
+                  (entryHasAvatar || cachedHasAvatar) &&
+                  (entryHasSupplementalFields || cachedHasSupplementalFields) &&
+                  (entryHasPermit || cachedHasPermit)
+                ) {
                   return null;
                 }
                 if ((now - cachedEntry.fetchedAt) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS) {
@@ -13700,6 +13815,7 @@ function MainApp() {
               greaterArea: string | null;
               studyFocus: string | null;
               bio: string | null;
+              hasResellerPermitUploaded: boolean;
             }
           >();
 	        batchIds.forEach((userId) => {
@@ -13724,17 +13840,20 @@ function MainApp() {
               typeof profile?.bio === "string" && profile.bio.trim().length > 0
                 ? profile.bio.trim()
                 : null;
+            const hasResellerPermitUploaded = hasUploadedResellerPermit(profile);
             supplementalById.set(userId, {
               profileImageUrl,
               greaterArea,
               studyFocus,
               bio,
+              hasResellerPermitUploaded,
             });
 	          nextById[userId] = {
                 value: profileImageUrl,
                 greaterArea,
                 studyFocus,
                 bio,
+                hasResellerPermitUploaded,
                 fetchedAt,
               };
 	        });
@@ -13762,6 +13881,9 @@ function MainApp() {
                 (typeof entry?.bio === "string" && entry.bio.trim().length > 0
                   ? entry.bio
                   : supplemental.bio) || null,
+              hasResellerPermitUploaded:
+                entry?.hasResellerPermitUploaded === true ||
+                supplemental.hasResellerPermitUploaded === true,
             };
           };
           setLiveClients((current) => current.map(mergeSupplementalEntry));
@@ -13776,6 +13898,9 @@ function MainApp() {
               greaterArea: current.greaterArea || supplemental.greaterArea || null,
               studyFocus: current.studyFocus || supplemental.studyFocus || null,
               bio: current.bio || supplemental.bio || null,
+              hasResellerPermitUploaded:
+                current.hasResellerPermitUploaded === true ||
+                supplemental.hasResellerPermitUploaded === true,
             };
           });
 	      } catch {
@@ -16796,6 +16921,7 @@ function MainApp() {
     if (!selectedSalesQuoteProspect) {
       return;
     }
+    const pendingMobilePdfWindow = openPendingMobilePdfWindow();
     setSalesQuotesExportingId(quoteId);
     setSalesQuotesError(null);
     const exportStartedAt =
@@ -16849,7 +16975,12 @@ function MainApp() {
       triggerBrowserDownload(
         result.blob,
         result.filename || fallbackFilename,
-        isPdfDownload ? { forceMimeType: "application/octet-stream" } : undefined,
+        isPdfDownload
+          ? {
+              forceMimeType: "application/octet-stream",
+              targetWindow: pendingMobilePdfWindow,
+            }
+          : undefined,
       );
       const refreshStartedAt =
         typeof performance !== "undefined" && typeof performance.now === "function"
@@ -16868,6 +16999,9 @@ function MainApp() {
       });
       toast.success("Quote exported.");
     } catch (error: any) {
+      if (pendingMobilePdfWindow && !pendingMobilePdfWindow.closed) {
+        pendingMobilePdfWindow.close();
+      }
       const message =
         typeof error?.message === "string" && error.message.trim()
           ? error.message
@@ -32914,6 +33048,7 @@ function MainApp() {
                           ) : null}
 						                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
 						                    isDoctorRole(salesDoctorDetail.role) && (
+                                  <>
 						                      <div className="text-sm font-normal text-slate-600">
 						                        {(() => {
 						                          const leadType = String(
@@ -33118,6 +33253,12 @@ function MainApp() {
 					                          );
 					                        })()}
 					                      </div>
+                                      {salesDoctorDetail.hasResellerPermitUploaded === true && (
+                                        <div className="text-sm font-normal text-slate-600">
+                                          Resellers Permit Uploaded
+                                        </div>
+                                      )}
+                                  </>
 				                    )}
 				                </DialogTitle>
 				                <DialogDescription>Account details</DialogDescription>
