@@ -60,5 +60,20 @@ Optional production settings:
 - `REDIS_URL=rediss://...` if Redis/RQ is used in production
 - `DATA_DIR=/opt/peppr/backend/server-data`
 
+Quote PDF renderer settings:
+
+- The export endpoint first tries the Node/Playwright renderer, then a system
+  Chrome/Chromium binary, and only falls back to the plain text PDF when
+  `QUOTE_PDF_ALLOW_TEXT_FALLBACK=true`.
+- Set `QUOTE_PDF_NODE_BINARY` when `node` is installed outside the Python
+  service PATH. On cPanel this is commonly
+  `/opt/cpanel/ea-nodejs20/bin/node`.
+- Set `PLAYWRIGHT_BROWSERS_PATH` when the Node renderer is present but its
+  browser cache lives outside the Python service environment.
+- Set `CHROMIUM_EXECUTABLE_PATH` or `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
+  when the system browser exists in a nonstandard path.
+- To inspect the current host, run
+  `python3 -m python_backend.scripts.check_quote_pdf_renderer`.
+
 See [`ops/peppr-api.env.example`](../ops/peppr-api.env.example)
 for a safe non-secret template.
