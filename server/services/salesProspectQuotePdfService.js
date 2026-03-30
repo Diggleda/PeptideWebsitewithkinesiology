@@ -1,7 +1,5 @@
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const { findProductBySku } = require('../integration/wooCommerceClient');
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -13,8 +11,6 @@ const escapeHtml = (value) => String(value ?? '')
 let cachedPepProLogoDataUrl;
 let cachedPepProIconDataUrl;
 let cachedWooSkuImageMap;
-const cachedResolvedProductImageBySku = new Map();
-const cachedImageDataUrlPromises = new Map();
 const STATIC_ASSET_SEARCH_DIRS = [
   path.resolve(__dirname, '../../public'),
   path.resolve(__dirname, '../../build'),
@@ -39,15 +35,6 @@ const IMAGE_SOURCE_KEYS = [
   'originalUrl',
   'original_url',
 ];
-const SUPPORTED_IMAGE_CONTENT_TYPES = new Set([
-  'image/gif',
-  'image/jpeg',
-  'image/png',
-  'image/svg+xml',
-  'image/webp',
-]);
-const IMAGE_FETCH_ACCEPT_HEADER = 'image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8';
-const IMAGE_FETCH_TIMEOUT_MS = 3500;
 const MAX_IMAGE_CANDIDATES_PER_ITEM = 4;
 const nowMs = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
   ? performance.now()
@@ -296,18 +283,19 @@ const appendImageCandidate = (candidates, value) => {
   if (!normalized) {
     return;
   }
-  if (!candidates.includes(normalized)) {
-    candidates.push(normalized);
-  }
+  let decodedSource = null;
   try {
     const parsed = new URL(normalized);
     const proxiedSource = parsed.searchParams.get('src');
-    const decoded = normalizeRemoteImageUrl(proxiedSource);
-    if (decoded && !candidates.includes(decoded)) {
-      candidates.push(decoded);
-    }
+    decodedSource = normalizeRemoteImageUrl(proxiedSource);
   } catch {
     // Ignore non-URL values that were already filtered out above.
+  }
+  if (decodedSource && !candidates.includes(decodedSource)) {
+    candidates.push(decodedSource);
+  }
+  if (!candidates.includes(normalized)) {
+    candidates.push(normalized);
   }
 };
 
@@ -325,98 +313,14 @@ const collectQuoteItemImageCandidates = async (item) => {
     return candidates;
   }
 
+  // Quote export should not block on live catalog lookups; use cached/media URLs or fall back.
   appendImageCandidate(candidates, getCachedWooSkuImageMap().get(sku));
-  if (candidates.length > 0) {
-    return candidates;
-  }
-
-  if (!cachedResolvedProductImageBySku.has(sku)) {
-    cachedResolvedProductImageBySku.set(sku, (async () => {
-      try {
-        const product = await findProductBySku(sku);
-        return extractImageSource(product?.image)
-          || extractImageSource(product?.images)
-          || null;
-      } catch {
-        return null;
-      }
-    })());
-  }
-
-  appendImageCandidate(candidates, await cachedResolvedProductImageBySku.get(sku));
-
   return candidates;
-};
-
-const inferImageContentType = (contentType, sourceUrl) => {
-  const normalizedContentType = String(contentType || '').trim().toLowerCase();
-  if (normalizedContentType.startsWith('image/')) {
-    const normalizedImageContentType = normalizedContentType.split(';', 1)[0];
-    return SUPPORTED_IMAGE_CONTENT_TYPES.has(normalizedImageContentType)
-      ? normalizedImageContentType
-      : null;
-  }
-
-  const normalizedUrl = normalizeRemoteImageUrl(sourceUrl);
-  if (!normalizedUrl || normalizedUrl.startsWith('data:image/')) {
-    return null;
-  }
-
-  try {
-    const pathname = new URL(normalizedUrl).pathname.toLowerCase();
-    if (pathname.endsWith('.png')) return 'image/png';
-    if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
-    if (pathname.endsWith('.webp')) return 'image/webp';
-    if (pathname.endsWith('.gif')) return 'image/gif';
-    if (pathname.endsWith('.svg')) return 'image/svg+xml';
-  } catch {
-    return null;
-  }
-
-  return null;
-};
-
-const fetchImageAsDataUrl = async (value) => {
-  const normalizedUrl = normalizeRemoteImageUrl(value);
-  if (!normalizedUrl || normalizedUrl.startsWith('data:image/')) {
-    return normalizedUrl;
-  }
-  if (!cachedImageDataUrlPromises.has(normalizedUrl)) {
-    cachedImageDataUrlPromises.set(normalizedUrl, (async () => {
-      try {
-        const response = await axios.get(normalizedUrl, {
-          responseType: 'arraybuffer',
-          timeout: IMAGE_FETCH_TIMEOUT_MS,
-          maxRedirects: 5,
-          headers: {
-            Accept: IMAGE_FETCH_ACCEPT_HEADER,
-          },
-        });
-        const contentType = inferImageContentType(response?.headers?.['content-type'], normalizedUrl);
-        const buffer = Buffer.isBuffer(response?.data)
-          ? response.data
-          : Buffer.from(response?.data || '');
-        if (!contentType || buffer.length === 0) {
-          return null;
-        }
-        return `data:${contentType};base64,${buffer.toString('base64')}`;
-      } catch {
-        return null;
-      }
-    })());
-  }
-  return cachedImageDataUrlPromises.get(normalizedUrl);
 };
 
 const resolveQuoteItemImageDataUrl = async (item) => {
   const candidates = (await collectQuoteItemImageCandidates(item)).slice(0, MAX_IMAGE_CANDIDATES_PER_ITEM);
-  for (const candidate of candidates) {
-    const dataUrl = await fetchImageAsDataUrl(candidate);
-    if (dataUrl) {
-      return dataUrl;
-    }
-  }
-  return null;
+  return candidates[0] || null;
 };
 
 const renderQuoteHtml = async (quote) => {

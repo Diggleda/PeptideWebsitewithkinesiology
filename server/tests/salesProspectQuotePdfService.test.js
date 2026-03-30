@@ -36,8 +36,6 @@ const withFreshPdfService = async (deps, run) => {
 test('generateProspectQuotePdf embeds a recovered product image instead of a broken localhost media URL', async () => {
   const localhostMediaUrl = 'http://localhost:3001/api/woo/media?src=https%3A%2F%2Fshop.peppro.net%2Fwp-content%2Fuploads%2F2025%2F12%2FPhysicians_Nasal-label_oxy-1.jpg';
   const remoteImageUrl = 'https://shop.peppro.net/wp-content/uploads/2025/12/Physicians_Nasal-label_oxy-1.jpg';
-  const embeddedImageData = Buffer.from('quote-line-item-image');
-  const embeddedImageDataUrl = `data:image/png;base64,${embeddedImageData.toString('base64')}`;
   const axiosCalls = [];
   let renderedHtml = '';
   let evaluatedImagePass = 0;
@@ -48,17 +46,6 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
       axios: {
         get: async (url) => {
           axiosCalls.push(url);
-          if (url === localhostMediaUrl) {
-            throw new Error('connect ECONNREFUSED 127.0.0.1:3001');
-          }
-          if (url === remoteImageUrl) {
-            return {
-              data: embeddedImageData,
-              headers: {
-                'content-type': 'image/png',
-              },
-            };
-          }
           throw new Error(`Unexpected image request: ${url}`);
         },
       },
@@ -113,10 +100,10 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
       });
 
       assert.equal(result.filename, 'PepPro_Quote_Client_Example_5.pdf');
-      assert.deepEqual(axiosCalls, [localhostMediaUrl, remoteImageUrl]);
+      assert.deepEqual(axiosCalls, []);
       assert.equal(evaluatedImagePass, 1);
       assert.equal(wooLookupCount, 0);
-      assert.match(renderedHtml, new RegExp(embeddedImageDataUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.match(renderedHtml, new RegExp(remoteImageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       assert.doesNotMatch(renderedHtml, /http:\/\/localhost:3001\/api\/woo\/media/);
       assert.match(renderedHtml, /<img class="brand-logo" src="data:image\/png;base64,/);
       assert.doesNotMatch(renderedHtml, /<div class="brand">PepPro<\/div>/);
@@ -139,22 +126,15 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
 
 test('generateProspectQuotePdf resolves nested thumbnail objects for quote item images', async () => {
   const remoteImageUrl = 'https://shop.peppro.net/wp-content/uploads/2025/12/Physicians_Vial-label_MOTS.jpg';
-  const embeddedImageData = Buffer.from('nested-item-image');
-  const embeddedImageDataUrl = `data:image/jpeg;base64,${embeddedImageData.toString('base64')}`;
+  const axiosCalls = [];
   let renderedHtml = '';
 
   await withFreshPdfService(
     {
       axios: {
         get: async (url, config) => {
-          assert.equal(url, remoteImageUrl);
-          assert.equal(config?.headers?.Accept, 'image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8');
-          return {
-            data: embeddedImageData,
-            headers: {
-              'content-type': 'image/jpeg',
-            },
-          };
+          axiosCalls.push({ url, config });
+          throw new Error(`No remote fetch expected: ${url}`);
         },
       },
       playwright: {
@@ -199,7 +179,72 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
         },
       });
 
-      assert.match(renderedHtml, new RegExp(embeddedImageDataUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.deepEqual(axiosCalls, []);
+      assert.match(renderedHtml, new RegExp(remoteImageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    },
+  );
+});
+
+test('generateProspectQuotePdf skips live Woo SKU lookups when no cached quote image is available', async () => {
+  let renderedHtml = '';
+  let wooLookupCount = 0;
+
+  await withFreshPdfService(
+    {
+      axios: {
+        get: async (url) => {
+          throw new Error(`No remote fetch expected: ${url}`);
+        },
+      },
+      wooCommerceClient: {
+        findProductBySku: async () => {
+          wooLookupCount += 1;
+          return {
+            image: 'https://shop.peppro.net/wp-content/uploads/2025/12/should-not-be-used.jpg',
+          };
+        },
+      },
+      playwright: {
+        chromium: {
+          launch: async () => ({
+            newPage: async () => ({
+              setContent: async (html) => {
+                renderedHtml = html;
+              },
+              waitForLoadState: async () => {},
+              evaluate: async () => {},
+              pdf: async () => Buffer.from('%PDF-1.4 mock'),
+            }),
+            close: async () => {},
+          }),
+        },
+      },
+    },
+    async ({ generateProspectQuotePdf }) => {
+      await generateProspectQuotePdf({
+        revisionNumber: 1,
+        title: 'Quote without Item Image',
+        quotePayloadJson: {
+          title: 'Quote without Item Image',
+          currency: 'USD',
+          subtotal: 15,
+          prospect: {
+            contactName: 'Fallback Example',
+          },
+          items: [
+            {
+              name: 'Image-less Item',
+              sku: 'NO-CACHED-IMAGE',
+              quantity: 1,
+              unitPrice: 15,
+              lineTotal: 15,
+            },
+          ],
+        },
+      });
+
+      assert.equal(wooLookupCount, 0);
+      assert.match(renderedHtml, /Image-less Item/);
     },
   );
 });
