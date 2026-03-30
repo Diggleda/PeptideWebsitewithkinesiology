@@ -143,6 +143,9 @@ def _resolve_sales_rep_snapshot(prospect: Optional[Dict], actor: Optional[Dict])
         "email": _normalize_optional_text((rep_record or {}).get("email"))
         or _normalize_optional_text((linked_user or {}).get("email"))
         or _normalize_optional_text((actor or {}).get("email")),
+        "phone": _normalize_optional_text((rep_record or {}).get("phone"))
+        or _normalize_optional_text((linked_user or {}).get("phone"))
+        or _normalize_optional_text((actor or {}).get("phone")),
     }
 
 
@@ -480,6 +483,8 @@ def export_prospect_quote(
     enrich_started_at = time.perf_counter()
     quote_payload = quote.get("quotePayloadJson") if isinstance(quote.get("quotePayloadJson"), dict) else {}
     quote_payload_prospect = quote_payload.get("prospect") if isinstance(quote_payload.get("prospect"), dict) else {}
+    quote_payload_sales_rep = quote_payload.get("salesRep") if isinstance(quote_payload.get("salesRep"), dict) else {}
+    resolved_sales_rep = _resolve_sales_rep_snapshot(access["prospect"], user)
     enriched_quote = {
         **quote,
         "quotePayloadJson": {
@@ -496,6 +501,18 @@ def export_prospect_quote(
                 or _normalize_optional_text(access["prospect"].get("contactEmail")),
                 "contactPhone": _normalize_optional_text(quote_payload_prospect.get("contactPhone"))
                 or _normalize_optional_text(access["prospect"].get("contactPhone")),
+            },
+            "salesRep": {
+                **quote_payload_sales_rep,
+                "id": _normalize_optional_text(quote_payload_sales_rep.get("id"))
+                or _normalize_optional_text(resolved_sales_rep.get("id")),
+                "name": _normalize_optional_text(quote_payload_sales_rep.get("name"))
+                or _normalize_optional_text(resolved_sales_rep.get("name"))
+                or "PepPro",
+                "email": _normalize_optional_text(quote_payload_sales_rep.get("email"))
+                or _normalize_optional_text(resolved_sales_rep.get("email")),
+                "phone": _normalize_optional_text(quote_payload_sales_rep.get("phone"))
+                or _normalize_optional_text(resolved_sales_rep.get("phone")),
             },
         },
     }

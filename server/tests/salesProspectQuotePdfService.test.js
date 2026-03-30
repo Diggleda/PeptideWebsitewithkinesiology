@@ -88,6 +88,11 @@ test('generateProspectQuotePdf embeds a recovered product image as a data URL in
           prospect: {
             contactName: 'Client Example',
           },
+          salesRep: {
+            name: 'Rep Example',
+            email: 'rep@example.com',
+            phone: '317-555-0101',
+          },
           items: [
             {
               name: 'Oxytocin N — 10mg',
@@ -118,6 +123,9 @@ test('generateProspectQuotePdf embeds a recovered product image as a data URL in
       assert.match(renderedHtml, /class="summary-row"/);
       assert.doesNotMatch(renderedHtml, /class="summary"/);
       assert.match(renderedHtml, /<div class="summary-row">\s*<span>Subtotal:<\/span>\s*<span>\$93\.91<\/span>\s*<\/div>/);
+      assert.match(renderedHtml, /<div class="meta-label">Physician<\/div>/);
+      assert.doesNotMatch(renderedHtml, /<div class="meta-label">Prospect<\/div>/);
+      assert.match(renderedHtml, /317-555-0101/);
       assert.doesNotMatch(renderedHtml, /<strong>Created:<\/strong>/);
       assert.doesNotMatch(renderedHtml, /<strong>Exported:<\/strong>/);
       assert.doesNotMatch(renderedHtml, /<strong>Pricing:<\/strong>/);

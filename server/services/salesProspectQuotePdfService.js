@@ -756,9 +756,9 @@ const renderQuoteHtml = async (quote) => {
 
       <div class="meta-grid">
         <div class="meta-card">
-          <div class="meta-label">Prospect</div>
+          <div class="meta-label">Physician</div>
           <div class="meta-value">
-            <div>${escapeHtml(prospect?.contactName || prospect?.name || 'Prospect')}</div>
+            <div>${escapeHtml(prospect?.contactName || prospect?.name || 'Physician')}</div>
             ${prospect?.contactEmail ? `<div>${escapeHtml(prospect.contactEmail)}</div>` : ''}
             ${prospect?.contactPhone ? `<div>${escapeHtml(prospect.contactPhone)}</div>` : ''}
           </div>
@@ -768,6 +768,7 @@ const renderQuoteHtml = async (quote) => {
           <div class="meta-value">
             <div>${escapeHtml(salesRep?.name || 'PepPro')}</div>
             ${salesRep?.email ? `<div>${escapeHtml(salesRep.email)}</div>` : ''}
+            ${salesRep?.phone ? `<div>${escapeHtml(salesRep.phone)}</div>` : ''}
           </div>
         </div>
       </div>

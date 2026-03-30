@@ -76,6 +76,10 @@ test('importCartToProspectQuote replaces the existing draft revision in place', 
       salesProspectRepository: {
         upsert: async (prospect) => prospect,
       },
+      salesRepRepository: {
+        findById: () => ({ id: 'rep-1', name: 'Rep One', email: 'rep@example.com', phone: '317-555-0101' }),
+        findByEmail: () => null,
+      },
       accessService: {
         resolveScopedProspectAccess: async () => ({
           identifier: 'doctor-1',
@@ -104,6 +108,7 @@ test('importCartToProspectQuote replaces the existing draft revision in place', 
       assert.equal(upserts.length, 1);
       assert.equal(upserts[0].id, 'quote-draft');
       assert.equal(upserts[0].revisionNumber, 2);
+      assert.equal(upserts[0].quotePayloadJson?.salesRep?.phone, '317-555-0101');
       assert.equal(result.quote?.title, 'New Draft');
     },
   );
@@ -173,6 +178,7 @@ test('importCartToProspectQuote creates the next revision after an exported quot
 
 test('exportProspectQuote freezes draft revisions before rendering pdf output', async () => {
   const upserts = [];
+  const renderCalls = [];
   await withFreshService(
     {
       quoteRepository: {
@@ -203,8 +209,14 @@ test('exportProspectQuote freezes draft revisions before rendering pdf output', 
         buildProspectBaseRecord: () => null,
         normalizeOptionalText: (value) => (value == null ? null : String(value).trim() || null),
       },
+      salesRepRepository: {
+        findById: () => ({ id: 'rep-1', name: 'Rep One', email: 'rep@example.com', phone: '317-555-0101' }),
+        findByEmail: () => null,
+      },
       pdfService: {
-        generateProspectQuotePdf: async () => ({
+        generateProspectQuotePdf: async (quote) => {
+          renderCalls.push(quote);
+          return {
           pdf: Buffer.from('%PDF-1.4 mock'),
           filename: 'PepPro_Quote_Dr_One_1.pdf',
           diagnostics: {
@@ -214,7 +226,8 @@ test('exportProspectQuote freezes draft revisions before rendering pdf output', 
               imageResolveMs: 7.2,
             },
           },
-        }),
+          };
+        },
       },
     },
     async (service) => {
@@ -233,6 +246,7 @@ test('exportProspectQuote freezes draft revisions before rendering pdf output', 
       assert.equal(typeof result.diagnostics?.pdfMs, 'number');
       assert.equal(result.diagnostics?.pdf?.renderer, 'playwright_browser');
       assert.equal(result.diagnostics?.pdf?.html?.imageResolveMs, 7.2);
+      assert.equal(renderCalls[0]?.quotePayloadJson?.salesRep?.phone, '317-555-0101');
     },
   );
 });

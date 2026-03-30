@@ -36,6 +36,7 @@ _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS = 45
 _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS = 300
 _QUOTE_PDF_RENDER_CACHE_LIMIT = 32
 _QUOTE_PDF_DISK_CACHE_LIMIT = 64
+_QUOTE_PDF_TEMPLATE_VERSION = "2026-03-30-physician-label-sales-rep-phone"
 _IMAGE_FETCH_ACCEPT_HEADER = "image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8"
 _MAX_IMAGE_CANDIDATES_PER_ITEM = 4
 _MAX_CONCURRENT_IMAGE_RESOLVERS = 6
@@ -299,6 +300,7 @@ def _allow_text_fallback() -> bool:
 def _build_quote_render_cache_key(quote: Dict) -> str:
     payload = quote.get("quotePayloadJson") if isinstance(quote.get("quotePayloadJson"), dict) else {}
     signature_payload = {
+        "templateVersion": _QUOTE_PDF_TEMPLATE_VERSION,
         "id": quote.get("id"),
         "revisionNumber": quote.get("revisionNumber"),
         "status": quote.get("status"),
@@ -1131,9 +1133,9 @@ def _render_quote_html(quote: Dict) -> str:
 
       <div class="meta-grid">
         <div class="meta-card">
-          <div class="meta-label">Prospect</div>
+          <div class="meta-label">Physician</div>
           <div class="meta-value">
-            <div>{_escape_html(prospect.get("contactName") or prospect.get("name") or "Prospect")}</div>
+            <div>{_escape_html(prospect.get("contactName") or prospect.get("name") or "Physician")}</div>
             {f'<div>{_escape_html(prospect.get("contactEmail"))}</div>' if _safe_text(prospect.get("contactEmail")) else ''}
             {f'<div>{_escape_html(prospect.get("contactPhone"))}</div>' if _safe_text(prospect.get("contactPhone")) else ''}
           </div>
@@ -1143,6 +1145,7 @@ def _render_quote_html(quote: Dict) -> str:
           <div class="meta-value">
             <div>{_escape_html(sales_rep.get("name") or "PepPro")}</div>
             {f'<div>{_escape_html(sales_rep.get("email"))}</div>' if _safe_text(sales_rep.get("email")) else ''}
+            {f'<div>{_escape_html(sales_rep.get("phone"))}</div>' if _safe_text(sales_rep.get("phone")) else ''}
           </div>
         </div>
       </div>
@@ -1353,8 +1356,8 @@ def _build_fallback_quote_pdf(quote: Dict) -> Dict:
         "",
     ]
 
-    prospect_name = _safe_text(prospect.get("contactName"), "Prospect")
-    lines.append(f"Prospect: {prospect_name}")
+    prospect_name = _safe_text(prospect.get("contactName"), "Physician")
+    lines.append(f"Physician: {prospect_name}")
     prospect_email = _safe_text(prospect.get("contactEmail"))
     if prospect_email:
         lines.append(f"Email: {prospect_email}")
@@ -1368,6 +1371,9 @@ def _build_fallback_quote_pdf(quote: Dict) -> Dict:
     sales_rep_email = _safe_text(sales_rep.get("email"))
     if sales_rep_email:
         lines.append(f"Sales Rep Email: {sales_rep_email}")
+    sales_rep_phone = _safe_text(sales_rep.get("phone"))
+    if sales_rep_phone:
+        lines.append(f"Sales Rep Phone: {sales_rep_phone}")
 
     updated_at = _format_datetime(quote.get("updatedAt"))
     if updated_at:

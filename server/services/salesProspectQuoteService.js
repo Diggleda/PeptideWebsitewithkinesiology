@@ -98,6 +98,9 @@ const resolveSalesRepSnapshot = (prospect, actor) => {
     email: normalizeOptionalText(repRecord?.email)
       || normalizeOptionalText(linkedUser?.email)
       || normalizeOptionalText(actor?.email),
+    phone: normalizeOptionalText(repRecord?.phone)
+      || normalizeOptionalText(linkedUser?.phone)
+      || normalizeOptionalText(actor?.phone),
   };
 };
 
@@ -347,6 +350,7 @@ const exportProspectQuote = async ({
   }
 
   const enrichStartedAt = nowMs();
+  const resolvedSalesRep = resolveSalesRepSnapshot(access.prospect, user);
   const enrichedQuote = {
     ...quote,
     quotePayloadJson: {
@@ -369,6 +373,24 @@ const exportProspectQuote = async ({
         contactPhone:
           normalizeOptionalText(quote?.quotePayloadJson?.prospect?.contactPhone)
           || normalizeOptionalText(access.prospect?.contactPhone),
+      },
+      salesRep: {
+        ...((quote.quotePayloadJson && typeof quote.quotePayloadJson === 'object'
+          ? quote.quotePayloadJson.salesRep
+          : null) || {}),
+        id:
+          normalizeOptionalText(quote?.quotePayloadJson?.salesRep?.id)
+          || normalizeOptionalText(resolvedSalesRep?.id),
+        name:
+          normalizeOptionalText(quote?.quotePayloadJson?.salesRep?.name)
+          || normalizeOptionalText(resolvedSalesRep?.name)
+          || 'PepPro',
+        email:
+          normalizeOptionalText(quote?.quotePayloadJson?.salesRep?.email)
+          || normalizeOptionalText(resolvedSalesRep?.email),
+        phone:
+          normalizeOptionalText(quote?.quotePayloadJson?.salesRep?.phone)
+          || normalizeOptionalText(resolvedSalesRep?.phone),
       },
     },
   };

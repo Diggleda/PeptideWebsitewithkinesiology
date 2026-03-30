@@ -125,7 +125,7 @@ class SalesProspectQuoteServiceTests(unittest.TestCase):
         ), patch.object(
             service,
             "_resolve_sales_rep_snapshot",
-            return_value={"id": "rep-1", "name": "Rep One", "email": "rep@example.com"},
+            return_value={"id": "rep-1", "name": "Rep One", "email": "rep@example.com", "phone": "317-555-0101"},
         ), patch.object(
             service.sales_prospect_quote_repository,
             "upsert",
@@ -148,6 +148,7 @@ class SalesProspectQuoteServiceTests(unittest.TestCase):
         self.assertEqual(len(upserts), 1)
         self.assertEqual(upserts[0]["id"], "quote-draft")
         self.assertEqual(upserts[0]["revisionNumber"], 2)
+        self.assertEqual(upserts[0]["quotePayloadJson"]["salesRep"]["phone"], "317-555-0101")
         self.assertEqual(result["quote"]["title"], "New Draft")
 
     def test_export_prospect_quote_marks_draft_exported_before_rendering(self) -> None:
@@ -187,6 +188,10 @@ class SalesProspectQuoteServiceTests(unittest.TestCase):
             side_effect=lambda quote: upserts.append(quote) or quote,
         ), patch.object(
             service,
+            "_resolve_sales_rep_snapshot",
+            return_value={"id": "rep-1", "name": "Rep One", "email": "rep@example.com", "phone": "317-555-0101"},
+        ), patch.object(
+            service,
             "generate_prospect_quote_pdf",
             side_effect=lambda quote: render_calls.append(quote)
             or {
@@ -205,6 +210,7 @@ class SalesProspectQuoteServiceTests(unittest.TestCase):
         self.assertEqual(upserts[0]["status"], "exported")
         self.assertEqual(result["filename"], "PepPro_Quote_Example_Lead_1.pdf")
         self.assertEqual(render_calls[0]["quotePayloadJson"]["prospect"]["contactName"], "Example Lead")
+        self.assertEqual(render_calls[0]["quotePayloadJson"]["salesRep"]["phone"], "317-555-0101")
         self.assertEqual(result["diagnostics"]["pdf"]["renderer"], "node_worker")
 
     def test_delete_prospect_quote_removes_scoped_quote(self) -> None:

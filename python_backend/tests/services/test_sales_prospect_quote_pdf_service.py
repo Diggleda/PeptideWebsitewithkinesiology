@@ -59,6 +59,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
             "title": "Quote for Client Example",
             "quotePayloadJson": {
                 "prospect": {"contactName": "Client Example"},
+                "salesRep": {"name": "Rep Example", "email": "rep@example.com", "phone": "317-555-0101"},
                 "items": [],
             },
         }
@@ -68,6 +69,9 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
 
         self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="PepPro" />', html)
         self.assertNotIn('<div class="brand">PepPro</div>', html)
+        self.assertIn('<div class="meta-label">Physician</div>', html)
+        self.assertNotIn('<div class="meta-label">Prospect</div>', html)
+        self.assertIn("317-555-0101", html)
 
     def test_ensure_node_worker_process_restarts_when_renderer_signature_changes(self) -> None:
         class DummyProcess:
@@ -234,6 +238,17 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self.assertEqual(store_to_disk_again.call_count, 0)
         self.assertEqual(first["pdf"], second["pdf"])
         self.assertEqual(first["filename"], second["filename"])
+
+    def test_build_quote_render_cache_key_includes_template_version(self) -> None:
+        quote = {"id": "quote-cache-version", "revisionNumber": 2, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
+
+        with patch.object(service, "_QUOTE_PDF_TEMPLATE_VERSION", "version-a"):
+            first = service._build_quote_render_cache_key(quote)
+
+        with patch.object(service, "_QUOTE_PDF_TEMPLATE_VERSION", "version-b"):
+            second = service._build_quote_render_cache_key(quote)
+
+        self.assertNotEqual(first, second)
 
     def test_run_node_bridge_skips_lookup_during_retry_cooldown(self) -> None:
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + 30
@@ -402,6 +417,33 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
 
         self.assertTrue(rendered["pdf"].startswith(b"%PDF-1.4"))
         self.assertEqual(rendered["filename"], "PepPro_Quote_Client_Example_2.pdf")
+
+    def test_build_fallback_quote_pdf_uses_physician_label(self) -> None:
+        quote = {
+            "revisionNumber": 2,
+            "title": "Quote for Client Example",
+            "quotePayloadJson": {
+                "prospect": {
+                    "contactName": "Client Example",
+                    "contactEmail": "client@example.com",
+                },
+                "salesRep": {
+                    "name": "Rep Example",
+                    "phone": "317-555-0101",
+                },
+                "items": [],
+            },
+        }
+
+        with patch.object(service, "_build_simple_text_pdf", return_value=b"%PDF-1.4 fallback") as build_pdf:
+            rendered = service._build_fallback_quote_pdf(quote)
+
+        self.assertEqual(rendered["pdf"], b"%PDF-1.4 fallback")
+        self.assertEqual(build_pdf.call_count, 1)
+        text_body = build_pdf.call_args.args[0]
+        self.assertIn("Physician: Client Example", text_body)
+        self.assertNotIn("Prospect: Client Example", text_body)
+        self.assertIn("Sales Rep Phone: 317-555-0101", text_body)
 
     def test_generate_prospect_quote_pdf_raises_when_renderer_unavailable_and_fallback_disabled(self) -> None:
         with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(service, "_run_node_bridge", return_value=None), patch.object(
