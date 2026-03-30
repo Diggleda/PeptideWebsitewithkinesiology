@@ -34,6 +34,26 @@ test('exportPdf sets pdf headers and sends the generated buffer', async () => {
           quote: { id: 'quote-1' },
           filename: 'PepPro_Quote_Test_1.pdf',
           pdf: Buffer.from('%PDF-1.4 mock'),
+          diagnostics: {
+            totalMs: 37.6,
+            accessMs: 0.8,
+            findQuoteMs: 1.2,
+            markExportedMs: 2.1,
+            enrichMs: 0.4,
+            pdfMs: 33.1,
+            pdf: {
+              renderer: 'playwright_browser',
+              totalMs: 32.4,
+              pageCreateMs: 4.2,
+              renderQuoteHtmlMs: 5.3,
+              setContentMs: 1.1,
+              waitForImagesMs: 18.8,
+              pdfMs: 6.3,
+              html: {
+                imageResolveMs: 17.4,
+              },
+            },
+          },
         }),
       },
     },
@@ -70,6 +90,14 @@ test('exportPdf sets pdf headers and sends the generated buffer', async () => {
       assert.equal(statusCode, 200);
       assert.equal(headers['Content-Type'], 'application/pdf');
       assert.equal(headers['Content-Disposition'], 'attachment; filename="PepPro_Quote_Test_1.pdf"');
+      assert.equal(headers['X-PepPro-Quote-Export-Ms'], '37.6');
+      assert.equal(headers['X-PepPro-Quote-Pdf-Ms'], '33.1');
+      assert.equal(headers['X-PepPro-Quote-Render-Ms'], '32.4');
+      assert.equal(headers['X-PepPro-Quote-Image-Ms'], '17.4');
+      assert.equal(headers['X-PepPro-Quote-Renderer'], 'playwright_browser');
+      assert.equal(headers['X-PepPro-Quote-Pdf-Bytes'], String(Buffer.from('%PDF-1.4 mock').length));
+      assert.match(headers['Server-Timing'], /quote_total;dur=37\.6/);
+      assert.match(headers['Server-Timing'], /pdf_images;dur=17\.4/);
       assert.match(body.toString('utf8'), /^%PDF/);
     },
   );

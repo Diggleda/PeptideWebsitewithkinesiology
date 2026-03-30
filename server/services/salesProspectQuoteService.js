@@ -11,6 +11,10 @@ const { generateProspectQuotePdf } = require('./salesProspectQuotePdfService');
 
 const QUOTE_STATUS_DRAFT = 'draft';
 const QUOTE_STATUS_EXPORTED = 'exported';
+const nowMs = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+  ? performance.now()
+  : Date.now());
+const elapsedMs = (startedAt) => Number((nowMs() - startedAt).toFixed(1));
 
 const toMoney = (value) => {
   const numeric = Number(value);
@@ -304,19 +308,24 @@ const exportProspectQuote = async ({
   user,
   query,
 } = {}) => {
+  const startedAt = nowMs();
+  const accessStartedAt = nowMs();
   const access = await resolveScopedProspectAccess({
     identifier,
     user,
     query,
     context: 'exportProspectQuote',
   });
+  const accessMs = elapsedMs(accessStartedAt);
   if (!access.prospect) {
     const error = new Error('Prospect not found');
     error.status = 404;
     throw error;
   }
 
+  const findQuoteStartedAt = nowMs();
   const existing = await salesProspectQuoteRepository.findById(quoteId);
+  const findQuoteMs = elapsedMs(findQuoteStartedAt);
   if (!existing || existing.prospectId !== access.prospect.id) {
     const error = new Error('Quote not found');
     error.status = 404;
@@ -324,14 +333,18 @@ const exportProspectQuote = async ({
   }
 
   let quote = existing;
+  let markExportedMs = 0;
   if (quote.status === QUOTE_STATUS_DRAFT) {
+    const markExportedStartedAt = nowMs();
     quote = await salesProspectQuoteRepository.upsert({
       ...quote,
       status: QUOTE_STATUS_EXPORTED,
       exportedAt: new Date().toISOString(),
     });
+    markExportedMs = elapsedMs(markExportedStartedAt);
   }
 
+  const enrichStartedAt = nowMs();
   const enrichedQuote = {
     ...quote,
     quotePayloadJson: {
@@ -357,12 +370,26 @@ const exportProspectQuote = async ({
       },
     },
   };
+  const enrichMs = elapsedMs(enrichStartedAt);
 
+  const pdfStartedAt = nowMs();
   const rendered = await generateProspectQuotePdf(enrichedQuote);
+  const pdfMs = elapsedMs(pdfStartedAt);
   return {
     quote: sanitizeQuoteSummary(quote),
     pdf: rendered.pdf,
     filename: rendered.filename,
+    diagnostics: {
+      totalMs: elapsedMs(startedAt),
+      accessMs,
+      findQuoteMs,
+      markExportedMs,
+      enrichMs,
+      pdfMs,
+      pdf: rendered && typeof rendered.diagnostics === 'object'
+        ? rendered.diagnostics
+        : null,
+    },
   };
 };
 
