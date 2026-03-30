@@ -12,10 +12,15 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self._original_node_bridge_skip_until = service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
         service._QUOTE_PDF_RENDER_CACHE.clear()
+        service._SKU_PRODUCT_IMAGE_CACHE.clear()
+        self._original_cached_woo_sku_image_map = service._CACHED_WOO_SKU_IMAGE_MAP
+        service._CACHED_WOO_SKU_IMAGE_MAP = None
 
     def tearDown(self) -> None:
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = self._original_node_bridge_skip_until
         service._QUOTE_PDF_RENDER_CACHE.clear()
+        service._SKU_PRODUCT_IMAGE_CACHE.clear()
+        service._CACHED_WOO_SKU_IMAGE_MAP = self._original_cached_woo_sku_image_map
 
     def test_render_quote_html_uses_logo_image_when_available(self) -> None:
         quote = {
@@ -72,6 +77,19 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
                 "data:image/png;base64,second",
             ],
         )
+
+    def test_collect_quote_item_image_candidates_prefers_cached_woo_proxy_image_before_live_product_cache(self) -> None:
+        item = {"sku": "SKU-123"}
+        service._SKU_PRODUCT_IMAGE_CACHE["SKU-123"] = "https://cdn.example.com/products/live-fallback.png"
+
+        with patch.object(
+            service,
+            "_get_cached_woo_sku_image_map",
+            return_value={"SKU-123": "https://cdn.example.com/products/sku-123.png"},
+        ):
+            candidates = service._collect_quote_item_image_candidates(item)
+
+        self.assertEqual(candidates, ["https://cdn.example.com/products/sku-123.png"])
 
     def test_generate_prospect_quote_pdf_uses_system_browser_renderer_when_node_bridge_is_unavailable(self) -> None:
         with patch.object(service, "_run_node_bridge", return_value=None), patch.object(

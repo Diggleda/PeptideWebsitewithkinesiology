@@ -62,6 +62,7 @@ _STATIC_ASSET_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
 _SKU_PRODUCT_IMAGE_CACHE: Dict[str, Optional[str]] = {}
 _IMAGE_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
 _QUOTE_PDF_RENDER_CACHE: Dict[str, Dict[str, Any]] = {}
+_CACHED_WOO_SKU_IMAGE_MAP: Optional[Dict[str, str]] = None
 _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
 _STATIC_ASSET_SEARCH_DIRS = (
     "public",
@@ -350,6 +351,48 @@ def _append_image_candidate(candidates: List[str], value: object) -> None:
         return
 
 
+def _get_cached_woo_sku_image_map() -> Dict[str, str]:
+    global _CACHED_WOO_SKU_IMAGE_MAP
+
+    if _CACHED_WOO_SKU_IMAGE_MAP is not None:
+        return _CACHED_WOO_SKU_IMAGE_MAP
+
+    image_map: Dict[str, str] = {}
+    cache_dir = BASE_DIR / "server-data" / "woo-proxy-cache"
+
+    try:
+        if not cache_dir.is_dir():
+            _CACHED_WOO_SKU_IMAGE_MAP = image_map
+            return image_map
+
+        for file_path in sorted(cache_dir.iterdir()):
+            if not file_path.is_file() or file_path.suffix.lower() != ".json":
+                continue
+            try:
+                raw = json.loads(file_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            records = raw.get("data") if isinstance(raw, dict) else None
+            if not isinstance(records, list):
+                continue
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                sku = str(record.get("sku") or "").strip()
+                if not sku or sku in image_map:
+                    continue
+                image_source = _extract_image_source(record.get("image")) or _extract_image_source(record.get("images"))
+                normalized_source = _normalize_image_url(image_source)
+                if normalized_source:
+                    image_map[sku] = normalized_source
+    except Exception:
+        _CACHED_WOO_SKU_IMAGE_MAP = image_map
+        return image_map
+
+    _CACHED_WOO_SKU_IMAGE_MAP = image_map
+    return image_map
+
+
 def _infer_image_content_type(content_type: object, source_url: object) -> Optional[str]:
     normalized = str(content_type or "").strip().lower()
     if normalized.startswith("image/"):
@@ -403,6 +446,8 @@ def _collect_quote_item_image_candidates(item: Dict[str, Any]) -> List[str]:
     sku = _safe_text(item.get("sku"))
     if not sku:
         return candidates
+
+    _append_image_candidate(candidates, _get_cached_woo_sku_image_map().get(sku))
     if candidates:
         return candidates
 
