@@ -3332,6 +3332,9 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             "greaterArea": target_user.get("greaterArea"),
             "studyFocus": target_user.get("studyFocus"),
             "bio": target_user.get("bio"),
+            "resellerPermitFilePath": target_user.get("resellerPermitFilePath"),
+            "resellerPermitFileName": target_user.get("resellerPermitFileName"),
+            "resellerPermitUploadedAt": target_user.get("resellerPermitUploadedAt"),
             "salesRepId": target_sales_rep_id,
             "isPartner": _normalize_bool(
                 target_sales_rep_record.get("isPartner")

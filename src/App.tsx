@@ -446,21 +446,48 @@ const isDoctorRole = (role?: string | null) => {
 
 const noop = () => {};
 
-const hasUploadedResellerPermit = (value: unknown): boolean => {
+const hasUploadedResellerPermit = (...values: unknown[]): boolean =>
+  values.some((value) => {
+    if (value === true) {
+      return true;
+    }
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    const record = value as {
+      hasResellerPermitUploaded?: unknown;
+      resellerPermitFilePath?: unknown;
+      resellerPermitFileName?: unknown;
+      resellerPermitUploadedAt?: unknown;
+    };
+    if (record.hasResellerPermitUploaded === true) {
+      return true;
+    }
+    return [
+      record.resellerPermitFilePath,
+      record.resellerPermitFileName,
+      record.resellerPermitUploadedAt,
+    ].some((field) => typeof field === "string" && field.trim().length > 0);
+  });
+
+const hasDoctorSupplementalProfileText = (value: unknown): boolean => {
   if (!value || typeof value !== "object") {
     return false;
   }
   const record = value as {
-    resellerPermitFilePath?: unknown;
-    resellerPermitFileName?: unknown;
-    resellerPermitUploadedAt?: unknown;
+    greaterArea?: unknown;
+    studyFocus?: unknown;
+    bio?: unknown;
   };
   return [
-    record.resellerPermitFilePath,
-    record.resellerPermitFileName,
-    record.resellerPermitUploadedAt,
+    record.greaterArea,
+    record.studyFocus,
+    record.bio,
   ].some((field) => typeof field === "string" && field.trim().length > 0);
 };
+
+const needsSupplementalDoctorProfile = (value: unknown): boolean =>
+  !hasDoctorSupplementalProfileText(value) || !hasUploadedResellerPermit(value);
 
 const isLikelyMobileBrowser = () => {
   if (typeof navigator === "undefined") {
@@ -9584,6 +9611,7 @@ function MainApp() {
       salesDoctorDetailRequestIdRef.current = requestId;
       const id = String(entry?.id || "").trim();
       if (!id) return;
+      const cachedLiveProfile = livePresenceProfileImageByUserId[id] || null;
       const aliasIds = Array.isArray(entry?.aliasIds)
         ? (entry.aliasIds as unknown[])
             .map((value) => String(value || "").trim())
@@ -9653,7 +9681,7 @@ function MainApp() {
             entry?.assignedSalesRepId ||
             entry?.assigned_sales_rep_id ||
             null,
-          hasResellerPermitUploaded: hasUploadedResellerPermit(entry),
+          hasResellerPermitUploaded: hasUploadedResellerPermit(entry, cachedLiveProfile),
           isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
           isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
           idleMinutes:
@@ -9685,12 +9713,7 @@ function MainApp() {
           !avatarUrl ||
           (
             isDoctorRole(entryRole || "doctor") &&
-            !(
-              (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0) ||
-              (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0) ||
-              (typeof entry?.bio === "string" && entry.bio.trim().length > 0) ||
-              hasUploadedResellerPermit(entry)
-            )
+            needsSupplementalDoctorProfile(entry)
           )
         );
 
@@ -9874,14 +9897,16 @@ function MainApp() {
 	                doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
 	                doctorAddress,
 	                addressOrigin: doctorAddress ? "user" : null,
-	                ownerSalesRepId:
-	                  doctorFromList?.ownerSalesRepId ||
-	                  doctorFromList?.owner_sales_rep_id ||
-	                  doctorFromList?.salesRepId ||
+                ownerSalesRepId:
+                  doctorFromList?.ownerSalesRepId ||
+                  doctorFromList?.owner_sales_rep_id ||
+                  doctorFromList?.salesRepId ||
                   doctorFromList?.sales_rep_id ||
                   null,
                 hasResellerPermitUploaded: hasUploadedResellerPermit(
-                  doctorFromList || entry,
+                  doctorFromList,
+                  entry,
+                  cachedLiveProfile,
                 ),
                 isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
                 isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
@@ -10020,7 +10045,13 @@ function MainApp() {
                 refreshedDoctorFromList?.sales_rep_id ||
                 null,
               hasResellerPermitUploaded: hasUploadedResellerPermit(
-                refreshedDoctorFromList || entry,
+                refreshedDoctorFromList,
+                entry,
+                cachedLiveProfile,
+                salesDoctorDetailRef.current &&
+                  String(salesDoctorDetailRef.current.doctorId || "").trim() === id
+                  ? salesDoctorDetailRef.current
+                  : null,
               ),
               orders: refreshedDoctorOrders,
               total: refreshedTotalOrderValue,
@@ -10051,12 +10082,7 @@ function MainApp() {
           const roleFromProfile = normalizeRole(profile?.role || entryRole || "doctor");
           const profileNeedsSupplementalFields =
             isDoctorRole(profile?.role || roleFromProfile || entryRole || "doctor") &&
-            !(
-              (typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0) ||
-              (typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0) ||
-              (typeof profile?.bio === "string" && profile.bio.trim().length > 0) ||
-              hasUploadedResellerPermit(profile)
-            );
+            needsSupplementalDoctorProfile(profile);
           if (
             profileNeedsSupplementalFields &&
             resolvedUserId &&
@@ -10233,7 +10259,14 @@ function MainApp() {
                 entry?.ownerSalesRepId ||
                 entry?.owner_sales_rep_id ||
                 null,
-              hasResellerPermitUploaded: hasUploadedResellerPermit(profile),
+              hasResellerPermitUploaded: hasUploadedResellerPermit(
+                profile,
+                cachedLiveProfile,
+                salesDoctorDetailRef.current &&
+                  String(salesDoctorDetailRef.current.doctorId || "").trim() === String(resolvedUserId || id)
+                  ? salesDoctorDetailRef.current
+                  : null,
+              ),
               isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
               isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
               idleMinutes:
@@ -10335,6 +10368,7 @@ function MainApp() {
       mergeSalesDoctorDetail,
       openSalesDoctorDetail,
       salesTrackingDoctors,
+      livePresenceProfileImageByUserId,
       user?.id,
       user?.role,
       user?.salesRepId,

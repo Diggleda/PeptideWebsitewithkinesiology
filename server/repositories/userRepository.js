@@ -390,7 +390,9 @@ const ensureUserDefaults = (user) => {
     normalized.taxExemptReason = null;
   }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitFilePath')) {
-    normalized.resellerPermitFilePath = null;
+    normalized.resellerPermitFilePath = normalizeOptionalString(
+      normalized.reseller_permit_file_path,
+    );
   } else {
     normalized.resellerPermitFilePath = normalizeOptionalString(normalized.resellerPermitFilePath);
   }
@@ -404,12 +406,16 @@ const ensureUserDefaults = (user) => {
     );
   }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitFileName')) {
-    normalized.resellerPermitFileName = null;
+    normalized.resellerPermitFileName = normalizeOptionalString(
+      normalized.reseller_permit_file_name,
+    );
   } else {
     normalized.resellerPermitFileName = normalizeOptionalString(normalized.resellerPermitFileName);
   }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitUploadedAt')) {
-    normalized.resellerPermitUploadedAt = null;
+    normalized.resellerPermitUploadedAt = normalizeOptionalString(
+      normalized.reseller_permit_uploaded_at,
+    );
   } else {
     normalized.resellerPermitUploadedAt = normalizeOptionalString(normalized.resellerPermitUploadedAt);
   }
