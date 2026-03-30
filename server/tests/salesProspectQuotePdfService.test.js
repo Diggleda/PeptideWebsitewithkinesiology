@@ -33,9 +33,8 @@ const withFreshPdfService = async (deps, run) => {
   }
 };
 
-test('generateProspectQuotePdf embeds a recovered product image instead of a broken localhost media URL', async () => {
+test('generateProspectQuotePdf embeds a recovered product image as a data URL instead of a broken localhost media URL', async () => {
   const localhostMediaUrl = 'http://localhost:3001/api/woo/media?src=https%3A%2F%2Fshop.peppro.net%2Fwp-content%2Fuploads%2F2025%2F12%2FPhysicians_Nasal-label_oxy-1.jpg';
-  const remoteImageUrl = 'https://shop.peppro.net/wp-content/uploads/2025/12/Physicians_Nasal-label_oxy-1.jpg';
   const axiosCalls = [];
   let renderedHtml = '';
   let evaluatedImagePass = 0;
@@ -44,9 +43,12 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
   await withFreshPdfService(
     {
       axios: {
-        get: async (url) => {
-          axiosCalls.push(url);
-          throw new Error(`Unexpected image request: ${url}`);
+        get: async (url, config) => {
+          axiosCalls.push({ url, config });
+          return {
+            headers: { 'content-type': 'image/jpeg' },
+            data: Buffer.from('mock-jpeg-binary'),
+          };
         },
       },
       wooCommerceClient: {
@@ -101,10 +103,16 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
 
       const expectedImageUrl = normalizeWebsiteQuoteImageUrl(localhostMediaUrl);
       assert.equal(result.filename, 'PepPro_Quote_Client_Example_5.pdf');
-      assert.deepEqual(axiosCalls, []);
+      assert.equal(axiosCalls.length, 1);
+      assert.equal(
+        axiosCalls[0].url,
+        'https://shop.peppro.net/wp-content/uploads/2025/12/Physicians_Nasal-label_oxy-1.jpg',
+      );
       assert.equal(evaluatedImagePass, 1);
       assert.equal(wooLookupCount, 0);
-      assert.match(renderedHtml, new RegExp(String(expectedImageUrl).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.ok(String(expectedImageUrl).includes('/api/woo/media?src='));
+      assert.match(renderedHtml, /data:image\/jpeg;base64,/);
+      assert.doesNotMatch(renderedHtml, /\/api\/woo\/media\?src=/);
       assert.match(renderedHtml, /<img class="brand-logo" src="data:image\/png;base64,/);
       assert.doesNotMatch(renderedHtml, /<div class="brand">PepPro<\/div>/);
       assert.match(renderedHtml, /class="summary-row"/);
@@ -134,7 +142,10 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
       axios: {
         get: async (url, config) => {
           axiosCalls.push({ url, config });
-          throw new Error(`No remote fetch expected: ${url}`);
+          return {
+            headers: { 'content-type': 'image/jpeg' },
+            data: Buffer.from('mock-nested-jpeg'),
+          };
         },
       },
       playwright: {
@@ -180,8 +191,11 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
       });
 
       const expectedImageUrl = normalizeWebsiteQuoteImageUrl(remoteImageUrl);
-      assert.deepEqual(axiosCalls, []);
-      assert.match(renderedHtml, new RegExp(String(expectedImageUrl).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.equal(axiosCalls.length, 1);
+      assert.equal(axiosCalls[0].url, remoteImageUrl);
+      assert.ok(String(expectedImageUrl).includes('/api/woo/media?src='));
+      assert.match(renderedHtml, /data:image\/jpeg;base64,/);
+      assert.doesNotMatch(renderedHtml, new RegExp(String(expectedImageUrl).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     },
   );
 });
@@ -189,11 +203,13 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
 test('generateProspectQuotePdf skips live Woo SKU lookups when no cached quote image is available', async () => {
   let renderedHtml = '';
   let wooLookupCount = 0;
+  const axiosCalls = [];
 
   await withFreshPdfService(
     {
       axios: {
         get: async (url) => {
+          axiosCalls.push(url);
           throw new Error(`No remote fetch expected: ${url}`);
         },
       },
@@ -244,6 +260,7 @@ test('generateProspectQuotePdf skips live Woo SKU lookups when no cached quote i
         },
       });
 
+      assert.deepEqual(axiosCalls, []);
       assert.equal(wooLookupCount, 0);
       assert.match(renderedHtml, /Image-less Item/);
     },

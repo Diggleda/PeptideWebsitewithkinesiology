@@ -1,3 +1,4 @@
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { env } = require('../config/env');
@@ -12,6 +13,8 @@ const escapeHtml = (value) => String(value ?? '')
 let cachedPepProLogoDataUrl;
 let cachedPepProIconDataUrl;
 let cachedWooSkuImageMap;
+const remoteImageDataUrlCache = new Map();
+const remoteImageDataUrlInflight = new Map();
 const STATIC_ASSET_SEARCH_DIRS = [
   path.resolve(__dirname, '../../public'),
   path.resolve(__dirname, '../../build'),
@@ -48,6 +51,23 @@ const wooMediaProxyBaseUrl = String(
     || `http://127.0.0.1:${env?.port || 3001}`,
 ).trim().replace(/\/+$/, '');
 const WOO_MEDIA_PROXY_PATH_PATTERN = /\/woo\/media$/i;
+const QUOTE_PDF_IMAGE_FETCH_TIMEOUT_MS = (() => {
+  const parsed = Number.parseInt(String(process.env.QUOTE_PDF_IMAGE_FETCH_TIMEOUT_MS || '').trim(), 10);
+  if (Number.isFinite(parsed) && parsed >= 1000) {
+    return Math.min(parsed, 15000);
+  }
+  return 5000;
+})();
+const QUOTE_PDF_IMAGE_FETCH_MAX_BYTES = (() => {
+  const parsed = Number.parseInt(String(process.env.QUOTE_PDF_IMAGE_FETCH_MAX_BYTES || '').trim(), 10);
+  if (Number.isFinite(parsed) && parsed >= 256 * 1024) {
+    return Math.min(parsed, 15 * 1024 * 1024);
+  }
+  return 5 * 1024 * 1024;
+})();
+const IMAGE_FETCH_ACCEPT_HEADER = 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8';
+const browserLikeUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+const frontendBaseUrl = String(env?.frontendBaseUrl || '').trim().replace(/\/+$/, '');
 
 const stripWooSizeSuffix = (raw) => {
   const trimmed = String(raw || '').trim();
@@ -79,6 +99,20 @@ const inferStaticAssetContentType = (assetPath, fallbackType) => {
   if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
   if (extension === '.gif') return 'image/gif';
   return fallbackType;
+};
+
+const inferRemoteImageContentType = (contentType, sourceUrl) => {
+  const normalized = String(contentType || '').trim().toLowerCase();
+  if (normalized.startsWith('image/')) {
+    return normalized.split(';', 1)[0];
+  }
+  const extension = path.extname(String(sourceUrl || '').split('?')[0]).trim().toLowerCase();
+  if (extension === '.svg') return 'image/svg+xml';
+  if (extension === '.webp') return 'image/webp';
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.gif') return 'image/gif';
+  if (extension === '.png') return 'image/png';
+  return null;
 };
 
 const findStaticAssetPath = ({ preferredRelativePaths = [], matchTokens = [] }) => {
@@ -369,6 +403,65 @@ const normalizeWebsiteQuoteImageUrl = (value) => {
   return normalized;
 };
 
+const buildRemoteImageFetchTarget = (value) => {
+  const extracted = extractImageSource(value);
+  const unwrapped = unwrapWooMediaProxySource(extracted);
+  const normalized = normalizeRemoteImageUrl(unwrapped);
+  return normalized || null;
+};
+
+const fetchRemoteImageAsDataUrl = async (value) => {
+  const targetUrl = buildRemoteImageFetchTarget(value);
+  if (!targetUrl) {
+    return null;
+  }
+  if (targetUrl.startsWith('data:image/')) {
+    return targetUrl;
+  }
+  if (remoteImageDataUrlCache.has(targetUrl)) {
+    return remoteImageDataUrlCache.get(targetUrl) || null;
+  }
+  if (remoteImageDataUrlInflight.has(targetUrl)) {
+    return remoteImageDataUrlInflight.get(targetUrl);
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const response = await axios.get(targetUrl, {
+        responseType: 'arraybuffer',
+        timeout: QUOTE_PDF_IMAGE_FETCH_TIMEOUT_MS,
+        maxContentLength: QUOTE_PDF_IMAGE_FETCH_MAX_BYTES,
+        maxBodyLength: QUOTE_PDF_IMAGE_FETCH_MAX_BYTES,
+        headers: {
+          Accept: IMAGE_FETCH_ACCEPT_HEADER,
+          'User-Agent': browserLikeUserAgent,
+          ...(frontendBaseUrl ? { Referer: `${frontendBaseUrl}/` } : {}),
+        },
+        validateStatus: (status) => status >= 200 && status < 300,
+      });
+      const contentType = inferRemoteImageContentType(response?.headers?.['content-type'], targetUrl);
+      const body = Buffer.isBuffer(response?.data)
+        ? response.data
+        : response?.data
+          ? Buffer.from(response.data)
+          : Buffer.alloc(0);
+      if (!contentType || body.length === 0) {
+        return null;
+      }
+      return `data:${contentType};base64,${body.toString('base64')}`;
+    } catch {
+      return null;
+    } finally {
+      remoteImageDataUrlInflight.delete(targetUrl);
+    }
+  })();
+
+  remoteImageDataUrlInflight.set(targetUrl, fetchPromise);
+  const resolved = await fetchPromise;
+  remoteImageDataUrlCache.set(targetUrl, resolved || null);
+  return resolved;
+};
+
 const appendImageCandidate = (candidates, value) => {
   const normalized = normalizeWebsiteQuoteImageUrl(value);
   if (!normalized) {
@@ -386,6 +479,9 @@ const collectQuoteItemImageCandidates = async (item) => {
   appendImageCandidate(candidates, item?.image_url);
   appendImageCandidate(candidates, item?.thumbnail);
   appendImageCandidate(candidates, item?.thumb);
+  if (candidates.length > 0) {
+    return candidates;
+  }
   const sku = typeof item?.sku === 'string' && item.sku.trim()
     ? item.sku.trim()
     : null;
@@ -400,7 +496,13 @@ const collectQuoteItemImageCandidates = async (item) => {
 
 const resolveQuoteItemImageDataUrl = async (item) => {
   const candidates = (await collectQuoteItemImageCandidates(item)).slice(0, MAX_IMAGE_CANDIDATES_PER_ITEM);
-  return candidates[0] || null;
+  for (const candidate of candidates) {
+    const dataUrl = await fetchRemoteImageAsDataUrl(candidate);
+    if (dataUrl) {
+      return dataUrl;
+    }
+  }
+  return null;
 };
 
 const renderQuoteHtml = async (quote) => {
