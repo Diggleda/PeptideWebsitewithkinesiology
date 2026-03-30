@@ -2437,6 +2437,24 @@ export const referralAPI = {
     }>;
   },
 
+  deleteProspectQuote: async (identifier: string, quoteId: string) => {
+    if (!identifier) {
+      throw new Error('identifier is required');
+    }
+    if (!quoteId) {
+      throw new Error('quoteId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/quotes/${encodeURIComponent(quoteId)}`,
+      {
+        method: 'DELETE',
+      },
+    ) as Promise<{
+      deleted: boolean;
+      quoteId: string;
+    }>;
+  },
+
   exportProspectQuote: async (identifier: string, quoteId: string) => {
     if (!identifier) {
       throw new Error('identifier is required');

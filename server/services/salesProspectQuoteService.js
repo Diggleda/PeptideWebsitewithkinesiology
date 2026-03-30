@@ -366,9 +366,42 @@ const exportProspectQuote = async ({
   };
 };
 
+const deleteProspectQuote = async ({
+  identifier,
+  quoteId,
+  user,
+  query,
+} = {}) => {
+  const access = await resolveScopedProspectAccess({
+    identifier,
+    user,
+    query,
+    context: 'deleteProspectQuote',
+  });
+  if (!access.prospect) {
+    const error = new Error('Prospect not found');
+    error.status = 404;
+    throw error;
+  }
+
+  const existing = await salesProspectQuoteRepository.findById(quoteId);
+  if (!existing || existing.prospectId !== access.prospect.id) {
+    const error = new Error('Quote not found');
+    error.status = 404;
+    throw error;
+  }
+
+  await salesProspectQuoteRepository.deleteById(existing.id);
+  return {
+    deleted: true,
+    quoteId: existing.id,
+  };
+};
+
 module.exports = {
   listQuotesForProspect,
   importCartToProspectQuote,
   updateProspectQuote,
   exportProspectQuote,
+  deleteProspectQuote,
 };

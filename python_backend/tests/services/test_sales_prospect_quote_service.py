@@ -201,6 +201,44 @@ class SalesProspectQuoteServiceTests(unittest.TestCase):
         self.assertEqual(result["filename"], "PepPro_Quote_Example_Lead_1.pdf")
         self.assertEqual(render_calls[0]["quotePayloadJson"]["prospect"]["contactName"], "Example Lead")
 
+    def test_delete_prospect_quote_removes_scoped_quote(self) -> None:
+        deleted_ids = []
+
+        with patch.object(
+            service,
+            "_resolve_scoped_prospect_access",
+            return_value={
+                "identifier": "doctor-1",
+                "prospect": {"id": "prospect-1", "salesRepId": "rep-1"},
+                "salesRepId": "rep-1",
+            },
+        ), patch.object(
+            service.sales_prospect_quote_repository,
+            "find_by_id",
+            return_value={
+                "id": "quote-2",
+                "prospectId": "prospect-1",
+                "salesRepId": "rep-1",
+                "revisionNumber": 2,
+                "status": "exported",
+                "title": "Quote",
+                "currency": "USD",
+                "subtotal": 40,
+            },
+        ), patch.object(
+            service.sales_prospect_quote_repository,
+            "delete_by_id",
+            side_effect=lambda quote_id: deleted_ids.append(quote_id) or True,
+        ):
+            result = service.delete_prospect_quote(
+                identifier="doctor-1",
+                quote_id="quote-2",
+                user={"id": "rep-1", "role": "sales_rep"},
+            )
+
+        self.assertEqual(deleted_ids, ["quote-2"])
+        self.assertEqual(result, {"deleted": True, "quoteId": "quote-2"})
+
 
 if __name__ == "__main__":
     unittest.main()

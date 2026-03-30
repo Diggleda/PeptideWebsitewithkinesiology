@@ -700,7 +700,7 @@ const renderQuoteHtml = async (quote) => {
       </table>
 
       <div class="summary-row">
-        <span>Subtotal</span>
+        <span>Subtotal:</span>
         <span>${escapeHtml(formatCurrency(quote?.subtotal ?? payload?.subtotal ?? 0, currency))}</span>
       </div>
 

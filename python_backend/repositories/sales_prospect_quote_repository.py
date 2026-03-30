@@ -224,6 +224,31 @@ def find_active_draft_by_prospect_id(prospect_id: str) -> Optional[Dict]:
     return next((record for record in list_by_prospect_id(prospect_id) if record.get("status") == "draft"), None)
 
 
+def delete_by_id(quote_id: str) -> bool:
+    normalized = _normalize_id(quote_id)
+    if not normalized:
+        return False
+
+    if _using_mysql():
+        result = mysql_client.execute(
+            "DELETE FROM sales_prospect_quotes WHERE id = %(id)s",
+            {"id": normalized},
+        )
+        if isinstance(result, int):
+            return result > 0
+        affected_rows = getattr(result, "affected_rows", None)
+        if isinstance(affected_rows, int):
+            return affected_rows > 0
+        return bool(result)
+
+    records = list(_get_store().read())
+    filtered = [record for record in records if _normalize_id(record.get("id")) != normalized]
+    if len(filtered) == len(records):
+        return False
+    _get_store().write(filtered)
+    return True
+
+
 def upsert(quote: Dict) -> Dict:
     incoming = dict(quote or {})
     existing = find_by_id(incoming.get("id")) if incoming.get("id") else None
@@ -302,4 +327,3 @@ def upsert(quote: Dict) -> Dict:
         records[index] = normalized
     _get_store().write(records)
     return normalized
-

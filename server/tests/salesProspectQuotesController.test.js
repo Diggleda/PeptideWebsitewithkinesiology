@@ -74,3 +74,40 @@ test('exportPdf sets pdf headers and sends the generated buffer', async () => {
     },
   );
 });
+
+test('remove returns the delete payload from the quote service', async () => {
+  await withFreshController(
+    {
+      service: {
+        deleteProspectQuote: async () => ({
+          deleted: true,
+          quoteId: 'quote-1',
+        }),
+      },
+    },
+    async (controller) => {
+      let jsonPayload = null;
+
+      await controller.remove(
+        {
+          params: { identifier: 'doctor-1', quoteId: 'quote-1' },
+          user: { id: 'rep-1', role: 'sales_rep' },
+          query: {},
+        },
+        {
+          json: (payload) => {
+            jsonPayload = payload;
+          },
+        },
+        (error) => {
+          throw error;
+        },
+      );
+
+      assert.deepEqual(jsonPayload, {
+        deleted: true,
+        quoteId: 'quote-1',
+      });
+    },
+  );
+});

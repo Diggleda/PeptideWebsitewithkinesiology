@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import unittest
 from unittest.mock import patch
 
@@ -22,6 +23,46 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
 
         self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="PepPro" />', html)
         self.assertNotIn('<div class="brand">PepPro</div>', html)
+
+    def test_render_quote_html_displays_subtotal_with_colon(self) -> None:
+        quote = {
+            "revisionNumber": 1,
+            "currency": "USD",
+            "subtotal": 93.91,
+            "quotePayloadJson": {
+                "prospect": {"contactName": "Client Example"},
+                "items": [],
+            },
+        }
+
+        html = service._render_quote_html(quote)
+
+        self.assertIn('<div class="summary-row">', html)
+        self.assertIn('<span>Subtotal:</span>', html)
+        self.assertIn('<span>$93.91</span>', html)
+
+    def test_resolve_quote_item_image_data_urls_preserves_item_order(self) -> None:
+        items = [
+            {"name": "First"},
+            {"name": "Second"},
+        ]
+
+        def resolve(item):
+            if item["name"] == "First":
+                time.sleep(0.03)
+                return "data:image/png;base64,first"
+            return "data:image/png;base64,second"
+
+        with patch.object(service, "_resolve_quote_item_image_data_url", side_effect=resolve):
+            resolved = service._resolve_quote_item_image_data_urls(items)
+
+        self.assertEqual(
+            resolved,
+            [
+                "data:image/png;base64,first",
+                "data:image/png;base64,second",
+            ],
+        )
 
     def test_generate_prospect_quote_pdf_uses_system_browser_renderer_when_node_bridge_is_unavailable(self) -> None:
         with patch.object(service, "_run_node_bridge", return_value=None), patch.object(

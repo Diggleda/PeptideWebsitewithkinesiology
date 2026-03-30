@@ -272,3 +272,52 @@ test('exportProspectQuote uses the scoped prospect contact name for filename whe
     },
   );
 });
+
+test('deleteProspectQuote removes a scoped quote revision', async () => {
+  const deletedIds = [];
+
+  await withFreshService(
+    {
+      quoteRepository: {
+        listByProspectId: async () => [],
+        findById: async () => ({
+          id: 'quote-exported',
+          prospectId: 'prospect-1',
+          salesRepId: 'rep-1',
+          revisionNumber: 2,
+          status: 'exported',
+          title: 'R2',
+          currency: 'USD',
+          subtotal: 80,
+        }),
+        deleteById: async (quoteId) => {
+          deletedIds.push(quoteId);
+          return true;
+        },
+      },
+      salesProspectRepository: {},
+      accessService: {
+        resolveScopedProspectAccess: async () => ({
+          identifier: 'doctor-1',
+          prospect: { id: 'prospect-1', salesRepId: 'rep-1' },
+          salesRepId: 'rep-1',
+        }),
+        buildProspectBaseRecord: () => null,
+        normalizeOptionalText: (value) => (value == null ? null : String(value).trim() || null),
+      },
+    },
+    async (service) => {
+      const result = await service.deleteProspectQuote({
+        identifier: 'doctor-1',
+        quoteId: 'quote-exported',
+        user: { id: 'rep-1', role: 'sales_rep' },
+      });
+
+      assert.deepEqual(deletedIds, ['quote-exported']);
+      assert.deepEqual(result, {
+        deleted: true,
+        quoteId: 'quote-exported',
+      });
+    },
+  );
+});

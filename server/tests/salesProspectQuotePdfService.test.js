@@ -122,7 +122,7 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
       assert.doesNotMatch(renderedHtml, /<div class="brand">PepPro<\/div>/);
       assert.match(renderedHtml, /class="summary-row"/);
       assert.doesNotMatch(renderedHtml, /class="summary"/);
-      assert.match(renderedHtml, /<div class="summary-row">\s*<span>Subtotal<\/span>\s*<span>\$93\.91<\/span>\s*<\/div>/);
+      assert.match(renderedHtml, /<div class="summary-row">\s*<span>Subtotal:<\/span>\s*<span>\$93\.91<\/span>\s*<\/div>/);
       assert.doesNotMatch(renderedHtml, /<strong>Created:<\/strong>/);
       assert.doesNotMatch(renderedHtml, /<strong>Exported:<\/strong>/);
       assert.doesNotMatch(renderedHtml, /<strong>Pricing:<\/strong>/);

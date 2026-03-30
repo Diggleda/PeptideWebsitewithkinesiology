@@ -49,6 +49,23 @@ class ReferralQuoteRouteTests(unittest.TestCase):
         self.assertEqual(response.headers.get("X-PepPro-Quote-Id"), "quote-1")
         self.assertEqual(response.get_data(), b"%PDF-1.4 mock")
 
+    def test_delete_quote_route_returns_delete_payload(self) -> None:
+        with patch.object(referrals, "_ensure_user", return_value={"id": "rep-1", "role": "sales_rep"}), patch.object(
+            referrals, "_require_sales_rep"
+        ), patch.object(
+            referrals.sales_prospect_quote_service,
+            "delete_prospect_quote",
+            return_value={"deleted": True, "quoteId": "quote-1"},
+        ):
+            with self.app.test_request_context(
+                "/api/referrals/sales-prospects/doctor-1/quotes/quote-1",
+                method="DELETE",
+            ):
+                g.current_user = {"id": "rep-1", "role": "sales_rep"}
+                response = referrals.admin_delete_prospect_quote.__wrapped__("doctor-1", "quote-1")
+
+        self.assertEqual(response, {"deleted": True, "quoteId": "quote-1"})
+
 
 if __name__ == "__main__":
     unittest.main()

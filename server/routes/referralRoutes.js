@@ -34,6 +34,7 @@ router.delete('/sales-prospects/:identifier', authenticate, referralController.d
 router.get('/sales-prospects/:identifier/quotes', authenticate, salesProspectQuotesController.list);
 router.post('/sales-prospects/:identifier/quotes/import-cart', authenticate, salesProspectQuotesController.importCart);
 router.patch('/sales-prospects/:identifier/quotes/:quoteId', authenticate, salesProspectQuotesController.update);
+router.delete('/sales-prospects/:identifier/quotes/:quoteId', authenticate, salesProspectQuotesController.remove);
 router.get('/sales-prospects/:identifier/quotes/:quoteId/export', authenticate, salesProspectQuotesController.exportPdf);
 router.get('/leads/:identifier/activity', authenticate, referralController.getLeadActivity);
 router.post('/sales-prospects/:identifier/reseller-permit', authenticate, referralController.uploadResellerPermit);

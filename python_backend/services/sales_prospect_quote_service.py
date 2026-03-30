@@ -497,3 +497,24 @@ def export_prospect_quote(
         "filename": rendered["filename"],
     }
 
+
+def delete_prospect_quote(
+    *,
+    identifier: str,
+    quote_id: str,
+    user: Dict,
+    query: Optional[Dict] = None,
+) -> Dict:
+    access = _resolve_scoped_prospect_access(identifier=identifier, user=user, query=query, context="delete_prospect_quote")
+    if not access.get("prospect"):
+        raise _service_error("PROSPECT_NOT_FOUND", 404)
+
+    existing = sales_prospect_quote_repository.find_by_id(quote_id)
+    if not existing or existing.get("prospectId") != access["prospect"].get("id"):
+        raise _service_error("QUOTE_NOT_FOUND", 404)
+
+    sales_prospect_quote_repository.delete_by_id(str(existing.get("id")))
+    return {
+        "deleted": True,
+        "quoteId": str(existing.get("id") or quote_id),
+    }

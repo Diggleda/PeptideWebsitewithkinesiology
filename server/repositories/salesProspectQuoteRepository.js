@@ -167,6 +167,34 @@ const findActiveDraftByProspectId = async (prospectId) => {
   return records.find((record) => record.status === 'draft') || null;
 };
 
+const deleteById = async (id) => {
+  const target = normalizeId(id);
+  if (!target) return false;
+
+  if (mysqlClient.isEnabled()) {
+    const result = await mysqlClient.execute(
+      'DELETE FROM sales_prospect_quotes WHERE id = :id',
+      { id: target },
+    );
+    if (typeof result === 'number') {
+      return result > 0;
+    }
+    if (result && typeof result.affectedRows === 'number') {
+      return result.affectedRows > 0;
+    }
+    return Boolean(result);
+  }
+
+  const records = salesProspectQuoteStore.read();
+  const next = Array.isArray(records) ? records : [];
+  const filtered = next.filter((record) => normalizeId(record?.id) !== target);
+  if (filtered.length === next.length) {
+    return false;
+  }
+  salesProspectQuoteStore.write(filtered);
+  return true;
+};
+
 const upsert = async (quote) => {
   const incoming = quote && typeof quote === 'object' ? quote : {};
   const existing = incoming.id ? await findById(incoming.id) : null;
@@ -259,5 +287,6 @@ module.exports = {
   findById,
   listByProspectId,
   findActiveDraftByProspectId,
+  deleteById,
   upsert,
 };

@@ -1,10 +1,10 @@
-import { type CSSProperties } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { IdentificationIcon } from '@heroicons/react/24/outline';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import { Textarea } from './ui/textarea';
-import { Download, RefreshCw, Save, ShoppingCart } from 'lucide-react';
+import { Download, RefreshCw, Save, ShoppingCart, Trash2 } from 'lucide-react';
 import type { ProspectQuoteDetail, ProspectQuoteLineItem, ProspectQuoteRevision } from '../types/quotes';
 
 export type SelectableProspectQuoteTarget = {
@@ -35,12 +35,14 @@ type Props = {
   importDisabled: boolean;
   saveDisabled: boolean;
   exportDisabled: boolean;
+  deleteBusyId: string | null;
   resolveItemImageUrl?: (item: ProspectQuoteLineItem) => string | null;
   onTitleChange: (value: string) => void;
   onNotesChange: (value: string) => void;
   onImportCart: () => void;
   onSaveDraft: () => void;
   onExportPdf: (quoteId: string) => void;
+  onDeleteQuote: (quoteId: string) => void;
 };
 
 const formatCurrency = (value: number, currency = 'USD') =>
@@ -58,6 +60,12 @@ const formatDateTime = (value: string | null | undefined) => {
   return new Date(parsed).toLocaleString();
 };
 
+const formatQuoteStatus = (value: string | null | undefined) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return 'Unknown';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
 export function YourQuotesPanel({
   selectedProspect,
   quoteLoading,
@@ -73,18 +81,80 @@ export function YourQuotesPanel({
   importDisabled,
   saveDisabled,
   exportDisabled,
+  deleteBusyId,
   resolveItemImageUrl,
   onTitleChange,
   onNotesChange,
   onImportCart,
   onSaveDraft,
   onExportPdf,
+  onDeleteQuote,
 }: Props) {
   const draftItems = Array.isArray(currentDraft?.quotePayloadJson?.items)
     ? currentDraft.quotePayloadJson.items
     : [];
   const draftCurrency = currentDraft?.currency || currentDraft?.quotePayloadJson?.currency || 'USD';
   const previousQuotesLabel = `${history.length} Previous ${history.length === 1 ? 'quote' : 'quotes'}`;
+  const shouldShowSaveDraft = saveBusy || !saveDisabled;
+  const [renderSaveDraftControl, setRenderSaveDraftControl] = useState(shouldShowSaveDraft);
+  const [saveDraftVisible, setSaveDraftVisible] = useState(shouldShowSaveDraft);
+  const saveDraftMountedRef = useRef(false);
+  const saveDraftFadeTimerRef = useRef<number | null>(null);
+  const saveDraftFadeFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (saveDraftFadeTimerRef.current !== null) {
+      window.clearTimeout(saveDraftFadeTimerRef.current);
+      saveDraftFadeTimerRef.current = null;
+    }
+    if (saveDraftFadeFrameRef.current !== null) {
+      window.cancelAnimationFrame(saveDraftFadeFrameRef.current);
+      saveDraftFadeFrameRef.current = null;
+    }
+
+    if (!saveDraftMountedRef.current) {
+      saveDraftMountedRef.current = true;
+      return;
+    }
+
+    if (shouldShowSaveDraft) {
+      setSaveDraftVisible(false);
+      setRenderSaveDraftControl(true);
+      let innerFrame: number | null = null;
+      saveDraftFadeFrameRef.current = window.requestAnimationFrame(() => {
+        innerFrame = window.requestAnimationFrame(() => {
+          setSaveDraftVisible(true);
+          saveDraftFadeFrameRef.current = null;
+        });
+      });
+      return () => {
+        if (saveDraftFadeFrameRef.current !== null) {
+          window.cancelAnimationFrame(saveDraftFadeFrameRef.current);
+          saveDraftFadeFrameRef.current = null;
+        }
+        if (innerFrame !== null) {
+          window.cancelAnimationFrame(innerFrame);
+        }
+      };
+    }
+
+    setSaveDraftVisible(false);
+    saveDraftFadeTimerRef.current = window.setTimeout(() => {
+      setRenderSaveDraftControl(false);
+      saveDraftFadeTimerRef.current = null;
+    }, 180);
+
+    return () => {
+      if (saveDraftFadeTimerRef.current !== null) {
+        window.clearTimeout(saveDraftFadeTimerRef.current);
+        saveDraftFadeTimerRef.current = null;
+      }
+      if (saveDraftFadeFrameRef.current !== null) {
+        window.cancelAnimationFrame(saveDraftFadeFrameRef.current);
+        saveDraftFadeFrameRef.current = null;
+      }
+    };
+  }, [shouldShowSaveDraft]);
 
   return (
     <section className="lead-panel sales-rep-leads-card sales-rep-combined-card w-full min-w-0">
@@ -131,6 +201,25 @@ export function YourQuotesPanel({
                 <div className="quote-compose-header pb-3">
                   <h3 className="quote-compose-title text-lg font-semibold text-slate-900 sm:text-xl">Make a quote</h3>
                   <div className="quote-compose-actions">
+                    {renderSaveDraftControl ? (
+                      <div className={`quote-save-draft-shell ${saveDraftVisible ? 'is-visible' : 'is-hidden'}`}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onSaveDraft}
+                          disabled={saveDisabled}
+                          className="header-home-button squircle-sm bg-white text-slate-900"
+                        >
+                          {saveBusy ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Save className="h-4 w-4" aria-hidden="true" />
+                          )}
+                          Save Draft
+                        </Button>
+                      </div>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"
@@ -145,21 +234,6 @@ export function YourQuotesPanel({
                         <ShoppingCart className="h-4 w-4" aria-hidden="true" />
                       )}
                       Import Cart
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={onSaveDraft}
-                      disabled={saveDisabled}
-                      className="header-home-button squircle-sm bg-white text-slate-900"
-                    >
-                      {saveBusy ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Save className="h-4 w-4" aria-hidden="true" />
-                      )}
-                      Save Draft
                     </Button>
                     <Button
                       type="button"
@@ -257,7 +331,7 @@ export function YourQuotesPanel({
                 <div className="border-b border-slate-200/80 pb-3">
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 sm:text-xl">{previousQuotesLabel}</h3>
-                    <div className="text-xs text-slate-500">Drafts stay editable until they are exported.</div>
+                    <div className="mb-2 text-xs text-slate-500">Drafts stay editable until they are exported.</div>
                   </div>
                 </div>
                 <div className="mt-3 max-h-[470px] space-y-2 overflow-y-auto pr-1">
@@ -267,39 +341,62 @@ export function YourQuotesPanel({
                     </div>
                   ) : (
                     <div className="overflow-hidden rounded-2xl bg-white">
-                      {history.map((quote, index) => (
-                        <div key={quote.id} className="px-4 py-3">
-                          {index > 0 ? <div className="mb-3 border-t border-slate-200" /> : null}
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-semibold text-slate-900">{quote.title}</div>
-                              <div className="mt-1 text-xs text-slate-500">
-                                Revision R{quote.revisionNumber} • {quote.status}
+                      {history.map((quote, index) => {
+                        const isDeleting = deleteBusyId === quote.id;
+                        return (
+                          <div key={quote.id} className="px-4 py-3">
+                            {index > 0 ? <div className="mb-3 border-t border-slate-200" /> : null}
+                            <div className="quote-history-row">
+                              <div className="quote-history-copy">
+                                <div className="truncate text-sm font-semibold text-slate-900">{quote.title}</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  Revision R{quote.revisionNumber} • {formatQuoteStatus(quote.status)}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  Updated {formatDateTime(quote.updatedAt)}
+                                </div>
                               </div>
-                              <div className="mt-1 text-xs text-slate-500">
-                                Updated {formatDateTime(quote.updatedAt)}
+                              <div className="quote-history-actions">
+                                <div className="quote-history-total text-sm font-semibold text-slate-900">
+                                  {formatCurrency(quote.subtotal, quote.currency)}
+                                </div>
+                                <div className="quote-history-action-row mb-2">
+                                  {quote.status === 'exported' ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => onExportPdf(quote.id)}
+                                      disabled={exportBusy || deleteBusyId !== null}
+                                      className="quote-history-download header-home-button squircle-sm h-9"
+                                    >
+                                      <Download className="h-4 w-4" aria-hidden="true" />
+                                      Download PDF
+                                    </Button>
+                                  ) : (
+                                    <span className="quote-history-action-spacer" aria-hidden="true" />
+                                  )}
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    onClick={() => onDeleteQuote(quote.id)}
+                                    disabled={isDeleting || exportBusy || deleteBusyId !== null}
+                                    className="quote-history-delete header-home-button squircle-sm h-9 w-9 shrink-0"
+                                    aria-label={`Delete ${quote.title}`}
+                                    title="Delete quote"
+                                  >
+                                    {isDeleting ? (
+                                      <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                    )}
+                                  </Button>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
-                              <div className="text-sm font-semibold text-slate-900">
-                                {formatCurrency(quote.subtotal, quote.currency)}
-                              </div>
-                              {quote.status === 'exported' ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => onExportPdf(quote.id)}
-                                disabled={exportBusy}
-                                className="header-home-button squircle-sm mb-2"
-                              >
-                                <Download className="h-4 w-4" aria-hidden="true" />
-                                Download PDF
-                              </Button>
-                              ) : null}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

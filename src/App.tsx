@@ -446,8 +446,15 @@ const isDoctorRole = (role?: string | null) => {
 
 const noop = () => {};
 
-const triggerBrowserDownload = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
+const triggerBrowserDownload = (
+  blob: Blob,
+  filename: string,
+  options: { forceMimeType?: string } = {},
+) => {
+  const downloadBlob = options.forceMimeType
+    ? new Blob([blob], { type: options.forceMimeType })
+    : blob;
+  const url = URL.createObjectURL(downloadBlob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
@@ -16335,6 +16342,8 @@ function MainApp() {
   const [salesQuotesSaving, setSalesQuotesSaving] = useState(false);
   const [salesQuotesExportingId, setSalesQuotesExportingId] =
     useState<string | null>(null);
+  const [salesQuotesDeletingId, setSalesQuotesDeletingId] =
+    useState<string | null>(null);
   const [salesQuotesTitleDraft, setSalesQuotesTitleDraft] = useState("");
   const [salesQuotesNotesDraft, setSalesQuotesNotesDraft] = useState("");
   const salesQuotesRequestSeqRef = useRef(0);
@@ -16802,9 +16811,13 @@ function MainApp() {
       }_${
         Math.max(1, Math.floor(Number(matchingQuote?.revisionNumber) || 1))
       }.pdf`;
+      const isPdfDownload =
+        /\.pdf$/i.test(result.filename || fallbackFilename) ||
+        /pdf/i.test(result.contentType || result.blob.type || "");
       triggerBrowserDownload(
         result.blob,
         result.filename || fallbackFilename,
+        isPdfDownload ? { forceMimeType: "application/octet-stream" } : undefined,
       );
       await refreshSelectedProspectQuotes(selectedSalesQuoteProspect.identifier, {
         silent: true,
@@ -16819,6 +16832,46 @@ function MainApp() {
       toast.error(message);
     } finally {
       setSalesQuotesExportingId(null);
+    }
+  }, [
+    refreshSelectedProspectQuotes,
+    salesQuotesCurrentDraft,
+    salesQuotesHistory,
+    selectedSalesQuoteProspect,
+  ]);
+
+  const handleDeleteProspectQuote = useCallback(async (quoteId: string) => {
+    if (!selectedSalesQuoteProspect) {
+      return;
+    }
+    const matchingQuote =
+      (salesQuotesCurrentDraft?.id === quoteId ? salesQuotesCurrentDraft : null) ||
+      salesQuotesHistory.find((quote) => quote.id === quoteId) ||
+      null;
+    const quoteLabel = String(matchingQuote?.title || "this quote").trim() || "this quote";
+    if (!window.confirm(`Delete ${quoteLabel}? This cannot be undone.`)) {
+      return;
+    }
+    setSalesQuotesDeletingId(quoteId);
+    setSalesQuotesError(null);
+    try {
+      await referralAPI.deleteProspectQuote(
+        selectedSalesQuoteProspect.identifier,
+        quoteId,
+      );
+      await refreshSelectedProspectQuotes(selectedSalesQuoteProspect.identifier, {
+        silent: true,
+      });
+      toast.success("Quote deleted.");
+    } catch (error: any) {
+      const message =
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message
+          : "Unable to delete the quote right now.";
+      setSalesQuotesError(message);
+      toast.error(message);
+    } finally {
+      setSalesQuotesDeletingId(null);
     }
   }, [
     refreshSelectedProspectQuotes,
@@ -28183,6 +28236,7 @@ function MainApp() {
               importBusy={salesQuotesImporting}
               saveBusy={salesQuotesSaving}
               exportBusy={salesQuotesExportingId !== null}
+              deleteBusyId={salesQuotesDeletingId}
               importDisabled={
                 salesQuotesImporting ||
                 !selectedSalesQuoteProspect ||
@@ -28203,6 +28257,7 @@ function MainApp() {
               onImportCart={handleImportCartToProspectQuote}
               onSaveDraft={handleSaveProspectQuoteDraft}
               onExportPdf={handleExportProspectQuotePdf}
+              onDeleteQuote={handleDeleteProspectQuote}
             />
           )}
 

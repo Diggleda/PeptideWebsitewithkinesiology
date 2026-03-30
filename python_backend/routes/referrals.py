@@ -674,6 +674,23 @@ def admin_update_prospect_quote(identifier: str, quote_id: str):
     return handle_action(action)
 
 
+@blueprint.delete("/admin/sales-prospects/<identifier>/quotes/<quote_id>")
+@blueprint.delete("/sales-prospects/<identifier>/quotes/<quote_id>")
+@require_auth
+def admin_delete_prospect_quote(identifier: str, quote_id: str):
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        return sales_prospect_quote_service.delete_prospect_quote(
+            identifier=identifier,
+            quote_id=quote_id,
+            user=user,
+            query=request.args.to_dict(flat=True),
+        )
+
+    return handle_action(action)
+
+
 @blueprint.get("/admin/sales-prospects/<identifier>/quotes/<quote_id>/export")
 @blueprint.get("/sales-prospects/<identifier>/quotes/<quote_id>/export")
 @require_auth

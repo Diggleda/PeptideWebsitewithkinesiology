@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import glob
 import html
 import json
@@ -27,6 +28,7 @@ _BROWSER_PDF_TIMEOUT_SECONDS = 120
 _REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS = 3.5
 _IMAGE_FETCH_ACCEPT_HEADER = "image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8"
 _MAX_IMAGE_CANDIDATES_PER_ITEM = 4
+_MAX_CONCURRENT_IMAGE_RESOLVERS = 6
 _SUPPORTED_IMAGE_CONTENT_TYPES = {
     "image/gif",
     "image/jpeg",
@@ -360,6 +362,31 @@ def _resolve_quote_item_image_data_url(item: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _resolve_quote_item_image_data_urls(items: List[Any]) -> List[Optional[str]]:
+    resolved_images: List[Optional[str]] = [None] * len(items)
+    indexed_items = [(index, item) for index, item in enumerate(items) if isinstance(item, dict)]
+    if not indexed_items:
+        return resolved_images
+
+    if len(indexed_items) == 1:
+        index, item = indexed_items[0]
+        resolved_images[index] = _resolve_quote_item_image_data_url(item)
+        return resolved_images
+
+    max_workers = min(_MAX_CONCURRENT_IMAGE_RESOLVERS, len(indexed_items))
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="quote-image") as executor:
+        future_to_index = {
+            executor.submit(_resolve_quote_item_image_data_url, item): index for index, item in indexed_items
+        }
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                resolved_images[index] = future.result()
+            except Exception:
+                logger.exception("Quote PDF image resolver failed", extra={"item_index": index})
+    return resolved_images
+
+
 def _find_chromium_binary() -> Optional[str]:
     candidates = [
         os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH"),
@@ -400,10 +427,7 @@ def _render_quote_html(quote: Dict) -> str:
     notes = _safe_text(payload.get("notes"))
     subtotal = _format_money(quote.get("subtotal") if quote.get("subtotal") is not None else payload.get("subtotal"), currency)
 
-    resolved_images = [
-        _resolve_quote_item_image_data_url(item) if isinstance(item, dict) else None
-        for item in items
-    ]
+    resolved_images = _resolve_quote_item_image_data_urls(items)
 
     row_fragments: List[str] = []
     for index, item in enumerate(items):
@@ -691,7 +715,7 @@ def _render_quote_html(quote: Dict) -> str:
       </table>
 
       <div class="summary-row">
-        <span>Subtotal</span>
+        <span>Subtotal:</span>
         <span>{_escape_html(subtotal)}</span>
       </div>
 
@@ -897,7 +921,7 @@ def _build_fallback_quote_pdf(quote: Dict) -> Dict:
                 lines.append(f"    Note: {note}")
 
     lines.append("")
-    lines.append(f"Subtotal  {subtotal}")
+    lines.append(f"Subtotal: {subtotal}")
 
     pdf = _build_simple_text_pdf(lines)
     return {
