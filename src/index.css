@@ -4616,6 +4616,8 @@ html {
   }
 
   .quote-compose-actions {
+    width: auto;
+    flex: 0 1 auto;
     margin-left: auto;
     flex-wrap: nowrap;
     justify-content: flex-end;

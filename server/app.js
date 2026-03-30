@@ -306,7 +306,20 @@ const buildCorsOptions = () => {
       callback(null, false);
     },
     credentials: true,
-    exposedHeaders: ['Content-Disposition', 'Content-Type'],
+    exposedHeaders: [
+      'Content-Disposition',
+      'Content-Type',
+      'Server-Timing',
+      'X-PepPro-Quote-Export-Ms',
+      'X-PepPro-Quote-Pdf-Ms',
+      'X-PepPro-Quote-Render-Ms',
+      'X-PepPro-Quote-Image-Ms',
+      'X-PepPro-Quote-Renderer',
+      'X-PepPro-Quote-Cache',
+      'X-PepPro-Quote-Pdf-Bytes',
+      'X-PepPro-Quote-Id',
+      'X-Request-Id',
+    ],
   };
 };
 

@@ -8,11 +8,25 @@ from . import auth, integrations, orders, payments, referrals, system, woo, ship
 
 def register_blueprints(app: Flask, config) -> None:
     origins = config.cors_allow_list or ["*"]
+    exposed_headers = [
+        "Content-Disposition",
+        "Content-Type",
+        "Server-Timing",
+        "X-PepPro-Quote-Export-Ms",
+        "X-PepPro-Quote-Pdf-Ms",
+        "X-PepPro-Quote-Render-Ms",
+        "X-PepPro-Quote-Image-Ms",
+        "X-PepPro-Quote-Renderer",
+        "X-PepPro-Quote-Cache",
+        "X-PepPro-Quote-Pdf-Bytes",
+        "X-PepPro-Quote-Id",
+        "X-Request-Id",
+    ]
     cors_config = {
         r"/api/*": {
             "origins": "*" if "*" in origins else origins,
             "supports_credentials": True,
-            "expose_headers": ["Content-Disposition", "Content-Type"],
+            "expose_headers": exposed_headers,
             # Cache preflight responses in browsers to reduce OPTIONS load.
             # Especially important when the frontend polls auth endpoints frequently.
             "max_age": 600,
