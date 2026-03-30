@@ -23,7 +23,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
-from ..config import BASE_DIR
+from ..config import BASE_DIR, get_config
 from .invoice_service import _build_simple_text_pdf
 
 logger = logging.getLogger(__name__)
@@ -222,6 +222,12 @@ def _build_node_renderer_env(node_binary: str) -> Dict[str, str]:
     browsers_path = _find_playwright_browsers_path()
     if browsers_path and not env.get("PLAYWRIGHT_BROWSERS_PATH"):
         env["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
+    if not env.get("QUOTE_PDF_MEDIA_PROXY_BASE_URL"):
+        try:
+            config = get_config()
+            env["QUOTE_PDF_MEDIA_PROXY_BASE_URL"] = f"http://127.0.0.1:{int(config.port or 3001)}"
+        except Exception:
+            env["QUOTE_PDF_MEDIA_PROXY_BASE_URL"] = "http://127.0.0.1:3001"
     return env
 
 

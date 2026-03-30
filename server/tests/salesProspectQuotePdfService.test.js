@@ -73,7 +73,7 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
         },
       },
     },
-    async ({ generateProspectQuotePdf }) => {
+    async ({ generateProspectQuotePdf, normalizeWebsiteQuoteImageUrl }) => {
       const result = await generateProspectQuotePdf({
         revisionNumber: 5,
         title: 'Quote for Client Example',
@@ -99,12 +99,12 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
         },
       });
 
+      const expectedImageUrl = normalizeWebsiteQuoteImageUrl(localhostMediaUrl);
       assert.equal(result.filename, 'PepPro_Quote_Client_Example_5.pdf');
       assert.deepEqual(axiosCalls, []);
       assert.equal(evaluatedImagePass, 1);
       assert.equal(wooLookupCount, 0);
-      assert.match(renderedHtml, new RegExp(remoteImageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-      assert.doesNotMatch(renderedHtml, /http:\/\/localhost:3001\/api\/woo\/media/);
+      assert.match(renderedHtml, new RegExp(String(expectedImageUrl).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       assert.match(renderedHtml, /<img class="brand-logo" src="data:image\/png;base64,/);
       assert.doesNotMatch(renderedHtml, /<div class="brand">PepPro<\/div>/);
       assert.match(renderedHtml, /class="summary-row"/);
@@ -153,7 +153,7 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
         },
       },
     },
-    async ({ generateProspectQuotePdf }) => {
+    async ({ generateProspectQuotePdf, normalizeWebsiteQuoteImageUrl }) => {
       await generateProspectQuotePdf({
         revisionNumber: 1,
         title: 'Quote with Nested Image',
@@ -179,8 +179,9 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
         },
       });
 
+      const expectedImageUrl = normalizeWebsiteQuoteImageUrl(remoteImageUrl);
       assert.deepEqual(axiosCalls, []);
-      assert.match(renderedHtml, new RegExp(remoteImageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.match(renderedHtml, new RegExp(String(expectedImageUrl).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     },
   );
 });

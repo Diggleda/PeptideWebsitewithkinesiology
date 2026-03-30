@@ -16363,11 +16363,12 @@ function MainApp() {
           pricingMode: effectiveCheckoutPricingMode,
         });
         const lineTotal = roundCurrency(unitPrice * quantity);
-        const imageUrl =
+        const imageUrl = normalizeWooImageUrl(
           (typeof variant?.image === "string" && variant.image.trim()) ||
           (typeof product.image === "string" && product.image.trim()) ||
           (Array.isArray(product.images) && typeof product.images[0] === "string" && product.images[0].trim()) ||
-          null;
+          null,
+        );
         return {
           position: index + 1,
           productId: product.id,

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { env } = require('../config/env');
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -40,6 +41,35 @@ const nowMs = () => (typeof performance !== 'undefined' && typeof performance.no
   ? performance.now()
   : Date.now());
 const elapsedMs = (startedAt) => Number((nowMs() - startedAt).toFixed(1));
+const normalizedWooStoreUrl = String(env?.wooCommerce?.storeUrl || '').trim().replace(/\/+$/, '');
+const wooMediaProxyBaseUrl = String(
+  process.env.QUOTE_PDF_MEDIA_PROXY_BASE_URL
+    || process.env.INTERNAL_API_BASE_URL
+    || `http://127.0.0.1:${env?.port || 3001}`,
+).trim().replace(/\/+$/, '');
+
+const stripWooSizeSuffix = (raw) => {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return trimmed;
+  const [base, query = ''] = trimmed.split('?');
+  const match = base.match(/^(.*)-(\d{2,4})x(\d{2,4})(\.[a-zA-Z0-9]+)$/);
+  if (!match) {
+    return trimmed;
+  }
+  const stripped = `${match[1]}${match[4]}`;
+  return query ? `${stripped}?${query}` : stripped;
+};
+
+const isWooStoreUrl = (candidate) => {
+  if (!candidate || !normalizedWooStoreUrl) {
+    return false;
+  }
+  try {
+    return new URL(candidate).hostname === new URL(normalizedWooStoreUrl).hostname;
+  } catch {
+    return false;
+  }
+};
 
 const inferStaticAssetContentType = (assetPath, fallbackType) => {
   const extension = path.extname(String(assetPath || '')).trim().toLowerCase();
@@ -258,7 +288,7 @@ const buildChromiumLaunchOptions = () => {
 
 const normalizeRemoteImageUrl = (value) => {
   if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
+  const trimmed = stripWooSizeSuffix(value);
   if (!trimmed) return null;
   if (trimmed.startsWith('data:image/')) {
     return trimmed;
@@ -278,21 +308,40 @@ const normalizeRemoteImageUrl = (value) => {
   }
 };
 
-const appendImageCandidate = (candidates, value) => {
-  const normalized = normalizeRemoteImageUrl(extractImageSource(value));
-  if (!normalized) {
-    return;
+const normalizeWebsiteQuoteImageUrl = (value) => {
+  const extracted = extractImageSource(value);
+  if (typeof extracted !== 'string' || !extracted.trim()) {
+    return null;
   }
-  let decodedSource = null;
+  const normalized = normalizeRemoteImageUrl(extracted);
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.startsWith('data:image/')) {
+    return normalized;
+  }
+
   try {
     const parsed = new URL(normalized);
     const proxiedSource = parsed.searchParams.get('src');
-    decodedSource = normalizeRemoteImageUrl(proxiedSource);
+    const decoded = normalizeRemoteImageUrl(proxiedSource);
+    if (decoded && isWooStoreUrl(decoded)) {
+      return `${wooMediaProxyBaseUrl}/api/woo/media?src=${encodeURIComponent(decoded)}`;
+    }
   } catch {
-    // Ignore non-URL values that were already filtered out above.
+    // Keep normalizing below.
   }
-  if (decodedSource && !candidates.includes(decodedSource)) {
-    candidates.push(decodedSource);
+
+  if (isWooStoreUrl(normalized)) {
+    return `${wooMediaProxyBaseUrl}/api/woo/media?src=${encodeURIComponent(normalized)}`;
+  }
+  return normalized;
+};
+
+const appendImageCandidate = (candidates, value) => {
+  const normalized = normalizeWebsiteQuoteImageUrl(value);
+  if (!normalized) {
+    return;
   }
   if (!candidates.includes(normalized)) {
     candidates.push(normalized);
@@ -736,4 +785,5 @@ module.exports = {
   buildChromiumLaunchOptions,
   generateProspectQuotePdf,
   generateProspectQuotePdfWithBrowser,
+  normalizeWebsiteQuoteImageUrl,
 };

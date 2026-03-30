@@ -27,7 +27,11 @@ const withFreshService = async (deps, run) => {
       return deps.accessService;
     }
     if (request === './salesProspectQuotePdfService') {
-      return deps.pdfService || { generateProspectQuotePdf: async () => ({ pdf: Buffer.from('%PDF-1.4'), filename: 'quote.pdf' }) };
+      return {
+        normalizeWebsiteQuoteImageUrl: (value) => value ?? null,
+        generateProspectQuotePdf: async () => ({ pdf: Buffer.from('%PDF-1.4'), filename: 'quote.pdf' }),
+        ...(deps.pdfService || {}),
+      };
     }
     return originalLoad.call(this, request, parent, isMain);
   };

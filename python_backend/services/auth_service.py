@@ -34,6 +34,13 @@ def _normalize_email(value: str) -> str:
     return str(value).strip().lower()
 
 
+def _normalize_optional_string(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _normalize_bool(value: Any) -> bool:
     if value is True or value is False:
         return value
@@ -914,14 +921,19 @@ def update_profile(user_id: str, data: Dict) -> Dict:
             zelle_contact = None
         if zelle_contact is not None and len(zelle_contact) > 190:
             raise _bad_request("ZELLE_CONTACT_TOO_LONG")
-    shipping_fields = {
-        "officeAddressLine1": data.get("officeAddressLine1") or user.get("officeAddressLine1"),
-        "officeAddressLine2": data.get("officeAddressLine2") or user.get("officeAddressLine2"),
-        "officeCity": data.get("officeCity") or user.get("officeCity"),
-        "officeState": data.get("officeState") or user.get("officeState"),
-        "officePostalCode": data.get("officePostalCode") or user.get("officePostalCode"),
-        "officeCountry": data.get("officeCountry") or user.get("officeCountry"),
-    }
+    shipping_fields = {}
+    for field in (
+        "officeAddressLine1",
+        "officeAddressLine2",
+        "officeCity",
+        "officeState",
+        "officePostalCode",
+        "officeCountry",
+    ):
+        if field in data:
+            shipping_fields[field] = _normalize_optional_string(data.get(field))
+        else:
+            shipping_fields[field] = _normalize_optional_string(user.get(field))
     receive_client_order_update_emails = (
         _normalize_bool(data.get("receiveClientOrderUpdateEmails"))
         if "receiveClientOrderUpdateEmails" in data

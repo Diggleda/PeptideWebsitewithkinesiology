@@ -7,7 +7,7 @@ const {
   buildProspectBaseRecord,
   normalizeOptionalText,
 } = require('./salesProspectAccessService');
-const { generateProspectQuotePdf } = require('./salesProspectQuotePdfService');
+const { generateProspectQuotePdf, normalizeWebsiteQuoteImageUrl } = require('./salesProspectQuotePdfService');
 
 const QUOTE_STATUS_DRAFT = 'draft';
 const QUOTE_STATUS_EXPORTED = 'exported';
@@ -43,7 +43,9 @@ const normalizeQuoteItems = (items) => (Array.isArray(items) ? items : [])
       productId: productId || null,
       variantId: variantId || null,
       sku: normalizeOptionalText(item?.sku),
-      imageUrl: normalizeOptionalText(item?.imageUrl) || normalizeOptionalText(item?.image),
+      imageUrl:
+        normalizeWebsiteQuoteImageUrl(normalizeOptionalText(item?.imageUrl) || normalizeOptionalText(item?.image))
+        || null,
       name,
       quantity,
       unitPrice,
