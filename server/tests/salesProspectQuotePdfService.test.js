@@ -192,3 +192,65 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
     },
   );
 });
+
+test('generateProspectQuotePdf launches Chromium with server-safe flags and optional executable override', async () => {
+  let launchOptions;
+  const originalExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = '/usr/bin/chromium';
+
+  try {
+    await withFreshPdfService(
+      {
+        axios: {
+          get: async () => {
+            throw new Error('No image fetch expected');
+          },
+        },
+        playwright: {
+          chromium: {
+            launch: async (options) => {
+              launchOptions = options;
+              return {
+                newPage: async () => ({
+                  setContent: async () => {},
+                  waitForLoadState: async () => {},
+                  evaluate: async () => {},
+                  pdf: async () => Buffer.from('%PDF-1.4 mock'),
+                }),
+                close: async () => {},
+              };
+            },
+          },
+        },
+      },
+      async ({ generateProspectQuotePdf }) => {
+        await generateProspectQuotePdf({
+          revisionNumber: 1,
+          title: 'Quote for Launch Options',
+          quotePayloadJson: {
+            prospect: {
+              contactName: 'Launch Example',
+            },
+            items: [],
+          },
+        });
+      },
+    );
+  } finally {
+    if (originalExecutablePath === undefined) {
+      delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    } else {
+      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = originalExecutablePath;
+    }
+  }
+
+  assert.deepEqual(launchOptions, {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+    ],
+    executablePath: '/usr/bin/chromium',
+  });
+});

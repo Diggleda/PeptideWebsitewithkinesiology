@@ -166,6 +166,24 @@ const buildQuoteFilename = (quote) => {
   return `PepPro_Quote_${safeProspectName}_${revision}.pdf`;
 };
 
+const buildChromiumLaunchOptions = () => {
+  const executablePath = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    process.env.CHROMIUM_EXECUTABLE_PATH,
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+  ].find((value) => typeof value === 'string' && value.trim());
+
+  return {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+    ],
+    ...(executablePath ? { executablePath } : {}),
+  };
+};
+
 const normalizeRemoteImageUrl = (value) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -601,7 +619,7 @@ const renderQuoteHtml = async (quote) => {
 
 const generateProspectQuotePdf = async (quote) => {
   const { chromium } = require('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch(buildChromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(await renderQuoteHtml(quote), { waitUntil: 'load' });

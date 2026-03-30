@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import glob
 import json
 import logging
+import os
 import shutil
 import subprocess
 from datetime import datetime
@@ -17,12 +19,85 @@ logger = logging.getLogger(__name__)
 _PDF_BRIDGE_TIMEOUT_SECONDS = 120
 
 
+def _service_error(message: str, status: int) -> Exception:
+    try:
+        from ..utils.http import service_error as http_service_error
+
+        return http_service_error(message, status)
+    except Exception:
+        error = ValueError(message)
+        setattr(error, "status", status)
+        return error
+
+
 def _bridge_script_path() -> Path:
     return BASE_DIR / "server" / "scripts" / "generateProspectQuotePdfCli.js"
 
 
+def _iter_existing_paths(patterns: List[str]) -> List[str]:
+    results: List[str] = []
+    for pattern in patterns:
+        expanded = os.path.expanduser(pattern)
+        if any(char in expanded for char in "*?[]"):
+            matches = sorted(glob.glob(expanded), reverse=True)
+        else:
+            matches = [expanded]
+        for match in matches:
+            if match and os.path.exists(match):
+                results.append(match)
+    return results
+
+
 def _find_node_binary() -> Optional[str]:
-    return shutil.which("node") or shutil.which("nodejs")
+    candidates = [
+        os.environ.get("QUOTE_PDF_NODE_BINARY"),
+        os.environ.get("NODE_BINARY"),
+        shutil.which("node"),
+        shutil.which("nodejs"),
+        *_iter_existing_paths(
+            [
+                "~/.nvm/versions/node/*/bin/node",
+                "~/.local/bin/node",
+                "/opt/cpanel/ea-nodejs*/bin/node",
+                "/usr/local/bin/node",
+                "/usr/bin/node",
+            ]
+        ),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _find_playwright_browsers_path() -> Optional[str]:
+    env_value = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if env_value and os.path.isdir(env_value):
+        return env_value
+
+    candidates = _iter_existing_paths(
+        [
+            str(BASE_DIR / ".playwright-browsers"),
+            "~/.cache/ms-playwright",
+            "~/Library/Caches/ms-playwright",
+            "/root/.cache/ms-playwright",
+            "/home/*/.cache/ms-playwright",
+            "/Users/*/Library/Caches/ms-playwright",
+        ]
+    )
+    for candidate in candidates:
+        try:
+            if os.path.isdir(candidate) and any(Path(candidate).iterdir()):
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
+def _allow_text_fallback() -> bool:
+    return str(os.environ.get("QUOTE_PDF_ALLOW_TEXT_FALLBACK") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _safe_text(value: object, fallback: str = "") -> str:
@@ -167,9 +242,26 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
     script_path = _bridge_script_path()
     node_binary = _find_node_binary()
     if not script_path.exists() or not node_binary:
+        logger.error(
+            "Quote PDF node bridge unavailable",
+            extra={
+                "script_path": str(script_path),
+                "script_exists": script_path.exists(),
+                "node_binary": node_binary,
+            },
+        )
         return None
 
     command = [node_binary, str(script_path)]
+    env = os.environ.copy()
+    node_dir = str(Path(node_binary).resolve().parent)
+    path_parts = [part for part in env.get("PATH", "").split(os.pathsep) if part]
+    if node_dir not in path_parts:
+        env["PATH"] = os.pathsep.join([node_dir, *path_parts])
+    browsers_path = _find_playwright_browsers_path()
+    if browsers_path and not env.get("PLAYWRIGHT_BROWSERS_PATH"):
+        env["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
+
     try:
         completed = subprocess.run(
             command,
@@ -177,6 +269,7 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
             capture_output=True,
             text=True,
             cwd=str(BASE_DIR),
+            env=env,
             timeout=_PDF_BRIDGE_TIMEOUT_SECONDS,
             check=False,
         )
@@ -189,6 +282,8 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
             "Quote PDF node bridge exited non-zero",
             extra={
                 "returncode": completed.returncode,
+                "node_binary": node_binary,
+                "playwright_browsers_path": env.get("PLAYWRIGHT_BROWSERS_PATH"),
                 "stderr": (completed.stderr or "")[:1000],
             },
         )
@@ -222,5 +317,7 @@ def generate_prospect_quote_pdf(quote: Dict) -> Dict:
     rendered = _run_node_bridge(quote)
     if rendered is not None:
         return rendered
-    logger.warning("Falling back to Python quote PDF generator")
-    return _build_fallback_quote_pdf(quote)
+    if _allow_text_fallback():
+        logger.warning("Falling back to Python quote PDF generator")
+        return _build_fallback_quote_pdf(quote)
+    raise _service_error("QUOTE_PDF_RENDERER_UNAVAILABLE", 500)
