@@ -712,47 +712,49 @@ const renderQuoteHtml = async (quote) => {
 </html>`;
 };
 
-const generateProspectQuotePdf = async (quote) => {
-  const { chromium } = require('playwright');
-  const browser = await chromium.launch(buildChromiumLaunchOptions());
-  try {
-    const page = await browser.newPage();
-    await page.setContent(await renderQuoteHtml(quote), { waitUntil: 'domcontentloaded' });
-    await page.evaluate(async () => {
-      const waitForImage = (image, timeoutMs = 800) => new Promise((resolve) => {
-        if (image.complete) {
-          resolve();
-          return;
-        }
-        let settled = false;
-        const done = () => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve();
-        };
-        const timer = setTimeout(done, timeoutMs);
-        image.addEventListener('load', done, { once: true });
-        image.addEventListener('error', done, { once: true });
-      });
-
-      const images = Array.from(document.images);
-      await Promise.all(images.map(async (image) => {
-        await waitForImage(image);
-        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-          return;
-        }
-        const fallbackSrc = image.dataset.fallbackSrc;
-        if (fallbackSrc && image.currentSrc !== fallbackSrc && image.src !== fallbackSrc) {
-          image.src = fallbackSrc;
-          await waitForImage(image, 400);
-        }
-        if (image.naturalWidth === 0 || image.naturalHeight === 0) {
-          image.removeAttribute('alt');
-          image.style.visibility = 'hidden';
-        }
-      }));
+const waitForQuotePageImages = async (page) => {
+  await page.evaluate(async () => {
+    const waitForImage = (image, timeoutMs = 800) => new Promise((resolve) => {
+      if (image.complete) {
+        resolve();
+        return;
+      }
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(done, timeoutMs);
+      image.addEventListener('load', done, { once: true });
+      image.addEventListener('error', done, { once: true });
     });
+
+    const images = Array.from(document.images);
+    await Promise.all(images.map(async (image) => {
+      await waitForImage(image);
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        return;
+      }
+      const fallbackSrc = image.dataset.fallbackSrc;
+      if (fallbackSrc && image.currentSrc !== fallbackSrc && image.src !== fallbackSrc) {
+        image.src = fallbackSrc;
+        await waitForImage(image, 400);
+      }
+      if (image.naturalWidth === 0 || image.naturalHeight === 0) {
+        image.removeAttribute('alt');
+        image.style.visibility = 'hidden';
+      }
+    }));
+  });
+};
+
+const generateProspectQuotePdfWithBrowser = async (browser, quote) => {
+  const page = await browser.newPage();
+  try {
+    await page.setContent(await renderQuoteHtml(quote), { waitUntil: 'domcontentloaded' });
+    await waitForQuotePageImages(page);
     const pdf = await page.pdf({
       format: 'Letter',
       printBackground: true,
@@ -768,11 +770,25 @@ const generateProspectQuotePdf = async (quote) => {
       filename: buildQuoteFilename(quote),
     };
   } finally {
+    if (typeof page.close === 'function') {
+      await page.close();
+    }
+  }
+};
+
+const generateProspectQuotePdf = async (quote) => {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch(buildChromiumLaunchOptions());
+  try {
+    return await generateProspectQuotePdfWithBrowser(browser, quote);
+  } finally {
     await browser.close();
   }
 };
 
 module.exports = {
   buildQuoteFilename,
+  buildChromiumLaunchOptions,
   generateProspectQuotePdf,
+  generateProspectQuotePdfWithBrowser,
 };

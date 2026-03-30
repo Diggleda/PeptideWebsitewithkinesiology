@@ -20,15 +20,22 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self._disk_cache_dir_patch.start()
         self._original_node_bridge_skip_until = service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
+        self._original_node_worker_process = service._NODE_WORKER_PROCESS
+        service._NODE_WORKER_PROCESS = None
         service._QUOTE_PDF_RENDER_CACHE.clear()
         service._SKU_PRODUCT_IMAGE_CACHE.clear()
         self._original_cached_woo_sku_image_map = service._CACHED_WOO_SKU_IMAGE_MAP
         service._CACHED_WOO_SKU_IMAGE_MAP = None
 
     def tearDown(self) -> None:
+        try:
+            service._shutdown_node_worker_process()
+        except Exception:
+            pass
         self._disk_cache_dir_patch.stop()
         self._disk_cache_temp_dir.cleanup()
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = self._original_node_bridge_skip_until
+        service._NODE_WORKER_PROCESS = self._original_node_worker_process
         service._QUOTE_PDF_RENDER_CACHE.clear()
         service._SKU_PRODUCT_IMAGE_CACHE.clear()
         service._CACHED_WOO_SKU_IMAGE_MAP = self._original_cached_woo_sku_image_map
@@ -103,7 +110,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self.assertEqual(candidates, ["https://cdn.example.com/products/sku-123.png"])
 
     def test_generate_prospect_quote_pdf_uses_system_browser_renderer_when_node_bridge_is_unavailable(self) -> None:
-        with patch.object(service, "_run_node_bridge", return_value=None), patch.object(
+        with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(service, "_run_node_bridge", return_value=None), patch.object(
             service,
             "_run_system_browser_renderer",
             return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
@@ -116,7 +123,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
     def test_generate_prospect_quote_pdf_caches_successful_result_for_same_quote(self) -> None:
         quote = {"id": "quote-1", "revisionNumber": 2, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
 
-        with patch.object(
+        with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(
             service,
             "_run_node_bridge",
             return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
@@ -132,7 +139,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
     def test_generate_prospect_quote_pdf_uses_disk_cache_after_memory_cache_reset(self) -> None:
         quote = {"id": "quote-2", "revisionNumber": 2, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
 
-        with patch.object(
+        with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(
             service,
             "_run_node_bridge",
             return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
@@ -153,6 +160,22 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
             rendered = service._run_node_bridge({"revisionNumber": 1, "quotePayloadJson": {}})
 
         self.assertIsNone(rendered)
+
+    def test_generate_prospect_quote_pdf_prefers_node_worker_before_one_shot_bridge(self) -> None:
+        quote = {"id": "quote-worker-1", "revisionNumber": 3, "quotePayloadJson": {"prospect": {"contactName": "Worker Example"}}}
+
+        with patch.object(
+            service,
+            "_run_node_worker_bridge",
+            return_value={"pdf": b"%PDF-1.4 worker", "filename": "PepPro_Quote_Worker_Example_3.pdf"},
+        ) as run_node_worker, patch.object(service, "_run_node_bridge", side_effect=AssertionError("one-shot bridge should not run")), patch.object(
+            service, "_run_system_browser_renderer", side_effect=AssertionError("browser fallback should not run")
+        ):
+            rendered = service.generate_prospect_quote_pdf(quote)
+
+        self.assertEqual(run_node_worker.call_count, 1)
+        self.assertEqual(rendered["pdf"], b"%PDF-1.4 worker")
+        self.assertEqual(rendered["filename"], "PepPro_Quote_Worker_Example_3.pdf")
 
     def test_generate_prospect_quote_pdf_falls_back_when_enabled(self) -> None:
         quote = {
@@ -183,7 +206,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
             },
         }
 
-        with patch.object(service, "_run_node_bridge", return_value=None), patch.object(
+        with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(service, "_run_node_bridge", return_value=None), patch.object(
             service, "_run_system_browser_renderer", return_value=None
         ), patch.object(service, "_allow_text_fallback", return_value=True):
             rendered = service.generate_prospect_quote_pdf(quote)
@@ -192,7 +215,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self.assertEqual(rendered["filename"], "PepPro_Quote_Client_Example_2.pdf")
 
     def test_generate_prospect_quote_pdf_raises_when_renderer_unavailable_and_fallback_disabled(self) -> None:
-        with patch.object(service, "_run_node_bridge", return_value=None), patch.object(
+        with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(service, "_run_node_bridge", return_value=None), patch.object(
             service, "_run_system_browser_renderer", return_value=None
         ), patch.object(
             service, "_allow_text_fallback", return_value=False

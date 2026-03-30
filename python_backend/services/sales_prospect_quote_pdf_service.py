@@ -9,10 +9,13 @@ import json
 import logging
 import mimetypes
 import os
+import select
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -27,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 _PDF_BRIDGE_TIMEOUT_SECONDS = max(5.0, min(float(os.environ.get("QUOTE_PDF_BRIDGE_TIMEOUT_SECONDS", "45").strip() or 45), 180.0))
 _BROWSER_PDF_TIMEOUT_SECONDS = max(10.0, min(float(os.environ.get("QUOTE_PDF_BROWSER_TIMEOUT_SECONDS", "90").strip() or 90), 180.0))
+_NODE_WORKER_REQUEST_TIMEOUT_SECONDS = max(5.0, min(float(os.environ.get("QUOTE_PDF_NODE_WORKER_TIMEOUT_SECONDS", "90").strip() or 90), 180.0))
 _REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS = 3.5
 _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS = 45
 _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS = 300
@@ -65,6 +69,8 @@ _IMAGE_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
 _QUOTE_PDF_RENDER_CACHE: Dict[str, Dict[str, Any]] = {}
 _CACHED_WOO_SKU_IMAGE_MAP: Optional[Dict[str, str]] = None
 _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
+_NODE_WORKER_PROCESS: Optional[subprocess.Popen] = None
+_NODE_WORKER_LOCK = threading.Lock()
 _STATIC_ASSET_SEARCH_DIRS = (
     "public",
     "build",
@@ -87,6 +93,10 @@ def _service_error(message: str, status: int) -> Exception:
 
 def _bridge_script_path() -> Path:
     return BASE_DIR / "server" / "scripts" / "generateProspectQuotePdfCli.js"
+
+
+def _worker_script_path() -> Path:
+    return BASE_DIR / "server" / "scripts" / "generateProspectQuotePdfWorker.js"
 
 
 def _iter_existing_paths(patterns: List[str]) -> List[str]:
@@ -164,6 +174,72 @@ def _iter_playwright_browser_executables() -> List[str]:
             os.path.join(browsers_path, "chromium_headless_shell-*", "chrome-headless-shell-mac", "chrome-headless-shell"),
         ]
     )
+
+
+def _build_node_renderer_env(node_binary: str) -> Dict[str, str]:
+    env = os.environ.copy()
+    node_dir = str(Path(node_binary).resolve().parent)
+    path_parts = [part for part in env.get("PATH", "").split(os.pathsep) if part]
+    if node_dir not in path_parts:
+        env["PATH"] = os.pathsep.join([node_dir, *path_parts])
+    browsers_path = _find_playwright_browsers_path()
+    if browsers_path and not env.get("PLAYWRIGHT_BROWSERS_PATH"):
+        env["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
+    return env
+
+
+def _shutdown_node_worker_process() -> None:
+    global _NODE_WORKER_PROCESS
+
+    process = _NODE_WORKER_PROCESS
+    _NODE_WORKER_PROCESS = None
+    if process is None:
+        return
+    try:
+        if process.stdin and not process.stdin.closed:
+            process.stdin.close()
+    except Exception:
+        pass
+    try:
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=1.5)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def _ensure_node_worker_process() -> Optional[subprocess.Popen]:
+    global _NODE_WORKER_PROCESS
+
+    if _NODE_WORKER_PROCESS is not None and _NODE_WORKER_PROCESS.poll() is None:
+        return _NODE_WORKER_PROCESS
+
+    _shutdown_node_worker_process()
+    script_path = _worker_script_path()
+    node_binary = _find_node_binary()
+    if not script_path.exists() or not node_binary:
+        return None
+
+    try:
+        _NODE_WORKER_PROCESS = subprocess.Popen(
+            [node_binary, str(script_path)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(BASE_DIR),
+            env=_build_node_renderer_env(node_binary),
+            bufsize=1,
+        )
+    except Exception:
+        logger.exception("Quote PDF node worker failed to start")
+        _NODE_WORKER_PROCESS = None
+        return None
+
+    return _NODE_WORKER_PROCESS
 
 
 def _allow_text_fallback() -> bool:
@@ -1164,6 +1240,108 @@ def _build_fallback_quote_pdf(quote: Dict) -> Dict:
     }
 
 
+def _run_node_worker_bridge(quote: Dict) -> Optional[Dict]:
+    started_at = time.monotonic()
+    with _NODE_WORKER_LOCK:
+        process = _ensure_node_worker_process()
+        if process is None or process.stdin is None or process.stdout is None:
+            return None
+
+        request_id = uuid.uuid4().hex
+        request_payload = json.dumps({"id": request_id, "quote": quote or {}}, ensure_ascii=False)
+
+        try:
+            process.stdin.write(f"{request_payload}\n")
+            process.stdin.flush()
+        except Exception:
+            logger.exception("Quote PDF node worker request failed to write")
+            _shutdown_node_worker_process()
+            return None
+
+        try:
+            ready, _, _ = select.select([process.stdout], [], [], _NODE_WORKER_REQUEST_TIMEOUT_SECONDS)
+        except Exception:
+            logger.exception("Quote PDF node worker failed while waiting for response")
+            _shutdown_node_worker_process()
+            return None
+
+        if not ready:
+            logger.error(
+                "Quote PDF node worker timed out",
+                extra={"duration_ms": round((time.monotonic() - started_at) * 1000, 1)},
+            )
+            _shutdown_node_worker_process()
+            return None
+
+        response_line = process.stdout.readline()
+        if not response_line:
+            stderr_output = ""
+            try:
+                if process.stderr is not None:
+                    stderr_output = (process.stderr.read() or "")[:1000]
+            except Exception:
+                stderr_output = ""
+            logger.error(
+                "Quote PDF node worker returned no response",
+                extra={
+                    "returncode": process.poll(),
+                    "stderr": stderr_output,
+                    "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+                },
+            )
+            _shutdown_node_worker_process()
+            return None
+
+        try:
+            payload = json.loads(response_line)
+        except Exception:
+            logger.exception("Quote PDF node worker returned invalid JSON")
+            _shutdown_node_worker_process()
+            return None
+
+        if payload.get("id") != request_id:
+            logger.error("Quote PDF node worker returned mismatched response id")
+            _shutdown_node_worker_process()
+            return None
+
+        if payload.get("error"):
+            logger.error(
+                "Quote PDF node worker returned render error",
+                extra={
+                    "stderr": str(payload.get("error"))[:1000],
+                    "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+                },
+            )
+            _shutdown_node_worker_process()
+            return None
+
+        pdf_base64 = payload.get("pdfBase64")
+        if not isinstance(pdf_base64, str) or not pdf_base64.strip():
+            logger.error("Quote PDF node worker returned no pdfBase64 payload")
+            _shutdown_node_worker_process()
+            return None
+
+        try:
+            pdf = base64.b64decode(pdf_base64)
+        except Exception:
+            logger.exception("Quote PDF node worker returned invalid base64 PDF")
+            _shutdown_node_worker_process()
+            return None
+
+        filename = _safe_text(payload.get("filename"), _build_quote_filename(quote))
+        logger.info(
+            "Quote PDF renderer completed",
+            extra={
+                "renderer": "node_worker",
+                "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+            },
+        )
+        return {
+            "pdf": pdf,
+            "filename": filename,
+        }
+
+
 def _run_node_bridge(quote: Dict) -> Optional[Dict]:
     global _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
     started_at = time.monotonic()
@@ -1191,14 +1369,7 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
         return None
 
     command = [node_binary, str(script_path)]
-    env = os.environ.copy()
-    node_dir = str(Path(node_binary).resolve().parent)
-    path_parts = [part for part in env.get("PATH", "").split(os.pathsep) if part]
-    if node_dir not in path_parts:
-        env["PATH"] = os.pathsep.join([node_dir, *path_parts])
-    browsers_path = _find_playwright_browsers_path()
-    if browsers_path and not env.get("PLAYWRIGHT_BROWSERS_PATH"):
-        env["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
+    env = _build_node_renderer_env(node_binary)
 
     try:
         completed = subprocess.run(
@@ -1272,6 +1443,11 @@ def generate_prospect_quote_pdf(quote: Dict) -> Dict:
     if cached is not None:
         logger.info("Quote PDF cache hit", extra={"cache_key": cache_key, "cache_layer": "memory"})
         return cached
+
+    rendered = _run_node_worker_bridge(quote)
+    if rendered is not None:
+        _store_rendered_quote_pdf(cache_key, rendered)
+        return rendered
 
     rendered = _run_node_bridge(quote)
     if rendered is not None:
