@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,6 +26,10 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         service._NODE_WORKER_PROCESS = None
         service._QUOTE_PDF_RENDER_CACHE.clear()
         service._SKU_PRODUCT_IMAGE_CACHE.clear()
+        service._IMAGE_DATA_URL_CACHE.clear()
+        service._QUOTE_PDF_RENDER_INFLIGHT.clear()
+        service._SKU_PRODUCT_IMAGE_INFLIGHT.clear()
+        service._IMAGE_DATA_URL_INFLIGHT.clear()
         self._original_cached_woo_sku_image_map = service._CACHED_WOO_SKU_IMAGE_MAP
         service._CACHED_WOO_SKU_IMAGE_MAP = None
 
@@ -38,6 +44,10 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         service._NODE_WORKER_PROCESS = self._original_node_worker_process
         service._QUOTE_PDF_RENDER_CACHE.clear()
         service._SKU_PRODUCT_IMAGE_CACHE.clear()
+        service._IMAGE_DATA_URL_CACHE.clear()
+        service._QUOTE_PDF_RENDER_INFLIGHT.clear()
+        service._SKU_PRODUCT_IMAGE_INFLIGHT.clear()
+        service._IMAGE_DATA_URL_INFLIGHT.clear()
         service._CACHED_WOO_SKU_IMAGE_MAP = self._original_cached_woo_sku_image_map
 
     def test_render_quote_html_uses_logo_image_when_available(self) -> None:
@@ -153,6 +163,32 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self.assertEqual(first["pdf"], second["pdf"])
         self.assertEqual(first["filename"], second["filename"])
 
+    def test_generate_prospect_quote_pdf_rehydrates_memory_from_disk_without_rewriting_disk_cache(self) -> None:
+        quote = {"id": "quote-2b", "revisionNumber": 2, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
+
+        with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(
+            service,
+            "_run_node_bridge",
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+        ), patch.object(service, "_store_rendered_quote_pdf_to_disk", wraps=service._store_rendered_quote_pdf_to_disk) as store_to_disk:
+            first = service.generate_prospect_quote_pdf(quote)
+
+        self.assertEqual(store_to_disk.call_count, 1)
+        service._QUOTE_PDF_RENDER_CACHE.clear()
+
+        with patch.object(service, "_store_rendered_quote_pdf_to_disk", wraps=service._store_rendered_quote_pdf_to_disk) as store_to_disk_again, patch.object(
+            service, "_run_node_worker_bridge", side_effect=AssertionError("renderer should not run on disk cache hit")
+        ), patch.object(
+            service, "_run_node_bridge", side_effect=AssertionError("renderer should not run on disk cache hit")
+        ), patch.object(
+            service, "_run_system_browser_renderer", side_effect=AssertionError("renderer should not run on disk cache hit")
+        ):
+            second = service.generate_prospect_quote_pdf(quote)
+
+        self.assertEqual(store_to_disk_again.call_count, 0)
+        self.assertEqual(first["pdf"], second["pdf"])
+        self.assertEqual(first["filename"], second["filename"])
+
     def test_run_node_bridge_skips_lookup_during_retry_cooldown(self) -> None:
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + 30
 
@@ -176,6 +212,113 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self.assertEqual(run_node_worker.call_count, 1)
         self.assertEqual(rendered["pdf"], b"%PDF-1.4 worker")
         self.assertEqual(rendered["filename"], "PepPro_Quote_Worker_Example_3.pdf")
+
+    def test_generate_prospect_quote_pdf_deduplicates_inflight_render_for_same_quote(self) -> None:
+        quote = {"id": "quote-inflight-1", "revisionNumber": 4, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
+        render_started = threading.Event()
+        release_render = threading.Event()
+        render_calls = 0
+        render_calls_lock = threading.Lock()
+
+        def render(_: dict) -> dict:
+            nonlocal render_calls
+            with render_calls_lock:
+                render_calls += 1
+            render_started.set()
+            self.assertTrue(release_render.wait(timeout=1.0))
+            return {"pdf": b"%PDF-1.4 shared", "filename": "PepPro_Quote_Client_Example_4.pdf"}
+
+        with patch.object(service, "_run_node_worker_bridge", side_effect=render), patch.object(
+            service, "_run_node_bridge", side_effect=AssertionError("fallback renderer should not run")
+        ), patch.object(service, "_run_system_browser_renderer", side_effect=AssertionError("fallback renderer should not run")):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first_future = executor.submit(service.generate_prospect_quote_pdf, quote)
+                self.assertTrue(render_started.wait(timeout=1.0))
+                second_future = executor.submit(service.generate_prospect_quote_pdf, quote)
+                time.sleep(0.05)
+                release_render.set()
+                first = first_future.result(timeout=1.0)
+                second = second_future.result(timeout=1.0)
+
+        self.assertEqual(render_calls, 1)
+        self.assertEqual(first["pdf"], second["pdf"])
+        self.assertEqual(first["filename"], second["filename"])
+
+    def test_fetch_image_as_data_url_deduplicates_inflight_fetches(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        call_count = 0
+        call_count_lock = threading.Lock()
+
+        class FakeResponse:
+            headers = {"Content-Type": "image/png"}
+
+            def read(self) -> bytes:
+                return b"png-bytes"
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+        def fake_urlopen(request, timeout):
+            del request, timeout
+            nonlocal call_count
+            with call_count_lock:
+                call_count += 1
+            started.set()
+            self.assertTrue(release.wait(timeout=1.0))
+            return FakeResponse()
+
+        url = "https://cdn.example.com/test-image.png"
+        with patch.object(service, "urlopen", side_effect=fake_urlopen):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first_future = executor.submit(service._fetch_image_as_data_url, url)
+                self.assertTrue(started.wait(timeout=1.0))
+                second_future = executor.submit(service._fetch_image_as_data_url, url)
+                time.sleep(0.05)
+                release.set()
+                first = first_future.result(timeout=1.0)
+                second = second_future.result(timeout=1.0)
+
+        self.assertEqual(call_count, 1)
+        self.assertEqual(first, second)
+        self.assertTrue(str(first).startswith("data:image/png;base64,"))
+
+    def test_collect_quote_item_image_candidates_deduplicates_inflight_sku_lookups(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        call_count = 0
+        call_count_lock = threading.Lock()
+
+        def fake_find_product_by_sku(sku: str):
+            self.assertEqual(sku, "SKU-123")
+            nonlocal call_count
+            with call_count_lock:
+                call_count += 1
+            started.set()
+            self.assertTrue(release.wait(timeout=1.0))
+            return {"image": "https://cdn.example.com/sku-123.png"}
+
+        item = {"sku": "SKU-123"}
+        with patch.object(service, "_get_cached_woo_sku_image_map", return_value={}), patch.object(
+            service,
+            "_lookup_product_image_source_for_sku",
+            side_effect=fake_find_product_by_sku,
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first_future = executor.submit(service._collect_quote_item_image_candidates, item)
+                self.assertTrue(started.wait(timeout=1.0))
+                second_future = executor.submit(service._collect_quote_item_image_candidates, item)
+                time.sleep(0.05)
+                release.set()
+                first = first_future.result(timeout=1.0)
+                second = second_future.result(timeout=1.0)
+
+        self.assertEqual(call_count, 1)
+        self.assertEqual(first, ["https://cdn.example.com/sku-123.png"])
+        self.assertEqual(second, ["https://cdn.example.com/sku-123.png"])
 
     def test_generate_prospect_quote_pdf_falls_back_when_enabled(self) -> None:
         quote = {

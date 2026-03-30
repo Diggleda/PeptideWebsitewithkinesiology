@@ -68,6 +68,16 @@ _SKU_PRODUCT_IMAGE_CACHE: Dict[str, Optional[str]] = {}
 _IMAGE_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
 _QUOTE_PDF_RENDER_CACHE: Dict[str, Dict[str, Any]] = {}
 _CACHED_WOO_SKU_IMAGE_MAP: Optional[Dict[str, str]] = None
+_QUOTE_PDF_RENDER_CACHE_LOCK = threading.Lock()
+_QUOTE_PDF_RENDER_INFLIGHT: Dict[str, threading.Event] = {}
+_QUOTE_PDF_RENDER_INFLIGHT_LOCK = threading.Lock()
+_CACHED_WOO_SKU_IMAGE_MAP_LOCK = threading.Lock()
+_SKU_PRODUCT_IMAGE_CACHE_LOCK = threading.Lock()
+_SKU_PRODUCT_IMAGE_INFLIGHT: Dict[str, threading.Event] = {}
+_SKU_PRODUCT_IMAGE_INFLIGHT_LOCK = threading.Lock()
+_IMAGE_DATA_URL_CACHE_LOCK = threading.Lock()
+_IMAGE_DATA_URL_INFLIGHT: Dict[str, threading.Event] = {}
+_IMAGE_DATA_URL_INFLIGHT_LOCK = threading.Lock()
 _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
 _NODE_WORKER_PROCESS: Optional[subprocess.Popen] = None
 _NODE_WORKER_LOCK = threading.Lock()
@@ -271,6 +281,32 @@ def _quote_pdf_disk_cache_path(cache_key: str) -> Path:
     return _quote_pdf_disk_cache_dir() / f"{cache_key}.json"
 
 
+def _register_inflight_work(
+    key: str,
+    registry: Dict[str, threading.Event],
+    registry_lock: threading.Lock,
+) -> tuple[threading.Event, bool]:
+    with registry_lock:
+        existing = registry.get(key)
+        if existing is not None:
+            return existing, False
+        event = threading.Event()
+        registry[key] = event
+        return event, True
+
+
+def _finish_inflight_work(
+    key: str,
+    event: threading.Event,
+    registry: Dict[str, threading.Event],
+    registry_lock: threading.Lock,
+) -> None:
+    event.set()
+    with registry_lock:
+        if registry.get(key) is event:
+            registry.pop(key, None)
+
+
 def _prune_quote_pdf_disk_cache(directory: Path) -> None:
     try:
         cache_files = sorted(
@@ -345,31 +381,76 @@ def _store_rendered_quote_pdf_to_disk(cache_key: str, rendered: Dict) -> None:
         logger.exception("Quote PDF disk cache store failed", extra={"cache_key": cache_key})
 
 
+def _refresh_quote_pdf_disk_cache_entry(cache_key: str) -> None:
+    cache_path = _quote_pdf_disk_cache_path(cache_key)
+    try:
+        cache_path.touch()
+    except Exception:
+        return
+
+
+def _store_rendered_quote_pdf_in_memory(cache_key: str, rendered: Dict, ttl_seconds: Optional[int] = None) -> None:
+    if ttl_seconds is None:
+        ttl_seconds = max(
+            0,
+            int(float(os.environ.get("QUOTE_PDF_RENDER_CACHE_TTL_SECONDS") or _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS)),
+        )
+    if ttl_seconds <= 0:
+        return
+
+    pdf = rendered.get("pdf")
+    filename = rendered.get("filename")
+    if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
+        return
+
+    with _QUOTE_PDF_RENDER_CACHE_LOCK:
+        while len(_QUOTE_PDF_RENDER_CACHE) >= _QUOTE_PDF_RENDER_CACHE_LIMIT:
+            oldest_key = next(iter(_QUOTE_PDF_RENDER_CACHE), None)
+            if oldest_key is None:
+                break
+            _QUOTE_PDF_RENDER_CACHE.pop(oldest_key, None)
+
+        _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+        _QUOTE_PDF_RENDER_CACHE[cache_key] = {
+            "pdf": bytes(pdf),
+            "filename": filename,
+            "expiresAt": time.monotonic() + ttl_seconds,
+        }
+
+
 def _get_cached_rendered_quote_pdf(cache_key: str) -> Optional[Dict]:
     ttl_seconds = max(0, int(float(os.environ.get("QUOTE_PDF_RENDER_CACHE_TTL_SECONDS") or _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS)))
     if ttl_seconds <= 0:
-        _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
-        return None
-    entry = _QUOTE_PDF_RENDER_CACHE.get(cache_key)
-    if isinstance(entry, dict):
-        expires_at = float(entry.get("expiresAt") or 0.0)
-        if expires_at <= time.monotonic():
+        with _QUOTE_PDF_RENDER_CACHE_LOCK:
             _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
-        else:
-            pdf = entry.get("pdf")
-            filename = entry.get("filename")
-            if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
+        return None
+
+    cached_rendered: Optional[Dict] = None
+    with _QUOTE_PDF_RENDER_CACHE_LOCK:
+        entry = _QUOTE_PDF_RENDER_CACHE.get(cache_key)
+        if isinstance(entry, dict):
+            expires_at = float(entry.get("expiresAt") or 0.0)
+            if expires_at <= time.monotonic():
                 _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
             else:
-                return {
-                    "pdf": bytes(pdf),
-                    "filename": filename,
-                }
+                pdf = entry.get("pdf")
+                filename = entry.get("filename")
+                if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
+                    _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+                else:
+                    cached_rendered = {
+                        "pdf": bytes(pdf),
+                        "filename": filename,
+                    }
+
+    if cached_rendered is not None:
+        return cached_rendered
 
     disk_cached = _get_cached_rendered_quote_pdf_from_disk(cache_key, ttl_seconds)
     if disk_cached is None:
         return None
-    _store_rendered_quote_pdf(cache_key, disk_cached)
+    _store_rendered_quote_pdf_in_memory(cache_key, disk_cached, ttl_seconds=ttl_seconds)
+    _refresh_quote_pdf_disk_cache_entry(cache_key)
     logger.info("Quote PDF cache hit", extra={"cache_key": cache_key, "cache_layer": "disk"})
     return {
         "pdf": bytes(disk_cached["pdf"]),
@@ -379,25 +460,7 @@ def _get_cached_rendered_quote_pdf(cache_key: str) -> Optional[Dict]:
 
 def _store_rendered_quote_pdf(cache_key: str, rendered: Dict) -> None:
     ttl_seconds = max(0, int(float(os.environ.get("QUOTE_PDF_RENDER_CACHE_TTL_SECONDS") or _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS)))
-    if ttl_seconds <= 0:
-        return
-    pdf = rendered.get("pdf")
-    filename = rendered.get("filename")
-    if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
-        return
-
-    while len(_QUOTE_PDF_RENDER_CACHE) >= _QUOTE_PDF_RENDER_CACHE_LIMIT:
-        oldest_key = next(iter(_QUOTE_PDF_RENDER_CACHE), None)
-        if oldest_key is None:
-            break
-        _QUOTE_PDF_RENDER_CACHE.pop(oldest_key, None)
-
-    _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
-    _QUOTE_PDF_RENDER_CACHE[cache_key] = {
-        "pdf": bytes(pdf),
-        "filename": filename,
-        "expiresAt": time.monotonic() + ttl_seconds,
-    }
+    _store_rendered_quote_pdf_in_memory(cache_key, rendered, ttl_seconds=ttl_seconds)
     _store_rendered_quote_pdf_to_disk(cache_key, rendered)
 
 
@@ -541,40 +604,44 @@ def _get_cached_woo_sku_image_map() -> Dict[str, str]:
     if _CACHED_WOO_SKU_IMAGE_MAP is not None:
         return _CACHED_WOO_SKU_IMAGE_MAP
 
-    image_map: Dict[str, str] = {}
-    cache_dir = BASE_DIR / "server-data" / "woo-proxy-cache"
+    with _CACHED_WOO_SKU_IMAGE_MAP_LOCK:
+        if _CACHED_WOO_SKU_IMAGE_MAP is not None:
+            return _CACHED_WOO_SKU_IMAGE_MAP
 
-    try:
-        if not cache_dir.is_dir():
+        image_map: Dict[str, str] = {}
+        cache_dir = BASE_DIR / "server-data" / "woo-proxy-cache"
+
+        try:
+            if not cache_dir.is_dir():
+                _CACHED_WOO_SKU_IMAGE_MAP = image_map
+                return image_map
+
+            for file_path in sorted(cache_dir.iterdir()):
+                if not file_path.is_file() or file_path.suffix.lower() != ".json":
+                    continue
+                try:
+                    raw = json.loads(file_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                records = raw.get("data") if isinstance(raw, dict) else None
+                if not isinstance(records, list):
+                    continue
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    sku = str(record.get("sku") or "").strip()
+                    if not sku or sku in image_map:
+                        continue
+                    image_source = _extract_image_source(record.get("image")) or _extract_image_source(record.get("images"))
+                    normalized_source = _normalize_image_url(image_source)
+                    if normalized_source:
+                        image_map[sku] = normalized_source
+        except Exception:
             _CACHED_WOO_SKU_IMAGE_MAP = image_map
             return image_map
 
-        for file_path in sorted(cache_dir.iterdir()):
-            if not file_path.is_file() or file_path.suffix.lower() != ".json":
-                continue
-            try:
-                raw = json.loads(file_path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            records = raw.get("data") if isinstance(raw, dict) else None
-            if not isinstance(records, list):
-                continue
-            for record in records:
-                if not isinstance(record, dict):
-                    continue
-                sku = str(record.get("sku") or "").strip()
-                if not sku or sku in image_map:
-                    continue
-                image_source = _extract_image_source(record.get("image")) or _extract_image_source(record.get("images"))
-                normalized_source = _normalize_image_url(image_source)
-                if normalized_source:
-                    image_map[sku] = normalized_source
-    except Exception:
         _CACHED_WOO_SKU_IMAGE_MAP = image_map
         return image_map
-
-    _CACHED_WOO_SKU_IMAGE_MAP = image_map
-    return image_map
 
 
 def _infer_image_content_type(content_type: object, source_url: object) -> Optional[str]:
@@ -598,25 +665,70 @@ def _fetch_image_as_data_url(source_url: object) -> Optional[str]:
         return None
     if normalized.startswith("data:image/"):
         return normalized
-    if normalized in _IMAGE_DATA_URL_CACHE:
-        return _IMAGE_DATA_URL_CACHE[normalized]
+    with _IMAGE_DATA_URL_CACHE_LOCK:
+        if normalized in _IMAGE_DATA_URL_CACHE:
+            return _IMAGE_DATA_URL_CACHE[normalized]
+
+    event, is_owner = _register_inflight_work(normalized, _IMAGE_DATA_URL_INFLIGHT, _IMAGE_DATA_URL_INFLIGHT_LOCK)
+    if not is_owner:
+        event.wait()
+        with _IMAGE_DATA_URL_CACHE_LOCK:
+            return _IMAGE_DATA_URL_CACHE.get(normalized)
+
     try:
-        request = Request(
-            normalized,
-            headers={"Accept": _IMAGE_FETCH_ACCEPT_HEADER},
-        )
-        with urlopen(request, timeout=_REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS) as response:
-            content = response.read()
-            content_type = _infer_image_content_type(response.headers.get("Content-Type"), normalized)
-    except (HTTPError, URLError, ValueError, OSError):
-        _IMAGE_DATA_URL_CACHE[normalized] = None
+        try:
+            request = Request(
+                normalized,
+                headers={"Accept": _IMAGE_FETCH_ACCEPT_HEADER},
+            )
+            with urlopen(request, timeout=_REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS) as response:
+                content = response.read()
+                content_type = _infer_image_content_type(response.headers.get("Content-Type"), normalized)
+        except (HTTPError, URLError, ValueError, OSError):
+            data_url = None
+        else:
+            if not content_type or not content:
+                data_url = None
+            else:
+                data_url = f"data:{content_type};base64,{base64.b64encode(bytes(content)).decode('ascii')}"
+
+        with _IMAGE_DATA_URL_CACHE_LOCK:
+            _IMAGE_DATA_URL_CACHE[normalized] = data_url
+        return data_url
+    finally:
+        _finish_inflight_work(normalized, event, _IMAGE_DATA_URL_INFLIGHT, _IMAGE_DATA_URL_INFLIGHT_LOCK)
+
+
+def _lookup_product_image_source_for_sku(sku: str) -> Optional[str]:
+    try:
+        from ..integrations.woo_commerce import find_product_by_sku
+
+        product = find_product_by_sku(sku)
+    except Exception:
+        product = None
+    if not isinstance(product, dict):
         return None
-    if not content_type or not content:
-        _IMAGE_DATA_URL_CACHE[normalized] = None
-        return None
-    data_url = f"data:{content_type};base64,{base64.b64encode(bytes(content)).decode('ascii')}"
-    _IMAGE_DATA_URL_CACHE[normalized] = data_url
-    return data_url
+    return _extract_image_source(product.get("image")) or _extract_image_source(product.get("images"))
+
+
+def _get_product_image_source_for_sku(sku: str) -> Optional[str]:
+    with _SKU_PRODUCT_IMAGE_CACHE_LOCK:
+        if sku in _SKU_PRODUCT_IMAGE_CACHE:
+            return _SKU_PRODUCT_IMAGE_CACHE[sku]
+
+    event, is_owner = _register_inflight_work(sku, _SKU_PRODUCT_IMAGE_INFLIGHT, _SKU_PRODUCT_IMAGE_INFLIGHT_LOCK)
+    if not is_owner:
+        event.wait()
+        with _SKU_PRODUCT_IMAGE_CACHE_LOCK:
+            return _SKU_PRODUCT_IMAGE_CACHE.get(sku)
+
+    try:
+        resolved_image = _lookup_product_image_source_for_sku(sku)
+        with _SKU_PRODUCT_IMAGE_CACHE_LOCK:
+            _SKU_PRODUCT_IMAGE_CACHE[sku] = resolved_image
+        return resolved_image
+    finally:
+        _finish_inflight_work(sku, event, _SKU_PRODUCT_IMAGE_INFLIGHT, _SKU_PRODUCT_IMAGE_INFLIGHT_LOCK)
 
 
 def _collect_quote_item_image_candidates(item: Dict[str, Any]) -> List[str]:
@@ -635,21 +747,7 @@ def _collect_quote_item_image_candidates(item: Dict[str, Any]) -> List[str]:
     if candidates:
         return candidates
 
-    if sku not in _SKU_PRODUCT_IMAGE_CACHE:
-        try:
-            from ..integrations.woo_commerce import find_product_by_sku
-
-            product = find_product_by_sku(sku)
-        except Exception:
-            product = None
-        if isinstance(product, dict):
-            _SKU_PRODUCT_IMAGE_CACHE[sku] = _extract_image_source(product.get("image")) or _extract_image_source(
-                product.get("images")
-            )
-        else:
-            _SKU_PRODUCT_IMAGE_CACHE[sku] = None
-
-    _append_image_candidate(candidates, _SKU_PRODUCT_IMAGE_CACHE.get(sku))
+    _append_image_candidate(candidates, _get_product_image_source_for_sku(sku))
     return candidates
 
 
@@ -1439,25 +1537,35 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
 
 def generate_prospect_quote_pdf(quote: Dict) -> Dict:
     cache_key = _build_quote_render_cache_key(quote)
-    cached = _get_cached_rendered_quote_pdf(cache_key)
-    if cached is not None:
-        logger.info("Quote PDF cache hit", extra={"cache_key": cache_key, "cache_layer": "memory"})
-        return cached
+    while True:
+        cached = _get_cached_rendered_quote_pdf(cache_key)
+        if cached is not None:
+            logger.info("Quote PDF cache hit", extra={"cache_key": cache_key, "cache_layer": "memory"})
+            return cached
 
-    rendered = _run_node_worker_bridge(quote)
-    if rendered is not None:
-        _store_rendered_quote_pdf(cache_key, rendered)
-        return rendered
+        event, is_owner = _register_inflight_work(cache_key, _QUOTE_PDF_RENDER_INFLIGHT, _QUOTE_PDF_RENDER_INFLIGHT_LOCK)
+        if not is_owner:
+            logger.info("Quote PDF render waiting for in-flight result", extra={"cache_key": cache_key})
+            event.wait()
+            continue
 
-    rendered = _run_node_bridge(quote)
-    if rendered is not None:
-        _store_rendered_quote_pdf(cache_key, rendered)
-        return rendered
-    rendered = _run_system_browser_renderer(quote)
-    if rendered is not None:
-        _store_rendered_quote_pdf(cache_key, rendered)
-        return rendered
-    if _allow_text_fallback():
-        logger.warning("Falling back to Python quote PDF generator")
-        return _build_fallback_quote_pdf(quote)
-    raise _service_error("QUOTE_PDF_RENDERER_UNAVAILABLE", 500)
+        try:
+            rendered = _run_node_worker_bridge(quote)
+            if rendered is not None:
+                _store_rendered_quote_pdf(cache_key, rendered)
+                return rendered
+
+            rendered = _run_node_bridge(quote)
+            if rendered is not None:
+                _store_rendered_quote_pdf(cache_key, rendered)
+                return rendered
+            rendered = _run_system_browser_renderer(quote)
+            if rendered is not None:
+                _store_rendered_quote_pdf(cache_key, rendered)
+                return rendered
+            if _allow_text_fallback():
+                logger.warning("Falling back to Python quote PDF generator")
+                return _build_fallback_quote_pdf(quote)
+            raise _service_error("QUOTE_PDF_RENDERER_UNAVAILABLE", 500)
+        finally:
+            _finish_inflight_work(cache_key, event, _QUOTE_PDF_RENDER_INFLIGHT, _QUOTE_PDF_RENDER_INFLIGHT_LOCK)
