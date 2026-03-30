@@ -7,6 +7,17 @@ from python_backend.services import sales_prospect_quote_pdf_service as service
 
 
 class SalesProspectQuotePdfServiceTests(unittest.TestCase):
+    def test_generate_prospect_quote_pdf_uses_system_browser_renderer_when_node_bridge_is_unavailable(self) -> None:
+        with patch.object(service, "_run_node_bridge", return_value=None), patch.object(
+            service,
+            "_run_system_browser_renderer",
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+        ), patch.object(service, "_allow_text_fallback", return_value=False):
+            rendered = service.generate_prospect_quote_pdf({"revisionNumber": 2, "quotePayloadJson": {}})
+
+        self.assertEqual(rendered["pdf"], b"%PDF-1.4 styled")
+        self.assertEqual(rendered["filename"], "PepPro_Quote_Client_Example_2.pdf")
+
     def test_generate_prospect_quote_pdf_falls_back_when_enabled(self) -> None:
         quote = {
             "prospectId": "prospect-1",
@@ -37,8 +48,8 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         }
 
         with patch.object(service, "_run_node_bridge", return_value=None), patch.object(
-            service, "_allow_text_fallback", return_value=True
-        ):
+            service, "_run_system_browser_renderer", return_value=None
+        ), patch.object(service, "_allow_text_fallback", return_value=True):
             rendered = service.generate_prospect_quote_pdf(quote)
 
         self.assertTrue(rendered["pdf"].startswith(b"%PDF-1.4"))
@@ -46,6 +57,8 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
 
     def test_generate_prospect_quote_pdf_raises_when_renderer_unavailable_and_fallback_disabled(self) -> None:
         with patch.object(service, "_run_node_bridge", return_value=None), patch.object(
+            service, "_run_system_browser_renderer", return_value=None
+        ), patch.object(
             service, "_allow_text_fallback", return_value=False
         ):
             with self.assertRaises(ValueError) as context:

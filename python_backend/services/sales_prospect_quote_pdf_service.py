@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import base64
 import glob
+import html
 import json
 import logging
+import mimetypes
 import os
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 from ..config import BASE_DIR
 from .invoice_service import _build_simple_text_pdf
@@ -17,6 +23,32 @@ from .invoice_service import _build_simple_text_pdf
 logger = logging.getLogger(__name__)
 
 _PDF_BRIDGE_TIMEOUT_SECONDS = 120
+_BROWSER_PDF_TIMEOUT_SECONDS = 120
+_IMAGE_FETCH_ACCEPT_HEADER = "image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8"
+_SUPPORTED_IMAGE_CONTENT_TYPES = {
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/svg+xml",
+    "image/webp",
+}
+_IMAGE_SOURCE_KEYS = (
+    "src",
+    "url",
+    "href",
+    "source",
+    "image",
+    "imageUrl",
+    "image_url",
+    "thumbnail",
+    "thumb",
+    "full",
+    "fullUrl",
+    "full_url",
+    "original",
+    "originalUrl",
+    "original_url",
+)
 
 
 def _service_error(message: str, status: int) -> Exception:
@@ -98,6 +130,564 @@ def _find_playwright_browsers_path() -> Optional[str]:
 
 def _allow_text_fallback() -> bool:
     return str(os.environ.get("QUOTE_PDF_ALLOW_TEXT_FALLBACK") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _load_static_data_url(relative_path: str, default_mime_type: str) -> Optional[str]:
+    asset_path = BASE_DIR / relative_path
+    if not asset_path.exists():
+        return None
+    try:
+        encoded = base64.b64encode(asset_path.read_bytes()).decode("ascii")
+        content_type = mimetypes.guess_type(str(asset_path))[0] or default_mime_type
+        return f"data:{content_type};base64,{encoded}"
+    except Exception:
+        return None
+
+
+def _get_logo_data_url() -> Optional[str]:
+    return _load_static_data_url("public/PepPro_fulllogo.png", "image/png")
+
+
+def _get_fallback_icon_data_url() -> Optional[str]:
+    return _load_static_data_url("public/PepPro_icon.png", "image/png")
+
+
+def _escape_html(value: object) -> str:
+    return html.escape(str(value or ""), quote=True)
+
+
+def _extract_image_source(value: object, visited: Optional[set[int]] = None) -> Optional[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if not isinstance(value, (dict, list, tuple)):
+        return None
+
+    visited = visited or set()
+    marker = id(value)
+    if marker in visited:
+        return None
+    visited.add(marker)
+
+    if isinstance(value, (list, tuple)):
+        for entry in value:
+            source = _extract_image_source(entry, visited)
+            if source:
+                return source
+        return None
+
+    for key in _IMAGE_SOURCE_KEYS:
+        if key not in value:
+            continue
+        source = _extract_image_source(value.get(key), visited)
+        if source:
+            return source
+    return None
+
+
+def _normalize_image_url(value: object) -> Optional[str]:
+    text = _extract_image_source(value)
+    if not text:
+        return None
+    if text.startswith("data:image/"):
+        return text
+    try:
+        parsed = urlparse(text)
+        if parsed.scheme not in ("http", "https"):
+            return None
+        return parsed.geturl()
+    except Exception:
+        return None
+
+
+def _append_image_candidate(candidates: List[str], value: object) -> None:
+    normalized = _normalize_image_url(value)
+    if not normalized:
+        return
+    if normalized not in candidates:
+        candidates.append(normalized)
+    try:
+        proxied_source = parse_qs(urlparse(normalized).query).get("src", [None])[0]
+        decoded = _normalize_image_url(proxied_source)
+        if decoded and decoded not in candidates:
+            candidates.append(decoded)
+    except Exception:
+        return
+
+
+def _infer_image_content_type(content_type: object, source_url: object) -> Optional[str]:
+    normalized = str(content_type or "").strip().lower()
+    if normalized.startswith("image/"):
+        image_type = normalized.split(";", 1)[0]
+        return image_type if image_type in _SUPPORTED_IMAGE_CONTENT_TYPES else None
+
+    normalized_url = _normalize_image_url(source_url)
+    if not normalized_url or normalized_url.startswith("data:image/"):
+        return None
+    guessed, _ = mimetypes.guess_type(normalized_url)
+    if guessed in _SUPPORTED_IMAGE_CONTENT_TYPES:
+        return guessed
+    return None
+
+
+def _fetch_image_as_data_url(source_url: object) -> Optional[str]:
+    normalized = _normalize_image_url(source_url)
+    if not normalized:
+        return None
+    if normalized.startswith("data:image/"):
+        return normalized
+    try:
+        request = Request(
+            normalized,
+            headers={"Accept": _IMAGE_FETCH_ACCEPT_HEADER},
+        )
+        with urlopen(request, timeout=10) as response:
+            content = response.read()
+            content_type = _infer_image_content_type(response.headers.get("Content-Type"), normalized)
+    except (HTTPError, URLError, ValueError, OSError):
+        return None
+    if not content_type or not content:
+        return None
+    return f"data:{content_type};base64,{base64.b64encode(bytes(content)).decode('ascii')}"
+
+
+def _collect_quote_item_image_candidates(item: Dict[str, Any]) -> List[str]:
+    candidates: List[str] = []
+    _append_image_candidate(candidates, item.get("imageUrl"))
+    _append_image_candidate(candidates, item.get("image"))
+    _append_image_candidate(candidates, item.get("image_url"))
+    _append_image_candidate(candidates, item.get("thumbnail"))
+    _append_image_candidate(candidates, item.get("thumb"))
+
+    sku = _safe_text(item.get("sku"))
+    if not sku:
+        return candidates
+    try:
+        from ..integrations.woo_commerce import find_product_by_sku
+
+        product = find_product_by_sku(sku)
+    except Exception:
+        product = None
+    if isinstance(product, dict):
+        _append_image_candidate(candidates, product.get("image"))
+        _append_image_candidate(candidates, product.get("images"))
+    return candidates
+
+
+def _resolve_quote_item_image_data_url(item: Dict[str, Any]) -> Optional[str]:
+    for candidate in _collect_quote_item_image_candidates(item):
+        data_url = _fetch_image_as_data_url(candidate)
+        if data_url:
+            return data_url
+    return None
+
+
+def _find_chromium_binary() -> Optional[str]:
+    candidates = [
+        os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH"),
+        os.environ.get("CHROMIUM_EXECUTABLE_PATH"),
+        os.environ.get("PUPPETEER_EXECUTABLE_PATH"),
+        shutil.which("google-chrome-stable"),
+        shutil.which("google-chrome"),
+        shutil.which("chromium-browser"),
+        shutil.which("chromium"),
+        *_iter_existing_paths(
+            [
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/chromium",
+                "/opt/google/chrome/chrome",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            ]
+        ),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _render_quote_html(quote: Dict) -> str:
+    payload = quote.get("quotePayloadJson") if isinstance(quote.get("quotePayloadJson"), dict) else {}
+    prospect = payload.get("prospect") if isinstance(payload.get("prospect"), dict) else {}
+    sales_rep = payload.get("salesRep") if isinstance(payload.get("salesRep"), dict) else {}
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    logo_data_url = _get_logo_data_url()
+    fallback_item_image = _get_fallback_icon_data_url()
+    title = _safe_text(quote.get("title") or payload.get("title"), "Quote")
+    currency = _safe_text(quote.get("currency") or payload.get("currency"), "USD").upper()
+    notes = _safe_text(payload.get("notes"))
+    subtotal = _format_money(quote.get("subtotal") if quote.get("subtotal") is not None else payload.get("subtotal"), currency)
+
+    resolved_images = [
+        _resolve_quote_item_image_data_url(item) if isinstance(item, dict) else None
+        for item in items
+    ]
+
+    row_fragments: List[str] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        quantity = max(1, int(float(item.get("quantity") or 1)))
+        unit_price = _format_money(item.get("unitPrice"), currency)
+        line_total_value = item.get("lineTotal")
+        if line_total_value is None:
+            line_total_value = _as_float(item.get("unitPrice")) * quantity
+        line_total = _format_money(line_total_value, currency)
+        image_src = resolved_images[index] or fallback_item_image
+        image_markup = (
+            f'<img class="item-thumb" src="{_escape_html(image_src)}" alt="{_escape_html(item.get("name") or "Item")}" />'
+            if image_src
+            else '<div class="item-thumb item-thumb--empty"></div>'
+        )
+        note_markup = f'<div class="item-meta">{_escape_html(item.get("note"))}</div>' if _safe_text(item.get("note")) else ""
+        row_fragments.append(
+            f"""
+      <tr>
+        <td class="col-index">{index + 1}</td>
+        <td>
+          <div class="item-cell">
+            <div class="item-thumb-shell">
+              {image_markup}
+            </div>
+            <div class="item-copy">
+              <div class="item-name">{_escape_html(item.get("name") or "Item")}</div>
+              {note_markup}
+            </div>
+          </div>
+        </td>
+        <td class="numeric">{quantity}</td>
+        <td class="numeric">{_escape_html(unit_price)}</td>
+        <td class="numeric">{_escape_html(line_total)}</td>
+      </tr>
+            """.strip()
+        )
+    rows = "\n".join(row_fragments) or '<tr><td colspan="5">No items</td></tr>'
+    notes_markup = (
+        f"""
+      <div class="notes">
+        <div class="meta-label">Notes</div>
+        <p>{_escape_html(notes)}</p>
+      </div>
+        """.strip()
+        if notes
+        else ""
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{_escape_html(title)}</title>
+    <style>
+      @page {{
+        size: Letter;
+        margin: 18px;
+      }}
+      :root {{
+        color-scheme: light;
+        --ink: #0f172a;
+        --muted: #475569;
+        --line: #dbe2ea;
+        --accent: #0f4c81;
+        --accent-soft: #eff6ff;
+      }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        color: var(--ink);
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }}
+      .page {{
+        padding: 28px 24px 36px;
+      }}
+      .hero {{
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 24px;
+        padding-bottom: 18px;
+        border-bottom: 2px solid var(--accent);
+      }}
+      .hero-brand {{
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }}
+      .brand-logo {{
+        display: block;
+        width: 190px;
+        max-width: 100%;
+        height: auto;
+      }}
+      .brand {{
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }}
+      .title {{
+        margin: 8px 0 0;
+        font-size: 24px;
+        font-weight: 700;
+      }}
+      .subtle {{
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }}
+      .meta-grid {{
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }}
+      .meta-card {{
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+        background: #fff;
+      }}
+      .meta-label {{
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }}
+      .meta-value {{
+        font-size: 14px;
+        line-height: 1.6;
+      }}
+      table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 18px;
+        font-size: 13px;
+      }}
+      thead th {{
+        text-align: left;
+        padding: 10px 12px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }}
+      tbody td {{
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }}
+      .col-index {{
+        width: 32px;
+        color: var(--muted);
+      }}
+      .numeric {{
+        text-align: right;
+        white-space: nowrap;
+      }}
+      .item-name {{
+        font-weight: 700;
+        font-size: 13px;
+      }}
+      .item-cell {{
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }}
+      .item-thumb-shell {{
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: #f8fafc;
+      }}
+      .item-thumb {{
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+      }}
+      .item-thumb--empty {{
+        background: #f8fafc;
+      }}
+      .item-copy {{
+        min-width: 0;
+      }}
+      .item-meta {{
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 11px;
+      }}
+      .summary-row {{
+        display: flex;
+        justify-content: flex-end;
+        align-items: baseline;
+        gap: 0.45rem;
+        margin-top: 22px;
+        margin-left: auto;
+        width: 260px;
+        text-align: right;
+        color: var(--accent);
+        font-weight: 800;
+        font-size: 16px;
+      }}
+      .notes {{
+        margin-top: 18px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+      }}
+      .notes p {{
+        margin: 0;
+        white-space: pre-wrap;
+        line-height: 1.6;
+      }}
+      .footer {{
+        margin-top: 30px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.6;
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="hero">
+        <div class="hero-brand">
+          {f'<img class="brand-logo" src="{_escape_html(logo_data_url)}" alt="PepPro" />' if logo_data_url else '<div class="brand">PepPro</div>'}
+          <div class="title">{_escape_html(title)}</div>
+          <div class="subtle">Revision R{max(1, int(float(quote.get("revisionNumber") or 1)))}</div>
+        </div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-card">
+          <div class="meta-label">Prospect</div>
+          <div class="meta-value">
+            <div>{_escape_html(prospect.get("contactName") or prospect.get("name") or "Prospect")}</div>
+            {f'<div>{_escape_html(prospect.get("contactEmail"))}</div>' if _safe_text(prospect.get("contactEmail")) else ''}
+            {f'<div>{_escape_html(prospect.get("contactPhone"))}</div>' if _safe_text(prospect.get("contactPhone")) else ''}
+          </div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-label">Sales Rep</div>
+          <div class="meta-value">
+            <div>{_escape_html(sales_rep.get("name") or "PepPro")}</div>
+            {f'<div>{_escape_html(sales_rep.get("email"))}</div>' if _safe_text(sales_rep.get("email")) else ''}
+          </div>
+        </div>
+      </div>
+
+      {notes_markup}
+
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item</th>
+            <th class="numeric">Qty</th>
+            <th class="numeric">Unit</th>
+            <th class="numeric">Line Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows}
+        </tbody>
+      </table>
+
+      <div class="summary-row">
+        <span>Subtotal</span>
+        <span>{_escape_html(subtotal)}</span>
+      </div>
+
+      <div class="footer">
+        This quote is a sales summary generated by PepPro. Shipping, tax, and payment terms are excluded from this revision.
+      </div>
+    </div>
+  </body>
+</html>"""
+
+
+def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
+    browser_binary = _find_chromium_binary()
+    if not browser_binary:
+        logger.error("Quote PDF browser renderer unavailable", extra={"browser_binary": None})
+        return None
+
+    try:
+        html_content = _render_quote_html(quote)
+    except Exception:
+        logger.exception("Quote PDF browser renderer failed to render HTML")
+        return None
+
+    with tempfile.TemporaryDirectory(prefix="peppro-quote-pdf-") as temp_dir:
+        temp_path = Path(temp_dir)
+        html_path = temp_path / "quote.html"
+        pdf_path = temp_path / "quote.pdf"
+        html_path.write_text(html_content, encoding="utf-8")
+
+        command = [
+            browser_binary,
+            "--headless",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--allow-file-access-from-files",
+            "--print-to-pdf-no-header",
+            f"--print-to-pdf={pdf_path}",
+            html_path.resolve().as_uri(),
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                cwd=str(BASE_DIR),
+                timeout=_BROWSER_PDF_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except Exception:
+            logger.exception("Quote PDF browser renderer failed to execute", extra={"browser_binary": browser_binary})
+            return None
+
+        if completed.returncode != 0 or not pdf_path.exists():
+            logger.error(
+                "Quote PDF browser renderer exited non-zero",
+                extra={
+                    "browser_binary": browser_binary,
+                    "returncode": completed.returncode,
+                    "stderr": (completed.stderr or "")[:1000],
+                },
+            )
+            return None
+
+        try:
+            pdf = pdf_path.read_bytes()
+        except Exception:
+            logger.exception("Quote PDF browser renderer could not read output PDF", extra={"browser_binary": browser_binary})
+            return None
+
+    return {
+        "pdf": pdf,
+        "filename": _build_quote_filename(quote),
+    }
 
 
 def _safe_text(value: object, fallback: str = "") -> str:
@@ -315,6 +905,9 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
 
 def generate_prospect_quote_pdf(quote: Dict) -> Dict:
     rendered = _run_node_bridge(quote)
+    if rendered is not None:
+        return rendered
+    rendered = _run_system_browser_renderer(quote)
     if rendered is not None:
         return rendered
     if _allow_text_fallback():

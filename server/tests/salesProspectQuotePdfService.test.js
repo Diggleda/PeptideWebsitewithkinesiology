@@ -196,8 +196,10 @@ test('generateProspectQuotePdf resolves nested thumbnail objects for quote item 
 
 test('generateProspectQuotePdf launches Chromium with server-safe flags and optional executable override', async () => {
   let launchOptions;
+  const originalExistsSync = fs.existsSync;
   const originalExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = '/usr/bin/chromium';
+  fs.existsSync = (value) => value === '/usr/bin/chromium' || originalExistsSync(value);
 
   try {
     await withFreshPdfService(
@@ -238,6 +240,7 @@ test('generateProspectQuotePdf launches Chromium with server-safe flags and opti
       },
     );
   } finally {
+    fs.existsSync = originalExistsSync;
     if (originalExecutablePath === undefined) {
       delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     } else {
