@@ -250,6 +250,39 @@ test('generateProspectQuotePdf skips live Woo SKU lookups when no cached quote i
   );
 });
 
+test('normalizeWebsiteQuoteImageUrl unwraps nested Woo media proxy URLs', async () => {
+  const nestedProxyUrl = 'https://api.peppro.net/api/woo/media?src=https%3A%2F%2Fapi.peppro.net%2Fapi%2Fwoo%2Fmedia%3Fsrc%3Dhttps%253A%252F%252Fshop.peppro.net%252Fwp-content%252Fuploads%252F2025%252F12%252FPhysicians_Nasal-label_BPC-TB-1.jpg&_imgRetry=1774882889344_1';
+
+  await withFreshPdfService(
+    {
+      axios: {
+        get: async (url) => {
+          throw new Error(`No remote fetch expected: ${url}`);
+        },
+      },
+      playwright: {
+        chromium: {
+          launch: async () => ({
+            newPage: async () => ({
+              setContent: async () => {},
+              waitForLoadState: async () => {},
+              evaluate: async () => {},
+              pdf: async () => Buffer.from('%PDF-1.4 mock'),
+            }),
+            close: async () => {},
+          }),
+        },
+      },
+    },
+    async ({ normalizeWebsiteQuoteImageUrl }) => {
+      assert.equal(
+        normalizeWebsiteQuoteImageUrl(nestedProxyUrl),
+        'http://127.0.0.1:3001/api/woo/media?src=https%3A%2F%2Fshop.peppro.net%2Fwp-content%2Fuploads%2F2025%2F12%2FPhysicians_Nasal-label_BPC-TB-1.jpg',
+      );
+    },
+  );
+});
+
 test('generateProspectQuotePdf launches Chromium with server-safe flags and optional executable override', async () => {
   let launchOptions;
   const originalExistsSync = fs.existsSync;

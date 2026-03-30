@@ -16399,7 +16399,7 @@ function MainApp() {
   const resolveSalesQuoteLineItemImageUrl = useCallback(
     (item: ProspectQuoteLineItem): string | null => {
       if (typeof item?.imageUrl === "string" && item.imageUrl.trim()) {
-        return item.imageUrl.trim();
+        return normalizeWooImageUrl(item.imageUrl) ?? item.imageUrl.trim();
       }
 
       const itemProductId = normalizeIdField(item?.productId);
@@ -16427,7 +16427,7 @@ function MainApp() {
       });
 
       if (typeof cartMatch?.imageUrl === "string" && cartMatch.imageUrl.trim()) {
-        return cartMatch.imageUrl.trim();
+        return normalizeWooImageUrl(cartMatch.imageUrl) ?? cartMatch.imageUrl.trim();
       }
 
       for (const product of catalogProducts) {
@@ -16453,7 +16453,7 @@ function MainApp() {
           });
 
           if (typeof variantMatch?.image === "string" && variantMatch.image.trim()) {
-            return variantMatch.image.trim();
+            return normalizeWooImageUrl(variantMatch.image) ?? variantMatch.image.trim();
           }
         }
 
@@ -16467,7 +16467,7 @@ function MainApp() {
           (itemProductId !== null && productId === itemProductId) ||
           (Boolean(itemSku) && productSku === itemSku)
         ) {
-          return productPrimaryImage;
+          return normalizeWooImageUrl(productPrimaryImage) ?? productPrimaryImage;
         }
       }
 

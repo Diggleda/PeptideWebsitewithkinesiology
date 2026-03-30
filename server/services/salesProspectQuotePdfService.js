@@ -47,6 +47,7 @@ const wooMediaProxyBaseUrl = String(
     || process.env.INTERNAL_API_BASE_URL
     || `http://127.0.0.1:${env?.port || 3001}`,
 ).trim().replace(/\/+$/, '');
+const WOO_MEDIA_PROXY_PATH_PATTERN = /\/woo\/media$/i;
 
 const stripWooSizeSuffix = (raw) => {
   const trimmed = String(raw || '').trim();
@@ -308,12 +309,42 @@ const normalizeRemoteImageUrl = (value) => {
   }
 };
 
-const normalizeWebsiteQuoteImageUrl = (value) => {
-  const extracted = extractImageSource(value);
-  if (typeof extracted !== 'string' || !extracted.trim()) {
+const unwrapWooMediaProxySource = (value) => {
+  if (typeof value !== 'string') {
     return null;
   }
-  const normalized = normalizeRemoteImageUrl(extracted);
+
+  let candidate = value.trim();
+  if (!candidate) {
+    return null;
+  }
+
+  for (let depth = 0; depth < 4; depth += 1) {
+    try {
+      const parsed = new URL(candidate);
+      if (!WOO_MEDIA_PROXY_PATH_PATTERN.test(parsed.pathname)) {
+        break;
+      }
+      const nestedSource = parsed.searchParams.get('src');
+      if (typeof nestedSource !== 'string' || !nestedSource.trim() || nestedSource.trim() === candidate) {
+        break;
+      }
+      candidate = nestedSource.trim();
+    } catch {
+      break;
+    }
+  }
+
+  return candidate || null;
+};
+
+const normalizeWebsiteQuoteImageUrl = (value) => {
+  const extracted = extractImageSource(value);
+  const unwrapped = unwrapWooMediaProxySource(extracted);
+  if (typeof unwrapped !== 'string' || !unwrapped.trim()) {
+    return null;
+  }
+  const normalized = normalizeRemoteImageUrl(unwrapped);
   if (!normalized) {
     return null;
   }
