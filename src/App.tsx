@@ -465,10 +465,37 @@ const hasUploadedResellerPermit = (...values: unknown[]): boolean =>
     }
     return [
       record.resellerPermitFilePath,
+      (record as any).reseller_permit_file_path,
       record.resellerPermitFileName,
+      (record as any).reseller_permit_file_name,
       record.resellerPermitUploadedAt,
+      (record as any).reseller_permit_uploaded_at,
     ].some((field) => typeof field === "string" && field.trim().length > 0);
   });
+
+const isOrderTaxExempt = (value: unknown): boolean => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as {
+    isTaxExempt?: unknown;
+    is_tax_exempt?: unknown;
+    taxExemptSource?: unknown;
+    tax_exempt_source?: unknown;
+  };
+  const explicit = coerceOptionalBoolean(
+    record.isTaxExempt ?? record.is_tax_exempt,
+  );
+  if (explicit != null) {
+    return explicit;
+  }
+  const normalizedSource = String(
+    record.taxExemptSource ?? record.tax_exempt_source ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  return normalizedSource.length > 0;
+};
 
 const hasDoctorSupplementalProfileText = (value: unknown): boolean => {
   if (!value || typeof value !== "object") {
@@ -719,6 +746,19 @@ interface AccountOrderSummary {
   as_delegate?: string | null;
   pricingMode?: string | null;
   pricing_mode?: string | null;
+  isTaxExempt?: boolean | null;
+  is_tax_exempt?: boolean | null;
+  taxExemptSource?: string | null;
+  tax_exempt_source?: string | null;
+  taxExemptReason?: string | null;
+  tax_exempt_reason?: string | null;
+  resellerPermitFilePath?: string | null;
+  reseller_permit_file_path?: string | null;
+  resellerPermitFileName?: string | null;
+  reseller_permit_file_name?: string | null;
+  resellerPermitUploadedAt?: string | null;
+  reseller_permit_uploaded_at?: string | null;
+  hasResellerPermitUploaded?: boolean | null;
   number?: string | null;
   trackingNumber?: string | null;
   shippingCarrier?: string | null;
@@ -7852,6 +7892,19 @@ function MainApp() {
 		  const [salesRepProspectsForModal, setSalesRepProspectsForModal] = useState<any[] | null>(
 		    null,
 		  );
+      const livePresenceProfileImageByUserIdRef = useRef<
+        Record<
+          string,
+          {
+            value: string | null;
+            greaterArea?: string | null;
+            studyFocus?: string | null;
+            bio?: string | null;
+            hasResellerPermitUploaded?: boolean | null;
+            fetchedAt: number;
+          }
+        >
+      >({});
       const mergeSalesDoctorDetail = useCallback(
         (
           requestId: number,
@@ -9517,6 +9570,8 @@ function MainApp() {
                     : null,
             }
           : resolvePresence();
+      const cachedProfile =
+        livePresenceProfileImageByUserIdRef.current[String(bucket.doctorId || "").trim()] || null;
 
         const nextDetail = {
 	        doctorId: bucket.doctorId,
@@ -9575,7 +9630,7 @@ function MainApp() {
 	        ownerSalesRepId: bucket.ownerSalesRepId ?? null,
 	        ownerSalesRepName: (bucket as any).ownerSalesRepName ?? null,
 	        ownerSalesRepEmail: (bucket as any).ownerSalesRepEmail ?? null,
-          hasResellerPermitUploaded: hasUploadedResellerPermit(bucket),
+          hasResellerPermitUploaded: hasUploadedResellerPermit(bucket, cachedProfile),
 	        isOnline: presence?.isOnline ?? null,
 	        isIdle: presence?.isIdle ?? null,
 	        idleMinutes: presence?.idleMinutes ?? null,
@@ -9611,7 +9666,7 @@ function MainApp() {
       salesDoctorDetailRequestIdRef.current = requestId;
       const id = String(entry?.id || "").trim();
       if (!id) return;
-      const cachedLiveProfile = livePresenceProfileImageByUserId[id] || null;
+      const cachedLiveProfile = livePresenceProfileImageByUserIdRef.current[id] || null;
       const aliasIds = Array.isArray(entry?.aliasIds)
         ? (entry.aliasIds as unknown[])
             .map((value) => String(value || "").trim())
@@ -10368,7 +10423,6 @@ function MainApp() {
       mergeSalesDoctorDetail,
       openSalesDoctorDetail,
       salesTrackingDoctors,
-      livePresenceProfileImageByUserId,
       user?.id,
       user?.role,
       user?.salesRepId,
@@ -13664,6 +13718,9 @@ function MainApp() {
   const [livePresenceProfileImageByUserId, setLivePresenceProfileImageByUserId] = useState<
     Record<string, LivePresenceProfileImageCacheEntry>
   >({});
+  useEffect(() => {
+    livePresenceProfileImageByUserIdRef.current = livePresenceProfileImageByUserId;
+  }, [livePresenceProfileImageByUserId]);
   const livePresenceProfileImageRequestIdsRef = useRef<Set<string>>(new Set());
 
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
@@ -13948,6 +14005,162 @@ function MainApp() {
       cancelled = true;
     };
   }, [adminLiveUsers, liveClients, livePresenceProfileImageByUserId, user?.role]);
+
+  useEffect(() => {
+    const currentDetail = salesDoctorDetailRef.current;
+    const canFetchSupplementalProfile =
+      Boolean(user?.role) && (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role));
+    if (!currentDetail || !canFetchSupplementalProfile || !isDoctorRole(currentDetail.role)) {
+      return;
+    }
+
+    const doctorId = String(currentDetail.doctorId || "").trim();
+    if (
+      !doctorId ||
+      doctorId.startsWith("contact_form:") ||
+      doctorId.startsWith("manual:") ||
+      doctorId.startsWith("anon:")
+    ) {
+      return;
+    }
+
+    const currentHasAvatar =
+      typeof currentDetail.avatar === "string" && currentDetail.avatar.trim().length > 0;
+    const currentHasSupplementalText = hasDoctorSupplementalProfileText(currentDetail);
+    const currentHasPermit = currentDetail.hasResellerPermitUploaded === true;
+    const cachedProfile = livePresenceProfileImageByUserId[doctorId] || null;
+    const cachedHasAvatar =
+      typeof cachedProfile?.value === "string" && cachedProfile.value.trim().length > 0;
+    const cachedHasSupplementalText = Boolean(
+      (typeof cachedProfile?.greaterArea === "string" && cachedProfile.greaterArea.trim().length > 0) ||
+      (typeof cachedProfile?.studyFocus === "string" && cachedProfile.studyFocus.trim().length > 0) ||
+      (typeof cachedProfile?.bio === "string" && cachedProfile.bio.trim().length > 0),
+    );
+    const cachedHasPermit = cachedProfile?.hasResellerPermitUploaded === true;
+    const cachedProfileIsFresh =
+      Boolean(cachedProfile) &&
+      (Date.now() - Number(cachedProfile?.fetchedAt || 0)) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS;
+
+    if (cachedProfile && (!currentHasAvatar || !currentHasSupplementalText || !currentHasPermit)) {
+      setSalesDoctorDetail((existing) => {
+        if (!existing || String(existing.doctorId || "").trim() !== doctorId) {
+          return existing;
+        }
+        return {
+          ...existing,
+          avatar: existing.avatar || cachedProfile.value || null,
+          greaterArea: existing.greaterArea || cachedProfile.greaterArea || null,
+          studyFocus: existing.studyFocus || cachedProfile.studyFocus || null,
+          bio: existing.bio || cachedProfile.bio || null,
+          hasResellerPermitUploaded:
+            existing.hasResellerPermitUploaded === true || cachedHasPermit,
+        };
+      });
+    }
+
+    if (
+      (currentHasAvatar || cachedHasAvatar) &&
+      (currentHasSupplementalText || cachedHasSupplementalText) &&
+      (currentHasPermit || cachedHasPermit)
+    ) {
+      return;
+    }
+
+    if (cachedProfileIsFresh) {
+      return;
+    }
+
+    if (livePresenceProfileImageRequestIdsRef.current.has(doctorId)) {
+      return;
+    }
+    livePresenceProfileImageRequestIdsRef.current.add(doctorId);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        let profile: any = null;
+        if (isAdmin(user?.role) || isSalesLead(user?.role)) {
+          const response = (await settingsAPI.getAdminUserProfile(doctorId)) as any;
+          profile =
+            response && typeof response === "object"
+              ? ((response as any).user || response)
+              : null;
+        } else {
+          const response = (await settingsAPI.getAdminUserProfiles([doctorId])) as any;
+          profile = Array.isArray(response?.users)
+            ? response.users.find((candidate: any) => String(candidate?.id || "").trim() === doctorId) || null
+            : null;
+        }
+        if (!profile || cancelled) {
+          return;
+        }
+
+        const profileImageUrl =
+          typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
+            ? profile.profileImageUrl.trim()
+            : null;
+        const greaterArea =
+          typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0
+            ? profile.greaterArea.trim()
+            : null;
+        const studyFocus =
+          typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0
+            ? profile.studyFocus.trim()
+            : null;
+        const bio =
+          typeof profile?.bio === "string" && profile.bio.trim().length > 0
+            ? profile.bio.trim()
+            : null;
+        const hasResellerPermitUploaded = hasUploadedResellerPermit(profile);
+
+        setLivePresenceProfileImageByUserId((current) => ({
+          ...current,
+          [doctorId]: {
+            value: profileImageUrl,
+            greaterArea,
+            studyFocus,
+            bio,
+            hasResellerPermitUploaded,
+            fetchedAt: Date.now(),
+          },
+        }));
+        setSalesDoctorDetail((existing) => {
+          if (!existing || String(existing.doctorId || "").trim() !== doctorId) {
+            return existing;
+          }
+          return {
+            ...existing,
+            avatar: existing.avatar || profileImageUrl || null,
+            greaterArea: existing.greaterArea || greaterArea || null,
+            studyFocus: existing.studyFocus || studyFocus || null,
+            bio: existing.bio || bio || null,
+            hasResellerPermitUploaded:
+              existing.hasResellerPermitUploaded === true || hasResellerPermitUploaded,
+          };
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("[SalesDoctor] Failed to load supplemental modal profile", error);
+        }
+      } finally {
+        livePresenceProfileImageRequestIdsRef.current.delete(doctorId);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    livePresenceProfileImageByUserId,
+    salesDoctorDetail?.avatar,
+    salesDoctorDetail?.bio,
+    salesDoctorDetail?.doctorId,
+    salesDoctorDetail?.greaterArea,
+    salesDoctorDetail?.hasResellerPermitUploaded,
+    salesDoctorDetail?.role,
+    salesDoctorDetail?.studyFocus,
+    user?.role,
+  ]);
 
   const resolveLivePresenceAvatarUrl = useCallback(
     (entry: any) => {
@@ -22076,6 +22289,34 @@ function MainApp() {
 	            id: wooId ? String(wooId) : String(wooNumber),
               asDelegate: delegateOrderLabel,
               as_delegate: delegateOrderField,
+              isTaxExempt:
+                coerceOptionalBoolean(
+                  created?.isTaxExempt ?? created?.is_tax_exempt,
+                ) ?? null,
+              taxExemptSource:
+                normalizeStringField(
+                  created?.taxExemptSource ?? created?.tax_exempt_source,
+                ) ?? null,
+              taxExemptReason:
+                normalizeStringField(
+                  created?.taxExemptReason ?? created?.tax_exempt_reason,
+                ) ?? null,
+              resellerPermitFilePath:
+                normalizeStringField(
+                  created?.resellerPermitFilePath ??
+                    created?.reseller_permit_file_path,
+                ) ?? null,
+              resellerPermitFileName:
+                normalizeStringField(
+                  created?.resellerPermitFileName ??
+                    created?.reseller_permit_file_name,
+                ) ?? null,
+              resellerPermitUploadedAt:
+                normalizeStringField(
+                  created?.resellerPermitUploadedAt ??
+                    created?.reseller_permit_uploaded_at,
+                ) ?? null,
+              hasResellerPermitUploaded: hasUploadedResellerPermit(created),
 	            number: wooNumber ? String(wooNumber) : null,
 	            status: String(created?.status || "on-hold"),
 	            currency: "usd",
@@ -27718,7 +27959,7 @@ function MainApp() {
             </div>
 
             <div className="sales-rep-leads-card sales-rep-combined-card">
-              <div className="flex flex-col gap-3 mb-4">
+              <div className="flex flex-col gap-3 mb-0">
                 <div className="sales-rep-header-row flex w-full flex-col gap-3">
 	                  <div className="min-w-0">
 	                    <h3 className="text-lg font-semibold text-slate-900">Products Sold & Commission</h3>
@@ -33287,11 +33528,6 @@ function MainApp() {
 					                          );
 					                        })()}
 					                      </div>
-                                      {salesDoctorDetail.hasResellerPermitUploaded === true && (
-                                        <div className="text-sm font-normal text-slate-600">
-                                          Resellers Permit Uploaded
-                                        </div>
-                                      )}
                                   </>
 				                    )}
 				                </DialogTitle>
@@ -33718,6 +33954,11 @@ function MainApp() {
                             salesDoctorDetail.totalOrderValue ?? salesDoctorDetail.revenue,
                           )}
                         </p>
+                        {salesDoctorDetail.hasResellerPermitUploaded === true && (
+                          <p className="text-sm text-slate-600">
+                            Resellers Permit Uploaded
+                          </p>
+                        )}
                       </>
                     ) : (
                       <>
@@ -33888,17 +34129,19 @@ function MainApp() {
                   <p className="text-sm font-semibold text-slate-700">
                     Contact
                   </p>
-	                  <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
+	                  <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
 	                    <div className="min-w-0">
 	                      <span className="font-semibold text-slate-800">Email: </span>
 	                      {salesDoctorDetail.email ? (
-	                        <span className="inline-block max-w-full align-middle overflow-x-auto whitespace-nowrap">
+	                        <span className="inline-block max-w-full align-middle">
+                            <span className="block max-w-full overflow-x-auto whitespace-nowrap">
                             <a
                               href={`mailto:${salesDoctorDetail.email}`}
                               className="inline-block min-w-max"
                             >
 	                            {salesDoctorDetail.email}
 	                          </a>
+                            </span>
                           </span>
 	                      ) : (
 	                        <span>Unavailable</span>
@@ -33972,19 +34215,22 @@ function MainApp() {
                     const hasChanges = trimmedDraft !== existingAddress;
                     if (!canEditAddress) {
                       return (
-                        <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 whitespace-pre-line min-h-[72px]">
-                          {salesDoctorDetail.address || "Unavailable"}
+                        <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700">
+                          <div className="min-w-max whitespace-pre">
+                            {salesDoctorDetail.address || "Unavailable"}
+                          </div>
                         </div>
                       );
                     }
                     return (
-                      <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 space-y-2">
+                      <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                        <div className="flex h-full min-h-0 flex-col gap-2">
                         <Textarea
                           value={salesDoctorAddressDraft}
                           onChange={(event) => setSalesDoctorAddressDraft(event.target.value)}
                           rows={4}
                           placeholder="Address line 1&#10;Address line 2&#10;City, State ZIP&#10;Country"
-                          className="block w-full rounded-md border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100 whitespace-pre-line"
+                          className="block min-h-0 flex-1 w-full rounded-md border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100 whitespace-pre-line"
                         />
                         <Button
                           type="button"
@@ -33996,6 +34242,7 @@ function MainApp() {
                         >
                           {salesDoctorAddressSaving ? "Saving…" : "Save"}
                         </Button>
+                        </div>
                       </div>
                     );
                   })()}
@@ -34005,18 +34252,18 @@ function MainApp() {
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
                     </p>
-                    <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
-                      <div>
+                    <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
+                      <div className="min-w-max">
                         <span className="font-semibold text-slate-800">Greater Area: </span>
                         <span>{salesDoctorDetail.greaterArea || "Unavailable"}</span>
                       </div>
-                      <div>
+                      <div className="min-w-max">
                         <span className="font-semibold text-slate-800">Study Focus: </span>
                         <span>{salesDoctorDetail.studyFocus || "Unavailable"}</span>
                       </div>
                       <div className="space-y-1">
                         <div className="font-semibold text-slate-800">Bio</div>
-                        <div className="overflow-auto whitespace-pre-line">
+                        <div className="min-w-max overflow-x-auto overflow-y-auto whitespace-pre-line">
                           {salesDoctorDetail.bio || "Unavailable"}
                         </div>
                       </div>
@@ -34497,6 +34744,7 @@ function MainApp() {
                             normalizeDelegateOrderLabel((order as any)?.as_delegate);
                           const dateSummary = getSalesOrderDateSummary(order as any);
                           const orderSubtotal = resolveOrderItemsSubtotal(order as any);
+                          const orderTaxExempt = isOrderTaxExempt(order);
                           return (
 	                        <button
 	                          key={order.id}
@@ -34523,6 +34771,11 @@ function MainApp() {
                                   ? `${dateSummary.label}: ${dateSummary.value}`
                                   : "Date unavailable"}
 	                            </div>
+                              {orderTaxExempt && (
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-600">
+                                  {orderTaxExempt && <span>Tax Exempt</span>}
+                                </div>
+                              )}
 	                          </div>
 	                          <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
 	                            {formatCurrency(orderSubtotal || 0)}
@@ -35121,6 +35374,11 @@ function MainApp() {
                 const delegateOrderLabel =
                   normalizeDelegateOrderLabel(delegateFields.asDelegate) ||
                   normalizeDelegateOrderLabel(delegateFields.as_delegate);
+                const orderDetailHasResellerPermit = hasUploadedResellerPermit(
+                  salesOrderDetail,
+                  salesDoctorDetail,
+                );
+                const orderDetailTaxExempt = isOrderTaxExempt(salesOrderDetail);
 
                 return (
               <div className="space-y-6">
@@ -35158,6 +35416,11 @@ function MainApp() {
                               </span>
                             ) : null}
                           </div>
+                          {orderDetailTaxExempt && (
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-600">
+                              {orderDetailTaxExempt && <span>Tax Exempt</span>}
+                            </div>
+                          )}
                       </div>
                       <div>
                         <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
@@ -35391,6 +35654,12 @@ function MainApp() {
                             <span className="font-semibold">Payment:</span>{" "}
                             {renderOrderDetailValue(paymentDisplay, { widthClass: "w-20" })}
                           </p>
+                          {orderDetailHasResellerPermit && (
+                            <p>
+                              <span className="font-semibold">Permit:</span>{" "}
+                              Resellers Permit Uploaded
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

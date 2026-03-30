@@ -452,6 +452,26 @@ const getSalesRepOrderDetail = async (req, res, next) => {
   }
 };
 
+const getSalesModalDetail = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'sales_rep' && role !== 'sales_partner' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
+      return res.status(403).json({ error: 'Sales rep access required' });
+    }
+    const userId = String(req.params?.userId || '').trim();
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+    const detail = await orderService.getSalesModalDetail({
+      actor: req.user,
+      targetUserId: userId,
+    });
+    return res.json(detail);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const cancelOrder = async (req, res, next) => {
   try {
     const result = await orderService.cancelOrder({
@@ -804,6 +824,7 @@ module.exports = {
   getOrders,
   getOrdersForSalesRep,
   getSalesRepOrderDetail,
+  getSalesModalDetail,
   getSalesByRepForAdmin,
   getOnHoldOrdersForSalesRep,
   getOnHoldOrdersForAdmin,

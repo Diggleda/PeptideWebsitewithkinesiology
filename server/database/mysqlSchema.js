@@ -34,6 +34,12 @@ const STATEMENTS = [
       id VARCHAR(64) PRIMARY KEY,
       user_id VARCHAR(64) NOT NULL,
       pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale',
+      is_tax_exempt TINYINT(1) NOT NULL DEFAULT 0,
+      tax_exempt_source VARCHAR(64) NULL,
+      tax_exempt_reason VARCHAR(255) NULL,
+      reseller_permit_file_path VARCHAR(255) NULL,
+      reseller_permit_file_name VARCHAR(255) NULL,
+      reseller_permit_uploaded_at DATETIME NULL,
       woo_order_id BIGINT NULL,
       shipstation_order_id VARCHAR(64) NULL,
       items_subtotal DECIMAL(12,2) NULL,
@@ -668,6 +674,48 @@ const ensureOrderColumns = async () => {
       ddl: `
         ALTER TABLE peppro_orders
         ADD COLUMN pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale' AFTER user_id
+      `,
+    },
+    {
+      name: 'is_tax_exempt',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN is_tax_exempt TINYINT(1) NOT NULL DEFAULT 0 AFTER pricing_mode
+      `,
+    },
+    {
+      name: 'tax_exempt_source',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN tax_exempt_source VARCHAR(64) NULL AFTER is_tax_exempt
+      `,
+    },
+    {
+      name: 'tax_exempt_reason',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN tax_exempt_reason VARCHAR(255) NULL AFTER tax_exempt_source
+      `,
+    },
+    {
+      name: 'reseller_permit_file_path',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN reseller_permit_file_path VARCHAR(255) NULL AFTER tax_exempt_reason
+      `,
+    },
+    {
+      name: 'reseller_permit_file_name',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN reseller_permit_file_name VARCHAR(255) NULL AFTER reseller_permit_file_path
+      `,
+    },
+    {
+      name: 'reseller_permit_uploaded_at',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN reseller_permit_uploaded_at DATETIME NULL AFTER reseller_permit_file_name
       `,
     },
     {

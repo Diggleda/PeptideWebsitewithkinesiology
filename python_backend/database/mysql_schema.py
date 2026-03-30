@@ -204,6 +204,12 @@ CREATE_TABLE_STATEMENTS = [
         user_id VARCHAR(32) NOT NULL,
         as_delegate VARCHAR(190) NULL,
         pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale',
+        is_tax_exempt TINYINT(1) NOT NULL DEFAULT 0,
+        tax_exempt_source VARCHAR(64) NULL,
+        tax_exempt_reason VARCHAR(255) NULL,
+        reseller_permit_file_path LONGTEXT NULL,
+        reseller_permit_file_name VARCHAR(190) NULL,
+        reseller_permit_uploaded_at DATETIME NULL,
         items LONGTEXT NULL,
         items_subtotal DECIMAL(12,2) NULL,
         total DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -565,6 +571,12 @@ def ensure_schema() -> None:
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS first_order_bonus_granted_at DATETIME NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale'",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS as_delegate VARCHAR(190) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_tax_exempt TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_exempt_source VARCHAR(64) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_exempt_reason VARCHAR(255) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS reseller_permit_file_path LONGTEXT NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS reseller_permit_file_name VARCHAR(190) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS reseller_permit_uploaded_at DATETIME NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS items_subtotal DECIMAL(12,2) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS facility_pickup TINYINT(1) NOT NULL DEFAULT 0",
@@ -758,6 +770,23 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE orders ADD COLUMN facility_pickup TINYINT(1) NOT NULL DEFAULT 0")
         if not _column_exists("orders", "fulfillment_method"):
             mysql_client.execute("ALTER TABLE orders ADD COLUMN fulfillment_method VARCHAR(32) NULL")
+    except Exception:
+        pass
+
+    # Ensure order-level tax exemption snapshots exist for reporting and modal display.
+    try:
+        if not _column_exists("orders", "is_tax_exempt"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN is_tax_exempt TINYINT(1) NOT NULL DEFAULT 0")
+        if not _column_exists("orders", "tax_exempt_source"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN tax_exempt_source VARCHAR(64) NULL")
+        if not _column_exists("orders", "tax_exempt_reason"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN tax_exempt_reason VARCHAR(255) NULL")
+        if not _column_exists("orders", "reseller_permit_file_path"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN reseller_permit_file_path LONGTEXT NULL")
+        if not _column_exists("orders", "reseller_permit_file_name"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN reseller_permit_file_name VARCHAR(190) NULL")
+        if not _column_exists("orders", "reseller_permit_uploaded_at"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN reseller_permit_uploaded_at DATETIME NULL")
     except Exception:
         pass
 

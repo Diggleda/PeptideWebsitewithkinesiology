@@ -653,6 +653,44 @@ def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
     return _has_reseller_permit_on_file(user)
 
 
+def _normalize_optional_text(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _resolve_order_exemption_snapshot(user: Optional[Dict], tax_exempt: bool = False) -> Dict[str, object]:
+    user = user if isinstance(user, dict) else {}
+    reseller_permit_file_path = _normalize_optional_text(
+        user.get("resellerPermitFilePath") or user.get("reseller_permit_file_path")
+    )
+    reseller_permit_file_name = _normalize_optional_text(
+        user.get("resellerPermitFileName") or user.get("reseller_permit_file_name")
+    )
+    reseller_permit_uploaded_at = _normalize_optional_text(
+        user.get("resellerPermitUploadedAt") or user.get("reseller_permit_uploaded_at")
+    )
+    has_reseller_permit_uploaded = bool(
+        reseller_permit_file_path or reseller_permit_file_name or reseller_permit_uploaded_at
+    )
+    tax_exempt_source = _normalize_optional_text(
+        user.get("taxExemptSource") or user.get("tax_exempt_source")
+    ) or ("RESELLER_PERMIT" if tax_exempt and has_reseller_permit_uploaded else None)
+    tax_exempt_reason = _normalize_optional_text(
+        user.get("taxExemptReason") or user.get("tax_exempt_reason")
+    ) or ("Reseller permit on file" if tax_exempt and has_reseller_permit_uploaded else None)
+    return {
+        "isTaxExempt": bool(tax_exempt),
+        "taxExemptSource": tax_exempt_source,
+        "taxExemptReason": tax_exempt_reason,
+        "resellerPermitFilePath": reseller_permit_file_path,
+        "resellerPermitFileName": reseller_permit_file_name,
+        "resellerPermitUploadedAt": reseller_permit_uploaded_at,
+        "hasResellerPermitUploaded": has_reseller_permit_uploaded,
+    }
+
+
 def _normalize_country_code(value: object) -> str:
     normalized = str(value or "").strip().upper()
     if normalized in ("US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"):
@@ -1177,6 +1215,8 @@ def create_order(
         raise _service_error("User not found", 404)
 
     tax_exempt = _is_tax_exempt_for_checkout(user)
+    checkout_profile_user = user_repository.find_by_id(user_id) if tax_exempt else user
+    order_exemption_snapshot = _resolve_order_exemption_snapshot(checkout_profile_user, tax_exempt)
     sales_rep_ctx = _resolve_sales_rep_context(user)
     raw_payment_method = str(payment_method or "").strip().lower()
     normalized_payment_method = raw_payment_method
@@ -1281,6 +1321,7 @@ def create_order(
         "doctorSalesRepName": sales_rep_ctx.get("name"),
         "doctorSalesRepEmail": sales_rep_ctx.get("email"),
         "doctorSalesRepCode": sales_rep_ctx.get("salesCode"),
+        **order_exemption_snapshot,
     }
 
     if test_override:
@@ -3134,6 +3175,17 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
 
     target_user = user_by_id.get(normalized_target_user_id)
     if not isinstance(target_user, dict):
+        target_user = next(
+            (
+                user
+                for user in users
+                if isinstance(user, dict)
+                and str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+                == normalized_target_user_id
+            ),
+            None,
+        )
+    if not isinstance(target_user, dict):
         raise _service_error("USER_NOT_FOUND", 404)
 
     def _is_sales_actor_role(value: object) -> bool:
@@ -3332,9 +3384,18 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             "greaterArea": target_user.get("greaterArea"),
             "studyFocus": target_user.get("studyFocus"),
             "bio": target_user.get("bio"),
-            "resellerPermitFilePath": target_user.get("resellerPermitFilePath"),
-            "resellerPermitFileName": target_user.get("resellerPermitFileName"),
-            "resellerPermitUploadedAt": target_user.get("resellerPermitUploadedAt"),
+            "resellerPermitFilePath": (
+                target_user.get("resellerPermitFilePath")
+                or target_user.get("reseller_permit_file_path")
+            ),
+            "resellerPermitFileName": (
+                target_user.get("resellerPermitFileName")
+                or target_user.get("reseller_permit_file_name")
+            ),
+            "resellerPermitUploadedAt": (
+                target_user.get("resellerPermitUploadedAt")
+                or target_user.get("reseller_permit_uploaded_at")
+            ),
             "salesRepId": target_sales_rep_id,
             "isPartner": _normalize_bool(
                 target_sales_rep_record.get("isPartner")

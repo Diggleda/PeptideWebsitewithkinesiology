@@ -14,6 +14,35 @@ from ..utils.crypto_envelope import decrypt_json, encrypt_json
 HAND_DELIVERY_SERVICE_LABEL = "Hand Delivered"
 
 
+def _normalize_optional_string(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _coerce_optional_bool(value: object) -> Optional[bool]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            if not float(value) == float(value):
+                return None
+        except Exception:
+            return None
+        return float(value) != 0.0
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
+
+
 def _normalize_fulfillment_method(value: object, fallback: object = None) -> Optional[str]:
     raw = value if value not in (None, "") else fallback
     text = str(raw or "").strip()
@@ -31,6 +60,12 @@ _SALES_TRACKING_SELECT_COLUMNS = """
     user_id,
     as_delegate,
     pricing_mode,
+    is_tax_exempt,
+    tax_exempt_source,
+    tax_exempt_reason,
+    reseller_permit_file_path,
+    reseller_permit_file_name,
+    reseller_permit_uploaded_at,
     items,
     items_subtotal,
     total,
@@ -226,6 +261,12 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 id,
                 as_delegate,
                 pricing_mode,
+                is_tax_exempt,
+                tax_exempt_source,
+                tax_exempt_reason,
+                reseller_permit_file_path,
+                reseller_permit_file_name,
+                reseller_permit_uploaded_at,
                 items,
                 items_subtotal,
                 total,
@@ -302,6 +343,59 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 "appliedReferralCredit": float(payload.get("appliedReferralCredit") or 0),
                 "discountCode": payload.get("discountCode") or None,
                 "discountCodeAmount": float(payload.get("discountCodeAmount") or 0),
+                "isTaxExempt": (
+                    _coerce_optional_bool(row.get("is_tax_exempt"))
+                    if _coerce_optional_bool(row.get("is_tax_exempt")) is not None
+                    else (
+                        bool(_coerce_optional_bool(payload.get("isTaxExempt")))
+                        or bool(
+                            row.get("tax_exempt_source")
+                            or payload.get("taxExemptSource")
+                            or payload.get("tax_exempt_source")
+                        )
+                    )
+                ),
+                "taxExemptSource": (
+                    row.get("tax_exempt_source")
+                    or payload.get("taxExemptSource")
+                    or payload.get("tax_exempt_source")
+                    or None
+                ),
+                "taxExemptReason": (
+                    row.get("tax_exempt_reason")
+                    or payload.get("taxExemptReason")
+                    or payload.get("tax_exempt_reason")
+                    or None
+                ),
+                "resellerPermitFilePath": (
+                    row.get("reseller_permit_file_path")
+                    or payload.get("resellerPermitFilePath")
+                    or payload.get("reseller_permit_file_path")
+                    or None
+                ),
+                "resellerPermitFileName": (
+                    row.get("reseller_permit_file_name")
+                    or payload.get("resellerPermitFileName")
+                    or payload.get("reseller_permit_file_name")
+                    or None
+                ),
+                "resellerPermitUploadedAt": (
+                    fmt_datetime(row.get("reseller_permit_uploaded_at"))
+                    or payload.get("resellerPermitUploadedAt")
+                    or payload.get("reseller_permit_uploaded_at")
+                    or None
+                ),
+                "hasResellerPermitUploaded": bool(
+                    row.get("reseller_permit_file_path")
+                    or row.get("reseller_permit_file_name")
+                    or row.get("reseller_permit_uploaded_at")
+                    or payload.get("resellerPermitFilePath")
+                    or payload.get("reseller_permit_file_path")
+                    or payload.get("resellerPermitFileName")
+                    or payload.get("reseller_permit_file_name")
+                    or payload.get("resellerPermitUploadedAt")
+                    or payload.get("reseller_permit_uploaded_at")
+                ),
                 "pricingMode": row.get("pricing_mode") or "wholesale",
                 "asDelegate": (
                     row.get("as_delegate")
@@ -866,14 +960,18 @@ def insert(order: Dict) -> Dict:
             mysql_client.execute(
                 """
                 INSERT INTO orders (
-                    id, user_id, as_delegate, pricing_mode, items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
+                    id, user_id, as_delegate, pricing_mode, is_tax_exempt, tax_exempt_source, tax_exempt_reason,
+                    reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
+                    items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
                     facility_pickup, fulfillment_method,
                     tracking_number, shipped_at,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
                 ) VALUES (
-                    %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                    %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(is_tax_exempt)s, %(tax_exempt_source)s, %(tax_exempt_reason)s,
+                    %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
+                    %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
                     %(facility_pickup)s, %(fulfillment_method)s,
                     %(tracking_number)s, %(shipped_at)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
@@ -884,6 +982,12 @@ def insert(order: Dict) -> Dict:
                     user_id = VALUES(user_id),
                     as_delegate = VALUES(as_delegate),
                     pricing_mode = VALUES(pricing_mode),
+                    is_tax_exempt = VALUES(is_tax_exempt),
+                    tax_exempt_source = VALUES(tax_exempt_source),
+                    tax_exempt_reason = VALUES(tax_exempt_reason),
+                    reseller_permit_file_path = VALUES(reseller_permit_file_path),
+                    reseller_permit_file_name = VALUES(reseller_permit_file_name),
+                    reseller_permit_uploaded_at = VALUES(reseller_permit_uploaded_at),
                     items = VALUES(items),
                     items_subtotal = VALUES(items_subtotal),
                     total = VALUES(total),
@@ -979,6 +1083,12 @@ def update(order: Dict) -> Optional[Dict]:
                     user_id = %(user_id)s,
                     as_delegate = %(as_delegate)s,
                     pricing_mode = %(pricing_mode)s,
+                    is_tax_exempt = %(is_tax_exempt)s,
+                    tax_exempt_source = %(tax_exempt_source)s,
+                    tax_exempt_reason = %(tax_exempt_reason)s,
+                    reseller_permit_file_path = %(reseller_permit_file_path)s,
+                    reseller_permit_file_name = %(reseller_permit_file_name)s,
+                    reseller_permit_uploaded_at = %(reseller_permit_uploaded_at)s,
                     items = %(items)s,
                     items_subtotal = %(items_subtotal)s,
                     total = %(total)s,
@@ -1117,11 +1227,72 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
 
     payload = _read_order_json_field(row, "payload", {})
     payload_order = payload.get("order") if isinstance(payload, dict) and isinstance(payload.get("order"), dict) else None
+    tax_exempt_source = _normalize_optional_string(
+        row.get("tax_exempt_source")
+        or (payload_order.get("taxExemptSource") if isinstance(payload_order, dict) else None)
+        or (payload_order.get("tax_exempt_source") if isinstance(payload_order, dict) else None)
+        or (payload.get("taxExemptSource") if isinstance(payload, dict) else None)
+        or (payload.get("tax_exempt_source") if isinstance(payload, dict) else None)
+    )
+    tax_exempt_reason = _normalize_optional_string(
+        row.get("tax_exempt_reason")
+        or (payload_order.get("taxExemptReason") if isinstance(payload_order, dict) else None)
+        or (payload_order.get("tax_exempt_reason") if isinstance(payload_order, dict) else None)
+        or (payload.get("taxExemptReason") if isinstance(payload, dict) else None)
+        or (payload.get("tax_exempt_reason") if isinstance(payload, dict) else None)
+    )
+    reseller_permit_file_path = _normalize_optional_string(
+        row.get("reseller_permit_file_path")
+        or (payload_order.get("resellerPermitFilePath") if isinstance(payload_order, dict) else None)
+        or (payload_order.get("reseller_permit_file_path") if isinstance(payload_order, dict) else None)
+        or (payload.get("resellerPermitFilePath") if isinstance(payload, dict) else None)
+        or (payload.get("reseller_permit_file_path") if isinstance(payload, dict) else None)
+    )
+    reseller_permit_file_name = _normalize_optional_string(
+        row.get("reseller_permit_file_name")
+        or (payload_order.get("resellerPermitFileName") if isinstance(payload_order, dict) else None)
+        or (payload_order.get("reseller_permit_file_name") if isinstance(payload_order, dict) else None)
+        or (payload.get("resellerPermitFileName") if isinstance(payload, dict) else None)
+        or (payload.get("reseller_permit_file_name") if isinstance(payload, dict) else None)
+    )
+    reseller_permit_uploaded_at = fmt_datetime(
+        row.get("reseller_permit_uploaded_at")
+        or (payload_order.get("resellerPermitUploadedAt") if isinstance(payload_order, dict) else None)
+        or (payload_order.get("reseller_permit_uploaded_at") if isinstance(payload_order, dict) else None)
+        or (payload.get("resellerPermitUploadedAt") if isinstance(payload, dict) else None)
+        or (payload.get("reseller_permit_uploaded_at") if isinstance(payload, dict) else None)
+    )
+    explicit_is_tax_exempt = _coerce_optional_bool(
+        row.get("is_tax_exempt")
+        if row.get("is_tax_exempt") is not None
+        else (
+            payload_order.get("isTaxExempt")
+            if isinstance(payload_order, dict) and payload_order.get("isTaxExempt") is not None
+            else (
+                payload_order.get("is_tax_exempt")
+                if isinstance(payload_order, dict) and payload_order.get("is_tax_exempt") is not None
+                else (
+                    payload.get("isTaxExempt")
+                    if isinstance(payload, dict) and payload.get("isTaxExempt") is not None
+                    else payload.get("is_tax_exempt") if isinstance(payload, dict) else None
+                )
+            )
+        )
+    )
     order: Dict = {
         "id": row.get("id"),
         "userId": row.get("user_id"),
         "asDelegate": row.get("as_delegate"),
         "pricingMode": row.get("pricing_mode") or "wholesale",
+        "isTaxExempt": explicit_is_tax_exempt is True or bool(tax_exempt_source),
+        "taxExemptSource": tax_exempt_source,
+        "taxExemptReason": tax_exempt_reason,
+        "resellerPermitFilePath": reseller_permit_file_path,
+        "resellerPermitFileName": reseller_permit_file_name,
+        "resellerPermitUploadedAt": reseller_permit_uploaded_at,
+        "hasResellerPermitUploaded": bool(
+            reseller_permit_file_path or reseller_permit_file_name or reseller_permit_uploaded_at
+        ),
         "items": _parse_json(row.get("items"), []),
         "total": float(row.get("total") or 0),
         "itemsSubtotal": float(row.get("items_subtotal") or 0) if row.get("items_subtotal") is not None else None,
@@ -1346,6 +1517,30 @@ def _to_db_params(order: Dict) -> Dict:
         "pricing_mode": (str(order.get("pricingMode") or "").strip().lower() or "wholesale")
         if str(order.get("pricingMode") or "").strip().lower() in ("wholesale", "retail")
         else "wholesale",
+        "is_tax_exempt": 1
+        if _coerce_optional_bool(order.get("isTaxExempt") if order.get("isTaxExempt") is not None else order.get("is_tax_exempt")) is True
+        else 0,
+        "tax_exempt_source": _normalize_optional_string(
+            order.get("taxExemptSource") if order.get("taxExemptSource") is not None else order.get("tax_exempt_source")
+        ),
+        "tax_exempt_reason": _normalize_optional_string(
+            order.get("taxExemptReason") if order.get("taxExemptReason") is not None else order.get("tax_exempt_reason")
+        ),
+        "reseller_permit_file_path": _normalize_optional_string(
+            order.get("resellerPermitFilePath")
+            if order.get("resellerPermitFilePath") is not None
+            else order.get("reseller_permit_file_path")
+        ),
+        "reseller_permit_file_name": _normalize_optional_string(
+            order.get("resellerPermitFileName")
+            if order.get("resellerPermitFileName") is not None
+            else order.get("reseller_permit_file_name")
+        ),
+        "reseller_permit_uploaded_at": parse_dt(
+            order.get("resellerPermitUploadedAt")
+            if order.get("resellerPermitUploadedAt") is not None
+            else order.get("reseller_permit_uploaded_at")
+        ),
         "items": serialize_json(order.get("items")),
         "items_subtotal": float(max(0.0, items_subtotal)),
         # `orders.total` should reflect the full amount paid (subtotal - discounts + shipping + tax).

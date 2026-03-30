@@ -379,6 +379,205 @@ const isDoctorRole = (role) => {
   return normalized === 'doctor' || normalized === 'test_doctor';
 };
 
+const isSalesAccessRole = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'admin'
+    || normalized === 'sales_rep'
+    || normalized === 'sales_partner'
+    || normalized === 'rep'
+    || normalized === 'sales_lead'
+    || normalized === 'saleslead';
+};
+
+const hasSetIntersection = (left, right) => {
+  if (!(left instanceof Set) || !(right instanceof Set) || left.size === 0 || right.size === 0) {
+    return false;
+  }
+  for (const value of left) {
+    if (right.has(value)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const resolveSalesRepRecordMap = () => {
+  const records = Array.isArray(salesRepRepository?.getAll?.()) ? salesRepRepository.getAll() : [];
+  const lookup = new Map();
+  records.forEach((record) => {
+    const id = normalizeId(record?.id || record?.salesRepId);
+    if (!id) return;
+    lookup.set(id, record);
+  });
+  return lookup;
+};
+
+const computeAllowedSalesRepIdsForUser = (user, users, repRecords) => {
+  const allowed = new Set();
+  const repRecordsMap = repRecords instanceof Map ? repRecords : new Map();
+  const allUsers = Array.isArray(users) ? users : [];
+  const userId = normalizeId(user?.id);
+  const userEmail = normalizeEmail(user?.email);
+
+  if (userId) {
+    allowed.add(userId);
+  }
+
+  [
+    user?.salesRepId,
+    user?.sales_rep_id,
+    user?.ownerSalesRepId,
+    user?.owner_sales_rep_id,
+  ]
+    .map(normalizeId)
+    .filter(Boolean)
+    .forEach((value) => allowed.add(value));
+
+  for (const repRecord of repRecordsMap.values()) {
+    const repId = normalizeId(repRecord?.id || repRecord?.salesRepId);
+    const legacyUserId = normalizeId(repRecord?.legacyUserId || repRecord?.legacy_user_id);
+    const repEmail = normalizeEmail(repRecord?.email);
+
+    if (repId && allowed.has(repId) && legacyUserId) {
+      allowed.add(legacyUserId);
+    }
+    if (legacyUserId && allowed.has(legacyUserId) && repId) {
+      allowed.add(repId);
+    }
+    if (userEmail && repEmail && userEmail === repEmail) {
+      if (repId) {
+        allowed.add(repId);
+      }
+      if (legacyUserId) {
+        allowed.add(legacyUserId);
+      }
+    }
+  }
+
+  if (userEmail) {
+    const repEmails = new Set(
+      Array.from(repRecordsMap.values())
+        .map((record) => normalizeEmail(record?.email))
+        .filter(Boolean)
+        .filter((email) => email === userEmail),
+    );
+    if (repEmails.size > 0) {
+      allUsers.forEach((candidate) => {
+        const candidateRole = normalizeRole(candidate?.role);
+        const candidateEmail = normalizeEmail(candidate?.email);
+        const candidateId = normalizeId(candidate?.id);
+        if (!candidateId || !candidateEmail || !repEmails.has(candidateEmail)) {
+          return;
+        }
+        if (isSalesAccessRole(candidateRole)) {
+          allowed.add(candidateId);
+        }
+      });
+    }
+  }
+
+  return allowed;
+};
+
+const resolveOrderSortKey = (order) =>
+  String(order?.createdAt || order?.updatedAt || order?.dateCreated || '');
+
+const resolveOrderIdentityKey = (order) => {
+  const candidates = [
+    order?.wooOrderNumber,
+    order?.woo_order_number,
+    order?.number,
+    order?.wooOrderId,
+    order?.woo_order_id,
+    order?.id,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeId(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return '';
+};
+
+const shouldCountRevenueForStatus = (status) => {
+  const normalized = String(status || '').trim().toLowerCase().replace(/_/g, '-');
+  return normalized !== 'cancelled'
+    && normalized !== 'canceled'
+    && normalized !== 'trash'
+    && normalized !== 'refunded'
+    && normalized !== 'failed';
+};
+
+const resolveOrderSubtotal = (order) => {
+  const candidates = [
+    order?.itemsSubtotal,
+    order?.items_subtotal,
+    order?.grandTotal,
+    order?.grand_total,
+    order?.total,
+  ];
+  for (const candidate of candidates) {
+    const value = Number(candidate || 0);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return 0;
+};
+
+const dedupeModalOrders = (orders) => {
+  const byKey = new Map();
+  (Array.isArray(orders) ? orders : []).forEach((order) => {
+    if (!order || typeof order !== 'object') {
+      return;
+    }
+    const key = resolveOrderIdentityKey(order) || normalizeId(order?.id);
+    if (!key) {
+      return;
+    }
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, order);
+      return;
+    }
+    const existingUpdated = Date.parse(String(existing?.updatedAt || existing?.createdAt || '')) || 0;
+    const nextUpdated = Date.parse(String(order?.updatedAt || order?.createdAt || '')) || 0;
+    if (nextUpdated >= existingUpdated) {
+      byKey.set(key, order);
+    }
+  });
+  return Array.from(byKey.values()).sort((a, b) =>
+    resolveOrderSortKey(b).localeCompare(resolveOrderSortKey(a)));
+};
+
+const loadModalPersonalOrders = async (userId) => {
+  const localOrders = Array.isArray(orderRepository.findByUserId(userId))
+    ? orderRepository.findByUserId(userId)
+    : [];
+  const sqlOrders = typeof orderSqlRepository.fetchByUserId === 'function'
+    ? await orderSqlRepository.fetchByUserId(userId)
+    : [];
+  const summaries = []
+    .concat(localOrders || [])
+    .concat(Array.isArray(sqlOrders) ? sqlOrders : [])
+    .map((order) => buildLocalOrderSummary(order))
+    .filter(Boolean);
+  return dedupeModalOrders(summaries);
+};
+
+const buildUserAddressText = (user) => {
+  const parts = [
+    user?.officeAddressLine1,
+    user?.officeAddressLine2,
+    [user?.officeCity, user?.officeState, user?.officePostalCode].filter(Boolean).join(', '),
+    user?.officeCountry,
+  ]
+    .map((value) => normalizeOptionalString(value))
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join('\n') : null;
+};
+
 const normalizePricingMode = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'retail') return 'retail';
@@ -556,6 +755,36 @@ const isUserTaxExemptForCheckout = async (user) => {
     return true;
   }
   return hasResellerPermitOnFile(user);
+};
+
+const resolveOrderExemptionSnapshot = (user, taxExempt = false) => {
+  const resellerPermitFilePath = normalizeOptionalString(
+    user?.resellerPermitFilePath ?? user?.reseller_permit_file_path,
+  );
+  const resellerPermitFileName = normalizeOptionalString(
+    user?.resellerPermitFileName ?? user?.reseller_permit_file_name,
+  );
+  const resellerPermitUploadedAt = normalizeOptionalString(
+    user?.resellerPermitUploadedAt ?? user?.reseller_permit_uploaded_at,
+  );
+  const hasResellerPermitUploaded = Boolean(
+    resellerPermitFilePath || resellerPermitFileName || resellerPermitUploadedAt,
+  );
+  const taxExemptSource = normalizeOptionalString(
+    user?.taxExemptSource ?? user?.tax_exempt_source,
+  ) || (taxExempt && hasResellerPermitUploaded ? 'RESELLER_PERMIT' : null);
+  const taxExemptReason = normalizeOptionalString(
+    user?.taxExemptReason ?? user?.tax_exempt_reason,
+  ) || (taxExempt && hasResellerPermitUploaded ? 'Reseller permit on file' : null);
+  return {
+    isTaxExempt: taxExempt === true,
+    taxExemptSource,
+    taxExemptReason,
+    resellerPermitFilePath,
+    resellerPermitFileName,
+    resellerPermitUploadedAt,
+    hasResellerPermitUploaded,
+  };
 };
 
 const extractWooMetaValue = (wooOrder, keys) => {
@@ -1338,6 +1567,8 @@ const createOrderInternal = async ({
   const effectivePricingMode = canSelectRetailPricing(user) ? requestedPricingMode : 'wholesale';
 
   const taxExempt = await isUserTaxExemptForCheckout(user);
+  const checkoutProfileUser = taxExempt ? (userRepository.findById(userId) || user) : user;
+  const orderExemptionSnapshot = resolveOrderExemptionSnapshot(checkoutProfileUser, taxExempt);
   const shippingData = resolveCheckoutShippingData({
     handDelivery,
     shippingAddress,
@@ -1429,6 +1660,7 @@ const createOrderInternal = async ({
     paymentDetails: manualPaymentLabel,
     createdAt: now,
     physicianCertificationAccepted: Boolean(physicianCertification),
+    ...orderExemptionSnapshot,
     ...(idempotencyKey ? { idempotencyKey } : {}),
   };
 
@@ -2816,6 +3048,210 @@ const getOrdersForSalesRep = async (
     : summaries;
 };
 
+const getSalesModalDetail = async ({ actor, targetUserId }) => {
+  const actorRole = normalizeRole(actor?.role);
+  if (!isSalesAccessRole(actorRole)) {
+    const error = new Error('SALES_REP_ACCESS_REQUIRED');
+    error.status = 403;
+    throw error;
+  }
+
+  const normalizedTargetUserId = normalizeId(targetUserId);
+  if (!normalizedTargetUserId) {
+    const error = new Error('USER_ID_REQUIRED');
+    error.status = 400;
+    throw error;
+  }
+
+  const users = Array.isArray(userRepository.getAll()) ? userRepository.getAll() : [];
+  const repRecords = resolveSalesRepRecordMap();
+  const targetUser = users.find((candidate) => {
+    const candidateId = normalizeId(candidate?.id);
+    const candidateSalesRepId = normalizeId(candidate?.salesRepId || candidate?.sales_rep_id);
+    return candidateId === normalizedTargetUserId || candidateSalesRepId === normalizedTargetUserId;
+  }) || null;
+
+  if (!targetUser) {
+    const error = new Error('USER_NOT_FOUND');
+    error.status = 404;
+    throw error;
+  }
+
+  const resolvedTargetUserId = normalizeId(targetUser?.id) || normalizedTargetUserId;
+  const actorUserId = normalizeId(actor?.id);
+  const actorAllowedRepIds =
+    actorRole !== 'admin' && actorUserId
+      ? computeAllowedSalesRepIdsForUser(
+        users.find((candidate) => normalizeId(candidate?.id) === actorUserId) || actor,
+        users,
+        repRecords,
+      )
+      : new Set();
+
+  const targetRole = normalizeRole(targetUser?.role);
+  const targetIsSalesActor = isSalesAccessRole(targetRole);
+  const targetAllowedRepIds = targetIsSalesActor
+    ? computeAllowedSalesRepIdsForUser(targetUser, users, repRecords)
+    : new Set(
+      [
+        normalizeId(
+          targetUser?.salesRepId
+            || targetUser?.sales_rep_id
+            || targetUser?.ownerSalesRepId
+            || targetUser?.owner_sales_rep_id,
+        ),
+      ].filter(Boolean),
+    );
+
+  if (actorRole !== 'admin') {
+    if (targetIsSalesActor) {
+      const isSelfLookup = resolvedTargetUserId && actorUserId && resolvedTargetUserId === actorUserId;
+      if (!isSelfLookup && !hasSetIntersection(actorAllowedRepIds, targetAllowedRepIds)) {
+        const error = new Error('USER_NOT_FOUND');
+        error.status = 404;
+        throw error;
+      }
+    } else {
+      const doctorRepId = normalizeId(targetUser?.salesRepId || targetUser?.sales_rep_id);
+      if (!doctorRepId || actorAllowedRepIds.size === 0 || !actorAllowedRepIds.has(doctorRepId)) {
+        const error = new Error('USER_NOT_FOUND');
+        error.status = 404;
+        throw error;
+      }
+    }
+  }
+
+  const targetSalesRepId = [
+    targetUser?.salesRepId,
+    targetUser?.sales_rep_id,
+    targetUser?.ownerSalesRepId,
+    targetUser?.owner_sales_rep_id,
+    ...Array.from(targetAllowedRepIds),
+  ]
+    .map(normalizeId)
+    .find(Boolean) || null;
+
+  let targetSalesRepRecord = resolveSalesRepRecordForUser(targetUser);
+  if (!targetSalesRepRecord && targetSalesRepId) {
+    targetSalesRepRecord = repRecords.get(targetSalesRepId) || null;
+  }
+  if (!targetSalesRepRecord && targetAllowedRepIds.size > 0) {
+    targetSalesRepRecord = Array.from(targetAllowedRepIds)
+      .map((repId) => repRecords.get(repId))
+      .find(Boolean) || null;
+  }
+
+  const personalOrders = await loadModalPersonalOrders(resolvedTargetUserId);
+  let salesOrders = [];
+  if (targetIsSalesActor && targetAllowedRepIds.size > 0) {
+    const orderedRepIds = Array.from(targetAllowedRepIds);
+    const salesOrderPayload = await getOrdersForSalesRep(orderedRepIds[0], {
+      includeDoctors: false,
+      includeSelfOrders: false,
+      includeAllDoctors: false,
+      alternateSalesRepIds: orderedRepIds.slice(1),
+    });
+    salesOrders = Array.isArray(salesOrderPayload)
+      ? salesOrderPayload
+      : Array.isArray(salesOrderPayload?.orders)
+        ? salesOrderPayload.orders
+        : [];
+  }
+
+  const personalOrderKeys = new Set(
+    personalOrders
+      .map((order) => resolveOrderIdentityKey(order))
+      .filter(Boolean),
+  );
+  const filteredSalesOrders = salesOrders.filter((order) => {
+    const key = resolveOrderIdentityKey(order);
+    return !key || !personalOrderKeys.has(key);
+  });
+  const combinedOrders = dedupeModalOrders([].concat(personalOrders, filteredSalesOrders));
+
+  const personalRevenue = personalOrders.reduce((sum, order) => (
+    shouldCountRevenueForStatus(order?.status)
+      ? sum + resolveOrderSubtotal(order)
+      : sum
+  ), 0);
+
+  let salesWholesaleRevenue = 0;
+  let salesRetailRevenue = 0;
+  filteredSalesOrders.forEach((order) => {
+    if (!shouldCountRevenueForStatus(order?.status)) {
+      return;
+    }
+    const subtotal = resolveOrderSubtotal(order);
+    if (String(order?.pricingMode || order?.pricing_mode || '').trim().toLowerCase() === 'retail') {
+      salesRetailRevenue += subtotal;
+    } else {
+      salesWholesaleRevenue += subtotal;
+    }
+  });
+
+  const totalOrderValue = combinedOrders.reduce((sum, order) => (
+    shouldCountRevenueForStatus(order?.status)
+      ? sum + resolveOrderSubtotal(order)
+      : sum
+  ), 0);
+  const orderQuantity = combinedOrders.reduce((count, order) => (
+    shouldCountRevenueForStatus(order?.status) ? count + 1 : count
+  ), 0);
+  const salesOrderCount = filteredSalesOrders.reduce((count, order) => (
+    shouldCountRevenueForStatus(order?.status) ? count + 1 : count
+  ), 0);
+  const lastOrderDate = combinedOrders[0]?.createdAt || combinedOrders[0]?.updatedAt || null;
+
+  return {
+    user: {
+      id: resolvedTargetUserId,
+      name: targetUser?.name || targetUser?.email || 'User',
+      email: targetUser?.email || null,
+      phone: targetUser?.phone || null,
+      role: targetUser?.role || null,
+      profileImageUrl: targetUser?.profileImageUrl || null,
+      greaterArea: targetUser?.greaterArea || null,
+      studyFocus: targetUser?.studyFocus || null,
+      bio: targetUser?.bio || null,
+      resellerPermitFilePath:
+        targetUser?.resellerPermitFilePath || targetUser?.reseller_permit_file_path || null,
+      resellerPermitFileName:
+        targetUser?.resellerPermitFileName || targetUser?.reseller_permit_file_name || null,
+      resellerPermitUploadedAt:
+        targetUser?.resellerPermitUploadedAt || targetUser?.reseller_permit_uploaded_at || null,
+      salesRepId: targetSalesRepId,
+      isPartner: normalizeBooleanish(
+        targetSalesRepRecord?.isPartner ?? targetSalesRepRecord?.is_partner,
+      ),
+      allowedRetail: normalizeBooleanish(
+        targetSalesRepRecord?.allowedRetail ?? targetSalesRepRecord?.allowed_retail,
+      ),
+      officeAddressLine1: targetUser?.officeAddressLine1 || null,
+      officeAddressLine2: targetUser?.officeAddressLine2 || null,
+      officeCity: targetUser?.officeCity || null,
+      officeState: targetUser?.officeState || null,
+      officePostalCode: targetUser?.officePostalCode || null,
+      officeCountry: targetUser?.officeCountry || null,
+    },
+    ownerSalesRepId: targetSalesRepId,
+    isSalesProfile: targetIsSalesActor,
+    orders: combinedOrders,
+    personalOrders,
+    salesOrders: filteredSalesOrders,
+    personalOrdersLoaded: true,
+    salesOrdersLoaded: true,
+    personalRevenue: personalOrders.length > 0 ? personalRevenue : null,
+    salesRevenue: targetIsSalesActor ? salesWholesaleRevenue + salesRetailRevenue : null,
+    salesWholesaleRevenue: targetIsSalesActor ? salesWholesaleRevenue : null,
+    salesRetailRevenue: targetIsSalesActor ? salesRetailRevenue : null,
+    orderQuantity,
+    salesOrderCount: targetIsSalesActor ? salesOrderCount : null,
+    totalOrderValue,
+    lastOrderDate,
+    address: buildUserAddressText(targetUser),
+  };
+};
+
 const getSalesByRep = async ({
   excludeSalesRepId = null,
   excludeDoctorIds = [],
@@ -3605,6 +4041,7 @@ module.exports = {
   estimateOrderTotals,
   getOrdersForUser,
   getOrdersForSalesRep,
+  getSalesModalDetail,
   getOnHoldOrdersForSalesRep,
   getOnHoldOrdersForAdmin,
   getSalesByRep,

@@ -5980,5 +5980,113 @@
     "wooOrderNumber": "1274",
     "shipStationOrderId": 200175493,
     "paymentIntentId": "pi_3SfbQaLdQwKDgAgZ1EVpcmvM"
+  },
+  {
+    "id": "ord_demo_avery_20260330",
+    "userId": "1774899000000",
+    "items": [
+      {
+        "cartItemId": "demo-bpc157-1",
+        "productId": 211,
+        "variantId": 217,
+        "sku": "BPC157-TB500-10",
+        "name": "BPC-157 / TB-500 N — 10mg / 10mg",
+        "price": 189.5,
+        "quantity": 1,
+        "note": null,
+        "position": 1,
+        "weightOz": 0.06
+      },
+      {
+        "cartItemId": "demo-sema-1",
+        "productId": 310,
+        "variantId": 311,
+        "sku": "SEMA-5",
+        "name": "Semaglutide — 5mg",
+        "price": 149,
+        "quantity": 2,
+        "note": null,
+        "position": 2,
+        "weightOz": 0.06
+      }
+    ],
+    "total": 506.25,
+    "taxTotal": 0,
+    "itemsSubtotal": 487.5,
+    "shippingTotal": 18.75,
+    "shippingEstimate": {
+      "carrierId": "demo_carrier",
+      "serviceCode": "ups_ground",
+      "serviceType": "ups_ground",
+      "estimatedDeliveryDays": 3,
+      "deliveryDateGuaranteed": false,
+      "rate": 18.75,
+      "currency": "USD",
+      "addressFingerprint": "demo-avery-20260330",
+      "packageCode": "package",
+      "weightOz": 0.12,
+      "packageDimensions": null,
+      "meta": {
+        "demo": true
+      },
+      "estimatedArrivalDate": "2026-04-02T17:00:00.000Z"
+    },
+    "shippingAddress": {
+      "name": "Dr. Avery Mercer",
+      "company": "Mercer Integrative Wellness",
+      "addressLine1": "742 Evergreen Terrace",
+      "addressLine2": "Suite 210",
+      "city": "Indianapolis",
+      "state": "IN",
+      "postalCode": "46204",
+      "country": "US",
+      "phone": "3175550148"
+    },
+    "billingAddress": {
+      "name": "Dr. Avery Mercer",
+      "company": "Mercer Integrative Wellness",
+      "addressLine1": "742 Evergreen Terrace",
+      "addressLine2": "Suite 210",
+      "city": "Indianapolis",
+      "state": "IN",
+      "postalCode": "46204",
+      "country": "US",
+      "phone": "3175550148",
+      "email": "dr.avery.mercer.pg7@peppro.test"
+    },
+    "referralCode": null,
+    "referrerBonus": null,
+    "status": "processing",
+    "pricingMode": "wholesale",
+    "currency": "USD",
+    "createdAt": "2026-03-30T17:45:00.000Z",
+    "updatedAt": "2026-03-30T17:45:00.000Z",
+    "physicianCertificationAccepted": true,
+    "paymentMethod": "Demo Card •••• 4242",
+    "paymentDetails": "Demo Card •••• 4242",
+    "source": "demo_seed",
+    "integrations": {
+      "demo": "seeded",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "demo": {
+        "status": "seeded",
+        "createdBy": "codex",
+        "note": "Demo order for Dr. Avery Mercer"
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderNumber": "DEMO-AVERY-1001",
+    "isTaxExempt": true,
+    "taxExemptSource": "RESELLER_PERMIT",
+    "taxExemptReason": "Demo reseller permit on file",
+    "resellerPermitFilePath": "uploads/reseller-permits/dr-avery-mercer-20260330.pdf",
+    "resellerPermitFileName": "dr-avery-mercer-20260330.pdf",
+    "resellerPermitUploadedAt": "2026-03-30T15:20:00.000Z",
+    "hasResellerPermitUploaded": true
   }
 ]

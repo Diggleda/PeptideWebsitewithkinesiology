@@ -18,6 +18,24 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const toOptionalBoolean = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value !== 0;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return null;
+};
+
 const roundCurrency = (value) => Math.max(0, Math.round((toNumber(value, 0) + 1e-9) * 100) / 100);
 const HAND_DELIVERY_SERVICE_LABEL = 'Hand Delivered';
 
@@ -406,6 +424,18 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     id: sanitizeString(order.id),
     userId: sanitizeString(order.userId),
     pricingMode: normalizePricingMode(order.pricingMode),
+    isTaxExempt: toOptionalBoolean(order.isTaxExempt ?? order.is_tax_exempt) === true ? 1 : 0,
+    taxExemptSource: sanitizeString(order.taxExemptSource ?? order.tax_exempt_source),
+    taxExemptReason: sanitizeString(order.taxExemptReason ?? order.tax_exempt_reason),
+    resellerPermitFilePath: sanitizeString(
+      order.resellerPermitFilePath ?? order.reseller_permit_file_path,
+    ),
+    resellerPermitFileName: sanitizeString(
+      order.resellerPermitFileName ?? order.reseller_permit_file_name,
+    ),
+    resellerPermitUploadedAt: toIsoDateTime(
+      order.resellerPermitUploadedAt ?? order.reseller_permit_uploaded_at,
+    ),
     wooOrderId: wooOrderId || null,
     shipStationOrderId: shipStationOrderId || null,
     itemsSubtotal: computeItemsSubtotal(order),
@@ -445,6 +475,12 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           id,
           user_id,
           pricing_mode,
+          is_tax_exempt,
+          tax_exempt_source,
+          tax_exempt_reason,
+          reseller_permit_file_path,
+          reseller_permit_file_name,
+          reseller_permit_uploaded_at,
           woo_order_id,
           shipstation_order_id,
           items_subtotal,
@@ -466,6 +502,12 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :id,
           :userId,
           :pricingMode,
+          :isTaxExempt,
+          :taxExemptSource,
+          :taxExemptReason,
+          :resellerPermitFilePath,
+          :resellerPermitFileName,
+          :resellerPermitUploadedAt,
           :wooOrderId,
           :shipStationOrderId,
           :itemsSubtotal,
@@ -487,6 +529,12 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
         ON DUPLICATE KEY UPDATE
           woo_order_id = VALUES(woo_order_id),
           shipstation_order_id = VALUES(shipstation_order_id),
+          is_tax_exempt = VALUES(is_tax_exempt),
+          tax_exempt_source = VALUES(tax_exempt_source),
+          tax_exempt_reason = VALUES(tax_exempt_reason),
+          reseller_permit_file_path = VALUES(reseller_permit_file_path),
+          reseller_permit_file_name = VALUES(reseller_permit_file_name),
+          reseller_permit_uploaded_at = VALUES(reseller_permit_uploaded_at),
           items_subtotal = VALUES(items_subtotal),
           total = VALUES(total),
           shipping_total = VALUES(shipping_total),
@@ -576,6 +624,39 @@ const mapRowToOrder = (row, options = {}) => {
       row.woo_order_id,
     )),
     shipStationOrderId: sanitizeString(coalesce(payloadOrder.shipStationOrderId, row.shipstation_order_id)),
+    isTaxExempt: (() => {
+      const explicit = toOptionalBoolean(
+        coalesce(payloadOrder.isTaxExempt, payloadOrder.is_tax_exempt, row.is_tax_exempt),
+      );
+      return explicit === true;
+    })(),
+    taxExemptSource: sanitizeString(
+      coalesce(payloadOrder.taxExemptSource, payloadOrder.tax_exempt_source, row.tax_exempt_source),
+    ),
+    taxExemptReason: sanitizeString(
+      coalesce(payloadOrder.taxExemptReason, payloadOrder.tax_exempt_reason, row.tax_exempt_reason),
+    ),
+    resellerPermitFilePath: sanitizeString(
+      coalesce(
+        payloadOrder.resellerPermitFilePath,
+        payloadOrder.reseller_permit_file_path,
+        row.reseller_permit_file_path,
+      ),
+    ),
+    resellerPermitFileName: sanitizeString(
+      coalesce(
+        payloadOrder.resellerPermitFileName,
+        payloadOrder.reseller_permit_file_name,
+        row.reseller_permit_file_name,
+      ),
+    ),
+    resellerPermitUploadedAt: toIso(
+      coalesce(
+        payloadOrder.resellerPermitUploadedAt,
+        payloadOrder.reseller_permit_uploaded_at,
+        row.reseller_permit_uploaded_at,
+      ),
+    ),
     total: (() => {
       const rowTotal = toNumber(row.total, NaN);
       if (Number.isFinite(rowTotal) && rowTotal > 0) {
@@ -658,6 +739,13 @@ const mapRowToOrder = (row, options = {}) => {
     payload,
     source: options?.source || 'mysql',
   };
+
+  normalized.hasResellerPermitUploaded = Boolean(
+    normalized.resellerPermitFilePath
+    || normalized.resellerPermitFileName
+    || normalized.resellerPermitUploadedAt,
+  );
+  normalized.isTaxExempt = normalized.isTaxExempt === true || Boolean(normalized.taxExemptSource);
 
   return normalized;
 };
