@@ -306,6 +306,7 @@ const buildCorsOptions = () => {
       callback(null, false);
     },
     credentials: true,
+    exposedHeaders: ['Content-Disposition', 'Content-Type'],
   };
 };
 

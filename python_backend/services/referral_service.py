@@ -10,6 +10,7 @@ from pathlib import Path
 from time import time
 from typing import Dict, List, Optional, Tuple
 
+from .. import storage
 from ..utils.http import service_error as _service_error, utc_now_iso as _now
 from ..repositories import (
     contact_form_status_repository,
@@ -910,6 +911,162 @@ def delete_manual_prospect(referral_id: str, sales_rep_id: str) -> None:
     if not prospect.get("isManual"):
         raise _service_error("NOT_MANUAL_PROSPECT", 400)
     sales_prospect_repository.delete(referral_id)
+
+
+def _normalize_optional_identifier(value: Optional[str]) -> Optional[str]:
+    candidate = str(value or "").strip()
+    return candidate or None
+
+
+def _extract_contact_form_id(identifier: Optional[str]) -> Optional[str]:
+    candidate = _normalize_optional_identifier(identifier)
+    if not candidate or not candidate.startswith("contact_form:"):
+        return None
+    _, _, suffix = candidate.partition(":")
+    suffix = suffix.strip()
+    return suffix or None
+
+
+def _delete_contact_form_submission(contact_form_id: str) -> bool:
+    target = _normalize_optional_identifier(contact_form_id)
+    if not target:
+        return False
+
+    deleted = False
+    if mysql_client.is_enabled():
+        deleted = mysql_client.execute(
+            "DELETE FROM contact_forms WHERE id = %(id)s",
+            {"id": target},
+        ) > 0
+    else:
+        store = storage.contact_form_store
+        if store is not None:
+            records = list(store.read())
+            filtered = [
+                record
+                for record in records
+                if str(record.get("id") or "").strip() not in {target, f"contact_form:{target}"}
+            ]
+            if len(filtered) != len(records):
+                store.write(filtered)
+                deleted = True
+
+    try:
+        contact_form_status_repository.delete(target)
+    except Exception:
+        pass
+
+    return deleted
+
+
+def delete_sales_prospect_for_sales_rep(
+    sales_rep_id: str,
+    identifier: str,
+    *,
+    referral_id: Optional[str] = None,
+    doctor_id: Optional[str] = None,
+    is_admin: bool = False,
+) -> Dict:
+    candidate = _normalize_optional_identifier(identifier)
+    if not candidate:
+        raise _service_error("INVALID_PAYLOAD", 400)
+
+    rep_id = str(
+        _resolve_sales_rep_id(sales_rep_id)
+        or _resolve_sales_rep_id(_resolve_user_id(sales_rep_id))
+        or _resolve_user_id(sales_rep_id)
+        or sales_rep_id
+        or ""
+    ).strip()
+    if not rep_id and not is_admin:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    normalized_referral_id = _normalize_optional_identifier(referral_id)
+    normalized_doctor_id = _normalize_optional_identifier(doctor_id)
+
+    if is_admin:
+        prospect = get_sales_prospect_for_admin(candidate)
+        if not prospect and normalized_referral_id:
+            prospect = get_sales_prospect_for_admin(normalized_referral_id)
+        if not prospect and normalized_doctor_id:
+            prospect = get_sales_prospect_for_admin(normalized_doctor_id)
+    else:
+        prospect = get_sales_prospect_for_sales_rep(rep_id, candidate)
+        if not prospect and normalized_referral_id:
+            prospect = get_sales_prospect_for_sales_rep(rep_id, normalized_referral_id)
+        if not prospect and normalized_doctor_id:
+            prospect = get_sales_prospect_for_sales_rep(rep_id, normalized_doctor_id)
+
+    if prospect and not is_admin:
+        owner = _normalize_optional_identifier(prospect.get("salesRepId"))
+        if owner and owner != rep_id:
+            raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    contact_form_id = (
+        _extract_contact_form_id(candidate)
+        or _extract_contact_form_id(normalized_referral_id)
+        or _normalize_optional_identifier(prospect.get("contactFormId") if prospect else None)
+    )
+    referral_key = normalized_referral_id
+    if not referral_key and prospect:
+        prospect_referral_id = _normalize_optional_identifier(prospect.get("referralId"))
+        if prospect_referral_id and not _is_contact_form_id(prospect_referral_id):
+            referral_key = prospect_referral_id
+
+    deleted = False
+
+    if referral_key:
+        referral = referral_repository.find_by_id(referral_key)
+        if referral:
+            owner = _normalize_optional_identifier(referral.get("salesRepId"))
+            if not is_admin and owner and owner != rep_id:
+                raise _service_error("REFERRAL_NOT_FOUND", 404)
+            referral_repository.delete(referral_key)
+            deleted = True
+        deleted = sales_prospect_repository.delete_by_referral_id(referral_key) or deleted
+        deleted = sales_prospect_repository.delete(referral_key) or deleted
+
+    if contact_form_id:
+        deleted = _delete_contact_form_submission(contact_form_id) or deleted
+        deleted = sales_prospect_repository.delete_by_contact_form_id(contact_form_id) or deleted
+        deleted = sales_prospect_repository.delete(f"contact_form:{contact_form_id}") or deleted
+        return {"status": "deleted", "deleted": deleted}
+
+    should_hide_prospect = not referral_key or candidate != referral_key
+    if should_hide_prospect:
+        owner_rep_id = _normalize_optional_identifier(prospect.get("salesRepId") if prospect else None) or rep_id
+        if not owner_rep_id and not is_admin:
+            raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+        if prospect and prospect.get("id"):
+            hidden = sales_prospect_repository.upsert(
+                {
+                    **prospect,
+                    "salesRepId": owner_rep_id,
+                    "status": "nuture",
+                }
+            )
+            return {"status": "deleted", "deleted": True, "prospect": hidden}
+
+        hide_identifier = normalized_doctor_id or candidate
+        if hide_identifier and str(hide_identifier).startswith("doctor:") and normalized_doctor_id:
+            hide_identifier = normalized_doctor_id
+
+        if hide_identifier:
+            linked_user = user_repository.find_by_id(hide_identifier)
+            if linked_user and (linked_user.get("role") or "").lower() in ("doctor", "test_doctor"):
+                hidden = upsert_sales_prospect_for_sales_rep(
+                    owner_rep_id or rep_id,
+                    hide_identifier,
+                    status="nuture",
+                )
+                return {"status": "deleted", "deleted": True, "prospect": hidden}
+
+    if prospect and prospect.get("id"):
+        deleted = sales_prospect_repository.delete(str(prospect.get("id"))) or deleted
+        return {"status": "deleted", "deleted": deleted}
+
+    raise _service_error("REFERRAL_NOT_FOUND", 404)
 
 def _resolve_sales_rep_id(identifier: Optional[str]) -> Optional[str]:
     """

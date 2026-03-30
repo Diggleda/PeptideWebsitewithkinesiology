@@ -11,6 +11,7 @@ sales_rep_store: Optional[JsonStore[List[dict]]] = None
 referral_code_store: Optional[JsonStore[List[dict]]] = None
 referral_store: Optional[JsonStore[List[dict]]] = None
 sales_prospect_store: Optional[JsonStore[List[dict]]] = None
+sales_prospect_quote_store: Optional[JsonStore[List[dict]]] = None
 credit_ledger_store: Optional[JsonStore[List[dict]]] = None
 contact_form_store: Optional[JsonStore[List[dict]]] = None
 bug_report_store: Optional[JsonStore[List[dict]]] = None
@@ -37,7 +38,7 @@ def _make_store(config, file_name: str, default) -> JsonStore:
 
 
 def init_storage(config) -> None:
-    global user_store, order_store, sales_rep_store, referral_code_store, referral_store, sales_prospect_store, credit_ledger_store, contact_form_store, bug_report_store, contact_form_status_store, settings_store, peptide_forum_store, seamless_store
+    global user_store, order_store, sales_rep_store, referral_code_store, referral_store, sales_prospect_store, sales_prospect_quote_store, credit_ledger_store, contact_form_store, bug_report_store, contact_form_status_store, settings_store, peptide_forum_store, seamless_store
 
     user_store = _make_store(config, "users.json", [])
     order_store = _make_store(config, "orders.json", [])
@@ -45,6 +46,7 @@ def init_storage(config) -> None:
     referral_code_store = _make_store(config, "referral-codes.json", [])
     referral_store = _make_store(config, "referrals.json", [])
     sales_prospect_store = _make_store(config, "sales-prospects.json", [])
+    sales_prospect_quote_store = _make_store(config, "sales-prospect-quotes.json", [])
     credit_ledger_store = _make_store(config, "credit-ledger.json", [])
     contact_form_store = _make_store(config, "contact-forms.json", [])
     bug_report_store = _make_store(config, "bug-reports.json", [])
@@ -75,6 +77,7 @@ def init_storage(config) -> None:
         referral_code_store,
         referral_store,
         sales_prospect_store,
+        sales_prospect_quote_store,
         credit_ledger_store,
         contact_form_store,
         bug_report_store,
@@ -95,6 +98,7 @@ __all__ = [
     "referral_code_store",
     "referral_store",
     "sales_prospect_store",
+    "sales_prospect_quote_store",
     "credit_ledger_store",
     "contact_form_store",
     "bug_report_store",

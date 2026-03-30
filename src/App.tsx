@@ -35,6 +35,7 @@ import {
   DialogTitle,
 } from "./components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { DocumentCurrencyDollarIcon } from "@heroicons/react/24/outline";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { TimestampedNotesField } from "./components/TimestampedNotesField";
@@ -99,7 +100,17 @@ import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
 import { LegalFooter } from "./components/LegalFooter";
 import { PublicSite, isPublicSitePath } from "./components/PublicPages";
+import {
+  YourQuotesPanel,
+  type SelectableProspectQuoteTarget,
+} from "./components/YourQuotesPanel";
 import { AuthActionResult } from "./types/auth";
+import type {
+  ProspectQuoteDetail,
+  ProspectQuoteImportPayload,
+  ProspectQuoteLineItem,
+  ProspectQuoteRevision,
+} from "./types/quotes";
 import {
   physicianCompensationDisclosure,
   productMatchesAllowedSku,
@@ -434,6 +445,26 @@ const isDoctorRole = (role?: string | null) => {
 };
 
 const noop = () => {};
+
+const triggerBrowserDownload = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+const sanitizeDownloadFilenamePart = (value: string | null | undefined, fallback: string) => {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  return normalized || fallback;
+};
 
 const isPageVisible = () => {
   if (typeof document === "undefined") return true;
@@ -2807,6 +2838,7 @@ const CONTACT_FORM_STATUS_FLOW_SELECT = CONTACT_FORM_STATUS_FLOW.filter(
   (stage) => stage.key !== "nuture",
 );
 
+const PROSPECT_DELETE_VALUE = "__prospect_delete__";
 const MANUAL_PROSPECT_DELETE_VALUE = "__manual_delete__";
 const DELETED_USER_ID = "0000000000000";
 const DELETED_USER_LABEL = "DELETED";
@@ -8568,7 +8600,7 @@ function MainApp() {
 	      setSalesDoctorDetail((current) =>
 	        current ? { ...current, address: nextAddress } : current,
 	      );
-	      toast.success(updatedProspect ? "Prospect address updated." : "Address updated.");
+	      toast.success(updatedProspect ? "Lead address updated." : "Address updated.");
 	    } catch (error: any) {
 	      console.warn("[SalesDoctor] Failed to update address", error);
 	      toast.error(
@@ -11845,8 +11877,9 @@ function MainApp() {
     | "here_now"
     | "your_team"
     | "crm"
-    | "your_sales"
     | "doctor_referrals_manual"
+    | "your_quotes"
+    | "your_sales"
     | "settings";
   const [salesDashboardTab, setSalesDashboardTab] =
     useState<SalesDashboardTabId>("here_now");
@@ -11862,6 +11895,7 @@ function MainApp() {
         label: "Your Leads",
         Icon: IdentificationIcon,
       },
+      { id: "your_quotes" as const, label: "Your Quotes", Icon: DocumentCurrencyDollarIcon },
       { id: "your_sales" as const, label: "Your Sales", Icon: BuildingStorefrontIcon },
       { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
     ];
@@ -16134,6 +16168,674 @@ function MainApp() {
     });
   }, [activeProspectEntries, activeProspectFilter, activeProspectSearch]);
 
+  const getActiveProspectNavigationIdentifier = useCallback((record: any) => {
+    const rawContactFormId = String(
+      (record as any)?.contactFormId ||
+      (record as any)?.contact_form_id ||
+      "",
+    ).trim();
+    const contactFormIdentifier =
+      (typeof record?.id === "string" && record.id.trim().startsWith("contact_form:"))
+        ? record.id.trim()
+        : rawContactFormId
+          ? `contact_form:${rawContactFormId}`
+          : null;
+    const accountId = String(
+      (record as any)?.referredContactAccountId ||
+      (record as any)?.convertedDoctorId ||
+      (record as any)?.referredContactId ||
+      (record as any)?.userId ||
+      (record as any)?.doctorId ||
+      "",
+    ).trim();
+    return String(
+      accountId ||
+      contactFormIdentifier ||
+      (typeof (record as any)?._prospectIdentifier === "string" ? (record as any)._prospectIdentifier : "") ||
+      (typeof record?.id === "string" ? record.id : "") ||
+      (typeof (record as any)?.doctorId === "string" ? (record as any).doctorId : "") ||
+      (typeof (record as any)?.doctor_id === "string" ? (record as any).doctor_id : "") ||
+      (typeof (record as any)?.referralId === "string" ? (record as any).referralId : "") ||
+      (typeof (record as any)?.referral_id === "string" ? (record as any).referral_id : ""),
+    ).trim();
+  }, []);
+
+  const salesQuoteProspects = useMemo<SelectableProspectQuoteTarget[]>(() => {
+    const getLookupProfile = (record: any) => {
+      const accountId = String(
+        record?.referredContactAccountId ||
+        record?.convertedDoctorId ||
+        record?.referredContactId ||
+        record?.userId ||
+        record?.doctorId ||
+        "",
+      ).trim();
+      const email = String(
+        record?.referredContactEmail ||
+        record?.contactEmail ||
+        record?.email ||
+        "",
+      ).trim();
+      const phone = String(
+        record?.referredContactPhone ||
+        record?.contactPhone ||
+        record?.phone ||
+        "",
+      ).trim();
+      const keys = [
+        accountId ? `acct:${accountId}` : null,
+        ...buildEmailIdentityKeys(email),
+        ...buildPhoneIdentityKeys(phone),
+      ]
+        .filter(Boolean)
+        .map((key) => String(key).trim().toLowerCase());
+      for (const key of keys) {
+        const match = accountProfileLookup.get(key);
+        if (match) {
+          return match;
+        }
+      }
+      return null;
+    };
+
+    const map = new Map<string, SelectableProspectQuoteTarget>();
+    activeProspectEntries.forEach(({ record }) => {
+      const rawContactFormId = String(
+        (record as any)?.contactFormId ||
+        (record as any)?.contact_form_id ||
+        "",
+      ).trim();
+      const accountId = String(
+        (record as any)?.referredContactAccountId ||
+        (record as any)?.convertedDoctorId ||
+        (record as any)?.referredContactId ||
+        (record as any)?.userId ||
+        (record as any)?.doctorId ||
+        "",
+      ).trim();
+      const identifier = getActiveProspectNavigationIdentifier(record);
+      if (!identifier || map.has(identifier)) {
+        return;
+      }
+
+      const profile = getLookupProfile(record);
+      const name = String(
+        profile?.name ||
+        record?.referredContactName ||
+        (record as any)?.contactName ||
+        (record as any)?.name ||
+        record?.referredContactEmail ||
+        identifier,
+      ).trim() || "Prospect";
+      const email = String(
+        record?.referredContactEmail ||
+        (record as any)?.contactEmail ||
+        profile?.email ||
+        "",
+      ).trim() || null;
+      const phone = String(
+        record?.referredContactPhone ||
+        (record as any)?.contactPhone ||
+        (record as any)?.phone ||
+        "",
+      ).trim() || null;
+      const salesRepId = String(
+        (record as any)?.ownerSalesRepId ||
+        (record as any)?.owner_sales_rep_id ||
+        (record as any)?.salesRepId ||
+        (record as any)?.sales_rep_id ||
+        (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : "") ||
+        "",
+      ).trim() || null;
+      const updatedAt = String(record?.updatedAt || record?.createdAt || "").trim() || null;
+      map.set(identifier, {
+        identifier,
+        name,
+        email,
+        phone,
+        status: sanitizeReferralStatus(record?.status || "") || null,
+        updatedAt,
+        salesRepId,
+        doctorId: accountId || String((record as any)?.doctorId || (record as any)?.doctor_id || "").trim() || null,
+        referralId: String((record as any)?.referralId || (record as any)?.referral_id || "").trim() || null,
+        contactFormId: rawContactFormId || null,
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const aTime = Date.parse(String(a.updatedAt || "")) || 0;
+      const bTime = Date.parse(String(b.updatedAt || "")) || 0;
+      if (aTime !== bTime) return bTime - aTime;
+      return a.name.localeCompare(b.name);
+    });
+  }, [
+    accountProfileLookup,
+    activeProspectEntries,
+    buildEmailIdentityKeys,
+    buildPhoneIdentityKeys,
+    getActiveProspectNavigationIdentifier,
+    user?.id,
+    user?.role,
+    user?.salesRepId,
+  ]);
+
+  const [activeProspectHighlightedIdentifier, setActiveProspectHighlightedIdentifier] =
+    useState<string | null>(null);
+  const activeProspectRowRefs = useRef<Map<string, HTMLLIElement>>(new Map());
+
+  const [salesQuotesSelectedProspectId, setSalesQuotesSelectedProspectId] =
+    useState<string | null>(null);
+  const [salesQuotesCurrentDraft, setSalesQuotesCurrentDraft] =
+    useState<ProspectQuoteDetail | null>(null);
+  const [salesQuotesHistory, setSalesQuotesHistory] =
+    useState<ProspectQuoteRevision[]>([]);
+  const [salesQuotesLoading, setSalesQuotesLoading] = useState(false);
+  const [salesQuotesError, setSalesQuotesError] = useState<string | null>(null);
+  const [salesQuotesImporting, setSalesQuotesImporting] = useState(false);
+  const [salesQuotesSaving, setSalesQuotesSaving] = useState(false);
+  const [salesQuotesExportingId, setSalesQuotesExportingId] =
+    useState<string | null>(null);
+  const [salesQuotesTitleDraft, setSalesQuotesTitleDraft] = useState("");
+  const [salesQuotesNotesDraft, setSalesQuotesNotesDraft] = useState("");
+  const salesQuotesRequestSeqRef = useRef(0);
+
+  const selectedSalesQuoteProspect = useMemo(
+    () =>
+      salesQuoteProspects.find(
+        (prospect) => prospect.identifier === salesQuotesSelectedProspectId,
+      ) || null,
+    [salesQuoteProspects, salesQuotesSelectedProspectId],
+  );
+
+  const currentCartQuoteItems = useMemo<ProspectQuoteLineItem[]>(
+    () =>
+      cartItems.map(({ product, quantity, note, variant }, index) => {
+        const unitPrice = computeUnitPrice(product, variant ?? null, quantity, {
+          pricingMode: effectiveCheckoutPricingMode,
+        });
+        const lineTotal = roundCurrency(unitPrice * quantity);
+        const imageUrl =
+          (typeof variant?.image === "string" && variant.image.trim()) ||
+          (typeof product.image === "string" && product.image.trim()) ||
+          (Array.isArray(product.images) && typeof product.images[0] === "string" && product.images[0].trim()) ||
+          null;
+        return {
+          position: index + 1,
+          productId: product.id,
+          variantId: variant?.id ?? null,
+          sku: variant?.sku || product.sku || null,
+          imageUrl,
+          name: variant ? `${product.name} — ${variant.label}` : product.name,
+          quantity,
+          unitPrice,
+          lineTotal,
+          note: note ?? null,
+        };
+      }),
+    [cartItems, effectiveCheckoutPricingMode],
+  );
+
+  const currentCartQuoteSubtotal = useMemo(
+    () =>
+      roundCurrency(
+        currentCartQuoteItems.reduce(
+          (sum, item) => sum + (Number(item.lineTotal) || 0),
+          0,
+        ),
+      ),
+    [currentCartQuoteItems],
+  );
+
+  const resolveSalesQuoteLineItemImageUrl = useCallback(
+    (item: ProspectQuoteLineItem): string | null => {
+      if (typeof item?.imageUrl === "string" && item.imageUrl.trim()) {
+        return item.imageUrl.trim();
+      }
+
+      const itemProductId = normalizeIdField(item?.productId);
+      const itemVariantId = normalizeIdField(item?.variantId);
+      const itemSku =
+        typeof item?.sku === "string" && item.sku.trim()
+          ? item.sku.trim().toLowerCase()
+          : "";
+
+      const cartMatch = currentCartQuoteItems.find((candidate) => {
+        const candidateProductId = normalizeIdField(candidate?.productId);
+        const candidateVariantId = normalizeIdField(candidate?.variantId);
+        const candidateSku =
+          typeof candidate?.sku === "string" && candidate.sku.trim()
+            ? candidate.sku.trim().toLowerCase()
+            : "";
+
+        return (
+          (itemVariantId !== null && candidateVariantId === itemVariantId) ||
+          (itemProductId !== null &&
+            candidateProductId === itemProductId &&
+            (itemVariantId === null || candidateVariantId === itemVariantId)) ||
+          (Boolean(itemSku) && candidateSku === itemSku)
+        );
+      });
+
+      if (typeof cartMatch?.imageUrl === "string" && cartMatch.imageUrl.trim()) {
+        return cartMatch.imageUrl.trim();
+      }
+
+      for (const product of catalogProducts) {
+        const productPrimaryImage =
+          (typeof product.image === "string" && product.image.trim()) ||
+          (Array.isArray(product.images) &&
+          typeof product.images[0] === "string" &&
+          product.images[0].trim()
+            ? product.images[0].trim()
+            : null);
+
+        if (Array.isArray(product.variants) && product.variants.length > 0) {
+          const variantMatch = product.variants.find((variant) => {
+            const variantId = normalizeIdField(variant.id) ?? normalizeIdField(variant.wooId);
+            const variantSku =
+              typeof variant.sku === "string" && variant.sku.trim()
+                ? variant.sku.trim().toLowerCase()
+                : "";
+            return (
+              (itemVariantId !== null && variantId === itemVariantId) ||
+              (Boolean(itemSku) && variantSku === itemSku)
+            );
+          });
+
+          if (typeof variantMatch?.image === "string" && variantMatch.image.trim()) {
+            return variantMatch.image.trim();
+          }
+        }
+
+        const productId = normalizeIdField(product.id) ?? normalizeIdField(product.wooId);
+        const productSku =
+          typeof product.sku === "string" && product.sku.trim()
+            ? product.sku.trim().toLowerCase()
+            : "";
+
+        if (
+          (itemProductId !== null && productId === itemProductId) ||
+          (Boolean(itemSku) && productSku === itemSku)
+        ) {
+          return productPrimaryImage;
+        }
+      }
+
+      return null;
+    },
+    [catalogProducts, currentCartQuoteItems],
+  );
+
+  const currentDraftQuoteNotes = useMemo(
+    () =>
+      typeof salesQuotesCurrentDraft?.quotePayloadJson?.notes === "string"
+        ? salesQuotesCurrentDraft.quotePayloadJson.notes
+        : "",
+    [salesQuotesCurrentDraft?.quotePayloadJson?.notes],
+  );
+
+  const salesQuotesHasUnsavedChanges = useMemo(
+    () =>
+      Boolean(salesQuotesCurrentDraft) && (
+        salesQuotesTitleDraft.trim() !== String(salesQuotesCurrentDraft?.title || "").trim() ||
+        salesQuotesNotesDraft.trim() !== currentDraftQuoteNotes.trim()
+      ),
+    [
+      currentDraftQuoteNotes,
+      salesQuotesCurrentDraft,
+      salesQuotesNotesDraft,
+      salesQuotesTitleDraft,
+    ],
+  );
+
+  const buildSalesQuoteProspectSnapshot = useCallback(
+    (prospect: SelectableProspectQuoteTarget): ProspectQuoteImportPayload["prospectSnapshot"] => {
+      const inferredDoctorId = prospect.doctorId
+        || (
+          !prospect.identifier.startsWith("contact_form:")
+          && !prospect.identifier.startsWith("manual:")
+          && !prospect.referralId
+            ? prospect.identifier
+            : null
+        );
+      return {
+        identifier: prospect.identifier,
+        salesRepId:
+          prospect.salesRepId ||
+          (user && (isRep(user.role) || isSalesLead(user.role))
+            ? (user.salesRepId || user.id)
+            : null) ||
+          null,
+        ownerSalesRepId: prospect.salesRepId || null,
+        doctorId: inferredDoctorId || null,
+        referralId: prospect.referralId || null,
+        contactFormId: prospect.contactFormId || null,
+        sourceSystem: prospect.contactFormId
+          ? "contact_form"
+          : prospect.identifier.startsWith("manual:")
+            ? "manual"
+            : prospect.referralId
+              ? "referral"
+              : "account",
+        status: prospect.status || null,
+        contactName: prospect.name,
+        contactEmail: prospect.email,
+        contactPhone: prospect.phone,
+        referredContactName: prospect.name,
+        referredContactEmail: prospect.email,
+        referredContactPhone: prospect.phone,
+      };
+    },
+    [user],
+  );
+
+  const refreshSelectedProspectQuotes = useCallback(
+    async (identifier: string, options?: { silent?: boolean }) => {
+      const normalizedIdentifier = String(identifier || "").trim();
+      if (!normalizedIdentifier) {
+        setSalesQuotesCurrentDraft(null);
+        setSalesQuotesHistory([]);
+        setSalesQuotesError(null);
+        return;
+      }
+      const requestSeq = salesQuotesRequestSeqRef.current + 1;
+      salesQuotesRequestSeqRef.current = requestSeq;
+      if (!options?.silent) {
+        setSalesQuotesLoading(true);
+      }
+      setSalesQuotesError(null);
+      try {
+        const response = await referralAPI.getProspectQuotes(normalizedIdentifier);
+        if (salesQuotesRequestSeqRef.current !== requestSeq) {
+          return;
+        }
+        const draft = response?.currentDraft ?? null;
+        setSalesQuotesCurrentDraft(draft);
+        setSalesQuotesHistory(
+          Array.isArray(response?.history) ? response.history : [],
+        );
+        const selectedProspect = salesQuoteProspects.find(
+          (prospect) => prospect.identifier === normalizedIdentifier,
+        );
+        const defaultTitle = selectedProspect
+          ? `Quote for ${selectedProspect.name}`
+          : "Quote";
+        setSalesQuotesTitleDraft(
+          String(draft?.title || draft?.quotePayloadJson?.title || defaultTitle).trim(),
+        );
+        setSalesQuotesNotesDraft(
+          typeof draft?.quotePayloadJson?.notes === "string"
+            ? draft.quotePayloadJson.notes
+            : "",
+        );
+      } catch (error: any) {
+        if (salesQuotesRequestSeqRef.current !== requestSeq) {
+          return;
+        }
+        setSalesQuotesCurrentDraft(null);
+        setSalesQuotesHistory([]);
+        setSalesQuotesError(
+          typeof error?.message === "string" && error.message.trim()
+            ? error.message
+            : "Unable to load quote history right now.",
+        );
+      } finally {
+        if (salesQuotesRequestSeqRef.current === requestSeq && !options?.silent) {
+          setSalesQuotesLoading(false);
+        }
+      }
+    },
+    [salesQuoteProspects],
+  );
+
+  useEffect(() => {
+    if (
+      salesQuotesSelectedProspectId &&
+      salesQuoteProspects.some(
+        (prospect) => prospect.identifier === salesQuotesSelectedProspectId,
+      )
+    ) {
+      return;
+    }
+
+    if (salesQuotesSelectedProspectId) {
+      setSalesQuotesSelectedProspectId(null);
+      return;
+    }
+
+    setSalesQuotesCurrentDraft(null);
+    setSalesQuotesHistory([]);
+    setSalesQuotesError(null);
+    setSalesQuotesTitleDraft("");
+    setSalesQuotesNotesDraft("");
+  }, [salesQuoteProspects, salesQuotesSelectedProspectId]);
+
+  useEffect(() => {
+    if (
+      salesDashboardTab !== "your_quotes" ||
+      !salesQuotesSelectedProspectId ||
+      !selectedSalesQuoteProspect
+    ) {
+      return;
+    }
+    void refreshSelectedProspectQuotes(selectedSalesQuoteProspect.identifier);
+  }, [
+    refreshSelectedProspectQuotes,
+    salesDashboardTab,
+    selectedSalesQuoteProspect,
+    salesQuotesSelectedProspectId,
+  ]);
+
+  useEffect(() => {
+    if (
+      salesDashboardTab !== "doctor_referrals_manual" ||
+      !activeProspectHighlightedIdentifier
+    ) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = activeProspectRowRefs.current.get(activeProspectHighlightedIdentifier);
+      if (target) {
+        target.scrollIntoView({
+          block: "center",
+          behavior: "smooth",
+        });
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [
+    activeProspectHighlightedIdentifier,
+    filteredActiveProspects,
+    salesDashboardTab,
+  ]);
+
+  useEffect(() => {
+    if (
+      salesDashboardTab !== "doctor_referrals_manual" ||
+      !activeProspectHighlightedIdentifier
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setActiveProspectHighlightedIdentifier((current) =>
+        current === activeProspectHighlightedIdentifier ? null : current,
+      );
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [activeProspectHighlightedIdentifier, salesDashboardTab]);
+
+  const handleImportCartToProspectQuote = useCallback(async () => {
+    if (!selectedSalesQuoteProspect) {
+      toast.error("Select a prospect first.");
+      return;
+    }
+    if (currentCartQuoteItems.length === 0) {
+      toast.error("Your cart is empty.");
+      return;
+    }
+    if (
+      salesQuotesCurrentDraft &&
+      !window.confirm("Replace the current draft with your cart?")
+    ) {
+      return;
+    }
+    setSalesQuotesImporting(true);
+    setSalesQuotesError(null);
+    try {
+      const response = await referralAPI.importProspectQuoteCart(
+        selectedSalesQuoteProspect.identifier,
+        {
+          title: salesQuotesTitleDraft.trim() || `Quote for ${selectedSalesQuoteProspect.name}`,
+          notes: salesQuotesNotesDraft.trim() || null,
+          pricingMode: effectiveCheckoutPricingMode,
+          currency: "USD",
+          subtotal: currentCartQuoteSubtotal,
+          items: currentCartQuoteItems,
+          prospectSnapshot: buildSalesQuoteProspectSnapshot(selectedSalesQuoteProspect),
+        },
+      );
+      const draft = response?.quote ?? null;
+      setSalesQuotesCurrentDraft(draft);
+      setSalesQuotesHistory(Array.isArray(response?.history) ? response.history : []);
+      setSalesQuotesTitleDraft(
+        String(draft?.title || `Quote for ${selectedSalesQuoteProspect.name}`).trim(),
+      );
+      setSalesQuotesNotesDraft(
+        typeof draft?.quotePayloadJson?.notes === "string"
+          ? draft.quotePayloadJson.notes
+          : "",
+      );
+      toast.success("Quote draft imported from cart.");
+    } catch (error: any) {
+      const message =
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message
+          : "Unable to import the current cart right now.";
+      setSalesQuotesError(message);
+      toast.error(message);
+    } finally {
+      setSalesQuotesImporting(false);
+    }
+  }, [
+    buildSalesQuoteProspectSnapshot,
+    currentCartQuoteItems,
+    currentCartQuoteSubtotal,
+    effectiveCheckoutPricingMode,
+    salesQuotesCurrentDraft,
+    salesQuotesNotesDraft,
+    salesQuotesTitleDraft,
+    selectedSalesQuoteProspect,
+  ]);
+
+  const handleSaveProspectQuoteDraft = useCallback(async () => {
+    if (!selectedSalesQuoteProspect || !salesQuotesCurrentDraft) {
+      return;
+    }
+    setSalesQuotesSaving(true);
+    setSalesQuotesError(null);
+    try {
+      const response = await referralAPI.updateProspectQuote(
+        selectedSalesQuoteProspect.identifier,
+        salesQuotesCurrentDraft.id,
+        {
+          title: salesQuotesTitleDraft.trim() || salesQuotesCurrentDraft.title,
+          notes: salesQuotesNotesDraft.trim() || null,
+        },
+      );
+      const updatedQuote = response?.quote ?? null;
+      setSalesQuotesCurrentDraft(updatedQuote);
+      setSalesQuotesTitleDraft(
+        String(updatedQuote?.title || salesQuotesTitleDraft || salesQuotesCurrentDraft.title).trim(),
+      );
+      setSalesQuotesNotesDraft(
+        typeof updatedQuote?.quotePayloadJson?.notes === "string"
+          ? updatedQuote.quotePayloadJson.notes
+          : salesQuotesNotesDraft,
+      );
+      await refreshSelectedProspectQuotes(selectedSalesQuoteProspect.identifier, {
+        silent: true,
+      });
+      toast.success("Quote draft saved.");
+    } catch (error: any) {
+      const message =
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message
+          : "Unable to save the draft right now.";
+      setSalesQuotesError(message);
+      toast.error(message);
+    } finally {
+      setSalesQuotesSaving(false);
+    }
+  }, [
+    refreshSelectedProspectQuotes,
+    salesQuotesCurrentDraft,
+    salesQuotesNotesDraft,
+    salesQuotesTitleDraft,
+    selectedSalesQuoteProspect,
+  ]);
+
+  const handleExportProspectQuotePdf = useCallback(async (quoteId: string) => {
+    if (!selectedSalesQuoteProspect) {
+      return;
+    }
+    setSalesQuotesExportingId(quoteId);
+    setSalesQuotesError(null);
+    try {
+      const result = await referralAPI.exportProspectQuote(
+        selectedSalesQuoteProspect.identifier,
+        quoteId,
+      );
+      const matchingQuote =
+        (salesQuotesCurrentDraft?.id === quoteId ? salesQuotesCurrentDraft : null) ||
+        salesQuotesHistory.find((quote) => quote.id === quoteId) ||
+        null;
+      const fallbackFilename = `PepPro_Quote_${
+        sanitizeDownloadFilenamePart(selectedSalesQuoteProspect.name, "Prospect")
+      }_${
+        Math.max(1, Math.floor(Number(matchingQuote?.revisionNumber) || 1))
+      }.pdf`;
+      triggerBrowserDownload(
+        result.blob,
+        result.filename || fallbackFilename,
+      );
+      await refreshSelectedProspectQuotes(selectedSalesQuoteProspect.identifier, {
+        silent: true,
+      });
+      toast.success("Quote exported.");
+    } catch (error: any) {
+      const message =
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message
+          : "Unable to export the quote right now.";
+      setSalesQuotesError(message);
+      toast.error(message);
+    } finally {
+      setSalesQuotesExportingId(null);
+    }
+  }, [
+    refreshSelectedProspectQuotes,
+    salesQuotesCurrentDraft,
+    salesQuotesHistory,
+    selectedSalesQuoteProspect,
+  ]);
+
+  const handleGenerateQuoteForProspect = useCallback((identifier: string) => {
+    const normalizedIdentifier = String(identifier || "").trim();
+    if (!normalizedIdentifier) {
+      return;
+    }
+    setSalesQuotesSelectedProspectId(normalizedIdentifier);
+    setSalesDashboardTab("your_quotes");
+  }, []);
+
   const filteredSalesRepReferrals = useMemo(() => {
     return referralRecords.filter(
       (referral) => sanitizeReferralStatus(referral.status) === "pending",
@@ -17897,7 +18599,7 @@ function MainApp() {
 	          status: manualProspectForm.status,
 	          hasAccount: false,
 	        });
-	        toast.success("Prospect added successfully.");
+	        toast.success("Lead added successfully.");
 	        closeManualProspectModal();
         await tracedRefreshReferralData("manual-prospect-submit", {
           showLoading: false,
@@ -17908,7 +18610,7 @@ function MainApp() {
         const message =
           typeof error?.message === "string"
             ? error.message
-            : "Unable to add prospect right now.";
+            : "Unable to add lead right now.";
         toast.error(message);
       } finally {
         setManualProspectSubmitting(false);
@@ -17930,7 +18632,7 @@ function MainApp() {
 
 	      const doctorId = String(record?.referredContactAccountId || "").trim();
 	      if (!doctorId) {
-	        toast.error("Unable to update this account prospect.");
+	        toast.error("Unable to update this account lead.");
 	        return;
 	      }
 
@@ -17949,7 +18651,7 @@ function MainApp() {
 	          setAccountProspectProspects((prev) => ({ ...prev, [doctorId]: prospect }));
 	        }
 
-	        toast.success("Prospect updated.");
+	        toast.success("Lead updated.");
         await tracedRefreshReferralData("synthetic-account-promote", {
           showLoading: false,
           force: true,
@@ -17959,7 +18661,7 @@ function MainApp() {
         const message =
           typeof error?.message === "string" && error.message
             ? error.message
-            : "Unable to update prospect right now.";
+            : "Unable to update lead right now.";
         setAdminActionState((prev) => ({ ...prev, error: message }));
 	        toast.error(message);
 	      } finally {
@@ -21388,7 +22090,7 @@ function MainApp() {
     async (referralId: string) => {
       if (
         !window.confirm(
-          "Delete this manual prospect? This will remove them permanently.",
+          "Delete this manual lead? This will remove them permanently.",
         )
       ) {
         return;
@@ -21400,7 +22102,7 @@ function MainApp() {
           error: null,
         }));
         await referralAPI.deleteManualProspect(referralId);
-        toast.success("Manual prospect deleted.");
+        toast.success("Manual lead deleted.");
         await tracedRefreshReferralData("manual-prospect-delete", {
           showLoading: false,
           force: true,
@@ -21410,7 +22112,7 @@ function MainApp() {
         const message =
           typeof error?.message === "string" && error.message
             ? error.message
-            : "Unable to delete manual prospect right now.";
+            : "Unable to delete manual lead right now.";
         setAdminActionState((prev) => ({ ...prev, error: message }));
         toast.error(message);
       } finally {
@@ -21421,6 +22123,68 @@ function MainApp() {
       }
     },
     [tracedRefreshReferralData],
+  );
+
+  const handleDeleteActiveProspect = useCallback(
+    async ({
+      busyKey,
+      identifier,
+      referralId,
+      doctorId,
+      kind,
+    }: {
+      busyKey: string;
+      identifier: string;
+      referralId?: string | null;
+      doctorId?: string | null;
+      kind: "referral" | "contact_form";
+    }) => {
+      const normalizedIdentifier = String(identifier || "").trim();
+      if (!normalizedIdentifier) {
+        return;
+      }
+      if (
+        !window.confirm(
+          "Delete this lead? This will remove it from Your Leads.",
+        )
+      ) {
+        return;
+      }
+      try {
+        setAdminActionState((prev) => ({
+          ...prev,
+          updatingReferral: busyKey,
+          error: null,
+        }));
+        await referralAPI.deleteSalesProspect(normalizedIdentifier, {
+          referralId: referralId ? String(referralId).trim() : null,
+          doctorId: doctorId ? String(doctorId).trim() : null,
+          kind,
+        });
+        if (salesQuotesSelectedProspectId === normalizedIdentifier) {
+          setSalesQuotesSelectedProspectId(null);
+        }
+        toast.success("Lead deleted.");
+        await tracedRefreshReferralData("sales-prospect-delete", {
+          showLoading: false,
+          force: true,
+        });
+      } catch (error: any) {
+        console.error("[Referral] Prospect delete failed", error);
+        const message =
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Unable to delete this lead right now.";
+        setAdminActionState((prev) => ({ ...prev, error: message }));
+        toast.error(message);
+      } finally {
+        setAdminActionState((prev) => ({
+          ...prev,
+          updatingReferral: null,
+        }));
+      }
+    },
+    [salesQuotesSelectedProspectId, tracedRefreshReferralData],
   );
 
   const renderDoctorDashboard = () => {
@@ -22313,6 +23077,7 @@ function MainApp() {
     const isSalesYourSalesActive = salesDashboardTab === "your_sales";
     const isSalesDoctorReferralsManualActive =
       salesDashboardTab === "doctor_referrals_manual";
+    const isSalesYourQuotesActive = salesDashboardTab === "your_quotes";
     const isSalesSettingsActive = salesDashboardTab === "settings";
     const isCrmSectionActive =
       isCrmVisibleForRole &&
@@ -22332,6 +23097,9 @@ function MainApp() {
     const isDoctorReferralsManualSectionActive =
       showSalesDashboardTabs &&
       isSalesDoctorReferralsManualActive;
+    const isYourQuotesSectionActive =
+      showSalesDashboardTabs &&
+      isSalesYourQuotesActive;
     const showSalesDashboardGrid =
       showSalesDashboardTabs &&
       (isSalesYourSalesActive || isSalesDoctorReferralsManualActive);
@@ -22979,7 +23747,7 @@ function MainApp() {
                     </div>
 
                     <div className="border-b border-slate-200/60 bg-white/70 px-3">
-                      <div className="relative w-full account-tab-shell database-visualizer-tab-shell">
+                      <div className="relative mb-3 w-full account-tab-shell database-visualizer-tab-shell">
                         <div
                           className="w-full account-tab-scroll-container"
                           ref={setDatabaseVisualizerTabsContainerRef}
@@ -23477,7 +24245,7 @@ function MainApp() {
 			          </div>
 
 			          {showSalesDashboardTabs && !isAdmin(user?.role) && (
-                  <div className="relative w-full account-tab-shell">
+                  <div className="relative mb-3 w-full account-tab-shell">
                     <div
                       className="w-full account-tab-scroll-container"
                       ref={setSalesDashboardTabsContainerRef}
@@ -23798,7 +24566,7 @@ function MainApp() {
 		          )}
 
                 {isAdmin(user?.role) && (
-                  <div className="relative w-full account-tab-shell">
+                  <div className="relative mb-3 w-full account-tab-shell">
                     <div
                       className="w-full account-tab-scroll-container"
                       ref={setAdminDashboardTabsContainerRef}
@@ -27155,7 +27923,7 @@ function MainApp() {
 			          )}
 
           {showSalesDashboardTabs && isAdmin(user?.role) && (
-            <div className="relative w-full account-tab-shell">
+            <div className="relative mb-3 w-full account-tab-shell">
               <div
                 className="w-full account-tab-scroll-container"
                 ref={setSalesDashboardTabsContainerRef}
@@ -27288,7 +28056,7 @@ function MainApp() {
             </div>
           )}
 	
-		          {isCrmSectionActive && hasChartData && (
+          {isCrmSectionActive && hasChartData && (
 	            <div className={clsx("sales-rep-combined-chart", isAdmin(user?.role) && "order-last")}>
 	              <div className="sales-rep-chart-header">
 	                <div>
@@ -27400,6 +28168,42 @@ function MainApp() {
                 </ResponsiveContainer>
               </div>
             </div>
+          )}
+
+          {isYourQuotesSectionActive && (
+            <YourQuotesPanel
+              selectedProspect={selectedSalesQuoteProspect}
+              quoteLoading={salesQuotesLoading}
+              quoteError={salesQuotesError}
+              currentDraft={salesQuotesCurrentDraft}
+              history={salesQuotesHistory}
+              titleDraft={salesQuotesTitleDraft}
+              notesDraft={salesQuotesNotesDraft}
+              cartItemCount={currentCartQuoteItems.length}
+              importBusy={salesQuotesImporting}
+              saveBusy={salesQuotesSaving}
+              exportBusy={salesQuotesExportingId !== null}
+              importDisabled={
+                salesQuotesImporting ||
+                !selectedSalesQuoteProspect ||
+                currentCartQuoteItems.length === 0
+              }
+              saveDisabled={
+                salesQuotesSaving ||
+                !salesQuotesCurrentDraft ||
+                !salesQuotesHasUnsavedChanges
+              }
+              exportDisabled={
+                salesQuotesExportingId !== null ||
+                !salesQuotesCurrentDraft?.id
+              }
+              resolveItemImageUrl={resolveSalesQuoteLineItemImageUrl}
+              onTitleChange={setSalesQuotesTitleDraft}
+              onNotesChange={setSalesQuotesNotesDraft}
+              onImportCart={handleImportCartToProspectQuote}
+              onSaveDraft={handleSaveProspectQuoteDraft}
+              onExportPdf={handleExportProspectQuotePdf}
+            />
           )}
 
           {showSalesDashboardGrid && (
@@ -27837,7 +28641,7 @@ function MainApp() {
                         <div className="lead-panel-filter-row">
                           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                             <h4>
-                              {filteredActiveProspects.length} Prospect
+                              {filteredActiveProspects.length} Lead
                               {filteredActiveProspects.length === 1 ? "" : "s"}
                             </h4>
                           </div>
@@ -27884,7 +28688,7 @@ function MainApp() {
                                   e.preventDefault();
                                 }
                               }}
-                              placeholder="Search prospects…"
+                              placeholder="Search leads…"
                               className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                             />
                           </div>
@@ -27917,7 +28721,7 @@ function MainApp() {
                   <div className="lead-panel-divider" />
                   {referralDataLoading && filteredActiveProspects.length === 0 ? (
                     <p className="lead-panel-empty text-sm text-slate-500">
-                      Loading prospects…
+                      Loading leads…
                     </p>
                   ) : filteredActiveProspects.length === 0 ? (
                     <p className="lead-panel-empty text-sm text-slate-500">
@@ -28054,6 +28858,11 @@ function MainApp() {
 				                              }));
 			                          })();
 			                          const promotionOptions = [
+                                    {
+                                      value: PROSPECT_DELETE_VALUE,
+                                      label: "Delete",
+                                      disabled: false,
+                                    },
 			                            ...backwardStatuses,
 			                            {
 			                              value: selectedStatusValue,
@@ -28093,7 +28902,12 @@ function MainApp() {
 	                            }
 	                            return null;
 	                          })();
-	                          const deletedProspect = isDeletedProspectLead(record);
+		                          const deletedProspect = isDeletedProspectLead(record);
+                              const prospectNavigationIdentifier =
+                                getActiveProspectNavigationIdentifier(record);
+                              const isHighlightedProspect =
+                                Boolean(activeProspectHighlightedIdentifier) &&
+                                prospectNavigationIdentifier === activeProspectHighlightedIdentifier;
 	                          const leadDisplayName =
 	                            deletedProspect
 	                              ? DELETED_USER_LABEL
@@ -28172,11 +28986,30 @@ function MainApp() {
                                 "doctor",
                               );
                             };
-	                          return (
-	                            <li
-	                              key={record.id}
-	                              className="lead-list-item lead-list-item--active-prospect"
-	                            >
+		                          return (
+		                            <li
+		                              key={record.id}
+                                      ref={(node) => {
+                                        if (!prospectNavigationIdentifier) {
+                                          return;
+                                        }
+                                        if (node) {
+                                          activeProspectRowRefs.current.set(
+                                            prospectNavigationIdentifier,
+                                            node,
+                                          );
+                                        } else {
+                                          activeProspectRowRefs.current.delete(
+                                            prospectNavigationIdentifier,
+                                          );
+                                        }
+                                      }}
+		                              className={clsx(
+                                        "lead-list-item lead-list-item--active-prospect",
+                                        isHighlightedProspect &&
+                                          "lead-list-item--active-prospect-highlighted",
+                                      )}
+		                            >
 	                              <div className="lead-list-meta">
 	                                <div className="lead-list-name min-w-0">
                                   <div className="flex items-start gap-2 min-w-0 text-left">
@@ -28243,10 +29076,26 @@ function MainApp() {
 				                                      return;
 				                                    }
 				                                    if (
-				                                      isManualLead &&
-				                                      nextValue === MANUAL_PROSPECT_DELETE_VALUE
+				                                      nextValue === PROSPECT_DELETE_VALUE
 				                                    ) {
-				                                      handleDeleteManualProspect(record.id);
+				                                      void handleDeleteActiveProspect({
+                                                        busyKey: String(record.id || ""),
+                                                        identifier:
+                                                          prospectNavigationIdentifier ||
+                                                          String(record.id || ""),
+                                                        referralId:
+                                                          kind === "referral" &&
+                                                          !isSyntheticAccount
+                                                            ? String(record.id || "")
+                                                            : null,
+                                                        doctorId: String(
+                                                          (record as any).referredContactAccountId ||
+                                                            (record as any).doctorId ||
+                                                            (record as any).doctor_id ||
+                                                            "",
+                                                        ).trim() || null,
+                                                        kind,
+                                                      });
 				                                      return;
 				                                    }
 				                                    if (
@@ -28269,11 +29118,6 @@ function MainApp() {
 				                                  }}
 				                                  className="lead-status-select"
 				                                >
-				                                  {isManualLead && (
-				                                    <option value={MANUAL_PROSPECT_DELETE_VALUE}>
-				                                      Delete
-				                                    </option>
-				                                  )}
 				                                  {promotionOptions.map((option) => (
 				                                    <option
 				                                      key={option.value}
@@ -28357,6 +29201,25 @@ function MainApp() {
 			                                    </div>
 			                                  )}
 		                                <div className="lead-list-actions-footer">
+                                  {prospectNavigationIdentifier ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        handleGenerateQuoteForProspect(
+                                          prospectNavigationIdentifier,
+                                        )
+                                      }
+                                      className="w-full header-home-button lead-generate-quote-button squircle-sm justify-center gap-2 bg-white text-slate-900"
+                                    >
+                                      <DocumentCurrencyDollarIcon
+                                        className="h-4 w-4"
+                                        aria-hidden="true"
+                                      />
+                                      Manage their quotes
+                                    </Button>
+                                  ) : null}
 		                                  {selectedStatusValue === "contacted" &&
 		                                    !isSyntheticAccount && (
 		                                      <div className="prospect-permit-container">
@@ -28539,7 +29402,7 @@ function MainApp() {
                     ) : filteredSalesRepReferrals.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
                         You have no referrals yet. Encourage doctors to grow the
-                        network and receive {formatCurrency(referralCreditAmount)} when
+                        network and they will receive {formatCurrency(referralCreditAmount)} when
                         their referee places their first order.
                       </p>
                     ) : (
@@ -28986,6 +29849,7 @@ function MainApp() {
 		          )}
 	        </div>
 	        {(isCrmSectionActive ||
+	          isYourQuotesSectionActive ||
 	          isYourSalesSectionActive ||
 	          isDoctorReferralsManualSectionActive) && (
 	        <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
@@ -31660,14 +32524,14 @@ function MainApp() {
 	      >
 	        <DialogContent className="glass-card squircle-lg w-full max-w-[min(720px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl">
 	          <DialogHeader>
-	            <DialogTitle>Prospect</DialogTitle>
-	            <DialogDescription>Prospect details (no user account yet).</DialogDescription>
+	            <DialogTitle>Lead</DialogTitle>
+	            <DialogDescription>Lead details (no user account yet).</DialogDescription>
 	          </DialogHeader>
 	          {(() => {
 	            const row = prospectDetailModalProspect;
 	            if (!row) return null;
 	            const name = String(
-	              row?._displayName || row?.referredContactName || row?.contactName || "Prospect",
+	              row?._displayName || row?.referredContactName || row?.contactName || "Lead",
 	            ).trim();
 	            const email = String(
 	              row?._displayEmail ||
@@ -31741,9 +32605,9 @@ function MainApp() {
           style={{ maxWidth: "min(960px, calc(100vw - 3rem))" }}
         >
           <DialogHeader>
-            <DialogTitle>Enter Prospect</DialogTitle>
+            <DialogTitle>Enter Lead</DialogTitle>
             <DialogDescription>
-              Create a manual prospect entry to jumpstart the pipeline.
+              Create a manual lead entry to jumpstart the pipeline.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -31763,7 +32627,7 @@ function MainApp() {
                   }))
                 }
                 required
-                placeholder="Prospect name"
+                placeholder="Lead name"
                 className="border-slate-300/90 bg-transparent"
               />
             </div>
@@ -31781,7 +32645,7 @@ function MainApp() {
                       email: event.target.value,
                     }))
                   }
-                  placeholder="prospect@email.com"
+                  placeholder="lead@email.com"
                   className="border-slate-300/90 bg-transparent"
                 />
               </div>
@@ -31876,7 +32740,7 @@ function MainApp() {
                     Saving…
                   </span>
                 ) : (
-                  "Save Prospect"
+                  "Save Lead"
                 )}
               </Button>
             </div>
@@ -31902,13 +32766,16 @@ function MainApp() {
               </>
             ) : (
               salesDoctorDetail && (
-	            <div className="space-y-4">
-			              <DialogHeader>
-			                <DialogTitle className="space-y-0.5">
+	            <div className="space-y-4 min-w-0">
+			              <DialogHeader className="min-w-0">
+			                <DialogTitle className="space-y-0.5 min-w-0">
 			                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
-				                  <div className="text-sm font-normal text-slate-600">
+				                  <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap text-sm font-normal text-slate-600">
 				                    {salesDoctorDetail.email ? (
-				                      <a href={`mailto:${salesDoctorDetail.email}`} className="hover:underline">
+				                      <a
+                                href={`mailto:${salesDoctorDetail.email}`}
+                                className="inline-block min-w-max hover:underline"
+                              >
 				                        {salesDoctorDetail.email}
 				                      </a>
 				                    ) : (
@@ -32190,7 +33057,7 @@ function MainApp() {
 		                  </div>
 		                </div>
 		              )}
-		              <div className="flex items-center gap-4">
+		              <div className="flex min-w-0 items-center gap-4">
 		                <div
 		                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
 			                  style={{
@@ -32241,7 +33108,7 @@ function MainApp() {
                     </span>
 	                  )}
 	                </div>
-	                <div className="space-y-1">
+	                <div className="min-w-0 space-y-1">
 				                    {((isAdmin(user?.role) || isRep(user?.role)) &&
                             (isRep(salesDoctorDetail.role) ||
                             isSalesLead(salesDoctorDetail.role) ||
@@ -32743,17 +33610,22 @@ function MainApp() {
               })()}
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <p className="text-sm font-semibold text-slate-700">
                     Contact
                   </p>
-	                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
-	                    <div>
+	                  <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
+	                    <div className="min-w-0">
 	                      <span className="font-semibold text-slate-800">Email: </span>
 	                      {salesDoctorDetail.email ? (
-	                        <a href={`mailto:${salesDoctorDetail.email}`}>
-	                          {salesDoctorDetail.email}
-	                        </a>
+	                        <span className="inline-block max-w-full align-middle overflow-x-auto whitespace-nowrap">
+                            <a
+                              href={`mailto:${salesDoctorDetail.email}`}
+                              className="inline-block min-w-max"
+                            >
+	                            {salesDoctorDetail.email}
+	                          </a>
+                          </span>
 	                      ) : (
 	                        <span>Unavailable</span>
 	                      )}
@@ -32806,7 +33678,7 @@ function MainApp() {
                     </div>
                   </div>
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <p className="text-sm font-semibold text-slate-700">
                     Address
                   </p>
@@ -32826,13 +33698,13 @@ function MainApp() {
                     const hasChanges = trimmedDraft !== existingAddress;
                     if (!canEditAddress) {
                       return (
-                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 whitespace-pre-line min-h-[72px]">
+                        <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 whitespace-pre-line min-h-[72px]">
                           {salesDoctorDetail.address || "Unavailable"}
                         </div>
                       );
                     }
                     return (
-                      <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 space-y-2">
+                      <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 space-y-2">
                         <Textarea
                           value={salesDoctorAddressDraft}
                           onChange={(event) => setSalesDoctorAddressDraft(event.target.value)}
@@ -32855,11 +33727,11 @@ function MainApp() {
                   })()}
                 </div>
                 {isDoctorRole(salesDoctorDetail.role) ? (
-                  <div className="space-y-2 sm:col-span-2 xl:col-span-1">
+                  <div className="min-w-0 space-y-2 sm:col-span-2 xl:col-span-1">
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
                     </p>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
+                    <div className="min-w-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
                       <div>
                         <span className="font-semibold text-slate-800">Greater Area: </span>
                         <span>{salesDoctorDetail.greaterArea || "Unavailable"}</span>
@@ -32870,7 +33742,7 @@ function MainApp() {
                       </div>
                       <div className="space-y-1">
                         <div className="font-semibold text-slate-800">Bio</div>
-                        <div className="whitespace-pre-line">
+                        <div className="overflow-auto whitespace-pre-line">
                           {salesDoctorDetail.bio || "Unavailable"}
                         </div>
                       </div>

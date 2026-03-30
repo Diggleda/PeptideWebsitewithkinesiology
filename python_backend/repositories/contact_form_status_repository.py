@@ -45,3 +45,16 @@ def upsert(form_id: str, status: str) -> Dict:
     data[str(form_id)] = payload
     _save(data)
     return payload
+
+
+def delete(form_id: str) -> bool:
+    key = str(form_id or "").strip()
+    if not key:
+        return False
+    data = _load()
+    if key not in data:
+        return False
+    next_data = dict(data)
+    next_data.pop(key, None)
+    _save(next_data)
+    return True

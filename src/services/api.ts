@@ -1,6 +1,11 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText';
 import { readDelegateTokenFromLocation } from '../lib/researchSupplyLinks';
+import type {
+  ProspectQuoteDetail,
+  ProspectQuoteImportPayload,
+  ProspectQuoteListResponse,
+} from '../types/quotes';
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
@@ -2319,6 +2324,36 @@ export const referralAPI = {
     });
   },
 
+  deleteSalesProspect: async (
+    identifier: string,
+    options?: {
+      referralId?: string | null;
+      doctorId?: string | null;
+      kind?: string | null;
+    },
+  ) => {
+    if (!identifier) {
+      throw new Error('identifier is required');
+    }
+    const params = new URLSearchParams();
+    if (options?.referralId) {
+      params.set('referralId', String(options.referralId));
+    }
+    if (options?.doctorId) {
+      params.set('doctorId', String(options.doctorId));
+    }
+    if (options?.kind) {
+      params.set('kind', String(options.kind));
+    }
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}?${query}`
+      : `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}`;
+    return fetchWithAuth(url, {
+      method: 'DELETE',
+    });
+  },
+
   uploadResellerPermit: async (identifier: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -2342,6 +2377,75 @@ export const referralAPI = {
     return fetchWithAuth(
       `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
       { method: 'DELETE' },
+    );
+  },
+
+  getProspectQuotes: async (identifier: string) => {
+    if (!identifier) {
+      throw new Error('identifier is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/quotes`,
+      { method: 'GET', cache: 'no-store' },
+    ) as Promise<ProspectQuoteListResponse>;
+  },
+
+  importProspectQuoteCart: async (identifier: string, payload: ProspectQuoteImportPayload) => {
+    if (!identifier) {
+      throw new Error('identifier is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/quotes/import-cart`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      },
+    ) as Promise<{
+      prospect: Record<string, unknown> | null;
+      quote: ProspectQuoteDetail | null;
+      history: ProspectQuoteListResponse['history'];
+    }>;
+  },
+
+  updateProspectQuote: async (
+    identifier: string,
+    quoteId: string,
+    payload: {
+      title?: string | null;
+      notes?: string | null;
+    },
+  ) => {
+    if (!identifier) {
+      throw new Error('identifier is required');
+    }
+    if (!quoteId) {
+      throw new Error('quoteId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/quotes/${encodeURIComponent(quoteId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload || {}),
+      },
+    ) as Promise<{
+      prospect: Record<string, unknown> | null;
+      quote: ProspectQuoteDetail | null;
+    }>;
+  },
+
+  exportProspectQuote: async (identifier: string, quoteId: string) => {
+    if (!identifier) {
+      throw new Error('identifier is required');
+    }
+    if (!quoteId) {
+      throw new Error('quoteId is required');
+    }
+    return fetchWithAuthBlob(
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/quotes/${encodeURIComponent(quoteId)}/export`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+      },
     );
   },
 

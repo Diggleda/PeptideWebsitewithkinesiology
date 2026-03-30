@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
+from io import BytesIO
 from pathlib import Path
 from flask import Blueprint, g, request, send_file
 
 from ..middleware.auth import require_auth
 from ..repositories import referral_code_repository, referral_repository, sales_prospect_repository, user_repository, sales_rep_repository
-from ..services import referral_service, auth_service
+from ..services import referral_service, auth_service, sales_prospect_quote_service
 from ..utils.http import handle_action
 
 blueprint = Blueprint("referrals", __name__, url_prefix="/api/referrals")
@@ -544,6 +545,30 @@ def admin_upsert_sales_prospect(identifier: str):
     return handle_action(action)
 
 
+@blueprint.delete("/admin/sales-prospects/<identifier>")
+@blueprint.delete("/sales-prospects/<identifier>")
+@require_auth
+def admin_delete_sales_prospect(identifier: str):
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        token_role = (g.current_user.get("role") or "").lower()
+        user_role = (user.get("role") or "").lower()
+        is_admin = token_role == "admin" or user_role == "admin"
+        sales_rep_id = user.get("salesRepId") or user.get("id")
+
+        result = referral_service.delete_sales_prospect_for_sales_rep(
+            sales_rep_id=str(sales_rep_id or ""),
+            identifier=identifier,
+            referral_id=request.args.get("referralId"),
+            doctor_id=request.args.get("doctorId"),
+            is_admin=is_admin,
+        )
+        return result
+
+    return handle_action(action)
+
+
 @blueprint.route("/admin/sales-prospects/<identifier>/reseller-permit", methods=["GET", "POST", "DELETE"])
 @blueprint.route("/sales-prospects/<identifier>/reseller-permit", methods=["GET", "POST", "DELETE"])
 @require_auth
@@ -590,6 +615,87 @@ def admin_reseller_permit(identifier: str):
 
         download_name = prospect.get("resellerPermitFileName") or abs_path.name
         return send_file(abs_path, download_name=download_name, as_attachment=False)
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/sales-prospects/<identifier>/quotes")
+@blueprint.get("/sales-prospects/<identifier>/quotes")
+@require_auth
+def admin_list_prospect_quotes(identifier: str):
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        return sales_prospect_quote_service.list_quotes_for_prospect(
+            identifier=identifier,
+            user=user,
+            query=request.args.to_dict(flat=True),
+        )
+
+    return handle_action(action)
+
+
+@blueprint.post("/admin/sales-prospects/<identifier>/quotes/import-cart")
+@blueprint.post("/sales-prospects/<identifier>/quotes/import-cart")
+@require_auth
+def admin_import_prospect_quote(identifier: str):
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        return sales_prospect_quote_service.import_cart_to_prospect_quote(
+            identifier=identifier,
+            user=user,
+            query=request.args.to_dict(flat=True),
+            payload=payload,
+        )
+
+    return handle_action(action)
+
+
+@blueprint.patch("/admin/sales-prospects/<identifier>/quotes/<quote_id>")
+@blueprint.patch("/sales-prospects/<identifier>/quotes/<quote_id>")
+@require_auth
+def admin_update_prospect_quote(identifier: str, quote_id: str):
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        return sales_prospect_quote_service.update_prospect_quote(
+            identifier=identifier,
+            quote_id=quote_id,
+            user=user,
+            query=request.args.to_dict(flat=True),
+            payload=payload,
+        )
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/sales-prospects/<identifier>/quotes/<quote_id>/export")
+@blueprint.get("/sales-prospects/<identifier>/quotes/<quote_id>/export")
+@require_auth
+def admin_export_prospect_quote(identifier: str, quote_id: str):
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        result = sales_prospect_quote_service.export_prospect_quote(
+            identifier=identifier,
+            quote_id=quote_id,
+            user=user,
+            query=request.args.to_dict(flat=True),
+        )
+        response = send_file(
+            BytesIO(result["pdf"]),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=result["filename"],
+        )
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-PepPro-Quote-Id"] = str((result.get("quote") or {}).get("id") or "")
+        return response
 
     return handle_action(action)
 

@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { authenticate } = require('../middleware/authenticate');
 const referralController = require('../controllers/referralController');
+const salesProspectQuotesController = require('../controllers/salesProspectQuotesController');
 
 const router = Router();
 
@@ -21,6 +22,7 @@ router.delete('/admin/manual/:referralId', authenticate, referralController.dele
 router.patch('/admin/referrals/:referralId', authenticate, referralController.updateReferral);
 router.get('/admin/sales-prospects/:identifier', authenticate, referralController.getSalesProspect);
 router.patch('/admin/sales-prospects/:identifier', authenticate, referralController.upsertSalesProspect);
+router.delete('/admin/sales-prospects/:identifier', authenticate, referralController.deleteSalesProspect);
 router.get('/admin/leads/:identifier/activity', authenticate, referralController.getLeadActivity);
 router.post('/admin/sales-prospects/:identifier/reseller-permit', authenticate, referralController.uploadResellerPermit);
 router.get('/admin/sales-prospects/:identifier/reseller-permit', authenticate, referralController.downloadResellerPermit);
@@ -28,6 +30,11 @@ router.get('/admin/sales-prospects/:identifier/reseller-permit', authenticate, r
 // Non-admin aliases for sales reps / sales leads (avoids infra path restrictions on /admin/*).
 router.get('/sales-prospects/:identifier', authenticate, referralController.getSalesProspect);
 router.patch('/sales-prospects/:identifier', authenticate, referralController.upsertSalesProspect);
+router.delete('/sales-prospects/:identifier', authenticate, referralController.deleteSalesProspect);
+router.get('/sales-prospects/:identifier/quotes', authenticate, salesProspectQuotesController.list);
+router.post('/sales-prospects/:identifier/quotes/import-cart', authenticate, salesProspectQuotesController.importCart);
+router.patch('/sales-prospects/:identifier/quotes/:quoteId', authenticate, salesProspectQuotesController.update);
+router.get('/sales-prospects/:identifier/quotes/:quoteId/export', authenticate, salesProspectQuotesController.exportPdf);
 router.get('/leads/:identifier/activity', authenticate, referralController.getLeadActivity);
 router.post('/sales-prospects/:identifier/reseller-permit', authenticate, referralController.uploadResellerPermit);
 router.get('/sales-prospects/:identifier/reseller-permit', authenticate, referralController.downloadResellerPermit);

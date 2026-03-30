@@ -12,6 +12,7 @@ def register_blueprints(app: Flask, config) -> None:
         r"/api/*": {
             "origins": "*" if "*" in origins else origins,
             "supports_credentials": True,
+            "expose_headers": ["Content-Disposition", "Content-Type"],
             # Cache preflight responses in browsers to reduce OPTIONS load.
             # Especially important when the frontend polls auth endpoints frequently.
             "max_age": 600,

@@ -7,6 +7,7 @@ const salesRepStore = new JsonStore(env.dataDir, 'sales-reps.json', []);
 const referralStore = new JsonStore(env.dataDir, 'referrals.json', []);
 const referralCodeStore = new JsonStore(env.dataDir, 'referral-codes.json', []);
 const salesProspectStore = new JsonStore(env.dataDir, 'sales-prospects.json', []);
+const salesProspectQuoteStore = new JsonStore(env.dataDir, 'sales-prospect-quotes.json', []);
 const creditLedgerStore = new JsonStore(env.dataDir, 'credit-ledger.json', []);
 const crmLeadActivityStore = new JsonStore(env.dataDir, 'crm-lead-activity.json', []);
 const crmAssignmentRulesStore = new JsonStore(env.dataDir, 'crm-assignment-rules.json', []);
@@ -32,6 +33,7 @@ const initStorage = () => {
   referralStore.init();
   referralCodeStore.init();
   salesProspectStore.init();
+  salesProspectQuoteStore.init();
   creditLedgerStore.init();
   crmLeadActivityStore.init();
   crmAssignmentRulesStore.init();
@@ -48,6 +50,7 @@ module.exports = {
   referralStore,
   referralCodeStore,
   salesProspectStore,
+  salesProspectQuoteStore,
   creditLedgerStore,
   crmLeadActivityStore,
   crmAssignmentRulesStore,

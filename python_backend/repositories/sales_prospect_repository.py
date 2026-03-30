@@ -375,6 +375,37 @@ def delete_by_referral_id(referral_id: str) -> bool:
     return True
 
 
+def delete_by_contact_form_id(contact_form_id: str) -> bool:
+    if not contact_form_id:
+        return False
+    target = str(contact_form_id).strip()
+    if not target:
+        return False
+    canonical_id = f"contact_form:{target}"
+    if _using_mysql():
+        result = mysql_client.execute(
+            """
+            DELETE FROM sales_prospects
+            WHERE contact_form_id = %(contact_form_id)s
+               OR id = %(canonical_id)s
+               OR id = %(contact_form_id)s
+            """,
+            {"contact_form_id": target, "canonical_id": canonical_id},
+        )
+        return result > 0
+    records = list(_get_store().read())
+    filtered = [
+        record
+        for record in records
+        if str(record.get("contactFormId") or "").strip() != target
+        and str(record.get("id") or "").strip() not in {target, canonical_id}
+    ]
+    if len(filtered) == len(records):
+        return False
+    _get_store().write(filtered)
+    return True
+
+
 def upsert(record: Dict) -> Dict:
     incoming = dict(record or {})
 

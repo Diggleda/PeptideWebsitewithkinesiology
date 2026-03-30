@@ -15,6 +15,14 @@ const { logger } = require('../config/logger');
 const { env } = require('../config/env');
 const { computeBlindIndex, decryptText } = require('../utils/cryptoEnvelope');
 const { parseMultipartSingleFile } = require('../utils/multipart');
+const {
+  ensureSalesRep: ensureSalesRepAccess,
+  normalizeOwnerIds: normalizeProspectOwnerIds,
+  extractContactFormId: extractProspectContactFormId,
+  isDoctorUser: isDoctorProspectUser,
+  resolveScopedProspectAccess,
+  buildProspectBaseRecord,
+} = require('../services/salesProspectAccessService');
 
 const REFERRAL_STATUSES = ['pending', 'contacted', 'verified', 'account_created', 'converted', 'nuture', 'contact_form'];
 
@@ -1683,9 +1691,9 @@ const deleteManualProspect = (req, res, next) => {
   }
 };
 
-const getSalesProspect = async (req, res, next) => {
+const deleteSalesProspect = async (req, res, next) => {
   try {
-    ensureSalesRep(req.user, 'getSalesProspect');
+    ensureSalesRepAccess(req.user, 'deleteSalesProspect');
     const identifier = String(req.params.identifier || '').trim();
     if (!identifier) {
       const error = new Error('Identifier is required');
@@ -1693,33 +1701,103 @@ const getSalesProspect = async (req, res, next) => {
       throw error;
     }
 
-    const role = normalizeRole(req.user.role);
-    const isAdmin = role === 'admin';
-    const ownerIds = normalizeOwnerIds(req.user);
-    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
-    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+    const access = await resolveScopedProspectAccess({
+      identifier,
+      user: req.user,
+      query: req.query,
+      context: 'deleteSalesProspect',
+      allowSalesLeadAll: true,
+    });
+    const referralId = normalizeOptionalText(req.query?.referralId);
+    const doctorId = normalizeOptionalText(req.query?.doctorId);
+    const contactFormId = extractProspectContactFormId(identifier)
+      || extractProspectContactFormId(referralId)
+      || normalizeOptionalText(access.prospect?.contactFormId);
+    const role = normalizeRole(req.user?.role);
+    const isAdminUser = role === 'admin';
+    const allowedOwners = [req.user?.id, req.user?.salesRepId].filter(Boolean).map(String);
 
-    let prospect = await salesProspectRepository.findById(identifier);
-    if (!prospect && salesRepId) {
-      const contactFormId = extractContactFormId(identifier);
-      prospect = contactFormId
-        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findByDoctorId(identifier)
-          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
-          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
+    let deleted = false;
+
+    if (referralId) {
+      const referral = referralRepository.findById(referralId);
+      if (referral) {
+        const owner = referral.salesRepId ? String(referral.salesRepId) : null;
+        if (!isAdminUser && owner && !allowedOwners.includes(owner)) {
+          const error = new Error('Prospect not found');
+          error.status = 404;
+          throw error;
+        }
+        referralRepository.remove(referralId);
+        deleted = true;
+      }
+      await salesProspectRepository.removeByReferralId(referralId).catch(() => false);
+      await salesProspectRepository.remove(referralId).catch(() => false);
     }
 
-    if (prospect && !scopeAll && !isAdmin) {
-      const owner = prospect.salesRepId ? String(prospect.salesRepId) : null;
-      if (owner && !ownerIds.includes(owner)) {
-        const error = new Error('Prospect not found');
-        error.status = 404;
-        throw error;
+    if (contactFormId && mysqlClient.isEnabled()) {
+      try {
+        await mysqlClient.execute(
+          'DELETE FROM contact_forms WHERE id = :id',
+          { id: contactFormId },
+        );
+        deleted = true;
+      } catch (error) {
+        logger.error({ err: error, contactFormId }, 'Failed to delete contact form prospect');
+        const wrapped = new Error('Unable to delete contact form prospect right now.');
+        wrapped.status = 500;
+        throw wrapped;
       }
     }
 
-    res.json({ prospect: prospect || null });
+    if (contactFormId) {
+      await salesProspectRepository.remove(`contact_form:${contactFormId}`).catch(() => false);
+    }
+
+    const shouldHideProspect =
+      !contactFormId &&
+      (!referralId || identifier !== referralId);
+
+    if (shouldHideProspect) {
+      const owner = access.prospect?.salesRepId
+        || access.salesRepId
+        || req.user.salesRepId
+        || req.user.id;
+      const base = access.prospect || buildProspectBaseRecord({
+        identifier,
+        existing: null,
+        ownerSalesRepId: owner,
+        prospectSnapshot: {
+          status: 'nuture',
+          doctorId,
+        },
+        doctorSourceSystem: 'account',
+      });
+      await salesProspectRepository.upsert({
+        ...base,
+        status: 'nuture',
+      });
+      deleted = true;
+    } else if (access.prospect?.id) {
+      await salesProspectRepository.remove(access.prospect.id).catch(() => false);
+    }
+
+    res.json({ status: deleted ? 'deleted' : 'deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getSalesProspect = async (req, res, next) => {
+  try {
+    ensureSalesRepAccess(req.user, 'getSalesProspect');
+    const access = await resolveScopedProspectAccess({
+      identifier: req.params.identifier,
+      user: req.user,
+      query: req.query,
+      context: 'getSalesProspect',
+    });
+    res.json({ prospect: access.prospect || null });
   } catch (error) {
     next(error);
   }
@@ -1727,42 +1805,15 @@ const getSalesProspect = async (req, res, next) => {
 
 const getLeadActivity = async (req, res, next) => {
   try {
-    ensureSalesRep(req.user, 'getLeadActivity');
-    const identifier = String(req.params.identifier || '').trim();
-    if (!identifier) {
-      const error = new Error('Identifier is required');
-      error.status = 400;
-      throw error;
-    }
-
-    const role = normalizeRole(req.user.role);
-    const isAdmin = role === 'admin';
-    const isLead = isSalesLead(role);
-    const ownerIds = normalizeOwnerIds(req.user);
-    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-    const scopeAll = (isAdmin || isLead) && (req.query.scope || '').toLowerCase() === 'all';
-    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
-
-    let prospect = await salesProspectRepository.findById(identifier);
-    if (!prospect && salesRepId) {
-      const contactFormId = extractContactFormId(identifier);
-      prospect = contactFormId
-        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findByDoctorId(identifier)
-          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
-          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
-    }
-
-    if (prospect && !scopeAll && !isAdmin && !isLead) {
-      const owner = prospect.salesRepId ? String(prospect.salesRepId) : null;
-      if (owner && owner !== 'unassigned' && !ownerIds.includes(owner)) {
-        const error = new Error('Prospect not found');
-        error.status = 404;
-        throw error;
-      }
-    }
-
-    const prospectId = prospect?.id || identifier;
+    ensureSalesRepAccess(req.user, 'getLeadActivity');
+    const access = await resolveScopedProspectAccess({
+      identifier: req.params.identifier,
+      user: req.user,
+      query: req.query,
+      context: 'getLeadActivity',
+      allowSalesLeadAll: true,
+    });
+    const prospectId = access.prospect?.id || String(req.params.identifier || '').trim();
     const activities = await crmRepository.listLeadActivityByProspectId(prospectId, {
       limit: req.query?.limit,
     });
@@ -1777,7 +1828,7 @@ const getLeadActivity = async (req, res, next) => {
 
 const upsertSalesProspect = async (req, res, next) => {
   try {
-    ensureSalesRep(req.user, 'upsertSalesProspect');
+    ensureSalesRepAccess(req.user, 'upsertSalesProspect');
     const identifier = String(req.params.identifier || '').trim();
     if (!identifier) {
       const error = new Error('Identifier is required');
@@ -1803,87 +1854,26 @@ const upsertSalesProspect = async (req, res, next) => {
       updates.status = status;
     }
 
-    const role = normalizeRole(req.user.role);
-    const isAdmin = role === 'admin';
-    const ownerIds = normalizeOwnerIds(req.user);
-    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
-    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+    const access = await resolveScopedProspectAccess({
+      identifier,
+      user: req.user,
+      query: req.query,
+      context: 'upsertSalesProspect',
+    });
+    const owner = access.prospect?.salesRepId
+      || access.salesRepId
+      || req.user.salesRepId
+      || req.user.id;
 
-    let existing = await salesProspectRepository.findById(identifier);
-    if (!existing && salesRepId) {
-      const contactFormId = extractContactFormId(identifier);
-      existing = contactFormId
-        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findByDoctorId(identifier)
-          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
-          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
-    }
-
-    if (existing && !scopeAll && !isAdmin) {
-      const owner = existing.salesRepId ? String(existing.salesRepId) : null;
-      if (owner && !ownerIds.includes(owner)) {
-        const error = new Error('Prospect not found');
-        error.status = 404;
-        throw error;
-      }
-    }
-
-    const contactFormId = extractContactFormId(identifier);
-    const isManual = identifier.startsWith('manual:');
-    const owner = existing?.salesRepId || salesRepId || req.user.salesRepId || req.user.id;
-
-    let base = existing;
-    if (!base) {
-      if (contactFormId) {
-        base = {
-          id: identifier,
-          salesRepId: String(owner),
-          contactFormId: String(contactFormId),
-          sourceSystem: 'contact_form',
-          status: 'contact_form',
-          isManual: false,
-        };
-      } else if (isManual) {
-        base = {
-          id: identifier,
-          salesRepId: String(owner),
-          sourceSystem: 'manual',
-          status: 'pending',
-          isManual: true,
-        };
-      } else {
-        const maybeDoctor = userRepository.findById(identifier);
-        const maybeDoctorRole = normalizeRole(maybeDoctor?.role);
-        if (maybeDoctor && (maybeDoctorRole === 'doctor' || maybeDoctorRole === 'test_doctor')) {
-          const doctorName = typeof maybeDoctor.name === 'string' ? maybeDoctor.name.trim() : null;
-          const doctorEmail = typeof maybeDoctor.email === 'string' ? maybeDoctor.email.trim().toLowerCase() : null;
-          const doctorPhone = typeof maybeDoctor.phone === 'string'
-            ? maybeDoctor.phone.trim()
-            : (typeof maybeDoctor.phoneNumber === 'string' ? maybeDoctor.phoneNumber.trim() : null);
-          base = {
-            id: `doctor:${identifier}`,
-            salesRepId: String(owner),
-            sourceSystem: 'account',
-            doctorId: String(identifier),
-            status: 'converted',
-            isManual: true,
-            contactName: doctorName || null,
-            contactEmail: doctorEmail || null,
-            contactPhone: doctorPhone || null,
-          };
-        } else {
-          base = {
-            id: identifier,
-            salesRepId: String(owner),
-            sourceSystem: 'referral',
-            referralId: identifier,
-            status: 'pending',
-            isManual: false,
-          };
-        }
-      }
-    }
+    const base = access.prospect || buildProspectBaseRecord({
+      identifier,
+      existing: null,
+      ownerSalesRepId: owner,
+      prospectSnapshot: {
+        status: updates.status,
+      },
+      doctorSourceSystem: 'account',
+    });
 
     const saved = await salesProspectRepository.upsert({
       ...base,
@@ -1897,7 +1887,7 @@ const upsertSalesProspect = async (req, res, next) => {
 
 const uploadResellerPermit = async (req, res, next) => {
   try {
-    ensureSalesRep(req.user, 'uploadResellerPermit');
+    ensureSalesRepAccess(req.user, 'uploadResellerPermit');
     const identifier = String(req.params.identifier || '').trim();
     if (!identifier) {
       const error = new Error('Identifier is required');
@@ -1905,31 +1895,12 @@ const uploadResellerPermit = async (req, res, next) => {
       throw error;
     }
 
-    const role = normalizeRole(req.user.role);
-    const isAdmin = role === 'admin';
-    const ownerIds = normalizeOwnerIds(req.user);
-    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
-    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
-
-    let existing = await salesProspectRepository.findById(identifier);
-    if (!existing && salesRepId) {
-      const contactFormId = extractContactFormId(identifier);
-      existing = contactFormId
-        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findByDoctorId(identifier)
-          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
-          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
-    }
-
-    if (existing && !scopeAll && !isAdmin) {
-      const owner = existing.salesRepId ? String(existing.salesRepId) : null;
-      if (owner && !ownerIds.includes(owner)) {
-        const error = new Error('Prospect not found');
-        error.status = 404;
-        throw error;
-      }
-    }
+    const access = await resolveScopedProspectAccess({
+      identifier,
+      user: req.user,
+      query: req.query,
+      context: 'uploadResellerPermit',
+    });
 
     const parsed = await parseMultipartSingleFile(req, {
       fieldName: 'file',
@@ -1953,55 +1924,16 @@ const uploadResellerPermit = async (req, res, next) => {
     const storedPath = path.join(uploadDir, storedName);
     await fs.promises.writeFile(storedPath, parsed.buffer);
 
-    const contactFormId = extractContactFormId(identifier);
-    const isManual = identifier.startsWith('manual:');
-    const owner = existing?.salesRepId || salesRepId || req.user.salesRepId || req.user.id;
-
-    let base = existing;
-    if (!base) {
-      if (contactFormId) {
-        base = {
-          id: identifier,
-          salesRepId: String(owner),
-          contactFormId: String(contactFormId),
-          sourceSystem: 'contact_form',
-          status: 'contact_form',
-          isManual: false,
-        };
-      } else if (isManual) {
-        base = {
-          id: identifier,
-          salesRepId: String(owner),
-          sourceSystem: 'manual',
-          status: 'pending',
-          isManual: true,
-        };
-      } else {
-        const doctor = userRepository.findById(identifier);
-        if (doctor && isDoctorUser(doctor)) {
-          base = {
-            id: `doctor:${identifier}`,
-            salesRepId: String(owner),
-            doctorId: String(identifier),
-            sourceSystem: 'doctor',
-            status: 'converted',
-            isManual: true,
-            contactName: doctor.name || null,
-            contactEmail: doctor.email || null,
-            contactPhone: doctor.phone || null,
-          };
-        } else {
-          base = {
-            id: identifier,
-            salesRepId: String(owner),
-            sourceSystem: 'referral',
-            referralId: identifier,
-            status: 'pending',
-            isManual: false,
-          };
-        }
-      }
-    }
+    const owner = access.prospect?.salesRepId
+      || access.salesRepId
+      || req.user.salesRepId
+      || req.user.id;
+    const base = access.prospect || buildProspectBaseRecord({
+      identifier,
+      existing: null,
+      ownerSalesRepId: owner,
+      doctorSourceSystem: 'doctor',
+    });
 
     const resellerPermitUploadedAt = new Date().toISOString();
     const resellerPermitFilePath = path.posix.join('uploads', 'reseller-permits', storedName);
@@ -2026,7 +1958,7 @@ const uploadResellerPermit = async (req, res, next) => {
 
 const downloadResellerPermit = async (req, res, next) => {
   try {
-    ensureSalesRep(req.user, 'downloadResellerPermit');
+    ensureSalesRepAccess(req.user, 'downloadResellerPermit');
     const identifier = String(req.params.identifier || '').trim();
     if (!identifier) {
       const error = new Error('Identifier is required');
@@ -2034,36 +1966,17 @@ const downloadResellerPermit = async (req, res, next) => {
       throw error;
     }
 
-    const role = normalizeRole(req.user.role);
-    const isAdmin = role === 'admin';
-    const ownerIds = normalizeOwnerIds(req.user);
-    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
-    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+    const access = await resolveScopedProspectAccess({
+      identifier,
+      user: req.user,
+      query: req.query,
+      context: 'downloadResellerPermit',
+    });
 
-    let existing = await salesProspectRepository.findById(identifier);
-    if (!existing && salesRepId) {
-      const contactFormId = extractContactFormId(identifier);
-      existing = contactFormId
-        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findByDoctorId(identifier)
-          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
-          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
-    }
-
-    if (existing && !scopeAll && !isAdmin) {
-      const owner = existing.salesRepId ? String(existing.salesRepId) : null;
-      if (owner && !ownerIds.includes(owner)) {
-        const error = new Error('Prospect not found');
-        error.status = 404;
-        throw error;
-      }
-    }
-
-    const relativePath = existing?.resellerPermitFilePath
-      ? String(existing.resellerPermitFilePath)
+    const relativePath = access.prospect?.resellerPermitFilePath
+      ? String(access.prospect.resellerPermitFilePath)
       : '';
-    if (!existing || !relativePath) {
+    if (!access.prospect || !relativePath) {
       const error = new Error('Permit not found');
       error.status = 404;
       throw error;
@@ -2103,8 +2016,8 @@ const downloadResellerPermit = async (req, res, next) => {
       }
     })();
 
-    const safeNameBase = existing?.resellerPermitFileName
-      ? String(existing.resellerPermitFileName)
+    const safeNameBase = access.prospect?.resellerPermitFileName
+      ? String(access.prospect.resellerPermitFileName)
       : path.basename(candidate);
     const safeName = path
       .basename(safeNameBase)
@@ -2129,6 +2042,7 @@ module.exports = {
   createReferralCode,
   createManualProspect,
   deleteManualProspect,
+  deleteSalesProspect,
   getSalesProspect,
   getLeadActivity,
   upsertSalesProspect,
