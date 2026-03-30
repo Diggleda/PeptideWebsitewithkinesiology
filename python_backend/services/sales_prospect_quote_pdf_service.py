@@ -80,6 +80,7 @@ _IMAGE_DATA_URL_INFLIGHT: Dict[str, threading.Event] = {}
 _IMAGE_DATA_URL_INFLIGHT_LOCK = threading.Lock()
 _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
 _NODE_WORKER_PROCESS: Optional[subprocess.Popen] = None
+_NODE_WORKER_SIGNATURE: Optional[str] = None
 _NODE_WORKER_LOCK = threading.Lock()
 _STATIC_ASSET_SEARCH_DIRS = (
     "public",
@@ -115,6 +116,24 @@ def _bridge_script_path() -> Path:
 
 def _worker_script_path() -> Path:
     return BASE_DIR / "server" / "scripts" / "generateProspectQuotePdfWorker.js"
+
+
+def _node_worker_dependency_paths() -> List[Path]:
+    return [
+        _worker_script_path(),
+        BASE_DIR / "server" / "services" / "salesProspectQuotePdfService.js",
+    ]
+
+
+def _node_worker_signature() -> Optional[str]:
+    parts: List[str] = []
+    for path in _node_worker_dependency_paths():
+        try:
+            stat = path.stat()
+        except Exception:
+            return None
+        parts.append(f"{path}:{stat.st_mtime_ns}:{stat.st_size}")
+    return "|".join(parts) if parts else None
 
 
 def _iter_existing_paths(patterns: List[str]) -> List[str]:
@@ -207,10 +226,11 @@ def _build_node_renderer_env(node_binary: str) -> Dict[str, str]:
 
 
 def _shutdown_node_worker_process() -> None:
-    global _NODE_WORKER_PROCESS
+    global _NODE_WORKER_PROCESS, _NODE_WORKER_SIGNATURE
 
     process = _NODE_WORKER_PROCESS
     _NODE_WORKER_PROCESS = None
+    _NODE_WORKER_SIGNATURE = None
     if process is None:
         return
     try:
@@ -230,10 +250,14 @@ def _shutdown_node_worker_process() -> None:
 
 
 def _ensure_node_worker_process() -> Optional[subprocess.Popen]:
-    global _NODE_WORKER_PROCESS
+    global _NODE_WORKER_PROCESS, _NODE_WORKER_SIGNATURE
 
+    current_signature = _node_worker_signature()
     if _NODE_WORKER_PROCESS is not None and _NODE_WORKER_PROCESS.poll() is None:
-        return _NODE_WORKER_PROCESS
+        if current_signature and _NODE_WORKER_SIGNATURE == current_signature:
+            return _NODE_WORKER_PROCESS
+        logger.info("Quote PDF node worker restarting after renderer source change")
+        _shutdown_node_worker_process()
 
     _shutdown_node_worker_process()
     script_path = _worker_script_path()
@@ -252,9 +276,11 @@ def _ensure_node_worker_process() -> Optional[subprocess.Popen]:
             env=_build_node_renderer_env(node_binary),
             bufsize=1,
         )
+        _NODE_WORKER_SIGNATURE = current_signature
     except Exception:
         logger.exception("Quote PDF node worker failed to start")
         _NODE_WORKER_PROCESS = None
+        _NODE_WORKER_SIGNATURE = None
         return None
 
     return _NODE_WORKER_PROCESS

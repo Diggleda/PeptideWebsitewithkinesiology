@@ -24,6 +24,8 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
         self._original_node_worker_process = service._NODE_WORKER_PROCESS
         service._NODE_WORKER_PROCESS = None
+        self._original_node_worker_signature = service._NODE_WORKER_SIGNATURE
+        service._NODE_WORKER_SIGNATURE = None
         service._QUOTE_PDF_RENDER_CACHE.clear()
         service._SKU_PRODUCT_IMAGE_CACHE.clear()
         service._IMAGE_DATA_URL_CACHE.clear()
@@ -42,6 +44,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         self._disk_cache_temp_dir.cleanup()
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = self._original_node_bridge_skip_until
         service._NODE_WORKER_PROCESS = self._original_node_worker_process
+        service._NODE_WORKER_SIGNATURE = self._original_node_worker_signature
         service._QUOTE_PDF_RENDER_CACHE.clear()
         service._SKU_PRODUCT_IMAGE_CACHE.clear()
         service._IMAGE_DATA_URL_CACHE.clear()
@@ -65,6 +68,49 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
 
         self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="PepPro" />', html)
         self.assertNotIn('<div class="brand">PepPro</div>', html)
+
+    def test_ensure_node_worker_process_restarts_when_renderer_signature_changes(self) -> None:
+        class DummyProcess:
+            def __init__(self, label: str) -> None:
+                self.label = label
+                self.stdin = None
+                self.stdout = None
+                self.stderr = None
+                self._returncode = None
+
+            def poll(self):
+                return self._returncode
+
+            def terminate(self) -> None:
+                self._returncode = 0
+
+            def wait(self, timeout=None) -> int:
+                return 0
+
+            def kill(self) -> None:
+                self._returncode = -9
+
+        started: list[DummyProcess] = []
+
+        def fake_popen(*args, **kwargs):
+            process = DummyProcess(f"worker-{len(started) + 1}")
+            started.append(process)
+            return process
+
+        with patch.object(service, "_worker_script_path", return_value=Path(__file__)), patch.object(
+            service, "_find_node_binary", return_value="node"
+        ), patch.object(service, "_build_node_renderer_env", return_value={}), patch.object(
+            service, "_node_worker_signature", side_effect=["sig-a", "sig-a", "sig-b"]
+        ), patch.object(service.subprocess, "Popen", side_effect=fake_popen):
+            first = service._ensure_node_worker_process()
+            second = service._ensure_node_worker_process()
+            third = service._ensure_node_worker_process()
+
+        self.assertIs(first, second)
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(third)
+        self.assertIsNot(first, third)
+        self.assertEqual(len(started), 2)
 
     def test_render_quote_html_displays_subtotal_with_colon(self) -> None:
         quote = {
