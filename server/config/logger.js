@@ -3,6 +3,7 @@ const { env, isProduction } = require('./env');
 const { getRequestContext } = require('./requestContext');
 
 const usePretty = env.logPretty === true;
+let hasWarnedAboutMissingPrettyTransport = false;
 
 const summarizeValue = (value) => {
   if (value === null || value === undefined) {
@@ -63,6 +64,39 @@ const serializeError = (error) => {
   return serialized;
 };
 
+const resolvePrettyTarget = (resolver = require.resolve) => {
+  try {
+    return resolver('pino-pretty');
+  } catch {
+    return null;
+  }
+};
+
+const buildTransport = ({
+  pretty = usePretty,
+  resolver = require.resolve,
+  warn = (message) => process.stderr.write(`${message}\n`),
+} = {}) => {
+  if (!pretty) {
+    return undefined;
+  }
+  const target = resolvePrettyTarget(resolver);
+  if (!target) {
+    if (!hasWarnedAboutMissingPrettyTransport) {
+      hasWarnedAboutMissingPrettyTransport = true;
+      warn('pino-pretty is not installed; falling back to standard JSON logs.');
+    }
+    return undefined;
+  }
+  return {
+    target,
+    options: {
+      translateTime: 'SYS:standard',
+      ignore: 'pid,hostname',
+    },
+  };
+};
+
 const logger = pino({
   name: 'peppro-backend',
   level: env.logLevel,
@@ -92,15 +126,11 @@ const logger = pino({
   serializers: {
     err: serializeError,
   },
-  transport: usePretty
-    ? {
-      target: 'pino-pretty',
-      options: {
-        translateTime: 'SYS:standard',
-        ignore: 'pid,hostname',
-      },
-    }
-    : undefined,
+  transport: buildTransport(),
 });
 
-module.exports = { logger };
+module.exports = {
+  logger,
+  buildTransport,
+  resolvePrettyTarget,
+};
