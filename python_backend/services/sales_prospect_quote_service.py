@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Dict, List, Optional
 
 from ..repositories import (
@@ -450,16 +451,23 @@ def export_prospect_quote(
     user: Dict,
     query: Optional[Dict] = None,
 ) -> Dict:
+    started_at = time.perf_counter()
+    access_started_at = time.perf_counter()
     access = _resolve_scoped_prospect_access(identifier=identifier, user=user, query=query, context="export_prospect_quote")
+    access_ms = round((time.perf_counter() - access_started_at) * 1000, 1)
     if not access.get("prospect"):
         raise _service_error("PROSPECT_NOT_FOUND", 404)
 
+    find_quote_started_at = time.perf_counter()
     existing = sales_prospect_quote_repository.find_by_id(quote_id)
+    find_quote_ms = round((time.perf_counter() - find_quote_started_at) * 1000, 1)
     if not existing or existing.get("prospectId") != access["prospect"].get("id"):
         raise _service_error("QUOTE_NOT_FOUND", 404)
 
     quote = existing
+    mark_exported_ms = 0.0
     if quote.get("status") == QUOTE_STATUS_DRAFT:
+        mark_exported_started_at = time.perf_counter()
         quote = sales_prospect_quote_repository.upsert(
             {
                 **quote,
@@ -467,7 +475,9 @@ def export_prospect_quote(
                 "exportedAt": _now(),
             }
         )
+        mark_exported_ms = round((time.perf_counter() - mark_exported_started_at) * 1000, 1)
 
+    enrich_started_at = time.perf_counter()
     quote_payload = quote.get("quotePayloadJson") if isinstance(quote.get("quotePayloadJson"), dict) else {}
     quote_payload_prospect = quote_payload.get("prospect") if isinstance(quote_payload.get("prospect"), dict) else {}
     enriched_quote = {
@@ -489,12 +499,24 @@ def export_prospect_quote(
             },
         },
     }
+    enrich_ms = round((time.perf_counter() - enrich_started_at) * 1000, 1)
 
+    generate_pdf_started_at = time.perf_counter()
     rendered = generate_prospect_quote_pdf(enriched_quote)
+    generate_pdf_ms = round((time.perf_counter() - generate_pdf_started_at) * 1000, 1)
     return {
         "quote": _sanitize_quote_summary(quote),
         "pdf": rendered["pdf"],
         "filename": rendered["filename"],
+        "diagnostics": {
+            "totalMs": round((time.perf_counter() - started_at) * 1000, 1),
+            "accessMs": access_ms,
+            "findQuoteMs": find_quote_ms,
+            "markExportedMs": mark_exported_ms,
+            "enrichMs": enrich_ms,
+            "pdfMs": generate_pdf_ms,
+            "pdf": rendered.get("diagnostics") if isinstance(rendered.get("diagnostics"), dict) else None,
+        },
     }
 
 

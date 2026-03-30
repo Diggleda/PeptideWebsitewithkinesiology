@@ -49,6 +49,10 @@ const SUPPORTED_IMAGE_CONTENT_TYPES = new Set([
 const IMAGE_FETCH_ACCEPT_HEADER = 'image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8';
 const IMAGE_FETCH_TIMEOUT_MS = 3500;
 const MAX_IMAGE_CANDIDATES_PER_ITEM = 4;
+const nowMs = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+  ? performance.now()
+  : Date.now());
+const elapsedMs = (startedAt) => Number((nowMs() - startedAt).toFixed(1));
 
 const inferStaticAssetContentType = (assetPath, fallbackType) => {
   const extension = path.extname(String(assetPath || '')).trim().toLowerCase();
@@ -416,6 +420,7 @@ const resolveQuoteItemImageDataUrl = async (item) => {
 };
 
 const renderQuoteHtml = async (quote) => {
+  const startedAt = nowMs();
   const payload = quote?.quotePayloadJson || {};
   const prospect = payload?.prospect || {};
   const salesRep = payload?.salesRep || {};
@@ -426,9 +431,12 @@ const renderQuoteHtml = async (quote) => {
   const currency = quote?.currency || payload?.currency || 'USD';
   const notes = typeof payload?.notes === 'string' ? payload.notes.trim() : '';
 
+  const imageResolveStartedAt = nowMs();
   const resolvedImages = await Promise.all(
     items.map((item) => resolveQuoteItemImageDataUrl(item)),
   );
+  const imageResolveMs = elapsedMs(imageResolveStartedAt);
+  const resolvedImageCount = resolvedImages.filter(Boolean).length;
 
   const rows = items.map((item, index) => {
     const quantity = Math.max(1, Math.floor(Number(item?.quantity) || 1));
@@ -464,7 +472,7 @@ const renderQuoteHtml = async (quote) => {
     `;
   }).join('');
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -710,6 +718,15 @@ const renderQuoteHtml = async (quote) => {
     </div>
   </body>
 </html>`;
+  return {
+    html,
+    diagnostics: {
+      itemCount: items.length,
+      resolvedImageCount,
+      imageResolveMs,
+      totalMs: elapsedMs(startedAt),
+    },
+  };
 };
 
 const waitForQuotePageImages = async (page) => {
@@ -751,10 +768,21 @@ const waitForQuotePageImages = async (page) => {
 };
 
 const generateProspectQuotePdfWithBrowser = async (browser, quote) => {
+  const startedAt = nowMs();
+  const pageCreateStartedAt = nowMs();
   const page = await browser.newPage();
+  const pageCreateMs = elapsedMs(pageCreateStartedAt);
   try {
-    await page.setContent(await renderQuoteHtml(quote), { waitUntil: 'domcontentloaded' });
+    const htmlStartedAt = nowMs();
+    const renderedHtml = await renderQuoteHtml(quote);
+    const renderQuoteHtmlMs = elapsedMs(htmlStartedAt);
+    const setContentStartedAt = nowMs();
+    await page.setContent(renderedHtml.html, { waitUntil: 'domcontentloaded' });
+    const setContentMs = elapsedMs(setContentStartedAt);
+    const waitForImagesStartedAt = nowMs();
     await waitForQuotePageImages(page);
+    const waitForImagesMs = elapsedMs(waitForImagesStartedAt);
+    const pdfStartedAt = nowMs();
     const pdf = await page.pdf({
       format: 'Letter',
       printBackground: true,
@@ -765,9 +793,22 @@ const generateProspectQuotePdfWithBrowser = async (browser, quote) => {
         left: '18px',
       },
     });
+    const pdfMs = elapsedMs(pdfStartedAt);
+    const pdfBuffer = Buffer.from(pdf);
     return {
-      pdf: Buffer.from(pdf),
+      pdf: pdfBuffer,
       filename: buildQuoteFilename(quote),
+      diagnostics: {
+        renderer: 'playwright_browser',
+        pageCreateMs,
+        renderQuoteHtmlMs,
+        setContentMs,
+        waitForImagesMs,
+        pdfMs,
+        totalMs: elapsedMs(startedAt),
+        pdfBytes: pdfBuffer.length,
+        html: renderedHtml.diagnostics || null,
+      },
     };
   } finally {
     if (typeof page.close === 'function') {

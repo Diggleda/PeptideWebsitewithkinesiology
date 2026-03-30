@@ -45,6 +45,7 @@ const renderQuote = async ({ id, quote }) => {
       id,
       filename: rendered.filename,
       pdfBase64: Buffer.from(rendered.pdf).toString('base64'),
+      debug: rendered.diagnostics || null,
     });
   } catch (error) {
     await closeBrowser();
@@ -55,6 +56,7 @@ const renderQuote = async ({ id, quote }) => {
         id,
         filename: rendered.filename,
         pdfBase64: Buffer.from(rendered.pdf).toString('base64'),
+        debug: rendered.diagnostics || null,
       });
     } catch (retryError) {
       writeResponse({

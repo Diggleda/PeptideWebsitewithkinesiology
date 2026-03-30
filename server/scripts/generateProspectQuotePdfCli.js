@@ -17,6 +17,7 @@ const main = async () => {
   process.stdout.write(JSON.stringify({
     filename: rendered.filename,
     pdfBase64: Buffer.from(rendered.pdf).toString('base64'),
+    debug: rendered.diagnostics || null,
   }));
 };
 
@@ -24,4 +25,3 @@ main().catch((error) => {
   process.stderr.write(`${error && error.stack ? error.stack : String(error)}\n`);
   process.exit(1);
 });
-

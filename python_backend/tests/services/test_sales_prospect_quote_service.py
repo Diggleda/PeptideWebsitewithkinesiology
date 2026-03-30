@@ -188,7 +188,12 @@ class SalesProspectQuoteServiceTests(unittest.TestCase):
         ), patch.object(
             service,
             "generate_prospect_quote_pdf",
-            side_effect=lambda quote: render_calls.append(quote) or {"pdf": b"%PDF-1.4 mock", "filename": "PepPro_Quote_Example_Lead_1.pdf"},
+            side_effect=lambda quote: render_calls.append(quote)
+            or {
+                "pdf": b"%PDF-1.4 mock",
+                "filename": "PepPro_Quote_Example_Lead_1.pdf",
+                "diagnostics": {"renderer": "node_worker", "totalMs": 123.4},
+            },
         ):
             result = service.export_prospect_quote(
                 identifier="doctor-1",
@@ -200,6 +205,7 @@ class SalesProspectQuoteServiceTests(unittest.TestCase):
         self.assertEqual(upserts[0]["status"], "exported")
         self.assertEqual(result["filename"], "PepPro_Quote_Example_Lead_1.pdf")
         self.assertEqual(render_calls[0]["quotePayloadJson"]["prospect"]["contactName"], "Example Lead")
+        self.assertEqual(result["diagnostics"]["pdf"]["renderer"], "node_worker")
 
     def test_delete_prospect_quote_removes_scoped_quote(self) -> None:
         deleted_ids = []

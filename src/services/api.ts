@@ -843,8 +843,38 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
   const contentDisposition = response.headers.get('content-disposition') || '';
   const filenameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
   const filename = filenameMatch && filenameMatch[1] ? filenameMatch[1] : null;
+  const debugHeaderNames = [
+    'server-timing',
+    'x-peppro-quote-export-ms',
+    'x-peppro-quote-pdf-ms',
+    'x-peppro-quote-render-ms',
+    'x-peppro-quote-image-ms',
+    'x-peppro-quote-renderer',
+    'x-peppro-quote-cache',
+    'x-peppro-quote-pdf-bytes',
+    'x-peppro-quote-id',
+  ];
+  const debugHeaders: Record<string, string> = {};
+  for (const headerName of debugHeaderNames) {
+    const value = response.headers.get(headerName);
+    if (typeof value === 'string' && value.trim()) {
+      debugHeaders[headerName] = value.trim();
+    }
+  }
+  const blobStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
   const blob = await response.blob();
-  return { blob, filename, contentType: response.headers.get('content-type') || '' };
+  const blobReadMs = (typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()) - blobStartedAt;
+  return {
+    blob,
+    filename,
+    contentType: response.headers.get('content-type') || '',
+    debugHeaders,
+    blobReadMs: Number(blobReadMs.toFixed(1)),
+  };
 };
 
 export type UpdateProfilePayload = {

@@ -16797,11 +16797,19 @@ function MainApp() {
     }
     setSalesQuotesExportingId(quoteId);
     setSalesQuotesError(null);
+    const exportStartedAt =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
     try {
       const result = await referralAPI.exportProspectQuote(
         selectedSalesQuoteProspect.identifier,
         quoteId,
       );
+      const responseReceivedAt =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
       const matchingQuote =
         (salesQuotesCurrentDraft?.id === quoteId ? salesQuotesCurrentDraft : null) ||
         salesQuotesHistory.find((quote) => quote.id === quoteId) ||
@@ -16814,13 +16822,48 @@ function MainApp() {
       const isPdfDownload =
         /\.pdf$/i.test(result.filename || fallbackFilename) ||
         /pdf/i.test(result.contentType || result.blob.type || "");
+      const exportFetchMs = Number((responseReceivedAt - exportStartedAt).toFixed(1));
+      const debugInfo = {
+        quoteId,
+        identifier: selectedSalesQuoteProspect.identifier,
+        filename: result.filename || fallbackFilename,
+        blobSize: result.blob.size,
+        fetchAndBlobMs: exportFetchMs,
+        blobReadMs: typeof result.blobReadMs === "number" ? result.blobReadMs : null,
+        renderer: result.debugHeaders?.["x-peppro-quote-renderer"] || null,
+        cache: result.debugHeaders?.["x-peppro-quote-cache"] || null,
+        backendExportMs: result.debugHeaders?.["x-peppro-quote-export-ms"] || null,
+        backendPdfMs: result.debugHeaders?.["x-peppro-quote-pdf-ms"] || null,
+        backendRenderMs: result.debugHeaders?.["x-peppro-quote-render-ms"] || null,
+        backendImageMs: result.debugHeaders?.["x-peppro-quote-image-ms"] || null,
+        backendPdfBytes: result.debugHeaders?.["x-peppro-quote-pdf-bytes"] || null,
+        serverTiming: result.debugHeaders?.["server-timing"] || null,
+      };
+      try {
+        (window as any).__PEPPRO_LAST_QUOTE_EXPORT_DEBUG = debugInfo;
+      } catch {
+        // Ignore window assignment failures outside the browser.
+      }
+      console.info("[Quote Export Debug]", debugInfo);
       triggerBrowserDownload(
         result.blob,
         result.filename || fallbackFilename,
         isPdfDownload ? { forceMimeType: "application/octet-stream" } : undefined,
       );
+      const refreshStartedAt =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
       await refreshSelectedProspectQuotes(selectedSalesQuoteProspect.identifier, {
         silent: true,
+      });
+      const refreshCompletedAt =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+      console.info("[Quote Export Debug] Refresh", {
+        quoteId,
+        refreshMs: Number((refreshCompletedAt - refreshStartedAt).toFixed(1)),
       });
       toast.success("Quote exported.");
     } catch (error: any) {

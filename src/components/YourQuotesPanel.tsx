@@ -196,8 +196,8 @@ export function YourQuotesPanel({
               {quoteError}
             </div>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="lead-panel bg-slate-50/80">
+            <div className="quote-panels-grid grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="quote-panel-card lead-panel bg-slate-50/80">
                 <div className="quote-compose-header pb-3">
                   <h3 className="quote-compose-title text-lg font-semibold text-slate-900 sm:text-xl">Make a quote</h3>
                   <div className="quote-compose-actions">
@@ -327,7 +327,7 @@ export function YourQuotesPanel({
                 </div>
               </div>
 
-              <div className="lead-panel bg-slate-50/80">
+              <div className="quote-panel-card lead-panel bg-slate-50/80">
                 <div className="border-b border-slate-200/80 pb-3">
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 sm:text-xl">{previousQuotesLabel}</h3>

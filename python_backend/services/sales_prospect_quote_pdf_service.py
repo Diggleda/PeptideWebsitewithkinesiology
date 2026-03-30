@@ -101,6 +101,14 @@ def _service_error(message: str, status: int) -> Exception:
         return error
 
 
+def _elapsed_ms(started_at: float) -> float:
+    return round(max(0.0, (time.perf_counter() - started_at) * 1000), 1)
+
+
+def _copy_diagnostics(value: object) -> Optional[Dict[str, Any]]:
+    return dict(value) if isinstance(value, dict) else None
+
+
 def _bridge_script_path() -> Path:
     return BASE_DIR / "server" / "scripts" / "generateProspectQuotePdfCli.js"
 
@@ -347,9 +355,11 @@ def _get_cached_rendered_quote_pdf_from_disk(cache_key: str, ttl_seconds: int) -
         pdf_base64 = payload.get("pdfBase64")
         if not isinstance(filename, str) or not filename.strip() or not isinstance(pdf_base64, str) or not pdf_base64.strip():
             raise ValueError("invalid quote pdf disk cache payload")
+        diagnostics = _copy_diagnostics(payload.get("diagnostics"))
         return {
             "pdf": base64.b64decode(pdf_base64),
             "filename": filename,
+            **({"diagnostics": diagnostics} if diagnostics else {}),
         }
     except Exception:
         try:
@@ -374,7 +384,10 @@ def _store_rendered_quote_pdf_to_disk(cache_key: str, rendered: Dict) -> None:
             "filename": filename,
             "pdfBase64": base64.b64encode(bytes(pdf)).decode("ascii"),
         }
-        temp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        diagnostics = _copy_diagnostics(rendered.get("diagnostics"))
+        if diagnostics:
+            payload["diagnostics"] = diagnostics
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         temp_path.replace(cache_path)
         _prune_quote_pdf_disk_cache(directory)
     except Exception:
@@ -402,6 +415,7 @@ def _store_rendered_quote_pdf_in_memory(cache_key: str, rendered: Dict, ttl_seco
     filename = rendered.get("filename")
     if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
         return
+    diagnostics = _copy_diagnostics(rendered.get("diagnostics"))
 
     with _QUOTE_PDF_RENDER_CACHE_LOCK:
         while len(_QUOTE_PDF_RENDER_CACHE) >= _QUOTE_PDF_RENDER_CACHE_LIMIT:
@@ -415,6 +429,7 @@ def _store_rendered_quote_pdf_in_memory(cache_key: str, rendered: Dict, ttl_seco
             "pdf": bytes(pdf),
             "filename": filename,
             "expiresAt": time.monotonic() + ttl_seconds,
+            **({"diagnostics": diagnostics} if diagnostics else {}),
         }
 
 
@@ -438,9 +453,12 @@ def _get_cached_rendered_quote_pdf(cache_key: str) -> Optional[Dict]:
                 if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
                     _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
                 else:
+                    diagnostics = _copy_diagnostics(entry.get("diagnostics"))
                     cached_rendered = {
                         "pdf": bytes(pdf),
                         "filename": filename,
+                        "cacheLayer": "memory",
+                        **({"diagnostics": diagnostics} if diagnostics else {}),
                     }
 
     if cached_rendered is not None:
@@ -455,6 +473,8 @@ def _get_cached_rendered_quote_pdf(cache_key: str) -> Optional[Dict]:
     return {
         "pdf": bytes(disk_cached["pdf"]),
         "filename": disk_cached["filename"],
+        "cacheLayer": "disk",
+        **({"diagnostics": _copy_diagnostics(disk_cached.get("diagnostics"))} if isinstance(disk_cached.get("diagnostics"), dict) else {}),
     }
 
 
@@ -1126,23 +1146,27 @@ def _render_quote_html(quote: Dict) -> str:
 
 
 def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
-    started_at = time.monotonic()
+    started_at = time.perf_counter()
     browser_binary = _find_chromium_binary()
     if not browser_binary:
         logger.error("Quote PDF browser renderer unavailable", extra={"browser_binary": None})
         return None
 
+    html_started_at = time.perf_counter()
     try:
         html_content = _render_quote_html(quote)
     except Exception:
         logger.exception("Quote PDF browser renderer failed to render HTML")
         return None
+    html_render_ms = _elapsed_ms(html_started_at)
 
     with tempfile.TemporaryDirectory(prefix="peppro-quote-pdf-") as temp_dir:
         temp_path = Path(temp_dir)
         html_path = temp_path / "quote.html"
         pdf_path = temp_path / "quote.pdf"
+        html_write_started_at = time.perf_counter()
         html_path.write_text(html_content, encoding="utf-8")
+        html_write_ms = _elapsed_ms(html_write_started_at)
 
         command = [
             browser_binary,
@@ -1155,6 +1179,7 @@ def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
             f"--print-to-pdf={pdf_path}",
             html_path.resolve().as_uri(),
         ]
+        browser_exec_started_at = time.perf_counter()
         try:
             completed = subprocess.run(
                 command,
@@ -1167,6 +1192,7 @@ def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
         except Exception:
             logger.exception("Quote PDF browser renderer failed to execute", extra={"browser_binary": browser_binary})
             return None
+        browser_exec_ms = _elapsed_ms(browser_exec_started_at)
 
         if completed.returncode != 0 or not pdf_path.exists():
             logger.error(
@@ -1175,28 +1201,41 @@ def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
                     "browser_binary": browser_binary,
                     "returncode": completed.returncode,
                     "stderr": (completed.stderr or "")[:1000],
-                    "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+                    "duration_ms": _elapsed_ms(started_at),
                 },
             )
             return None
 
+        pdf_read_started_at = time.perf_counter()
         try:
             pdf = pdf_path.read_bytes()
         except Exception:
             logger.exception("Quote PDF browser renderer could not read output PDF", extra={"browser_binary": browser_binary})
             return None
+        pdf_read_ms = _elapsed_ms(pdf_read_started_at)
 
+    total_ms = _elapsed_ms(started_at)
     logger.info(
         "Quote PDF renderer completed",
         extra={
             "renderer": "system_browser",
-            "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+            "duration_ms": total_ms,
             "browser_binary": browser_binary,
         },
     )
     return {
         "pdf": pdf,
         "filename": _build_quote_filename(quote),
+        "diagnostics": {
+            "renderer": "system_browser",
+            "renderMs": total_ms,
+            "htmlRenderMs": html_render_ms,
+            "htmlWriteMs": html_write_ms,
+            "browserExecMs": browser_exec_ms,
+            "pdfReadMs": pdf_read_ms,
+            "totalMs": total_ms,
+            "pdfBytes": len(pdf),
+        },
     }
 
 
@@ -1259,6 +1298,7 @@ def _format_datetime(value: object) -> str:
 
 
 def _build_fallback_quote_pdf(quote: Dict) -> Dict:
+    started_at = time.perf_counter()
     payload = quote.get("quotePayloadJson") if isinstance(quote.get("quotePayloadJson"), dict) else {}
     items = payload.get("items") if isinstance(payload.get("items"), list) else []
     prospect = payload.get("prospect") if isinstance(payload.get("prospect"), dict) else {}
@@ -1335,11 +1375,17 @@ def _build_fallback_quote_pdf(quote: Dict) -> Dict:
     return {
         "pdf": pdf,
         "filename": _build_quote_filename(quote),
+        "diagnostics": {
+            "renderer": "text_fallback",
+            "renderMs": _elapsed_ms(started_at),
+            "totalMs": _elapsed_ms(started_at),
+            "pdfBytes": len(pdf),
+        },
     }
 
 
 def _run_node_worker_bridge(quote: Dict) -> Optional[Dict]:
-    started_at = time.monotonic()
+    started_at = time.perf_counter()
     with _NODE_WORKER_LOCK:
         process = _ensure_node_worker_process()
         if process is None or process.stdin is None or process.stdout is None:
@@ -1366,7 +1412,7 @@ def _run_node_worker_bridge(quote: Dict) -> Optional[Dict]:
         if not ready:
             logger.error(
                 "Quote PDF node worker timed out",
-                extra={"duration_ms": round((time.monotonic() - started_at) * 1000, 1)},
+                extra={"duration_ms": _elapsed_ms(started_at)},
             )
             _shutdown_node_worker_process()
             return None
@@ -1384,7 +1430,7 @@ def _run_node_worker_bridge(quote: Dict) -> Optional[Dict]:
                 extra={
                     "returncode": process.poll(),
                     "stderr": stderr_output,
-                    "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+                    "duration_ms": _elapsed_ms(started_at),
                 },
             )
             _shutdown_node_worker_process()
@@ -1407,7 +1453,7 @@ def _run_node_worker_bridge(quote: Dict) -> Optional[Dict]:
                 "Quote PDF node worker returned render error",
                 extra={
                     "stderr": str(payload.get("error"))[:1000],
-                    "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+                    "duration_ms": _elapsed_ms(started_at),
                 },
             )
             _shutdown_node_worker_process()
@@ -1427,22 +1473,32 @@ def _run_node_worker_bridge(quote: Dict) -> Optional[Dict]:
             return None
 
         filename = _safe_text(payload.get("filename"), _build_quote_filename(quote))
+        total_ms = _elapsed_ms(started_at)
+        worker_debug = _copy_diagnostics(payload.get("debug"))
         logger.info(
             "Quote PDF renderer completed",
             extra={
                 "renderer": "node_worker",
-                "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+                "duration_ms": total_ms,
             },
         )
         return {
             "pdf": pdf,
             "filename": filename,
+            "diagnostics": {
+                "renderer": "node_worker",
+                "renderMs": total_ms,
+                "bridgeMs": total_ms,
+                "totalMs": total_ms,
+                "pdfBytes": len(pdf),
+                **({"worker": worker_debug} if worker_debug else {}),
+            },
         }
 
 
 def _run_node_bridge(quote: Dict) -> Optional[Dict]:
     global _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
-    started_at = time.monotonic()
+    started_at = time.perf_counter()
 
     retry_after_seconds = _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC - time.monotonic()
     if retry_after_seconds > 0:
@@ -1494,7 +1550,7 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
                 "node_binary": node_binary,
                 "playwright_browsers_path": env.get("PLAYWRIGHT_BROWSERS_PATH"),
                 "stderr": (completed.stderr or "")[:1000],
-                "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+                "duration_ms": _elapsed_ms(started_at),
             },
         )
         return None
@@ -1521,51 +1577,130 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
 
     _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
     filename = _safe_text(payload.get("filename"), _build_quote_filename(quote))
+    total_ms = _elapsed_ms(started_at)
+    bridge_debug = _copy_diagnostics(payload.get("debug"))
     logger.info(
         "Quote PDF renderer completed",
         extra={
             "renderer": "node_bridge",
-            "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+            "duration_ms": total_ms,
             "node_binary": node_binary,
         },
     )
     return {
         "pdf": pdf,
         "filename": filename,
+        "diagnostics": {
+            "renderer": "node_bridge",
+            "renderMs": total_ms,
+            "bridgeMs": total_ms,
+            "totalMs": total_ms,
+            "pdfBytes": len(pdf),
+            **({"bridge": bridge_debug} if bridge_debug else {}),
+        },
     }
 
 
 def generate_prospect_quote_pdf(quote: Dict) -> Dict:
+    started_at = time.perf_counter()
     cache_key = _build_quote_render_cache_key(quote)
+    cache_lookup_ms = 0.0
+    inflight_wait_ms = 0.0
     while True:
+        cache_lookup_started_at = time.perf_counter()
         cached = _get_cached_rendered_quote_pdf(cache_key)
+        cache_lookup_ms += _elapsed_ms(cache_lookup_started_at)
         if cached is not None:
+            diagnostics = _copy_diagnostics(cached.get("diagnostics")) or {}
+            diagnostics.update(
+                {
+                    "cacheKey": cache_key,
+                    "cacheLayer": _safe_text(cached.get("cacheLayer")) or diagnostics.get("cacheLayer") or "memory",
+                    "cacheLookupMs": round(cache_lookup_ms, 1),
+                    "inflightWaitMs": round(inflight_wait_ms, 1),
+                    "totalMs": _elapsed_ms(started_at),
+                }
+            )
+            cached["diagnostics"] = diagnostics
             logger.info("Quote PDF cache hit", extra={"cache_key": cache_key, "cache_layer": "memory"})
             return cached
 
         event, is_owner = _register_inflight_work(cache_key, _QUOTE_PDF_RENDER_INFLIGHT, _QUOTE_PDF_RENDER_INFLIGHT_LOCK)
         if not is_owner:
             logger.info("Quote PDF render waiting for in-flight result", extra={"cache_key": cache_key})
+            wait_started_at = time.perf_counter()
             event.wait()
+            inflight_wait_ms += _elapsed_ms(wait_started_at)
             continue
 
         try:
             rendered = _run_node_worker_bridge(quote)
             if rendered is not None:
+                store_cache_started_at = time.perf_counter()
                 _store_rendered_quote_pdf(cache_key, rendered)
+                diagnostics = _copy_diagnostics(rendered.get("diagnostics")) or {}
+                diagnostics.update(
+                    {
+                        "cacheKey": cache_key,
+                        "cacheLayer": "miss",
+                        "cacheLookupMs": round(cache_lookup_ms, 1),
+                        "inflightWaitMs": round(inflight_wait_ms, 1),
+                        "storeCacheMs": _elapsed_ms(store_cache_started_at),
+                        "totalMs": _elapsed_ms(started_at),
+                    }
+                )
+                rendered["diagnostics"] = diagnostics
                 return rendered
 
             rendered = _run_node_bridge(quote)
             if rendered is not None:
+                store_cache_started_at = time.perf_counter()
                 _store_rendered_quote_pdf(cache_key, rendered)
+                diagnostics = _copy_diagnostics(rendered.get("diagnostics")) or {}
+                diagnostics.update(
+                    {
+                        "cacheKey": cache_key,
+                        "cacheLayer": "miss",
+                        "cacheLookupMs": round(cache_lookup_ms, 1),
+                        "inflightWaitMs": round(inflight_wait_ms, 1),
+                        "storeCacheMs": _elapsed_ms(store_cache_started_at),
+                        "totalMs": _elapsed_ms(started_at),
+                    }
+                )
+                rendered["diagnostics"] = diagnostics
                 return rendered
             rendered = _run_system_browser_renderer(quote)
             if rendered is not None:
+                store_cache_started_at = time.perf_counter()
                 _store_rendered_quote_pdf(cache_key, rendered)
+                diagnostics = _copy_diagnostics(rendered.get("diagnostics")) or {}
+                diagnostics.update(
+                    {
+                        "cacheKey": cache_key,
+                        "cacheLayer": "miss",
+                        "cacheLookupMs": round(cache_lookup_ms, 1),
+                        "inflightWaitMs": round(inflight_wait_ms, 1),
+                        "storeCacheMs": _elapsed_ms(store_cache_started_at),
+                        "totalMs": _elapsed_ms(started_at),
+                    }
+                )
+                rendered["diagnostics"] = diagnostics
                 return rendered
             if _allow_text_fallback():
                 logger.warning("Falling back to Python quote PDF generator")
-                return _build_fallback_quote_pdf(quote)
+                rendered = _build_fallback_quote_pdf(quote)
+                diagnostics = _copy_diagnostics(rendered.get("diagnostics")) or {}
+                diagnostics.update(
+                    {
+                        "cacheKey": cache_key,
+                        "cacheLayer": "miss",
+                        "cacheLookupMs": round(cache_lookup_ms, 1),
+                        "inflightWaitMs": round(inflight_wait_ms, 1),
+                        "totalMs": _elapsed_ms(started_at),
+                    }
+                )
+                rendered["diagnostics"] = diagnostics
+                return rendered
             raise _service_error("QUOTE_PDF_RENDERER_UNAVAILABLE", 500)
         finally:
             _finish_inflight_work(cache_key, event, _QUOTE_PDF_RENDER_INFLIGHT, _QUOTE_PDF_RENDER_INFLIGHT_LOCK)

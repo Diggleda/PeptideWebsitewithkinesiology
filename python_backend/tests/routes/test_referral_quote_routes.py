@@ -33,6 +33,24 @@ class ReferralQuoteRouteTests(unittest.TestCase):
                 "quote": {"id": "quote-1"},
                 "pdf": b"%PDF-1.4 mock",
                 "filename": "PepPro_Quote_Example_1.pdf",
+                "diagnostics": {
+                    "totalMs": 321.4,
+                    "pdfMs": 287.9,
+                    "pdf": {
+                        "renderer": "node_worker",
+                        "cacheLayer": "miss",
+                        "renderMs": 280.1,
+                        "worker": {
+                            "renderQuoteHtmlMs": 110.0,
+                            "setContentMs": 22.0,
+                            "waitForImagesMs": 15.0,
+                            "pdfMs": 98.0,
+                            "html": {
+                                "imageResolveMs": 84.5,
+                            },
+                        },
+                    },
+                },
             },
         ):
             with self.app.test_request_context(
@@ -47,6 +65,15 @@ class ReferralQuoteRouteTests(unittest.TestCase):
         self.assertIn("PepPro_Quote_Example_1.pdf", response.headers.get("Content-Disposition", ""))
         self.assertEqual(response.headers.get("Cache-Control"), "no-store")
         self.assertEqual(response.headers.get("X-PepPro-Quote-Id"), "quote-1")
+        self.assertEqual(response.headers.get("X-PepPro-Quote-Renderer"), "node_worker")
+        self.assertEqual(response.headers.get("X-PepPro-Quote-Cache"), "miss")
+        self.assertEqual(response.headers.get("X-PepPro-Quote-Export-Ms"), "321.4")
+        self.assertEqual(response.headers.get("X-PepPro-Quote-Pdf-Ms"), "287.9")
+        self.assertEqual(response.headers.get("X-PepPro-Quote-Render-Ms"), "280.1")
+        self.assertEqual(response.headers.get("X-PepPro-Quote-Image-Ms"), "84.5")
+        self.assertEqual(response.headers.get("X-PepPro-Quote-Pdf-Bytes"), str(len(b"%PDF-1.4 mock")))
+        self.assertIn("quote_total;dur=321.4", response.headers.get("Server-Timing", ""))
+        self.assertIn("pdf_images;dur=84.5", response.headers.get("Server-Timing", ""))
         self.assertEqual(response.get_data(), b"%PDF-1.4 mock")
 
     def test_delete_quote_route_returns_delete_payload(self) -> None:

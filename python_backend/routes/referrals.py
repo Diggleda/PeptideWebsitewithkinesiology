@@ -42,6 +42,85 @@ def _sanitize_phone(value):
     return cleaned[:32] if cleaned else None
 
 
+def _format_debug_timing_ms(value) -> str | None:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if numeric < 0:
+        return None
+    return f"{numeric:.1f}"
+
+
+def _append_server_timing_metric(metrics: list[str], name: str, value) -> None:
+    formatted = _format_debug_timing_ms(value)
+    if not formatted:
+        return
+    metrics.append(f"{name};dur={formatted}")
+
+
+def _attach_quote_export_debug_headers(response, result: dict) -> None:
+    diagnostics = result.get("diagnostics") if isinstance(result, dict) else None
+    if not isinstance(diagnostics, dict):
+        return
+
+    pdf_diagnostics = diagnostics.get("pdf") if isinstance(diagnostics.get("pdf"), dict) else {}
+    renderer_diagnostics = (
+        pdf_diagnostics.get("worker")
+        if isinstance(pdf_diagnostics.get("worker"), dict)
+        else pdf_diagnostics.get("bridge")
+        if isinstance(pdf_diagnostics.get("bridge"), dict)
+        else pdf_diagnostics
+        if isinstance(pdf_diagnostics, dict)
+        else {}
+    )
+    html_diagnostics = renderer_diagnostics.get("html") if isinstance(renderer_diagnostics.get("html"), dict) else {}
+
+    header_values = {
+        "X-PepPro-Quote-Export-Ms": diagnostics.get("totalMs"),
+        "X-PepPro-Quote-Pdf-Ms": diagnostics.get("pdfMs"),
+        "X-PepPro-Quote-Render-Ms": pdf_diagnostics.get("renderMs"),
+        "X-PepPro-Quote-Image-Ms": html_diagnostics.get("imageResolveMs"),
+    }
+    for header_name, header_value in header_values.items():
+        formatted = _format_debug_timing_ms(header_value)
+        if formatted:
+            response.headers[header_name] = formatted
+
+    renderer = str(pdf_diagnostics.get("renderer") or "").strip()
+    if renderer:
+        response.headers["X-PepPro-Quote-Renderer"] = renderer
+
+    cache_layer = str(pdf_diagnostics.get("cacheLayer") or "").strip()
+    if cache_layer:
+        response.headers["X-PepPro-Quote-Cache"] = cache_layer
+
+    try:
+        response.headers["X-PepPro-Quote-Pdf-Bytes"] = str(len(result.get("pdf") or b""))
+    except Exception:
+        pass
+
+    server_timing: list[str] = []
+    _append_server_timing_metric(server_timing, "quote_total", diagnostics.get("totalMs"))
+    _append_server_timing_metric(server_timing, "quote_access", diagnostics.get("accessMs"))
+    _append_server_timing_metric(server_timing, "quote_lookup", diagnostics.get("findQuoteMs"))
+    _append_server_timing_metric(server_timing, "quote_mark", diagnostics.get("markExportedMs"))
+    _append_server_timing_metric(server_timing, "quote_enrich", diagnostics.get("enrichMs"))
+    _append_server_timing_metric(server_timing, "quote_pdf", diagnostics.get("pdfMs"))
+    _append_server_timing_metric(server_timing, "pdf_cache_lookup", pdf_diagnostics.get("cacheLookupMs"))
+    _append_server_timing_metric(server_timing, "pdf_wait", pdf_diagnostics.get("inflightWaitMs"))
+    _append_server_timing_metric(server_timing, "pdf_render", pdf_diagnostics.get("renderMs"))
+    _append_server_timing_metric(server_timing, "pdf_store", pdf_diagnostics.get("storeCacheMs"))
+    _append_server_timing_metric(server_timing, "pdf_page", renderer_diagnostics.get("pageCreateMs"))
+    _append_server_timing_metric(server_timing, "pdf_html", renderer_diagnostics.get("renderQuoteHtmlMs"))
+    _append_server_timing_metric(server_timing, "pdf_images", html_diagnostics.get("imageResolveMs"))
+    _append_server_timing_metric(server_timing, "pdf_set", renderer_diagnostics.get("setContentMs"))
+    _append_server_timing_metric(server_timing, "pdf_wait_images", renderer_diagnostics.get("waitForImagesMs"))
+    _append_server_timing_metric(server_timing, "pdf_print", renderer_diagnostics.get("pdfMs"))
+    if server_timing:
+        response.headers["Server-Timing"] = ", ".join(server_timing)
+
+
 def _normalize_bool(value) -> bool:
     if value is True or value is False:
         return value
@@ -712,6 +791,7 @@ def admin_export_prospect_quote(identifier: str, quote_id: str):
         )
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-PepPro-Quote-Id"] = str((result.get("quote") or {}).get("id") or "")
+        _attach_quote_export_debug_headers(response, result)
         return response
 
     return handle_action(action)
