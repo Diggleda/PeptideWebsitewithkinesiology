@@ -41,6 +41,7 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
   const axiosCalls = [];
   let renderedHtml = '';
   let evaluatedImagePass = 0;
+  let wooLookupCount = 0;
 
   await withFreshPdfService(
     {
@@ -59,6 +60,12 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
             };
           }
           throw new Error(`Unexpected image request: ${url}`);
+        },
+      },
+      wooCommerceClient: {
+        findProductBySku: async () => {
+          wooLookupCount += 1;
+          return null;
         },
       },
       playwright: {
@@ -108,8 +115,11 @@ test('generateProspectQuotePdf embeds a recovered product image instead of a bro
       assert.equal(result.filename, 'PepPro_Quote_Client_Example_5.pdf');
       assert.deepEqual(axiosCalls, [localhostMediaUrl, remoteImageUrl]);
       assert.equal(evaluatedImagePass, 1);
+      assert.equal(wooLookupCount, 0);
       assert.match(renderedHtml, new RegExp(embeddedImageDataUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       assert.doesNotMatch(renderedHtml, /http:\/\/localhost:3001\/api\/woo\/media/);
+      assert.match(renderedHtml, /<img class="brand-logo" src="data:image\/png;base64,/);
+      assert.doesNotMatch(renderedHtml, /<div class="brand">PepPro<\/div>/);
       assert.match(renderedHtml, /class="summary-row"/);
       assert.doesNotMatch(renderedHtml, /class="summary"/);
       assert.match(renderedHtml, /<div class="summary-row">\s*<span>Subtotal<\/span>\s*<span>\$93\.91<\/span>\s*<\/div>/);

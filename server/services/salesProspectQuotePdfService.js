@@ -11,7 +11,17 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 let cachedPepProLogoDataUrl;
+let cachedPepProIconDataUrl;
 let cachedWooSkuImageMap;
+const cachedResolvedProductImageBySku = new Map();
+const cachedImageDataUrlPromises = new Map();
+const STATIC_ASSET_SEARCH_DIRS = [
+  path.resolve(__dirname, '../../public'),
+  path.resolve(__dirname, '../../build'),
+  path.resolve(__dirname, '../../build_debug'),
+  path.resolve(__dirname, '../../build_main_tmp'),
+  path.resolve(__dirname, '../../build_staging_tmp'),
+];
 const IMAGE_SOURCE_KEYS = [
   'src',
   'url',
@@ -37,20 +47,87 @@ const SUPPORTED_IMAGE_CONTENT_TYPES = new Set([
   'image/webp',
 ]);
 const IMAGE_FETCH_ACCEPT_HEADER = 'image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8';
+const IMAGE_FETCH_TIMEOUT_MS = 3500;
+const MAX_IMAGE_CANDIDATES_PER_ITEM = 4;
 
-const getPepProLogoDataUrl = () => {
-  if (cachedPepProLogoDataUrl !== undefined) {
+const inferStaticAssetContentType = (assetPath, fallbackType) => {
+  const extension = path.extname(String(assetPath || '')).trim().toLowerCase();
+  if (extension === '.svg') return 'image/svg+xml';
+  if (extension === '.webp') return 'image/webp';
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.gif') return 'image/gif';
+  return fallbackType;
+};
+
+const findStaticAssetPath = ({ preferredRelativePaths = [], matchTokens = [] }) => {
+  for (const relativePath of preferredRelativePaths) {
+    if (typeof relativePath !== 'string' || !relativePath.trim()) continue;
+    const candidatePath = path.resolve(__dirname, relativePath);
+    if (fs.existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  const loweredTokens = matchTokens.map((token) => String(token || '').trim().toLowerCase()).filter(Boolean);
+  if (loweredTokens.length === 0) {
+    return null;
+  }
+
+  for (const directoryPath of STATIC_ASSET_SEARCH_DIRS) {
+    try {
+      const candidateName = fs.readdirSync(directoryPath).find((entry) => {
+        const loweredEntry = String(entry || '').trim().toLowerCase();
+        return /\.(png|svg|webp|jpe?g|gif)$/i.test(loweredEntry)
+          && loweredTokens.every((token) => loweredEntry.includes(token));
+      });
+      if (candidateName) {
+        return path.join(directoryPath, candidateName);
+      }
+    } catch {
+      // Ignore missing asset directories and continue searching.
+    }
+  }
+
+  return null;
+};
+
+const loadStaticAssetDataUrl = ({ cacheKey, preferredRelativePaths, matchTokens, fallbackType }) => {
+  if (cacheKey === 'logo' && cachedPepProLogoDataUrl !== undefined) {
     return cachedPepProLogoDataUrl;
   }
-
-  const logoPath = path.resolve(__dirname, '../../public/PepPro_fulllogo.png');
-  try {
-    const buffer = fs.readFileSync(logoPath);
-    cachedPepProLogoDataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
-  } catch {
-    cachedPepProLogoDataUrl = null;
+  if (cacheKey === 'icon' && cachedPepProIconDataUrl !== undefined) {
+    return cachedPepProIconDataUrl;
   }
-  return cachedPepProLogoDataUrl;
+
+  const assetPath = findStaticAssetPath({ preferredRelativePaths, matchTokens });
+  let dataUrl = null;
+  if (assetPath) {
+    try {
+      const buffer = fs.readFileSync(assetPath);
+      dataUrl = `data:${inferStaticAssetContentType(assetPath, fallbackType)};base64,${buffer.toString('base64')}`;
+    } catch {
+      dataUrl = null;
+    }
+  }
+
+  if (cacheKey === 'logo') {
+    cachedPepProLogoDataUrl = dataUrl;
+  } else if (cacheKey === 'icon') {
+    cachedPepProIconDataUrl = dataUrl;
+  }
+  return dataUrl;
+};
+
+const getPepProLogoDataUrl = () => {
+  return loadStaticAssetDataUrl({
+    cacheKey: 'logo',
+    preferredRelativePaths: [
+      '../../public/PepPro_fulllogo.png',
+      '../../public/Peppro_fulllogo.png',
+    ],
+    matchTokens: ['pep', 'fulllogo'],
+    fallbackType: 'image/png',
+  });
 };
 
 const extractImageSource = (value, visited = new Set()) => {
@@ -82,21 +159,16 @@ const extractImageSource = (value, visited = new Set()) => {
   return null;
 };
 
-let cachedPepProIconDataUrl;
-
 const getPepProIconDataUrl = () => {
-  if (cachedPepProIconDataUrl !== undefined) {
-    return cachedPepProIconDataUrl;
-  }
-
-  const iconPath = path.resolve(__dirname, '../../public/PepPro_icon.png');
-  try {
-    const buffer = fs.readFileSync(iconPath);
-    cachedPepProIconDataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
-  } catch {
-    cachedPepProIconDataUrl = null;
-  }
-  return cachedPepProIconDataUrl;
+  return loadStaticAssetDataUrl({
+    cacheKey: 'icon',
+    preferredRelativePaths: [
+      '../../public/PepPro_icon.png',
+      '../../public/Peppro_icon.png',
+    ],
+    matchTokens: ['pep', 'icon'],
+    fallbackType: 'image/png',
+  });
 };
 
 const toMoney = (value) => {
@@ -250,15 +322,24 @@ const collectQuoteItemImageCandidates = async (item) => {
   }
 
   appendImageCandidate(candidates, getCachedWooSkuImageMap().get(sku));
-
-  try {
-    const product = await findProductBySku(sku);
-    const imageSource = extractImageSource(product?.image)
-      || extractImageSource(product?.images);
-    appendImageCandidate(candidates, imageSource);
-  } catch {
-    // Ignore lookup failures and let the caller fall back to the icon.
+  if (candidates.length > 0) {
+    return candidates;
   }
+
+  if (!cachedResolvedProductImageBySku.has(sku)) {
+    cachedResolvedProductImageBySku.set(sku, (async () => {
+      try {
+        const product = await findProductBySku(sku);
+        return extractImageSource(product?.image)
+          || extractImageSource(product?.images)
+          || null;
+      } catch {
+        return null;
+      }
+    })());
+  }
+
+  appendImageCandidate(candidates, await cachedResolvedProductImageBySku.get(sku));
 
   return candidates;
 };
@@ -296,30 +377,35 @@ const fetchImageAsDataUrl = async (value) => {
   if (!normalizedUrl || normalizedUrl.startsWith('data:image/')) {
     return normalizedUrl;
   }
-  try {
-    const response = await axios.get(normalizedUrl, {
-      responseType: 'arraybuffer',
-      timeout: 10000,
-      maxRedirects: 5,
-      headers: {
-        Accept: IMAGE_FETCH_ACCEPT_HEADER,
-      },
-    });
-    const contentType = inferImageContentType(response?.headers?.['content-type'], normalizedUrl);
-    const buffer = Buffer.isBuffer(response?.data)
-      ? response.data
-      : Buffer.from(response?.data || '');
-    if (!contentType || buffer.length === 0) {
-      return null;
-    }
-    return `data:${contentType};base64,${buffer.toString('base64')}`;
-  } catch {
-    return null;
+  if (!cachedImageDataUrlPromises.has(normalizedUrl)) {
+    cachedImageDataUrlPromises.set(normalizedUrl, (async () => {
+      try {
+        const response = await axios.get(normalizedUrl, {
+          responseType: 'arraybuffer',
+          timeout: IMAGE_FETCH_TIMEOUT_MS,
+          maxRedirects: 5,
+          headers: {
+            Accept: IMAGE_FETCH_ACCEPT_HEADER,
+          },
+        });
+        const contentType = inferImageContentType(response?.headers?.['content-type'], normalizedUrl);
+        const buffer = Buffer.isBuffer(response?.data)
+          ? response.data
+          : Buffer.from(response?.data || '');
+        if (!contentType || buffer.length === 0) {
+          return null;
+        }
+        return `data:${contentType};base64,${buffer.toString('base64')}`;
+      } catch {
+        return null;
+      }
+    })());
   }
+  return cachedImageDataUrlPromises.get(normalizedUrl);
 };
 
 const resolveQuoteItemImageDataUrl = async (item) => {
-  const candidates = await collectQuoteItemImageCandidates(item);
+  const candidates = (await collectQuoteItemImageCandidates(item)).slice(0, MAX_IMAGE_CANDIDATES_PER_ITEM);
   for (const candidate of candidates) {
     const dataUrl = await fetchImageAsDataUrl(candidate);
     if (dataUrl) {
@@ -631,10 +717,9 @@ const generateProspectQuotePdf = async (quote) => {
   const browser = await chromium.launch(buildChromiumLaunchOptions());
   try {
     const page = await browser.newPage();
-    await page.setContent(await renderQuoteHtml(quote), { waitUntil: 'load' });
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.setContent(await renderQuoteHtml(quote), { waitUntil: 'domcontentloaded' });
     await page.evaluate(async () => {
-      const waitForImage = (image, timeoutMs = 2000) => new Promise((resolve) => {
+      const waitForImage = (image, timeoutMs = 800) => new Promise((resolve) => {
         if (image.complete) {
           resolve();
           return;
@@ -652,21 +737,21 @@ const generateProspectQuotePdf = async (quote) => {
       });
 
       const images = Array.from(document.images);
-      for (const image of images) {
+      await Promise.all(images.map(async (image) => {
         await waitForImage(image);
         if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-          continue;
+          return;
         }
         const fallbackSrc = image.dataset.fallbackSrc;
         if (fallbackSrc && image.currentSrc !== fallbackSrc && image.src !== fallbackSrc) {
           image.src = fallbackSrc;
-          await waitForImage(image, 1000);
+          await waitForImage(image, 400);
         }
         if (image.naturalWidth === 0 || image.naturalHeight === 0) {
           image.removeAttribute('alt');
           image.style.visibility = 'hidden';
         }
-      }
+      }));
     });
     const pdf = await page.pdf({
       format: 'Letter',

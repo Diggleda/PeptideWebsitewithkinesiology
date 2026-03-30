@@ -7,6 +7,22 @@ from python_backend.services import sales_prospect_quote_pdf_service as service
 
 
 class SalesProspectQuotePdfServiceTests(unittest.TestCase):
+    def test_render_quote_html_uses_logo_image_when_available(self) -> None:
+        quote = {
+            "revisionNumber": 1,
+            "title": "Quote for Client Example",
+            "quotePayloadJson": {
+                "prospect": {"contactName": "Client Example"},
+                "items": [],
+            },
+        }
+
+        with patch.object(service, "_get_logo_data_url", return_value="data:image/png;base64,abc123"):
+            html = service._render_quote_html(quote)
+
+        self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="PepPro" />', html)
+        self.assertNotIn('<div class="brand">PepPro</div>', html)
+
     def test_generate_prospect_quote_pdf_uses_system_browser_renderer_when_node_bridge_is_unavailable(self) -> None:
         with patch.object(service, "_run_node_bridge", return_value=None), patch.object(
             service,

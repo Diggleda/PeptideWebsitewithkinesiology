@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 _PDF_BRIDGE_TIMEOUT_SECONDS = 120
 _BROWSER_PDF_TIMEOUT_SECONDS = 120
+_REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS = 3.5
 _IMAGE_FETCH_ACCEPT_HEADER = "image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8"
+_MAX_IMAGE_CANDIDATES_PER_ITEM = 4
 _SUPPORTED_IMAGE_CONTENT_TYPES = {
     "image/gif",
     "image/jpeg",
@@ -48,6 +50,16 @@ _IMAGE_SOURCE_KEYS = (
     "original",
     "originalUrl",
     "original_url",
+)
+_STATIC_ASSET_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
+_SKU_PRODUCT_IMAGE_CACHE: Dict[str, Optional[str]] = {}
+_IMAGE_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
+_STATIC_ASSET_SEARCH_DIRS = (
+    "public",
+    "build",
+    "build_debug",
+    "build_main_tmp",
+    "build_staging_tmp",
 )
 
 
@@ -132,24 +144,75 @@ def _allow_text_fallback() -> bool:
     return str(os.environ.get("QUOTE_PDF_ALLOW_TEXT_FALLBACK") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _load_static_data_url(relative_path: str, default_mime_type: str) -> Optional[str]:
-    asset_path = BASE_DIR / relative_path
-    if not asset_path.exists():
+def _find_static_asset_path(preferred_relative_paths: List[str], match_tokens: List[str]) -> Optional[Path]:
+    for relative_path in preferred_relative_paths:
+        asset_path = BASE_DIR / relative_path
+        if asset_path.exists():
+            return asset_path
+
+    lowered_tokens = [str(token or "").strip().lower() for token in match_tokens if str(token or "").strip()]
+    if not lowered_tokens:
         return None
+
+    for directory_name in _STATIC_ASSET_SEARCH_DIRS:
+        directory_path = BASE_DIR / directory_name
+        if not directory_path.is_dir():
+            continue
+        try:
+            for entry in sorted(directory_path.iterdir()):
+                lowered_name = entry.name.lower()
+                if (
+                    entry.is_file()
+                    and entry.suffix.lower() in {".png", ".svg", ".webp", ".jpg", ".jpeg", ".gif"}
+                    and all(token in lowered_name for token in lowered_tokens)
+                ):
+                    return entry
+        except Exception:
+            continue
+    return None
+
+
+def _load_static_data_url(
+    cache_key: str,
+    preferred_relative_paths: List[str],
+    match_tokens: List[str],
+    default_mime_type: str,
+) -> Optional[str]:
+    if cache_key in _STATIC_ASSET_DATA_URL_CACHE:
+        return _STATIC_ASSET_DATA_URL_CACHE[cache_key]
+
+    asset_path = _find_static_asset_path(preferred_relative_paths, match_tokens)
+    if not asset_path:
+        _STATIC_ASSET_DATA_URL_CACHE[cache_key] = None
+        return None
+
     try:
         encoded = base64.b64encode(asset_path.read_bytes()).decode("ascii")
         content_type = mimetypes.guess_type(str(asset_path))[0] or default_mime_type
-        return f"data:{content_type};base64,{encoded}"
+        data_url = f"data:{content_type};base64,{encoded}"
     except Exception:
-        return None
+        data_url = None
+
+    _STATIC_ASSET_DATA_URL_CACHE[cache_key] = data_url
+    return data_url
 
 
 def _get_logo_data_url() -> Optional[str]:
-    return _load_static_data_url("public/PepPro_fulllogo.png", "image/png")
+    return _load_static_data_url(
+        "logo",
+        ["public/PepPro_fulllogo.png", "public/Peppro_fulllogo.png"],
+        ["pep", "fulllogo"],
+        "image/png",
+    )
 
 
 def _get_fallback_icon_data_url() -> Optional[str]:
-    return _load_static_data_url("public/PepPro_icon.png", "image/png")
+    return _load_static_data_url(
+        "icon",
+        ["public/PepPro_icon.png", "public/Peppro_icon.png"],
+        ["pep", "icon"],
+        "image/png",
+    )
 
 
 def _escape_html(value: object) -> str:
@@ -236,19 +299,25 @@ def _fetch_image_as_data_url(source_url: object) -> Optional[str]:
         return None
     if normalized.startswith("data:image/"):
         return normalized
+    if normalized in _IMAGE_DATA_URL_CACHE:
+        return _IMAGE_DATA_URL_CACHE[normalized]
     try:
         request = Request(
             normalized,
             headers={"Accept": _IMAGE_FETCH_ACCEPT_HEADER},
         )
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=_REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS) as response:
             content = response.read()
             content_type = _infer_image_content_type(response.headers.get("Content-Type"), normalized)
     except (HTTPError, URLError, ValueError, OSError):
+        _IMAGE_DATA_URL_CACHE[normalized] = None
         return None
     if not content_type or not content:
+        _IMAGE_DATA_URL_CACHE[normalized] = None
         return None
-    return f"data:{content_type};base64,{base64.b64encode(bytes(content)).decode('ascii')}"
+    data_url = f"data:{content_type};base64,{base64.b64encode(bytes(content)).decode('ascii')}"
+    _IMAGE_DATA_URL_CACHE[normalized] = data_url
+    return data_url
 
 
 def _collect_quote_item_image_candidates(item: Dict[str, Any]) -> List[str]:
@@ -262,20 +331,29 @@ def _collect_quote_item_image_candidates(item: Dict[str, Any]) -> List[str]:
     sku = _safe_text(item.get("sku"))
     if not sku:
         return candidates
-    try:
-        from ..integrations.woo_commerce import find_product_by_sku
+    if candidates:
+        return candidates
 
-        product = find_product_by_sku(sku)
-    except Exception:
-        product = None
-    if isinstance(product, dict):
-        _append_image_candidate(candidates, product.get("image"))
-        _append_image_candidate(candidates, product.get("images"))
+    if sku not in _SKU_PRODUCT_IMAGE_CACHE:
+        try:
+            from ..integrations.woo_commerce import find_product_by_sku
+
+            product = find_product_by_sku(sku)
+        except Exception:
+            product = None
+        if isinstance(product, dict):
+            _SKU_PRODUCT_IMAGE_CACHE[sku] = _extract_image_source(product.get("image")) or _extract_image_source(
+                product.get("images")
+            )
+        else:
+            _SKU_PRODUCT_IMAGE_CACHE[sku] = None
+
+    _append_image_candidate(candidates, _SKU_PRODUCT_IMAGE_CACHE.get(sku))
     return candidates
 
 
 def _resolve_quote_item_image_data_url(item: Dict[str, Any]) -> Optional[str]:
-    for candidate in _collect_quote_item_image_candidates(item):
+    for candidate in _collect_quote_item_image_candidates(item)[:_MAX_IMAGE_CANDIDATES_PER_ITEM]:
         data_url = _fetch_image_as_data_url(candidate)
         if data_url:
             return data_url
