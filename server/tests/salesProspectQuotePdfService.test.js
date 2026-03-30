@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
+const fs = require('node:fs');
 
 const clearModule = (modulePath) => {
   delete require.cache[require.resolve(modulePath)];
@@ -253,4 +254,62 @@ test('generateProspectQuotePdf launches Chromium with server-safe flags and opti
     ],
     executablePath: '/usr/bin/chromium',
   });
+});
+
+test('generateProspectQuotePdf falls back to a common system Chromium path when no env override is set', async () => {
+  let launchOptions;
+  const originalExistsSync = fs.existsSync;
+  const originalExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+
+  fs.existsSync = (value) => value === '/usr/bin/google-chrome-stable' || originalExistsSync(value);
+
+  try {
+    await withFreshPdfService(
+      {
+        axios: {
+          get: async () => {
+            throw new Error('No image fetch expected');
+          },
+        },
+        playwright: {
+          chromium: {
+            launch: async (options) => {
+              launchOptions = options;
+              return {
+                newPage: async () => ({
+                  setContent: async () => {},
+                  waitForLoadState: async () => {},
+                  evaluate: async () => {},
+                  pdf: async () => Buffer.from('%PDF-1.4 mock'),
+                }),
+                close: async () => {},
+              };
+            },
+          },
+        },
+      },
+      async ({ generateProspectQuotePdf }) => {
+        await generateProspectQuotePdf({
+          revisionNumber: 1,
+          title: 'Quote for System Chromium',
+          quotePayloadJson: {
+            prospect: {
+              contactName: 'System Chromium Example',
+            },
+            items: [],
+          },
+        });
+      },
+    );
+  } finally {
+    fs.existsSync = originalExistsSync;
+    if (originalExecutablePath === undefined) {
+      delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    } else {
+      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = originalExecutablePath;
+    }
+  }
+
+  assert.equal(launchOptions.executablePath, '/usr/bin/google-chrome-stable');
 });

@@ -166,12 +166,21 @@ const buildQuoteFilename = (quote) => {
   return `PepPro_Quote_${safeProspectName}_${revision}.pdf`;
 };
 
+const findExistingExecutablePath = (candidates = []) => candidates
+  .find((candidate) => typeof candidate === 'string' && candidate.trim() && fs.existsSync(candidate.trim()));
+
 const buildChromiumLaunchOptions = () => {
-  const executablePath = [
+  const executablePath = findExistingExecutablePath([
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
     process.env.CHROMIUM_EXECUTABLE_PATH,
     process.env.PUPPETEER_EXECUTABLE_PATH,
-  ].find((value) => typeof value === 'string' && value.trim());
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/opt/google/chrome/chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ]);
 
   return {
     headless: true,
