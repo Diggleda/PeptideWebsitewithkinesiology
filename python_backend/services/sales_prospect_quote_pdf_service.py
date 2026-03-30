@@ -25,12 +25,13 @@ from .invoice_service import _build_simple_text_pdf
 
 logger = logging.getLogger(__name__)
 
-_PDF_BRIDGE_TIMEOUT_SECONDS = 120
-_BROWSER_PDF_TIMEOUT_SECONDS = 120
+_PDF_BRIDGE_TIMEOUT_SECONDS = max(5.0, min(float(os.environ.get("QUOTE_PDF_BRIDGE_TIMEOUT_SECONDS", "15").strip() or 15), 120.0))
+_BROWSER_PDF_TIMEOUT_SECONDS = max(10.0, min(float(os.environ.get("QUOTE_PDF_BROWSER_TIMEOUT_SECONDS", "90").strip() or 90), 180.0))
 _REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS = 3.5
 _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS = 45
 _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS = 300
 _QUOTE_PDF_RENDER_CACHE_LIMIT = 32
+_QUOTE_PDF_DISK_CACHE_LIMIT = 64
 _IMAGE_FETCH_ACCEPT_HEADER = "image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8"
 _MAX_IMAGE_CANDIDATES_PER_ITEM = 4
 _MAX_CONCURRENT_IMAGE_RESOLVERS = 6
@@ -171,26 +172,117 @@ def _build_quote_render_cache_key(quote: Dict) -> str:
     return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
 
 
+def _quote_pdf_disk_cache_dir() -> Path:
+    return BASE_DIR / "server-data" / "quote-pdf-cache"
+
+
+def _quote_pdf_disk_cache_path(cache_key: str) -> Path:
+    return _quote_pdf_disk_cache_dir() / f"{cache_key}.json"
+
+
+def _prune_quote_pdf_disk_cache(directory: Path) -> None:
+    try:
+        cache_files = sorted(
+            (entry for entry in directory.iterdir() if entry.is_file() and entry.suffix.lower() == ".json"),
+            key=lambda entry: entry.stat().st_mtime,
+            reverse=True,
+        )
+    except Exception:
+        return
+
+    for stale_file in cache_files[_QUOTE_PDF_DISK_CACHE_LIMIT :]:
+        try:
+            stale_file.unlink()
+        except Exception:
+            continue
+
+
+def _get_cached_rendered_quote_pdf_from_disk(cache_key: str, ttl_seconds: int) -> Optional[Dict]:
+    if ttl_seconds <= 0:
+        return None
+
+    cache_path = _quote_pdf_disk_cache_path(cache_key)
+    try:
+        stat = cache_path.stat()
+    except Exception:
+        return None
+
+    if (time.time() - stat.st_mtime) > ttl_seconds:
+        try:
+            cache_path.unlink()
+        except Exception:
+            pass
+        return None
+
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        filename = payload.get("filename")
+        pdf_base64 = payload.get("pdfBase64")
+        if not isinstance(filename, str) or not filename.strip() or not isinstance(pdf_base64, str) or not pdf_base64.strip():
+            raise ValueError("invalid quote pdf disk cache payload")
+        return {
+            "pdf": base64.b64decode(pdf_base64),
+            "filename": filename,
+        }
+    except Exception:
+        try:
+            cache_path.unlink()
+        except Exception:
+            pass
+        return None
+
+
+def _store_rendered_quote_pdf_to_disk(cache_key: str, rendered: Dict) -> None:
+    pdf = rendered.get("pdf")
+    filename = rendered.get("filename")
+    if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
+        return
+
+    directory = _quote_pdf_disk_cache_dir()
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        temp_path = directory / f"{cache_key}.tmp"
+        cache_path = _quote_pdf_disk_cache_path(cache_key)
+        payload = {
+            "filename": filename,
+            "pdfBase64": base64.b64encode(bytes(pdf)).decode("ascii"),
+        }
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temp_path.replace(cache_path)
+        _prune_quote_pdf_disk_cache(directory)
+    except Exception:
+        logger.exception("Quote PDF disk cache store failed", extra={"cache_key": cache_key})
+
+
 def _get_cached_rendered_quote_pdf(cache_key: str) -> Optional[Dict]:
     ttl_seconds = max(0, int(float(os.environ.get("QUOTE_PDF_RENDER_CACHE_TTL_SECONDS") or _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS)))
     if ttl_seconds <= 0:
         _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
         return None
     entry = _QUOTE_PDF_RENDER_CACHE.get(cache_key)
-    if not isinstance(entry, dict):
+    if isinstance(entry, dict):
+        expires_at = float(entry.get("expiresAt") or 0.0)
+        if expires_at <= time.monotonic():
+            _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+        else:
+            pdf = entry.get("pdf")
+            filename = entry.get("filename")
+            if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
+                _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+            else:
+                return {
+                    "pdf": bytes(pdf),
+                    "filename": filename,
+                }
+
+    disk_cached = _get_cached_rendered_quote_pdf_from_disk(cache_key, ttl_seconds)
+    if disk_cached is None:
         return None
-    expires_at = float(entry.get("expiresAt") or 0.0)
-    if expires_at <= time.monotonic():
-        _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
-        return None
-    pdf = entry.get("pdf")
-    filename = entry.get("filename")
-    if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
-        _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
-        return None
+    _store_rendered_quote_pdf(cache_key, disk_cached)
+    logger.info("Quote PDF cache hit", extra={"cache_key": cache_key, "cache_layer": "disk"})
     return {
-        "pdf": bytes(pdf),
-        "filename": filename,
+        "pdf": bytes(disk_cached["pdf"]),
+        "filename": disk_cached["filename"],
     }
 
 
@@ -215,6 +307,7 @@ def _store_rendered_quote_pdf(cache_key: str, rendered: Dict) -> None:
         "filename": filename,
         "expiresAt": time.monotonic() + ttl_seconds,
     }
+    _store_rendered_quote_pdf_to_disk(cache_key, rendered)
 
 
 def _find_static_asset_path(preferred_relative_paths: List[str], match_tokens: List[str]) -> Optional[Path]:
@@ -843,6 +936,7 @@ def _render_quote_html(quote: Dict) -> str:
 
 
 def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
+    started_at = time.monotonic()
     browser_binary = _find_chromium_binary()
     if not browser_binary:
         logger.error("Quote PDF browser renderer unavailable", extra={"browser_binary": None})
@@ -891,6 +985,7 @@ def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
                     "browser_binary": browser_binary,
                     "returncode": completed.returncode,
                     "stderr": (completed.stderr or "")[:1000],
+                    "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
                 },
             )
             return None
@@ -901,6 +996,14 @@ def _run_system_browser_renderer(quote: Dict) -> Optional[Dict]:
             logger.exception("Quote PDF browser renderer could not read output PDF", extra={"browser_binary": browser_binary})
             return None
 
+    logger.info(
+        "Quote PDF renderer completed",
+        extra={
+            "renderer": "system_browser",
+            "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+            "browser_binary": browser_binary,
+        },
+    )
     return {
         "pdf": pdf,
         "filename": _build_quote_filename(quote),
@@ -1047,6 +1150,7 @@ def _build_fallback_quote_pdf(quote: Dict) -> Dict:
 
 def _run_node_bridge(quote: Dict) -> Optional[Dict]:
     global _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
+    started_at = time.monotonic()
 
     retry_after_seconds = _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC - time.monotonic()
     if retry_after_seconds > 0:
@@ -1105,6 +1209,7 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
                 "node_binary": node_binary,
                 "playwright_browsers_path": env.get("PLAYWRIGHT_BROWSERS_PATH"),
                 "stderr": (completed.stderr or "")[:1000],
+                "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
             },
         )
         return None
@@ -1131,6 +1236,14 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
 
     _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
     filename = _safe_text(payload.get("filename"), _build_quote_filename(quote))
+    logger.info(
+        "Quote PDF renderer completed",
+        extra={
+            "renderer": "node_bridge",
+            "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+            "node_binary": node_binary,
+        },
+    )
     return {
         "pdf": pdf,
         "filename": filename,
@@ -1141,6 +1254,7 @@ def generate_prospect_quote_pdf(quote: Dict) -> Dict:
     cache_key = _build_quote_render_cache_key(quote)
     cached = _get_cached_rendered_quote_pdf(cache_key)
     if cached is not None:
+        logger.info("Quote PDF cache hit", extra={"cache_key": cache_key, "cache_layer": "memory"})
         return cached
 
     rendered = _run_node_bridge(quote)

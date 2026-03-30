@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from python_backend.services import sales_prospect_quote_pdf_service as service
@@ -9,6 +11,13 @@ from python_backend.services import sales_prospect_quote_pdf_service as service
 
 class SalesProspectQuotePdfServiceTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._disk_cache_temp_dir = tempfile.TemporaryDirectory()
+        self._disk_cache_dir_patch = patch.object(
+            service,
+            "_quote_pdf_disk_cache_dir",
+            return_value=Path(self._disk_cache_temp_dir.name),
+        )
+        self._disk_cache_dir_patch.start()
         self._original_node_bridge_skip_until = service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
         service._QUOTE_PDF_RENDER_CACHE.clear()
@@ -17,6 +26,8 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         service._CACHED_WOO_SKU_IMAGE_MAP = None
 
     def tearDown(self) -> None:
+        self._disk_cache_dir_patch.stop()
+        self._disk_cache_temp_dir.cleanup()
         service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = self._original_node_bridge_skip_until
         service._QUOTE_PDF_RENDER_CACHE.clear()
         service._SKU_PRODUCT_IMAGE_CACHE.clear()
@@ -111,6 +122,23 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
             return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
         ) as run_node_bridge, patch.object(service, "_run_system_browser_renderer") as run_system_browser_renderer:
             first = service.generate_prospect_quote_pdf(quote)
+            second = service.generate_prospect_quote_pdf(quote)
+
+        self.assertEqual(run_node_bridge.call_count, 1)
+        run_system_browser_renderer.assert_not_called()
+        self.assertEqual(first["pdf"], second["pdf"])
+        self.assertEqual(first["filename"], second["filename"])
+
+    def test_generate_prospect_quote_pdf_uses_disk_cache_after_memory_cache_reset(self) -> None:
+        quote = {"id": "quote-2", "revisionNumber": 2, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
+
+        with patch.object(
+            service,
+            "_run_node_bridge",
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+        ) as run_node_bridge, patch.object(service, "_run_system_browser_renderer") as run_system_browser_renderer:
+            first = service.generate_prospect_quote_pdf(quote)
+            service._QUOTE_PDF_RENDER_CACHE.clear()
             second = service.generate_prospect_quote_pdf(quote)
 
         self.assertEqual(run_node_bridge.call_count, 1)
