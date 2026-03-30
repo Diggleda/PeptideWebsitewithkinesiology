@@ -337,7 +337,7 @@ export function YourQuotesPanel({
                 <div className="mt-3 max-h-[470px] space-y-2 overflow-y-auto pr-1">
                   {history.length === 0 ? (
                     <div className="lead-panel-empty rounded-2xl bg-white px-4 py-6">
-                      No saved revisions yet.
+                      No quotes made for {selectedProspect.name} yet.
                     </div>
                   ) : (
                     <div className="overflow-hidden rounded-2xl bg-white">

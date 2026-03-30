@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import glob
+import hashlib
 import html
 import json
 import logging
@@ -11,6 +12,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,6 +28,9 @@ logger = logging.getLogger(__name__)
 _PDF_BRIDGE_TIMEOUT_SECONDS = 120
 _BROWSER_PDF_TIMEOUT_SECONDS = 120
 _REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS = 3.5
+_NODE_BRIDGE_RETRY_COOLDOWN_SECONDS = 45
+_QUOTE_PDF_RENDER_CACHE_TTL_SECONDS = 300
+_QUOTE_PDF_RENDER_CACHE_LIMIT = 32
 _IMAGE_FETCH_ACCEPT_HEADER = "image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8"
 _MAX_IMAGE_CANDIDATES_PER_ITEM = 4
 _MAX_CONCURRENT_IMAGE_RESOLVERS = 6
@@ -56,6 +61,8 @@ _IMAGE_SOURCE_KEYS = (
 _STATIC_ASSET_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
 _SKU_PRODUCT_IMAGE_CACHE: Dict[str, Optional[str]] = {}
 _IMAGE_DATA_URL_CACHE: Dict[str, Optional[str]] = {}
+_QUOTE_PDF_RENDER_CACHE: Dict[str, Dict[str, Any]] = {}
+_NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
 _STATIC_ASSET_SEARCH_DIRS = (
     "public",
     "build",
@@ -144,6 +151,69 @@ def _find_playwright_browsers_path() -> Optional[str]:
 
 def _allow_text_fallback() -> bool:
     return str(os.environ.get("QUOTE_PDF_ALLOW_TEXT_FALLBACK") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _build_quote_render_cache_key(quote: Dict) -> str:
+    payload = quote.get("quotePayloadJson") if isinstance(quote.get("quotePayloadJson"), dict) else {}
+    signature_payload = {
+        "id": quote.get("id"),
+        "revisionNumber": quote.get("revisionNumber"),
+        "status": quote.get("status"),
+        "title": quote.get("title"),
+        "currency": quote.get("currency"),
+        "subtotal": quote.get("subtotal"),
+        "updatedAt": quote.get("updatedAt"),
+        "exportedAt": quote.get("exportedAt"),
+        "quotePayloadJson": payload,
+    }
+    serialized = json.dumps(signature_payload, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":"))
+    return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
+
+
+def _get_cached_rendered_quote_pdf(cache_key: str) -> Optional[Dict]:
+    ttl_seconds = max(0, int(float(os.environ.get("QUOTE_PDF_RENDER_CACHE_TTL_SECONDS") or _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS)))
+    if ttl_seconds <= 0:
+        _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+        return None
+    entry = _QUOTE_PDF_RENDER_CACHE.get(cache_key)
+    if not isinstance(entry, dict):
+        return None
+    expires_at = float(entry.get("expiresAt") or 0.0)
+    if expires_at <= time.monotonic():
+        _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+        return None
+    pdf = entry.get("pdf")
+    filename = entry.get("filename")
+    if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
+        _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+        return None
+    return {
+        "pdf": bytes(pdf),
+        "filename": filename,
+    }
+
+
+def _store_rendered_quote_pdf(cache_key: str, rendered: Dict) -> None:
+    ttl_seconds = max(0, int(float(os.environ.get("QUOTE_PDF_RENDER_CACHE_TTL_SECONDS") or _QUOTE_PDF_RENDER_CACHE_TTL_SECONDS)))
+    if ttl_seconds <= 0:
+        return
+    pdf = rendered.get("pdf")
+    filename = rendered.get("filename")
+    if not isinstance(pdf, (bytes, bytearray)) or not isinstance(filename, str) or not filename.strip():
+        return
+
+    while len(_QUOTE_PDF_RENDER_CACHE) >= _QUOTE_PDF_RENDER_CACHE_LIMIT:
+        oldest_key = next(iter(_QUOTE_PDF_RENDER_CACHE), None)
+        if oldest_key is None:
+            break
+        _QUOTE_PDF_RENDER_CACHE.pop(oldest_key, None)
+
+    _QUOTE_PDF_RENDER_CACHE.pop(cache_key, None)
+    _QUOTE_PDF_RENDER_CACHE[cache_key] = {
+        "pdf": bytes(pdf),
+        "filename": filename,
+        "expiresAt": time.monotonic() + ttl_seconds,
+    }
 
 
 def _find_static_asset_path(preferred_relative_paths: List[str], match_tokens: List[str]) -> Optional[Path]:
@@ -931,9 +1001,20 @@ def _build_fallback_quote_pdf(quote: Dict) -> Dict:
 
 
 def _run_node_bridge(quote: Dict) -> Optional[Dict]:
+    global _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
+
+    retry_after_seconds = _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC - time.monotonic()
+    if retry_after_seconds > 0:
+        logger.warning(
+            "Quote PDF node bridge temporarily skipped after recent failure",
+            extra={"retry_after_seconds": round(retry_after_seconds, 2)},
+        )
+        return None
+
     script_path = _bridge_script_path()
     node_binary = _find_node_binary()
     if not script_path.exists() or not node_binary:
+        _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS
         logger.error(
             "Quote PDF node bridge unavailable",
             extra={
@@ -966,10 +1047,12 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
             check=False,
         )
     except Exception:
+        _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS
         logger.exception("Quote PDF node bridge failed to execute")
         return None
 
     if completed.returncode != 0:
+        _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS
         logger.error(
             "Quote PDF node bridge exited non-zero",
             extra={
@@ -984,20 +1067,24 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
     try:
         payload = json.loads(completed.stdout or "{}")
     except Exception:
+        _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS
         logger.exception("Quote PDF node bridge returned invalid JSON")
         return None
 
     pdf_base64 = payload.get("pdfBase64")
     if not isinstance(pdf_base64, str) or not pdf_base64.strip():
+        _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS
         logger.error("Quote PDF node bridge returned no pdfBase64 payload")
         return None
 
     try:
         pdf = base64.b64decode(pdf_base64)
     except Exception:
+        _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + _NODE_BRIDGE_RETRY_COOLDOWN_SECONDS
         logger.exception("Quote PDF node bridge returned invalid base64 PDF")
         return None
 
+    _NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
     filename = _safe_text(payload.get("filename"), _build_quote_filename(quote))
     return {
         "pdf": pdf,
@@ -1006,11 +1093,18 @@ def _run_node_bridge(quote: Dict) -> Optional[Dict]:
 
 
 def generate_prospect_quote_pdf(quote: Dict) -> Dict:
+    cache_key = _build_quote_render_cache_key(quote)
+    cached = _get_cached_rendered_quote_pdf(cache_key)
+    if cached is not None:
+        return cached
+
     rendered = _run_node_bridge(quote)
     if rendered is not None:
+        _store_rendered_quote_pdf(cache_key, rendered)
         return rendered
     rendered = _run_system_browser_renderer(quote)
     if rendered is not None:
+        _store_rendered_quote_pdf(cache_key, rendered)
         return rendered
     if _allow_text_fallback():
         logger.warning("Falling back to Python quote PDF generator")

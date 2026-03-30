@@ -27,8 +27,8 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "2026-03-30T03:26:49.925Z",
-    "lastInteractionAt": "2026-03-30T03:26:35.167Z",
+    "lastSeenAt": "2026-03-30T03:33:46.966Z",
+    "lastInteractionAt": "2026-03-30T03:33:35.237Z",
     "isOnline": true,
     "isIdle": true,
     "devCommission": false,
@@ -41,7 +41,7 @@
         "productWooId": 1367,
         "variantId": "woo-variation-1368",
         "variantWooId": 1368,
-        "quantity": 1,
+        "quantity": 2,
         "note": null
       },
       {

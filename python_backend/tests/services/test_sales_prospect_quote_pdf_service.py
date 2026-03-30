@@ -8,6 +8,15 @@ from python_backend.services import sales_prospect_quote_pdf_service as service
 
 
 class SalesProspectQuotePdfServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_node_bridge_skip_until = service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC
+        service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = 0.0
+        service._QUOTE_PDF_RENDER_CACHE.clear()
+
+    def tearDown(self) -> None:
+        service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = self._original_node_bridge_skip_until
+        service._QUOTE_PDF_RENDER_CACHE.clear()
+
     def test_render_quote_html_uses_logo_image_when_available(self) -> None:
         quote = {
             "revisionNumber": 1,
@@ -74,6 +83,30 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
 
         self.assertEqual(rendered["pdf"], b"%PDF-1.4 styled")
         self.assertEqual(rendered["filename"], "PepPro_Quote_Client_Example_2.pdf")
+
+    def test_generate_prospect_quote_pdf_caches_successful_result_for_same_quote(self) -> None:
+        quote = {"id": "quote-1", "revisionNumber": 2, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
+
+        with patch.object(
+            service,
+            "_run_node_bridge",
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+        ) as run_node_bridge, patch.object(service, "_run_system_browser_renderer") as run_system_browser_renderer:
+            first = service.generate_prospect_quote_pdf(quote)
+            second = service.generate_prospect_quote_pdf(quote)
+
+        self.assertEqual(run_node_bridge.call_count, 1)
+        run_system_browser_renderer.assert_not_called()
+        self.assertEqual(first["pdf"], second["pdf"])
+        self.assertEqual(first["filename"], second["filename"])
+
+    def test_run_node_bridge_skips_lookup_during_retry_cooldown(self) -> None:
+        service._NODE_BRIDGE_SKIP_UNTIL_MONOTONIC = time.monotonic() + 30
+
+        with patch.object(service, "_find_node_binary", side_effect=AssertionError("bridge lookup should be skipped")):
+            rendered = service._run_node_bridge({"revisionNumber": 1, "quotePayloadJson": {}})
+
+        self.assertIsNone(rendered)
 
     def test_generate_prospect_quote_pdf_falls_back_when_enabled(self) -> None:
         quote = {
