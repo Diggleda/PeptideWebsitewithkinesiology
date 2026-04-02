@@ -53,6 +53,8 @@ class TestSettingsLiveUsers(unittest.TestCase):
                 "greaterArea": "Midwest",
                 "studyFocus": "Metabolism",
                 "bio": "Long physician bio",
+                "isPartner": True,
+                "allowedRetail": True,
             }
 
         with patch.object(settings.user_repository, "get_all", return_value=[build_user("data:image/png;base64,AAA")]), \
@@ -64,6 +66,8 @@ class TestSettingsLiveUsers(unittest.TestCase):
         self.assertNotIn("greaterArea", payload_with_avatar["users"][0])
         self.assertNotIn("studyFocus", payload_with_avatar["users"][0])
         self.assertNotIn("bio", payload_with_avatar["users"][0])
+        self.assertEqual(payload_with_avatar["users"][0]["isPartner"], True)
+        self.assertEqual(payload_with_avatar["users"][0]["allowedRetail"], True)
         self.assertIsInstance(payload_with_avatar.get("etag"), str)
         self.assertTrue(payload_with_avatar["etag"])
 

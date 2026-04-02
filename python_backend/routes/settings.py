@@ -1009,6 +1009,8 @@ def _compute_live_clients_payload(
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": _normalize_role(user.get("role")) or "unknown",
+                "isPartner": _normalize_bool(user.get("isPartner")),
+                "allowedRetail": _normalize_bool(user.get("allowedRetail")),
                 **snapshot,
             }
         )
@@ -1031,6 +1033,8 @@ def _compute_live_clients_payload(
             "lastLoginAt": entry.get("lastLoginAt") or None,
             "lastSeenAt": entry.get("lastSeenAt") or None,
             "lastInteractionAt": entry.get("lastInteractionAt") or None,
+            "isPartner": _normalize_bool(entry.get("isPartner")),
+            "allowedRetail": _normalize_bool(entry.get("allowedRetail")),
         }
         for entry in clients
     ]
@@ -1107,6 +1111,8 @@ def _compute_live_users_payload() -> dict:
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": normalize_user_role(user.get("role")),
+                "isPartner": _normalize_bool(user.get("isPartner")),
+                "allowedRetail": _normalize_bool(user.get("allowedRetail")),
                 **snapshot,
             }
         )
@@ -1127,6 +1133,8 @@ def _compute_live_users_payload() -> dict:
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
             "lastLoginAt": entry.get("lastLoginAt") or None,
+            "isPartner": _normalize_bool(entry.get("isPartner")),
+            "allowedRetail": _normalize_bool(entry.get("allowedRetail")),
         }
         for entry in entries
     ]

@@ -13731,6 +13731,111 @@ function MainApp() {
   }, [livePresenceProfileImageByUserId]);
   const livePresenceProfileImageRequestIdsRef = useRef<Set<string>>(new Set());
 
+  const hydrateLivePresenceSqlProfiles = useCallback((entries: any[]) => {
+    const canFetchSqlProfiles =
+      Boolean(user?.role) && (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role));
+    if (!canFetchSqlProfiles || !Array.isArray(entries) || entries.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const missingIds = Array.from(
+      new Set(
+        entries
+          .map((entry: any) => {
+            const userId = String(entry?.id || "").trim();
+            if (!userId) return null;
+            const cachedEntry = livePresenceProfileImageByUserIdRef.current[userId];
+            const cachedHasAvatar =
+              typeof cachedEntry?.value === "string" && cachedEntry.value.trim().length > 0;
+            const cachedHasSupplementalFields = Boolean(
+              (typeof cachedEntry?.greaterArea === "string" && cachedEntry.greaterArea.trim().length > 0) ||
+              (typeof cachedEntry?.studyFocus === "string" && cachedEntry.studyFocus.trim().length > 0) ||
+              (typeof cachedEntry?.bio === "string" && cachedEntry.bio.trim().length > 0),
+            );
+            const cachedHasPermit = cachedEntry?.hasResellerPermitUploaded === true;
+            if (
+              cachedEntry &&
+              (now - cachedEntry.fetchedAt) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS &&
+              cachedHasAvatar &&
+              cachedHasSupplementalFields &&
+              cachedHasPermit
+            ) {
+              return null;
+            }
+            if (livePresenceProfileImageRequestIdsRef.current.has(userId)) {
+              return null;
+            }
+            return userId;
+          })
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    if (!missingIds.length) {
+      return;
+    }
+
+    const batchIds = missingIds.slice(0, 40);
+    batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.add(userId));
+
+    void (async () => {
+      try {
+        const payload = (await settingsAPI.getAdminUserProfiles(batchIds)) as any;
+        const users = Array.isArray(payload?.users) ? payload.users : [];
+        const fetchedAt = Date.now();
+        const nextById: Record<string, LivePresenceProfileImageCacheEntry> = {};
+        batchIds.forEach((userId) => {
+          nextById[userId] = { value: null, fetchedAt };
+        });
+        users.forEach((profile: any) => {
+          const userId = String(profile?.id || "").trim();
+          if (!userId) return;
+          nextById[userId] = {
+            value:
+              typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
+                ? profile.profileImageUrl.trim()
+                : null,
+            greaterArea:
+              typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0
+                ? profile.greaterArea.trim()
+                : null,
+            studyFocus:
+              typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0
+                ? profile.studyFocus.trim()
+                : null,
+            bio:
+              typeof profile?.bio === "string" && profile.bio.trim().length > 0
+                ? profile.bio.trim()
+                : null,
+            hasResellerPermitUploaded: hasUploadedResellerPermit(profile),
+            fetchedAt,
+          };
+        });
+        setLivePresenceProfileImageByUserId((current) => ({ ...current, ...nextById }));
+        setSalesDoctorDetail((current) => {
+          if (!current) return current;
+          const supplemental = nextById[String(current.doctorId || "").trim()];
+          if (!supplemental) return current;
+          return {
+            ...current,
+            avatar: current.avatar || supplemental.value || null,
+            greaterArea: current.greaterArea || supplemental.greaterArea || null,
+            studyFocus: current.studyFocus || supplemental.studyFocus || null,
+            bio: current.bio || supplemental.bio || null,
+            hasResellerPermitUploaded:
+              current.hasResellerPermitUploaded === true ||
+              supplemental.hasResellerPermitUploaded === true,
+          };
+        });
+      } catch (error) {
+        console.warn("[Presence] Failed to hydrate SQL-backed live profiles", error);
+      } finally {
+        batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.delete(userId));
+      }
+    })();
+  }, [user?.role]);
+
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
   const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
   const [adminLiveUsersError, setAdminLiveUsersError] = useState<string | null>(null);
@@ -13840,179 +13945,12 @@ function MainApp() {
     return false;
   }, [adminHandDeliveryUsers, adminLiveUsers, liveClients, user]);
 
-	  useEffect(() => {
-	    const canFetchSqlProfileImages =
-        Boolean(user?.role) && (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role));
-    if (!canFetchSqlProfileImages) {
-      return;
-    }
-
-	    const sourceEntries = [
-	      ...(Array.isArray(liveClients) ? liveClients : []),
-	      ...(Array.isArray(adminLiveUsers) ? adminLiveUsers : []),
-	    ];
-      const now = Date.now();
-	    const missingIds = Array.from(
-	      new Set(
-	        sourceEntries
-	          .map((entry: any) => {
-            const userId = String(entry?.id || "").trim();
-            if (!userId) return null;
-              const entryHasAvatar =
-                typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0;
-              const entryHasSupplementalFields =
-                (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0) ||
-                (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0) ||
-                (typeof entry?.bio === "string" && entry.bio.trim().length > 0);
-              const entryHasPermit = hasUploadedResellerPermit(entry);
-              const cachedEntry = livePresenceProfileImageByUserId[userId];
-              if (cachedEntry) {
-                const cachedHasAvatar =
-                  typeof cachedEntry.value === "string" && cachedEntry.value.trim().length > 0;
-                const cachedHasSupplementalFields =
-                  (typeof cachedEntry.greaterArea === "string" && cachedEntry.greaterArea.trim().length > 0) ||
-                  (typeof cachedEntry.studyFocus === "string" && cachedEntry.studyFocus.trim().length > 0) ||
-                  (typeof cachedEntry.bio === "string" && cachedEntry.bio.trim().length > 0);
-                const cachedHasPermit = cachedEntry.hasResellerPermitUploaded === true;
-                if (
-                  (entryHasAvatar || cachedHasAvatar) &&
-                  (entryHasSupplementalFields || cachedHasSupplementalFields) &&
-                  (entryHasPermit || cachedHasPermit)
-                ) {
-                  return null;
-                }
-                if ((now - cachedEntry.fetchedAt) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS) {
-                  return null;
-                }
-              }
-	            if (livePresenceProfileImageRequestIdsRef.current.has(userId)) return null;
-	            return userId;
-	          })
-	          .filter((value): value is string => Boolean(value)),
-	      ),
-    );
-
-    if (!missingIds.length) {
-      return;
-    }
-
-    const batchIds = missingIds.slice(0, 40);
-    batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.add(userId));
-    let cancelled = false;
-
-	    void (async () => {
-	      try {
-	        const payload = (await settingsAPI.getAdminUserProfiles(batchIds)) as any;
-	        if (cancelled) return;
-	        const users = Array.isArray(payload?.users) ? payload.users : [];
-          const fetchedAt = Date.now();
-	        const nextById: Record<string, LivePresenceProfileImageCacheEntry> = {};
-          const supplementalById = new Map<
-            string,
-            {
-              profileImageUrl: string | null;
-              greaterArea: string | null;
-              studyFocus: string | null;
-              bio: string | null;
-              hasResellerPermitUploaded: boolean;
-            }
-          >();
-	        batchIds.forEach((userId) => {
-	          nextById[userId] = { value: null, fetchedAt };
-	        });
-	        users.forEach((profile: any) => {
-	          const userId = String(profile?.id || "").trim();
-	          if (!userId) return;
-            const profileImageUrl =
-              typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
-                ? profile.profileImageUrl.trim()
-                : null;
-            const greaterArea =
-              typeof profile?.greaterArea === "string" && profile.greaterArea.trim().length > 0
-                ? profile.greaterArea.trim()
-                : null;
-            const studyFocus =
-              typeof profile?.studyFocus === "string" && profile.studyFocus.trim().length > 0
-                ? profile.studyFocus.trim()
-                : null;
-            const bio =
-              typeof profile?.bio === "string" && profile.bio.trim().length > 0
-                ? profile.bio.trim()
-                : null;
-            const hasResellerPermitUploaded = hasUploadedResellerPermit(profile);
-            supplementalById.set(userId, {
-              profileImageUrl,
-              greaterArea,
-              studyFocus,
-              bio,
-              hasResellerPermitUploaded,
-            });
-	          nextById[userId] = {
-                value: profileImageUrl,
-                greaterArea,
-                studyFocus,
-                bio,
-                hasResellerPermitUploaded,
-                fetchedAt,
-              };
-	        });
-	        setLivePresenceProfileImageByUserId((current) => ({ ...current, ...nextById }));
-          const mergeSupplementalEntry = (entry: any) => {
-            const userId = String(entry?.id || "").trim();
-            if (!userId) return entry;
-            const supplemental = supplementalById.get(userId);
-            if (!supplemental) return entry;
-            return {
-              ...entry,
-              profileImageUrl:
-                (typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
-                  ? entry.profileImageUrl
-                  : supplemental.profileImageUrl) || null,
-              greaterArea:
-                (typeof entry?.greaterArea === "string" && entry.greaterArea.trim().length > 0
-                  ? entry.greaterArea
-                  : supplemental.greaterArea) || null,
-              studyFocus:
-                (typeof entry?.studyFocus === "string" && entry.studyFocus.trim().length > 0
-                  ? entry.studyFocus
-                  : supplemental.studyFocus) || null,
-              bio:
-                (typeof entry?.bio === "string" && entry.bio.trim().length > 0
-                  ? entry.bio
-                  : supplemental.bio) || null,
-              hasResellerPermitUploaded:
-                entry?.hasResellerPermitUploaded === true ||
-                supplemental.hasResellerPermitUploaded === true,
-            };
-          };
-          setLiveClients((current) => current.map(mergeSupplementalEntry));
-          setAdminLiveUsers((current) => current.map(mergeSupplementalEntry));
-          setSalesDoctorDetail((current) => {
-            if (!current) return current;
-            const supplemental = supplementalById.get(String(current.doctorId || "").trim());
-            if (!supplemental) return current;
-            return {
-              ...current,
-              avatar: current.avatar || supplemental.profileImageUrl || null,
-              greaterArea: current.greaterArea || supplemental.greaterArea || null,
-              studyFocus: current.studyFocus || supplemental.studyFocus || null,
-              bio: current.bio || supplemental.bio || null,
-              hasResellerPermitUploaded:
-                current.hasResellerPermitUploaded === true ||
-                supplemental.hasResellerPermitUploaded === true,
-            };
-          });
-	      } catch {
-	        if (cancelled) return;
-      } finally {
-        batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.delete(userId));
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [adminLiveUsers, liveClients, livePresenceProfileImageByUserId, user?.role]);
+  useEffect(() => {
+    void hydrateLivePresenceSqlProfiles([
+      ...(Array.isArray(liveClients) ? liveClients : []),
+      ...(Array.isArray(adminLiveUsers) ? adminLiveUsers : []),
+    ]);
+  }, [adminLiveUsers, hydrateLivePresenceSqlProfiles, liveClients]);
 
   useEffect(() => {
     const currentDetail = salesDoctorDetailRef.current;
@@ -14548,6 +14486,18 @@ function MainApp() {
 	    adminLiveUsersRef.current = adminLiveUsers;
 	  }, [adminLiveUsers]);
 
+  const hideRepViewerSalesActorCommerceSections = useMemo(() => {
+    const viewerRole = normalizeRole(user?.role || "");
+    const targetRole = normalizeRole(salesDoctorDetail?.role || "");
+    const viewerIsRepOrPartner =
+      viewerRole === "sales_partner" ||
+      viewerRole === "sales_rep" ||
+      viewerRole === "test_rep" ||
+      viewerRole === "rep";
+    const targetIsAdminOrSalesLead = isAdmin(targetRole) || isSalesLead(targetRole);
+    return viewerIsRepOrPartner && targetIsAdminOrSalesLead;
+  }, [salesDoctorDetail?.role, user?.role]);
+
 	  useEffect(() => {
 	    const canSeeOwner =
 	      Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
@@ -14664,6 +14614,7 @@ function MainApp() {
       const cachedSnapshot = readPresenceSnapshot(liveClientsPresenceCacheKey);
       if (cachedSnapshot && cachedSnapshot.items.length > 0) {
         setLiveClients(cachedSnapshot.items as any[]);
+        void hydrateLivePresenceSqlProfiles(cachedSnapshot.items as any[]);
         setLiveClientsUsingCachedSnapshot(true);
         setLiveClientsLoading(true);
       } else {
@@ -14697,6 +14648,7 @@ function MainApp() {
 		          return true;
 		        });
 		        setLiveClients(clients);
+            void hydrateLivePresenceSqlProfiles(clients);
             writePresenceSnapshot(liveClientsPresenceCacheKey, clients);
             setLiveClientsUsingCachedSnapshot(false);
 		      } catch (error: any) {
@@ -14780,6 +14732,7 @@ function MainApp() {
 		            return true;
 		          });
 		          setLiveClients(clients);
+              void hydrateLivePresenceSqlProfiles(clients);
               writePresenceSnapshot(liveClientsPresenceCacheKey, clients);
               setLiveClientsUsingCachedSnapshot(false);
               setLiveClientsError(null);
@@ -14843,6 +14796,7 @@ function MainApp() {
       const cachedSnapshot = readPresenceSnapshot(adminLiveUsersPresenceCacheKey);
       if (cachedSnapshot && cachedSnapshot.items.length > 0) {
         setAdminLiveUsers(cachedSnapshot.items as any[]);
+        void hydrateLivePresenceSqlProfiles(cachedSnapshot.items as any[]);
         setAdminLiveUsersUsingCachedSnapshot(true);
         setAdminLiveUsersLoading(true);
       } else {
@@ -14861,6 +14815,7 @@ function MainApp() {
 	        adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 	        const users = Array.isArray(payload?.users) ? payload.users : [];
 	        setAdminLiveUsers(users);
+          void hydrateLivePresenceSqlProfiles(users);
           writePresenceSnapshot(adminLiveUsersPresenceCacheKey, users);
           setAdminLiveUsersUsingCachedSnapshot(false);
 	      } catch (error: any) {
@@ -14922,6 +14877,7 @@ function MainApp() {
 		          adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 		          const users = Array.isArray(payload?.users) ? payload.users : [];
 		          setAdminLiveUsers(users);
+              void hydrateLivePresenceSqlProfiles(users);
               writePresenceSnapshot(adminLiveUsersPresenceCacheKey, users);
               setAdminLiveUsersUsingCachedSnapshot(false);
               setAdminLiveUsersError(null);
@@ -34471,35 +34427,37 @@ function MainApp() {
                 );
               })()}
 
-              {(() => {
-                const showMetricsSkeleton =
-                  salesDoctorDetailHydrating &&
-                  salesDoctorDetail.orders.length === 0 &&
-                  !salesDoctorDetail.lastOrderDate &&
-                  typeof salesDoctorDetail.avgOrderValue !== "number";
-                if (showMetricsSkeleton) {
-                  return renderSalesDoctorMetricSkeletons();
-                }
-                const { avgOrderValue } = getSalesDoctorOrdersForDisplay(
-                  salesDoctorDetail,
-                );
-                return (
-                  <div className="grid grid-cols-1 gap-3">
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Avg Order Value
-                      </p>
-                      <p className="text-lg font-semibold text-slate-900">
-                        {typeof avgOrderValue === "number" && Number.isFinite(avgOrderValue)
-                          ? formatCurrency(avgOrderValue)
-                          : "—"}
-                      </p>
+              {!hideRepViewerSalesActorCommerceSections &&
+                (() => {
+                  const showMetricsSkeleton =
+                    salesDoctorDetailHydrating &&
+                    salesDoctorDetail.orders.length === 0 &&
+                    !salesDoctorDetail.lastOrderDate &&
+                    typeof salesDoctorDetail.avgOrderValue !== "number";
+                  if (showMetricsSkeleton) {
+                    return renderSalesDoctorMetricSkeletons();
+                  }
+                  const { avgOrderValue } = getSalesDoctorOrdersForDisplay(
+                    salesDoctorDetail,
+                  );
+                  return (
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Avg Order Value
+                        </p>
+                        <p className="text-lg font-semibold text-slate-900">
+                          {typeof avgOrderValue === "number" && Number.isFinite(avgOrderValue)
+                            ? formatCurrency(avgOrderValue)
+                            : "—"}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
-			              <div className="space-y-2">
+			              {!hideRepViewerSalesActorCommerceSections && (
+              <div className="space-y-2">
                     {isDoctorRole(salesDoctorDetail.role) &&
                       (() => {
                         const formatDateObject = (date?: Date | null) => {
@@ -34899,6 +34857,7 @@ function MainApp() {
 	                  );
 		                })()}
 		              </div>
+                )}
 
 				              {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
 				                (isRep(salesDoctorDetail.role) ||
