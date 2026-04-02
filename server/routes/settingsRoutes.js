@@ -174,7 +174,7 @@ const serializeUserProfile = (user) => {
     officeState: user.officeState || null,
     officePostalCode: user.officePostalCode || null,
     officeCountry: user.officeCountry || null,
-    handDelivered: Boolean(user.handDelivered || user.hand_delivered),
+    handDelivered: normalizeBooleanFlag(user.handDelivered ?? user.hand_delivered),
     receiveClientOrderUpdateEmails: Boolean(user.receiveClientOrderUpdateEmails),
     devCommission: Boolean(user.devCommission),
     resellerPermitFilePath: user.resellerPermitFilePath || user.reseller_permit_file_path || null,
@@ -227,7 +227,7 @@ const buildSalesRepDoctorEntries = async (ownerIds = []) => {
       name: String(doctor?.name || doctor?.email || `Doctor ${doctor?.id || ''}`).trim(),
       email: doctor?.email ? String(doctor.email).trim().toLowerCase() : null,
       role: normalizeRole(doctor?.role || ''),
-      handDelivered: Boolean(doctor?.handDelivered || doctor?.hand_delivered),
+      handDelivered: normalizeBooleanFlag(doctor?.handDelivered ?? doctor?.hand_delivered),
     }))
     .sort((a, b) => {
       const byName = a.name.localeCompare(b.name);
@@ -854,7 +854,7 @@ router.patch('/structure/hand-delivery/doctors/:doctorUserId', authenticate, req
       name: String(updated?.name || updated?.email || `Doctor ${updated?.id || ''}`).trim(),
       email: updated?.email ? String(updated.email).trim().toLowerCase() : null,
       role: normalizeRole(updated?.role || ''),
-      handDelivered: Boolean(updated?.handDelivered || updated?.hand_delivered),
+      handDelivered: normalizeBooleanFlag(updated?.handDelivered ?? updated?.hand_delivered),
     },
   });
 });

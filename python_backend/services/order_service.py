@@ -655,6 +655,18 @@ def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
     return _has_reseller_permit_on_file(user)
 
 
+def _can_user_use_hand_delivery_for_checkout(user: Optional[Dict]) -> bool:
+    if not isinstance(user, dict):
+        return False
+    if not _is_doctor_role(user.get("role")) and not _is_sales_access_role(user.get("role")):
+        return False
+    return _normalize_bool(
+        user.get("handDelivered")
+        if "handDelivered" in user
+        else user.get("hand_delivered")
+    )
+
+
 def _normalize_optional_text(value: object) -> Optional[str]:
     if value is None:
         return None
@@ -987,7 +999,7 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
-    is_facility_pickup = bool(facility_pickup)
+    is_facility_pickup = bool(facility_pickup) and _can_user_use_hand_delivery_for_checkout(user)
     try:
         shipping_total_value = float(shipping_total or 0)
     except Exception:
@@ -1228,7 +1240,7 @@ def create_order(
         normalized_payment_method = "stripe"
 
     now = _now_order_iso()
-    is_facility_pickup = bool(facility_pickup)
+    is_facility_pickup = bool(facility_pickup) and _can_user_use_hand_delivery_for_checkout(user)
     shipping_address = shipping_address or {}
     if is_facility_pickup:
         existing_rate = shipping_rate if isinstance(shipping_rate, dict) else {}

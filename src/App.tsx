@@ -392,6 +392,18 @@ const getSalesPartnerLabel = (allowedRetail?: boolean | null) => {
   if (normalized === false) return "Wholesale Partner";
   return "Sales Partner";
 };
+const isUserHandDeliveryEnabled = (
+  candidate:
+    | {
+        handDelivered?: unknown;
+        hand_delivered?: unknown;
+      }
+    | null
+    | undefined,
+) =>
+  coerceOptionalBoolean(
+    candidate?.handDelivered ?? (candidate as any)?.hand_delivered,
+  ) === true;
 const resolveSalesActorAllowedRetail = (
   candidate:
     | {
@@ -14188,7 +14200,7 @@ function MainApp() {
         name,
         email: email || null,
         role,
-        handDelivered: Boolean(entry?.handDelivered || entry?.hand_delivered),
+        handDelivered: isUserHandDeliveryEnabled(entry),
       };
     },
     [],
@@ -32997,13 +33009,13 @@ function MainApp() {
           handDelivered={
             isDelegateMode
               ? false
-              : Boolean(
-                  isDoctorRole(user?.role) &&
-                    ((user as any)?.handDelivered || (user as any)?.hand_delivered),
-                )
+              : Boolean(isDoctorRole(user?.role) && isUserHandDeliveryEnabled(user as any))
           }
           allowManualHandDelivery={Boolean(
-            !isDelegateMode && user?.role && (isRep(user.role) || isAdmin(user.role)),
+            !isDelegateMode
+              && user?.role
+              && (isRep(user.role) || isAdmin(user.role))
+              && isUserHandDeliveryEnabled(user as any),
           )}
 	        defaultShippingAddress={
 	          isDelegateMode ? null : (proposalShippingAddress ?? checkoutDefaultShippingAddress)

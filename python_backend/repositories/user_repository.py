@@ -811,7 +811,7 @@ def _row_to_user(row: Dict) -> Dict:
             "password": row.get("password"),
             "role": row.get("role"),
             "status": row.get("status"),
-            "handDelivered": bool(row.get("hand_delivered")),
+            "handDelivered": _normalize_bool(row.get("hand_delivered")),
             "isOnline": bool(row.get("is_online")),
             "salesRepId": row.get("sales_rep_id"),
             "referrerDoctorId": row.get("referrer_doctor_id"),

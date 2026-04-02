@@ -520,7 +520,11 @@ def _public_user_profile(user: dict) -> dict:
         "email": user.get("email") or None,
         "role": user.get("role") or None,
         "status": user.get("status") or None,
-        "handDelivered": bool(user.get("handDelivered")) or bool(user.get("hand_delivered")),
+        "handDelivered": _normalize_bool(
+            user.get("handDelivered")
+            if "handDelivered" in user
+            else user.get("hand_delivered")
+        ),
         "isOnline": bool(user.get("isOnline")),
         "lastLoginAt": user.get("lastLoginAt") or None,
         "createdAt": user.get("createdAt") or None,
@@ -775,7 +779,11 @@ def _build_hand_delivery_doctor_entries(owner_ids: set[str]) -> list[dict]:
                 or (user_id or "Doctor"),
                 "email": user_email or None,
                 "role": _normalize_role(user.get("role") or ""),
-                "handDelivered": bool(user.get("handDelivered")) or bool(user.get("hand_delivered")),
+                "handDelivered": _normalize_bool(
+                    user.get("handDelivered")
+                    if "handDelivered" in user
+                    else user.get("hand_delivered")
+                ),
             }
         )
 
@@ -2062,7 +2070,11 @@ def update_hand_delivery_doctor(doctor_user_id: str):
             or f"Doctor {str(updated.get('id') or '')}",
             "email": str(updated.get("email") or "").strip().lower() or None,
             "role": _normalize_role(updated.get("role") or ""),
-            "handDelivered": bool(updated.get("handDelivered")) or bool(updated.get("hand_delivered")),
+            "handDelivered": _normalize_bool(
+                updated.get("handDelivered")
+                if "handDelivered" in updated
+                else updated.get("hand_delivered")
+            ),
         }
         return {"entry": entry}
 

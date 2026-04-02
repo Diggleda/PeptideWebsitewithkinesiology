@@ -1362,6 +1362,16 @@ const normalizeBooleanish = (value) => {
   return false;
 };
 
+const canUserUseHandDeliveryForCheckout = (user) => {
+  if (!user || typeof user !== 'object') {
+    return false;
+  }
+  if (!isDoctorRole(user.role) && !isSalesAccessRole(user.role)) {
+    return false;
+  }
+  return normalizeBooleanish(user.handDelivered ?? user.hand_delivered);
+};
+
 const isHandDeliverySelection = (shippingEstimate) => {
   if (!shippingEstimate || typeof shippingEstimate !== 'object') return false;
   const candidates = [
@@ -1578,10 +1588,11 @@ const createOrderInternal = async ({
     shippingEstimate,
     shippingTotal,
   });
-  const handDeliverySelected =
+  const handDeliverySelected = canUserUseHandDeliveryForCheckout(user) && (
     normalizeBooleanish(handDelivery)
     || shippingData.handDelivery === true
-    || isHandDeliverySelection(shippingData.shippingEstimate);
+    || isHandDeliverySelection(shippingData.shippingEstimate)
+  );
   const itemsSubtotal = calculateItemsSubtotal(items);
   const taxCalculation = taxExempt
     ? { taxTotal: 0, taxSource: 'tax_exempt' }
@@ -1951,10 +1962,11 @@ const estimateOrderTotals = async ({
     shippingEstimate,
     shippingTotal,
   });
-  const handDeliverySelected =
+  const handDeliverySelected = canUserUseHandDeliveryForCheckout(user) && (
     normalizeBooleanish(handDelivery)
     || shippingData.handDelivery === true
-    || isHandDeliverySelection(shippingData.shippingEstimate);
+    || isHandDeliverySelection(shippingData.shippingEstimate)
+  );
 
   const itemsSubtotal = calculateItemsSubtotal(items);
   const taxExempt = await isUserTaxExemptForCheckout(user);
