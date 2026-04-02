@@ -1009,10 +1009,6 @@ def _compute_live_clients_payload(
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": _normalize_role(user.get("role")) or "unknown",
-                "profileImageUrl": user.get("profileImageUrl") or None,
-                "greaterArea": user.get("greaterArea") or None,
-                "studyFocus": user.get("studyFocus") or None,
-                "bio": user.get("bio") or None,
                 **snapshot,
             }
         )
@@ -1035,10 +1031,6 @@ def _compute_live_clients_payload(
             "lastLoginAt": entry.get("lastLoginAt") or None,
             "lastSeenAt": entry.get("lastSeenAt") or None,
             "lastInteractionAt": entry.get("lastInteractionAt") or None,
-            "profileImageUrl": entry.get("profileImageUrl") or None,
-            "greaterArea": entry.get("greaterArea") or None,
-            "studyFocus": entry.get("studyFocus") or None,
-            "bio": entry.get("bio") or None,
         }
         for entry in clients
     ]
@@ -1115,10 +1107,6 @@ def _compute_live_users_payload() -> dict:
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": normalize_user_role(user.get("role")),
-                "profileImageUrl": user.get("profileImageUrl") or None,
-                "greaterArea": user.get("greaterArea") or None,
-                "studyFocus": user.get("studyFocus") or None,
-                "bio": user.get("bio") or None,
                 **snapshot,
             }
         )
@@ -1139,10 +1127,6 @@ def _compute_live_users_payload() -> dict:
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
             "lastLoginAt": entry.get("lastLoginAt") or None,
-            "profileImageUrl": entry.get("profileImageUrl") or None,
-            "greaterArea": entry.get("greaterArea") or None,
-            "studyFocus": entry.get("studyFocus") or None,
-            "bio": entry.get("bio") or None,
         }
         for entry in entries
     ]

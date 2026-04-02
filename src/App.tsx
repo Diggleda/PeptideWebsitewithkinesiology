@@ -386,6 +386,12 @@ const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
   return null;
 };
+const getSalesPartnerLabel = (allowedRetail?: boolean | null) => {
+  const normalized = coerceOptionalBoolean(allowedRetail);
+  if (normalized === true) return "Retail Partner";
+  if (normalized === false) return "Wholesale Partner";
+  return "Sales Partner";
+};
 const resolveSalesActorAllowedRetail = (
   candidate:
     | {
@@ -413,10 +419,12 @@ const isRep = (role?: string | null) => {
 };
 const formatRoleLabel = (
   role?: string | null,
-  options?: { isPartner?: boolean | null },
+  options?: { isPartner?: boolean | null; allowedRetail?: boolean | null },
 ) => {
   const normalized = normalizeRole(role);
-  if (isSalesPartner(normalized, options?.isPartner)) return "Sales Partner";
+  if (isSalesPartner(normalized, options?.isPartner)) {
+    return getSalesPartnerLabel(options?.allowedRetail);
+  }
   if (normalized === "admin") return "Admin";
   if (
     normalized === "sales_lead" ||
@@ -25376,9 +25384,15 @@ function MainApp() {
 		                              } as CSSProperties,
 		                            };
 		                          }
-		                          if (isSalesPartner(role, Boolean(entry?.isPartner))) {
+                                  const isPartner = coerceOptionalBoolean(
+                                    entry?.isPartner ?? entry?.is_partner,
+                                  );
+                                  const allowedRetail = coerceOptionalBoolean(
+                                    entry?.allowedRetail ?? entry?.allowed_retail,
+                                  );
+		                          if (isSalesPartner(role, isPartner)) {
 		                            return {
-		                              label: "Sales Partner",
+		                              label: getSalesPartnerLabel(allowedRetail),
 		                              style: {
 		                                backgroundColor: "rgb(129,221,228)",
 		                                color: "#ffffff",
@@ -26694,9 +26708,15 @@ function MainApp() {
 		                                    } as CSSProperties,
 		                                  };
 		                                }
-				                                if (isSalesPartner(role, Boolean(entry?.isPartner))) {
+                                  const isPartner = coerceOptionalBoolean(
+                                    entry?.isPartner ?? entry?.is_partner,
+                                  );
+                                  const allowedRetail = coerceOptionalBoolean(
+                                    entry?.allowedRetail ?? entry?.allowed_retail,
+                                  );
+				                                if (isSalesPartner(role, isPartner)) {
 				                                  return {
-				                                    label: "Sales Partner",
+				                                    label: getSalesPartnerLabel(allowedRetail),
 				                                    style: {
 				                                      backgroundColor: "rgb(129,221,228)",
 				                                      color: "#ffffff",
@@ -28276,7 +28296,10 @@ function MainApp() {
 						                                    key="role"
 						                                    className="whitespace-nowrap"
 						                                  >
-						                                    Role: {formatRoleLabel(row?.role)}
+						                                    Role: {formatRoleLabel(row?.role, {
+                                                  isPartner: row?.isPartner ?? row?.is_partner,
+                                                  allowedRetail: row?.allowedRetail ?? row?.allowed_retail,
+                                                })}
 						                                  </span>,
 						                                );
 						                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
@@ -30745,8 +30768,16 @@ function MainApp() {
         ) {
           return `Lead: ${rawName}`;
         }
+        const landingAccountIsPartner = coerceOptionalBoolean(
+          user?.salesRep?.isPartner,
+        );
+        const landingAccountAllowedRetail = coerceOptionalBoolean(
+          user?.salesRep?.allowedRetail,
+        );
+        if (isSalesPartner(landingAccountRole, landingAccountIsPartner)) {
+          return `${getSalesPartnerLabel(landingAccountAllowedRetail)}: ${rawName}`;
+        }
         if (
-          landingAccountRole === "sales_partner" ||
           landingAccountRole === "sales_rep" ||
           landingAccountRole === "salesrep" ||
           landingAccountRole === "rep" ||
@@ -33304,7 +33335,10 @@ function MainApp() {
                             );
                             const formatFlag = (value: boolean | null) =>
                               value === true ? "Yes" : value === false ? "No" : "—";
-                            const roleLabel = formatRoleLabel(salesDoctorDetail.role);
+                            const roleLabel = formatRoleLabel(salesDoctorDetail.role, {
+                              isPartner: salesDoctorDetail.isPartner,
+                              allowedRetail: salesDoctorDetail.allowedRetail,
+                            });
                             return (
                               <>
                                 <div className="text-sm font-normal text-slate-600">
@@ -33387,7 +33421,10 @@ function MainApp() {
 						                          const role = normalizeRole(
 						                            ownerProfile?.role || "sales_rep",
 						                          );
-						                          const ownerRoleLabel = "Sales Rep";
+						                          const ownerRoleLabel = formatRoleLabel(role || "sales_rep", {
+                                    isPartner: ownerProfile?.isPartner ?? null,
+                                    allowedRetail: ownerProfile?.allowedRetail ?? null,
+                                  });
 					                          const content = name || ownerId;
 					                          const resolved = Boolean(name);
 					                          const canOpen = Boolean(userId);

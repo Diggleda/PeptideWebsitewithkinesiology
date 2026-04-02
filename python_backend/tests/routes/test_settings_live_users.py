@@ -36,7 +36,7 @@ class TestSettingsLiveUsers(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def test_live_users_payload_includes_profile_image_and_avatar_affects_etag(self):
+    def test_live_users_payload_excludes_profile_fields_and_avatar_does_not_affect_etag(self):
         settings = self._load_settings_module()
 
         def build_user(profile_image_url: str | None):
@@ -50,6 +50,9 @@ class TestSettingsLiveUsers(unittest.TestCase):
                 "lastSeenAt": None,
                 "lastInteractionAt": None,
                 "profileImageUrl": profile_image_url,
+                "greaterArea": "Midwest",
+                "studyFocus": "Metabolism",
+                "bio": "Long physician bio",
             }
 
         with patch.object(settings.user_repository, "get_all", return_value=[build_user("data:image/png;base64,AAA")]), \
@@ -57,7 +60,10 @@ class TestSettingsLiveUsers(unittest.TestCase):
             patch.object(settings.time, "time", return_value=1_000.0):
             payload_with_avatar = settings._compute_live_users_payload()
 
-        self.assertEqual(payload_with_avatar["users"][0]["profileImageUrl"], "data:image/png;base64,AAA")
+        self.assertNotIn("profileImageUrl", payload_with_avatar["users"][0])
+        self.assertNotIn("greaterArea", payload_with_avatar["users"][0])
+        self.assertNotIn("studyFocus", payload_with_avatar["users"][0])
+        self.assertNotIn("bio", payload_with_avatar["users"][0])
         self.assertIsInstance(payload_with_avatar.get("etag"), str)
         self.assertTrue(payload_with_avatar["etag"])
 
@@ -66,8 +72,8 @@ class TestSettingsLiveUsers(unittest.TestCase):
             patch.object(settings.time, "time", return_value=1_000.0):
             payload_without_avatar = settings._compute_live_users_payload()
 
-        self.assertEqual(payload_without_avatar["users"][0]["profileImageUrl"], None)
-        self.assertNotEqual(payload_with_avatar["etag"], payload_without_avatar["etag"])
+        self.assertNotIn("profileImageUrl", payload_without_avatar["users"][0])
+        self.assertEqual(payload_with_avatar["etag"], payload_without_avatar["etag"])
 
 
 if __name__ == "__main__":

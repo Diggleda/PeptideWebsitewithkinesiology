@@ -64,6 +64,19 @@ const normalizeOptionalText = (value) => {
   const text = String(value).trim();
   return text || null;
 };
+const normalizeBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'y'
+      || normalized === 'on';
+  }
+  return false;
+};
 const isDoctorUser = (user) => {
   const role = normalizeRole(user?.role);
   return role === 'doctor' || role === 'test_doctor';
@@ -1213,7 +1226,8 @@ const getSalesRepById = async (req, res, next) => {
     const byLegacy = legacyUserId ? userRepository.findById(legacyUserId) : null;
     const byEmail = rep?.email ? userRepository.findByEmail(rep.email) : null;
     const resolvedUserId = (byRepId?.id || byLegacy?.id || byEmail?.id || null);
-    const isPartner = Boolean(rep?.isPartner || rep?.is_partner);
+    const isPartner = normalizeBooleanFlag(rep?.isPartner ?? rep?.is_partner);
+    const allowedRetail = normalizeBooleanFlag(rep?.allowedRetail ?? rep?.allowed_retail);
     const resolvedRole = normalizeRole(byRepId?.role || byLegacy?.role || byEmail?.role || (isPartner ? 'sales_partner' : rep?.role || 'sales_rep'));
 
     return res.status(200).json({
@@ -1223,6 +1237,7 @@ const getSalesRepById = async (req, res, next) => {
         email: rep?.email || null,
         role: resolvedRole,
         isPartner,
+        allowedRetail,
         userId: resolvedUserId,
       },
     });

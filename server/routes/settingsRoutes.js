@@ -52,6 +52,19 @@ const isSalesRep = (role) => {
   const normalized = normalizeRole(role);
   return normalized === 'sales_rep' || normalized === 'sales_partner' || normalized === 'test_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead';
 };
+const normalizeBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'y'
+      || normalized === 'on';
+  }
+  return false;
+};
 
 const requireAdmin = (req, res, next) => {
   const currentUser = req.currentUser || req.user || null;
@@ -669,7 +682,8 @@ router.get('/sales-reps/:salesRepId', authenticate, requireAdminOrSalesLead, asy
     users.find((candidate) => String(candidate?.salesRepId || '').trim() === String(rep.id || rep.salesRepId || '').trim())
     || (rep?.email ? userRepository.findByEmail(rep.email) : null)
     || null;
-  const isPartner = Boolean(rep?.isPartner || rep?.is_partner);
+  const isPartner = normalizeBooleanFlag(rep?.isPartner ?? rep?.is_partner);
+  const allowedRetail = normalizeBooleanFlag(rep?.allowedRetail ?? rep?.allowed_retail);
   const effectiveRole = normalizeRole(resolvedUser?.role || (isPartner ? 'sales_partner' : rep.role || 'sales_rep'));
 
   return res.json({
@@ -680,6 +694,7 @@ router.get('/sales-reps/:salesRepId', authenticate, requireAdminOrSalesLead, asy
       phone: rep.phone || null,
       role: effectiveRole,
       isPartner,
+      allowedRetail,
       userId: resolvedUser?.id ? String(resolvedUser.id) : null,
       salesRepId: String(rep.id || rep.salesRepId || salesRepId),
     },

@@ -23,6 +23,19 @@ import {
 } from '../lib/researchSupplyLinks';
 
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+const coerceOptionalBoolean = (value: unknown): boolean | null => {
+  if (value === true || value === false) return value;
+  if (value == null) return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value !== 0;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return null;
+};
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
 const isSalesLead = (role?: string | null) => {
   const normalized = normalizeRole(role);
@@ -35,6 +48,14 @@ const isRep = (role?: string | null) => {
 const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return normalized === 'doctor' || normalized === 'test_doctor';
+};
+const isSalesPartner = (role?: string | null, isPartner?: unknown) =>
+  coerceOptionalBoolean(isPartner) === true || normalizeRole(role) === 'sales_partner';
+const getSalesPartnerLabel = (allowedRetail?: unknown) => {
+  const normalized = coerceOptionalBoolean(allowedRetail);
+  if (normalized === true) return 'Retail Partner';
+  if (normalized === false) return 'Wholesale Partner';
+  return 'Sales Partner';
 };
 
 type PatientLinkPaymentMethod = 'none' | 'zelle';
@@ -291,6 +312,8 @@ interface HeaderUserSalesRep {
   name?: string | null;
   email?: string | null;
   phone?: string | null;
+  isPartner?: boolean | null;
+  allowedRetail?: boolean | null;
 }
 
 type DirectShippingField =
@@ -1967,14 +1990,21 @@ export function Header({
     }
   }, [welcomeOpen]);
   const accountRole = localUser?.role ?? user?.role ?? null;
+  const accountPartnerFlag = coerceOptionalBoolean(localUser?.salesRep?.isPartner ?? user?.salesRep?.isPartner ?? null);
+  const accountAllowedRetail = coerceOptionalBoolean(localUser?.salesRep?.allowedRetail ?? user?.salesRep?.allowedRetail ?? null);
   const accountIsAdmin = isAdmin(accountRole);
   const accountIsSalesRep = isRep(accountRole) || isSalesLead(accountRole);
   const accountIsDoctor = isDoctorRole(accountRole);
+  const accountIsPartner = isSalesPartner(accountRole, accountPartnerFlag);
+  const accountPartnerLabel = accountIsPartner ? getSalesPartnerLabel(accountAllowedRetail) : null;
+  const accountCanUploadResellerPermit = accountIsDoctor || accountIsPartner;
   const headerDisplayName = localUser
     ? accountIsAdmin
       ? `Admin: ${localUser.name}`
       : isSalesLead(accountRole)
         ? `Lead: ${localUser.name}`
+      : accountIsPartner && accountPartnerLabel
+        ? `${accountPartnerLabel}: ${localUser.name}`
       : accountIsSalesRep
         ? `Rep: ${localUser.name}`
         : localUser.name
@@ -4819,12 +4849,12 @@ export function Header({
         </div>
       </div>
 
-      {accountIsDoctor && (
+      {accountCanUploadResellerPermit && (
         <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
           <div>
             <h3 className="text-base font-semibold text-slate-800">Reseller Permit</h3>
             <p className="text-sm text-slate-600">
-              Upload an applicable resellers permit for tax exception.
+              Upload an applicable reseller permit for tax exemption.
             </p>
           </div>
 

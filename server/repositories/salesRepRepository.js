@@ -28,7 +28,9 @@ const ensureDefaults = (record) => {
   const rawRole = String(record.role || '').trim().toLowerCase();
   const role = rawRole === 'rep' || rawRole === 'sales_partner' ? 'sales_rep' : (record.role || null);
   const isPartner = normalizeBooleanFlag(record.isPartner ?? record.is_partner);
+  const allowedRetail = normalizeBooleanFlag(record.allowedRetail ?? record.allowed_retail);
   return {
+    ...record,
     id: record.id || record.salesRepId || null,
     name: record.name || null,
     email: record.email || null,
@@ -36,7 +38,7 @@ const ensureDefaults = (record) => {
     status: record.status || null,
     role,
     isPartner,
-    ...record,
+    allowedRetail,
   };
 };
 
