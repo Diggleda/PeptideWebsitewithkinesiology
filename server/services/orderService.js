@@ -748,11 +748,14 @@ const hasResellerPermitOnFile = async (user) => {
 };
 
 const isUserTaxExemptForCheckout = async (user) => {
-  if (!user || !isDoctorRole(user.role)) {
+  if (!user) {
     return false;
   }
   if (user.isTaxExempt === true) {
     return true;
+  }
+  if (!isDoctorRole(user.role) && !isSalesAccessRole(user.role)) {
+    return false;
   }
   return hasResellerPermitOnFile(user);
 };

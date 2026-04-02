@@ -646,10 +646,12 @@ def _has_reseller_permit_on_file(user: Optional[Dict]) -> bool:
 
 
 def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
-    if not isinstance(user, dict) or not _is_doctor_role(user.get("role")):
+    if not isinstance(user, dict):
         return False
     if bool(user.get("isTaxExempt")):
         return True
+    if not _is_doctor_role(user.get("role")) and not _is_sales_access_role(user.get("role")):
+        return False
     return _has_reseller_permit_on_file(user)
 
 
