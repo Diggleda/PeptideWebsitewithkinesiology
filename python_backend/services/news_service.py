@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import threading
+import time
 from dataclasses import dataclass
 from html import unescape
 from typing import List, Optional
@@ -24,6 +27,10 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
 )
 
+_CACHE_LOCK = threading.Lock()
+_CACHE: dict[str, object] = {"items": None, "expiresAt": 0.0, "fetchedAt": 0.0}
+_INFLIGHT_EVENT: threading.Event | None = None
+
 
 @dataclass
 class NewsItem:
@@ -36,18 +43,95 @@ class NewsItem:
 
 def fetch_peptide_news(limit: int = 8) -> List[NewsItem]:
     """Fetch peptide related headlines from Nature and return cleaned entries."""
-    html = _fetch_page_html()
-    if not html:
-        return []
+    leader = False
+    wait_event: threading.Event | None = None
+    stale_items: List[NewsItem] = []
+    now = time.monotonic()
+    ttl_s = _cache_ttl_seconds()
+    max_stale_s = _cache_max_stale_seconds()
 
-    items = _parse_news(html)
+    with _CACHE_LOCK:
+        cached_items = _coerce_cached_items(_CACHE.get("items"))
+        expires_at = float(_CACHE.get("expiresAt") or 0.0)
+        fetched_at = float(_CACHE.get("fetchedAt") or 0.0)
+        if cached_items and expires_at > now:
+            return _limit_items(cached_items, limit)
 
-    # Sort by date (most recent first), treating items without dates as oldest
-    items = _sort_by_date(items)
+        stale_items = list(cached_items)
+        global _INFLIGHT_EVENT
+        if _INFLIGHT_EVENT is not None:
+            wait_event = _INFLIGHT_EVENT
+        else:
+            wait_event = threading.Event()
+            _INFLIGHT_EVENT = wait_event
+            leader = True
 
+    if not leader:
+        if stale_items and fetched_at > 0 and (now - fetched_at) <= max_stale_s:
+            return _limit_items(stale_items, limit)
+        wait_event.wait(timeout=_inflight_wait_seconds())
+        with _CACHE_LOCK:
+            refreshed_items = _coerce_cached_items(_CACHE.get("items"))
+            if refreshed_items:
+                return _limit_items(refreshed_items, limit)
+        return _limit_items(stale_items, limit)
+
+    try:
+        html = _fetch_page_html()
+        if not html:
+            return _limit_items(stale_items, limit)
+
+        items = _sort_by_date(_parse_news(html))
+        with _CACHE_LOCK:
+            _CACHE["items"] = list(items)
+            _CACHE["fetchedAt"] = time.monotonic()
+            _CACHE["expiresAt"] = float(_CACHE["fetchedAt"]) + ttl_s
+        return _limit_items(items, limit)
+    finally:
+        with _CACHE_LOCK:
+            event = _INFLIGHT_EVENT
+            _INFLIGHT_EVENT = None
+        if event is not None:
+            event.set()
+
+
+def _limit_items(items: List[NewsItem], limit: int) -> List[NewsItem]:
     if limit > 0:
-        items = items[:limit]
-    return items
+        return list(items[:limit])
+    return list(items)
+
+
+def _coerce_cached_items(value: object) -> List[NewsItem]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, NewsItem)]
+    return []
+
+
+def _cache_ttl_seconds() -> float:
+    raw = str(os.environ.get("PEPTIDE_NEWS_CACHE_TTL_SECONDS") or "300").strip()
+    try:
+        value = float(raw)
+    except Exception:
+        value = 300.0
+    return max(30.0, min(value, 3600.0))
+
+
+def _cache_max_stale_seconds() -> float:
+    raw = str(os.environ.get("PEPTIDE_NEWS_CACHE_MAX_STALE_SECONDS") or "3600").strip()
+    try:
+        value = float(raw)
+    except Exception:
+        value = 3600.0
+    return max(60.0, min(value, 24 * 3600.0))
+
+
+def _inflight_wait_seconds() -> float:
+    raw = str(os.environ.get("PEPTIDE_NEWS_INFLIGHT_WAIT_SECONDS") or "2.0").strip()
+    try:
+        value = float(raw)
+    except Exception:
+        value = 2.0
+    return max(0.1, min(value, 10.0))
 
 
 def _fetch_page_html() -> Optional[str]:

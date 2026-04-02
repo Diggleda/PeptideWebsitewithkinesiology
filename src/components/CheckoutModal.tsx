@@ -260,6 +260,7 @@ interface CheckoutModalProps {
   isAuthenticated: boolean;
   onRequireLogin: () => void;
   physicianName?: string | null;
+  agreementTextPrefix?: string | null;
   customerEmail?: string | null;
   customerName?: string | null;
   salesRepName?: string | null;
@@ -332,6 +333,7 @@ export function CheckoutModal({
   isAuthenticated,
   onRequireLogin,
   physicianName,
+  agreementTextPrefix,
   customerEmail,
   customerName,
   salesRepName,
@@ -2185,6 +2187,10 @@ export function CheckoutModal({
 	                  {isDelegateFlow ? (
 	                    <>
 	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Physician'}), and I agree to PepPro&apos;s{' '}
+	                    </>
+	                  ) : typeof agreementTextPrefix === 'string' && agreementTextPrefix.trim().length > 0 ? (
+	                    <>
+	                      {agreementTextPrefix.trim()}, and I agree to PepPro&apos;s{' '}
 	                    </>
 	                  ) : (
 	                    <>

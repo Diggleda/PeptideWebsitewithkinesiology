@@ -398,6 +398,13 @@ interface AccountOrderSummary {
   id: string;
   asDelegate?: string | null;
   as_delegate?: string | null;
+  resellerPermitFilePath?: string | null;
+  reseller_permit_file_path?: string | null;
+  resellerPermitFileName?: string | null;
+  reseller_permit_file_name?: string | null;
+  resellerPermitUploadedAt?: string | null;
+  reseller_permit_uploaded_at?: string | null;
+  hasResellerPermitUploaded?: boolean | null;
   number?: string | null;
   trackingNumber?: string | null;
   status?: string | null;
@@ -419,6 +426,33 @@ interface AccountOrderSummary {
   physicianCertified?: boolean | null;
   expectedShipmentWindow?: string | null;
 }
+
+const hasUploadedResellerPermit = (...values: unknown[]): boolean =>
+  values.some((value) => {
+    if (value === true) {
+      return true;
+    }
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const record = value as {
+      hasResellerPermitUploaded?: unknown;
+      resellerPermitFilePath?: unknown;
+      resellerPermitFileName?: unknown;
+      resellerPermitUploadedAt?: unknown;
+    };
+    if (record.hasResellerPermitUploaded === true) {
+      return true;
+    }
+    return [
+      record.resellerPermitFilePath,
+      (record as any).reseller_permit_file_path,
+      record.resellerPermitFileName,
+      (record as any).reseller_permit_file_name,
+      record.resellerPermitUploadedAt,
+      (record as any).reseller_permit_uploaded_at,
+    ].some((field) => typeof field === 'string' && field.trim().length > 0);
+  });
 
 interface HeaderProps {
   user: HeaderUser | null;
@@ -5953,6 +5987,7 @@ export function Header({
       }
       return null;
     })();
+    const orderDetailHasResellerPermit = hasUploadedResellerPermit(selectedOrder, localUser);
     const renderOrderDetailShimmer = (widthClass = 'w-24') => (
       <span className={`news-loading-line news-loading-shimmer inline-block align-middle ${widthClass}`} aria-hidden="true" />
     );
@@ -6147,7 +6182,13 @@ export function Header({
 	                      {`${stripeMeta?.cardBrand || 'Card'} •••• ${stripeMeta.cardLast4}`}
 	                    </p>
 	                  )}
-	                  {selectedOrder.physicianCertified && (
+	                  {orderDetailHasResellerPermit && (
+	                    <p>
+	                      <span className="font-semibold">Permit:</span>{' '}
+	                      Reseller permit uploaded
+	                    </p>
+	                  )}
+	                  {selectedOrder.physicianCertified && !orderDetailHasResellerPermit && accountIsDoctor && (
 	                    <p className="text-green-700 font-semibold">Physician certification acknowledged</p>
 	                  )}
 	                </div>

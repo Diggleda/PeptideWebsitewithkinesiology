@@ -33024,6 +33024,17 @@ function MainApp() {
 	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}
 	        onRejectProposal={isProposalReviewMode ? handleRejectActiveDelegationProposal : null}
 	        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
+        agreementTextPrefix={
+          isDelegateMode
+            ? null
+            : isDoctorRole(user?.role)
+              ? null
+              : isSalesPartner(user?.role, coerceOptionalBoolean(user?.salesRep?.isPartner))
+                ? `I acknowledge that I am placing this order as a ${getSalesPartnerLabel(coerceOptionalBoolean(user?.salesRep?.allowedRetail))}`
+                : user?.role && (isRep(user.role) || isAdmin(user.role))
+                  ? 'I acknowledge that I am placing this order under my PepPro account'
+                  : null
+        }
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}
 	        salesRepName={isDelegateMode ? null : user?.salesRep?.name || null}
