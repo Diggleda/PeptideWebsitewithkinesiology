@@ -12,6 +12,7 @@ router.get('/check-email', authController.checkEmail);
 router.get('/me', authenticate, authController.getProfile);
 router.put('/me', authenticate, authController.updateProfile);
 router.post('/me/reseller-permit', authenticate, authController.uploadResellerPermit);
+router.post('/me/reseller-permit/delete', authenticate, authController.deleteResellerPermit);
 router.delete('/me/reseller-permit', authenticate, authController.deleteResellerPermit);
 router.put('/me/cart', authenticate, authController.updateCart);
 router.post('/me/delete', authenticate, authController.deleteAccount);

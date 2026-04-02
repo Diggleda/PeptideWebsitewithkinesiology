@@ -1174,9 +1174,31 @@ export const authAPI = {
   },
 
   deleteResellerPermit: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/auth/me/reseller-permit`, {
-      method: 'DELETE',
-    });
+    const isMethodFallbackError = (error: any) => {
+      const status = typeof error?.status === 'number' ? error.status : null;
+      const details = error?.details;
+      const code = details && typeof details === 'object' ? (details as any).code : null;
+      const message = typeof error?.message === 'string' ? error.message : '';
+      return status === 405
+        || status === 404
+        || code === 'METHOD_NOT_ALLOWED'
+        || /method[_\s-]?not[_\s-]?allowed/i.test(message);
+    };
+
+    try {
+      return await fetchWithAuth(`${API_BASE_URL}/auth/me/reseller-permit/delete`, {
+        method: 'POST',
+        body: '{}',
+      });
+    } catch (error: any) {
+      if (!isMethodFallbackError(error)) {
+        throw error;
+      }
+
+      return fetchWithAuth(`${API_BASE_URL}/auth/me/reseller-permit`, {
+        method: 'DELETE',
+      });
+    }
   },
 
   updateCart: async (cart: PersistedCartItemPayload[]) => {
