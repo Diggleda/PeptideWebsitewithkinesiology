@@ -3291,9 +3291,17 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             None,
         )
 
+    summary_only = _is_basic_sales_rep_viewer_role(actor_role) and (
+        target_role == "admin" or _is_sales_lead_role(target_role)
+    )
+
     if actor_role != "admin":
         if target_is_sales_actor:
-            if normalized_target_user_id != actor_user_id and actor_allowed_rep_ids.isdisjoint(target_allowed_rep_ids):
+            if (
+                normalized_target_user_id != actor_user_id
+                and not summary_only
+                and actor_allowed_rep_ids.isdisjoint(target_allowed_rep_ids)
+            ):
                 raise _service_error("USER_NOT_FOUND", 404)
         else:
             if not actor_allowed_rep_ids:
@@ -3303,10 +3311,6 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             ).strip()
             if not doctor_rep_id or doctor_rep_id not in actor_allowed_rep_ids:
                 raise _service_error("USER_NOT_FOUND", 404)
-
-    summary_only = _is_basic_sales_rep_viewer_role(actor_role) and (
-        target_role == "admin" or _is_sales_lead_role(target_role)
-    )
 
     if summary_only:
         address_parts = [

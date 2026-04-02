@@ -9813,13 +9813,7 @@ function MainApp() {
         entryRole || "doctor",
       );
       setSalesDoctorDetailLoading(false);
-      setSalesDoctorDetailHydrating(!restrictSalesActorModalView);
-
-      // Basic sales reps only get the summary-only modal for admin/sales lead accounts.
-      // Avoid the follow-up modal-detail request entirely so alias/legacy ids don't throw 404s.
-      if (restrictSalesActorModalView) {
-        return;
-      }
+      setSalesDoctorDetailHydrating(true);
 
       const shouldFetchSupplementalProfile =
         Boolean(id) &&

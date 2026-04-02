@@ -254,6 +254,35 @@ class SalesRepOrderDetailTests(unittest.TestCase):
         self.assertEqual(result["user"]["isPartner"], True)
         self.assertEqual(result["user"]["allowedRetail"], False)
 
+    def test_modal_detail_allows_summary_only_sales_actor_lookup_without_rep_overlap(self):
+        service = self.order_service
+        actor = {
+            "id": "rep-user-1",
+            "role": "sales_rep",
+            "email": "rep@example.com",
+        }
+        target = {
+            "id": "admin-1",
+            "role": "admin",
+            "name": "Admin One",
+            "email": "admin@example.com",
+            "phone": "317-555-0199",
+        }
+        actor_rep_record = {
+            "id": "rep-1",
+            "legacyUserId": "rep-user-1",
+            "email": "rep@example.com",
+            "phone": "317-555-0101",
+        }
+
+        with patch.object(service.user_repository, "get_all", return_value=[actor, target]), \
+            patch.object(service.sales_rep_repository, "get_all", return_value=[actor_rep_record]):
+            result = service.get_sales_modal_detail(actor=actor, target_user_id="admin-1")
+
+        self.assertEqual(result["summaryOnly"], True)
+        self.assertEqual(result["user"]["phone"], "317-555-0199")
+        self.assertEqual(result["user"]["email"], "admin@example.com")
+
 
 if __name__ == "__main__":
     unittest.main()
