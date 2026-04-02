@@ -466,8 +466,8 @@ const formatRoleLabel = (
   ) {
     return "Sales Rep";
   }
-  if (normalized === "doctor") return "Doctor";
-  if (normalized === "test_doctor") return "Test Doctor";
+  if (normalized === "doctor") return "Physician";
+  if (normalized === "test_doctor") return "Test Physician";
   return role ? String(role) : "—";
 };
 const isTestDoctor = (role?: string | null) =>
@@ -4266,9 +4266,9 @@ function MainApp() {
     : 0;
   const delegateDoctorNameForShare = useMemo(() => {
     const raw = typeof delegateContext?.doctorName === "string" ? delegateContext.doctorName.trim() : "";
-    if (!raw) return "Doctor";
+    if (!raw) return "Physician";
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
-    return stripped || "Doctor";
+    return stripped || "Physician";
   }, [delegateContext?.doctorName]);
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
@@ -9800,7 +9800,13 @@ function MainApp() {
         entryRole || "doctor",
       );
       setSalesDoctorDetailLoading(false);
-      setSalesDoctorDetailHydrating(true);
+      setSalesDoctorDetailHydrating(!restrictSalesActorModalView);
+
+      // Basic sales reps only get the summary-only modal for admin/sales lead accounts.
+      // Avoid the follow-up modal-detail request entirely so alias/legacy ids don't throw 404s.
+      if (restrictSalesActorModalView) {
+        return;
+      }
 
       const shouldFetchSupplementalProfile =
         Boolean(id) &&
@@ -10501,7 +10507,7 @@ function MainApp() {
           ? orderAny.doctor_name.trim()
           : "") ||
         normalizedDoctorEmail ||
-        "Doctor";
+        "Physician";
 
       const candidateIds = new Set(
         [
@@ -14216,7 +14222,8 @@ function MainApp() {
       const userId = String(entry?.userId ?? entry?.id ?? "").trim();
       if (!userId) return null;
       const name =
-        String(entry?.name ?? entry?.email ?? `Doctor ${userId}`).trim() || `Doctor ${userId}`;
+        String(entry?.name ?? entry?.email ?? `Physician ${userId}`).trim() ||
+        `Physician ${userId}`;
       const email = typeof entry?.email === "string" ? String(entry.email).trim() : null;
       const role = normalizeRole(entry?.role || "doctor") || "doctor";
       return {
@@ -14532,6 +14539,10 @@ function MainApp() {
       salesDoctorDetail?.role,
     );
   }, [salesDoctorDetail?.role, salesDoctorDetail?.summaryOnly, user?.role]);
+  const canSeeSalesDoctorFullModalDetails =
+    isAdmin(user?.role) || isSalesLead(user?.role);
+  const canSeeSalesActorCommerceBreakdown =
+    isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role);
 
 	  useEffect(() => {
 	    const canSeeOwner =
@@ -17541,14 +17552,14 @@ function MainApp() {
       if (referral.referrerDoctorId) {
         lookup.set(
           referral.referrerDoctorId,
-          referral.referrerDoctorName || "Doctor",
+          referral.referrerDoctorName || "Physician",
         );
       }
       if (referral.convertedDoctorId) {
         const convertedName =
           referral.referrerDoctorName ??
           referral.referredContactName ??
-          "Converted doctor";
+          "Converted physician";
         lookup.set(referral.convertedDoctorId, convertedName);
       }
     }
@@ -17697,7 +17708,7 @@ function MainApp() {
 	              doc.name ||
 	              [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() ||
 	              doc.email ||
-	              "Doctor",
+	              "Physician",
 	            email: doc.email || doc.doctorEmail || doc.userEmail || null,
 	            profileImageUrl:
 	              doc.profileImageUrl || doc.profile_image_url || null,
@@ -17882,7 +17893,7 @@ function MainApp() {
               (order as any)?.billing_name ||
               (order as any)?.billing?.lastName ||
               (order as any)?.billing?.last_name ||
-              "Doctor",
+              "Physician",
             doctorProfileImageUrl:
               doctorInfo?.profileImageUrl ||
               (original as any)?.doctorProfileImageUrl ||
@@ -18596,7 +18607,7 @@ function MainApp() {
         doctorInfo?.name ||
         salesRepDoctorsById.get(doctorId) ||
         order.doctorName ||
-        "Doctor";
+        "Physician";
       const doctorEmail = doctorInfo?.email || order.doctorEmail || null;
       const doctorAvatar =
         doctorInfo?.profileImageUrl ||
@@ -18624,7 +18635,7 @@ function MainApp() {
           .join(" ")
           .trim() ||
         (order as any)?.billing_name ||
-        "Doctor";
+        "Physician";
 	      const doctorEmailFromOrder =
 	        doctorEmail ||
 	        (order as any)?.billing?.email ||
@@ -22489,7 +22500,7 @@ function MainApp() {
     if (!referralForm.contactName.trim()) {
       setReferralStatusMessage({
         type: "error",
-        message: "Please provide the doctor’s name before submitting.",
+        message: "Please provide the physician’s name before submitting.",
       });
       return;
     }
@@ -23735,7 +23746,7 @@ function MainApp() {
 	                      orderAny?.doctor_email ||
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
-	                      "Unknown doctor";
+	                      "Unknown physician";
                       const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabel);
                       const canOpenDoctorModal = Boolean(doctorModalEntry);
 	                    const orderPlacedAt =
@@ -23895,7 +23906,7 @@ function MainApp() {
 	                      orderAny?.doctor_email ||
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
-	                      "Unknown doctor";
+	                      "Unknown physician";
                     const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabel);
                     const canOpenDoctorModal = Boolean(doctorModalEntry);
                     const orderPlacedAt =
@@ -24010,7 +24021,7 @@ function MainApp() {
               <div className="min-w-0 flex-1 pr-2">
               <h4 className="text-lg font-semibold text-slate-900">Hand Delivery</h4>
               <p className="text-sm text-slate-600">
-                Doctors assigned to you. Check to enable hand delivery + free shipping messaging.
+                Physicians assigned to you. Check to enable hand delivery + free shipping messaging.
               </p>
               </div>
               <Button
@@ -25139,7 +25150,13 @@ function MainApp() {
 		                      ? "Everyone in the PepPro network."
 		                      : isSalesLead(user?.role)
 		                        ? "The PepPro team and your clients."
-		                        : "Your clients, sales leads and admin."}
+		                        : `Your clients, ${
+		                            (liveClients || []).filter((entry: any) =>
+		                              isSalesLead(entry?.role),
+		                            ).length === 1
+		                              ? "sales lead"
+		                              : "sales leads"
+		                          } and admin.`}
 		                  </p>
 		                </div>
 
@@ -25313,8 +25330,8 @@ function MainApp() {
 		                                <option value="admin">Admin</option>
 		                                <option value="sales_lead">Sales Lead</option>
 		                                <option value="sales_rep">Sales / Partner / Test Rep</option>
-		                                <option value="doctor">Doctors</option>
-		                                <option value="test_doctor">Test doctors</option>
+		                                <option value="doctor">Physicians</option>
+		                                <option value="test_doctor">Test physicians</option>
 		                              </select>
                                       <span className="product-card-select__chevron" aria-hidden="true">
                                         <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
@@ -25337,7 +25354,7 @@ function MainApp() {
 	                            <div className="flex w-full min-w-0 flex-col gap-2 sm:min-w-[900px]">
 		                          {liveUsers.map((entry: any) => {
 		                        const avatarUrl = resolveLivePresenceAvatarUrl(entry);
-		                        const displayName = entry.name || entry.email || "Doctor";
+		                        const displayName = entry.name || entry.email || "Physician";
 		                        const resolveLastSeenMs = () => {
 		                          const raw =
 		                            entry?.lastInteractionAt ||
@@ -25410,7 +25427,7 @@ function MainApp() {
 		                          }
 		                          if (role === "doctor") {
 		                            return {
-		                              label: "Doctor",
+		                              label: "Physician",
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
@@ -25419,7 +25436,7 @@ function MainApp() {
 		                          }
 		                          if (role === "test_doctor") {
 		                            return {
-		                              label: "Test Doctor",
+		                              label: "Test Physician",
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
@@ -25971,7 +25988,7 @@ function MainApp() {
 	                              <div className="flex min-w-0 shrink-0 items-center gap-2">
 	                              <button
                                 type="button"
-                                aria-label="Toggle Delegate Links doctors"
+                                aria-label="Toggle Delegate Links physicians"
                                 aria-expanded={patientLinksDoctorsOpen}
                                 onClick={() => {
                                   setPatientLinksDoctorsOpen((current) => !current);
@@ -26017,7 +26034,7 @@ function MainApp() {
                                       onChange={(event) =>
                                         setPatientLinksDoctorSearch(event.target.value)
                                       }
-                                      placeholder="Search doctors..."
+                                      placeholder="Search physicians..."
                                       disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
                                       className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-3 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
                                     />
@@ -26025,7 +26042,7 @@ function MainApp() {
                                 ) : null}
                                 <button
                                   type="button"
-                                  aria-label="Toggle Delegate Links doctors"
+                                  aria-label="Toggle Delegate Links physicians"
                                   aria-expanded={patientLinksDoctorsOpen}
                                   onClick={() => {
                                     setPatientLinksDoctorsOpen((current) => !current);
@@ -26065,7 +26082,7 @@ function MainApp() {
                                     onChange={(event) =>
                                       setPatientLinksDoctorSearch(event.target.value)
                                     }
-                                    placeholder="Search doctors..."
+                                    placeholder="Search physicians..."
                                     disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
                                     className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-3 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
                                   />
@@ -26092,9 +26109,9 @@ function MainApp() {
                                 style={{ maxHeight: "calc(5 * 3.5rem + 4 * 0.5rem)" }}
                               >
                                 {patientLinksDoctorOptions.length === 0 ? (
-                                  <p className="text-xs text-slate-500">No doctors available.</p>
+                                  <p className="text-xs text-slate-500">No physicians available.</p>
                                 ) : filteredPatientLinksDoctorOptions.length === 0 ? (
-                                  <p className="text-xs text-slate-500">No doctors match your search.</p>
+                                  <p className="text-xs text-slate-500">No physicians match your search.</p>
                                 ) : (
                                   filteredPatientLinksDoctorOptions.map((doctor) => {
                                     const checked = patientLinksDoctorUserIds.includes(doctor.userId);
@@ -26668,8 +26685,8 @@ function MainApp() {
                               <option value="admin">Admin</option>
 	                              <option value="sales_rep">Sales / Partner / Test Rep</option>
 	                              <option value="sales_lead">Sales Lead</option>
-	                              <option value="doctor">Doctors</option>
-	                              <option value="test_doctor">Test doctors</option>
+	                              <option value="doctor">Physicians</option>
+	                              <option value="test_doctor">Test physicians</option>
                             </select>
                             <span className="product-card-select__chevron" aria-hidden="true">
                               <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
@@ -26734,7 +26751,7 @@ function MainApp() {
 				                                }
 				                                if (role === "doctor") {
 				                                  return {
-				                                    label: "Doctor",
+				                                    label: "Physician",
 				                                    style: {
 				                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
@@ -26743,7 +26760,7 @@ function MainApp() {
 			                                }
 			                                if (role === "test_doctor") {
 			                                  return {
-			                                    label: "Test Doctor",
+			                                    label: "Test Physician",
 			                                    style: {
 			                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
@@ -29767,7 +29784,7 @@ function MainApp() {
 		                                              }}
 		                                              className="prospect-permit-checkbox-input"
 		                                            />
-		                                            Doctor does not have a resellers permit
+		                                            Physician does not have a resellers permit
 		                                          </label>
 			                                          <div className="prospect-permit-file-picker">
 				                                            <input
@@ -31048,7 +31065,7 @@ function MainApp() {
           <div className="space-y-5">
             <div className="space-y-2">
               <Input
-                id="doctor-reseller-permit-upload"
+                id="physician-reseller-permit-upload"
                 ref={doctorResellerPermitInputRef}
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.gif"
@@ -32882,7 +32899,7 @@ function MainApp() {
 		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
 		                          <p className="mt-1 text-sm text-slate-700">
 		                            Your proposal has been sent to{' '}
-		                            {delegateDoctorNameForShare === 'Doctor'
+		                            {delegateDoctorNameForShare === 'Physician'
 		                              ? 'your physician'
 		                              : `Dr. ${delegateDoctorNameForShare}`}
 		                            .
@@ -33577,7 +33594,7 @@ function MainApp() {
                     (isAdmin(user?.role) || isRep(user?.role)) && (
 		                <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
 		                  <p className="text-sm font-semibold justify-center text-slate-800">
-                        Shared Notes (Rep and Admin only)
+                        Your Notes
 		                  </p>
 		                  <TimestampedNotesField
 		                    value={salesDoctorNoteDraft}
@@ -33585,7 +33602,7 @@ function MainApp() {
 		                    placeholder={
 		                      salesDoctorNotesLoading
 		                        ? "Loading notes..."
-		                        : "Add notes about this doctor"
+		                        : "Add notes about this physician"
 		                    }
 		                    className="text-sm notes-textarea"
 		                    disabled={salesDoctorNotesLoading}
@@ -33659,7 +33676,7 @@ function MainApp() {
 	                  )}
 	                </div>
 	                <div className="min-w-0 space-y-1">
-				                    {((isAdmin(user?.role) || isRep(user?.role)) &&
+				                    {(canSeeSalesActorCommerceBreakdown &&
                             (isRep(salesDoctorDetail.role) ||
                             isSalesLead(salesDoctorDetail.role) ||
                             isAdmin(salesDoctorDetail.role))) ? (
@@ -33980,26 +33997,32 @@ function MainApp() {
 		                        })()}
 		                      </>
 	                    ) : isDoctorRole(salesDoctorDetail.role) ? (
-                      <>
-                        <p className="text-sm text-slate-600">
-                          Order Quantity:{" "}
-                          {salesDoctorDetail.orderQuantity ??
-                            salesDoctorDetail.orders.filter((order) =>
-                              shouldCountRevenueForStatus(order.status),
-                            ).length}
-                        </p>
-                        <p className="text-sm text-slate-600">
-                          Total Order Value:{" "}
-                          {formatCurrency(
-                            salesDoctorDetail.totalOrderValue ?? salesDoctorDetail.revenue,
-                          )}
-                        </p>
-                        {salesDoctorDetail.hasResellerPermitUploaded === true && (
+                      canSeeSalesDoctorFullModalDetails ? (
+                        <>
                           <p className="text-sm text-slate-600">
-                            Resellers Permit Uploaded
+                            Order Quantity:{" "}
+                            {salesDoctorDetail.orderQuantity ??
+                              salesDoctorDetail.orders.filter((order) =>
+                                shouldCountRevenueForStatus(order.status),
+                              ).length}
                           </p>
-                        )}
-                      </>
+                          <p className="text-sm text-slate-600">
+                            Total Order Value:{" "}
+                            {formatCurrency(
+                              salesDoctorDetail.totalOrderValue ?? salesDoctorDetail.revenue,
+                            )}
+                          </p>
+                          {salesDoctorDetail.hasResellerPermitUploaded === true && (
+                            <p className="text-sm text-slate-600">
+                              Resellers Permit Uploaded
+                            </p>
+                          )}
+                        </>
+                      ) : salesDoctorDetail.hasResellerPermitUploaded === true ? (
+                        <p className="text-sm text-slate-600">
+                          Resellers Permit Uploaded
+                        </p>
+                      ) : null
                     ) : (
                       <>
                         <p className="text-sm text-slate-600">
@@ -34014,8 +34037,8 @@ function MainApp() {
               </div>
                   )}
 
-	              {!hideRepViewerSalesActorCommerceSections &&
-                  (isAdmin(user?.role) || isRep(user?.role)) &&
+	              {canSeeSalesDoctorFullModalDetails &&
+                  !hideRepViewerSalesActorCommerceSections &&
                   !isDoctorRole(salesDoctorDetail.role) && (() => {
                 const formatDateObject = (date?: Date | null) => {
                   if (!date) return null;
@@ -34166,7 +34189,13 @@ function MainApp() {
                 );
               })()}
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div
+                className={`grid grid-cols-1 gap-4 sm:grid-cols-2${
+                  canSeeSalesDoctorFullModalDetails && isDoctorRole(salesDoctorDetail.role)
+                    ? " xl:grid-cols-3"
+                    : ""
+                }`}
+              >
                 <div className="min-w-0 space-y-2">
                   <p className="text-sm font-semibold text-slate-700">
                     Contact
@@ -34291,7 +34320,7 @@ function MainApp() {
                     );
                   })()}
                 </div>
-                {isDoctorRole(salesDoctorDetail.role) ? (
+                {canSeeSalesDoctorFullModalDetails && isDoctorRole(salesDoctorDetail.role) ? (
                   <div className="min-w-0 space-y-2 sm:col-span-2 xl:col-span-1">
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
@@ -34316,158 +34345,8 @@ function MainApp() {
                 ) : null}
               </div>
 
-	              {!(isAdmin(user?.role) || isRep(user?.role)) &&
-                  !isDoctorRole(salesDoctorDetail.role) && (() => {
-                const formatDateObject = (date?: Date | null) => {
-                  if (!date) return null;
-                  if (Number.isNaN(date.getTime())) return null;
-                  return date.toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  });
-                };
-                const formatOrdersPeriodLabel = (
-                  startRaw?: string | null,
-                  endRaw?: string | null,
-                ) => {
-                  const start = startRaw ? formatDate(String(startRaw)) : null;
-                  const end = endRaw ? formatDate(String(endRaw)) : null;
-                  if (start && end && start !== "—" && end !== "—") {
-                    return `${start} - ${end}`;
-                  }
-                  if (start && start !== "—") {
-                    return `Since ${start}`;
-                  }
-                  if (end && end !== "—") {
-                    return `Until ${end}`;
-                  }
-                  return "All time";
-                };
-                const hasCustomRange =
-                  Boolean(salesDoctorCommissionRange?.from) &&
-                  Boolean(salesDoctorCommissionRange?.to);
-                const customRangeLabel = hasCustomRange
-                  ? (() => {
-                      const start = formatDateObject(
-                        salesDoctorCommissionRange?.from || null,
-                      );
-                      const end = formatDateObject(
-                        salesDoctorCommissionRange?.to || null,
-                      );
-                      return start && end ? `${start} - ${end}` : start || end || null;
-                    })()
-                  : null;
-                const periodLabel = formatOrdersPeriodLabel(
-                  adminProductsCommissionMeta?.periodStart ??
-                    salesRepPeriodStart ??
-                    salesRepSalesSummaryMeta?.periodStart ??
-                    salesRepProductSalesSummaryMeta?.periodStart ??
-                    null,
-                  adminProductsCommissionMeta?.periodEnd ??
-                    salesRepPeriodEnd ??
-                    salesRepSalesSummaryMeta?.periodEnd ??
-                    salesRepProductSalesSummaryMeta?.periodEnd ??
-                    null,
-                );
-
-                return (
-                  <div className="border-t border-slate-200 pt-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-800">Timeframe</p>
-                        <p className="text-xs text-slate-500">
-                          {customRangeLabel || periodLabel}
-                        </p>
-                      </div>
-                      <Popover.Root
-                        open={salesDoctorCommissionPickerOpen}
-                        onOpenChange={setSalesDoctorCommissionPickerOpen}
-                      >
-                        <Popover.Trigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="header-home-button squircle-sm h-8 w-8"
-                            aria-label="Select user modal date range"
-                            title="Select date range"
-                          >
-                            <CalendarDays aria-hidden="true" />
-                          </Button>
-                        </Popover.Trigger>
-                        <Popover.Portal>
-                          <Popover.Content
-                            side="bottom"
-                            align="start"
-                            sideOffset={8}
-                            className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-                          >
-                            <div>
-                              <DayPicker
-                                mode="range"
-                                numberOfMonths={1}
-                                selected={salesDoctorCommissionRange}
-                                onSelect={(range) => {
-                                  setSalesDoctorCommissionRange(range);
-                                  if (range?.from && range?.to) {
-                                    setSalesRepPeriodStart(formatDateInputValue(range.from));
-                                    setSalesRepPeriodEnd(formatDateInputValue(range.to));
-                                  }
-                                }}
-                                defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
-                              />
-                            </div>
-                            <div className="mt-3 flex items-center justify-between">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-slate-700"
-                                onClick={() => {
-                                  const cleared = getClearedSalesDoctorCommissionWindow();
-                                  setSalesDoctorCommissionRange(cleared.range);
-                                  setSalesRepPeriodStart(cleared.start);
-                                  setSalesRepPeriodEnd(cleared.end);
-                                  applyAdminDashboardPeriod();
-                                }}
-                              >
-                                Clear
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-                                onClick={() => {
-                                  if (
-                                    salesDoctorCommissionRange?.from &&
-                                    salesDoctorCommissionRange?.to
-                                  ) {
-                                    setSalesRepPeriodStart(
-                                      formatDateInputValue(salesDoctorCommissionRange.from),
-                                    );
-                                    setSalesRepPeriodEnd(
-                                      formatDateInputValue(salesDoctorCommissionRange.to),
-                                    );
-                                  }
-                                  applyAdminDashboardPeriod();
-                                  setSalesDoctorCommissionPickerOpen(false);
-                                }}
-                              >
-                                Done
-                              </Button>
-                            </div>
-                            <Popover.Arrow className="calendar-popover-arrow" />
-                          </Popover.Content>
-                        </Popover.Portal>
-                      </Popover.Root>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {!hideRepViewerSalesActorCommerceSections &&
+              {canSeeSalesDoctorFullModalDetails &&
+                !hideRepViewerSalesActorCommerceSections &&
                 (() => {
                   const showMetricsSkeleton =
                     salesDoctorDetailHydrating &&
@@ -34496,7 +34375,8 @@ function MainApp() {
                   );
                 })()}
 
-			              {!hideRepViewerSalesActorCommerceSections && (
+			              {canSeeSalesDoctorFullModalDetails &&
+                  !hideRepViewerSalesActorCommerceSections && (
               <div className="space-y-2">
                     {isDoctorRole(salesDoctorDetail.role) &&
                       (() => {
@@ -34710,7 +34590,7 @@ function MainApp() {
                       return (
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
                           <p className="text-sm font-semibold text-slate-700">
-                            {isAdmin(user?.role) || isRep(user?.role)
+                            {canSeeSalesActorCommerceBreakdown
                               ? isDoctorRole(salesDoctorDetail.role)
                                 ? "Orders"
                                 : "Orders by type"
@@ -34750,8 +34630,7 @@ function MainApp() {
 			                    salesDoctorCommissionRange,
 			                  );
                       const forceSingleOrdersList =
-                        !isAdmin(user?.role) &&
-                        !isRep(user?.role)
+                        !canSeeSalesActorCommerceBreakdown
                           ? true
                           : isDoctorRole(salesDoctorDetail.role);
 		                  const personalRevenueForDisplay =

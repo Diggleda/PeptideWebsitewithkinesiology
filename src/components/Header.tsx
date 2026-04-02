@@ -7500,7 +7500,7 @@ export function Header({
   const delegateDoctorLabel = (() => {
     const raw = typeof delegateDoctorName === 'string' ? delegateDoctorName.trim() : '';
     if (!raw) return 'Physician';
-    if (raw.toLowerCase() === 'doctor') return 'Physician';
+    if (raw.toLowerCase() === 'doctor' || raw.toLowerCase() === 'physician') return 'Physician';
     return `Dr. ${raw}`;
   })();
 

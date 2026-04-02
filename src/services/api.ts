@@ -343,6 +343,16 @@ const clearAuthToken = () => {
   clearSessionStartedAt();
 };
 
+const throwLocalAuthRequired = (authCode: string = 'TOKEN_REQUIRED'): never => {
+  clearAuthToken();
+  clearSessionId();
+  const error = new Error('Access token required');
+  (error as any).status = 401;
+  (error as any).code = 'AUTH_REQUIRED';
+  (error as any).authCode = authCode;
+  throw error;
+};
+
 const dispatchApiReachability = (payload: { ok: boolean; status?: number | null; message?: string | null }) => {
   try {
     if (typeof window === 'undefined') return;
@@ -1009,6 +1019,13 @@ export const authAPI = {
   },
 
 	  getCurrentUser: async () => {
+      if (!getAuthToken()) {
+        clearAuthToken();
+        clearSessionId();
+        setAuthUserId(null);
+        setAuthEmail(null);
+        return null;
+      }
 	    try {
 	      const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`, { method: 'GET', cache: 'no-store' });
 	      setAuthUserId((user as any)?.id);
@@ -1285,6 +1302,9 @@ export const settingsAPI = {
     timeoutMs: number = 25000,
     signal?: AbortSignal,
   ) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (window) {
       params.set('window', window);
@@ -1302,12 +1322,18 @@ export const settingsAPI = {
     });
   },
   pingPresence: async (payload?: { kind?: 'heartbeat' | 'interaction'; isIdle?: boolean }) => {
+    if (!getAuthToken()) {
+      return null;
+    }
     return fetchWithAuth(`${API_BASE_URL}/settings/presence`, {
       method: 'POST',
       body: JSON.stringify(payload || {}),
     });
   },
   getLiveClients: async (salesRepId?: string | null) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (salesRepId) {
       params.set('salesRepId', String(salesRepId));
@@ -1323,6 +1349,9 @@ export const settingsAPI = {
     timeoutMs: number = 25000,
     signal?: AbortSignal,
   ) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (salesRepId) {
       params.set('salesRepId', String(salesRepId));
@@ -1341,6 +1370,9 @@ export const settingsAPI = {
   },
 
   getLiveUsers: async () => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     return fetchWithAuth(`${API_BASE_URL}/settings/live-users`, {
       method: 'GET',
     });
@@ -1351,6 +1383,9 @@ export const settingsAPI = {
     timeoutMs: number = 25000,
     signal?: AbortSignal,
   ) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (etag) {
       params.set('etag', String(etag));
@@ -2278,6 +2313,9 @@ export const referralAPI = {
     scope?: 'mine' | 'all';
     context?: 'dashboard' | 'modal';
   }) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (options?.salesRepId) {
       params.set('salesRepId', options.salesRepId);

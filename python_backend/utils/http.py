@@ -17,6 +17,7 @@ _PUBLIC_SERVICE_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bshipstation\b", re.IGNORECASE), "shipping provider"),
     (re.compile(r"\bshipengine\b", re.IGNORECASE), "shipping provider"),
 ]
+_ERROR_CODE_PATTERN = re.compile(r"^[A-Z0-9]+(?:_[A-Z0-9]+)*$")
 
 
 def _sanitize_public_message(message: str) -> str:
@@ -39,7 +40,45 @@ def service_error(message: str, status: int) -> Exception:
     """Create a ValueError with an HTTP status code for handle_action to catch."""
     err = ValueError(message)
     setattr(err, "status", status)
+    normalized = str(message or "").strip()
+    if _ERROR_CODE_PATTERN.fullmatch(normalized):
+        setattr(err, "error_code", normalized)
     return err
+
+
+def _default_code_for_status(status: int) -> str:
+    if status == 400:
+        return "BAD_REQUEST"
+    if status == 401:
+        return "UNAUTHORIZED"
+    if status == 403:
+        return "FORBIDDEN"
+    if status == 404:
+        return "NOT_FOUND"
+    if status == 409:
+        return "CONFLICT"
+    if status == 413:
+        return "PAYLOAD_TOO_LARGE"
+    if status == 415:
+        return "UNSUPPORTED_MEDIA_TYPE"
+    if status == 422:
+        return "UNPROCESSABLE_ENTITY"
+    if status == 429:
+        return "RATE_LIMITED"
+    return "INTERNAL_ERROR" if status >= 500 else "ERROR"
+
+
+def _extract_error_code(error: Exception, status: int, message: str) -> str:
+    explicit = getattr(error, "error_code", None)
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    candidate = getattr(error, "code", None)
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate.strip()
+    normalized_message = str(message or "").strip()
+    if _ERROR_CODE_PATTERN.fullmatch(normalized_message):
+        return normalized_message
+    return _default_code_for_status(status)
 
 
 def require_admin() -> None:
@@ -83,7 +122,7 @@ def json_error(error: Exception) -> Response:
         if isinstance(description, str) and description.strip():
             message = description.strip()
     message = _sanitize_public_message(message)
-    return jsonify({"error": message}), status
+    return jsonify({"error": message, "code": _extract_error_code(error, status, message)}), status
 
 
 def handle_action(action: Callable[[], Any], status: int = 200) -> Response:

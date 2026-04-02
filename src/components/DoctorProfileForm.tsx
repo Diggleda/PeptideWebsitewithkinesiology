@@ -351,7 +351,7 @@ export function DoctorProfileForm({
                 {profileImageUrl ? (
                   <img
                     src={profileImageUrl}
-                    alt={`${name.trim() || user?.name || 'Doctor'} profile`}
+                    alt={`${name.trim() || user?.name || 'Physician'} profile`}
                     className={avatarImageClassName}
                     style={avatarImageStyle}
                   />
@@ -414,9 +414,9 @@ export function DoctorProfileForm({
         <div className="flex-1 space-y-3">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="doctor-profile-name">Name</Label>
+              <Label htmlFor="physician-profile-name">Name</Label>
               <Input
-                id="doctor-profile-name"
+                id="physician-profile-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 autoComplete="name"
@@ -426,9 +426,9 @@ export function DoctorProfileForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="doctor-profile-email">Email</Label>
+              <Label htmlFor="physician-profile-email">Email</Label>
               <Input
-                id="doctor-profile-email"
+                id="physician-profile-email"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -441,9 +441,9 @@ export function DoctorProfileForm({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="doctor-profile-area">Greater Area</Label>
+              <Label htmlFor="physician-profile-area">Greater Area</Label>
               <Input
-                id="doctor-profile-area"
+                id="physician-profile-area"
                 value={greaterArea}
                 onChange={(event) => setGreaterArea(event.target.value)}
                 placeholder="e.g. Greater Chicago Area"
@@ -454,9 +454,9 @@ export function DoctorProfileForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="doctor-profile-focus">Study Focus</Label>
+              <Label htmlFor="physician-profile-focus">Study Focus</Label>
               <Input
-                id="doctor-profile-focus"
+                id="physician-profile-focus"
                 value={studyFocus}
                 onChange={(event) => setStudyFocus(event.target.value)}
                 placeholder="e.g. metabolic response and recovery"
@@ -471,9 +471,9 @@ export function DoctorProfileForm({
       </div>
 
       <div className={bioSectionClassName}>
-        <Label htmlFor="doctor-profile-bio">Bio</Label>
+        <Label htmlFor="physician-profile-bio">Bio</Label>
         <Textarea
-          id="doctor-profile-bio"
+          id="physician-profile-bio"
           value={bio}
           onChange={(event) => setBio(event.target.value)}
           rows={5}

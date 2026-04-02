@@ -3130,11 +3130,13 @@ const getSalesModalDetail = async ({ actor, targetUserId }) => {
         ),
       ].filter(Boolean),
     );
+  const summaryOnly = isBasicSalesRepViewerRole(actorRole)
+    && (targetRole === 'admin' || isSalesLeadRole(targetRole));
 
   if (actorRole !== 'admin') {
     if (targetIsSalesActor) {
       const isSelfLookup = resolvedTargetUserId && actorUserId && resolvedTargetUserId === actorUserId;
-      if (!isSelfLookup && !hasSetIntersection(actorAllowedRepIds, targetAllowedRepIds)) {
+      if (!isSelfLookup && !summaryOnly && !hasSetIntersection(actorAllowedRepIds, targetAllowedRepIds)) {
         const error = new Error('USER_NOT_FOUND');
         error.status = 404;
         throw error;
@@ -3148,9 +3150,6 @@ const getSalesModalDetail = async ({ actor, targetUserId }) => {
       }
     }
   }
-
-  const summaryOnly = isBasicSalesRepViewerRole(actorRole)
-    && (targetRole === 'admin' || isSalesLeadRole(targetRole));
 
   const targetSalesRepId = [
     targetUser?.salesRepId,

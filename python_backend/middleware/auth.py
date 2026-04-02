@@ -101,6 +101,8 @@ def require_auth(func: F) -> F:
         exempt_multi_session = (payload.get("email") or "").strip().lower() == "test@doctor.com"
 
         user = user_repository.find_by_id(str(user_id))
+        if not isinstance(user, dict):
+            user = None
         stored_session_id = user.get("sessionId") if user else None
 
         if not stored_session_id or not isinstance(stored_session_id, str):
@@ -129,7 +131,6 @@ def require_auth(func: F) -> F:
         session_start_dt = (
             issued_at_dt
             or _parse_datetime((user or {}).get("lastLoginAt"))
-            or _parse_datetime((rep or {}).get("lastLoginAt"))
         )
         if session_start_dt and (now_dt - session_start_dt).total_seconds() >= session_max_s:
             try:

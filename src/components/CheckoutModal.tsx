@@ -638,7 +638,7 @@ export function CheckoutModal({
   const showDualPricing = proposalMode && !isDelegateFlow && proposalMarkupPercentValue != null;
   const delegateComparisonPricingMode: PricingMode = 'wholesale';
   const delegateDoctorDisplayName = isDelegateFlow
-    ? (String(delegateDoctorName || '').trim().toLowerCase() === 'doctor'
+    ? (['doctor', 'physician'].includes(String(delegateDoctorName || '').trim().toLowerCase())
       ? 'Physician'
       : `Dr. ${delegateDoctorName}`)
     : null;
