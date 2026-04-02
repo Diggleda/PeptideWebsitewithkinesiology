@@ -65,6 +65,30 @@ const normalizeBooleanFlag = (value) => {
   }
   return false;
 };
+const normalizeOptionalBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (value == null) return null;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'y'
+      || normalized === 'on') {
+      return true;
+    }
+    if (normalized === '0'
+      || normalized === 'false'
+      || normalized === 'no'
+      || normalized === 'n'
+      || normalized === 'off') {
+      return false;
+    }
+  }
+  return null;
+};
 
 const requireAdmin = (req, res, next) => {
   const currentUser = req.currentUser || req.user || null;
@@ -119,6 +143,29 @@ const resolveCurrentSalesRepRecord = (user) => {
   if (byUserId) return byUserId;
   const byEmail = user?.email ? salesRepRepository.findByEmail(String(user.email)) : null;
   return byEmail || null;
+};
+
+const resolveNetworkPartnerFlags = (user) => {
+  const role = normalizeRole(user?.role);
+  const repLikeRole = role === 'sales_rep'
+    || role === 'sales_partner'
+    || role === 'rep'
+    || role === 'test_rep';
+  if (!repLikeRole) {
+    return {
+      isPartner: normalizeOptionalBooleanFlag(user?.isPartner ?? user?.is_partner),
+      allowedRetail: normalizeOptionalBooleanFlag(user?.allowedRetail ?? user?.allowed_retail),
+    };
+  }
+  const rep = resolveCurrentSalesRepRecord(user);
+  return {
+    isPartner: rep
+      ? normalizeBooleanFlag(rep?.isPartner ?? rep?.is_partner)
+      : normalizeOptionalBooleanFlag(user?.isPartner ?? user?.is_partner),
+    allowedRetail: rep
+      ? normalizeOptionalBooleanFlag(rep?.allowedRetail ?? rep?.allowed_retail)
+      : normalizeOptionalBooleanFlag(user?.allowedRetail ?? user?.allowed_retail),
+  };
 };
 
 const isDoctorUser = (user) => {
@@ -955,6 +1002,7 @@ const buildLiveUsersPayload = () => {
   const idleThresholdMs = idleThresholdMinutes * 60 * 1000;
 
   const normalized = userRepository.getAll().map((user) => {
+    const partnerFlags = resolveNetworkPartnerFlags(user);
     const snapshot = computePresenceSnapshot({
       user,
       nowMs,
@@ -970,6 +1018,8 @@ const buildLiveUsersPayload = () => {
       greaterArea: user.greaterArea || null,
       studyFocus: user.studyFocus || null,
       bio: user.bio || null,
+      isPartner: partnerFlags.isPartner,
+      allowedRetail: partnerFlags.allowedRetail,
       ...snapshot,
     };
   });
@@ -990,6 +1040,8 @@ const buildLiveUsersPayload = () => {
         email: entry.email || null,
         role: normalizeUserRole(entry.role),
         profileImageUrl: null,
+        isPartner: null,
+        allowedRetail: null,
         isOnline: true,
         isIdle: (liveUsers.length + index) % 3 === 0,
         isSimulated: true,
@@ -1020,6 +1072,8 @@ const buildLiveUsersPayload = () => {
     greaterArea: entry.greaterArea || null,
     studyFocus: entry.studyFocus || null,
     bio: entry.bio || null,
+    isPartner: entry.isPartner ?? null,
+    allowedRetail: entry.allowedRetail ?? null,
   }));
   sig.sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
   const etag = crypto
@@ -1358,6 +1412,7 @@ router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, re
         return Boolean(email && doctorEmails.has(email));
       })
       .map((doctor) => {
+        const partnerFlags = resolveNetworkPartnerFlags(doctor);
         const snapshot = computePresenceSnapshot({
           user: doctor,
           nowMs,
@@ -1373,6 +1428,8 @@ router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, re
           greaterArea: doctor.greaterArea || null,
           studyFocus: doctor.studyFocus || null,
           bio: doctor.bio || null,
+          isPartner: partnerFlags.isPartner,
+          allowedRetail: partnerFlags.allowedRetail,
           ...snapshot,
         };
       })

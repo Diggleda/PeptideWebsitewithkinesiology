@@ -373,6 +373,19 @@ const isTestRep = (role?: string | null) =>
   normalizeRole(role) === "test_rep";
 const isSalesPartner = (role?: string | null, isPartner?: boolean | null) =>
   Boolean(isPartner) || normalizeRole(role) === "sales_partner";
+const isBasicSalesRepViewer = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  return (
+    normalized === "sales_partner" ||
+    normalized === "sales_rep" ||
+    normalized === "test_rep" ||
+    normalized === "rep"
+  );
+};
+const shouldRestrictSalesActorModalForViewer = (
+  viewerRole?: string | null,
+  targetRole?: string | null,
+) => isBasicSalesRepViewer(viewerRole) && (isAdmin(targetRole) || isSalesLead(targetRole));
 const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (value === true || value === false) return value;
   if (value == null) return null;
@@ -7751,6 +7764,7 @@ function MainApp() {
 	    lastSeenAt?: string | null;
         lastInteractionAt?: string | null;
     lastLoginAt?: string | null;
+        summaryOnly?: boolean;
 		  } | null>(null);
       const [salesDoctorDetailStack, setSalesDoctorDetailStack] = useState<
         NonNullable<typeof salesDoctorDetail>[]
@@ -9657,6 +9671,7 @@ function MainApp() {
 	        lastSeenAt: presence?.lastSeenAt ?? null,
         lastInteractionAt: presence?.lastInteractionAt ?? null,
         lastLoginAt: presence?.lastLoginAt ?? null,
+        summaryOnly: (bucket as any).summaryOnly === true,
       } as NonNullable<typeof salesDoctorDetail>;
 
         const current = salesDoctorDetailRef.current;
@@ -9723,6 +9738,10 @@ function MainApp() {
       const displayName = entry?.name || entry?.email || "User";
       const entryRole = normalizeRole(entry?.role);
       const entryIsSalesActor = isRep(entryRole) || isAdmin(entryRole);
+      const restrictSalesActorModalView = shouldRestrictSalesActorModalForViewer(
+        user?.role,
+        entryRole,
+      );
       const salesWholesaleRevenue =
         typeof options?.salesRepWholesaleRevenue === "number" &&
         Number.isFinite(options.salesRepWholesaleRevenue)
@@ -9776,6 +9795,7 @@ function MainApp() {
           allowedRetail: coerceOptionalBoolean(
             entry?.allowedRetail ?? entry?.allowed_retail,
           ),
+          summaryOnly: restrictSalesActorModalView,
         },
         entryRole || "doctor",
       );
@@ -9792,7 +9812,11 @@ function MainApp() {
           )
         );
 
-      if (shouldFetchSupplementalProfile && (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role))) {
+      if (
+        shouldFetchSupplementalProfile &&
+        !restrictSalesActorModalView &&
+        (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role))
+      ) {
         void (async () => {
           try {
             const supplementalResp = (await settingsAPI.getAdminUserProfiles([id])) as any;
@@ -9846,7 +9870,7 @@ function MainApp() {
         })();
       }
 
-	      if (!isAdmin(user?.role) && !isSalesLead(user?.role)) {
+	      if (!isAdmin(user?.role) && !isSalesLead(user?.role) && !restrictSalesActorModalView) {
 	        (async () => {
 	          try {
 	            const role = user?.role || null;
@@ -10411,6 +10435,7 @@ function MainApp() {
                   : 0,
               lastOrderDate:
                 typeof modalResp?.lastOrderDate === "string" ? modalResp.lastOrderDate : null,
+              summaryOnly: modalResp?.summaryOnly === true,
             },
             roleFromProfile || "doctor",
           );
@@ -14499,16 +14524,14 @@ function MainApp() {
 	  }, [adminLiveUsers]);
 
   const hideRepViewerSalesActorCommerceSections = useMemo(() => {
-    const viewerRole = normalizeRole(user?.role || "");
-    const targetRole = normalizeRole(salesDoctorDetail?.role || "");
-    const viewerIsRepOrPartner =
-      viewerRole === "sales_partner" ||
-      viewerRole === "sales_rep" ||
-      viewerRole === "test_rep" ||
-      viewerRole === "rep";
-    const targetIsAdminOrSalesLead = isAdmin(targetRole) || isSalesLead(targetRole);
-    return viewerIsRepOrPartner && targetIsAdminOrSalesLead;
-  }, [salesDoctorDetail?.role, user?.role]);
+    if (salesDoctorDetail?.summaryOnly === true) {
+      return true;
+    }
+    return shouldRestrictSalesActorModalForViewer(
+      user?.role,
+      salesDoctorDetail?.role,
+    );
+  }, [salesDoctorDetail?.role, salesDoctorDetail?.summaryOnly, user?.role]);
 
 	  useEffect(() => {
 	    const canSeeOwner =
@@ -33583,7 +33606,8 @@ function MainApp() {
 		                  </div>
 		                </div>
 		              )}
-		              <div className="flex min-w-0 items-center gap-4">
+		              {!hideRepViewerSalesActorCommerceSections && (
+                  <div className="flex min-w-0 items-center gap-4">
 		                <div
 		                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
 			                  style={{
@@ -33988,8 +34012,10 @@ function MainApp() {
                     )}
                 </div>
               </div>
+                  )}
 
-	              {(isAdmin(user?.role) || isRep(user?.role)) &&
+	              {!hideRepViewerSalesActorCommerceSections &&
+                  (isAdmin(user?.role) || isRep(user?.role)) &&
                   !isDoctorRole(salesDoctorDetail.role) && (() => {
                 const formatDateObject = (date?: Date | null) => {
                   if (!date) return null;
@@ -34168,6 +34194,7 @@ function MainApp() {
 	                      {(() => {
 	                        const canEditPhone =
                           Boolean(
+                            !hideRepViewerSalesActorCommerceSections &&
                             salesDoctorDetail &&
                               (isAdmin(user?.role) ||
                                 (isRep(user?.role) &&
@@ -34217,6 +34244,7 @@ function MainApp() {
                   </p>
 	                  {(() => {
 	                    const canEditAddress = Boolean(
+                        !hideRepViewerSalesActorCommerceSections &&
 	                      salesDoctorDetail &&
 	                        !String(salesDoctorDetail.doctorId || "").startsWith("anon:") &&
 	                        (isAdmin(user?.role) ||

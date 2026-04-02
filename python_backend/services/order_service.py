@@ -102,6 +102,14 @@ def _is_sales_access_role(value: Any) -> bool:
     return _normalize_role(value) in ("admin", "sales_rep", "sales_partner", "rep", "sales_lead", "saleslead")
 
 
+def _is_basic_sales_rep_viewer_role(value: Any) -> bool:
+    return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "test_rep")
+
+
+def _is_sales_lead_role(value: Any) -> bool:
+    return _normalize_role(value) in ("sales_lead", "saleslead")
+
+
 def _resolve_rep_record_role(rep: Dict | None) -> str:
     if not isinstance(rep, dict):
         return "sales_rep"
@@ -3295,6 +3303,86 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             ).strip()
             if not doctor_rep_id or doctor_rep_id not in actor_allowed_rep_ids:
                 raise _service_error("USER_NOT_FOUND", 404)
+
+    summary_only = _is_basic_sales_rep_viewer_role(actor_role) and (
+        target_role == "admin" or _is_sales_lead_role(target_role)
+    )
+
+    if summary_only:
+        address_parts = [
+            target_user.get("officeAddressLine1"),
+            target_user.get("officeAddressLine2"),
+            ", ".join(
+                [
+                    value
+                    for value in (
+                        target_user.get("officeCity"),
+                        target_user.get("officeState"),
+                        target_user.get("officePostalCode"),
+                    )
+                    if str(value or "").strip()
+                ]
+            ),
+            target_user.get("officeCountry"),
+        ]
+        address = "\n".join(
+            [str(part).strip() for part in address_parts if str(part or "").strip()]
+        ) or None
+
+        return {
+            "user": {
+                "id": target_user.get("id"),
+                "name": target_user.get("name") or target_user.get("email") or "User",
+                "email": target_user.get("email"),
+                "phone": target_user.get("phone"),
+                "role": target_user.get("role"),
+                "profileImageUrl": None,
+                "greaterArea": None,
+                "studyFocus": None,
+                "bio": None,
+                "resellerPermitFilePath": None,
+                "resellerPermitFileName": None,
+                "resellerPermitUploadedAt": None,
+                "salesRepId": target_sales_rep_id,
+                "isPartner": _normalize_bool(
+                    target_sales_rep_record.get("isPartner")
+                    if isinstance(target_sales_rep_record, dict) and "isPartner" in target_sales_rep_record
+                    else (target_sales_rep_record or {}).get("is_partner")
+                )
+                if isinstance(target_sales_rep_record, dict)
+                else None,
+                "allowedRetail": _normalize_bool(
+                    target_sales_rep_record.get("allowedRetail")
+                    if isinstance(target_sales_rep_record, dict) and "allowedRetail" in target_sales_rep_record
+                    else (target_sales_rep_record or {}).get("allowed_retail")
+                )
+                if isinstance(target_sales_rep_record, dict)
+                else None,
+                "officeAddressLine1": target_user.get("officeAddressLine1"),
+                "officeAddressLine2": target_user.get("officeAddressLine2"),
+                "officeCity": target_user.get("officeCity"),
+                "officeState": target_user.get("officeState"),
+                "officePostalCode": target_user.get("officePostalCode"),
+                "officeCountry": target_user.get("officeCountry"),
+            },
+            "ownerSalesRepId": target_sales_rep_id,
+            "isSalesProfile": target_is_sales_actor,
+            "summaryOnly": True,
+            "orders": [],
+            "personalOrders": [],
+            "salesOrders": [],
+            "personalOrdersLoaded": True,
+            "salesOrdersLoaded": True,
+            "personalRevenue": None,
+            "salesRevenue": None,
+            "salesWholesaleRevenue": None,
+            "salesRetailRevenue": None,
+            "orderQuantity": None,
+            "salesOrderCount": None,
+            "totalOrderValue": None,
+            "lastOrderDate": None,
+            "address": address,
+        }
 
     personal_orders = order_repository.list_user_overlay_fields(normalized_target_user_id)
     personal_orders.sort(key=_order_sort_key, reverse=True)

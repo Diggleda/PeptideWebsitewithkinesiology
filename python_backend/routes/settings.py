@@ -60,6 +60,26 @@ def _normalize_bool(value: object) -> bool:
     return text in ("1", "true", "yes", "y", "on")
 
 
+def _normalize_optional_bool(value: object) -> bool | None:
+    if value is True or value is False:
+        return value
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return None
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text in ("1", "true", "yes", "y", "on"):
+        return True
+    if text in ("0", "false", "no", "n", "off"):
+        return False
+    return None
+
+
 def _mysql_host_scope() -> str:
     config = get_config()
     host = str(getattr(config, "mysql", {}).get("host") or "").strip().lower()
@@ -715,6 +735,43 @@ def _resolve_current_sales_rep_record(current_user: dict) -> dict | None:
         by_email=by_email,
     )
 
+
+def _resolve_network_partner_flags(
+    user: dict,
+    *,
+    by_id: dict[str, dict] | None = None,
+    by_legacy_user_id: dict[str, dict] | None = None,
+    by_email: dict[str, dict] | None = None,
+) -> tuple[bool | None, bool | None]:
+    role = _normalize_role((user or {}).get("role"))
+    rep_like_role = role in ("sales_rep", "sales_partner", "rep", "test_rep")
+    if not rep_like_role:
+        return (
+            _normalize_optional_bool((user or {}).get("isPartner")),
+            _normalize_optional_bool((user or {}).get("allowedRetail")),
+        )
+    rep = None
+    if by_id is not None and by_legacy_user_id is not None and by_email is not None:
+        rep = _resolve_sales_rep_for_user(
+            user or {},
+            by_id=by_id,
+            by_legacy_user_id=by_legacy_user_id,
+            by_email=by_email,
+        )
+    else:
+        rep = _resolve_current_sales_rep_record(user or {})
+    if isinstance(rep, dict):
+        return (
+            _normalize_bool(rep.get("isPartner") if "isPartner" in rep else rep.get("is_partner")),
+            _normalize_optional_bool(
+                rep.get("allowedRetail") if "allowedRetail" in rep else rep.get("allowed_retail")
+            ),
+        )
+    return (
+        _normalize_optional_bool((user or {}).get("isPartner")),
+        _normalize_optional_bool((user or {}).get("allowedRetail")),
+    )
+
 def _require_local_jurisdiction_for_sales_rep(current_user: dict) -> None:
     role = _normalize_role((current_user or {}).get("role"))
     if _is_admin_role(role):
@@ -1001,9 +1058,21 @@ def _compute_live_clients_payload(
     idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
     presence = presence_service.snapshot()
 
+    try:
+        reps = sales_rep_repository.get_all() or []
+    except Exception:
+        reps = []
+    rep_by_id, rep_by_legacy_user_id, rep_by_email = _build_sales_rep_indexes(reps)
+
     clients = []
     visible_users = list(candidate_by_id.values()) + list(sales_actor_by_id.values())
     for user in visible_users:
+        is_partner, allowed_retail = _resolve_network_partner_flags(
+            user,
+            by_id=rep_by_id,
+            by_legacy_user_id=rep_by_legacy_user_id,
+            by_email=rep_by_email,
+        )
         snapshot = _compute_presence_snapshot(
             user,
             now_epoch=now_epoch,
@@ -1017,8 +1086,8 @@ def _compute_live_clients_payload(
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": _normalize_role(user.get("role")) or "unknown",
-                "isPartner": _normalize_bool(user.get("isPartner")),
-                "allowedRetail": _normalize_bool(user.get("allowedRetail")),
+                "isPartner": is_partner,
+                "allowedRetail": allowed_retail,
                 **snapshot,
             }
         )
@@ -1041,8 +1110,8 @@ def _compute_live_clients_payload(
             "lastLoginAt": entry.get("lastLoginAt") or None,
             "lastSeenAt": entry.get("lastSeenAt") or None,
             "lastInteractionAt": entry.get("lastInteractionAt") or None,
-            "isPartner": _normalize_bool(entry.get("isPartner")),
-            "allowedRetail": _normalize_bool(entry.get("allowedRetail")),
+            "isPartner": _normalize_optional_bool(entry.get("isPartner")),
+            "allowedRetail": _normalize_optional_bool(entry.get("allowedRetail")),
         }
         for entry in clients
     ]
@@ -1104,8 +1173,20 @@ def _compute_live_users_payload() -> dict:
     idle_threshold_s = max(10.0, min(idle_threshold_s, 6 * 60 * 60))
     presence = presence_service.snapshot()
 
+    try:
+        reps = sales_rep_repository.get_all() or []
+    except Exception:
+        reps = []
+    rep_by_id, rep_by_legacy_user_id, rep_by_email = _build_sales_rep_indexes(reps)
+
     entries = []
     for user in users_by_id.values():
+        is_partner, allowed_retail = _resolve_network_partner_flags(
+            user,
+            by_id=rep_by_id,
+            by_legacy_user_id=rep_by_legacy_user_id,
+            by_email=rep_by_email,
+        )
         snapshot = _compute_presence_snapshot(
             user,
             now_epoch=now_epoch,
@@ -1119,8 +1200,8 @@ def _compute_live_users_payload() -> dict:
                 "name": user.get("name") or None,
                 "email": user.get("email") or None,
                 "role": normalize_user_role(user.get("role")),
-                "isPartner": _normalize_bool(user.get("isPartner")),
-                "allowedRetail": _normalize_bool(user.get("allowedRetail")),
+                "isPartner": is_partner,
+                "allowedRetail": allowed_retail,
                 **snapshot,
             }
         )
@@ -1141,8 +1222,8 @@ def _compute_live_users_payload() -> dict:
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
             "lastLoginAt": entry.get("lastLoginAt") or None,
-            "isPartner": _normalize_bool(entry.get("isPartner")),
-            "allowedRetail": _normalize_bool(entry.get("allowedRetail")),
+            "isPartner": _normalize_optional_bool(entry.get("isPartner")),
+            "allowedRetail": _normalize_optional_bool(entry.get("allowedRetail")),
         }
         for entry in entries
     ]

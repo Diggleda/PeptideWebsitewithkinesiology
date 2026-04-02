@@ -389,6 +389,19 @@ const isSalesAccessRole = (role) => {
     || normalized === 'saleslead';
 };
 
+const isBasicSalesRepViewerRole = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'sales_rep'
+    || normalized === 'sales_partner'
+    || normalized === 'rep'
+    || normalized === 'test_rep';
+};
+
+const isSalesLeadRole = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'sales_lead' || normalized === 'saleslead';
+};
+
 const hasSetIntersection = (left, right) => {
   if (!(left instanceof Set) || !(right instanceof Set) || left.size === 0 || right.size === 0) {
     return false;
@@ -3136,6 +3149,9 @@ const getSalesModalDetail = async ({ actor, targetUserId }) => {
     }
   }
 
+  const summaryOnly = isBasicSalesRepViewerRole(actorRole)
+    && (targetRole === 'admin' || isSalesLeadRole(targetRole));
+
   const targetSalesRepId = [
     targetUser?.salesRepId,
     targetUser?.sales_rep_id,
@@ -3154,6 +3170,55 @@ const getSalesModalDetail = async ({ actor, targetUserId }) => {
     targetSalesRepRecord = Array.from(targetAllowedRepIds)
       .map((repId) => repRecords.get(repId))
       .find(Boolean) || null;
+  }
+
+  if (summaryOnly) {
+    return {
+      user: {
+        id: resolvedTargetUserId,
+        name: targetUser?.name || targetUser?.email || 'User',
+        email: targetUser?.email || null,
+        phone: targetUser?.phone || null,
+        role: targetUser?.role || null,
+        profileImageUrl: null,
+        greaterArea: null,
+        studyFocus: null,
+        bio: null,
+        resellerPermitFilePath: null,
+        resellerPermitFileName: null,
+        resellerPermitUploadedAt: null,
+        salesRepId: targetSalesRepId,
+        isPartner: normalizeBooleanish(
+          targetSalesRepRecord?.isPartner ?? targetSalesRepRecord?.is_partner,
+        ),
+        allowedRetail: normalizeBooleanish(
+          targetSalesRepRecord?.allowedRetail ?? targetSalesRepRecord?.allowed_retail,
+        ),
+        officeAddressLine1: targetUser?.officeAddressLine1 || null,
+        officeAddressLine2: targetUser?.officeAddressLine2 || null,
+        officeCity: targetUser?.officeCity || null,
+        officeState: targetUser?.officeState || null,
+        officePostalCode: targetUser?.officePostalCode || null,
+        officeCountry: targetUser?.officeCountry || null,
+      },
+      ownerSalesRepId: targetSalesRepId,
+      isSalesProfile: targetIsSalesActor,
+      summaryOnly: true,
+      orders: [],
+      personalOrders: [],
+      salesOrders: [],
+      personalOrdersLoaded: true,
+      salesOrdersLoaded: true,
+      personalRevenue: null,
+      salesRevenue: null,
+      salesWholesaleRevenue: null,
+      salesRetailRevenue: null,
+      orderQuantity: null,
+      salesOrderCount: null,
+      totalOrderValue: null,
+      lastOrderDate: null,
+      address: buildUserAddressText(targetUser),
+    };
   }
 
   const personalOrders = await loadModalPersonalOrders(resolvedTargetUserId);
