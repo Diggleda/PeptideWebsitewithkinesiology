@@ -155,6 +155,74 @@ class TestSettingsControls(unittest.TestCase):
                     {"testPaymentsOverrideEnabled": False, "mysqlEnabled": True},
                 )
 
+    def test_user_profile_routes_include_modal_contact_fields_and_rep_phone_fallback(self):
+        settings = self.settings
+        user = {
+            "id": "rep-user-7",
+            "name": "Sales Rep One",
+            "email": "rep.one@example.com",
+            "role": "sales_rep",
+            "status": "active",
+            "salesRepId": None,
+            "phone": None,
+            "officeAddressLine1": "123 Main St",
+            "officeAddressLine2": "Suite 400",
+            "officeCity": "Indianapolis",
+            "officeState": "IN",
+            "officePostalCode": "46204",
+            "officeCountry": "US",
+            "resellerPermitFilePath": "uploads/reseller-permits/permit.pdf",
+            "resellerPermitFileName": "permit.pdf",
+            "resellerPermitUploadedAt": "2026-04-02T12:00:00Z",
+        }
+        rep = {
+            "id": "rep-7",
+            "legacyUserId": "rep-user-7",
+            "email": "rep.one@example.com",
+            "phone": "317-555-0101",
+            "isPartner": True,
+            "allowedRetail": False,
+            "jurisdiction": "local",
+        }
+
+        with patch.object(settings.user_repository, "find_by_id", return_value=user), \
+            patch.object(settings.user_repository, "get_all", return_value=[user]), \
+            patch.object(settings.sales_rep_repository, "get_all", return_value=[rep]), \
+            patch.object(settings.presence_service, "snapshot", return_value={}), \
+            patch.object(settings.time, "time", return_value=1_000.0):
+            with self.app.test_request_context("/api/settings/users/rep-user-7", method="GET"):
+                g.current_user = {"id": "admin-1", "role": "admin"}
+                response = self._make_response(settings.get_user_profile.__wrapped__("rep-user-7"))
+                payload = response.get_json()["user"]
+
+            with self.app.test_request_context("/api/settings/users?ids=rep-user-7", method="GET"):
+                g.current_user = {"id": "admin-1", "role": "admin"}
+                response = self._make_response(settings.get_user_profiles.__wrapped__())
+                users_payload = response.get_json()["users"]
+
+        self.assertEqual(payload["phone"], "317-555-0101")
+        self.assertEqual(payload["salesRepId"], "rep-7")
+        self.assertEqual(payload["isPartner"], True)
+        self.assertEqual(payload["allowedRetail"], False)
+        self.assertEqual(payload["jurisdiction"], "local")
+
+        self.assertEqual(len(users_payload), 1)
+        self.assertEqual(users_payload[0]["phone"], "317-555-0101")
+        self.assertEqual(users_payload[0]["status"], "active")
+        self.assertEqual(users_payload[0]["salesRepId"], "rep-7")
+        self.assertEqual(users_payload[0]["isPartner"], True)
+        self.assertEqual(users_payload[0]["allowedRetail"], False)
+        self.assertEqual(users_payload[0]["jurisdiction"], "local")
+        self.assertEqual(users_payload[0]["officeAddressLine1"], "123 Main St")
+        self.assertEqual(users_payload[0]["officeAddressLine2"], "Suite 400")
+        self.assertEqual(users_payload[0]["officeCity"], "Indianapolis")
+        self.assertEqual(users_payload[0]["officeState"], "IN")
+        self.assertEqual(users_payload[0]["officePostalCode"], "46204")
+        self.assertEqual(users_payload[0]["officeCountry"], "US")
+        self.assertEqual(users_payload[0]["resellerPermitFilePath"], "uploads/reseller-permits/permit.pdf")
+        self.assertEqual(users_payload[0]["resellerPermitFileName"], "permit.pdf")
+        self.assertEqual(users_payload[0]["resellerPermitUploadedAt"], "2026-04-02T12:00:00Z")
+
     def test_beta_service_normalization_keeps_supported_keys_only(self):
         from python_backend.services import settings_service
 

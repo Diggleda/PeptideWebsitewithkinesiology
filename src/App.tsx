@@ -9752,6 +9752,17 @@ function MainApp() {
         Number.isFinite(options.salesRepRetailRevenue)
           ? options.salesRepRetailRevenue
           : null;
+      const entryAddress =
+        [
+          entry?.officeAddressLine1,
+          entry?.officeAddressLine2,
+          [entry?.officeCity, entry?.officeState, entry?.officePostalCode]
+            .filter(Boolean)
+            .join(", "),
+          entry?.officeCountry,
+        ]
+          .filter((part) => typeof part === "string" && part.trim().length > 0)
+          .join("\n") || null;
 
       openSalesDoctorDetail(
         {
@@ -9765,8 +9776,10 @@ function MainApp() {
           studyFocus:
             typeof entry?.studyFocus === "string" ? entry.studyFocus : null,
           bio: typeof entry?.bio === "string" ? entry.bio : null,
-          doctorPhone: null,
-          doctorAddress: null,
+          doctorPhone:
+            entry?.phone || entry?.phoneNumber || entry?.phone_number || null,
+          doctorAddress: entryAddress,
+          addressOrigin: entryAddress ? "user" : null,
           ownerSalesRepId:
             entry?.ownerSalesRepId ||
             entry?.owner_sales_rep_id ||
@@ -9848,6 +9861,25 @@ function MainApp() {
               typeof supplementalProfile?.bio === "string" && supplementalProfile.bio.trim().length > 0
                 ? supplementalProfile.bio.trim()
                 : null;
+            const supplementalPhone =
+              typeof supplementalProfile?.phone === "string" && supplementalProfile.phone.trim().length > 0
+                ? supplementalProfile.phone.trim()
+                : null;
+            const supplementalAddress =
+              [
+                supplementalProfile?.officeAddressLine1,
+                supplementalProfile?.officeAddressLine2,
+                [
+                  supplementalProfile?.officeCity,
+                  supplementalProfile?.officeState,
+                  supplementalProfile?.officePostalCode,
+                ]
+                  .filter(Boolean)
+                  .join(", "),
+                supplementalProfile?.officeCountry,
+              ]
+                .filter((part) => typeof part === "string" && part.trim().length > 0)
+                .join("\n") || null;
             const supplementalHasResellerPermitUploaded =
               hasUploadedResellerPermit(supplementalProfile);
 
@@ -9863,13 +9895,21 @@ function MainApp() {
               },
             }));
 
-            mergeSalesDoctorDetail(requestId, {
+            const supplementalPatch: Partial<NonNullable<typeof salesDoctorDetail>> = {
               avatar: supplementalAvatar,
               greaterArea: supplementalGreaterArea,
               studyFocus: supplementalStudyFocus,
               bio: supplementalBio,
               hasResellerPermitUploaded: supplementalHasResellerPermitUploaded,
-            });
+            };
+            if (supplementalPhone) {
+              supplementalPatch.phone = supplementalPhone;
+            }
+            if (supplementalAddress) {
+              supplementalPatch.address = supplementalAddress;
+              supplementalPatch.addressOrigin = "user";
+            }
+            mergeSalesDoctorDetail(requestId, supplementalPatch);
           } catch (supplementalError) {
             console.warn("[Live User] Failed to load supplemental modal profile", supplementalError);
           }
@@ -10221,6 +10261,52 @@ function MainApp() {
                       : typeof supplementalProfile?.bio === "string"
                         ? supplementalProfile.bio
                         : null,
+                  phone:
+                    typeof profile?.phone === "string" && profile.phone.trim().length > 0
+                      ? profile.phone
+                      : typeof supplementalProfile?.phone === "string"
+                        ? supplementalProfile.phone
+                        : null,
+                  officeAddressLine1:
+                    typeof profile?.officeAddressLine1 === "string" &&
+                    profile.officeAddressLine1.trim().length > 0
+                      ? profile.officeAddressLine1
+                      : typeof supplementalProfile?.officeAddressLine1 === "string"
+                        ? supplementalProfile.officeAddressLine1
+                        : null,
+                  officeAddressLine2:
+                    typeof profile?.officeAddressLine2 === "string" &&
+                    profile.officeAddressLine2.trim().length > 0
+                      ? profile.officeAddressLine2
+                      : typeof supplementalProfile?.officeAddressLine2 === "string"
+                        ? supplementalProfile.officeAddressLine2
+                        : null,
+                  officeCity:
+                    typeof profile?.officeCity === "string" && profile.officeCity.trim().length > 0
+                      ? profile.officeCity
+                      : typeof supplementalProfile?.officeCity === "string"
+                        ? supplementalProfile.officeCity
+                        : null,
+                  officeState:
+                    typeof profile?.officeState === "string" && profile.officeState.trim().length > 0
+                      ? profile.officeState
+                      : typeof supplementalProfile?.officeState === "string"
+                        ? supplementalProfile.officeState
+                        : null,
+                  officePostalCode:
+                    typeof profile?.officePostalCode === "string" &&
+                    profile.officePostalCode.trim().length > 0
+                      ? profile.officePostalCode
+                      : typeof supplementalProfile?.officePostalCode === "string"
+                        ? supplementalProfile.officePostalCode
+                        : null,
+                  officeCountry:
+                    typeof profile?.officeCountry === "string" &&
+                    profile.officeCountry.trim().length > 0
+                      ? profile.officeCountry
+                      : typeof supplementalProfile?.officeCountry === "string"
+                        ? supplementalProfile.officeCountry
+                        : null,
                   resellerPermitFilePath:
                     typeof profile?.resellerPermitFilePath === "string" &&
                     profile.resellerPermitFilePath.trim().length > 0
@@ -10354,7 +10440,12 @@ function MainApp() {
               studyFocus:
                 typeof profile?.studyFocus === "string" ? profile.studyFocus : null,
               bio: typeof profile?.bio === "string" ? profile.bio : null,
-              doctorPhone: profile?.phone || null,
+              doctorPhone:
+                profile?.phone ||
+                entry?.phone ||
+                entry?.phoneNumber ||
+                entry?.phone_number ||
+                null,
               doctorAddress: address,
               addressOrigin: address ? "user" : null,
               ownerSalesRepId:

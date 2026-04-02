@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 def _install_test_stubs() -> None:
@@ -219,6 +220,39 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.order_repository.find_by_id = original_find_by_id
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
+
+    def test_modal_detail_uses_sales_rep_phone_fallback_for_summary_profiles(self):
+        service = self.order_service
+        actor = {
+            "id": "rep-user-1",
+            "role": "sales_rep",
+            "email": "rep@example.com",
+        }
+        target = {
+            "id": "admin-1",
+            "role": "admin",
+            "name": "Admin One",
+            "email": "admin-profile@example.com",
+            "phone": None,
+        }
+        rep_record = {
+            "id": "rep-1",
+            "legacyUserId": "rep-user-1",
+            "email": "admin-profile@example.com",
+            "phone": "317-555-0101",
+            "isPartner": True,
+            "allowedRetail": False,
+        }
+
+        with patch.object(service.user_repository, "get_all", return_value=[actor, target]), \
+            patch.object(service.sales_rep_repository, "get_all", return_value=[rep_record]):
+            result = service.get_sales_modal_detail(actor=actor, target_user_id="admin-1")
+
+        self.assertEqual(result["summaryOnly"], True)
+        self.assertEqual(result["user"]["phone"], "317-555-0101")
+        self.assertEqual(result["user"]["salesRepId"], "rep-1")
+        self.assertEqual(result["user"]["isPartner"], True)
+        self.assertEqual(result["user"]["allowedRetail"], False)
 
 
 if __name__ == "__main__":

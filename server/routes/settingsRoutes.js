@@ -38,6 +38,12 @@ const crmRepository = require('../repositories/crmRepository');
 
 const router = Router();
 
+// Mounted-router fallback for infrastructure that sporadically bypasses the app-level
+// OPTIONS route on cross-origin admin/settings requests.
+router.options(/.*/, (_req, res) => {
+  res.sendStatus(204);
+});
+
 const normalizeRole = (role) => (role || '')
   .toString()
   .trim()
@@ -203,18 +209,23 @@ const buildDelegateLinksDoctorEntries = () => userRepository
 
 const serializeUserProfile = (user) => {
   if (!user) return null;
+  const rep = resolveCurrentSalesRepRecord(user);
+  const networkFlags = resolveNetworkPartnerFlags(user);
   return {
     id: String(user.id || ''),
     name: user.name || null,
     email: user.email || null,
-    phone: user.phone || null,
+    phone: user.phone || rep?.phone || null,
     role: normalizeRole(user.role || ''),
     status: user.status || null,
     profileImageUrl: user.profileImageUrl || null,
     greaterArea: user.greaterArea || null,
     studyFocus: user.studyFocus || null,
     bio: user.bio || null,
-    salesRepId: user.salesRepId || null,
+    salesRepId: user.salesRepId || rep?.id || rep?.salesRepId || null,
+    isPartner: networkFlags.isPartner,
+    allowedRetail: networkFlags.allowedRetail,
+    jurisdiction: rep?.jurisdiction || normalizeOptionalText(user?.jurisdiction),
     officeAddressLine1: user.officeAddressLine1 || null,
     officeAddressLine2: user.officeAddressLine2 || null,
     officeCity: user.officeCity || null,
@@ -636,11 +647,23 @@ router.get('/users', authenticate, requireAdminOrSalesLead, async (req, res) => 
         id: profile.id,
         name: profile.name,
         email: profile.email,
+        phone: profile.phone,
         role: profile.role,
+        status: profile.status,
         profileImageUrl: profile.profileImageUrl || null,
         greaterArea: profile.greaterArea || null,
         studyFocus: profile.studyFocus || null,
         bio: profile.bio || null,
+        salesRepId: profile.salesRepId || null,
+        isPartner: profile.isPartner,
+        allowedRetail: profile.allowedRetail,
+        jurisdiction: profile.jurisdiction || null,
+        officeAddressLine1: profile.officeAddressLine1 || null,
+        officeAddressLine2: profile.officeAddressLine2 || null,
+        officeCity: profile.officeCity || null,
+        officeState: profile.officeState || null,
+        officePostalCode: profile.officePostalCode || null,
+        officeCountry: profile.officeCountry || null,
         resellerPermitFilePath: profile.resellerPermitFilePath || null,
         resellerPermitFileName: profile.resellerPermitFileName || null,
         resellerPermitUploadedAt: profile.resellerPermitUploadedAt || null,

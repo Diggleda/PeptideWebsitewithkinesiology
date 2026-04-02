@@ -80,6 +80,13 @@ def _normalize_optional_bool(value: object) -> bool | None:
     return None
 
 
+def _normalize_optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _mysql_host_scope() -> str:
     config = get_config()
     host = str(getattr(config, "mysql", {}).get("host") or "").strip().lower()
@@ -531,9 +538,40 @@ def _require_admin_or_sales_lead():
         raise service_error("Admin access required", 403)
 
 
-def _public_user_profile(user: dict) -> dict:
+def _public_user_profile(
+    user: dict,
+    *,
+    by_id: dict[str, dict] | None = None,
+    by_legacy_user_id: dict[str, dict] | None = None,
+    by_email: dict[str, dict] | None = None,
+) -> dict:
     if not isinstance(user, dict):
         return {}
+    if by_id is not None and by_legacy_user_id is not None and by_email is not None:
+        rep = _resolve_sales_rep_for_user(
+            user,
+            by_id=by_id,
+            by_legacy_user_id=by_legacy_user_id,
+            by_email=by_email,
+        )
+        is_partner, allowed_retail = _resolve_network_partner_flags(
+            user,
+            by_id=by_id,
+            by_legacy_user_id=by_legacy_user_id,
+            by_email=by_email,
+        )
+    else:
+        rep = _resolve_current_sales_rep_record(user)
+        is_partner, allowed_retail = _resolve_network_partner_flags(user)
+
+    sales_rep_id = _normalize_optional_text(user.get("salesRepId") or user.get("sales_rep_id"))
+    if sales_rep_id is None and isinstance(rep, dict):
+        sales_rep_id = _normalize_optional_text(
+            rep.get("id") or rep.get("salesRepId") or rep.get("sales_rep_id")
+        )
+    jurisdiction = _normalize_optional_text(
+        (rep.get("jurisdiction") if isinstance(rep, dict) else None) or user.get("jurisdiction")
+    )
     return {
         "id": user.get("id"),
         "name": user.get("name") or None,
@@ -555,14 +593,17 @@ def _public_user_profile(user: dict) -> dict:
         "resellerPermitFilePath": user.get("resellerPermitFilePath") or user.get("reseller_permit_file_path") or None,
         "resellerPermitFileName": user.get("resellerPermitFileName") or user.get("reseller_permit_file_name") or None,
         "resellerPermitUploadedAt": user.get("resellerPermitUploadedAt") or user.get("reseller_permit_uploaded_at") or None,
-        "phone": user.get("phone") or None,
+        "phone": _normalize_optional_text(user.get("phone") or (rep.get("phone") if isinstance(rep, dict) else None)),
         "officeAddressLine1": user.get("officeAddressLine1") or None,
         "officeAddressLine2": user.get("officeAddressLine2") or None,
         "officeCity": user.get("officeCity") or None,
         "officeState": user.get("officeState") or None,
         "officePostalCode": user.get("officePostalCode") or None,
         "officeCountry": user.get("officeCountry") or None,
-        "salesRepId": user.get("salesRepId") or None,
+        "salesRepId": sales_rep_id,
+        "isPartner": is_partner,
+        "allowedRetail": allowed_retail,
+        "jurisdiction": jurisdiction,
         "leadType": user.get("leadType") or None,
         "leadTypeSource": user.get("leadTypeSource") or None,
         "leadTypeLockedAt": user.get("leadTypeLockedAt") or None,
@@ -1739,7 +1780,14 @@ def get_user_profile(user_id: str):
             err = RuntimeError("User not found")
             setattr(err, "status", 404)
             raise err
-        profile = _public_user_profile(user)
+        reps = sales_rep_repository.get_all() or []
+        by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
+        profile = _public_user_profile(
+            user,
+            by_id=by_id,
+            by_legacy_user_id=by_legacy_user_id,
+            by_email=by_email,
+        )
         try:
             now_epoch = time.time()
             online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
@@ -1804,6 +1852,8 @@ def get_user_profiles():
                 if isinstance(entry, dict) and str(entry.get("id") or "").strip()
             }
 
+        reps = sales_rep_repository.get_all() or []
+        by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
         users: list[dict] = []
         for target_id in requested_ids:
             if visible_user_ids is not None and target_id not in visible_user_ids:
@@ -1811,17 +1861,34 @@ def get_user_profiles():
             user = user_repository.find_by_id(target_id)
             if not user:
                 continue
-            profile = _public_user_profile(user)
+            profile = _public_user_profile(
+                user,
+                by_id=by_id,
+                by_legacy_user_id=by_legacy_user_id,
+                by_email=by_email,
+            )
             users.append(
                 {
                     "id": profile.get("id"),
                     "name": profile.get("name"),
                     "email": profile.get("email"),
+                    "phone": profile.get("phone"),
                     "role": profile.get("role"),
+                    "status": profile.get("status"),
                     "profileImageUrl": profile.get("profileImageUrl"),
                     "greaterArea": profile.get("greaterArea"),
                     "studyFocus": profile.get("studyFocus"),
                     "bio": profile.get("bio"),
+                    "salesRepId": profile.get("salesRepId"),
+                    "isPartner": profile.get("isPartner"),
+                    "allowedRetail": profile.get("allowedRetail"),
+                    "jurisdiction": profile.get("jurisdiction"),
+                    "officeAddressLine1": profile.get("officeAddressLine1"),
+                    "officeAddressLine2": profile.get("officeAddressLine2"),
+                    "officeCity": profile.get("officeCity"),
+                    "officeState": profile.get("officeState"),
+                    "officePostalCode": profile.get("officePostalCode"),
+                    "officeCountry": profile.get("officeCountry"),
                     "resellerPermitFilePath": profile.get("resellerPermitFilePath"),
                     "resellerPermitFileName": profile.get("resellerPermitFileName"),
                     "resellerPermitUploadedAt": profile.get("resellerPermitUploadedAt"),

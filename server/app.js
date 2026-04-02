@@ -356,6 +356,23 @@ const createApp = () => {
   const corsOptions = buildCorsOptions();
   app.use(cors(corsOptions));
 
+  const respondToPreflight = (req, res, next) => cors(corsOptions)(req, res, (err) => {
+    if (err) return next(err);
+    if (!res.headersSent) {
+      res.sendStatus(204);
+    }
+    return undefined;
+  });
+
+  // Some deployments intermittently miss the global OPTIONS route for mounted API routers.
+  // Short-circuit all API preflights here so authenticated cross-origin requests stay reliable.
+  app.use('/api', (req, res, next) => {
+    if (req.method !== 'OPTIONS') {
+      return next();
+    }
+    return respondToPreflight(req, res, next);
+  });
+
   app.use(rateLimit);
   app.use(requestTiming);
 
@@ -373,13 +390,7 @@ const createApp = () => {
   // Express 5 disallows plain "*" path strings; use a regex matcher instead.
   // Some deployments return a 404 for preflight when CORS rejects the origin;
   // ensure we always send a response (and let CORS attach headers when allowed).
-  app.options(/.*/, (req, res, next) => cors(corsOptions)(req, res, (err) => {
-    if (err) return next(err);
-    if (!res.headersSent) {
-      res.sendStatus(204);
-    }
-    return undefined;
-  }));
+  app.options(/.*/, respondToPreflight);
 
   if (typeof logger.isLevelEnabled !== 'function' || logger.isLevelEnabled('debug')) {
     app.use((req, res, next) => {

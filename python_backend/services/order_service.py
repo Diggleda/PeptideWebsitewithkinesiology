@@ -3334,7 +3334,8 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
                 "id": target_user.get("id"),
                 "name": target_user.get("name") or target_user.get("email") or "User",
                 "email": target_user.get("email"),
-                "phone": target_user.get("phone"),
+                "phone": _normalize_optional_text(target_user.get("phone"))
+                or _normalize_optional_text((target_sales_rep_record or {}).get("phone")),
                 "role": target_user.get("role"),
                 "profileImageUrl": None,
                 "greaterArea": None,
@@ -3480,7 +3481,8 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             "id": target_user.get("id"),
             "name": target_user.get("name") or target_user.get("email") or "User",
             "email": target_user.get("email"),
-            "phone": target_user.get("phone"),
+            "phone": _normalize_optional_text(target_user.get("phone"))
+            or _normalize_optional_text((target_sales_rep_record or {}).get("phone")),
             "role": target_user.get("role"),
             "profileImageUrl": target_user.get("profileImageUrl"),
             "greaterArea": target_user.get("greaterArea"),
