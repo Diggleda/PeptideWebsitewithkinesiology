@@ -94,6 +94,8 @@ import {
 	  settingsAPI,
     usageTrackingAPI,
 	  API_BASE_URL,
+    isApiBackgroundCooldownActive,
+    noteApiBackgroundThrottle,
     type PersistedCartItemPayload,
 	} from "./services/api";
 import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
@@ -5223,13 +5225,20 @@ function MainApp() {
   );
 
   const ensureCatalogProductHasVariants = useCallback(
-    async (product: Product, options?: { force?: boolean }): Promise<Product> => {
+    async (
+      product: Product,
+      options?: { force?: boolean; background?: boolean },
+    ): Promise<Product> => {
       const isVariable = (product.type ?? "").toLowerCase() === "variable";
       const shouldForce = options?.force === true;
+      const isBackgroundRequest = options?.background === true;
       if (!isVariable) {
         return product;
       }
       if (!shouldForce && product.variants && product.variants.length > 0) {
+        return product;
+      }
+      if (isBackgroundRequest && isApiBackgroundCooldownActive()) {
         return product;
       }
       if (!shouldForce && Date.now() < wooBackoffUntilRef.current) {
@@ -5387,24 +5396,34 @@ function MainApp() {
           typeof (error as any)?.status === "number" ? (error as any).status : null;
         const message =
           typeof (error as any)?.message === "string" ? (error as any).message : "";
+        const statusMatch = message.match(/\((\d{3})\)/);
+        const resolvedStatus =
+          status ??
+          (statusMatch ? Number.parseInt(statusMatch[1] || "", 10) : null);
         const errorName =
           typeof (error as any)?.name === "string" ? (error as any).name : "";
         const shouldBackoff =
-          status === 429 ||
-          status === 500 ||
-          status === 502 ||
-          status === 503 ||
-          status === 504 ||
+          resolvedStatus === 429 ||
+          resolvedStatus === 500 ||
+          resolvedStatus === 502 ||
+          resolvedStatus === 503 ||
+          resolvedStatus === 504 ||
           message === "Failed to fetch" ||
           message === "Load failed" ||
           errorName === "TypeError";
+        if (isBackgroundRequest && shouldBackoff) {
+          noteApiBackgroundThrottle({
+            status: resolvedStatus,
+            message: message || null,
+          });
+        }
         if (!shouldForce && shouldBackoff) {
           wooBackoffAttemptRef.current += 1;
           const attempt = Math.min(8, wooBackoffAttemptRef.current);
           const delayMs = Math.min(5 * 60 * 1000, 2000 * Math.pow(2, attempt - 1));
           wooBackoffUntilRef.current = Date.now() + delayMs;
           console.warn("[Catalog] Woo backoff engaged", {
-            status,
+            status: resolvedStatus,
             attempt,
             delayMs,
           });
@@ -5464,7 +5483,7 @@ function MainApp() {
           startNext();
           return;
         }
-        void ensureCatalogProductHasVariants(product)
+        void ensureCatalogProductHasVariants(product, { background: true })
           .catch(() => {})
           .finally(() => {
             variantPrefetchActiveRef.current = Math.max(
@@ -6209,7 +6228,7 @@ function MainApp() {
     // Hydrate the full profile in the background so login does not wait on
     // large media fields like avatar/logo data URLs.
     void authAPI
-      .getCurrentUser()
+      .getCurrentUser({ background: true })
       .then((current) => {
         if (!current || doctorProfileGateRefreshSeqRef.current !== gateRefreshSeq) {
           return;
@@ -8445,7 +8464,9 @@ function MainApp() {
 			        };
 			        let best: ProspectCandidate | null = null;
 			        for (const identifier of identifiersToTry) {
-			          const response = await referralAPI.getSalesProspect(identifier);
+			          const response = await referralAPI.getSalesProspect(identifier, {
+                    background: true,
+                  });
 			          const prospect = (response as any)?.prospect || null;
 			          const userRecord =
 			            (response as any)?.user ||
@@ -14759,8 +14780,8 @@ function MainApp() {
 		        }
 		        setLiveClientsError(null);
 		        const payload = (isSalesLeadRole
-              ? ((await settingsAPI.getLiveUsers()) as any)
-              : ((await settingsAPI.getLiveClients()) as any));
+              ? ((await settingsAPI.getLiveUsers({ background: true })) as any)
+              : ((await settingsAPI.getLiveClients(undefined, { background: true })) as any));
 		        if (cancelled) return;
             liveClientsRetryDelayMsRef.current = 1000;
 		        liveClientsEtagRef.current =
@@ -14826,12 +14847,14 @@ function MainApp() {
                     liveClientsEtagRef.current,
                     LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS,
                     controller.signal,
+                    { background: true },
                   )) as any)
                   : ((await settingsAPI.getLiveClientsLongPoll(
                     null,
                     liveClientsEtagRef.current,
                     LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS,
                     controller.signal,
+                    { background: true },
                   )) as any));
 			          if (cancelled) break;
 			          const elapsedMs = Date.now() - requestStartedAt;
@@ -14940,7 +14963,7 @@ function MainApp() {
             setAdminLiveUsersLoading(true);
           }
 	        setAdminLiveUsersError(null);
-	        const payload = (await settingsAPI.getLiveUsers()) as any;
+	        const payload = (await settingsAPI.getLiveUsers({ background: true })) as any;
 	        if (cancelled) return;
           adminLiveUsersRetryDelayMsRef.current = 1000;
 	        adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
@@ -14992,6 +15015,7 @@ function MainApp() {
 		            adminLiveUsersEtagRef.current,
 		            LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS,
 		            controller.signal,
+                { background: true },
 		          )) as any;
 		          if (cancelled) break;
 		          const elapsedMs = Date.now() - requestStartedAt;
@@ -15638,6 +15662,9 @@ function MainApp() {
       if (backgroundVariantPrefetchTokenRef.current !== token) {
         return;
       }
+      if (isApiBackgroundCooldownActive()) {
+        return;
+      }
 
       const candidates = catalogProducts.filter((product) => {
         const isVariable = (product.type ?? "").toLowerCase() === "variable";
@@ -15651,7 +15678,7 @@ function MainApp() {
         try {
           // Load gently; don't block UI and don't spam Woo.
           // eslint-disable-next-line no-await-in-loop
-          await ensureCatalogProductHasVariants(product);
+          await ensureCatalogProductHasVariants(product, { background: true });
         } catch {
           // ignore; on-demand selection can retry
         }
@@ -15692,6 +15719,9 @@ function MainApp() {
       logLeaderActivity(leaderKey, "catalog-variant-poll", VARIANT_POLL_INTERVAL_MS);
       const products = catalogProductsRef.current;
       if (!Array.isArray(products) || products.length === 0) {
+        return;
+      }
+      if (isApiBackgroundCooldownActive()) {
         return;
       }
       for (const product of products) {
@@ -16362,7 +16392,9 @@ function MainApp() {
 	        }
 	        accountProspectFetchInFlightRef.current.add(doctorId);
 	        try {
-	          const response = await referralAPI.getSalesProspect(doctorId);
+	          const response = await referralAPI.getSalesProspect(doctorId, {
+              background: true,
+            });
 	          const prospect = (response as any)?.prospect;
 	          if (!canceled && prospect) {
 	            setAccountProspectProspects((prev) => ({ ...prev, [doctorId]: prospect }));
@@ -20114,8 +20146,11 @@ function MainApp() {
       const startedAt = Date.now();
 
       try {
-        const data = await newsAPI.getPeptideHeadlines();
+        const data = await newsAPI.getPeptideHeadlines({ background: true });
         if (cancelled) {
+          return;
+        }
+        if ((data as any)?.skipped) {
           return;
         }
 
@@ -21094,7 +21129,7 @@ function MainApp() {
 	      lastPresenceInteractionPingAtRef.current = now;
 	      try {
 	        void settingsAPI
-	          .pingPresence({ kind: "interaction", isIdle: false })
+	          .pingPresence({ kind: "interaction", isIdle: false }, { background: true })
 	          .catch(() => undefined);
 	      } catch {
 	        // ignore
@@ -21129,7 +21164,7 @@ function MainApp() {
         if (nextIsIdle) {
           try {
             void settingsAPI
-              .pingPresence({ kind: "heartbeat", isIdle: true })
+              .pingPresence({ kind: "heartbeat", isIdle: true }, { background: true })
               .catch(() => undefined);
           } catch {
             // ignore
@@ -21184,10 +21219,13 @@ function MainApp() {
 		      lastPresenceHeartbeatPingAtRef.current = now;
 		      try {
 		        void settingsAPI
-		          .pingPresence({
-		            kind: "heartbeat",
-		            isIdle: isIdleRef.current,
-		          })
+		          .pingPresence(
+                {
+		              kind: "heartbeat",
+		              isIdle: isIdleRef.current,
+                },
+                { background: true },
+              )
 		          .catch(() => undefined);
 		      } catch {
 		        // ignore
@@ -21242,7 +21280,7 @@ function MainApp() {
 	      if (now - lastSessionCheckAtRef.current < throttleMs) return;
 	      lastSessionCheckAtRef.current = now;
 	      try {
-	        const current = await authAPI.getCurrentUser();
+	        const current = await authAPI.getCurrentUser({ background: true });
 	        if (!current && !cancelled) {
 	          handleLogout();
 	          return;

@@ -868,6 +868,57 @@ const uploadResellerPermit = async (userId, parsed) => {
   return sanitizeUser(updated);
 };
 
+const resolveTaxExemptionWithoutResellerPermit = (user) => {
+  const currentSource = normalizeOptionalString(
+    user?.taxExemptSource ?? user?.tax_exempt_source,
+  );
+  if (currentSource && currentSource !== 'RESELLER_PERMIT') {
+    return {
+      isTaxExempt: normalizeBooleanFlag(user?.isTaxExempt ?? user?.is_tax_exempt),
+      taxExemptSource: currentSource,
+      taxExemptReason: normalizeOptionalString(
+        user?.taxExemptReason ?? user?.tax_exempt_reason,
+      ),
+    };
+  }
+
+  const verificationStatus = normalizeOptionalString(
+    user?.npiVerificationStatus ?? user?.npi_verification_status,
+  );
+  if (verificationStatus === 'VALID_PHYSICIAN') {
+    return {
+      isTaxExempt: true,
+      taxExemptSource: 'NPI_VERIFICATION',
+      taxExemptReason: 'Licensed medical provider purchasing prescription products',
+    };
+  }
+
+  return {
+    isTaxExempt: false,
+    taxExemptSource: null,
+    taxExemptReason: null,
+  };
+};
+
+const deleteResellerPermit = async (userId) => {
+  const user = userRepository.findById(userId);
+  if (!user) {
+    throw createError('User not found', 404);
+  }
+
+  const next = {
+    ...user,
+    ...resolveTaxExemptionWithoutResellerPermit(user),
+    resellerPermitFilePath: null,
+    resellerPermitFileName: null,
+    resellerPermitUploadedAt: null,
+    resellerPermitOnboardingPresented: true,
+  };
+  const updated = userRepository.update(next) || next;
+  await deleteStoredResellerPermitFile(user);
+  return sanitizeUser(updated);
+};
+
 const updateCart = async (userId, cart) => {
   const user = userRepository.findById(userId);
   if (!user) {
@@ -975,6 +1026,7 @@ module.exports = {
   getProfile,
   updateProfile,
   uploadResellerPermit,
+  deleteResellerPermit,
   updateCart,
   sanitizeUser,
   sanitizeUserForAuthResponse,

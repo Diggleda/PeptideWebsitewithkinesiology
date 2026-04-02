@@ -1424,6 +1424,7 @@ export function Header({
   const [avatarUploadPercent, setAvatarUploadPercent] = useState(0);
   const [showAvatarControls, setShowAvatarControls] = useState(false);
   const [resellerPermitUploading, setResellerPermitUploading] = useState(false);
+  const [resellerPermitDeleting, setResellerPermitDeleting] = useState(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -4396,7 +4397,7 @@ export function Header({
 
   const handleAccountResellerPermitUpload = useCallback(
     async (file: File | null) => {
-      if (!file || resellerPermitUploading) {
+      if (!file || resellerPermitUploading || resellerPermitDeleting) {
         return;
       }
 
@@ -4434,7 +4435,47 @@ export function Header({
         }
       }
     },
-    [localUser, onUserUpdated, resellerPermitUploading],
+    [localUser, onUserUpdated, resellerPermitDeleting, resellerPermitUploading],
+  );
+
+  const handleAccountResellerPermitDelete = useCallback(
+    async () => {
+      if (resellerPermitUploading || resellerPermitDeleting || !hasUploadedResellerPermit(localUser)) {
+        return;
+      }
+      if (!window.confirm('Delete this reseller permit file?')) {
+        return;
+      }
+
+      setResellerPermitDeleting(true);
+      try {
+        const api = await import('../services/api');
+        const updated = await api.authAPI.deleteResellerPermit();
+        const nextUserState: HeaderUser = {
+          ...(localUser || {}),
+          ...(updated || {}),
+          resellerPermitFilePath: null,
+          resellerPermitFileName: null,
+          resellerPermitUploadedAt: null,
+          resellerPermitOnboardingPresented: true,
+        };
+        setLocalUser(nextUserState);
+        onUserUpdated?.(nextUserState);
+        toast.success('Reseller permit deleted.');
+      } catch (error: any) {
+        const message =
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message.trim()
+            : 'Unable to delete your reseller permit right now.';
+        toast.error(message);
+      } finally {
+        setResellerPermitDeleting(false);
+        if (resellerPermitInputRef.current) {
+          resellerPermitInputRef.current.value = '';
+        }
+      }
+    },
+    [localUser, onUserUpdated, resellerPermitDeleting, resellerPermitUploading],
   );
 
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
@@ -4612,6 +4653,16 @@ export function Header({
     typeof localUser?.resellerPermitFileName === 'string'
       ? localUser.resellerPermitFileName.trim()
       : '';
+  const accountResellerPermitFilePath =
+    typeof localUser?.resellerPermitFilePath === 'string'
+      ? localUser.resellerPermitFilePath.trim()
+      : '';
+  const accountHasResellerPermitFile = hasUploadedResellerPermit(localUser);
+  const accountResellerPermitDisplayName =
+    accountResellerPermitFileName
+    || accountResellerPermitFilePath.split('/').pop()
+    || 'reseller_permit';
+  const resellerPermitBusy = resellerPermitUploading || resellerPermitDeleting;
   const accountResellerPermitUploadedLabel = useMemo(() => {
     const raw = typeof localUser?.resellerPermitUploadedAt === 'string'
       ? localUser.resellerPermitUploadedAt.trim()
@@ -4898,7 +4949,7 @@ export function Header({
               type="file"
               accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.gif"
               className="bg-slate-100 file:mr-4 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900"
-              disabled={resellerPermitUploading}
+              disabled={resellerPermitBusy}
               onChange={(event) => {
                 void handleAccountResellerPermitUpload(event.target.files?.[0] || null);
               }}
@@ -4906,17 +4957,34 @@ export function Header({
             <p className="text-xs text-slate-500">
               Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
             </p>
-            {accountResellerPermitFileName && (
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <span className="font-medium text-slate-900">On file:</span>{' '}
-                {accountResellerPermitFileName}
-                {accountResellerPermitUploadedLabel
-                  ? ` • Uploaded ${accountResellerPermitUploadedLabel}`
-                  : ''}
+            {accountHasResellerPermitFile && (
+              <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-slate-900">On file:</span>{' '}
+                  <span className="break-all">{accountResellerPermitDisplayName}</span>
+                  {accountResellerPermitUploadedLabel
+                    ? ` • Uploaded ${accountResellerPermitUploadedLabel}`
+                    : ''}
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:border-rose-200 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={resellerPermitBusy}
+                  aria-label="Delete uploaded reseller permit"
+                  title="Delete uploaded permit"
+                  onClick={() => {
+                    void handleAccountResellerPermitDelete();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </button>
               </div>
             )}
             {resellerPermitUploading && (
               <p className="text-sm text-slate-600">Uploading reseller permit…</p>
+            )}
+            {resellerPermitDeleting && (
+              <p className="text-sm text-slate-600">Deleting reseller permit…</p>
             )}
           </div>
         </div>

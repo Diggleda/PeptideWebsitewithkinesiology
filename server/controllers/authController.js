@@ -85,6 +85,15 @@ const uploadResellerPermit = async (req, res, next) => {
   }
 };
 
+const deleteResellerPermit = async (req, res, next) => {
+  try {
+    const updated = await authService.deleteResellerPermit(req.user.id);
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const updateCart = async (req, res, next) => {
   try {
     const updated = await authService.updateCart(req.user.id, req.body?.cart || []);
@@ -193,6 +202,7 @@ module.exports = {
   verifyNpi,
   updateProfile,
   uploadResellerPermit,
+  deleteResellerPermit,
   updateCart,
   deleteAccount,
   logout,

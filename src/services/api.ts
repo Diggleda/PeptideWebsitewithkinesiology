@@ -24,6 +24,7 @@ export const API_BASE_URL = (() => {
 })();
 
 type AuthenticatedRequestInit = RequestInit & {
+  background?: boolean;
   skipReachabilityDispatch?: boolean;
 };
 
@@ -361,11 +362,91 @@ const dispatchApiReachability = (payload: { ok: boolean; status?: number | null;
       status: typeof payload.status === 'number' ? payload.status : null,
       message: typeof payload.message === 'string' ? payload.message : null,
       at: Date.now(),
+      backgroundCooldownRemainingMs: getApiBackgroundCooldownRemainingMs(),
     };
     window.dispatchEvent(new CustomEvent('peppro:api-reachability', { detail }));
   } catch {
     // ignore
   }
+};
+
+const _PEPPRO_BACKGROUND_COOLDOWN_MIN_MS = 15_000;
+const _PEPPRO_BACKGROUND_COOLDOWN_BASE_MS = 30_000;
+const _PEPPRO_BACKGROUND_COOLDOWN_MAX_MS = 5 * 60 * 1000;
+
+let _backgroundApiCooldownUntil = 0;
+let _backgroundApiCooldownFailures = 0;
+
+const clampBackgroundCooldownMs = (value: number) =>
+  Math.max(
+    _PEPPRO_BACKGROUND_COOLDOWN_MIN_MS,
+    Math.min(_PEPPRO_BACKGROUND_COOLDOWN_MAX_MS, Math.floor(value)),
+  );
+
+const parseRetryAfterMs = (value?: string | null) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const seconds = Number.parseFloat(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return clampBackgroundCooldownMs(seconds * 1000);
+  }
+  const targetAt = Date.parse(trimmed);
+  if (!Number.isFinite(targetAt)) {
+    return null;
+  }
+  return clampBackgroundCooldownMs(Math.max(0, targetAt - Date.now()));
+};
+
+const resolveBackgroundCooldownMs = (payload?: {
+  status?: number | null;
+  retryAfterMs?: number | null;
+}) => {
+  if (typeof payload?.retryAfterMs === 'number' && Number.isFinite(payload.retryAfterMs)) {
+    return clampBackgroundCooldownMs(payload.retryAfterMs);
+  }
+  const attempt = Math.min(6, Math.max(1, _backgroundApiCooldownFailures + 1));
+  const baseMs = payload?.status === 429 ? _PEPPRO_BACKGROUND_COOLDOWN_BASE_MS : 12_000;
+  return clampBackgroundCooldownMs(baseMs * Math.pow(2, attempt - 1));
+};
+
+export const getApiBackgroundCooldownRemainingMs = () =>
+  Math.max(0, _backgroundApiCooldownUntil - Date.now());
+
+export const isApiBackgroundCooldownActive = () =>
+  getApiBackgroundCooldownRemainingMs() > 0;
+
+export const noteApiBackgroundThrottle = (payload?: {
+  status?: number | null;
+  retryAfterMs?: number | null;
+  message?: string | null;
+}) => {
+  const cooldownMs = resolveBackgroundCooldownMs(payload);
+  _backgroundApiCooldownFailures = Math.min(8, _backgroundApiCooldownFailures + 1);
+  _backgroundApiCooldownUntil = Math.max(_backgroundApiCooldownUntil, Date.now() + cooldownMs);
+  dispatchApiReachability({
+    ok: false,
+    status: typeof payload?.status === 'number' ? payload.status : null,
+    message: typeof payload?.message === 'string' ? payload.message : null,
+  });
+  return cooldownMs;
+};
+
+const maybeResetBackgroundCooldown = () => {
+  if (Date.now() < _backgroundApiCooldownUntil) {
+    return;
+  }
+  _backgroundApiCooldownUntil = 0;
+  _backgroundApiCooldownFailures = 0;
+};
+
+const buildBackgroundCooldownError = () => {
+  const remainingMs = getApiBackgroundCooldownRemainingMs();
+  const error = new Error('Background requests paused while the API recovers.');
+  (error as any).status = 429;
+  (error as any).code = 'BACKGROUND_COOLDOWN_ACTIVE';
+  (error as any).retryAfterMs = remainingMs;
+  return error;
 };
 
 const _PEPPRO_DEFAULT_TIMEOUT_MS = 15000;
@@ -440,7 +521,7 @@ const rewriteBlockedAdminPaths = (url: string) => {
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}) => {
   const rewrittenUrl = rewriteBlockedAdminPaths(url);
-  const { skipReachabilityDispatch = false, ...requestOptions } = options;
+  const { background = false, skipReachabilityDispatch = false, ...requestOptions } = options;
   const token = getAuthToken();
   const method = (requestOptions.method || 'GET').toUpperCase();
   const headers: Record<string, string> = {
@@ -458,6 +539,11 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
   }
 
   const run = async () => {
+    maybeResetBackgroundCooldown();
+    if (background && isApiBackgroundCooldownActive()) {
+      throw buildBackgroundCooldownError();
+    }
+
     let requestUrl = rewrittenUrl;
 
     if (method === 'GET' && !(requestOptions.cache && requestOptions.cache !== 'default')) {
@@ -489,6 +575,13 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     } catch (error: any) {
       const isAbort = error?.name === 'AbortError';
       const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
+      if (
+        background &&
+        !isAbort &&
+        isNetworkLikeFetchError(error)
+      ) {
+        noteApiBackgroundThrottle({ message });
+      }
       if (!skipReachabilityDispatch) {
         dispatchApiReachability({ ok: false, status: null, message });
       }
@@ -499,6 +592,17 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
         throw wrapped;
       }
       throw error;
+    }
+
+    if (response.status === 429) {
+      noteApiBackgroundThrottle({
+        status: 429,
+        retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after')),
+      });
+    } else if (response.status >= 500) {
+      noteApiBackgroundThrottle({ status: response.status });
+    } else if (response.ok) {
+      maybeResetBackgroundCooldown();
     }
 
     if (!skipReachabilityDispatch && response.ok) {
@@ -1018,7 +1122,7 @@ export const authAPI = {
     }
   },
 
-	  getCurrentUser: async () => {
+	  getCurrentUser: async (options?: { background?: boolean }) => {
       if (!getAuthToken()) {
         clearAuthToken();
         clearSessionId();
@@ -1027,7 +1131,11 @@ export const authAPI = {
         return null;
       }
 	    try {
-	      const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`, { method: 'GET', cache: 'no-store' });
+	      const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`, {
+          method: 'GET',
+          cache: 'no-store',
+          background: options?.background === true,
+        });
 	      setAuthUserId((user as any)?.id);
 	      setAuthEmail((user as any)?.email);
 	      return user;
@@ -1062,6 +1170,12 @@ export const authAPI = {
     return fetchWithAuthForm(`${API_BASE_URL}/auth/me/reseller-permit`, {
       method: 'POST',
       body: formData,
+    });
+  },
+
+  deleteResellerPermit: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/auth/me/reseller-permit`, {
+      method: 'DELETE',
     });
   },
 
@@ -1321,16 +1435,23 @@ export const settingsAPI = {
       signal,
     });
   },
-  pingPresence: async (payload?: { kind?: 'heartbeat' | 'interaction'; isIdle?: boolean }) => {
+  pingPresence: async (
+    payload?: { kind?: 'heartbeat' | 'interaction'; isIdle?: boolean },
+    options?: { background?: boolean },
+  ) => {
     if (!getAuthToken()) {
       return null;
     }
     return fetchWithAuth(`${API_BASE_URL}/settings/presence`, {
       method: 'POST',
       body: JSON.stringify(payload || {}),
+      background: options?.background === true,
     });
   },
-  getLiveClients: async (salesRepId?: string | null) => {
+  getLiveClients: async (
+    salesRepId?: string | null,
+    options?: { background?: boolean },
+  ) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
     }
@@ -1341,6 +1462,7 @@ export const settingsAPI = {
     const query = params.toString() ? `?${params.toString()}` : '';
     return fetchWithAuth(`${API_BASE_URL}/settings/live-clients${query}`, {
       method: 'GET',
+      background: options?.background === true,
     });
   },
   getLiveClientsLongPoll: async (
@@ -1348,6 +1470,7 @@ export const settingsAPI = {
     etag?: string | null,
     timeoutMs: number = 25000,
     signal?: AbortSignal,
+    options?: { background?: boolean },
   ) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
@@ -1366,15 +1489,17 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-clients/longpoll${query}`, {
       method: 'GET',
       signal,
+      background: options?.background === true,
     });
   },
 
-  getLiveUsers: async () => {
+  getLiveUsers: async (options?: { background?: boolean }) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
     }
     return fetchWithAuth(`${API_BASE_URL}/settings/live-users`, {
       method: 'GET',
+      background: options?.background === true,
     });
   },
 
@@ -1382,6 +1507,7 @@ export const settingsAPI = {
     etag?: string | null,
     timeoutMs: number = 25000,
     signal?: AbortSignal,
+    options?: { background?: boolean },
   ) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
@@ -1397,6 +1523,7 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-users/longpoll${query}`, {
       method: 'GET',
       signal,
+      background: options?.background === true,
     });
   },
   getAdminUserProfile: async (userId: string | number) => {
@@ -2370,9 +2497,13 @@ export const referralAPI = {
     });
   },
 
-  getSalesProspect: async (doctorId: string) => {
+  getSalesProspect: async (
+    doctorId: string,
+    options?: { background?: boolean },
+  ) => {
     return fetchWithAuth(
       `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(doctorId)}`,
+      { background: options?.background === true },
     );
   },
 
@@ -2646,16 +2777,43 @@ export const checkServerHealth = async (options: { force?: boolean; quiet?: bool
 };
 
 export const newsAPI = {
-  getPeptideHeadlines: async () => {
+  getPeptideHeadlines: async (options?: { background?: boolean }) => {
+    if (options?.background && isApiBackgroundCooldownActive()) {
+      return {
+        items: [],
+        count: 0,
+        skipped: true,
+      } as {
+        items?: Array<{ title?: unknown; url?: unknown; summary?: unknown; imageUrl?: unknown; date?: unknown }>;
+        count?: number;
+        skipped?: boolean;
+      };
+    }
     const ts = Date.now();
-    const response = await fetch(`${API_BASE_URL}/news/peptides?_ts=${ts}`, {
-      headers: {
-        Accept: 'application/json',
-      },
-      credentials: 'include',
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}/news/peptides?_ts=${ts}`, {
+        headers: {
+          Accept: 'application/json',
+        },
+        credentials: 'include',
+      });
+    } catch (error) {
+      if (options?.background && isNetworkLikeFetchError(error)) {
+        noteApiBackgroundThrottle({
+          message: typeof (error as any)?.message === 'string' ? (error as any).message : null,
+        });
+      }
+      throw error;
+    }
 
     if (!response.ok) {
+      if (options?.background && (response.status === 429 || response.status >= 500)) {
+        noteApiBackgroundThrottle({
+          status: response.status,
+          retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after')),
+        });
+      }
       if (response.status === 404) {
         // Backend route not implemented in local/dev; return empty list gracefully.
         return { items: [], count: 0 } as {
@@ -2669,6 +2827,7 @@ export const newsAPI = {
     return response.json() as Promise<{
       items?: Array<{ title?: unknown; url?: unknown; summary?: unknown; imageUrl?: unknown; date?: unknown }>;
       count?: number;
+      skipped?: boolean;
     }>;
   },
 };
