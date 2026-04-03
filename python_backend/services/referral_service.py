@@ -124,6 +124,35 @@ def _sanitize_phone(value: Optional[str]) -> Optional[str]:
     return cleaned[:32] if cleaned else None
 
 
+def _split_contact_values(value: object) -> List[str]:
+    if isinstance(value, list):
+        entries: List[str] = []
+        for item in value:
+            entries.extend(_split_contact_values(item))
+        return entries
+    if value is None:
+        return []
+    return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+def _sanitize_email_list(value: object) -> List[str]:
+    normalized: List[str] = []
+    for item in _split_contact_values(value):
+        email = _sanitize_email(item)
+        if email and email not in normalized:
+            normalized.append(email)
+    return normalized
+
+
+def _sanitize_phone_list(value: object) -> List[str]:
+    normalized: List[str] = []
+    for item in _split_contact_values(value):
+        phone = _sanitize_phone(item)
+        if phone and phone not in normalized:
+            normalized.append(phone)
+    return normalized
+
+
 def _contact_form_field_aad(field: str) -> Dict[str, str]:
     return {"table": "contact_forms", "field": field}
 
@@ -793,8 +822,22 @@ def create_manual_prospect(data: Dict) -> Dict:
     if not contact_name:
         raise _service_error("CONTACT_NAME_REQUIRED", 400)
 
-    contact_email = _sanitize_email(data.get("email"))
-    contact_phone = _sanitize_phone(data.get("phone"))
+    contact_emails = _sanitize_email_list(
+        data["emails"]
+        if "emails" in data
+        else data["contactEmails"]
+        if "contactEmails" in data
+        else data.get("email")
+    )
+    contact_phones = _sanitize_phone_list(
+        data["phones"]
+        if "phones" in data
+        else data["contactPhones"]
+        if "contactPhones" in data
+        else data.get("phone")
+    )
+    contact_email = contact_emails[0] if contact_emails else None
+    contact_phone = contact_phones[0] if contact_phones else None
     notes = _sanitize_notes(data.get("notes"))
     status = _sanitize_referral_status(data.get("status"), "pending")
     has_account = bool(data.get("hasAccount")) if "hasAccount" in data else False
@@ -805,26 +848,36 @@ def create_manual_prospect(data: Dict) -> Dict:
     office_postal_code = _sanitize_address_field(data.get("officePostalCode"))
     office_country = _sanitize_address_field(data.get("officeCountry"))
 
-    if contact_email:
-        if user_repository.find_by_email(contact_email):
-            raise _service_error("EMAIL_ALREADY_EXISTS", 400)
-        if sales_rep_repository.find_by_email(contact_email):
-            raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+    if contact_emails:
+        for candidate_email in contact_emails:
+            if user_repository.find_by_email(candidate_email):
+                raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+            if sales_rep_repository.find_by_email(candidate_email):
+                raise _service_error("EMAIL_ALREADY_EXISTS", 400)
         try:
             for referral in referral_repository.get_all():
-                if (referral.get("referredContactEmail") or "").strip().lower() == contact_email:
+                referral_email = (referral.get("referredContactEmail") or "").strip().lower()
+                if referral_email and referral_email in contact_emails:
                     raise _service_error("EMAIL_ALREADY_EXISTS", 400)
         except Exception:
             pass
         try:
             for prospect in sales_prospect_repository.get_all():
-                if (prospect.get("contactEmail") or "").strip().lower() == contact_email:
+                prospect_emails = {
+                    str(email or "").strip().lower()
+                    for email in (prospect.get("contactEmails") or [])
+                    if str(email or "").strip()
+                }
+                primary_email = (prospect.get("contactEmail") or "").strip().lower()
+                if primary_email:
+                    prospect_emails.add(primary_email)
+                if any(candidate in prospect_emails for candidate in contact_emails):
                     raise _service_error("EMAIL_ALREADY_EXISTS", 400)
         except Exception:
             pass
         try:
             if get_config().mysql.get("enabled"):
-                where_clause, params = _build_contact_form_email_lookup([contact_email])
+                where_clause, params = _build_contact_form_email_lookup(contact_emails)
                 row = (
                     mysql_client.fetch_one(
                         f"SELECT id FROM contact_forms WHERE {where_clause} LIMIT 1",
@@ -852,6 +905,8 @@ def create_manual_prospect(data: Dict) -> Dict:
             "contactName": contact_name,
             "contactEmail": contact_email,
             "contactPhone": contact_phone,
+            "contactEmails": contact_emails,
+            "contactPhones": contact_phones,
             "officeAddressLine1": office_address_line1,
             "officeAddressLine2": office_address_line2,
             "officeCity": office_city,
@@ -867,6 +922,8 @@ def create_manual_prospect(data: Dict) -> Dict:
         "referredContactName": record.get("contactName"),
         "referredContactEmail": record.get("contactEmail"),
         "referredContactPhone": record.get("contactPhone"),
+        "contactEmails": record.get("contactEmails") or [],
+        "contactPhones": record.get("contactPhones") or [],
         "status": record.get("status") or "pending",
         "salesRepNotes": record.get("notes") or None,
         "notes": record.get("notes") or None,
@@ -2029,11 +2086,15 @@ def _update_manual_prospect(prospect_id: str, sales_rep_id: str, updates: Dict) 
         changed = True
 
     if "referredContactEmail" in updates:
-        payload["contactEmail"] = _sanitize_email(updates.get("referredContactEmail"))
+        contact_emails = _sanitize_email_list(updates.get("referredContactEmail"))
+        payload["contactEmails"] = contact_emails
+        payload["contactEmail"] = contact_emails[0] if contact_emails else None
         changed = True
 
     if "referredContactPhone" in updates:
-        payload["contactPhone"] = _sanitize_phone(updates.get("referredContactPhone"))
+        contact_phones = _sanitize_phone_list(updates.get("referredContactPhone"))
+        payload["contactPhones"] = contact_phones
+        payload["contactPhone"] = contact_phones[0] if contact_phones else None
         changed = True
 
     if not changed:
@@ -2044,6 +2105,8 @@ def _update_manual_prospect(prospect_id: str, sales_rep_id: str, updates: Dict) 
             "referredContactName": existing.get("contactName"),
             "referredContactEmail": existing.get("contactEmail"),
             "referredContactPhone": existing.get("contactPhone"),
+            "contactEmails": existing.get("contactEmails") or [],
+            "contactPhones": existing.get("contactPhones") or [],
             "status": existing.get("status") or "pending",
             "salesRepNotes": existing.get("notes") or None,
             "notes": existing.get("notes") or None,
@@ -2073,6 +2136,8 @@ def _update_manual_prospect(prospect_id: str, sales_rep_id: str, updates: Dict) 
         "referredContactName": saved.get("contactName"),
         "referredContactEmail": saved.get("contactEmail"),
         "referredContactPhone": saved.get("contactPhone"),
+        "contactEmails": saved.get("contactEmails") or [],
+        "contactPhones": saved.get("contactPhones") or [],
         "status": saved.get("status") or "pending",
         "salesRepNotes": saved.get("notes") or None,
         "notes": saved.get("notes") or None,

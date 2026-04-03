@@ -131,6 +131,8 @@ const STATEMENTS = [
         GENERATED ALWAYS AS (LOWER(TRIM(COALESCE(contact_email, ''))))
         STORED,
       contact_phone VARCHAR(32) NULL,
+      contact_emails_json JSON NULL,
+      contact_phones_json JSON NULL,
       assigned_by_rule_id VARCHAR(64) NULL,
       assigned_at DATETIME NULL,
       last_synced_at DATETIME NULL,
@@ -948,6 +950,20 @@ const ensureSalesProspectColumns = async () => {
           STORED
       `,
     },
+    {
+      name: 'contact_emails_json',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN contact_emails_json JSON NULL
+      `,
+    },
+    {
+      name: 'contact_phones_json',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN contact_phones_json JSON NULL
+      `,
+    },
   ];
   for (const column of columns) {
     try {
@@ -994,6 +1010,28 @@ const ensureSalesProspectColumns = async () => {
     baseColumn: 'source_payload_json',
     legacyColumn: 'source_payload_encrypted',
   });
+  try {
+    await mysqlClient.execute(
+      `
+        UPDATE sales_prospects
+        SET contact_emails_json = JSON_ARRAY(LOWER(TRIM(contact_email)))
+        WHERE contact_emails_json IS NULL
+          AND contact_email IS NOT NULL
+          AND TRIM(contact_email) <> ''
+      `,
+    );
+    await mysqlClient.execute(
+      `
+        UPDATE sales_prospects
+        SET contact_phones_json = JSON_ARRAY(TRIM(contact_phone))
+        WHERE contact_phones_json IS NULL
+          AND contact_phone IS NOT NULL
+          AND TRIM(contact_phone) <> ''
+      `,
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to backfill MySQL sales_prospects contact arrays');
+  }
   await dropColumnIfExists('sales_prospects', 'source_payload_encrypted');
 };
 

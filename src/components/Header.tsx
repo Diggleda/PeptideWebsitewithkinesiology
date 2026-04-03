@@ -49,8 +49,12 @@ const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return normalized === 'doctor' || normalized === 'test_doctor';
 };
-const isSalesPartner = (role?: string | null, isPartner?: unknown) =>
-  coerceOptionalBoolean(isPartner) === true || normalizeRole(role) === 'sales_partner';
+const isSalesPartner = (role?: string | null, isPartner?: unknown) => {
+  const normalized = normalizeRole(role);
+  return normalized !== 'doctor'
+    && normalized !== 'test_doctor'
+    && (coerceOptionalBoolean(isPartner) === true || normalized === 'sales_partner');
+};
 const getSalesPartnerLabel = (allowedRetail?: unknown) => {
   const normalized = coerceOptionalBoolean(allowedRetail);
   if (normalized === true) return 'Retail Partner';
@@ -765,6 +769,17 @@ const formatExpectedDelivery = (order: AccountOrderSummary) => {
   return null;
 };
 
+const normalizeEstimateDisplayLabel = (value?: string | null) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.replace(/\s*[–—]\s*/g, ' - ').replace(/\s*-\s*/g, ' - ');
+};
+
 const formatShippingMethod = (estimate?: AccountShippingEstimate | null) => {
   if (!estimate) {
     return null;
@@ -1013,6 +1028,49 @@ const normalizeStringField = (value: unknown) => {
     return trimmed.length > 0 ? trimmed : null;
   }
   return null;
+};
+
+const getOrderCacheKeys = (order: any): string[] => {
+  if (!order) return [];
+  return [
+    order?.id,
+    order?.wooOrderId,
+    order?.wooOrderNumber,
+    order?.number,
+    order?.cancellationId,
+  ]
+    .map((value) => normalizeStringField(value)?.toLowerCase())
+    .filter((value): value is string => Boolean(value));
+};
+
+const resolveExpectedShipmentWindow = (order: any): string | null => {
+  if (!order) {
+    return null;
+  }
+
+  const direct = normalizeStringField(
+    order?.expectedShipmentWindow ?? order?.expected_shipment_window,
+  );
+  if (direct) {
+    return direct;
+  }
+
+  const integrations = parseMaybeJson(order?.integrationDetails || order?.integrations) || {};
+  const wooIntegration =
+    parseMaybeJson(integrations?.wooCommerce || integrations?.woocommerce) || {};
+  const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+  const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+  const mysqlIntegration = parseMaybeJson(integrations?.mysql) || {};
+  const mysqlOrder = parseMaybeJson(mysqlIntegration?.order) || {};
+
+  return normalizeStringField(
+    wooResponse?.expectedShipmentWindow ??
+      wooResponse?.expected_shipment_window ??
+      wooPayload?.expectedShipmentWindow ??
+      wooPayload?.expected_shipment_window ??
+      mysqlOrder?.expectedShipmentWindow ??
+      mysqlOrder?.expected_shipment_window,
+  );
 };
 
 const isTerminalOrderStatus = (status?: string | null) => {
@@ -1315,6 +1373,9 @@ export function Header({
   const [zelleContactDraft, setZelleContactDraft] = useState('');
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
+  const [selectedOrderStickyEstimateWindow, setSelectedOrderStickyEstimateWindow] = useState<string | null>(null);
+  const selectedOrderEstimateWindowRef = useRef<Map<string, string>>(new Map());
+  const selectedOrderStickyKeysRef = useRef<Set<string>>(new Set());
   const trackingStatusCacheRef = useRef<Map<string, any>>(new Map());
   const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const cachedAccountOrdersRef = useRef<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
@@ -1893,6 +1954,57 @@ export function Header({
     },
     [],
   );
+  const rememberSelectedOrderEstimateWindow = useCallback((order: AccountOrderSummary | null | undefined) => {
+    const estimateWindow = resolveExpectedShipmentWindow(order);
+    if (!estimateWindow) {
+      return;
+    }
+    getOrderCacheKeys(order).forEach((key) => {
+      selectedOrderEstimateWindowRef.current.set(key, estimateWindow);
+    });
+  }, []);
+  const getRememberedSelectedOrderEstimateWindow = useCallback((order: AccountOrderSummary | null | undefined) => {
+    const keys = getOrderCacheKeys(order);
+    for (const key of keys) {
+      const remembered = selectedOrderEstimateWindowRef.current.get(key);
+      if (remembered) {
+        return remembered;
+      }
+    }
+    return null;
+  }, []);
+  const syncSelectedOrderStickyEstimateWindow = useCallback((order: AccountOrderSummary | null | undefined) => {
+    if (!order) {
+      selectedOrderStickyKeysRef.current = new Set();
+      setSelectedOrderStickyEstimateWindow(null);
+      return;
+    }
+
+    const nextKeys = getOrderCacheKeys(order);
+    if (!nextKeys.length) {
+      return;
+    }
+
+    const nextEstimateWindow =
+      resolveExpectedShipmentWindow(order) ||
+      getRememberedSelectedOrderEstimateWindow(order);
+    const currentKeys = selectedOrderStickyKeysRef.current;
+    const isSameOpenOrder =
+      currentKeys.size > 0 && nextKeys.some((key) => currentKeys.has(key));
+
+    if (!isSameOpenOrder) {
+      selectedOrderStickyKeysRef.current = new Set(nextKeys);
+      setSelectedOrderStickyEstimateWindow(nextEstimateWindow);
+      return;
+    }
+
+    selectedOrderStickyKeysRef.current = new Set([...currentKeys, ...nextKeys]);
+    if (nextEstimateWindow) {
+      setSelectedOrderStickyEstimateWindow((current) =>
+        current === nextEstimateWindow ? current : nextEstimateWindow,
+      );
+    }
+  }, [getRememberedSelectedOrderEstimateWindow]);
   const applyPendingLoginPrefill = useCallback(() => {
     const pending = pendingLoginPrefill.current;
     if (pending.email !== undefined && loginEmailRef.current) {
@@ -1927,6 +2039,7 @@ export function Header({
     accountModalRequestTokenRef.current = token;
     console.debug('[Header] Processing account modal request', accountModalRequest);
     if (accountModalRequest.order) {
+      rememberSelectedOrderEstimateWindow(accountModalRequest.order);
       mergeOrderIntoCache(accountModalRequest.order);
       setSelectedOrder(accountModalRequest.order);
     }
@@ -1937,8 +2050,14 @@ export function Header({
       setWelcomeOpen(true);
     }
     onAccountModalRequestHandled?.(token);
-  }, [accountModalRequest, mergeOrderIntoCache, onAccountModalRequestHandled]);
+  }, [accountModalRequest, mergeOrderIntoCache, onAccountModalRequestHandled, rememberSelectedOrderEstimateWindow]);
   useEffect(() => { setLocalUser(user); }, [user]);
+  useEffect(() => {
+    rememberSelectedOrderEstimateWindow(selectedOrder);
+  }, [selectedOrder, rememberSelectedOrderEstimateWindow]);
+  useEffect(() => {
+    syncSelectedOrderStickyEstimateWindow(selectedOrder);
+  }, [selectedOrder, syncSelectedOrderStickyEstimateWindow]);
   useEffect(() => {
     const raw = typeof localUser?.zelleContact === 'string' ? localUser.zelleContact : '';
     setZelleContactDraft(raw ? raw.trim() : '');
@@ -2030,7 +2149,7 @@ export function Header({
   const accountIsAdmin = isAdmin(accountRole);
   const accountIsSalesRep = isRep(accountRole) || isSalesLead(accountRole);
   const accountIsDoctor = isDoctorRole(accountRole);
-  const accountIsPartner = isSalesPartner(accountRole, accountPartnerFlag);
+  const accountIsPartner = !accountIsDoctor && isSalesPartner(accountRole, accountPartnerFlag);
   const accountPartnerLabel = accountIsPartner ? getSalesPartnerLabel(accountAllowedRetail) : null;
   const accountCanUploadResellerPermit = accountIsDoctor || accountIsPartner;
   const headerDisplayName = localUser
@@ -2457,11 +2576,50 @@ export function Header({
 
     const statusChanged = String(match.status ?? '') !== String(selectedOrder.status ?? '');
     const updatedAtChanged = String(match.updatedAt ?? '') !== String(selectedOrder.updatedAt ?? '');
-    if (statusChanged || updatedAtChanged) {
-      setSelectedOrder(match);
+    const shippingChanged =
+      JSON.stringify(match.shippingAddress ?? null) !== JSON.stringify(selectedOrder.shippingAddress ?? null);
+    const billingChanged =
+      JSON.stringify(match.billingAddress ?? null) !== JSON.stringify(selectedOrder.billingAddress ?? null);
+    const trackingChanged = resolveTrackingNumber(match) !== resolveTrackingNumber(selectedOrder);
+    const selectedExpectedShipmentWindow =
+      selectedOrderStickyEstimateWindow ||
+      resolveExpectedShipmentWindow(selectedOrder) ||
+      getRememberedSelectedOrderEstimateWindow(selectedOrder);
+    const nextExpectedShipmentWindow =
+      resolveExpectedShipmentWindow(match) ||
+      selectedExpectedShipmentWindow ||
+      getRememberedSelectedOrderEstimateWindow(match);
+    const estimateChanged = nextExpectedShipmentWindow !== selectedExpectedShipmentWindow;
+
+    if (statusChanged || updatedAtChanged || shippingChanged || billingChanged || trackingChanged || estimateChanged) {
+      if (nextExpectedShipmentWindow) {
+        rememberSelectedOrderEstimateWindow({
+          ...selectedOrder,
+          ...match,
+          expectedShipmentWindow: nextExpectedShipmentWindow,
+        });
+      }
+      const nextExpectedShipmentWindow =
+        resolveExpectedShipmentWindow(match) ||
+        resolveExpectedShipmentWindow(selectedOrder) ||
+        getRememberedSelectedOrderEstimateWindow(match) ||
+        getRememberedSelectedOrderEstimateWindow(selectedOrder) ||
+        null;
+      setSelectedOrder({
+        ...selectedOrder,
+        ...match,
+        expectedShipmentWindow: nextExpectedShipmentWindow,
+        shippingEstimate: match.shippingEstimate ?? selectedOrder.shippingEstimate ?? null,
+        shippingAddress: match.shippingAddress ?? selectedOrder.shippingAddress ?? null,
+        billingAddress: match.billingAddress ?? selectedOrder.billingAddress ?? null,
+        integrationDetails: match.integrationDetails ?? selectedOrder.integrationDetails ?? null,
+      });
     }
   }, [
     cachedAccountOrders,
+    getRememberedSelectedOrderEstimateWindow,
+    rememberSelectedOrderEstimateWindow,
+    selectedOrderStickyEstimateWindow,
     selectedOrder?.id,
     selectedOrder?.wooOrderId,
     selectedOrder?.wooOrderNumber,
@@ -5886,17 +6044,11 @@ export function Header({
         : [];
 
     const expectedDelivery = formatExpectedDelivery(selectedOrder);
-    const showExpectedDeliveryDetails = Boolean(
-      expectedDelivery && (isShipmentInTransit(selectedOrder.status) || !selectedOrder.status),
-    );
     const normalizedStatus = String(selectedOrder.status || '').trim().toLowerCase();
     const expectedShipmentWindow =
-      (selectedOrder as any).expectedShipmentWindow ||
-      (selectedOrder as any).expected_shipment_window ||
-      null;
-    const showExpectedShipmentWindow = Boolean(
-      expectedShipmentWindow && !(normalizedStatus === 'shipped' && Boolean(resolveTrackingNumber(selectedOrder))),
-    );
+      selectedOrderStickyEstimateWindow ||
+      resolveExpectedShipmentWindow(selectedOrder) ||
+      getRememberedSelectedOrderEstimateWindow(selectedOrder);
     const shippingMethod =
       formatShippingMethod(selectedOrder.shippingEstimate) ||
       titleCase(wooShippingLine?.method_title || wooShippingLine?.method_id);
@@ -5907,6 +6059,11 @@ export function Header({
     const wooShippingAddress = convertWooAddress(wooResponse?.shipping || wooPayload?.shipping);
     const wooBillingAddress = convertWooAddress(wooResponse?.billing || wooPayload?.billing);
     const trackingNumber = resolveTrackingNumber(selectedOrder);
+    const estimateRangeLabel =
+      normalizeEstimateDisplayLabel(expectedShipmentWindow) ||
+      normalizeEstimateDisplayLabel(expectedDelivery) ||
+      '';
+    const showEstimateDetails = Boolean(estimateRangeLabel && !trackingNumber);
     const wooService = wooShippingLine?.method_title || wooShippingLine?.method_id || '';
     const carrierCode =
       selectedOrder.shippingEstimate?.carrierId ||
@@ -6138,11 +6295,11 @@ export function Header({
                   {renderOrderTextOrShimmer(formatOrderDate(resolveOrderPlacedAt(selectedOrder)), 'w-28')}
                 </div>
               </div>
-              {showExpectedDeliveryDetails && (
+              {showEstimateDetails && (
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Estimate</p>
                   <div className="text-sm font-semibold text-slate-900">
-                    {renderOrderTextOrShimmer(expectedDelivery, 'w-32')}
+                    {renderOrderTextOrShimmer(estimateRangeLabel, 'w-32')}
                   </div>
                 </div>
               )}
@@ -6216,15 +6373,10 @@ export function Header({
 	                      {formatCurrency(taxTotal, selectedOrder.currency || 'USD')}
 	                    </p>
 	                  )}
-	                  {expectedDelivery && (
+	                  {showEstimateDetails && (
 	                    <p>
-	                      <span className="font-semibold">Expected:</span> {expectedDelivery}
-	                    </p>
-	                  )}
-	                  {showExpectedShipmentWindow && (
-	                    <p>
-	                      <span className="font-semibold">Estimated ship window:</span>{' '}
-	                      {expectedShipmentWindow}
+	                      <span className="font-semibold">Estimate:</span>{' '}
+	                      {estimateRangeLabel}
 	                    </p>
 	                  )}
 	                </div>
@@ -8426,7 +8578,7 @@ export function Header({
 	            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end min-w-0 max-w-full">
 		              {(networkQuality === 'offline' || networkQuality === 'poor') && (
 		                <div
-		                  className="flex items-center justify-center squircle-sm border border-slate-200 bg-white/70 px-2 py-1"
+		                  className="flex items-center justify-center squircle-sm bg-white/70 px-2 py-1"
 			                  title={
 			                    networkQuality === 'offline'
 	                          ? 'Offline'

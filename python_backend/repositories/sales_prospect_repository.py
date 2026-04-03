@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import re
 from typing import Dict, List, Optional
 import uuid
 
@@ -29,6 +31,141 @@ def _get_store():
 
 def _generate_id() -> str:
     return uuid.uuid4().hex
+
+
+def _has_key(record: Optional[Dict], key: str) -> bool:
+    return isinstance(record, dict) and key in record
+
+
+def _parse_json_list(value: object) -> List[object]:
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return []
+        if isinstance(parsed, list):
+            return parsed
+    return []
+
+
+def _normalize_email_list(value: object) -> List[str]:
+    items = value if isinstance(value, (list, tuple)) else [value]
+    normalized: List[str] = []
+    for item in items:
+        email = str(item or "").strip().lower()
+        if email and email not in normalized:
+            normalized.append(email)
+    return normalized
+
+
+def _normalize_phone_list(value: object) -> List[str]:
+    items = value if isinstance(value, (list, tuple)) else [value]
+    normalized: List[str] = []
+    for item in items:
+        phone = str(item or "").strip()
+        if phone and phone not in normalized:
+            normalized.append(phone)
+    return normalized
+
+
+def _normalize_contact_fields(record: Optional[Dict]) -> Dict:
+    record = dict(record or {})
+    raw_email_list_provided = _has_key(record, "contactEmails") or _has_key(record, "contact_emails_json")
+    raw_phone_list_provided = _has_key(record, "contactPhones") or _has_key(record, "contact_phones_json")
+    raw_email_list = (
+        record.get("contactEmails")
+        if _has_key(record, "contactEmails")
+        else record.get("contact_emails_json")
+    )
+    raw_phone_list = (
+        record.get("contactPhones")
+        if _has_key(record, "contactPhones")
+        else record.get("contact_phones_json")
+    )
+    raw_email = record.get("contactEmail") if _has_key(record, "contactEmail") else record.get("contact_email")
+    raw_phone = record.get("contactPhone") if _has_key(record, "contactPhone") else record.get("contact_phone")
+    contact_emails = (
+        _normalize_email_list(_parse_json_list(raw_email_list))
+        if raw_email_list_provided
+        else _normalize_email_list(raw_email)
+    )
+    contact_phones = (
+        _normalize_phone_list(_parse_json_list(raw_phone_list))
+        if raw_phone_list_provided
+        else _normalize_phone_list(raw_phone)
+    )
+    return {
+        "contactEmails": contact_emails,
+        "contactPhones": contact_phones,
+        "contactEmail": contact_emails[0] if contact_emails else (None if raw_email_list_provided else (str(raw_email).strip() or None) if raw_email else None),
+        "contactPhone": contact_phones[0] if contact_phones else (None if raw_phone_list_provided else (str(raw_phone).strip() or None) if raw_phone else None),
+    }
+
+
+def _resolve_contact_patch(existing: Optional[Dict], incoming: Optional[Dict]) -> Dict:
+    base = _normalize_contact_fields(existing)
+    payload = dict(incoming or {})
+    incoming_has_email_list = _has_key(payload, "contactEmails") or _has_key(payload, "contact_emails_json")
+    incoming_has_phone_list = _has_key(payload, "contactPhones") or _has_key(payload, "contact_phones_json")
+    incoming_has_email = _has_key(payload, "contactEmail") or _has_key(payload, "contact_email")
+    incoming_has_phone = _has_key(payload, "contactPhone") or _has_key(payload, "contact_phone")
+
+    contact_emails = (
+        _normalize_email_list(
+            _parse_json_list(
+                payload.get("contactEmails")
+                if _has_key(payload, "contactEmails")
+                else payload.get("contact_emails_json")
+            )
+        )
+        if incoming_has_email_list
+        else _normalize_email_list(payload.get("contactEmail") if _has_key(payload, "contactEmail") else payload.get("contact_email"))
+        if incoming_has_email
+        else base.get("contactEmails") or []
+    )
+    contact_phones = (
+        _normalize_phone_list(
+            _parse_json_list(
+                payload.get("contactPhones")
+                if _has_key(payload, "contactPhones")
+                else payload.get("contact_phones_json")
+            )
+        )
+        if incoming_has_phone_list
+        else _normalize_phone_list(payload.get("contactPhone") if _has_key(payload, "contactPhone") else payload.get("contact_phone"))
+        if incoming_has_phone
+        else base.get("contactPhones") or []
+    )
+    return {
+        "contactEmails": contact_emails,
+        "contactPhones": contact_phones,
+        "contactEmail": contact_emails[0] if contact_emails else None,
+        "contactPhone": contact_phones[0] if contact_phones else None,
+    }
+
+
+def _normalize_phone_digits(value: object) -> str:
+    if value is None:
+        return ""
+    return re.sub(r"[^0-9]", "", str(value))
+
+
+def _record_has_email(record: Dict, email: str) -> bool:
+    if not email:
+        return False
+    contacts = _normalize_contact_fields(record)
+    return email in contacts.get("contactEmails", [])
+
+
+def _record_has_phone(record: Dict, phone_digits: str) -> bool:
+    if not phone_digits:
+        return False
+    contacts = _normalize_contact_fields(record)
+    return any(_normalize_phone_digits(value) == phone_digits for value in contacts.get("contactPhones", []))
 
 
 def _is_contact_form_prospect(record: Dict) -> bool:
@@ -62,6 +199,7 @@ def _sales_prospects_supports_office_address() -> bool:
 
 def _ensure_defaults(record: Dict) -> Dict:
     normalized = dict(record)
+    contact_fields = _normalize_contact_fields(normalized)
     normalized.setdefault("id", normalized.get("id") or _generate_id())
     normalized.setdefault("salesRepId", normalized.get("salesRepId") or None)
     normalized.setdefault("doctorId", normalized.get("doctorId") or None)
@@ -80,8 +218,10 @@ def _ensure_defaults(record: Dict) -> Dict:
     normalized.setdefault("resellerPermitFileName", normalized.get("resellerPermitFileName") or None)
     normalized.setdefault("resellerPermitUploadedAt", normalized.get("resellerPermitUploadedAt") or None)
     normalized.setdefault("contactName", normalized.get("contactName") or None)
-    normalized.setdefault("contactEmail", normalized.get("contactEmail") or None)
-    normalized.setdefault("contactPhone", normalized.get("contactPhone") or None)
+    normalized["contactEmails"] = list(contact_fields.get("contactEmails") or [])
+    normalized["contactPhones"] = list(contact_fields.get("contactPhones") or [])
+    normalized["contactEmail"] = contact_fields.get("contactEmail")
+    normalized["contactPhone"] = contact_fields.get("contactPhone")
     normalized.setdefault("officeAddressLine1", normalized.get("officeAddressLine1") or None)
     normalized.setdefault("officeAddressLine2", normalized.get("officeAddressLine2") or None)
     normalized.setdefault("officeCity", normalized.get("officeCity") or None)
@@ -218,7 +358,14 @@ def find_by_contact_email(email: str) -> Optional[Dict]:
         return None
     if _using_mysql():
         row = mysql_client.fetch_one(
-            "SELECT * FROM sales_prospects WHERE LOWER(contact_email) = %(email)s LIMIT 1",
+            """
+            SELECT *
+            FROM sales_prospects
+            WHERE LOWER(contact_email) = %(email)s
+               OR JSON_SEARCH(contact_emails_json, 'one', %(email)s) IS NOT NULL
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
             {"email": email_norm},
         )
         return _row_to_record(row)
@@ -226,7 +373,7 @@ def find_by_contact_email(email: str) -> Optional[Dict]:
         (
             _ensure_defaults(item)
             for item in _get_store().read()
-            if str(item.get("contactEmail") or "").strip().lower() == email_norm
+            if _record_has_email(item, email_norm)
         ),
         None,
     )
@@ -290,7 +437,10 @@ def find_by_sales_rep_and_contact_email(sales_rep_id: str, contact_email: str) -
             SELECT *
             FROM sales_prospects
             WHERE sales_rep_id = %(sales_rep_id)s
-              AND LOWER(TRIM(contact_email)) = %(email)s
+              AND (
+                LOWER(TRIM(contact_email)) = %(email)s
+                OR JSON_SEARCH(contact_emails_json, 'one', %(email)s) IS NOT NULL
+              )
             ORDER BY updated_at DESC
             LIMIT 1
             """,
@@ -301,7 +451,47 @@ def find_by_sales_rep_and_contact_email(sales_rep_id: str, contact_email: str) -
         _ensure_defaults(item)
         for item in _get_store().read()
         if str(item.get("salesRepId") or "") == str(sales_rep_id)
-        and str(item.get("contactEmail") or "").strip().lower() == email_norm
+        and _record_has_email(item, email_norm)
+    ]
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda rec: str(rec.get("updatedAt") or rec.get("createdAt") or ""),
+        reverse=True,
+    )
+    return matches[0]
+
+
+def find_by_contact_phone(phone: str) -> Optional[Dict]:
+    if not phone:
+        return None
+    phone_digits = _normalize_phone_digits(phone)
+    if not phone_digits:
+        return None
+    if _using_mysql():
+        rows = mysql_client.fetch_all(
+            """
+            SELECT *
+            FROM sales_prospects
+            WHERE contact_phone IS NOT NULL
+               OR contact_phones_json IS NOT NULL
+            """,
+            {},
+        )
+        matches = []
+        for row in rows:
+            normalized = _row_to_record(row)
+            if normalized and _record_has_phone(normalized, phone_digits):
+                matches.append(normalized)
+        matches.sort(
+            key=lambda rec: str(rec.get("updatedAt") or rec.get("createdAt") or ""),
+            reverse=True,
+        )
+        return matches[0] if matches else None
+    matches = [
+        _ensure_defaults(item)
+        for item in _get_store().read()
+        if _record_has_phone(item, phone_digits)
     ]
     if not matches:
         return None
@@ -413,6 +603,16 @@ def upsert(record: Dict) -> Dict:
     if incoming.get("id"):
         existing = find_by_id(incoming.get("id"))
 
+    contact_patch = _resolve_contact_patch(existing, incoming)
+    for email in contact_patch.get("contactEmails", []):
+        if existing:
+            break
+        existing = find_by_contact_email(email)
+    for phone in contact_patch.get("contactPhones", []):
+        if existing:
+            break
+        existing = find_by_contact_phone(phone)
+
     sales_rep_id = incoming.get("salesRepId") or (existing.get("salesRepId") if existing else None)
     if not sales_rep_id and _is_contact_form_prospect(incoming):
         sales_rep_id = HOUSE_SALES_REP_ID
@@ -427,7 +627,8 @@ def upsert(record: Dict) -> Dict:
     if not existing and sales_rep_id and incoming.get("contactFormId"):
         existing = find_by_sales_rep_and_contact_form(sales_rep_id, incoming.get("contactFormId"))
 
-    merged = _ensure_defaults({**(existing or {}), **incoming, "updatedAt": _now()})
+    contact_patch = _resolve_contact_patch(existing, incoming)
+    merged = _ensure_defaults({**(existing or {}), **incoming, **contact_patch, "updatedAt": _now()})
 
     if _using_mysql():
         params = _to_db_params(merged)
@@ -452,6 +653,8 @@ def upsert(record: Dict) -> Dict:
                         contact_name = %(contact_name)s,
                         contact_email = %(contact_email)s,
                         contact_phone = %(contact_phone)s,
+                        contact_emails_json = %(contact_emails_json)s,
+                        contact_phones_json = %(contact_phones_json)s,
                         office_address_line1 = %(office_address_line1)s,
                         office_address_line2 = %(office_address_line2)s,
                         office_city = %(office_city)s,
@@ -482,6 +685,8 @@ def upsert(record: Dict) -> Dict:
                     contact_name = %(contact_name)s,
                     contact_email = %(contact_email)s,
                     contact_phone = %(contact_phone)s,
+                    contact_emails_json = %(contact_emails_json)s,
+                    contact_phones_json = %(contact_phones_json)s,
                     updated_at = %(updated_at)s
                 WHERE id = %(id)s
                 """,
@@ -496,6 +701,7 @@ def upsert(record: Dict) -> Dict:
                     status, notes, is_manual,
                     reseller_permit_exempt, reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
                     contact_name, contact_email, contact_phone,
+                    contact_emails_json, contact_phones_json,
                     office_address_line1, office_address_line2, office_city, office_state, office_postal_code, office_country,
                     created_at, updated_at
                 ) VALUES (
@@ -503,6 +709,7 @@ def upsert(record: Dict) -> Dict:
                     %(status)s, %(notes)s, %(is_manual)s,
                     %(reseller_permit_exempt)s, %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
                     %(contact_name)s, %(contact_email)s, %(contact_phone)s,
+                    %(contact_emails_json)s, %(contact_phones_json)s,
                     %(office_address_line1)s, %(office_address_line2)s, %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
                     %(created_at)s, %(updated_at)s
                 )
@@ -517,12 +724,14 @@ def upsert(record: Dict) -> Dict:
                 status, notes, is_manual,
                 reseller_permit_exempt, reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
                 contact_name, contact_email, contact_phone,
+                contact_emails_json, contact_phones_json,
                 created_at, updated_at
             ) VALUES (
                 %(id)s, %(sales_rep_id)s, %(doctor_id)s, %(referral_id)s, %(contact_form_id)s,
                 %(status)s, %(notes)s, %(is_manual)s,
                 %(reseller_permit_exempt)s, %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
                 %(contact_name)s, %(contact_email)s, %(contact_phone)s,
+                %(contact_emails_json)s, %(contact_phones_json)s,
                 %(created_at)s, %(updated_at)s
             )
             """,
@@ -814,6 +1023,8 @@ def _row_to_record(row: Optional[Dict]) -> Optional[Dict]:
             "contactName": row.get("contact_name"),
             "contactEmail": row.get("contact_email"),
             "contactPhone": row.get("contact_phone"),
+            "contact_emails_json": row.get("contact_emails_json"),
+            "contact_phones_json": row.get("contact_phones_json"),
             "officeAddressLine1": row.get("office_address_line1"),
             "officeAddressLine2": row.get("office_address_line2"),
             "officeCity": row.get("office_city"),
@@ -846,6 +1057,8 @@ def _to_db_params(record: Dict) -> Dict:
         "contact_name": record.get("contactName"),
         "contact_email": record.get("contactEmail"),
         "contact_phone": record.get("contactPhone"),
+        "contact_emails_json": json.dumps(record.get("contactEmails")) if record.get("contactEmails") else None,
+        "contact_phones_json": json.dumps(record.get("contactPhones")) if record.get("contactPhones") else None,
         "office_address_line1": record.get("officeAddressLine1"),
         "office_address_line2": record.get("officeAddressLine2"),
         "office_city": record.get("officeCity"),

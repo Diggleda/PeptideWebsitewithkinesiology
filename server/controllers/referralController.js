@@ -42,6 +42,7 @@ const normalizeReferralStatus = (value) => {
 };
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
 const normalizeRole = (role) => (role || '')
   .toString()
@@ -63,6 +64,58 @@ const normalizeOptionalText = (value) => {
   if (value == null) return null;
   const text = String(value).trim();
   return text || null;
+};
+const uniqueValues = (values) => {
+  const seen = new Set();
+  const output = [];
+  values.forEach((value) => {
+    if (!value || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    output.push(value);
+  });
+  return output;
+};
+const explodeCommaSeparatedValues = (value) => {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => explodeCommaSeparatedValues(item));
+  }
+  if (value == null) {
+    return [];
+  }
+  return String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+const normalizeEmailList = (value) => uniqueValues(
+  explodeCommaSeparatedValues(value)
+    .map((item) => normalizeOptionalText(item)?.toLowerCase() || null)
+    .filter(Boolean),
+);
+const normalizePhoneList = (value) => uniqueValues(
+  explodeCommaSeparatedValues(value)
+    .map((item) => normalizeOptionalText(item))
+    .filter(Boolean),
+);
+const buildManualContactPayload = (payload) => {
+  const contactEmails = hasOwn(payload, 'emails')
+    ? normalizeEmailList(payload.emails)
+    : hasOwn(payload, 'contactEmails')
+      ? normalizeEmailList(payload.contactEmails)
+      : normalizeEmailList(payload.email);
+  const contactPhones = hasOwn(payload, 'phones')
+    ? normalizePhoneList(payload.phones)
+    : hasOwn(payload, 'contactPhones')
+      ? normalizePhoneList(payload.contactPhones)
+      : normalizePhoneList(payload.phone);
+  return {
+    contactEmails,
+    contactPhones,
+    contactEmail: contactEmails[0] || null,
+    contactPhone: contactPhones[0] || null,
+  };
 };
 const normalizeBooleanFlag = (value) => {
   if (value === true || value === false) return value;
@@ -89,8 +142,11 @@ const findLinkedUserForProspect = (prospect) => {
       return doctor;
     }
   }
-  const email = normalizeOptionalText(prospect?.contactEmail);
-  if (email) {
+  const contactEmails = uniqueValues([
+    ...normalizeEmailList(prospect?.contactEmails),
+    ...normalizeEmailList(prospect?.contactEmail),
+  ]);
+  for (const email of contactEmails) {
     const normalizedEmail = email.toLowerCase();
     const user = userRepository.findByEmail(email)
       || userRepository.getAll().find(
@@ -1501,6 +1557,16 @@ const updateReferral = (req, res, next) => {
       .findById(referralId)
       .catch(() => null)
       .then((existingProspect) => {
+        const contactEmails = hasOwn(req.body || {}, 'referredContactEmail')
+          ? normalizeEmailList(req.body?.referredContactEmail)
+          : Array.isArray(existingProspect?.contactEmails)
+            ? normalizeEmailList(existingProspect.contactEmails)
+            : normalizeEmailList(existingProspect?.contactEmail);
+        const contactPhones = hasOwn(req.body || {}, 'referredContactPhone')
+          ? normalizePhoneList(req.body?.referredContactPhone)
+          : Array.isArray(existingProspect?.contactPhones)
+            ? normalizePhoneList(existingProspect.contactPhones)
+            : normalizePhoneList(existingProspect?.contactPhone);
         const resolvedOwnerId = updated?.salesRepId
           ? String(updated.salesRepId)
           : (owner || (existingProspect?.salesRepId ? String(existingProspect.salesRepId) : null));
@@ -1520,8 +1586,18 @@ const updateReferral = (req, res, next) => {
             : (existingProspect?.notes ?? null),
           isManual,
           contactName: updated?.referredContactName || req.body?.referredContactName || existingProspect?.contactName || null,
-          contactEmail: updated?.referredContactEmail || req.body?.referredContactEmail || existingProspect?.contactEmail || null,
-          contactPhone: updated?.referredContactPhone || req.body?.referredContactPhone || existingProspect?.contactPhone || null,
+          contactEmail: contactEmails[0]
+            || updated?.referredContactEmail
+            || req.body?.referredContactEmail
+            || existingProspect?.contactEmail
+            || null,
+          contactPhone: contactPhones[0]
+            || updated?.referredContactPhone
+            || req.body?.referredContactPhone
+            || existingProspect?.contactPhone
+            || null,
+          contactEmails,
+          contactPhones,
         });
       })
       .catch((error) => {
@@ -1564,8 +1640,12 @@ const createManualProspect = async (req, res, next) => {
       throw error;
     }
 
-    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : null;
-    const phone = typeof payload.phone === 'string' ? payload.phone.trim() : null;
+    const {
+      contactEmails,
+      contactPhones,
+      contactEmail: email,
+      contactPhone: phone,
+    } = buildManualContactPayload(payload);
     const notesRaw = typeof payload.notes === 'string' ? payload.notes : null;
     const notes = notesRaw && notesRaw.trim().length > 0
       ? notesRaw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
@@ -1574,13 +1654,14 @@ const createManualProspect = async (req, res, next) => {
     const salesRepId = req.user.salesRepId || req.user.id;
     const now = new Date().toISOString();
 
-    if (email) {
+    if (contactEmails.length > 0) {
       const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
       const emailTakenInReferrals = () => {
         try {
           const referrals = referralRepository.getAll();
           return Array.isArray(referrals)
-            && referrals.some((r) => normalizeEmail(r?.referredContactEmail) === email);
+            && referrals.some((r) =>
+              contactEmails.some((candidate) => normalizeEmail(r?.referredContactEmail) === candidate));
         } catch {
           return false;
         }
@@ -1589,7 +1670,13 @@ const createManualProspect = async (req, res, next) => {
         try {
           const prospects = await salesProspectRepository.getAll();
           return Array.isArray(prospects)
-            && prospects.some((p) => normalizeEmail(p?.contactEmail) === email);
+            && prospects.some((p) => {
+              const existingEmails = uniqueValues([
+                ...normalizeEmailList(p?.contactEmails),
+                ...normalizeEmailList(p?.contactEmail),
+              ]);
+              return contactEmails.some((candidate) => existingEmails.includes(candidate));
+            });
         } catch {
           return false;
         }
@@ -1599,18 +1686,24 @@ const createManualProspect = async (req, res, next) => {
           return false;
         }
         try {
-          const normalizedEmail = normalizeEmail(email);
-          const emailBlindIndex = computeContactFormEmailBlindIndex(normalizedEmail);
+          const blindIndexes = contactEmails
+            .map((candidate) => computeContactFormEmailBlindIndex(normalizeEmail(candidate)))
+            .filter(Boolean);
+          if (blindIndexes.length === 0) {
+            return false;
+          }
+          const placeholders = blindIndexes.map((_, index) => `:emailBlindIndex${index}`);
+          const params = Object.fromEntries(
+            blindIndexes.map((value, index) => [`emailBlindIndex${index}`, value]),
+          );
           const row = await mysqlClient.fetchOne(
             `
               SELECT id
               FROM contact_forms
-              WHERE email_blind_index = :emailBlindIndex
+              WHERE email_blind_index IN (${placeholders.join(', ')})
               LIMIT 1
             `,
-            {
-              emailBlindIndex,
-            },
+            params,
           );
           return Boolean(row);
         } catch {
@@ -1619,9 +1712,10 @@ const createManualProspect = async (req, res, next) => {
       };
 
       const taken =
-        Boolean(adminRepository.findByEmail(email))
-        || Boolean(salesRepRepository.findByEmail(email))
-        || Boolean(userRepository.findByEmail(email))
+        contactEmails.some((candidate) =>
+          Boolean(adminRepository.findByEmail(candidate))
+          || Boolean(salesRepRepository.findByEmail(candidate))
+          || Boolean(userRepository.findByEmail(candidate)))
         || emailTakenInReferrals()
         || (await emailTakenInSalesProspects())
         || (await emailTakenInContactForms());
@@ -1640,6 +1734,8 @@ const createManualProspect = async (req, res, next) => {
       referredContactName: name,
       referredContactEmail: email || null,
       referredContactPhone: phone || null,
+      contactEmails,
+      contactPhones,
       status,
       notes: notes || null,
       createdAt: now,
@@ -1660,6 +1756,8 @@ const createManualProspect = async (req, res, next) => {
         contactName: name,
         contactEmail: email || null,
         contactPhone: phone || null,
+        contactEmails,
+        contactPhones,
       })
       .catch((error) => {
         logger.warn({ err: error, manualId: record.id }, 'Failed to persist manual sales prospect');

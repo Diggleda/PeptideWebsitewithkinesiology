@@ -145,6 +145,8 @@ CREATE_TABLE_STATEMENTS = [
         contact_name VARCHAR(190) NULL,
         contact_email VARCHAR(190) NULL,
         contact_phone VARCHAR(32) NULL,
+        contact_emails_json JSON NULL,
+        contact_phones_json JSON NULL,
         office_address_line1 VARCHAR(190) NULL,
         office_address_line2 VARCHAR(190) NULL,
         office_city VARCHAR(190) NULL,
@@ -612,6 +614,8 @@ def ensure_schema() -> None:
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_name VARCHAR(190) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_email VARCHAR(190) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(32) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_emails_json JSON NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_phones_json JSON NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_address_line1 VARCHAR(190) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_address_line2 VARCHAR(190) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_city VARCHAR(190) NULL",
@@ -800,6 +804,10 @@ def ensure_schema() -> None:
 
     # Ensure sales prospects office address fields exist (used by manual prospects + contact form pipeline).
     try:
+        if not _column_exists("sales_prospects", "contact_emails_json"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN contact_emails_json JSON NULL")
+        if not _column_exists("sales_prospects", "contact_phones_json"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN contact_phones_json JSON NULL")
         if not _column_exists("sales_prospects", "office_address_line1"):
             mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_address_line1 VARCHAR(190) NULL")
         if not _column_exists("sales_prospects", "office_address_line2"):
@@ -812,6 +820,28 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_postal_code VARCHAR(32) NULL")
         if not _column_exists("sales_prospects", "office_country"):
             mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_country VARCHAR(64) NULL")
+    except Exception:
+        pass
+
+    try:
+        mysql_client.execute(
+            """
+            UPDATE sales_prospects
+            SET contact_emails_json = JSON_ARRAY(LOWER(TRIM(contact_email)))
+            WHERE contact_emails_json IS NULL
+              AND contact_email IS NOT NULL
+              AND TRIM(contact_email) <> ''
+            """
+        )
+        mysql_client.execute(
+            """
+            UPDATE sales_prospects
+            SET contact_phones_json = JSON_ARRAY(TRIM(contact_phone))
+            WHERE contact_phones_json IS NULL
+              AND contact_phone IS NOT NULL
+              AND TRIM(contact_phone) <> ''
+            """
+        )
     except Exception:
         pass
 

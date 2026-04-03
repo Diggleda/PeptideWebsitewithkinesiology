@@ -2695,7 +2695,9 @@ export const referralAPI = {
   createManualProspect: async (payload: {
     name: string;
     email?: string;
+    emails?: string[];
     phone?: string;
+    phones?: string[];
     notes?: string;
     status?: string;
     hasAccount?: boolean;

@@ -75,6 +75,8 @@ test('upsert stores source payload ciphertext inline in source_payload_json', as
         salesRepId: 'rep-1',
         status: 'pending',
         sourcePayloadJson: { assignedRepEmail: 'rep@example.com' },
+        contactEmails: ['lead@example.com', 'alt@example.com'],
+        contactPhones: ['(555) 111-2222', '(555) 333-4444'],
       });
     },
   );
@@ -85,6 +87,14 @@ test('upsert stores source payload ciphertext inline in source_payload_json', as
   assert.equal(
     calls[0].params.sourcePayloadJson,
     'cipher:source_payload_json:prospect-1:rep@example.com',
+  );
+  assert.equal(
+    calls[0].params.contactEmailsJson,
+    JSON.stringify(['lead@example.com', 'alt@example.com']),
+  );
+  assert.equal(
+    calls[0].params.contactPhonesJson,
+    JSON.stringify(['(555) 111-2222', '(555) 333-4444']),
   );
 });
 
@@ -98,6 +108,8 @@ test('findById decrypts inline source payload from source_payload_json', async (
       sales_rep_id: 'rep-2',
       status: 'pending',
       source_payload_json: 'cipher-source-payload',
+      contact_emails_json: JSON.stringify(['lead@example.com', 'alt@example.com']),
+      contact_phones_json: JSON.stringify(['(555) 111-2222', '(555) 333-4444']),
       created_at: '2026-03-24T12:00:00Z',
       updated_at: '2026-03-24T12:00:00Z',
     }),
@@ -118,6 +130,10 @@ test('findById decrypts inline source payload from source_payload_json', async (
       const record = await repository.findById('prospect-2');
       assert.equal(record.id, 'prospect-2');
       assert.deepEqual(record.sourcePayloadJson, { assignedRepEmail: 'rep@example.com' });
+      assert.deepEqual(record.contactEmails, ['lead@example.com', 'alt@example.com']);
+      assert.deepEqual(record.contactPhones, ['(555) 111-2222', '(555) 333-4444']);
+      assert.equal(record.contactEmail, 'lead@example.com');
+      assert.equal(record.contactPhone, '(555) 111-2222');
     },
   );
 });

@@ -373,8 +373,14 @@ const isSalesLead = (role?: string | null) => {
 };
 const isTestRep = (role?: string | null) =>
   normalizeRole(role) === "test_rep";
-const isSalesPartner = (role?: string | null, isPartner?: boolean | null) =>
-  Boolean(isPartner) || normalizeRole(role) === "sales_partner";
+const isSalesPartner = (role?: string | null, isPartner?: boolean | null) => {
+  const normalized = normalizeRole(role);
+  return (
+    normalized !== "doctor" &&
+    normalized !== "test_doctor" &&
+    (Boolean(isPartner) || normalized === "sales_partner")
+  );
+};
 const isBasicSalesRepViewer = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return (
@@ -407,6 +413,18 @@ const getSalesPartnerLabel = (allowedRetail?: boolean | null) => {
   if (normalized === false) return "Wholesale Partner";
   return "Sales Partner";
 };
+
+const normalizeEstimateDisplayLabel = (value?: string | null) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.replace(/\s*[–—]\s*/g, " - ").replace(/\s*-\s*/g, " - ");
+};
+
 const isUserHandDeliveryEnabled = (
   candidate:
     | {
@@ -2281,6 +2299,137 @@ const mergeIntegrationDetails = (
   };
 };
 
+const mergeAccountOrderSummaryPreservingSeed = (
+  baseOrder: AccountOrderSummary,
+  incomingOrder: AccountOrderSummary,
+): AccountOrderSummary => {
+  const merged: AccountOrderSummary = { ...baseOrder };
+  Object.entries(incomingOrder).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      (merged as any)[key] = value;
+    }
+  });
+
+  const toObjectRecord = (value: unknown): Record<string, any> | null => {
+    const parsed = parseMaybeJson(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, any>)
+      : null;
+  };
+  const pickAddress = (
+    preferred?: AccountOrderAddress | null,
+    fallback?: AccountOrderAddress | null,
+  ): AccountOrderAddress | null => {
+    if (hasSavedAddress(preferred)) {
+      return preferred ?? null;
+    }
+    if (hasSavedAddress(fallback)) {
+      return fallback ?? null;
+    }
+    return preferred ?? fallback ?? null;
+  };
+
+  const baseIntegrationDetails = toObjectRecord(baseOrder.integrationDetails);
+  const incomingIntegrationDetails = toObjectRecord(incomingOrder.integrationDetails);
+  const baseIntegrations = toObjectRecord(baseOrder.integrations);
+  const incomingIntegrations = toObjectRecord(incomingOrder.integrations);
+  const mergedIntegrationDetails =
+    baseIntegrationDetails || incomingIntegrationDetails
+      ? {
+          ...(baseIntegrationDetails || {}),
+          ...(incomingIntegrationDetails || {}),
+        }
+      : null;
+  const baseWooCommerceDetails = toObjectRecord(baseIntegrationDetails?.wooCommerce);
+  const incomingWooCommerceDetails = toObjectRecord(incomingIntegrationDetails?.wooCommerce);
+  if (mergedIntegrationDetails && (baseWooCommerceDetails || incomingWooCommerceDetails)) {
+    mergedIntegrationDetails.wooCommerce = {
+      ...(baseWooCommerceDetails || {}),
+      ...(incomingWooCommerceDetails || {}),
+    };
+  }
+  const baseWooCommerceLegacyDetails = toObjectRecord(baseIntegrationDetails?.woocommerce);
+  const incomingWooCommerceLegacyDetails = toObjectRecord(incomingIntegrationDetails?.woocommerce);
+  if (mergedIntegrationDetails && (baseWooCommerceLegacyDetails || incomingWooCommerceLegacyDetails)) {
+    mergedIntegrationDetails.woocommerce = {
+      ...(baseWooCommerceLegacyDetails || {}),
+      ...(incomingWooCommerceLegacyDetails || {}),
+    };
+  }
+
+  const basePlacedAt = resolveOrderPlacedAt(baseOrder as any) || baseOrder.createdAt || null;
+  const incomingPlacedAt = resolveOrderPlacedAt(incomingOrder as any) || incomingOrder.createdAt || null;
+  const baseUpdatedAt = resolveOrderUpdatedAt(baseOrder as any) || baseOrder.updatedAt || basePlacedAt;
+  const incomingUpdatedAt =
+    resolveOrderUpdatedAt(incomingOrder as any) || incomingOrder.updatedAt || incomingPlacedAt;
+
+  merged.createdAt = basePlacedAt || incomingPlacedAt || null;
+  merged.updatedAt = baseUpdatedAt || incomingUpdatedAt || merged.createdAt || null;
+  merged.trackingNumber =
+    normalizeStringField(resolveTrackingNumber(incomingOrder)) ||
+    normalizeStringField(resolveTrackingNumber(baseOrder)) ||
+    null;
+  merged.shippingEstimate = incomingOrder.shippingEstimate || baseOrder.shippingEstimate || null;
+  merged.shippingAddress = pickAddress(incomingOrder.shippingAddress, baseOrder.shippingAddress);
+  merged.billingAddress = pickAddress(incomingOrder.billingAddress, baseOrder.billingAddress);
+  merged.integrations =
+    baseIntegrations || incomingIntegrations
+      ? {
+          ...(baseIntegrations || {}),
+          ...(incomingIntegrations || {}),
+        }
+      : incomingOrder.integrations ?? baseOrder.integrations ?? null;
+  merged.integrationDetails = mergedIntegrationDetails;
+  merged.paymentMethod =
+    normalizeStringField(incomingOrder.paymentMethod) ||
+    normalizeStringField(baseOrder.paymentMethod) ||
+    null;
+  merged.paymentDetails =
+    normalizeStringField(incomingOrder.paymentDetails) ||
+    normalizeStringField(baseOrder.paymentDetails) ||
+    null;
+  merged.lineItems =
+    Array.isArray(incomingOrder.lineItems) && incomingOrder.lineItems.length > 0
+      ? incomingOrder.lineItems
+      : baseOrder.lineItems;
+  merged.shippingTotal = coerceNumber(incomingOrder.shippingTotal) ?? coerceNumber(baseOrder.shippingTotal) ?? null;
+  merged.taxTotal = coerceNumber(incomingOrder.taxTotal) ?? coerceNumber(baseOrder.taxTotal) ?? null;
+  merged.itemsSubtotal = coerceNumber(incomingOrder.itemsSubtotal) ?? coerceNumber(baseOrder.itemsSubtotal) ?? null;
+  merged.originalItemsSubtotal =
+    coerceNumber(incomingOrder.originalItemsSubtotal) ?? coerceNumber(baseOrder.originalItemsSubtotal) ?? null;
+  merged.discountCode =
+    normalizeStringField(incomingOrder.discountCode) ||
+    normalizeStringField(baseOrder.discountCode) ||
+    null;
+  merged.discountCodeAmount =
+    coerceNumber(incomingOrder.discountCodeAmount) ?? coerceNumber(baseOrder.discountCodeAmount) ?? null;
+  merged.appliedReferralCredit =
+    coerceNumber(incomingOrder.appliedReferralCredit) ??
+    coerceNumber(baseOrder.appliedReferralCredit) ??
+    null;
+  merged.expectedShipmentWindow =
+    normalizeStringField(incomingOrder.expectedShipmentWindow) ||
+    normalizeStringField(baseOrder.expectedShipmentWindow) ||
+    null;
+  merged.wooOrderId =
+    normalizeStringField(incomingOrder.wooOrderId) ||
+    normalizeStringField(baseOrder.wooOrderId) ||
+    null;
+  merged.wooOrderNumber =
+    normalizeStringField(incomingOrder.wooOrderNumber) ||
+    normalizeStringField(baseOrder.wooOrderNumber) ||
+    normalizeStringField(incomingOrder.number) ||
+    normalizeStringField(baseOrder.number) ||
+    null;
+  merged.cancellationId =
+    normalizeStringField(incomingOrder.cancellationId) ||
+    normalizeStringField(baseOrder.cancellationId) ||
+    merged.wooOrderId ||
+    baseOrder.id;
+
+  return merged;
+};
+
 const mergeWooSummaryIntoLocal = (
   localOrder: AccountOrderSummary,
   wooOrder: AccountOrderSummary,
@@ -2335,6 +2484,17 @@ const mergeWooSummaryIntoLocal = (
   }
   if (!localOrder.shippingEstimate && wooOrder.shippingEstimate) {
     localOrder.shippingEstimate = wooOrder.shippingEstimate;
+  }
+  const localExpectedShipmentWindow = normalizeStringField(
+    localOrder.expectedShipmentWindow ?? (localOrder as any).expected_shipment_window,
+  );
+  const wooExpectedShipmentWindow = normalizeStringField(
+    wooOrder.expectedShipmentWindow ?? (wooOrder as any).expected_shipment_window,
+  );
+  if (!localExpectedShipmentWindow && wooExpectedShipmentWindow) {
+    localOrder.expectedShipmentWindow = wooExpectedShipmentWindow;
+  } else if (localExpectedShipmentWindow) {
+    localOrder.expectedShipmentWindow = localExpectedShipmentWindow;
   }
   if (typeof wooOrder.shippingTotal === "number") {
     localOrder.shippingTotal = wooOrder.shippingTotal;
@@ -2490,6 +2650,10 @@ const normalizeAccountOrdersResponse = (
           shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
           taxTotal: coerceNumber(order?.taxTotal) ?? null,
           physicianCertified: order?.physicianCertified === true,
+          expectedShipmentWindow:
+            normalizeStringField(
+              order?.expectedShipmentWindow ?? order?.expected_shipment_window,
+            ) || null,
           wooOrderNumber:
             normalizeStringField(
               order?.wooOrderNumber ||
@@ -2577,6 +2741,10 @@ const normalizeAccountOrdersResponse = (
           shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
           taxTotal: coerceNumber(order?.taxTotal) ?? null,
           physicianCertified: order?.physicianCertified === true,
+          expectedShipmentWindow:
+            normalizeStringField(
+              order?.expectedShipmentWindow ?? order?.expected_shipment_window,
+            ) || null,
           wooOrderNumber:
             normalizeStringField(
               order?.wooOrderNumber ||
@@ -2680,6 +2848,10 @@ const normalizeAccountOrdersResponse = (
               order?.taxTotal ?? order?.total_tax ?? order?.totalTax,
             ) ?? null,
           physicianCertified: order?.physicianCertified === true,
+          expectedShipmentWindow:
+            normalizeStringField(
+              order?.expectedShipmentWindow ?? order?.expected_shipment_window,
+            ) || null,
           cancellationId:
             normalizeWooOrderId(order?.id) ||
             normalizeWooOrderId(order?.number) ||
@@ -7719,11 +7891,13 @@ function MainApp() {
 	      status: "",
 	      expectedShipmentWindow: "",
 	    });
-	  const [salesOrderFieldsSaving, setSalesOrderFieldsSaving] = useState(false);
-	  const salesOrderFieldsInitializedForRef = useRef<string | null>(null);
+  const [salesOrderFieldsSaving, setSalesOrderFieldsSaving] = useState(false);
+  const salesOrderFieldsInitializedForRef = useRef<string | null>(null);
   const [salesOrderDetail, setSalesOrderDetail] =
     useState<AccountOrderSummary | null>(null);
+  const [salesOrderDetailOpen, setSalesOrderDetailOpen] = useState(false);
   const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
+  const salesOrderDetailRequestIdRef = useRef(0);
   const [trackingStatusByNumber, setTrackingStatusByNumber] = useState<Record<string, CarrierTrackingInfo>>({});
   const trackingStatusByNumberRef = useRef<Record<string, CarrierTrackingInfo>>({});
   useEffect(() => {
@@ -8832,8 +9006,6 @@ function MainApp() {
   const mergeSalesOrderDetail = useCallback(
     (detail: AccountOrderSummary | null) => {
       if (!detail) return;
-      const detailPlacedAt = resolveOrderPlacedAt(detail as any);
-      const detailUpdatedAt = resolveOrderUpdatedAt(detail as any) || detailPlacedAt;
       setSalesTrackingOrders((prev) =>
         prev.map((order) => {
           const match =
@@ -8841,21 +9013,7 @@ function MainApp() {
             (order.wooOrderId && detail.wooOrderId && String(order.wooOrderId) === String(detail.wooOrderId)) ||
             (order.number && detail.number && String(order.number) === String(detail.number));
           if (!match) return order;
-          return {
-            ...order,
-            ...detail,
-            shippingEstimate: detail.shippingEstimate || order.shippingEstimate || null,
-            createdAt:
-              resolveOrderPlacedAt(order as any) ||
-              detailPlacedAt ||
-              null,
-            updatedAt:
-              resolveOrderUpdatedAt(order as any) ||
-              detailUpdatedAt ||
-              resolveOrderPlacedAt(order as any) ||
-              null,
-            lineItems: detail.lineItems?.length ? detail.lineItems : order.lineItems,
-          };
+          return mergeAccountOrderSummaryPreservingSeed(order, detail);
         }),
       );
     },
@@ -8943,9 +9101,18 @@ function MainApp() {
   }, [salesTrackingOrders]);
 	  const openSalesOrderDetails = useCallback(
 	    async (order: AccountOrderSummary) => {
-	      setSalesOrderDetail(order);
+        const requestId = salesOrderDetailRequestIdRef.current + 1;
+        salesOrderDetailRequestIdRef.current = requestId;
+        setSalesOrderDetailOpen(true);
+        setSalesOrderDetail(null);
 	      salesOrderFieldsInitializedForRef.current = null;
 	      setSalesOrderDetailLoading(true);
+        const applyResolvedOrder = (resolvedOrder: AccountOrderSummary) => {
+          setSalesOrderDetail(resolvedOrder);
+          const derived = deriveSalesOrderEditableFields(resolvedOrder);
+          setSalesOrderFieldsSaved(derived);
+          setSalesOrderFieldsDraft(derived);
+        };
 	      try {
 	        const detail = await ordersAPI.getSalesRepOrderDetail(
 	          order.wooOrderId || order.id || order.number || "",
@@ -8955,36 +9122,31 @@ function MainApp() {
             resolveOrderDoctorId(order) ||
             null,
         );
+        if (requestId !== salesOrderDetailRequestIdRef.current) {
+          return;
+        }
         const normalized = normalizeAccountOrdersResponse(
           { woo: Array.isArray(detail) ? detail : [detail] },
           { includeCanceled: true },
         );
         if (normalized && normalized.length > 0) {
-          const basePlacedAt = resolveOrderPlacedAt(order as any);
-          const baseUpdatedAt = resolveOrderUpdatedAt(order as any) || basePlacedAt;
-          const enriched = {
-            ...normalized[0],
-            createdAt: basePlacedAt || resolveOrderPlacedAt(normalized[0] as any) || null,
-            updatedAt:
-              baseUpdatedAt ||
-              resolveOrderUpdatedAt(normalized[0] as any) ||
-              resolveOrderPlacedAt(normalized[0] as any) ||
-              null,
-          };
-	          setSalesOrderDetail(enriched);
-	          const derived = deriveSalesOrderEditableFields(enriched);
-	          setSalesOrderFieldsSaved(derived);
-	          setSalesOrderFieldsDraft(derived);
+          const enriched = mergeAccountOrderSummaryPreservingSeed(order, normalized[0]);
+	          applyResolvedOrder(enriched);
 	          mergeSalesOrderDetail(enriched);
 	        } else if (detail && typeof detail === "object") {
-	          const enriched = detail as AccountOrderSummary;
-	          setSalesOrderDetail(enriched);
-	          const derived = deriveSalesOrderEditableFields(enriched);
-	          setSalesOrderFieldsSaved(derived);
-	          setSalesOrderFieldsDraft(derived);
+	          const enriched = mergeAccountOrderSummaryPreservingSeed(
+              order,
+              detail as AccountOrderSummary,
+            );
+	          applyResolvedOrder(enriched);
 	          mergeSalesOrderDetail(enriched);
+        } else {
+          applyResolvedOrder(order);
         }
       } catch (error: any) {
+        if (requestId !== salesOrderDetailRequestIdRef.current) {
+          return;
+        }
         const message =
           typeof error?.message === "string" ? error.message.toLowerCase() : "";
         const isTransientDetailError =
@@ -9003,6 +9165,7 @@ function MainApp() {
           message.includes("preflight");
         if (isTransientDetailError) {
           console.warn("[Sales Tracking] Order detail request timed out; showing cached summary", error);
+          applyResolvedOrder(order);
           return;
         }
         console.error("[Sales Tracking] Failed to fetch order detail", error);
@@ -9011,8 +9174,11 @@ function MainApp() {
             ? error.message
             : "Unable to load order details.",
         );
+        applyResolvedOrder(order);
       } finally {
-        setSalesOrderDetailLoading(false);
+        if (requestId === salesOrderDetailRequestIdRef.current) {
+          setSalesOrderDetailLoading(false);
+        }
       }
 	    },
 	    [deriveSalesOrderEditableFields, mergeSalesOrderDetail],
@@ -19138,6 +19304,19 @@ function MainApp() {
 	      }
 	      try {
 	        setManualProspectSubmitting(true);
+	        const parseCommaSeparatedEntries = (value: string) =>
+	          Array.from(
+	            new Set(
+	              value
+	                .split(",")
+	                .map((entry) => entry.trim())
+	                .filter((entry) => entry.length > 0),
+	            ),
+	          );
+	        const emails = parseCommaSeparatedEntries(manualProspectForm.email).map((entry) =>
+	          entry.toLowerCase(),
+	        );
+	        const phones = parseCommaSeparatedEntries(manualProspectForm.phone);
 	        const normalizedLines = manualProspectForm.address
 	          .split(/\r?\n/)
 	          .map((line) => line.trim())
@@ -19192,8 +19371,10 @@ function MainApp() {
 	          withoutCityStateZip.length > 1 ? withoutCityStateZip.slice(1).join(", ") : null;
 	        await referralAPI.createManualProspect({
 	          name: manualProspectForm.name.trim(),
-	          email: manualProspectForm.email.trim() || undefined,
-	          phone: manualProspectForm.phone.trim() || undefined,
+	          email: emails[0] || undefined,
+	          emails: emails.length > 0 ? emails : undefined,
+	          phone: phones[0] || undefined,
+	          phones: phones.length > 0 ? phones : undefined,
 	          officeAddressLine1: officeAddressLine1 || undefined,
 	          officeAddressLine2: officeAddressLine2 || undefined,
 	          officeCity: city || undefined,
@@ -33211,17 +33392,34 @@ function MainApp() {
 	          {(() => {
 	            const row = prospectDetailModalProspect;
 	            if (!row) return null;
+	            const emailValues = Array.isArray(row?.contactEmails)
+	              ? row.contactEmails
+	                  .map((value: unknown) => String(value || "").trim())
+	                  .filter((value: string) => value.length > 0)
+	              : [];
+	            const phoneValues = Array.isArray(row?.contactPhones)
+	              ? row.contactPhones
+	                  .map((value: unknown) => String(value || "").trim())
+	                  .filter((value: string) => value.length > 0)
+	              : [];
 	            const name = String(
 	              row?._displayName || row?.referredContactName || row?.contactName || "Lead",
 	            ).trim();
 	            const email = String(
 	              row?._displayEmail ||
+	                emailValues.join(", ") ||
 	                row?.referredContactEmail ||
 	                row?.contactEmail ||
 	                row?.email ||
 	                "",
 	            ).trim();
-	            const phone = String(row?.referredContactPhone || row?.contactPhone || row?.phone || "").trim();
+	            const phone = String(
+	              phoneValues.join(", ") ||
+	                row?.referredContactPhone ||
+	                row?.contactPhone ||
+	                row?.phone ||
+	                "",
+	            ).trim();
 	            const status = String(row?.status || "pending").trim();
 	            const updatedAt = String(row?.updatedAt || row?.createdAt || "").trim();
 	            const idLabel = String(row?.id || row?.referralId || row?.contactFormId || "").trim();
@@ -33318,7 +33516,7 @@ function MainApp() {
 	                  Email
 	                </label>
                 <Input
-                  type="email"
+                  type="text"
                   value={manualProspectForm.email}
                   onChange={(event) =>
                     setManualProspectForm((prev) => ({
@@ -33326,9 +33524,10 @@ function MainApp() {
                       email: event.target.value,
                     }))
                   }
-                  placeholder="lead@email.com"
+                  placeholder="lead@email.com, alternate@email.com"
                   className="border-slate-300/90 bg-transparent"
                 />
+                <p className="text-xs text-slate-500">Comma separated.</p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">
@@ -33342,9 +33541,10 @@ function MainApp() {
                       phone: event.target.value,
                     }))
                   }
-                  placeholder="(444) 222 4224"
+                  placeholder="(444) 222 4224, (555) 333 1212"
                   className="border-slate-300/90 bg-transparent"
                 />
+                <p className="text-xs text-slate-500">Comma separated.</p>
 	              </div>
 	            </div>
 	            <div className="space-y-2">
@@ -35159,9 +35359,11 @@ function MainApp() {
 	        </DialogContent>
       </Dialog>
       <Dialog
-        open={Boolean(salesOrderDetail)}
+        open={salesOrderDetailOpen}
         onOpenChange={(open) => {
           if (!open) {
+            salesOrderDetailRequestIdRef.current += 1;
+            setSalesOrderDetailOpen(false);
             setSalesOrderDetail(null);
             setSalesOrderDetailLoading(false);
             salesOrderFieldsInitializedForRef.current = null;
@@ -35367,15 +35569,39 @@ function MainApp() {
                   null;
                 const isShippedDetail =
                   hasOrderShippedAt(salesOrderDetail) || normalizedStatus === "shipped";
-                const expectedDelivery =
-                  isShippedDetail && shipping?.estimatedArrivalDate
-                    ? formatDate(shipping.estimatedArrivalDate)
-                    : null;
+                const normalizedShippingEstimate = normalizeShippingEstimateField(
+                  shipping,
+                  {
+                    fallbackDate:
+                      resolveOrderPlacedAt(salesOrderDetail as any) ||
+                      (salesOrderDetail as any)?.createdAt ||
+                      null,
+                  },
+                );
+                const expectedDeliveryDateRaw =
+                  normalizedShippingEstimate?.estimatedArrivalDate ||
+                  (typeof shipping?.deliveryDateGuaranteed === "string"
+                    ? shipping.deliveryDateGuaranteed
+                    : null) ||
+                  (typeof (shipping as any)?.estimated_delivery_date === "string"
+                    ? (shipping as any).estimated_delivery_date
+                    : null) ||
+                  null;
+                const expectedDelivery = expectedDeliveryDateRaw
+                  ? formatDate(expectedDeliveryDateRaw)
+                  : null;
+                const trackingLabel = resolveTrackingNumber(salesOrderDetail);
+                const estimateRangeLabel =
+                  normalizeEstimateDisplayLabel(expectedShipmentWindow) ||
+                  normalizeEstimateDisplayLabel(expectedDelivery) ||
+                  "";
                 const deliverySummaryLabel = isSalesOrderHandDelivered(salesOrderDetail as any)
                   ? "Hand delivery"
-                  : isShippedDetail && shippedDate
-                    ? `Shipped ${shippedDate}`
-                    : expectedDelivery;
+                  : estimateRangeLabel
+                    ? estimateRangeLabel
+                    : isShippedDetail && shippedDate
+                      ? `Shipped ${shippedDate}`
+                      : null;
 
                 const formatShippingCode = (value?: string | null) => {
                   if (!value) return null;
@@ -35388,7 +35614,6 @@ function MainApp() {
                 };
                 const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
                 const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
-                const trackingLabel = resolveTrackingNumber(salesOrderDetail);
                 const integrationsParsed = parseMaybeJson(
                   (salesOrderDetail as any).integrationDetails ||
                     (salesOrderDetail as any).integrations ||
@@ -35404,9 +35629,6 @@ function MainApp() {
                   carrierTracking?.trackingStatus ||
                   carrierTracking?.status ||
                   null;
-                const showExpectedShipmentWindow = Boolean(
-                  expectedShipmentWindow && !(normalizedStatus === "shipped" && Boolean(trackingLabel)),
-                );
                 const trackingHref = trackingLabel
                   ? buildTrackingUrl(
                       trackingLabel,
@@ -35530,16 +35752,10 @@ function MainApp() {
                               )}
                             </p>
                           )}
-                          {expectedDelivery && expectedDelivery !== "—" && (
+                          {estimateRangeLabel && (
                             <p>
-                              <span className="font-semibold">Expected:</span>{" "}
-                              {expectedDelivery}
-                            </p>
-                          )}
-	                          {showExpectedShipmentWindow && (
-	                            <p>
-	                              <span className="font-semibold">Estimated ship window:</span>{" "}
-	                              {expectedShipmentWindow}
+                              <span className="font-semibold">Estimate:</span>{" "}
+                              {estimateRangeLabel}
 	                            </p>
 	                          )}
 	                        </div>
@@ -35634,7 +35850,7 @@ function MainApp() {
 	                                  />
 	                                </label>
 	                                <label className="text-xs text-slate-600 sm:col-span-2">
-	                                  Estimated ship window
+	                                  Estimated delivery window
 	                                  <input
 	                                    value={salesOrderFieldsDraft.expectedShipmentWindow}
 	                                    onChange={(e) =>

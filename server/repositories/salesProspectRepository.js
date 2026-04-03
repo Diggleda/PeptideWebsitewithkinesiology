@@ -3,6 +3,8 @@ const { salesProspectStore } = require('../storage');
 const { logger } = require('../config/logger');
 const { decryptJson, encryptJson } = require('../utils/cryptoEnvelope');
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
 const normalizeId = (value) => {
   if (value === null || value === undefined) return null;
   const str = String(value).trim();
@@ -17,6 +19,121 @@ const normalizeEmail = (value) => {
 const normalizePhoneDigits = (value) => {
   if (value === null || value === undefined) return '';
   return String(value).replace(/[^0-9]/g, '');
+};
+
+const normalizeText = (value) => {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  return str.length > 0 ? str : null;
+};
+
+const uniqueList = (values) => {
+  const seen = new Set();
+  const output = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    output.push(value);
+  }
+  return output;
+};
+
+const parseJsonArray = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const normalizeEmailList = (value) => uniqueList(
+  (Array.isArray(value) ? value : [value])
+    .map((item) => normalizeEmail(item))
+    .filter(Boolean),
+);
+
+const normalizePhoneList = (value) => uniqueList(
+  (Array.isArray(value) ? value : [value])
+    .map((item) => normalizeText(item))
+    .filter(Boolean),
+);
+
+const normalizeContactFields = (record) => {
+  const rawEmailListProvided = hasOwn(record, 'contactEmails') || hasOwn(record, 'contact_emails_json');
+  const rawPhoneListProvided = hasOwn(record, 'contactPhones') || hasOwn(record, 'contact_phones_json');
+  const rawEmailList = rawEmailListProvided
+    ? (hasOwn(record, 'contactEmails') ? record.contactEmails : record.contact_emails_json)
+    : null;
+  const rawPhoneList = rawPhoneListProvided
+    ? (hasOwn(record, 'contactPhones') ? record.contactPhones : record.contact_phones_json)
+    : null;
+  const rawEmail = hasOwn(record, 'contactEmail') ? record.contactEmail : record?.contact_email;
+  const rawPhone = hasOwn(record, 'contactPhone') ? record.contactPhone : record?.contact_phone;
+  const contactEmails = rawEmailListProvided
+    ? normalizeEmailList(parseJsonArray(rawEmailList))
+    : normalizeEmailList(rawEmail);
+  const contactPhones = rawPhoneListProvided
+    ? normalizePhoneList(parseJsonArray(rawPhoneList))
+    : normalizePhoneList(rawPhone);
+
+  return {
+    contactEmails,
+    contactPhones,
+    contactEmail: contactEmails[0] || (rawEmailListProvided ? null : normalizeText(rawEmail)),
+    contactPhone: contactPhones[0] || (rawPhoneListProvided ? null : normalizeText(rawPhone)),
+  };
+};
+
+const resolveContactPatch = (existing, incoming) => {
+  const base = normalizeContactFields(existing || {});
+  const incomingHasEmailList = hasOwn(incoming, 'contactEmails') || hasOwn(incoming, 'contact_emails_json');
+  const incomingHasPhoneList = hasOwn(incoming, 'contactPhones') || hasOwn(incoming, 'contact_phones_json');
+  const incomingHasEmail = hasOwn(incoming, 'contactEmail') || hasOwn(incoming, 'contact_email');
+  const incomingHasPhone = hasOwn(incoming, 'contactPhone') || hasOwn(incoming, 'contact_phone');
+
+  const contactEmails = incomingHasEmailList
+    ? normalizeEmailList(parseJsonArray(hasOwn(incoming, 'contactEmails') ? incoming.contactEmails : incoming.contact_emails_json))
+    : incomingHasEmail
+      ? normalizeEmailList(hasOwn(incoming, 'contactEmail') ? incoming.contactEmail : incoming.contact_email)
+      : base.contactEmails;
+
+  const contactPhones = incomingHasPhoneList
+    ? normalizePhoneList(parseJsonArray(hasOwn(incoming, 'contactPhones') ? incoming.contactPhones : incoming.contact_phones_json))
+    : incomingHasPhone
+      ? normalizePhoneList(hasOwn(incoming, 'contactPhone') ? incoming.contactPhone : incoming.contact_phone)
+      : base.contactPhones;
+
+  return {
+    contactEmails,
+    contactPhones,
+    contactEmail: contactEmails[0] || null,
+    contactPhone: contactPhones[0] || null,
+  };
+};
+
+const recordHasEmail = (record, email) => {
+  if (!email) return false;
+  const { contactEmails, contactEmail } = normalizeContactFields(record);
+  if (contactEmails.some((item) => item === email)) {
+    return true;
+  }
+  return normalizeEmail(contactEmail) === email;
+};
+
+const recordHasPhone = (record, phoneDigits) => {
+  if (!phoneDigits) return false;
+  const { contactPhones, contactPhone } = normalizeContactFields(record);
+  if (contactPhones.some((item) => normalizePhoneDigits(item) === phoneDigits)) {
+    return true;
+  }
+  return normalizePhoneDigits(contactPhone) === phoneDigits;
 };
 
 const isDoctorLinked = (record) => Boolean(normalizeId(record?.doctorId || record?.doctor_id));
@@ -35,6 +152,7 @@ const ensureDefaults = (record) => {
   const encryptedSourcePayload = record.source_payload_encrypted || null;
   const assignedAt = record.assignedAt || record.assigned_at || null;
   const lastSyncedAt = record.lastSyncedAt || record.last_synced_at || null;
+  const contactFields = normalizeContactFields(record);
   const resolvedSourcePayload = (() => {
     const decryptedInline = decryptJson(sourcePayloadJson, {
       aad: {
@@ -86,8 +204,10 @@ const ensureDefaults = (record) => {
     notes: record.notes == null ? null : String(record.notes),
     isManual: Boolean(record.isManual) || Boolean(record.is_manual),
     contactName: record.contactName || record.contact_name || null,
-    contactEmail: record.contactEmail || record.contact_email || null,
-    contactPhone: record.contactPhone || record.contact_phone || null,
+    contactEmail: contactFields.contactEmail,
+    contactPhone: contactFields.contactPhone,
+    contactEmails: contactFields.contactEmails,
+    contactPhones: contactFields.contactPhones,
     resellerPermitExempt: Boolean(
       record.resellerPermitExempt || record.reseller_permit_exempt,
     ),
@@ -141,6 +261,14 @@ const toDbParams = (record) => {
     contactName: record.contactName,
     contactEmail: record.contactEmail,
     contactPhone: record.contactPhone,
+    contactEmailsJson:
+      Array.isArray(record.contactEmails) && record.contactEmails.length > 0
+        ? JSON.stringify(record.contactEmails)
+        : null,
+    contactPhonesJson:
+      Array.isArray(record.contactPhones) && record.contactPhones.length > 0
+        ? JSON.stringify(record.contactPhones)
+        : null,
     resellerPermitExempt: record.resellerPermitExempt ? 1 : 0,
     resellerPermitFilePath: record.resellerPermitFilePath || null,
     resellerPermitFileName: record.resellerPermitFileName || null,
@@ -288,7 +416,10 @@ const findBySalesRepAndContactEmail = async (salesRepId, contactEmail) => {
       `
         SELECT * FROM sales_prospects
         WHERE sales_rep_id = :salesRepId
-          AND contact_email_normalized = :contactEmail
+          AND (
+            contact_email_normalized = :contactEmail
+            OR JSON_SEARCH(contact_emails_json, 'one', :contactEmail) IS NOT NULL
+          )
         ORDER BY COALESCE(updated_at, created_at) DESC
         LIMIT 1
       `,
@@ -299,7 +430,7 @@ const findBySalesRepAndContactEmail = async (salesRepId, contactEmail) => {
   const list = readStoreRecords();
   const matches = list
     .map(ensureDefaults)
-    .filter((item) => item.salesRepId === rep && normalizeEmail(item.contactEmail) === email);
+    .filter((item) => item.salesRepId === rep && recordHasEmail(item, email));
   if (matches.length === 0) return null;
   matches.sort((a, b) => {
     const aMs = Date.parse(String(a.updatedAt || a.createdAt || '')) || 0;
@@ -344,6 +475,7 @@ const findByContactEmail = async (contactEmail) => {
       `
         SELECT * FROM sales_prospects
         WHERE contact_email_normalized = :contactEmail
+           OR JSON_SEARCH(contact_emails_json, 'one', :contactEmail) IS NOT NULL
         ORDER BY COALESCE(updated_at, created_at) DESC
         LIMIT 1
       `,
@@ -354,7 +486,7 @@ const findByContactEmail = async (contactEmail) => {
   const list = readStoreRecords();
   const matches = list
     .map(ensureDefaults)
-    .filter((item) => normalizeEmail(item.contactEmail) === email);
+    .filter((item) => recordHasEmail(item, email));
   if (matches.length === 0) return null;
   matches.sort((a, b) => {
     const aMs = Date.parse(String(a.updatedAt || a.createdAt || '')) || 0;
@@ -369,7 +501,7 @@ const findByContactPhone = async (contactPhone) => {
   if (!phone) return null;
   const matchesByPhone = (records) => (records || [])
     .map(ensureDefaults)
-    .filter((item) => normalizePhoneDigits(item.contactPhone) === phone)
+    .filter((item) => recordHasPhone(item, phone))
     .sort((a, b) => {
       const aMs = Date.parse(String(a.updatedAt || a.createdAt || '')) || 0;
       const bMs = Date.parse(String(b.updatedAt || b.createdAt || '')) || 0;
@@ -382,6 +514,7 @@ const findByContactPhone = async (contactPhone) => {
         SELECT *
         FROM sales_prospects
         WHERE contact_phone IS NOT NULL
+           OR contact_phones_json IS NOT NULL
       `,
     );
     const matches = matchesByPhone(rows);
@@ -429,11 +562,14 @@ const upsert = async (prospect) => {
   ) {
     existing = await findBySourceExternalId(incoming.sourceSystem, incoming.sourceExternalId);
   }
-  if (!existing && normalizeEmail(incoming.contactEmail)) {
-    existing = await findByContactEmail(incoming.contactEmail);
+  const incomingContactPatch = resolveContactPatch(existing || {}, incoming);
+  for (const email of incomingContactPatch.contactEmails) {
+    if (existing) break;
+    existing = await findByContactEmail(email);
   }
-  if (!existing && normalizePhoneDigits(incoming.contactPhone)) {
-    existing = await findByContactPhone(incoming.contactPhone);
+  for (const phone of incomingContactPatch.contactPhones) {
+    if (existing) break;
+    existing = await findByContactPhone(phone);
   }
   if (!existing && doctorId) {
     existing = await findByDoctorId(doctorId);
@@ -462,9 +598,11 @@ const upsert = async (prospect) => {
     );
   }
   const resolvedSalesRepId = lockedDoctorSalesRepId || salesRepId || normalizeId(existing?.salesRepId);
+  const contactPatch = resolveContactPatch(existing || {}, incoming);
   const normalized = ensureDefaults({
     ...(existing || {}),
     ...incoming,
+    ...contactPatch,
     id: resolvedId,
     salesRepId: resolvedSalesRepId,
     updatedAt: nowIso(),
@@ -508,6 +646,8 @@ const upsert = async (prospect) => {
 	          contact_name,
 	          contact_email,
 	          contact_phone,
+	          contact_emails_json,
+	          contact_phones_json,
 	          reseller_permit_exempt,
 	          reseller_permit_file_path,
 	          reseller_permit_file_name,
@@ -533,6 +673,8 @@ const upsert = async (prospect) => {
 	          :contactName,
 	          :contactEmail,
 	          :contactPhone,
+	          :contactEmailsJson,
+	          :contactPhonesJson,
 	          :resellerPermitExempt,
 	          :resellerPermitFilePath,
 	          :resellerPermitFileName,
@@ -561,6 +703,8 @@ const upsert = async (prospect) => {
 	          contact_name = VALUES(contact_name),
 	          contact_email = VALUES(contact_email),
 	          contact_phone = VALUES(contact_phone),
+	          contact_emails_json = VALUES(contact_emails_json),
+	          contact_phones_json = VALUES(contact_phones_json),
 	          reseller_permit_exempt = VALUES(reseller_permit_exempt),
 	          reseller_permit_file_path = VALUES(reseller_permit_file_path),
 	          reseller_permit_file_name = VALUES(reseller_permit_file_name),

@@ -58,11 +58,21 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
                 "id": "prospect1",
                 "createdAt": "2025-11-06T02:14:26+00:00",
                 "updatedAt": "2025-11-06T02:14:26Z",
+                "contactEmails": ["lead@example.com", "alt@example.com"],
+                "contactPhones": ["(555) 111-2222", "(555) 333-4444"],
             }
         )
 
         self.assertEqual(params["created_at"], "2025-11-06 02:14:26")
         self.assertEqual(params["updated_at"], "2025-11-06 02:14:26")
+        self.assertEqual(
+            params["contact_emails_json"],
+            '["lead@example.com", "alt@example.com"]',
+        )
+        self.assertEqual(
+            params["contact_phones_json"],
+            '["(555) 111-2222", "(555) 333-4444"]',
+        )
 
     def test_referral_repository_strips_timezone_offset(self) -> None:
         params = referral_repository._to_db_params(
