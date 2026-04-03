@@ -186,7 +186,7 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
             )
             persisted = []
             service.order_repository.update_ups_tracking_status = (
-                lambda order_id, *, ups_tracking_status, delivered_at=None: persisted.append((order_id, ups_tracking_status, delivered_at)) or {
+                lambda order_id, *, ups_tracking_status, delivered_at=None, estimated_arrival_date=None, delivery_date_guaranteed=None, expected_shipment_window=None: persisted.append((order_id, ups_tracking_status, delivered_at)) or {
                     "id": order_id,
                     "wooOrderNumber": "#1396",
                     "trackingNumber": "1ZTEST1396",
@@ -249,7 +249,7 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
 
             service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"2001", "#2001"} else None
             service.order_repository.update_ups_tracking_status = (
-                lambda order_id, *, ups_tracking_status, delivered_at=None: persisted.append((order_id, ups_tracking_status, delivered_at)) or local_order
+                lambda order_id, *, ups_tracking_status, delivered_at=None, estimated_arrival_date=None, delivery_date_guaranteed=None, expected_shipment_window=None: persisted.append((order_id, ups_tracking_status, delivered_at)) or local_order
             )
             service.ups_tracking.fetch_tracking_status = lambda _tracking_number: {
                 "carrier": "ups",
@@ -273,6 +273,94 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
             self.assertEqual(order["upsTrackingStatus"], "in_transit")
             self.assertEqual(order["shippingEstimate"]["status"], "in_transit")
             self.assertEqual(refreshed["upsTrackingStatus"], "in_transit")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
+
+    def test_refresh_ups_status_persists_estimate_when_status_is_unchanged(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
+        try:
+            local_order = {
+                "id": "local-ups-2002",
+                "wooOrderNumber": "#2002",
+                "trackingNumber": "1ZTEST2002",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "in_transit",
+                "shippingEstimate": {"status": "in_transit", "carrierId": "ups"},
+            }
+            persisted = []
+
+            service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"2002", "#2002"} else None
+            service.order_repository.update_ups_tracking_status = (
+                lambda order_id, *, ups_tracking_status, delivered_at=None, estimated_arrival_date=None, delivery_date_guaranteed=None, expected_shipment_window=None: (
+                    persisted.append(
+                        (
+                            order_id,
+                            ups_tracking_status,
+                            delivered_at,
+                            estimated_arrival_date,
+                            delivery_date_guaranteed,
+                            expected_shipment_window,
+                        )
+                    )
+                    or {
+                        **local_order,
+                        "upsTrackingStatus": ups_tracking_status,
+                        "shippingEstimate": {
+                            "status": ups_tracking_status,
+                            "carrierId": "ups",
+                            **({"estimatedArrivalDate": estimated_arrival_date} if estimated_arrival_date else {}),
+                            **({"deliveryDateGuaranteed": delivery_date_guaranteed} if delivery_date_guaranteed else {}),
+                        },
+                        "expectedShipmentWindow": expected_shipment_window,
+                    }
+                )
+            )
+            service.ups_tracking.fetch_tracking_status = lambda _tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": "1ZTEST2002",
+                "trackingStatus": "In Transit",
+                "trackingStatusRaw": "On the Way",
+                "estimatedArrivalDate": "2026-04-07T18:00:00",
+                "deliveryDateGuaranteed": "2026-04-07T00:00:00",
+                "expectedShipmentWindow": "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+            }
+
+            order = {
+                "id": "2002",
+                "wooOrderNumber": "2002",
+                "trackingNumber": "1ZTEST2002",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "in_transit",
+                "shippingEstimate": {"status": "in_transit", "carrierId": "ups"},
+            }
+
+            refreshed = service._refresh_authoritative_ups_status_for_order_view(order, local_order=local_order)
+
+            self.assertEqual(
+                persisted,
+                [
+                    (
+                        "local-ups-2002",
+                        "in_transit",
+                        None,
+                        "2026-04-07T18:00:00",
+                        "2026-04-07T00:00:00",
+                        "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+                    )
+                ],
+            )
+            self.assertEqual(order["shippingEstimate"]["estimatedArrivalDate"], "2026-04-07T18:00:00")
+            self.assertEqual(order["shippingEstimate"]["deliveryDateGuaranteed"], "2026-04-07T00:00:00")
+            self.assertEqual(
+                order["expectedShipmentWindow"],
+                "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+            )
+            self.assertEqual(refreshed["shippingEstimate"]["estimatedArrivalDate"], "2026-04-07T18:00:00")
         finally:
             service.order_repository.find_by_order_identifier = original_find_identifier
             service.order_repository.update_ups_tracking_status = original_update_ups_status

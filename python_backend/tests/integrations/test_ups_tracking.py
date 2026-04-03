@@ -126,6 +126,53 @@ class TestUpsTracking(unittest.TestCase):
     @patch("python_backend.integrations.ups_tracking.get_config")
     @patch("python_backend.integrations.ups_tracking._get_access_token", return_value="token-1")
     @patch("python_backend.integrations.ups_tracking.http_client.get")
+    def test_fetch_tracking_status_extracts_estimated_delivery_window(
+        self, mock_get, _mock_token, mock_get_config
+    ):
+        mock_get_config.return_value = SimpleNamespace(
+            ups={"client_id": "client-id", "client_secret": "client-secret", "merchant_id": "", "use_cie": False}
+        )
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "trackResponse": {
+                "shipment": [
+                    {
+                        "inquiryNumber": "1ZESTIMATE1",
+                        "package": [
+                            {
+                                "currentStatus": {
+                                    "simplifiedTextDescription": "On the Way",
+                                    "description": "In Transit",
+                                    "statusCode": "012",
+                                },
+                                "deliveryDate": [{"type": "SDD", "date": "20260407"}],
+                                "deliveryTime": {
+                                    "type": "EDW",
+                                    "startTime": "140000",
+                                    "endTime": "180000",
+                                },
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = response
+
+        result = ups_tracking.fetch_tracking_status("1ZESTIMATE1")
+
+        self.assertEqual(result["trackingStatus"], "in_transit")
+        self.assertEqual(result["estimatedArrivalDate"], "2026-04-07T18:00:00")
+        self.assertEqual(result["deliveryDateGuaranteed"], "2026-04-07T00:00:00")
+        self.assertEqual(
+            result["expectedShipmentWindow"],
+            "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+        )
+
+    @patch("python_backend.integrations.ups_tracking.get_config")
+    @patch("python_backend.integrations.ups_tracking._get_access_token", return_value="token-1")
+    @patch("python_backend.integrations.ups_tracking.http_client.get")
     def test_fetch_tracking_status_maps_shipper_created_label_phrase(
         self, mock_get, _mock_token, mock_get_config
     ):

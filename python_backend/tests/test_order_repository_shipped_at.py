@@ -298,6 +298,34 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertEqual(result["shippingEstimate"]["status"], "delivered")
         self.assertEqual(result["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
 
+    @patch("python_backend.repositories.order_repository.update")
+    @patch(
+        "python_backend.repositories.order_repository.find_by_id",
+        return_value={
+            "id": "order-10b",
+            "shippingEstimate": {"carrierId": "ups", "status": "in_transit"},
+            "upsTrackingStatus": "in_transit",
+        },
+    )
+    def test_update_ups_tracking_status_persists_estimated_delivery_fields(self, _find_by_id, mock_update):
+        mock_update.side_effect = lambda order: order
+
+        result = order_repository.update_ups_tracking_status(
+            "order-10b",
+            ups_tracking_status="in_transit",
+            estimated_arrival_date="2026-04-07T18:00:00",
+            delivery_date_guaranteed="2026-04-07T00:00:00",
+            expected_shipment_window="Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+        )
+
+        self.assertEqual(result["upsTrackingStatus"], "in_transit")
+        self.assertEqual(result["shippingEstimate"]["estimatedArrivalDate"], "2026-04-07T18:00:00")
+        self.assertEqual(result["shippingEstimate"]["deliveryDateGuaranteed"], "2026-04-07T00:00:00")
+        self.assertEqual(
+            result["expectedShipmentWindow"],
+            "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+        )
+
     @patch("python_backend.repositories.order_repository.mysql_client.fetch_one")
     @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)
     def test_find_by_order_identifier_matches_hash_prefixed_woo_number(self, _using_mysql, mock_fetch_one):

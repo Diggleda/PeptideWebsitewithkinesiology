@@ -218,6 +218,11 @@ def _normalize_text(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _normalize_optional_text(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
 def _normalize_ups_status(value: Any) -> Optional[str]:
     normalized = ups_tracking.normalize_tracking_status(value)
     if not normalized or normalized == "unknown":
@@ -245,6 +250,51 @@ def _parse_order_datetime(value: Any) -> Optional[datetime]:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _extract_estimated_arrival_date(order: Dict[str, Any]) -> Optional[str]:
+    estimate = order.get("shippingEstimate")
+    if not isinstance(estimate, dict):
+        return None
+    for candidate in (
+        estimate.get("estimatedArrivalDate"),
+        estimate.get("estimated_arrival_date"),
+        estimate.get("deliveryDateGuaranteed"),
+        estimate.get("delivery_date_guaranteed"),
+        estimate.get("delivery_date"),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _extract_delivery_date_guaranteed(order: Dict[str, Any]) -> Optional[str]:
+    estimate = order.get("shippingEstimate")
+    if not isinstance(estimate, dict):
+        return None
+    for candidate in (
+        estimate.get("deliveryDateGuaranteed"),
+        estimate.get("delivery_date_guaranteed"),
+        estimate.get("delivery_date"),
+        estimate.get("estimatedArrivalDate"),
+        estimate.get("estimated_arrival_date"),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _extract_expected_shipment_window(order: Dict[str, Any]) -> Optional[str]:
+    for candidate in (
+        order.get("expectedShipmentWindow"),
+        order.get("expected_shipment_window"),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized:
+            return normalized
+    return None
 
 
 def _is_hand_delivery_order(order: Dict[str, Any]) -> bool:
@@ -461,6 +511,15 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     continue
                 next_status = _normalize_ups_status(info.get("trackingStatus") or info.get("trackingStatusRaw"))
                 delivered_at = str(info.get("deliveredAt") or "").strip() or None
+                estimated_arrival_date = _normalize_optional_text(
+                    info.get("estimatedArrivalDate") or info.get("estimated_arrival_date")
+                )
+                delivery_date_guaranteed = _normalize_optional_text(
+                    info.get("deliveryDateGuaranteed") or info.get("delivery_date_guaranteed") or info.get("delivery_date")
+                )
+                expected_shipment_window = _normalize_optional_text(
+                    info.get("expectedShipmentWindow") or info.get("expected_shipment_window")
+                )
                 if not next_status:
                     if info.get("error"):
                         failed += 1
@@ -478,14 +537,27 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     or order.get("ups_delivered_at")
                     or ""
                 ).strip() or None
+                current_estimated_arrival_date = _extract_estimated_arrival_date(order)
+                current_delivery_date_guaranteed = _extract_delivery_date_guaranteed(order)
+                current_expected_shipment_window = _extract_expected_shipment_window(order)
                 if current_status == next_status and (
                     next_status != "delivered" or not delivered_at or current_delivered_at == delivered_at
+                ) and (
+                    next_status == "delivered"
+                    or (
+                        (not estimated_arrival_date or current_estimated_arrival_date == estimated_arrival_date)
+                        and (not delivery_date_guaranteed or current_delivery_date_guaranteed == delivery_date_guaranteed)
+                        and (not expected_shipment_window or current_expected_shipment_window == expected_shipment_window)
+                    )
                 ):
                     continue
                 order_repository.update_ups_tracking_status(
                     order_id,
                     ups_tracking_status=next_status,
                     delivered_at=delivered_at,
+                    estimated_arrival_date=estimated_arrival_date,
+                    delivery_date_guaranteed=delivery_date_guaranteed,
+                    expected_shipment_window=expected_shipment_window,
                 )
                 updated += 1
             except Exception as exc:

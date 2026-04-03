@@ -918,6 +918,20 @@ def _normalize_ups_delivered_at(value: Any) -> Optional[str]:
     return text or None
 
 
+def _normalize_ups_estimated_delivery_value(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _normalize_ups_expected_shipment_window(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) <= 64:
+        return text
+    return text[:64].rstrip() or None
+
+
 def _extract_ups_delivered_at(*orders: Optional[Dict]) -> Optional[str]:
     for order in orders:
         if not isinstance(order, dict):
@@ -939,6 +953,81 @@ def _extract_ups_delivered_at(*orders: Optional[Dict]) -> Optional[str]:
     return None
 
 
+def _extract_ups_estimated_arrival_date(*orders: Optional[Dict]) -> Optional[str]:
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        for candidate in (
+            estimate.get("estimatedArrivalDate"),
+            estimate.get("estimated_arrival_date"),
+            estimate.get("deliveryDateGuaranteed"),
+            estimate.get("delivery_date_guaranteed"),
+            estimate.get("delivery_date"),
+        ):
+            normalized = _normalize_ups_estimated_delivery_value(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
+def _extract_ups_delivery_date_guaranteed(*orders: Optional[Dict]) -> Optional[str]:
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        for candidate in (
+            estimate.get("deliveryDateGuaranteed"),
+            estimate.get("delivery_date_guaranteed"),
+            estimate.get("delivery_date"),
+            estimate.get("estimatedArrivalDate"),
+            estimate.get("estimated_arrival_date"),
+        ):
+            normalized = _normalize_ups_estimated_delivery_value(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
+def _extract_ups_expected_shipment_window(*orders: Optional[Dict]) -> Optional[str]:
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        for candidate in (
+            order.get("expectedShipmentWindow"),
+            order.get("expected_shipment_window"),
+        ):
+            normalized = _normalize_ups_expected_shipment_window(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
+def _apply_ups_delivery_estimate(
+    order: Dict,
+    *,
+    estimated_arrival_date: Optional[str] = None,
+    delivery_date_guaranteed: Optional[str] = None,
+    expected_shipment_window: Optional[str] = None,
+    clear: bool = False,
+) -> None:
+    if not isinstance(order, dict):
+        return
+    estimate = _ensure_dict(order.get("shippingEstimate"))
+    if clear:
+        estimate.pop("estimatedArrivalDate", None)
+        estimate.pop("deliveryDateGuaranteed", None)
+        order["expectedShipmentWindow"] = None
+    else:
+        if estimated_arrival_date:
+            estimate["estimatedArrivalDate"] = estimated_arrival_date
+        if delivery_date_guaranteed:
+            estimate["deliveryDateGuaranteed"] = delivery_date_guaranteed
+        if expected_shipment_window:
+            order["expectedShipmentWindow"] = expected_shipment_window
+    order["shippingEstimate"] = estimate
+
+
 def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
     if not isinstance(order, dict):
         return None
@@ -957,9 +1046,11 @@ def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
         return None
     estimate = _ensure_dict(order.get("shippingEstimate"))
     estimate["status"] = normalized
-    if normalized == "delivered" and delivered_at:
-        estimate["deliveredAt"] = delivered_at
-    elif normalized != "delivered":
+    if normalized == "delivered":
+        if delivered_at:
+            estimate["deliveredAt"] = delivered_at
+        _apply_ups_delivery_estimate(order, clear=True)
+    else:
         estimate.pop("deliveredAt", None)
         order["upsDeliveredAt"] = None
     order["shippingEstimate"] = estimate
@@ -1154,6 +1245,15 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
 
     live_tracking_number = str(info.get("trackingNumber") or tracking_number).strip() or tracking_number
     delivered_at = _normalize_ups_delivered_at(info.get("deliveredAt"))
+    estimated_arrival_date = _normalize_ups_estimated_delivery_value(
+        info.get("estimatedArrivalDate") or info.get("estimated_arrival_date")
+    )
+    delivery_date_guaranteed = _normalize_ups_estimated_delivery_value(
+        info.get("deliveryDateGuaranteed") or info.get("delivery_date_guaranteed") or info.get("delivery_date")
+    )
+    expected_shipment_window = _normalize_ups_expected_shipment_window(
+        info.get("expectedShipmentWindow") or info.get("expected_shipment_window")
+    )
     current_status = (
         _normalize_ups_tracking_status(order.get("upsTrackingStatus") if order.get("upsTrackingStatus") is not None else order.get("ups_tracking_status"))
         or _normalize_ups_tracking_status(
@@ -1163,11 +1263,20 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
         )
     )
     current_delivered_at = _extract_ups_delivered_at(order, local_order)
+    current_estimated_arrival_date = _extract_ups_estimated_arrival_date(order, local_order)
+    current_delivery_date_guaranteed = _extract_ups_delivery_date_guaranteed(order, local_order)
+    current_expected_shipment_window = _extract_ups_expected_shipment_window(order, local_order)
 
     refreshed_local_order = local_order
     peppro_order_id = _resolve_peppro_order_id_for_ups_refresh(order, local_order)
     should_persist = current_status != normalized or (
         normalized == "delivered" and delivered_at and current_delivered_at != delivered_at
+    ) or (
+        normalized != "delivered" and (
+            (estimated_arrival_date and current_estimated_arrival_date != estimated_arrival_date)
+            or (delivery_date_guaranteed and current_delivery_date_guaranteed != delivery_date_guaranteed)
+            or (expected_shipment_window and current_expected_shipment_window != expected_shipment_window)
+        )
     )
     if peppro_order_id and should_persist:
         try:
@@ -1175,6 +1284,9 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
                 peppro_order_id,
                 ups_tracking_status=normalized,
                 delivered_at=delivered_at,
+                estimated_arrival_date=estimated_arrival_date,
+                delivery_date_guaranteed=delivery_date_guaranteed,
+                expected_shipment_window=expected_shipment_window,
             )
             if isinstance(persisted, dict):
                 refreshed_local_order = persisted
@@ -1191,6 +1303,13 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
         target["trackingNumber"] = live_tracking_number
         target["upsTrackingStatus"] = normalized
         target["upsDeliveredAt"] = delivered_at if normalized == "delivered" else None
+        _apply_ups_delivery_estimate(
+            target,
+            estimated_arrival_date=estimated_arrival_date,
+            delivery_date_guaranteed=delivery_date_guaranteed,
+            expected_shipment_window=expected_shipment_window,
+            clear=normalized == "delivered",
+        )
         _apply_authoritative_ups_tracking_status(target)
 
     return refreshed_local_order

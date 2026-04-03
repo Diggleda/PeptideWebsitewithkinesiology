@@ -268,7 +268,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"1492", "9002"} else None
             service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-ups-1492" else None
             service.order_repository.update_ups_tracking_status = (
-                lambda order_id, *, ups_tracking_status, delivered_at=None: persisted_updates.append((order_id, ups_tracking_status, delivered_at)) or {
+                lambda order_id, *, ups_tracking_status, delivered_at=None, estimated_arrival_date=None, delivery_date_guaranteed=None, expected_shipment_window=None: persisted_updates.append((order_id, ups_tracking_status, delivered_at)) or {
                     **local_order,
                     "upsTrackingStatus": ups_tracking_status,
                     "upsDeliveredAt": delivered_at,

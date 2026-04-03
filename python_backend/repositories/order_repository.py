@@ -21,6 +21,15 @@ def _normalize_optional_string(value: object) -> Optional[str]:
     return text or None
 
 
+def _normalize_optional_string_max(value: object, max_len: int) -> Optional[str]:
+    text = _normalize_optional_string(value)
+    if text is None:
+        return None
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip() or None
+
+
 def _coerce_optional_bool(value: object) -> Optional[bool]:
     if value is None or value == "":
         return None
@@ -95,7 +104,11 @@ def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
     shipping_estimate["status"] = normalized
     if normalized == "delivered" and delivered_at:
         shipping_estimate["deliveredAt"] = delivered_at
-    elif normalized != "delivered":
+    if normalized == "delivered":
+        shipping_estimate.pop("estimatedArrivalDate", None)
+        shipping_estimate.pop("deliveryDateGuaranteed", None)
+        order["expectedShipmentWindow"] = None
+    else:
         shipping_estimate.pop("deliveredAt", None)
         order["upsDeliveredAt"] = None
     order["shippingEstimate"] = shipping_estimate
@@ -564,9 +577,15 @@ def update_ups_tracking_status(
     *,
     ups_tracking_status: str | None,
     delivered_at: str | None = None,
+    estimated_arrival_date: str | None = None,
+    delivery_date_guaranteed: str | None = None,
+    expected_shipment_window: str | None = None,
 ) -> Optional[Dict]:
     normalized = _normalize_ups_tracking_status(ups_tracking_status)
     normalized_delivered_at = _normalize_optional_string(delivered_at)
+    normalized_estimated_arrival_date = _normalize_optional_string(estimated_arrival_date)
+    normalized_delivery_date_guaranteed = _normalize_optional_string(delivery_date_guaranteed)
+    normalized_expected_shipment_window = _normalize_optional_string_max(expected_shipment_window, 64)
     if not order_id:
         return None
 
@@ -587,8 +606,17 @@ def update_ups_tracking_status(
             estimate["deliveredAt"] = normalized_delivered_at
         elif _normalize_optional_string(estimate.get("deliveredAt")):
             pass
+        estimate.pop("estimatedArrivalDate", None)
+        estimate.pop("deliveryDateGuaranteed", None)
+        updated["expectedShipmentWindow"] = None
     else:
         estimate.pop("deliveredAt", None)
+        if normalized_estimated_arrival_date:
+            estimate["estimatedArrivalDate"] = normalized_estimated_arrival_date
+        if normalized_delivery_date_guaranteed:
+            estimate["deliveryDateGuaranteed"] = normalized_delivery_date_guaranteed
+        if normalized_expected_shipment_window:
+            updated["expectedShipmentWindow"] = normalized_expected_shipment_window
     updated["shippingEstimate"] = estimate
     updated["upsDeliveredAt"] = (
         normalized_delivered_at

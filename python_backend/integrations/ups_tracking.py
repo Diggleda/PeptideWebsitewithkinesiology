@@ -346,6 +346,92 @@ def _format_activity_datetime(date_value: Any, time_value: Any, gmt_offset: Any 
     return stamp
 
 
+def _format_delivery_date_label(date_value: Any) -> Optional[str]:
+    date_text = _safe_string(date_value)
+    if not date_text or len(date_text) != 8 or not date_text.isdigit():
+        return None
+    try:
+        parsed = datetime.strptime(date_text, "%Y%m%d")
+    except Exception:
+        return None
+    return f"{parsed.strftime('%A, %B')} {parsed.day}, {parsed.year}"
+
+
+def _format_delivery_time_label(time_value: Any) -> Optional[str]:
+    time_text = (_safe_string(time_value) or "").rjust(6, "0")
+    if len(time_text) != 6 or not time_text.isdigit():
+        return None
+    try:
+        parsed = datetime.strptime(time_text, "%H%M%S")
+    except Exception:
+        return None
+    return parsed.strftime("%I:%M %p").lstrip("0")
+
+
+def _extract_estimated_delivery(payload: Any) -> Dict[str, Optional[str]]:
+    package = _first_package(payload)
+    delivery_dates = package.get("deliveryDate") if isinstance(package.get("deliveryDate"), list) else []
+
+    scheduled_date = None
+    for preferred_type in ("RDD", "SDD"):
+        for entry in delivery_dates:
+            if not isinstance(entry, dict):
+                continue
+            if (_safe_string(entry.get("type")) or "").upper() != preferred_type:
+                continue
+            candidate = _safe_string(entry.get("date"))
+            if candidate:
+                scheduled_date = candidate
+                break
+        if scheduled_date:
+            break
+
+    if not scheduled_date:
+        return {
+            "estimatedArrivalDate": None,
+            "deliveryDateGuaranteed": None,
+            "expectedShipmentWindow": None,
+        }
+
+    delivery_time = package.get("deliveryTime") if isinstance(package.get("deliveryTime"), dict) else {}
+    delivery_time_type = (_safe_string(delivery_time.get("type")) or "").upper()
+    start_time = _safe_string(delivery_time.get("startTime"))
+    end_time = _safe_string(delivery_time.get("endTime"))
+
+    delivery_date_guaranteed = _format_activity_datetime(scheduled_date, "000000")
+    estimated_arrival_date = delivery_date_guaranteed
+    if delivery_time_type in {"EDW", "CDW", "IDW", "CMT"} and end_time:
+        estimated_arrival_date = _format_activity_datetime(scheduled_date, end_time) or delivery_date_guaranteed
+    elif delivery_time_type == "EOD":
+        estimated_arrival_date = _format_activity_datetime(scheduled_date, "235900") or delivery_date_guaranteed
+
+    date_label = _format_delivery_date_label(scheduled_date)
+    start_label = _format_delivery_time_label(start_time)
+    end_label = _format_delivery_time_label(end_time)
+    expected_window = date_label
+    if date_label:
+        if delivery_time_type in {"EDW", "CDW", "IDW"}:
+            if start_label and end_label:
+                expected_window = f"{date_label}, between {start_label} - {end_label}"
+            elif end_label:
+                expected_window = f"{date_label}, by {end_label}"
+        elif delivery_time_type == "CMT":
+            if end_label:
+                expected_window = f"{date_label}, by {end_label}"
+        elif delivery_time_type == "EOD":
+            expected_window = f"{date_label}, by end of day"
+        elif start_label and end_label:
+            expected_window = f"{date_label}, between {start_label} - {end_label}"
+        elif end_label:
+            expected_window = f"{date_label}, by {end_label}"
+
+    return {
+        "estimatedArrivalDate": estimated_arrival_date,
+        "deliveryDateGuaranteed": delivery_date_guaranteed,
+        "expectedShipmentWindow": expected_window,
+    }
+
+
 def _extract_delivered_at(payload: Any) -> Optional[str]:
     package = _first_package(payload)
     delivery_dates = package.get("deliveryDate")
@@ -429,6 +515,7 @@ def fetch_tracking_status(tracking_number: str) -> Optional[Dict[str, Any]]:
     raw_status, status_code = _extract_ups_status(payload)
     tracking_status = normalize_tracking_status(raw_status) or "unknown"
     delivered_at = _extract_delivered_at(payload)
+    estimated_delivery = _extract_estimated_delivery(payload)
 
     result = {
         "carrier": "ups",
@@ -437,6 +524,9 @@ def fetch_tracking_status(tracking_number: str) -> Optional[Dict[str, Any]]:
         "trackingStatusRaw": raw_status,
         "statusCode": status_code,
         "deliveredAt": delivered_at,
+        "estimatedArrivalDate": estimated_delivery.get("estimatedArrivalDate"),
+        "deliveryDateGuaranteed": estimated_delivery.get("deliveryDateGuaranteed"),
+        "expectedShipmentWindow": estimated_delivery.get("expectedShipmentWindow"),
         "checkedAt": checked_at,
     }
     _tracking_cache_set(normalized, result)
