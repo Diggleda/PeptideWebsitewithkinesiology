@@ -1755,8 +1755,8 @@ const createManualProspect = async (req, res, next) => {
       source: 'manual',
     });
 
-    salesProspectRepository
-      .upsert({
+    await salesProspectRepository.upsert(
+      {
         id: String(record.id),
         salesRepId: String(salesRepId),
         sourceSystem: 'manual',
@@ -1768,13 +1768,11 @@ const createManualProspect = async (req, res, next) => {
         contactPhone: phone || null,
         contactEmails,
         contactPhones,
-      })
-      .catch((error) => {
-        logger.warn({ err: error, manualId: record.id }, 'Failed to persist manual sales prospect');
-      })
-      .finally(() => {
-        res.status(201).json({ referral: { ...record, isManual: true }, statuses: REFERRAL_STATUSES });
-      });
+      },
+      { matchByContact: false },
+    );
+
+    res.status(201).json({ referral: { ...record, isManual: true }, statuses: REFERRAL_STATUSES });
   } catch (error) {
     next(error);
   }

@@ -540,8 +540,9 @@ const findAllByReferralId = async (referralId) => {
     .filter((item) => item.id === target || item.referralId === target);
 };
 
-const upsert = async (prospect) => {
+const upsert = async (prospect, options = {}) => {
   const incoming = prospect && typeof prospect === 'object' ? prospect : {};
+  const { matchByContact = true } = options || {};
   const id = normalizeId(incoming.id);
   const salesRepId = normalizeId(incoming.salesRepId);
   const doctorId = normalizeId(incoming.doctorId);
@@ -557,14 +558,16 @@ const upsert = async (prospect) => {
   ) {
     existing = await findBySourceExternalId(incoming.sourceSystem, incoming.sourceExternalId);
   }
-  const incomingContactPatch = resolveContactPatch(existing || {}, incoming);
-  for (const email of incomingContactPatch.contactEmails) {
-    if (existing) break;
-    existing = await findByContactEmail(email);
-  }
-  for (const phone of incomingContactPatch.contactPhones) {
-    if (existing) break;
-    existing = await findByContactPhone(phone);
+  if (matchByContact) {
+    const incomingContactPatch = resolveContactPatch(existing || {}, incoming);
+    for (const email of incomingContactPatch.contactEmails) {
+      if (existing) break;
+      existing = await findByContactEmail(email);
+    }
+    for (const phone of incomingContactPatch.contactPhones) {
+      if (existing) break;
+      existing = await findByContactPhone(phone);
+    }
   }
   if (!existing && doctorId) {
     existing = await findByDoctorId(doctorId);
@@ -579,7 +582,7 @@ const upsert = async (prospect) => {
     existing = await findBySalesRepAndContactFormId(salesRepId, incoming.contactFormId);
   }
 
-  const resolvedId = id || normalizeId(existing?.id);
+  const resolvedId = normalizeId(existing?.id) || id;
   const lockedDoctorSalesRepId = isDoctorLinked(existing) ? normalizeId(existing?.salesRepId) : null;
   if (lockedDoctorSalesRepId && salesRepId && salesRepId !== lockedDoctorSalesRepId) {
     logger.warn(

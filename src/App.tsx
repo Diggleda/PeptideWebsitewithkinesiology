@@ -19941,7 +19941,7 @@ function MainApp() {
 	          withoutCityStateZip.length > 0 ? withoutCityStateZip[0] : null;
 	        const officeAddressLine2 =
 	          withoutCityStateZip.length > 1 ? withoutCityStateZip.slice(1).join(", ") : null;
-	        await referralAPI.createManualProspect({
+	        const response = await referralAPI.createManualProspect({
 	          name: manualProspectForm.name.trim(),
 	          email: emails[0] || undefined,
 	          emails: emails.length > 0 ? emails : undefined,
@@ -19957,6 +19957,29 @@ function MainApp() {
 	          status: manualProspectForm.status,
 	          hasAccount: false,
 	        });
+	        const createdReferral = (response as any)?.referral;
+	        if (createdReferral) {
+	          setSalesRepDashboard((prev: any) => {
+	            if (!prev) return prev;
+	            const currentReferrals = Array.isArray(prev.referrals) ? prev.referrals : [];
+	            const nextReferrals = [
+	              createdReferral,
+	              ...currentReferrals.filter(
+	                (item: any) =>
+	                  String(item?.id || "") !== String(createdReferral?.id || ""),
+	              ),
+	            ];
+	            const currentStatuses = Array.isArray(prev.statuses) ? prev.statuses : [];
+	            const nextStatus = String(createdReferral?.status || "").trim();
+	            return {
+	              ...prev,
+	              referrals: nextReferrals,
+	              statuses: nextStatus
+	                ? Array.from(new Set([...currentStatuses, nextStatus]))
+	                : currentStatuses,
+	            };
+	          });
+	        }
 	        toast.success("Lead added successfully.");
 	        closeManualProspectModal();
         await tracedRefreshReferralData("manual-prospect-submit", {

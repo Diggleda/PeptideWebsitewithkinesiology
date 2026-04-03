@@ -137,3 +137,106 @@ test('findById decrypts inline source payload from source_payload_json', async (
     },
   );
 });
+
+test('upsert preserves an existing matched prospect id', async () => {
+  const calls = [];
+  const mysqlClient = {
+    isEnabled: () => true,
+    execute: async (query, params) => {
+      calls.push({ query, params });
+      return 1;
+    },
+    fetchAll: async () => [],
+    fetchOne: async (query, params) => {
+      const sql = String(query);
+      if (sql.includes('WHERE id = :id')) {
+        if (params?.id === 'manual:new') {
+          return null;
+        }
+        if (params?.id === 'existing-prospect') {
+          return {
+            id: 'existing-prospect',
+            sales_rep_id: 'rep-1',
+            contact_emails_json: JSON.stringify(['lead@example.com']),
+            created_at: '2026-03-24T12:00:00Z',
+            updated_at: '2026-03-24T12:00:00Z',
+          };
+        }
+      }
+      if (sql.includes('JSON_SEARCH(contact_emails_json')) {
+        return {
+          id: 'existing-prospect',
+          sales_rep_id: 'rep-1',
+          contact_emails_json: JSON.stringify(['lead@example.com']),
+          created_at: '2026-03-24T12:00:00Z',
+          updated_at: '2026-03-24T12:00:00Z',
+        };
+      }
+      return null;
+    },
+  };
+
+  await withFreshRepository(
+    {
+      mysqlClient,
+      encryptJson: () => null,
+      decryptJson: () => null,
+    },
+    async (repository) => {
+      await repository.upsert({
+        id: 'manual:new',
+        salesRepId: 'rep-1',
+        status: 'pending',
+        contactEmails: ['lead@example.com'],
+      });
+    },
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].params.id, 'existing-prospect');
+});
+
+test('upsert can skip contact matching for create-only flows', async () => {
+  const calls = [];
+  const mysqlClient = {
+    isEnabled: () => true,
+    execute: async (query, params) => {
+      calls.push({ query, params });
+      return 1;
+    },
+    fetchAll: async () => [],
+    fetchOne: async (query, params) => {
+      const sql = String(query);
+      if (sql.includes('WHERE id = :id') && params?.id === 'manual:new') {
+        return null;
+      }
+      if (sql.includes('JSON_SEARCH(contact_emails_json') || sql.includes('contact_phones_json IS NOT NULL')) {
+        throw new Error('contact matching should be skipped');
+      }
+      return null;
+    },
+  };
+
+  await withFreshRepository(
+    {
+      mysqlClient,
+      encryptJson: () => null,
+      decryptJson: () => null,
+    },
+    async (repository) => {
+      await repository.upsert(
+        {
+          id: 'manual:new',
+          salesRepId: 'rep-1',
+          status: 'pending',
+          contactEmails: ['lead@example.com'],
+          contactPhones: ['(555) 111-2222'],
+        },
+        { matchByContact: false },
+      );
+    },
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].params.id, 'manual:new');
+});

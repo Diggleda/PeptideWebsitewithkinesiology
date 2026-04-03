@@ -591,22 +591,23 @@ def delete_by_contact_form_id(contact_form_id: str) -> bool:
     return True
 
 
-def upsert(record: Dict) -> Dict:
+def upsert(record: Dict, *, match_by_contact: bool = True) -> Dict:
     incoming = dict(record or {})
 
     existing = None
     if incoming.get("id"):
         existing = find_by_id(incoming.get("id"))
 
-    contact_patch = _resolve_contact_patch(existing, incoming)
-    for email in contact_patch.get("contactEmails", []):
-        if existing:
-            break
-        existing = find_by_contact_email(email)
-    for phone in contact_patch.get("contactPhones", []):
-        if existing:
-            break
-        existing = find_by_contact_phone(phone)
+    if match_by_contact:
+        contact_patch = _resolve_contact_patch(existing, incoming)
+        for email in contact_patch.get("contactEmails", []):
+            if existing:
+                break
+            existing = find_by_contact_email(email)
+        for phone in contact_patch.get("contactPhones", []):
+            if existing:
+                break
+            existing = find_by_contact_phone(phone)
 
     sales_rep_id = incoming.get("salesRepId") or (existing.get("salesRepId") if existing else None)
     if not sales_rep_id and _is_contact_form_prospect(incoming):
@@ -623,7 +624,16 @@ def upsert(record: Dict) -> Dict:
         existing = find_by_sales_rep_and_contact_form(sales_rep_id, incoming.get("contactFormId"))
 
     contact_patch = _resolve_contact_patch(existing, incoming)
-    merged = _ensure_defaults({**(existing or {}), **incoming, **contact_patch, "updatedAt": _now()})
+    resolved_id = (existing.get("id") if existing else None) or incoming.get("id")
+    merged = _ensure_defaults(
+        {
+            **(existing or {}),
+            **incoming,
+            **contact_patch,
+            "id": resolved_id,
+            "updatedAt": _now(),
+        }
+    )
 
     if _using_mysql():
         params = _to_db_params(merged)

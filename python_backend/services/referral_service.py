@@ -958,7 +958,8 @@ def create_manual_prospect(data: Dict) -> Dict:
             "officeState": office_state,
             "officePostalCode": office_postal_code,
             "officeCountry": office_country,
-        }
+        },
+        match_by_contact=False,
     )
     return {
         "id": record.get("id"),
