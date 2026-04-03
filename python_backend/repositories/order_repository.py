@@ -55,6 +55,31 @@ def _normalize_fulfillment_method(value: object, fallback: object = None) -> Opt
         return "hand_delivered"
     return text
 
+
+def _normalize_ups_tracking_status(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    text = text.replace("-", "_").replace(" ", "_")
+    while "__" in text:
+        text = text.replace("__", "_")
+    return text or None
+
+
+def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
+    normalized = _normalize_ups_tracking_status(status)
+    order["upsTrackingStatus"] = normalized
+    if not normalized:
+        return order
+    shipping_estimate = order.get("shippingEstimate")
+    if not isinstance(shipping_estimate, dict):
+        shipping_estimate = {}
+    shipping_estimate["status"] = normalized
+    order["shippingEstimate"] = shipping_estimate
+    return order
+
 _SALES_TRACKING_SELECT_COLUMNS = """
     id,
     user_id,
@@ -75,6 +100,7 @@ _SALES_TRACKING_SELECT_COLUMNS = """
     shipping_carrier,
     shipping_service,
     tracking_number,
+    ups_tracking_status,
     shipped_at,
     physician_certified,
     referral_code,
@@ -272,6 +298,9 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 total,
                 shipping_total,
                 fulfillment_method,
+                tracking_number,
+                ups_tracking_status,
+                shipped_at,
                 status,
                 notes,
                 shipping_address,
@@ -300,6 +329,8 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 items,
                 total,
                 shipping_total,
+                tracking_number,
+                shipped_at,
                 status,
                 notes,
                 shipping_address,
@@ -329,103 +360,110 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         payload = _read_order_json_field(row, "payload", {}) if row.get("payload") is not None else {}
         if not isinstance(payload, dict):
             payload = {}
-        result.append(
-            {
-                "id": row.get("id"),
-                "items": _parse_json(row.get("items"), []) if row.get("items") is not None else [],
-                # `total` is historically overloaded; treat it as "items subtotal" for UI overlays,
-                # but also surface `grandTotal` when we can.
-                "total": float(row.get("total") or 0),
-                "itemsSubtotal": float(row.get("items_subtotal") or payload.get("itemsSubtotal") or row.get("total") or 0),
-                "originalItemsSubtotal": float(payload.get("originalItemsSubtotal") or 0),
-                "taxTotal": float(payload.get("taxTotal") or 0),
-                "grandTotal": float(payload.get("grandTotal") or 0),
-                "appliedReferralCredit": float(payload.get("appliedReferralCredit") or 0),
-                "discountCode": payload.get("discountCode") or None,
-                "discountCodeAmount": float(payload.get("discountCodeAmount") or 0),
-                "isTaxExempt": (
-                    _coerce_optional_bool(row.get("is_tax_exempt"))
-                    if _coerce_optional_bool(row.get("is_tax_exempt")) is not None
-                    else (
-                        bool(_coerce_optional_bool(payload.get("isTaxExempt")))
-                        or bool(
-                            row.get("tax_exempt_source")
-                            or payload.get("taxExemptSource")
-                            or payload.get("tax_exempt_source")
-                        )
+        entry = {
+            "id": row.get("id"),
+            "items": _parse_json(row.get("items"), []) if row.get("items") is not None else [],
+            # `total` is historically overloaded; treat it as "items subtotal" for UI overlays,
+            # but also surface `grandTotal` when we can.
+            "total": float(row.get("total") or 0),
+            "itemsSubtotal": float(row.get("items_subtotal") or payload.get("itemsSubtotal") or row.get("total") or 0),
+            "originalItemsSubtotal": float(payload.get("originalItemsSubtotal") or 0),
+            "taxTotal": float(payload.get("taxTotal") or 0),
+            "grandTotal": float(payload.get("grandTotal") or 0),
+            "appliedReferralCredit": float(payload.get("appliedReferralCredit") or 0),
+            "discountCode": payload.get("discountCode") or None,
+            "discountCodeAmount": float(payload.get("discountCodeAmount") or 0),
+            "isTaxExempt": (
+                _coerce_optional_bool(row.get("is_tax_exempt"))
+                if _coerce_optional_bool(row.get("is_tax_exempt")) is not None
+                else (
+                    bool(_coerce_optional_bool(payload.get("isTaxExempt")))
+                    or bool(
+                        row.get("tax_exempt_source")
+                        or payload.get("taxExemptSource")
+                        or payload.get("tax_exempt_source")
                     )
-                ),
-                "taxExemptSource": (
-                    row.get("tax_exempt_source")
-                    or payload.get("taxExemptSource")
-                    or payload.get("tax_exempt_source")
-                    or None
-                ),
-                "taxExemptReason": (
-                    row.get("tax_exempt_reason")
-                    or payload.get("taxExemptReason")
-                    or payload.get("tax_exempt_reason")
-                    or None
-                ),
-                "resellerPermitFilePath": (
-                    row.get("reseller_permit_file_path")
-                    or payload.get("resellerPermitFilePath")
-                    or payload.get("reseller_permit_file_path")
-                    or None
-                ),
-                "resellerPermitFileName": (
-                    row.get("reseller_permit_file_name")
-                    or payload.get("resellerPermitFileName")
-                    or payload.get("reseller_permit_file_name")
-                    or None
-                ),
-                "resellerPermitUploadedAt": (
-                    fmt_datetime(row.get("reseller_permit_uploaded_at"))
-                    or payload.get("resellerPermitUploadedAt")
-                    or payload.get("reseller_permit_uploaded_at")
-                    or None
-                ),
-                "hasResellerPermitUploaded": bool(
-                    row.get("reseller_permit_file_path")
-                    or row.get("reseller_permit_file_name")
-                    or row.get("reseller_permit_uploaded_at")
-                    or payload.get("resellerPermitFilePath")
-                    or payload.get("reseller_permit_file_path")
-                    or payload.get("resellerPermitFileName")
-                    or payload.get("reseller_permit_file_name")
-                    or payload.get("resellerPermitUploadedAt")
-                    or payload.get("reseller_permit_uploaded_at")
-                ),
-                "pricingMode": row.get("pricing_mode") or "wholesale",
-                "asDelegate": (
-                    row.get("as_delegate")
-                    if row.get("as_delegate") is not None
-                    else (
-                        payload.get("asDelegate")
-                        if payload.get("asDelegate") is not None
-                        else payload.get("as_delegate")
-                    )
-                ),
-                "shippingTotal": float(row.get("shipping_total") or 0),
-                "handDelivery": bool(payload.get("handDelivery")),
-                "fulfillmentMethod": _normalize_fulfillment_method(
-                    row.get("fulfillment_method"),
-                    payload.get("fulfillmentMethod"),
                 )
-                or ("hand_delivered" if bool(payload.get("handDelivery")) else "shipping"),
-                "status": row.get("status"),
-                "notes": row.get("notes") if row.get("notes") is not None else None,
-                "shippingAddress": _read_order_json_field(row, "shipping_address", None),
-                "expectedShipmentWindow": row.get("expected_shipment_window") or None,
-                "shippingCarrier": row.get("shipping_carrier"),
-                "shippingService": row.get("shipping_service"),
-                "wooOrderId": row.get("woo_order_id") or None,
-                "wooOrderNumber": row.get("woo_order_number") or None,
-                "wooOrderKey": row.get("woo_order_key") or None,
-                "createdAt": fmt_datetime(row.get("created_at")),
-                "updatedAt": fmt_datetime(row.get("updated_at")),
-            }
-        )
+            ),
+            "taxExemptSource": (
+                row.get("tax_exempt_source")
+                or payload.get("taxExemptSource")
+                or payload.get("tax_exempt_source")
+                or None
+            ),
+            "taxExemptReason": (
+                row.get("tax_exempt_reason")
+                or payload.get("taxExemptReason")
+                or payload.get("tax_exempt_reason")
+                or None
+            ),
+            "resellerPermitFilePath": (
+                row.get("reseller_permit_file_path")
+                or payload.get("resellerPermitFilePath")
+                or payload.get("reseller_permit_file_path")
+                or None
+            ),
+            "resellerPermitFileName": (
+                row.get("reseller_permit_file_name")
+                or payload.get("resellerPermitFileName")
+                or payload.get("reseller_permit_file_name")
+                or None
+            ),
+            "resellerPermitUploadedAt": (
+                fmt_datetime(row.get("reseller_permit_uploaded_at"))
+                or payload.get("resellerPermitUploadedAt")
+                or payload.get("reseller_permit_uploaded_at")
+                or None
+            ),
+            "hasResellerPermitUploaded": bool(
+                row.get("reseller_permit_file_path")
+                or row.get("reseller_permit_file_name")
+                or row.get("reseller_permit_uploaded_at")
+                or payload.get("resellerPermitFilePath")
+                or payload.get("reseller_permit_file_path")
+                or payload.get("resellerPermitFileName")
+                or payload.get("reseller_permit_file_name")
+                or payload.get("resellerPermitUploadedAt")
+                or payload.get("reseller_permit_uploaded_at")
+            ),
+            "pricingMode": row.get("pricing_mode") or "wholesale",
+            "asDelegate": (
+                row.get("as_delegate")
+                if row.get("as_delegate") is not None
+                else (
+                    payload.get("asDelegate")
+                    if payload.get("asDelegate") is not None
+                    else payload.get("as_delegate")
+                )
+            ),
+            "shippingTotal": float(row.get("shipping_total") or 0),
+            "shippingEstimate": {},
+            "handDelivery": bool(payload.get("handDelivery")),
+            "fulfillmentMethod": _normalize_fulfillment_method(
+                row.get("fulfillment_method"),
+                payload.get("fulfillmentMethod"),
+            )
+            or ("hand_delivered" if bool(payload.get("handDelivery")) else "shipping"),
+            "trackingNumber": row.get("tracking_number") or None,
+            "upsTrackingStatus": _normalize_ups_tracking_status(
+                row.get("ups_tracking_status")
+                or payload.get("upsTrackingStatus")
+                or payload.get("ups_tracking_status")
+            ),
+            "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
+            "status": row.get("status"),
+            "notes": row.get("notes") if row.get("notes") is not None else None,
+            "shippingAddress": _read_order_json_field(row, "shipping_address", None),
+            "expectedShipmentWindow": row.get("expected_shipment_window") or None,
+            "shippingCarrier": row.get("shipping_carrier"),
+            "shippingService": row.get("shipping_service"),
+            "wooOrderId": row.get("woo_order_id") or None,
+            "wooOrderNumber": row.get("woo_order_number") or None,
+            "wooOrderKey": row.get("woo_order_key") or None,
+            "createdAt": fmt_datetime(row.get("created_at")),
+            "updatedAt": fmt_datetime(row.get("updated_at")),
+        }
+        result.append(_apply_ups_status_to_order(entry, entry.get("upsTrackingStatus")))
     return result
 
 
@@ -476,6 +514,44 @@ def update_status_fields(
             )
         except Exception:
             return
+
+
+def update_ups_tracking_status(order_id: str, *, ups_tracking_status: str | None) -> Optional[Dict]:
+    normalized = _normalize_ups_tracking_status(ups_tracking_status)
+    if not order_id:
+        return None
+
+    if _using_mysql():
+        try:
+            mysql_client.execute(
+                """
+                UPDATE orders
+                SET
+                    ups_tracking_status = %(ups_tracking_status)s,
+                    updated_at = NOW()
+                WHERE id = %(id)s
+                """,
+                {"id": order_id, "ups_tracking_status": normalized},
+            )
+            return find_by_id(order_id)
+        except Exception:
+            pass
+
+    existing = find_by_id(order_id)
+    if not existing:
+        return None
+    updated = dict(existing)
+    updated["upsTrackingStatus"] = normalized
+    estimate = updated.get("shippingEstimate")
+    if not isinstance(estimate, dict):
+        estimate = {}
+    if normalized:
+        estimate["status"] = normalized
+    elif "status" in estimate:
+        estimate.pop("status", None)
+    updated["shippingEstimate"] = estimate
+    updated["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return update(updated)
 
 
 def find_by_user_ids(user_ids: List[str]) -> List[Dict]:
@@ -964,7 +1040,7 @@ def insert(order: Dict) -> Dict:
                     reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
                     items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
                     facility_pickup, fulfillment_method,
-                    tracking_number, shipped_at,
+                    tracking_number, ups_tracking_status, shipped_at,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
@@ -973,7 +1049,7 @@ def insert(order: Dict) -> Dict:
                     %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
                     %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
                     %(facility_pickup)s, %(fulfillment_method)s,
-                    %(tracking_number)s, %(shipped_at)s,
+                    %(tracking_number)s, %(ups_tracking_status)s, %(shipped_at)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
                     %(created_at)s, %(updated_at)s
@@ -997,6 +1073,7 @@ def insert(order: Dict) -> Dict:
                     facility_pickup = VALUES(facility_pickup),
                     fulfillment_method = VALUES(fulfillment_method),
                     tracking_number = VALUES(tracking_number),
+                    ups_tracking_status = VALUES(ups_tracking_status),
                     shipped_at = CASE
                         WHEN VALUES(shipped_at) IS NOT NULL THEN VALUES(shipped_at)
                         ELSE shipped_at
@@ -1098,6 +1175,7 @@ def update(order: Dict) -> Optional[Dict]:
                     facility_pickup = %(facility_pickup)s,
                     fulfillment_method = %(fulfillment_method)s,
                     tracking_number = %(tracking_number)s,
+                    ups_tracking_status = %(ups_tracking_status)s,
                     shipped_at = CASE
                         WHEN %(shipped_at)s IS NOT NULL THEN %(shipped_at)s
                         ELSE shipped_at
@@ -1279,6 +1357,13 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             )
         )
     )
+    ups_tracking_status = _normalize_ups_tracking_status(
+        row.get("ups_tracking_status")
+        or (payload_order.get("upsTrackingStatus") if isinstance(payload_order, dict) else None)
+        or (payload_order.get("ups_tracking_status") if isinstance(payload_order, dict) else None)
+        or (payload.get("upsTrackingStatus") if isinstance(payload, dict) else None)
+        or (payload.get("ups_tracking_status") if isinstance(payload, dict) else None)
+    )
     order: Dict = {
         "id": row.get("id"),
         "userId": row.get("user_id"),
@@ -1304,6 +1389,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
+        "upsTrackingStatus": ups_tracking_status,
         "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
         "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),
@@ -1363,7 +1449,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
                 order[key] = value
     if not order.get("fulfillmentMethod"):
         order["fulfillmentMethod"] = "hand_delivered" if bool(order.get("handDelivery")) else "shipping"
-    return order
+    return _apply_ups_status_to_order(order, order.get("upsTrackingStatus"))
 
 
 def _to_db_params(order: Dict) -> Dict:
@@ -1496,6 +1582,11 @@ def _to_db_params(order: Dict) -> Dict:
     grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
     grand_total = max(0.0, grand_total)
     tracking_number = _resolve_tracking_number(order)
+    ups_tracking_status = _normalize_ups_tracking_status(
+        order.get("upsTrackingStatus")
+        if order.get("upsTrackingStatus") is not None
+        else order.get("ups_tracking_status")
+    )
     hand_delivery = bool(order.get("handDelivery") is True)
     fulfillment_method = _normalize_fulfillment_method(
         order.get("fulfillmentMethod"),
@@ -1558,6 +1649,7 @@ def _to_db_params(order: Dict) -> Dict:
             or order.get("shippingEstimate", {}).get("serviceCode")
         ),
         "tracking_number": tracking_number,
+        "ups_tracking_status": ups_tracking_status,
         "shipped_at": _resolve_shipped_at(order),
         "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),

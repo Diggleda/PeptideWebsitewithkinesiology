@@ -3,18 +3,32 @@ from __future__ import annotations
 import re
 import threading
 import time
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
+from uuid import uuid4
 
 import requests
+from requests.auth import HTTPBasicAuth
+from urllib.parse import quote
 
+from ..services import get_config
 from ..utils import http_client
 
-UPS_TRACK_PAGE_URL = "https://www.ups.com/track"
-UPS_TRACK_STATUS_API_URL = "https://www.ups.com/track/api/Track/GetStatus"
+UPS_CIE_BASE_URL = "https://wwwcie.ups.com"
+UPS_PROD_BASE_URL = "https://onlinetools.ups.com"
+UPS_TOKEN_PATH = "/security/v1/oauth/token"
+UPS_TRACK_PATH = "/api/track/v1/details"
+UPS_TRANSACTION_SOURCE = "peppro"
 
-_CACHE_TTL_SECONDS = 300.0
-_cache_lock = threading.Lock()
-_cache: Dict[str, Dict[str, Any]] = {}
+_TRACKING_CACHE_TTL_SECONDS = 300.0
+_tracking_cache_lock = threading.Lock()
+_tracking_cache: Dict[str, Dict[str, Any]] = {}
+
+_token_lock = threading.Lock()
+_token_cache: Dict[str, Any] = {
+    "accessToken": None,
+    "expiresAt": 0.0,
+}
 
 
 def _safe_string(value: Any) -> Optional[str]:
@@ -41,26 +55,29 @@ def _deep_get(obj: Any, *path: Any) -> Any:
     return cur
 
 
-def _normalize_tracking_number(value: str) -> str:
+def _normalize_tracking_number(value: Any) -> str:
     raw = _safe_string(value) or ""
-    # Keep alphanumerics only to avoid header injection / weird formats.
-    cleaned = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
-    return cleaned
+    return re.sub(r"[^A-Za-z0-9]", "", raw).upper()
 
 
-def _normalize_status_token(value: Optional[str]) -> Optional[str]:
+def looks_like_ups_tracking_number(value: Any) -> bool:
+    normalized = _normalize_tracking_number(value)
+    return normalized.startswith("1Z") and len(normalized) >= 8
+
+
+def _normalize_status_token(value: Any) -> Optional[str]:
     raw = _safe_string(value)
     if not raw:
         return None
     token = raw.lower().strip()
-    token = re.sub(r"\s+", "_", token)
-    token = re.sub(r"-+", "_", token)
-    token = re.sub(r"_+", "_", token)
-    return token
+    token = token.replace("&", " and ")
+    token = re.sub(r"[^a-z0-9]+", "_", token)
+    token = re.sub(r"_+", "_", token).strip("_")
+    return token or None
 
 
-def _map_status_to_peppro(raw_status: Optional[str]) -> Optional[str]:
-    token = _normalize_status_token(raw_status)
+def normalize_tracking_status(value: Any) -> Optional[str]:
+    token = _normalize_status_token(value)
     if not token:
         return None
 
@@ -68,121 +85,256 @@ def _map_status_to_peppro(raw_status: Optional[str]) -> Optional[str]:
         return "delivered"
     if "out_for_delivery" in token or "outfordelivery" in token:
         return "out_for_delivery"
-    if "in_transit" in token or "intransit" in token:
-        return "in_transit"
-    if "label_created" in token or "labelcreated" in token:
-        return "label_created"
-    if "exception" in token:
+    if any(part in token for part in ("exception", "delay", "delayed", "hold", "held")):
         return "exception"
-    if "shipped" in token:
-        return "shipped"
-    return token
+    if any(
+        part in token
+        for part in (
+            "label_created",
+            "shipment_ready_for_ups",
+            "order_processed",
+            "billing_information_received",
+            "manifest_picked_up",
+            "shipment_information_received",
+        )
+    ):
+        return "label_created"
+    if any(
+        part in token
+        for part in (
+            "in_transit",
+            "intransit",
+            "on_the_way",
+            "ontheway",
+            "departed",
+            "arrived",
+            "pickup_scan",
+            "origin_scan",
+            "destination_scan",
+            "processing_at_ups_facility",
+            "loaded_on_delivery_vehicle",
+            "received_by_post_office_for_delivery",
+        )
+    ):
+        return "in_transit"
+    return "unknown"
 
 
-def _extract_ups_status(payload: Any) -> Optional[str]:
-    # UPS Track API responses vary; try a few common paths.
-    candidates = [
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "currentStatus", "description"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "currentStatus", "statusCode"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity", 0, "status", "description"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity", 0, "status", "statusCode"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "currentStatus", "description"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "currentStatus", "statusCode"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "statusType", "description"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "statusType", "statusCode"),
-    ]
-    for candidate in candidates:
-        text = _safe_string(candidate)
-        if text:
-            return text
-    return None
+def is_configured() -> bool:
+    cfg = get_config().ups
+    return bool(cfg.get("client_id") and cfg.get("client_secret"))
 
 
-def _extract_ups_delivered_at(payload: Any) -> Optional[str]:
-    # Best-effort: find a delivered activity timestamp.
-    activities = _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity")
-    if isinstance(activities, list):
-        for entry in activities:
-            status_desc = _safe_string(_deep_get(entry, "status", "description")) or ""
-            if "delivered" in status_desc.lower():
-                timestamp = _safe_string(entry.get("date")) or _safe_string(entry.get("time"))
-                # UPS commonly provides separate date/time; keep raw best-effort.
-                delivered_dt = _safe_string(entry.get("dateTime")) or _safe_string(entry.get("datetime"))
-                return delivered_dt or timestamp
-    return None
+def _base_url() -> str:
+    cfg = get_config().ups
+    return UPS_CIE_BASE_URL if bool(cfg.get("use_cie")) else UPS_PROD_BASE_URL
 
 
-def _get_cached(tracking_number: str) -> Optional[Dict[str, Any]]:
+def _tracking_cache_get(tracking_number: str) -> Optional[Dict[str, Any]]:
     now = time.time()
-    with _cache_lock:
-        cached = _cache.get(tracking_number)
+    with _tracking_cache_lock:
+        cached = _tracking_cache.get(tracking_number)
         if cached and float(cached.get("expiresAt") or 0) > now:
             return cached.get("value")  # type: ignore[return-value]
     return None
 
 
-def _set_cached(tracking_number: str, value: Dict[str, Any]) -> None:
+def _tracking_cache_set(tracking_number: str, value: Dict[str, Any]) -> None:
+    with _tracking_cache_lock:
+        _tracking_cache[tracking_number] = {
+            "value": value,
+            "expiresAt": time.time() + _TRACKING_CACHE_TTL_SECONDS,
+        }
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_positive_int(value: Any, fallback: int) -> int:
+    try:
+        parsed = int(str(value or "").strip())
+    except Exception:
+        return fallback
+    return parsed if parsed > 0 else fallback
+
+
+def _token_cache_get() -> Optional[str]:
     now = time.time()
-    with _cache_lock:
-        _cache[tracking_number] = {"value": value, "expiresAt": now + _CACHE_TTL_SECONDS}
+    token = _safe_string(_token_cache.get("accessToken"))
+    expires_at = float(_token_cache.get("expiresAt") or 0.0)
+    if token and expires_at > now:
+        return token
+    return None
+
+
+def _token_cache_set(access_token: str, expires_in: Any) -> None:
+    ttl_seconds = _parse_positive_int(expires_in, 3600)
+    refresh_buffer = max(30, min(int(ttl_seconds * 0.1), 300))
+    expires_at = time.time() + max(30, ttl_seconds - refresh_buffer)
+    _token_cache["accessToken"] = access_token
+    _token_cache["expiresAt"] = expires_at
+
+
+def _request_access_token() -> str:
+    cfg = get_config().ups
+    client_id = _safe_string(cfg.get("client_id"))
+    client_secret = _safe_string(cfg.get("client_secret"))
+    if not client_id or not client_secret:
+        raise RuntimeError("UPS credentials are not configured")
+
+    headers = {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"}
+    merchant_id = _safe_string(cfg.get("merchant_id"))
+    if merchant_id:
+        headers["x-merchant-id"] = merchant_id
+
+    response = http_client.post(
+        f"{_base_url()}{UPS_TOKEN_PATH}",
+        data={"grant_type": "client_credentials"},
+        headers=headers,
+        auth=HTTPBasicAuth(client_id, client_secret),
+    )
+    response.raise_for_status()
+
+    payload = response.json() or {}
+    access_token = _safe_string(payload.get("access_token"))
+    if not access_token:
+        raise RuntimeError("UPS token response did not contain an access token")
+    _token_cache_set(access_token, payload.get("expires_in"))
+    return access_token
+
+
+def _get_access_token() -> str:
+    with _token_lock:
+        cached = _token_cache_get()
+        if cached:
+            return cached
+        return _request_access_token()
+
+
+def _first_package(payload: Any) -> Dict[str, Any]:
+    package = _deep_get(payload, "trackResponse", "shipment", 0, "package", 0)
+    return package if isinstance(package, dict) else {}
+
+
+def _extract_status_obj(payload: Any) -> Dict[str, Any]:
+    candidates = [
+        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "currentStatus"),
+        _deep_get(payload, "trackResponse", "shipment", 0, "currentStatus"),
+        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity", 0, "status"),
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            return candidate
+    return {}
+
+
+def _extract_ups_status(payload: Any) -> Tuple[Optional[str], Optional[str]]:
+    package = _first_package(payload)
+    status_obj = _extract_status_obj(payload)
+    raw_status_candidates = [
+        status_obj.get("simplifiedTextDescription"),
+        status_obj.get("description"),
+        package.get("statusDescription"),
+        package.get("currentStatusDescription"),
+        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity", 0, "status", "simplifiedTextDescription"),
+        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity", 0, "status", "description"),
+    ]
+    for candidate in raw_status_candidates:
+        text = _safe_string(candidate)
+        if text:
+            return text, _safe_string(status_obj.get("statusCode") or status_obj.get("code"))
+    return None, _safe_string(status_obj.get("statusCode") or status_obj.get("code"))
+
+
+def _format_activity_datetime(date_value: Any, time_value: Any, gmt_offset: Any = None) -> Optional[str]:
+    date_text = _safe_string(date_value)
+    if not date_text or len(date_text) != 8 or not date_text.isdigit():
+        return None
+    time_text = (_safe_string(time_value) or "000000").rjust(6, "0")
+    if len(time_text) != 6 or not time_text.isdigit():
+        return None
+
+    stamp = f"{date_text[0:4]}-{date_text[4:6]}-{date_text[6:8]}T{time_text[0:2]}:{time_text[2:4]}:{time_text[4:6]}"
+    offset_text = _safe_string(gmt_offset)
+    if offset_text and re.match(r"^[+-]\d{2}:\d{2}$", offset_text):
+        stamp = f"{stamp}{offset_text}"
+        try:
+            return datetime.fromisoformat(stamp).isoformat()
+        except Exception:
+            return stamp
+    return stamp
+
+
+def _extract_delivered_at(payload: Any) -> Optional[str]:
+    package = _first_package(payload)
+    delivery_dates = package.get("deliveryDate")
+    if isinstance(delivery_dates, list):
+        delivered_date = None
+        for entry in delivery_dates:
+            if not isinstance(entry, dict):
+                continue
+            if _safe_string(entry.get("type")) == "DEL":
+                delivered_date = entry.get("date")
+                break
+        delivery_time = package.get("deliveryTime")
+        if isinstance(delivery_time, dict) and _safe_string(delivery_time.get("type")) == "DEL":
+            formatted = _format_activity_datetime(delivered_date, delivery_time.get("endTime"))
+            if formatted:
+                return formatted
+        if delivered_date:
+            formatted = _format_activity_datetime(delivered_date, "000000")
+            if formatted:
+                return formatted
+
+    activities = package.get("activity")
+    if isinstance(activities, list):
+        for entry in activities:
+            if not isinstance(entry, dict):
+                continue
+            status = entry.get("status") if isinstance(entry.get("status"), dict) else {}
+            raw_status = (
+                _safe_string(status.get("simplifiedTextDescription"))
+                or _safe_string(status.get("description"))
+                or ""
+            )
+            if normalize_tracking_status(raw_status) != "delivered":
+                continue
+            gmt_date = entry.get("gmtDate") or entry.get("date")
+            gmt_time = entry.get("gmtTime") or entry.get("time")
+            formatted = _format_activity_datetime(gmt_date, gmt_time, entry.get("gmtOffset"))
+            if formatted:
+                return formatted
+    return None
 
 
 def fetch_tracking_status(tracking_number: str) -> Optional[Dict[str, Any]]:
-    """
-    Best-effort UPS tracking status lookup for a given tracking number.
-    Returns a minimal dict with `trackingStatus` + optional timestamps, or None on failure.
-    """
     normalized = _normalize_tracking_number(tracking_number)
     if not normalized:
         return None
+    if not is_configured():
+        return None
 
-    cached = _get_cached(normalized)
+    cached = _tracking_cache_get(normalized)
     if cached is not None:
         return cached
 
-    session = requests.Session()
-    session.headers.update(
-        {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-    )
-
-    checked_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    checked_at = _now_utc_iso()
     try:
-        # Prime cookies + XSRF token (UPS Track API can require it).
-        http_client.request_with_session(
-            session,
-            "GET",
-            UPS_TRACK_PAGE_URL,
-            params={"loc": "en_US", "tracknum": normalized, "requester": "ST/trackdetails"},
-            headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
-            allow_redirects=True,
+        access_token = _get_access_token()
+        response = http_client.get(
+            f"{_base_url()}{UPS_TRACK_PATH}/{quote(normalized)}",
+            params={"locale": "en_US"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+                "transId": uuid4().hex,
+                "transactionSrc": UPS_TRANSACTION_SOURCE,
+            },
         )
-
-        xsrf = session.cookies.get("XSRF-TOKEN") or session.cookies.get("xsrf-token")
-        api_headers = {
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/json",
-            "Origin": "https://www.ups.com",
-            "Referer": f"{UPS_TRACK_PAGE_URL}?loc=en_US&tracknum={normalized}&requester=ST/trackdetails",
-        }
-        if xsrf:
-            api_headers["X-XSRF-TOKEN"] = xsrf
-
-        resp = http_client.request_with_session(
-            session,
-            "POST",
-            UPS_TRACK_STATUS_API_URL,
-            params={"loc": "en_US"},
-            json={"Locale": "en_US", "TrackingNumber": [normalized]},
-            headers=api_headers,
-        )
-        resp.raise_for_status()
-        payload = resp.json() or {}
+        response.raise_for_status()
+        payload = response.json() or {}
     except Exception as exc:
-        # Return a structured failure instead of None so callers can debug deployments.
         return {
             "carrier": "ups",
             "trackingNumber": normalized,
@@ -194,17 +346,18 @@ def fetch_tracking_status(tracking_number: str) -> Optional[Dict[str, Any]]:
             "errorDetail": str(exc)[:240],
         }
 
-    raw_status = _extract_ups_status(payload)
-    tracking_status = _map_status_to_peppro(raw_status)
-    delivered_at = _extract_ups_delivered_at(payload)
+    raw_status, status_code = _extract_ups_status(payload)
+    tracking_status = normalize_tracking_status(raw_status) or "unknown"
+    delivered_at = _extract_delivered_at(payload)
 
     result = {
         "carrier": "ups",
-        "trackingNumber": normalized,
+        "trackingNumber": _safe_string(_deep_get(payload, "trackResponse", "shipment", 0, "inquiryNumber")) or normalized,
         "trackingStatus": tracking_status,
         "trackingStatusRaw": raw_status,
+        "statusCode": status_code,
         "deliveredAt": delivered_at,
         "checkedAt": checked_at,
     }
-    _set_cached(normalized, result)
+    _tracking_cache_set(normalized, result)
     return result

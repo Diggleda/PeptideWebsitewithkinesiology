@@ -7968,20 +7968,43 @@ function MainApp() {
       const salesDoctorDetailStackRef = useRef<NonNullable<typeof salesDoctorDetail>[]>([]);
       const normalizeSalesDoctorContactValues = useCallback((...values: unknown[]) => {
         const normalized: string[] = [];
-        values.forEach((value) => {
-          const entries = Array.isArray(value)
-            ? value
-            : typeof value === "string"
-              ? value.split(",")
-              : [];
-          entries.forEach((entry) => {
-            const text = String(entry || "").trim();
-            if (!text || normalized.includes(text)) {
+        const pushValue = (value: unknown) => {
+          const text = String(value || "").trim();
+          if (!text || normalized.includes(text)) {
+            return;
+          }
+          normalized.push(text);
+        };
+        const visit = (value: unknown) => {
+          if (Array.isArray(value)) {
+            value.forEach(visit);
+            return;
+          }
+          if (value == null) {
+            return;
+          }
+          if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (!trimmed) {
               return;
             }
-            normalized.push(text);
-          });
-        });
+            if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+              try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                  parsed.forEach(visit);
+                  return;
+                }
+              } catch {
+                // Fall through to comma splitting when the string is not valid JSON.
+              }
+            }
+            trimmed.split(",").forEach((entry) => pushValue(entry));
+            return;
+          }
+          pushValue(value);
+        };
+        values.forEach(visit);
         return normalized;
       }, []);
       useEffect(() => {
@@ -9799,14 +9822,39 @@ function MainApp() {
 	          ? bucket.total / relevantOrders.length
 	          : null;
       const normalizedRole = normalizeRole(sourceRole || "doctor") || "doctor";
+      const currentDetail = salesDoctorDetailRef.current;
+      const currentDetailMatchesBucket =
+        Boolean(currentDetail) &&
+        String(currentDetail?.doctorId || "").trim().length > 0 &&
+        String(currentDetail?.doctorId || "").trim() === String(bucket?.doctorId || "").trim();
       const contactEmails = normalizeSalesDoctorContactValues(
+        currentDetailMatchesBucket ? currentDetail?.contactEmails : null,
         (bucket as any)?.contactEmails,
+        (bucket as any)?.contact_emails_json,
         (bucket as any)?.doctorEmails,
+        (bucket as any)?.doctor_emails,
+        (bucket as any)?.referredContactEmails,
+        (bucket as any)?.referred_contact_emails,
+        (bucket as any)?.referredContactEmail,
+        (bucket as any)?.referred_contact_email,
+        (bucket as any)?.contactEmail,
+        (bucket as any)?.contact_email,
+        currentDetailMatchesBucket ? currentDetail?.email : null,
         bucket.doctorEmail,
       );
       const contactPhones = normalizeSalesDoctorContactValues(
+        currentDetailMatchesBucket ? currentDetail?.contactPhones : null,
         (bucket as any)?.contactPhones,
+        (bucket as any)?.contact_phones_json,
         (bucket as any)?.doctorPhones,
+        (bucket as any)?.doctor_phones,
+        (bucket as any)?.referredContactPhones,
+        (bucket as any)?.referred_contact_phones,
+        (bucket as any)?.referredContactPhone,
+        (bucket as any)?.referred_contact_phone,
+        (bucket as any)?.contactPhone,
+        (bucket as any)?.contact_phone,
+        currentDetailMatchesBucket ? currentDetail?.phone : null,
         bucket.doctorPhone,
         (addressSource as any)?.phone,
         (addressSource as any)?.phoneNumber,
@@ -29856,14 +29904,20 @@ function MainApp() {
                                 prospectAddress ? "prospect" : accountAddress ? "user" : null;
                               const contactEmails = normalizeSalesDoctorContactValues(
                                 (record as any)?.contactEmails,
+                                (record as any)?.contact_emails_json,
                                 (record as any)?.referredContactEmail,
+                                (record as any)?.referred_contact_email,
                                 (record as any)?.contactEmail,
+                                (record as any)?.contact_email,
                                 doctorEmail,
                               );
                               const contactPhones = normalizeSalesDoctorContactValues(
                                 (record as any)?.contactPhones,
+                                (record as any)?.contact_phones_json,
                                 (record as any)?.referredContactPhone,
+                                (record as any)?.referred_contact_phone,
                                 (record as any)?.contactPhone,
+                                (record as any)?.contact_phone,
                               );
                               const ownerSalesRepId =
                                 (record as any).ownerSalesRepId ||
@@ -33459,16 +33513,24 @@ function MainApp() {
 	          {(() => {
 	            const row = prospectDetailModalProspect;
 	            if (!row) return null;
-	            const emailValues = Array.isArray(row?.contactEmails)
-	              ? row.contactEmails
-	                  .map((value: unknown) => String(value || "").trim())
-	                  .filter((value: string) => value.length > 0)
-	              : [];
-	            const phoneValues = Array.isArray(row?.contactPhones)
-	              ? row.contactPhones
-	                  .map((value: unknown) => String(value || "").trim())
-	                  .filter((value: string) => value.length > 0)
-	              : [];
+	            const emailValues = normalizeSalesDoctorContactValues(
+                row?.contactEmails,
+                row?.contact_emails_json,
+                row?.referredContactEmail,
+                row?.referred_contact_email,
+                row?.contactEmail,
+                row?.contact_email,
+                row?.email,
+              );
+	            const phoneValues = normalizeSalesDoctorContactValues(
+                row?.contactPhones,
+                row?.contact_phones_json,
+                row?.referredContactPhone,
+                row?.referred_contact_phone,
+                row?.contactPhone,
+                row?.contact_phone,
+                row?.phone,
+              );
 	            const name = String(
 	              row?._displayName || row?.referredContactName || row?.contactName || "Lead",
 	            ).trim();
@@ -35271,20 +35333,22 @@ function MainApp() {
 					                                  );
 					                                  return parts.length > 0 ? parts.join("\n") : null;
 					                                })();
-					                                const contactEmails = normalizeSalesDoctorContactValues(
-					                                  row?.contactEmails,
-					                                  row?.referredContactEmail,
-					                                  row?.referred_contact_email,
-					                                  row?.contactEmail,
-					                                  row?.contact_email,
-					                                  doctorEmail,
-					                                );
-					                                const contactPhones = normalizeSalesDoctorContactValues(
-					                                  row?.contactPhones,
-					                                  row?.referredContactPhone,
-					                                  row?.referred_contact_phone,
-					                                  row?.contactPhone,
-					                                  row?.contact_phone,
+	                                const contactEmails = normalizeSalesDoctorContactValues(
+	                                  row?.contactEmails,
+	                                  row?.contact_emails_json,
+	                                  row?.referredContactEmail,
+	                                  row?.referred_contact_email,
+	                                  row?.contactEmail,
+	                                  row?.contact_email,
+	                                  doctorEmail,
+	                                );
+	                                const contactPhones = normalizeSalesDoctorContactValues(
+	                                  row?.contactPhones,
+	                                  row?.contact_phones_json,
+	                                  row?.referredContactPhone,
+	                                  row?.referred_contact_phone,
+	                                  row?.contactPhone,
+	                                  row?.contact_phone,
 					                                  doctorPhone,
 					                                );
 					                                const ownerSalesRepId =

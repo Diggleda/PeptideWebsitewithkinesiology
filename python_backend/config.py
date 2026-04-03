@@ -113,6 +113,7 @@ class AppConfig:
     referral: Dict[str, Any]
     encryption: Dict[str, Any]
     ship_station: Dict[str, Any]
+    ups: Dict[str, Any]
     mysql: Dict[str, Any]
     integrations: Dict[str, Any]
     quotes: Dict[str, Any]
@@ -233,6 +234,20 @@ def load_config() -> AppConfig:
                 "country_code": _s(os.environ.get("SHIPSTATION_SHIP_FROM_COUNTRY") or "US"),
                 "phone": _s(os.environ.get("SHIPSTATION_SHIP_FROM_PHONE")),
             },
+        },
+        ups={
+            "client_id": _s(
+                os.environ.get("UPS_CLIENT_ID")
+                or os.environ.get("UPS_API_CLIENT_ID")
+                or ""
+            ),
+            "client_secret": _s(
+                os.environ.get("UPS_CLIENT_SECRET")
+                or os.environ.get("UPS_API_CLIENT_SECRET")
+                or ""
+            ),
+            "merchant_id": _s(os.environ.get("UPS_MERCHANT_ID") or ""),
+            "use_cie": _to_bool(os.environ.get("UPS_USE_CIE"), False),
         },
         mysql={
             "enabled": (

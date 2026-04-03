@@ -33,6 +33,7 @@ class ServicesConfigFallbackTests(unittest.TestCase):
             referral={},
             encryption={"key": "test-key"},
             ship_station={},
+            ups={},
             mysql={},
             integrations={},
             quotes={},

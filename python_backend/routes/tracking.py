@@ -4,7 +4,7 @@ import re
 
 from flask import Blueprint, make_response, request
 
-from ..integrations import ship_engine, ups_tracking
+from ..integrations import ups_tracking
 from ..middleware.auth import require_auth
 
 blueprint = Blueprint("tracking", __name__, url_prefix="/api/tracking")
@@ -49,13 +49,7 @@ def get_tracking_status(tracking_number: str):
             200,
         )
 
-    # Prefer ShipEngine tracking if configured (UPS Track API stalls from some server networks).
-    info = None
-    if ship_engine.is_configured():
-        info = ship_engine.fetch_tracking_status("ups", normalized)
-
-    if not info:
-        info = ups_tracking.fetch_tracking_status(normalized)
+    info = ups_tracking.fetch_tracking_status(normalized)
 
     if not info:
         return make_response(

@@ -22,6 +22,7 @@ def create_app() -> "Flask":
     from .services.presence_sweep_service import start_presence_sweep
     from .services.product_document_sync_service import start_product_document_sync
     from .services.shipstation_status_sync_service import start_shipstation_status_sync
+    from .services.ups_status_sync_service import start_ups_status_sync
     from .storage import init_storage
 
     config = load_config()
@@ -48,6 +49,7 @@ def create_app() -> "Flask":
         pass
     start_product_document_sync()
     start_shipstation_status_sync()
+    start_ups_status_sync()
     start_presence_sweep()
     start_patient_links_sweep()
 

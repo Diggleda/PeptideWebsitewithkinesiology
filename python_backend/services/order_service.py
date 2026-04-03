@@ -21,7 +21,7 @@ from ..repositories import (
     discount_code_repository,
 )
 from ..database import mysql_client
-from ..integrations import ship_station, stripe_payments, woo_commerce
+from ..integrations import ship_station, stripe_payments, ups_tracking, woo_commerce
 from .. import storage
 from . import referral_service
 from . import settings_service
@@ -904,6 +904,26 @@ def _ensure_dict(value):
         except Exception:
             return {}
     return {}
+
+
+def _normalize_ups_tracking_status(value: Any) -> Optional[str]:
+    normalized = ups_tracking.normalize_tracking_status(value)
+    return normalized or None
+
+
+def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
+    if not isinstance(order, dict):
+        return None
+    normalized = _normalize_ups_tracking_status(
+        order.get("upsTrackingStatus") if order.get("upsTrackingStatus") is not None else order.get("ups_tracking_status")
+    )
+    if not normalized:
+        return None
+    order["upsTrackingStatus"] = normalized
+    estimate = _ensure_dict(order.get("shippingEstimate"))
+    estimate["status"] = normalized
+    order["shippingEstimate"] = estimate
+    return normalized
 
 
 def _validate_items(items: Optional[List[Dict]]) -> bool:
@@ -2050,6 +2070,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
                 "expectedShipmentWindow": local.get("expectedShipmentWindow") or None,
                 "shippingCarrier": local.get("shippingCarrier") or None,
                 "shippingService": local.get("shippingService") or None,
+                "upsTrackingStatus": local.get("upsTrackingStatus") or None,
                 "lineItems": local.get("items") or [],
                 "source": "peppro",
             }
@@ -2170,6 +2191,8 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
 
         if local_order.get("trackingNumber") is not None:
             order["trackingNumber"] = local_order.get("trackingNumber")
+        if local_order.get("upsTrackingStatus") is not None:
+            order["upsTrackingStatus"] = local_order.get("upsTrackingStatus")
 
         if local_order.get("shippingCarrier") is not None:
             order["shippingCarrier"] = local_order.get("shippingCarrier")
@@ -2214,6 +2237,7 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
         if woo_details:
             integrations["wooCommerce"] = woo_details
         order["integrationDetails"] = integrations
+        _apply_authoritative_ups_tracking_status(order)
 
     return woo_orders
 
@@ -3672,9 +3696,11 @@ def _enrich_with_shipstation(order: Dict) -> None:
     order["integrationDetails"] = integrations
     ship_status = (info.get("status") or "").lower()
     derived_shipping_status = _normalize_shipstation_delivery_status(info)
+    authoritative_ups_status = _apply_authoritative_ups_tracking_status(order)
     if ship_status == "shipped" or derived_shipping_status:
         estimate = _ensure_dict(order.get("shippingEstimate"))
-        estimate["status"] = derived_shipping_status or "shipped"
+        if not authoritative_ups_status:
+            estimate["status"] = derived_shipping_status or "shipped"
         if info.get("shipDate"):
             estimate["shipDate"] = info["shipDate"]
         order["shippingEstimate"] = estimate
@@ -3939,13 +3965,17 @@ def get_sales_rep_order_detail(
         mapped["integrationDetails"]["shipStation"] = shipstation_info
         ship_status = (shipstation_info.get("status") or "").lower()
         derived_shipping_status = _normalize_shipstation_delivery_status(shipstation_info)
+        authoritative_ups_status = _apply_authoritative_ups_tracking_status(mapped) or (
+            _apply_authoritative_ups_tracking_status(local_order) if isinstance(local_order, dict) else None
+        )
         carrier_code = shipstation_info.get("carrierCode")
         service_code = shipstation_info.get("serviceCode")
         if ship_status == "shipped" or derived_shipping_status:
             if ship_status == "shipped" and not mapped.get("status"):
                 mapped["status"] = "shipped"
             mapped.setdefault("shippingEstimate", {})
-            mapped["shippingEstimate"]["status"] = derived_shipping_status or "shipped"
+            if not authoritative_ups_status:
+                mapped["shippingEstimate"]["status"] = derived_shipping_status or "shipped"
             if shipstation_info.get("shipDate"):
                 mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
         mapped.setdefault("shippingEstimate", {})
@@ -4002,6 +4032,8 @@ def get_sales_rep_order_detail(
                 mapped["notes"] = local_order.get("notes")
             if local_order.get("trackingNumber") is not None:
                 mapped["trackingNumber"] = local_order.get("trackingNumber")
+            if local_order.get("upsTrackingStatus") is not None:
+                mapped["upsTrackingStatus"] = local_order.get("upsTrackingStatus")
             if local_order.get("shippingCarrier") is not None:
                 mapped["shippingCarrier"] = local_order.get("shippingCarrier")
                 mapped.setdefault("shippingEstimate", {})
@@ -4032,6 +4064,7 @@ def get_sales_rep_order_detail(
                 )
                 if fallback_email:
                     mapped["billingEmail"] = fallback_email
+            _apply_authoritative_ups_tracking_status(mapped)
     except Exception:
         pass
 

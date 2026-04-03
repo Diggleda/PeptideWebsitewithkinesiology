@@ -219,6 +219,7 @@ CREATE_TABLE_STATEMENTS = [
         shipping_carrier VARCHAR(64) NULL,
         shipping_service VARCHAR(128) NULL,
         tracking_number VARCHAR(64) NULL,
+        ups_tracking_status VARCHAR(32) NULL,
         shipped_at DATETIME NULL,
         physician_certified TINYINT(1) NOT NULL DEFAULT 0,
         referral_code VARCHAR(8) NULL,
@@ -584,6 +585,7 @@ def ensure_schema() -> None:
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number VARCHAR(64) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS ups_tracking_status VARCHAR(32) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_at DATETIME NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS physician_certified TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_rate LONGTEXT NULL",
@@ -770,6 +772,8 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE orders ADD COLUMN facility_pickup TINYINT(1) NOT NULL DEFAULT 0")
         if not _column_exists("orders", "fulfillment_method"):
             mysql_client.execute("ALTER TABLE orders ADD COLUMN fulfillment_method VARCHAR(32) NULL")
+        if not _column_exists("orders", "ups_tracking_status"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN ups_tracking_status VARCHAR(32) NULL")
     except Exception:
         pass
 
