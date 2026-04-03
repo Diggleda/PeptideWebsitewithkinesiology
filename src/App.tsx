@@ -7920,6 +7920,7 @@ function MainApp() {
 				    referralId?: string | null;
 				    name: string;
 				    email?: string | null;
+            contactEmails?: string[] | null;
 			    avatar?: string | null;
             greaterArea?: string | null;
             studyFocus?: string | null;
@@ -7941,6 +7942,7 @@ function MainApp() {
           personalOrdersLoaded?: boolean;
           salesOrdersLoaded?: boolean;
 		    phone?: string | null;
+            contactPhones?: string[] | null;
 		    address?: string | null;
 		    addressOrigin?: "prospect" | "user" | "order" | "unknown" | null;
         leadTypeLabel?: string | null;
@@ -7964,6 +7966,24 @@ function MainApp() {
       >([]);
       const salesDoctorDetailRef = useRef<typeof salesDoctorDetail>(null);
       const salesDoctorDetailStackRef = useRef<NonNullable<typeof salesDoctorDetail>[]>([]);
+      const normalizeSalesDoctorContactValues = useCallback((...values: unknown[]) => {
+        const normalized: string[] = [];
+        values.forEach((value) => {
+          const entries = Array.isArray(value)
+            ? value
+            : typeof value === "string"
+              ? value.split(",")
+              : [];
+          entries.forEach((entry) => {
+            const text = String(entry || "").trim();
+            if (!text || normalized.includes(text)) {
+              return;
+            }
+            normalized.push(text);
+          });
+        });
+        return normalized;
+      }, []);
       useEffect(() => {
         salesDoctorDetailRef.current = salesDoctorDetail;
       }, [salesDoctorDetail]);
@@ -7977,6 +7997,25 @@ function MainApp() {
       const salesDoctorRepFeedCacheRef = useRef<
         Map<string, { orders: AccountOrderSummary[]; doctors: any[] }>
       >(new Map());
+      const salesDoctorDetailEmailValues = useMemo(
+        () =>
+          normalizeSalesDoctorContactValues(
+            salesDoctorDetail?.contactEmails,
+            salesDoctorDetail?.email,
+          ),
+        [normalizeSalesDoctorContactValues, salesDoctorDetail?.contactEmails, salesDoctorDetail?.email],
+      );
+      const salesDoctorDetailPhoneValues = useMemo(
+        () =>
+          normalizeSalesDoctorContactValues(
+            salesDoctorDetail?.contactPhones,
+            salesDoctorDetail?.phone,
+          ),
+        [normalizeSalesDoctorContactValues, salesDoctorDetail?.contactPhones, salesDoctorDetail?.phone],
+      );
+      const salesDoctorDetailPrimaryEmail = salesDoctorDetailEmailValues[0] || null;
+      const salesDoctorDetailEmailDisplay = salesDoctorDetailEmailValues.join(", ");
+      const salesDoctorDetailPhoneDisplay = salesDoctorDetailPhoneValues.join(", ");
 	  const [salesDoctorCommissionRange, setSalesDoctorCommissionRange] = useState<
 	    DateRange | undefined
 	  >(undefined);
@@ -9755,11 +9794,23 @@ function MainApp() {
       const relevantOrders = bucket.orders.filter((order) =>
         shouldCountRevenueForStatus(order.status),
       );
-      const avgOrderValue =
-        relevantOrders.length > 0
-          ? bucket.total / relevantOrders.length
-          : null;
+	      const avgOrderValue =
+	        relevantOrders.length > 0
+	          ? bucket.total / relevantOrders.length
+	          : null;
       const normalizedRole = normalizeRole(sourceRole || "doctor") || "doctor";
+      const contactEmails = normalizeSalesDoctorContactValues(
+        (bucket as any)?.contactEmails,
+        (bucket as any)?.doctorEmails,
+        bucket.doctorEmail,
+      );
+      const contactPhones = normalizeSalesDoctorContactValues(
+        (bucket as any)?.contactPhones,
+        (bucket as any)?.doctorPhones,
+        bucket.doctorPhone,
+        (addressSource as any)?.phone,
+        (addressSource as any)?.phoneNumber,
+      );
       const presence =
         typeof bucket?.isOnline === "boolean" || typeof bucket?.isIdle === "boolean"
           ? {
@@ -9798,7 +9849,8 @@ function MainApp() {
 	        doctorId: bucket.doctorId,
 	        referralId: bucket.referralId ?? null,
 	        name: bucket.doctorName,
-	        email: bucket.doctorEmail,
+	        email: contactEmails[0] || bucket.doctorEmail,
+            contactEmails,
 	        avatar: bucket.doctorAvatar ?? null,
             greaterArea:
               typeof (bucket as any)?.greaterArea === "string"
@@ -9835,10 +9887,12 @@ function MainApp() {
 	        personalOrders: Array.isArray(bucket.personalOrders) ? bucket.personalOrders : undefined,
 	        salesOrders: Array.isArray(bucket.salesOrders) ? bucket.salesOrders : undefined,
 	        phone:
+              contactPhones[0] ||
 	          bucket.doctorPhone ||
 	          (addressSource as any)?.phone ||
 	          (addressSource as any)?.phoneNumber ||
 	          null,
+            contactPhones,
 	        address,
 	        addressOrigin,
           leadTypeLabel:
@@ -29800,6 +29854,17 @@ function MainApp() {
                               const doctorAddress = prospectAddress || accountAddress || null;
                               const addressOrigin =
                                 prospectAddress ? "prospect" : accountAddress ? "user" : null;
+                              const contactEmails = normalizeSalesDoctorContactValues(
+                                (record as any)?.contactEmails,
+                                (record as any)?.referredContactEmail,
+                                (record as any)?.contactEmail,
+                                doctorEmail,
+                              );
+                              const contactPhones = normalizeSalesDoctorContactValues(
+                                (record as any)?.contactPhones,
+                                (record as any)?.referredContactPhone,
+                                (record as any)?.contactPhone,
+                              );
                               const ownerSalesRepId =
                                 (record as any).ownerSalesRepId ||
                                 (record as any).owner_sales_rep_id ||
@@ -29814,11 +29879,13 @@ function MainApp() {
                                   doctorId: String(doctorId || record.id),
                                   referralId: kind === "referral" ? String(record.id) : null,
                                   doctorName: leadDisplayName,
-                                  doctorEmail,
+                                  doctorEmail: contactEmails[0] || doctorEmail,
+                                  contactEmails,
                                   doctorAvatar: hasContactAccount
                                     ? leadAccountProfile?.profileImageUrl ?? null
                                     : null,
-                                  doctorPhone: record.referredContactPhone || null,
+                                  doctorPhone: contactPhones[0] || record.referredContactPhone || null,
+                                  contactPhones,
                                   doctorAddress,
                                   addressOrigin,
                                   leadTypeLabel,
@@ -33649,15 +33716,15 @@ function MainApp() {
               salesDoctorDetail && (
 	            <div className="space-y-4 min-w-0">
 			              <DialogHeader className="min-w-0">
-			                <DialogTitle className="space-y-0.5 min-w-0">
-			                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
+				                <DialogTitle className="space-y-0.5 min-w-0">
+				                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
 				                  <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap text-sm font-normal text-slate-600">
-				                    {salesDoctorDetail.email ? (
+				                    {salesDoctorDetailEmailDisplay ? (
 				                      <a
-                                href={`mailto:${salesDoctorDetail.email}`}
+                                href={`mailto:${salesDoctorDetailPrimaryEmail || salesDoctorDetailEmailDisplay}`}
                                 className="inline-block min-w-max hover:underline"
                               >
-				                        {salesDoctorDetail.email}
+				                        {salesDoctorDetailEmailDisplay}
 				                      </a>
 				                    ) : (
 				                      "—"
@@ -34526,14 +34593,14 @@ function MainApp() {
 	                  <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
 	                    <div className="min-w-0">
 	                      <span className="font-semibold text-slate-800">Email: </span>
-	                      {salesDoctorDetail.email ? (
+	                      {salesDoctorDetailEmailDisplay ? (
 	                        <span className="inline-block max-w-full align-middle">
                             <span className="block max-w-full overflow-x-auto whitespace-nowrap">
                             <a
-                              href={`mailto:${salesDoctorDetail.email}`}
+                              href={`mailto:${salesDoctorDetailPrimaryEmail || salesDoctorDetailEmailDisplay}`}
                               className="inline-block min-w-max"
                             >
-	                            {salesDoctorDetail.email}
+	                            {salesDoctorDetailEmailDisplay}
 	                          </a>
                             </span>
                           </span>
@@ -34560,11 +34627,17 @@ function MainApp() {
                         const hasChanges = trimmedDraft !== existingPhone.trim();
                         if (!canEditPhone) {
                           return (
-                            <span>{salesDoctorDetail.phone || "Unavailable"}</span>
+                            <span>{salesDoctorDetailPhoneDisplay || "Unavailable"}</span>
                           );
                         }
                         return (
                           <div className="flex flex-col gap-2">
+                            {salesDoctorDetailPhoneDisplay &&
+                              salesDoctorDetailPhoneDisplay !== existingPhone && (
+                                <p className="text-xs text-slate-500">
+                                  Stored: {salesDoctorDetailPhoneDisplay}
+                                </p>
+                              )}
                             <Input
                               type="tel"
                               value={salesDoctorPhoneDraft}
@@ -35198,6 +35271,22 @@ function MainApp() {
 					                                  );
 					                                  return parts.length > 0 ? parts.join("\n") : null;
 					                                })();
+					                                const contactEmails = normalizeSalesDoctorContactValues(
+					                                  row?.contactEmails,
+					                                  row?.referredContactEmail,
+					                                  row?.referred_contact_email,
+					                                  row?.contactEmail,
+					                                  row?.contact_email,
+					                                  doctorEmail,
+					                                );
+					                                const contactPhones = normalizeSalesDoctorContactValues(
+					                                  row?.contactPhones,
+					                                  row?.referredContactPhone,
+					                                  row?.referred_contact_phone,
+					                                  row?.contactPhone,
+					                                  row?.contact_phone,
+					                                  doctorPhone,
+					                                );
 					                                const ownerSalesRepId =
 					                                  row?.ownerSalesRepId ||
 					                                  row?.owner_sales_rep_id ||
@@ -35220,7 +35309,8 @@ function MainApp() {
 						                                          "",
 						                                      ).trim() || null,
 						                                    doctorName: name,
-						                                    doctorEmail,
+						                                    doctorEmail: contactEmails[0] || doctorEmail,
+                                            contactEmails,
 						                                    doctorAvatar: avatarUrl || null,
                                             prospectNotes: (() => {
                                               const contactFormIdRaw =
@@ -35259,7 +35349,8 @@ function MainApp() {
                                               }
                                               return null;
                                             })(),
-						                                    doctorPhone,
+						                                    doctorPhone: contactPhones[0] || doctorPhone,
+                                            contactPhones,
 						                                    doctorAddress: prospectAddress,
 						                                    addressOrigin: prospectAddress ? "prospect" : null,
 						                                    ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,

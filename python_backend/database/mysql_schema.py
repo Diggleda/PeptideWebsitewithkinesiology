@@ -143,8 +143,6 @@ CREATE_TABLE_STATEMENTS = [
         reseller_permit_file_name VARCHAR(190) NULL,
         reseller_permit_uploaded_at DATETIME NULL,
         contact_name VARCHAR(190) NULL,
-        contact_email VARCHAR(190) NULL,
-        contact_phone VARCHAR(32) NULL,
         contact_emails_json JSON NULL,
         contact_phones_json JSON NULL,
         office_address_line1 VARCHAR(190) NULL,
@@ -612,8 +610,6 @@ def ensure_schema() -> None:
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS reseller_permit_uploaded_at DATETIME NULL",
         "ALTER TABLE sales_prospects MODIFY COLUMN sales_rep_id VARCHAR(32) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_name VARCHAR(190) NULL",
-        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_email VARCHAR(190) NULL",
-        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(32) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_emails_json JSON NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_phones_json JSON NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_address_line1 VARCHAR(190) NULL",
@@ -824,26 +820,31 @@ def ensure_schema() -> None:
         pass
 
     try:
-        mysql_client.execute(
-            """
-            UPDATE sales_prospects
-            SET contact_emails_json = JSON_ARRAY(LOWER(TRIM(contact_email)))
-            WHERE contact_emails_json IS NULL
-              AND contact_email IS NOT NULL
-              AND TRIM(contact_email) <> ''
-            """
-        )
-        mysql_client.execute(
-            """
-            UPDATE sales_prospects
-            SET contact_phones_json = JSON_ARRAY(TRIM(contact_phone))
-            WHERE contact_phones_json IS NULL
-              AND contact_phone IS NOT NULL
-              AND TRIM(contact_phone) <> ''
-            """
-        )
+        if _column_exists("sales_prospects", "contact_email"):
+            mysql_client.execute(
+                """
+                UPDATE sales_prospects
+                SET contact_emails_json = JSON_ARRAY(LOWER(TRIM(contact_email)))
+                WHERE contact_emails_json IS NULL
+                  AND contact_email IS NOT NULL
+                  AND TRIM(contact_email) <> ''
+                """
+            )
+        if _column_exists("sales_prospects", "contact_phone"):
+            mysql_client.execute(
+                """
+                UPDATE sales_prospects
+                SET contact_phones_json = JSON_ARRAY(TRIM(contact_phone))
+                WHERE contact_phones_json IS NULL
+                  AND contact_phone IS NOT NULL
+                  AND TRIM(contact_phone) <> ''
+                """
+            )
     except Exception:
         pass
+
+    _drop_column_if_exists("sales_prospects", "contact_email")
+    _drop_column_if_exists("sales_prospects", "contact_phone")
 
     # Ensure delegation markup percent is stored on doctor records.
     try:

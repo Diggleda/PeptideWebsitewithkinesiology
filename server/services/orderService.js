@@ -700,7 +700,7 @@ const hasResellerPermitOnFile = async (user) => {
       params.doctorId = doctorId;
     }
     if (email) {
-      clauses.push('LOWER(contact_email) = :email');
+      clauses.push("JSON_SEARCH(contact_emails_json, 'one', :email) IS NOT NULL");
       params.email = email;
     }
     if (!clauses.length) {
@@ -3630,22 +3630,31 @@ const getSalesByRep = async ({
     if (mysqlClient.isEnabled() && billingEmailsFromOrders.size <= 800) {
       try {
         const emails = Array.from(billingEmailsFromOrders);
-        const placeholders = emails.map((_, idx) => `:email${idx}`).join(', ');
-        const params = emails.reduce((acc, email, idx) => ({ ...acc, [`email${idx}`]: email }), {});
         const rows = await mysqlClient.fetchAll(
           `
-            SELECT contact_email, sales_rep_id, updated_at, created_at
+            SELECT contact_emails_json, sales_rep_id, updated_at, created_at
             FROM sales_prospects
-            WHERE contact_email_normalized IN (${placeholders})
+            WHERE contact_emails_json IS NOT NULL
           `,
-          params,
         );
         (rows || []).forEach((row) => {
-          setProspectEmailMapping(
-            row?.contact_email ?? row?.contactEmail ?? null,
-            row?.sales_rep_id ?? row?.salesRepId ?? null,
-            row?.updated_at ?? row?.updatedAt ?? row?.created_at ?? row?.createdAt ?? null,
-          );
+          let contactEmails = [];
+          try {
+            const parsed = JSON.parse(String(row?.contact_emails_json || '[]'));
+            contactEmails = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            contactEmails = [];
+          }
+          contactEmails
+            .map((value) => normalizeEmail(value))
+            .filter((value) => value && billingEmailsFromOrders.has(value))
+            .forEach((value) => {
+              setProspectEmailMapping(
+                value,
+                row?.sales_rep_id ?? row?.salesRepId ?? null,
+                row?.updated_at ?? row?.updatedAt ?? row?.created_at ?? row?.createdAt ?? null,
+              );
+            });
         });
       } catch (error) {
         logger.warn({ err: error }, 'Sales-by-rep summary: failed to query MySQL sales_prospects email mapping');

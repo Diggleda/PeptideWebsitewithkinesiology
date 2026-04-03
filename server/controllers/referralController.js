@@ -947,6 +947,8 @@ const getDoctorLedger = (req, res, next) => {
           const contactName = readContactFormField(row, 'name');
           const contactEmail = normalizeEmail(readContactFormField(row, 'email'));
           const contactPhone = readContactFormField(row, 'phone');
+          const contactEmails = contactEmail ? [contactEmail] : [];
+          const contactPhones = contactPhone ? [contactPhone] : [];
           return {
             id: row.id ? `contact_form:${row.id}` : crypto.randomUUID(),
             status: 'contact_form',
@@ -958,6 +960,8 @@ const getDoctorLedger = (req, res, next) => {
             referredContactName: contactName || 'Contact Form Lead',
             referredContactEmail: contactEmail,
             referredContactPhone: contactPhone,
+            contactEmails,
+            contactPhones,
             notes: row.source || 'Contact form submission',
             createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
             updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString(),
@@ -1002,6 +1006,10 @@ const getDoctorLedger = (req, res, next) => {
 
           return {
             ...referral,
+            referredContactEmail: prospect?.contactEmail || referral?.referredContactEmail || null,
+            referredContactPhone: prospect?.contactPhone || referral?.referredContactPhone || null,
+            contactEmails: Array.isArray(prospect?.contactEmails) ? prospect.contactEmails : [],
+            contactPhones: Array.isArray(prospect?.contactPhones) ? prospect.contactPhones : [],
             status: prospect.status || referral.status,
             notes: prospect.notes ?? referral.notes ?? null,
             salesRepNotes: prospect.notes ?? null,
@@ -1061,6 +1069,8 @@ const getDoctorLedger = (req, res, next) => {
             referredContactName: prospect?.contactName || 'Seamless Lead',
             referredContactEmail: prospect?.contactEmail || null,
             referredContactPhone: prospect?.contactPhone || null,
+            contactEmails: Array.isArray(prospect?.contactEmails) ? prospect.contactEmails : [],
+            contactPhones: Array.isArray(prospect?.contactPhones) ? prospect.contactPhones : [],
             notes: prospect?.notes || null,
             createdAt,
             updatedAt,

@@ -416,10 +416,7 @@ const findBySalesRepAndContactEmail = async (salesRepId, contactEmail) => {
       `
         SELECT * FROM sales_prospects
         WHERE sales_rep_id = :salesRepId
-          AND (
-            contact_email_normalized = :contactEmail
-            OR JSON_SEARCH(contact_emails_json, 'one', :contactEmail) IS NOT NULL
-          )
+          AND JSON_SEARCH(contact_emails_json, 'one', :contactEmail) IS NOT NULL
         ORDER BY COALESCE(updated_at, created_at) DESC
         LIMIT 1
       `,
@@ -474,8 +471,7 @@ const findByContactEmail = async (contactEmail) => {
     const row = await mysqlClient.fetchOne(
       `
         SELECT * FROM sales_prospects
-        WHERE contact_email_normalized = :contactEmail
-           OR JSON_SEARCH(contact_emails_json, 'one', :contactEmail) IS NOT NULL
+        WHERE JSON_SEARCH(contact_emails_json, 'one', :contactEmail) IS NOT NULL
         ORDER BY COALESCE(updated_at, created_at) DESC
         LIMIT 1
       `,
@@ -513,8 +509,7 @@ const findByContactPhone = async (contactPhone) => {
       `
         SELECT *
         FROM sales_prospects
-        WHERE contact_phone IS NOT NULL
-           OR contact_phones_json IS NOT NULL
+        WHERE contact_phones_json IS NOT NULL
       `,
     );
     const matches = matchesByPhone(rows);
@@ -644,8 +639,6 @@ const upsert = async (prospect) => {
 	          notes,
 	          is_manual,
 	          contact_name,
-	          contact_email,
-	          contact_phone,
 	          contact_emails_json,
 	          contact_phones_json,
 	          reseller_permit_exempt,
@@ -671,8 +664,6 @@ const upsert = async (prospect) => {
 	          :notes,
 	          :isManual,
 	          :contactName,
-	          :contactEmail,
-	          :contactPhone,
 	          :contactEmailsJson,
 	          :contactPhonesJson,
 	          :resellerPermitExempt,
@@ -701,8 +692,6 @@ const upsert = async (prospect) => {
 	          notes = VALUES(notes),
 	          is_manual = VALUES(is_manual),
 	          contact_name = VALUES(contact_name),
-	          contact_email = VALUES(contact_email),
-	          contact_phone = VALUES(contact_phone),
 	          contact_emails_json = VALUES(contact_emails_json),
 	          contact_phones_json = VALUES(contact_phones_json),
 	          reseller_permit_exempt = VALUES(reseller_permit_exempt),

@@ -126,11 +126,6 @@ const STATEMENTS = [
       notes LONGTEXT NULL,
       is_manual TINYINT(1) NOT NULL DEFAULT 0,
       contact_name VARCHAR(190) NULL,
-      contact_email VARCHAR(190) NULL,
-      contact_email_normalized VARCHAR(190)
-        GENERATED ALWAYS AS (LOWER(TRIM(COALESCE(contact_email, ''))))
-        STORED,
-      contact_phone VARCHAR(32) NULL,
       contact_emails_json JSON NULL,
       contact_phones_json JSON NULL,
       assigned_by_rule_id VARCHAR(64) NULL,
@@ -147,7 +142,6 @@ const STATEMENTS = [
       UNIQUE KEY uniq_sales_rep_referral (sales_rep_id, referral_id),
       UNIQUE KEY uniq_sales_rep_contact_form (sales_rep_id, contact_form_id),
       INDEX idx_sales_prospects_doctor_updated (doctor_id, updated_at, created_at),
-      INDEX idx_sales_prospects_contact_email_norm (contact_email_normalized),
       INDEX idx_sales_prospects_referral_id (referral_id),
       INDEX idx_sales_prospects_contact_form_id (contact_form_id),
       INDEX idx_sales_prospects_source_system (source_system),
@@ -942,15 +936,6 @@ const ensureSalesProspectColumns = async () => {
       `,
     },
     {
-      name: 'contact_email_normalized',
-      ddl: `
-        ALTER TABLE sales_prospects
-        ADD COLUMN contact_email_normalized VARCHAR(190)
-          GENERATED ALWAYS AS (LOWER(TRIM(COALESCE(contact_email, ''))))
-          STORED
-      `,
-    },
-    {
       name: 'contact_emails_json',
       ddl: `
         ALTER TABLE sales_prospects
@@ -992,11 +977,6 @@ const ensureSalesProspectColumns = async () => {
   );
   await ensureIndex(
     'sales_prospects',
-    'idx_sales_prospects_contact_email_norm',
-    'ALTER TABLE sales_prospects ADD INDEX idx_sales_prospects_contact_email_norm (contact_email_normalized)',
-  );
-  await ensureIndex(
-    'sales_prospects',
     'idx_sales_prospects_referral_id',
     'ALTER TABLE sales_prospects ADD INDEX idx_sales_prospects_referral_id (referral_id)',
   );
@@ -1011,27 +991,53 @@ const ensureSalesProspectColumns = async () => {
     legacyColumn: 'source_payload_encrypted',
   });
   try {
-    await mysqlClient.execute(
+    const hasLegacyContactEmail = await mysqlClient.fetchOne(
       `
-        UPDATE sales_prospects
-        SET contact_emails_json = JSON_ARRAY(LOWER(TRIM(contact_email)))
-        WHERE contact_emails_json IS NULL
-          AND contact_email IS NOT NULL
-          AND TRIM(contact_email) <> ''
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'sales_prospects'
+          AND COLUMN_NAME = 'contact_email'
       `,
     );
-    await mysqlClient.execute(
+    if (hasLegacyContactEmail) {
+      await mysqlClient.execute(
+        `
+          UPDATE sales_prospects
+          SET contact_emails_json = JSON_ARRAY(LOWER(TRIM(contact_email)))
+          WHERE contact_emails_json IS NULL
+            AND contact_email IS NOT NULL
+            AND TRIM(contact_email) <> ''
+        `,
+      );
+    }
+    const hasLegacyContactPhone = await mysqlClient.fetchOne(
       `
-        UPDATE sales_prospects
-        SET contact_phones_json = JSON_ARRAY(TRIM(contact_phone))
-        WHERE contact_phones_json IS NULL
-          AND contact_phone IS NOT NULL
-          AND TRIM(contact_phone) <> ''
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'sales_prospects'
+          AND COLUMN_NAME = 'contact_phone'
       `,
     );
+    if (hasLegacyContactPhone) {
+      await mysqlClient.execute(
+        `
+          UPDATE sales_prospects
+          SET contact_phones_json = JSON_ARRAY(TRIM(contact_phone))
+          WHERE contact_phones_json IS NULL
+            AND contact_phone IS NOT NULL
+            AND TRIM(contact_phone) <> ''
+        `,
+      );
+    }
   } catch (error) {
     logger.error({ err: error }, 'Failed to backfill MySQL sales_prospects contact arrays');
   }
+  await dropIndexIfExists('sales_prospects', 'idx_sales_prospects_contact_email_norm');
+  await dropColumnIfExists('sales_prospects', 'contact_email_normalized');
+  await dropColumnIfExists('sales_prospects', 'contact_email');
+  await dropColumnIfExists('sales_prospects', 'contact_phone');
   await dropColumnIfExists('sales_prospects', 'source_payload_encrypted');
 };
 

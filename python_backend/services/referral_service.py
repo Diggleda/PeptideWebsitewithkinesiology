@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -151,6 +152,43 @@ def _sanitize_phone_list(value: object) -> List[str]:
         if phone and phone not in normalized:
             normalized.append(phone)
     return normalized
+
+
+def _parse_json_array(value: object) -> object:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return value
+        if isinstance(parsed, list):
+            return parsed
+    return value
+
+
+def _prospect_contact_lists(prospect: Optional[Dict]) -> Tuple[List[str], List[str]]:
+    if not isinstance(prospect, dict):
+        return [], []
+    contact_emails = _sanitize_email_list(
+        prospect.get("contactEmails")
+        if "contactEmails" in prospect
+        else _parse_json_array(prospect.get("contact_emails_json")),
+    )
+    if not contact_emails:
+        contact_emails = _sanitize_email_list(
+            prospect.get("contactEmail") or prospect.get("contact_email"),
+        )
+    contact_phones = _sanitize_phone_list(
+        prospect.get("contactPhones")
+        if "contactPhones" in prospect
+        else _parse_json_array(prospect.get("contact_phones_json")),
+    )
+    if not contact_phones:
+        contact_phones = _sanitize_phone_list(
+            prospect.get("contactPhone") or prospect.get("contact_phone"),
+        )
+    return contact_emails, contact_phones
 
 
 def _contact_form_field_aad(field: str) -> Dict[str, str]:
@@ -538,10 +576,17 @@ def _enrich_referral(referral: Dict) -> Dict:
             str(sales_rep_id),
             str(referral.get("id")),
         )
+    prospect_contact_emails, prospect_contact_phones = _prospect_contact_lists(prospect)
     prospect_doctor_id = prospect.get("doctorId") if prospect else None
     enriched["salesRepNotes"] = (prospect.get("notes") if prospect else None) or None
     enriched["isManual"] = bool(prospect.get("isManual")) if prospect else False
     enriched["status"] = prospect.get("status") if prospect and prospect.get("status") else "pending"
+    enriched["contactEmails"] = prospect_contact_emails
+    enriched["contactPhones"] = prospect_contact_phones
+    if prospect_contact_emails:
+        enriched["referredContactEmail"] = prospect_contact_emails[0]
+    if prospect_contact_phones:
+        enriched["referredContactPhone"] = prospect_contact_phones[0]
     enriched["convertedDoctorId"] = (
         referral.get("convertedDoctorId")
         or referral.get("converted_doctor_id")
@@ -1361,6 +1406,8 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     sp.reseller_permit_file_path AS reseller_permit_file_path,
                     sp.reseller_permit_file_name AS reseller_permit_file_name,
                     sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
+                    ,sp.contact_emails_json AS contact_emails_json
+                    ,sp.contact_phones_json AS contact_phones_json
                     {address_select}
                 FROM sales_prospects sp
                 JOIN contact_forms cf ON cf.id = sp.contact_form_id
@@ -1390,6 +1437,8 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     sp.reseller_permit_file_path AS reseller_permit_file_path,
                     sp.reseller_permit_file_name AS reseller_permit_file_name,
                     sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
+                    ,sp.contact_emails_json AS contact_emails_json
+                    ,sp.contact_phones_json AS contact_phones_json
                     {address_select}
                 FROM contact_forms cf
                 LEFT JOIN sales_prospects sp
@@ -1428,6 +1477,16 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
         contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
         contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
+        contact_emails = _sanitize_email_list(
+            _parse_json_array(row.get("contact_emails_json"))
+            if row.get("contact_emails_json") is not None
+            else contact_email,
+        )
+        contact_phones = _sanitize_phone_list(
+            _parse_json_array(row.get("contact_phones_json"))
+            if row.get("contact_phones_json") is not None
+            else contact_phone,
+        )
         record_id = f"contact_form:{row.get('id')}" if row.get("id") is not None else _generate_unique_code("system")
         status = row.get("prospect_status") or "contact_form"
         prospect_sales_rep_id = row.get("prospect_sales_rep_id") or None
@@ -1442,8 +1501,10 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                         "status": "contact_form",
                         "isManual": False,
                         "contactName": contact_name,
-                        "contactEmail": contact_email,
-                        "contactPhone": contact_phone,
+                        "contactEmail": contact_emails[0] if contact_emails else None,
+                        "contactPhone": contact_phones[0] if contact_phones else None,
+                        "contactEmails": contact_emails,
+                        "contactPhones": contact_phones,
                     }
                 )
             except Exception:
@@ -1455,8 +1516,10 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
             if sales_rep_id
             else (str(prospect_sales_rep_id) if prospect_sales_rep_id else None),
             "referredContactName": contact_name or "Contact Form Lead",
-            "referredContactEmail": contact_email,
-            "referredContactPhone": contact_phone,
+            "referredContactEmail": contact_emails[0] if contact_emails else None,
+            "referredContactPhone": contact_phones[0] if contact_phones else None,
+            "contactEmails": contact_emails,
+            "contactPhones": contact_phones,
             "status": status,
             "salesRepNotes": row.get("prospect_notes") or None,
             "notes": row.get("source") or "Contact form submission",
@@ -1606,13 +1669,16 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         return bool(p.get("contactFormId"))
 
     def _make_manual_lead(p: Dict) -> Dict:
+        contact_emails, contact_phones = _prospect_contact_lists(p)
         base = {
             "id": p.get("id"),
             "referrerDoctorId": None,
             "salesRepId": p.get("salesRepId"),
             "referredContactName": p.get("contactName"),
-            "referredContactEmail": p.get("contactEmail"),
-            "referredContactPhone": p.get("contactPhone"),
+            "referredContactEmail": contact_emails[0] if contact_emails else None,
+            "referredContactPhone": contact_phones[0] if contact_phones else None,
+            "contactEmails": contact_emails,
+            "contactPhones": contact_phones,
             "status": p.get("status") or "pending",
             "salesRepNotes": p.get("notes") or None,
             "notes": p.get("notes") or None,
@@ -1642,6 +1708,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         return _apply_referred_contact_account_fields(base)
 
     def _make_contact_form_lead(p: Dict) -> Dict:
+        contact_emails, contact_phones = _prospect_contact_lists(p)
         contact_form_id = p.get("contactFormId")
         lead_id = str(p.get("id") or "")
         if not lead_id.startswith("contact_form:"):
@@ -1651,8 +1718,10 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
             "referrerDoctorId": None,
             "salesRepId": p.get("salesRepId"),
             "referredContactName": p.get("contactName") or "Contact Form Lead",
-            "referredContactEmail": p.get("contactEmail") or None,
-            "referredContactPhone": p.get("contactPhone") or None,
+            "referredContactEmail": contact_emails[0] if contact_emails else None,
+            "referredContactPhone": contact_phones[0] if contact_phones else None,
+            "contactEmails": contact_emails,
+            "contactPhones": contact_phones,
             "status": p.get("status") or "contact_form",
             "salesRepNotes": p.get("notes") or None,
             "notes": p.get("notes") or "Contact form submission",
@@ -1682,14 +1751,17 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         return _apply_referred_contact_account_fields(base)
 
     def _make_referral_prospect_lead(p: Dict, lead_id: Optional[str] = None) -> Dict:
+        contact_emails, contact_phones = _prospect_contact_lists(p)
         resolved_id = str(lead_id if lead_id is not None else (p.get("referralId") or p.get("id") or "")).strip()
         base = {
             "id": resolved_id,
             "referrerDoctorId": None,
             "salesRepId": p.get("salesRepId"),
             "referredContactName": p.get("contactName"),
-            "referredContactEmail": p.get("contactEmail"),
-            "referredContactPhone": p.get("contactPhone"),
+            "referredContactEmail": contact_emails[0] if contact_emails else None,
+            "referredContactPhone": contact_phones[0] if contact_phones else None,
+            "contactEmails": contact_emails,
+            "contactPhones": contact_phones,
             "status": p.get("status") or "pending",
             "salesRepNotes": p.get("notes") or None,
             "notes": p.get("notes") or None,

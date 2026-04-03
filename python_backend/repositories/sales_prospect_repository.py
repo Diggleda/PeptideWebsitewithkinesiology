@@ -361,8 +361,7 @@ def find_by_contact_email(email: str) -> Optional[Dict]:
             """
             SELECT *
             FROM sales_prospects
-            WHERE LOWER(contact_email) = %(email)s
-               OR JSON_SEARCH(contact_emails_json, 'one', %(email)s) IS NOT NULL
+            WHERE JSON_SEARCH(contact_emails_json, 'one', %(email)s) IS NOT NULL
             ORDER BY updated_at DESC
             LIMIT 1
             """,
@@ -437,10 +436,7 @@ def find_by_sales_rep_and_contact_email(sales_rep_id: str, contact_email: str) -
             SELECT *
             FROM sales_prospects
             WHERE sales_rep_id = %(sales_rep_id)s
-              AND (
-                LOWER(TRIM(contact_email)) = %(email)s
-                OR JSON_SEARCH(contact_emails_json, 'one', %(email)s) IS NOT NULL
-              )
+              AND JSON_SEARCH(contact_emails_json, 'one', %(email)s) IS NOT NULL
             ORDER BY updated_at DESC
             LIMIT 1
             """,
@@ -473,8 +469,7 @@ def find_by_contact_phone(phone: str) -> Optional[Dict]:
             """
             SELECT *
             FROM sales_prospects
-            WHERE contact_phone IS NOT NULL
-               OR contact_phones_json IS NOT NULL
+            WHERE contact_phones_json IS NOT NULL
             """,
             {},
         )
@@ -651,8 +646,6 @@ def upsert(record: Dict) -> Dict:
                         reseller_permit_file_name = %(reseller_permit_file_name)s,
                         reseller_permit_uploaded_at = %(reseller_permit_uploaded_at)s,
                         contact_name = %(contact_name)s,
-                        contact_email = %(contact_email)s,
-                        contact_phone = %(contact_phone)s,
                         contact_emails_json = %(contact_emails_json)s,
                         contact_phones_json = %(contact_phones_json)s,
                         office_address_line1 = %(office_address_line1)s,
@@ -683,8 +676,6 @@ def upsert(record: Dict) -> Dict:
                     reseller_permit_file_name = %(reseller_permit_file_name)s,
                     reseller_permit_uploaded_at = %(reseller_permit_uploaded_at)s,
                     contact_name = %(contact_name)s,
-                    contact_email = %(contact_email)s,
-                    contact_phone = %(contact_phone)s,
                     contact_emails_json = %(contact_emails_json)s,
                     contact_phones_json = %(contact_phones_json)s,
                     updated_at = %(updated_at)s
@@ -700,7 +691,7 @@ def upsert(record: Dict) -> Dict:
                     id, sales_rep_id, doctor_id, referral_id, contact_form_id,
                     status, notes, is_manual,
                     reseller_permit_exempt, reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
-                    contact_name, contact_email, contact_phone,
+                    contact_name,
                     contact_emails_json, contact_phones_json,
                     office_address_line1, office_address_line2, office_city, office_state, office_postal_code, office_country,
                     created_at, updated_at
@@ -708,7 +699,7 @@ def upsert(record: Dict) -> Dict:
                     %(id)s, %(sales_rep_id)s, %(doctor_id)s, %(referral_id)s, %(contact_form_id)s,
                     %(status)s, %(notes)s, %(is_manual)s,
                     %(reseller_permit_exempt)s, %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
-                    %(contact_name)s, %(contact_email)s, %(contact_phone)s,
+                    %(contact_name)s,
                     %(contact_emails_json)s, %(contact_phones_json)s,
                     %(office_address_line1)s, %(office_address_line2)s, %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
                     %(created_at)s, %(updated_at)s
@@ -723,14 +714,14 @@ def upsert(record: Dict) -> Dict:
                 id, sales_rep_id, doctor_id, referral_id, contact_form_id,
                 status, notes, is_manual,
                 reseller_permit_exempt, reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
-                contact_name, contact_email, contact_phone,
+                contact_name,
                 contact_emails_json, contact_phones_json,
                 created_at, updated_at
             ) VALUES (
                 %(id)s, %(sales_rep_id)s, %(doctor_id)s, %(referral_id)s, %(contact_form_id)s,
                 %(status)s, %(notes)s, %(is_manual)s,
                 %(reseller_permit_exempt)s, %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
-                %(contact_name)s, %(contact_email)s, %(contact_phone)s,
+                %(contact_name)s,
                 %(contact_emails_json)s, %(contact_phones_json)s,
                 %(created_at)s, %(updated_at)s
             )
@@ -800,7 +791,7 @@ def sync_contact_for_doctor(
     Keep sales_prospects contact fields aligned with the canonical users table.
 
     - Updates rows linked to doctor_id
-    - Also "claims" rows by matching contact_email when doctor_id is missing (common for contact-form prospects)
+    - Also "claims" rows by matching contact_emails_json when doctor_id is missing
     """
     normalized_doctor_id = str(doctor_id or "").strip()
     if not normalized_doctor_id:
@@ -812,6 +803,8 @@ def sync_contact_for_doctor(
     next_phone = (str(phone or "").strip() or None)
 
     email_candidates = {e for e in (next_email, prev_email) if e and "@" in e}
+    next_contact_emails_json = json.dumps([next_email]) if next_email else None
+    next_contact_phones_json = json.dumps([next_phone]) if next_phone else None
 
     if _using_mysql():
         # Update by doctor id (always), and also by email when the row has no doctor_id yet.
@@ -821,16 +814,16 @@ def sync_contact_for_doctor(
                 """
                 UPDATE sales_prospects
                 SET contact_name = %(contact_name)s,
-                    contact_email = %(contact_email)s,
-                    contact_phone = %(contact_phone)s,
+                    contact_emails_json = %(contact_emails_json)s,
+                    contact_phones_json = %(contact_phones_json)s,
                     updated_at = UTC_TIMESTAMP()
                 WHERE doctor_id = %(doctor_id)s
                 """,
                 {
                     "doctor_id": normalized_doctor_id,
                     "contact_name": next_name,
-                    "contact_email": next_email,
-                    "contact_phone": next_phone,
+                    "contact_emails_json": next_contact_emails_json,
+                    "contact_phones_json": next_contact_phones_json,
                 },
             )
             or 0
@@ -846,19 +839,19 @@ def sync_contact_for_doctor(
                         END,
                         doctor_id = %(doctor_id)s,
                         contact_name = %(contact_name)s,
-                        contact_email = %(contact_email)s,
-                        contact_phone = %(contact_phone)s,
+                        contact_emails_json = %(contact_emails_json)s,
+                        contact_phones_json = %(contact_phones_json)s,
                         updated_at = UTC_TIMESTAMP()
                     WHERE (doctor_id IS NULL OR doctor_id = '' OR doctor_id = %(deleted_doctor_id)s)
-                      AND LOWER(TRIM(contact_email)) = %(email)s
+                      AND JSON_SEARCH(contact_emails_json, 'one', %(email)s) IS NOT NULL
                     """,
                     {
                         "doctor_id": normalized_doctor_id,
                         "deleted_doctor_id": DELETED_USER_ID,
                         "email": candidate_email,
                         "contact_name": next_name,
-                        "contact_email": next_email or candidate_email,
-                        "contact_phone": next_phone,
+                        "contact_emails_json": next_contact_emails_json or json.dumps([candidate_email]),
+                        "contact_phones_json": next_contact_phones_json,
                     },
                 )
                 or 0
@@ -1021,8 +1014,6 @@ def _row_to_record(row: Optional[Dict]) -> Optional[Dict]:
             "resellerPermitFileName": row.get("reseller_permit_file_name"),
             "resellerPermitUploadedAt": fmt_datetime(row.get("reseller_permit_uploaded_at")),
             "contactName": row.get("contact_name"),
-            "contactEmail": row.get("contact_email"),
-            "contactPhone": row.get("contact_phone"),
             "contact_emails_json": row.get("contact_emails_json"),
             "contact_phones_json": row.get("contact_phones_json"),
             "officeAddressLine1": row.get("office_address_line1"),
@@ -1055,8 +1046,6 @@ def _to_db_params(record: Dict) -> Dict:
         "reseller_permit_file_name": record.get("resellerPermitFileName"),
         "reseller_permit_uploaded_at": parse_dt(record.get("resellerPermitUploadedAt")),
         "contact_name": record.get("contactName"),
-        "contact_email": record.get("contactEmail"),
-        "contact_phone": record.get("contactPhone"),
         "contact_emails_json": json.dumps(record.get("contactEmails")) if record.get("contactEmails") else None,
         "contact_phones_json": json.dumps(record.get("contactPhones")) if record.get("contactPhones") else None,
         "office_address_line1": record.get("officeAddressLine1"),
