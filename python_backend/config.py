@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -33,12 +34,63 @@ def _load_dotenv(node_env: Optional[str] = None) -> None:
             )
         if load_dotenv:
             load_dotenv(candidate)
+        else:
+            _load_dotenv_fallback(candidate)
         return
     if runtime_env == "production":
         return
     candidate = BASE_DIR / ".env"
     if load_dotenv:
         load_dotenv(candidate)
+    else:
+        _load_dotenv_fallback(candidate)
+
+
+def _parse_dotenv_line(raw_line: str) -> tuple[Optional[str], Optional[str]]:
+    line = str(raw_line or "").strip()
+    if not line or line.startswith("#"):
+        return None, None
+    if line.startswith("export "):
+        line = line[7:].strip()
+    if "=" not in line:
+        return None, None
+    key, raw_value = line.split("=", 1)
+    key = key.strip()
+    if not key:
+        return None, None
+
+    value = raw_value.strip()
+    if value and value[0] in ("'", '"'):
+        quote = value[0]
+        lexer = shlex.shlex(value, posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        try:
+            parts = list(lexer)
+            parsed = parts[0] if parts else ""
+            if value.endswith(quote):
+                return key, parsed
+        except ValueError:
+            pass
+
+    if " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+    return key, value
+
+
+def _load_dotenv_fallback(path: Path) -> None:
+    candidate = Path(path)
+    if not candidate.exists() or not candidate.is_file():
+        return
+    try:
+        content = candidate.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for raw_line in content.splitlines():
+        key, value = _parse_dotenv_line(raw_line)
+        if not key or value is None:
+            continue
+        os.environ.setdefault(key, value)
 
 def _default_backend_build() -> str:
     """

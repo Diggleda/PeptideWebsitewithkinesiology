@@ -111,6 +111,91 @@ const resolveShippedAt = (order) => {
   return null;
 };
 
+const normalizeUpsTrackingStatus = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const token = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!token) {
+    return null;
+  }
+  if (token.includes('delivered')) return 'delivered';
+  if (token.includes('out_for_delivery') || token.includes('outfordelivery')) return 'out_for_delivery';
+  if (['exception', 'delay', 'delayed', 'hold', 'held'].some((part) => token.includes(part))) return 'exception';
+  if (
+    [
+      'label_created',
+      'shipment_ready_for_ups',
+      'order_processed',
+      'billing_information_received',
+      'manifest_picked_up',
+      'shipment_information_received',
+    ].some((part) => token.includes(part))
+  ) {
+    return 'label_created';
+  }
+  if (
+    [
+      'in_transit',
+      'intransit',
+      'on_the_way',
+      'ontheway',
+      'departed',
+      'arrived',
+      'pickup_scan',
+      'origin_scan',
+      'destination_scan',
+      'processing_at_ups_facility',
+      'loaded_on_delivery_vehicle',
+      'received_by_post_office_for_delivery',
+    ].some((part) => token.includes(part))
+  ) {
+    return 'in_transit';
+  }
+  return 'unknown';
+};
+
+const applyUpsTrackingStatusToOrder = (order, status) => {
+  if (!order || typeof order !== 'object') {
+    return order;
+  }
+  const normalized = normalizeUpsTrackingStatus(status);
+  if (!normalized) {
+    return order;
+  }
+  const shippingEstimate = order.shippingEstimate && typeof order.shippingEstimate === 'object'
+    ? { ...order.shippingEstimate }
+    : {};
+  shippingEstimate.status = normalized;
+  const integrationDetails = order.integrationDetails && typeof order.integrationDetails === 'object'
+    ? { ...order.integrationDetails }
+    : {};
+  const carrierTracking = integrationDetails.carrierTracking && typeof integrationDetails.carrierTracking === 'object'
+    ? { ...integrationDetails.carrierTracking }
+    : {};
+  carrierTracking.carrier = carrierTracking.carrier || 'ups';
+  carrierTracking.trackingNumber = carrierTracking.trackingNumber || order.trackingNumber || null;
+  carrierTracking.trackingStatus = normalized;
+  carrierTracking.trackingStatusRaw = carrierTracking.trackingStatusRaw || normalized;
+  integrationDetails.carrierTracking = carrierTracking;
+  order.upsTrackingStatus = normalized;
+  order.shippingEstimate = shippingEstimate;
+  order.integrationDetails = integrationDetails;
+  if (order.integrations && typeof order.integrations === 'object') {
+    order.integrations = {
+      ...order.integrations,
+      carrierTracking,
+    };
+  }
+  return order;
+};
+
 const isHandDeliveryOrder = (order) => {
   if (!order || typeof order !== 'object') {
     return false;
@@ -419,6 +504,9 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
   const createdAtRawWithPst = appendPstSuffix(createdAtRaw);
   const orderPlacedAt = resolveOrderPlacedAt(order, createdAtRaw);
   const shippedAt = resolveShippedAt(order);
+  const upsTrackingStatus = normalizeUpsTrackingStatus(
+    order.upsTrackingStatus !== undefined ? order.upsTrackingStatus : order.ups_tracking_status,
+  );
 
   const payload = {
     id: sanitizeString(order.id),
@@ -453,6 +541,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     status: order.status || 'pending',
     orderPlacedAt,
     shippedAt,
+    upsTrackingStatus,
     paymentDetails: null,
     payload: encryptJson(
       buildEncryptedOrderPayload(order, createdAtRawWithPst || createdAtRaw, orderPlacedAt, shippedAt),
@@ -494,6 +583,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           status,
           order_placed_at,
           shipped_at,
+          ups_tracking_status,
           \`Payment Details\`,
           payload,
           created_at,
@@ -521,6 +611,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :status,
           :orderPlacedAt,
           :shippedAt,
+          :upsTrackingStatus,
           :paymentDetails,
           :payload,
           :createdAt,
@@ -546,6 +637,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           status = VALUES(status),
           order_placed_at = COALESCE(order_placed_at, VALUES(order_placed_at)),
           shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
+          ups_tracking_status = VALUES(ups_tracking_status),
           \`Payment Details\` = VALUES(\`Payment Details\`),
           payload = VALUES(payload),
           pricing_mode = VALUES(pricing_mode),
@@ -624,6 +716,15 @@ const mapRowToOrder = (row, options = {}) => {
       row.woo_order_id,
     )),
     shipStationOrderId: sanitizeString(coalesce(payloadOrder.shipStationOrderId, row.shipstation_order_id)),
+    upsTrackingStatus: normalizeUpsTrackingStatus(
+      coalesce(
+        row.ups_tracking_status,
+        payloadOrder.upsTrackingStatus,
+        payloadOrder.ups_tracking_status,
+        payload?.upsTrackingStatus,
+        payload?.ups_tracking_status,
+      ),
+    ),
     isTaxExempt: (() => {
       const explicit = toOptionalBoolean(
         coalesce(payloadOrder.isTaxExempt, payloadOrder.is_tax_exempt, row.is_tax_exempt),
@@ -675,6 +776,15 @@ const mapRowToOrder = (row, options = {}) => {
     })(),
     shippingCarrier: sanitizeString(coalesce(payloadOrder.shippingCarrier, row.shipping_carrier)),
     shippingService: sanitizeString(coalesce(payloadOrder.shippingService, row.shipping_service)),
+    trackingNumber: sanitizeString(coalesce(
+      payloadOrder.trackingNumber,
+      payloadOrder.tracking_number,
+      payloadOrder.integrationDetails?.carrierTracking?.trackingNumber,
+      payloadOrder.integrationDetails?.carrier_tracking?.trackingNumber,
+      payload?.integrations?.shipStation?.trackingNumber,
+      payload?.integrations?.carrierTracking?.trackingNumber,
+      payload?.integrations?.carrier_tracking?.trackingNumber,
+    )),
     physicianCertificationAccepted: typeof payloadOrder.physicianCertificationAccepted === 'boolean'
       ? payloadOrder.physicianCertificationAccepted
       : Boolean(row.physician_certified),
@@ -746,6 +856,7 @@ const mapRowToOrder = (row, options = {}) => {
     || normalized.resellerPermitUploadedAt,
   );
   normalized.isTaxExempt = normalized.isTaxExempt === true || Boolean(normalized.taxExemptSource);
+  applyUpsTrackingStatusToOrder(normalized, normalized.upsTrackingStatus);
 
   return normalized;
 };
@@ -1030,6 +1141,57 @@ const fetchByStatuses = async (statuses = [], options = {}) => {
   );
 };
 
+const updateUpsTrackingStatus = async (orderId, { upsTrackingStatus } = {}) => {
+  if (!mysqlClient.isEnabled() || !orderId) {
+    return null;
+  }
+
+  await mysqlClient.execute(
+    `
+      UPDATE peppro_orders
+      SET ups_tracking_status = :upsTrackingStatus,
+          updated_at = :updatedAt
+      WHERE id = :id
+    `,
+    {
+      id: String(orderId),
+      upsTrackingStatus: normalizeUpsTrackingStatus(upsTrackingStatus),
+      updatedAt: new Date().toISOString(),
+    },
+  );
+
+  return fetchById(orderId);
+};
+
+const fetchRecentForUpsSync = async ({ lookbackDays = 60, limit = 250 } = {}) => {
+  if (!mysqlClient.isEnabled()) {
+    return [];
+  }
+
+  const safeLookbackDays = Math.max(1, Math.min(Math.trunc(Number(lookbackDays) || 60), 180));
+  const safeLimit = Math.max(1, Math.min(Math.trunc(Number(limit) || 250), 1000));
+  const cutoff = new Date(Date.now() - (safeLookbackDays * 24 * 60 * 60 * 1000)).toISOString();
+  const rows = await safeFetchAll(
+    `
+      SELECT *
+      FROM peppro_orders
+      WHERE COALESCE(updated_at, created_at) >= :cutoff
+        AND COALESCE(facility_pickup, 0) = 0
+        AND COALESCE(ups_tracking_status, '') <> 'delivered'
+        AND COALESCE(status_normalized, '') NOT IN ('cancelled', 'canceled', 'trash', 'refunded', 'failed')
+      ORDER BY COALESCE(updated_at, created_at) DESC
+      LIMIT ${safeLimit}
+    `,
+    { cutoff },
+  );
+
+  return dedupeOrders(
+    (rows || [])
+      .map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' }))
+      .filter(Boolean),
+  );
+};
+
 module.exports = {
   persistOrder,
   fetchAll,
@@ -1041,4 +1203,7 @@ module.exports = {
   fetchByWooOrderNumber,
   fetchByShipStationOrderId,
   fetchByStatuses,
+  fetchRecentForUpsSync,
+  normalizeUpsTrackingStatus,
+  updateUpsTrackingStatus,
 };

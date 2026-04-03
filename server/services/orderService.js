@@ -12,6 +12,12 @@ const paymentService = require('./paymentService');
 const taxTrackingService = require('./taxTrackingService');
 const stripeClient = require('../integration/stripeClient');
 const {
+  fetchUpsTrackingStatus,
+  isConfigured: isUpsConfigured,
+  looksLikeUpsTrackingNumber,
+  normalizeTrackingStatus,
+} = require('./upsTrackingService');
+const {
   ensureShippingData,
   ensureShippingAddress,
   createAddressFingerprint,
@@ -1077,6 +1083,155 @@ const buildBillingAddressFromUser = (user, fallbackAddress = null, options = {})
   };
 };
 
+const normalizeUpsTrackingStatus = (value) => {
+  const normalized = normalizeTrackingStatus(value);
+  return normalized || null;
+};
+
+const applyAuthoritativeUpsTrackingStatus = (order) => {
+  if (!order || typeof order !== 'object') {
+    return null;
+  }
+  const normalized = normalizeUpsTrackingStatus(
+    order.upsTrackingStatus !== undefined ? order.upsTrackingStatus : order.ups_tracking_status,
+  );
+  if (!normalized) {
+    return null;
+  }
+
+  order.upsTrackingStatus = normalized;
+  const shippingEstimate = order.shippingEstimate && typeof order.shippingEstimate === 'object'
+    ? { ...order.shippingEstimate }
+    : {};
+  shippingEstimate.status = normalized;
+  order.shippingEstimate = shippingEstimate;
+
+  const integrationDetails = order.integrationDetails && typeof order.integrationDetails === 'object'
+    ? { ...order.integrationDetails }
+    : {};
+  const carrierTracking = integrationDetails.carrierTracking && typeof integrationDetails.carrierTracking === 'object'
+    ? { ...integrationDetails.carrierTracking }
+    : {};
+  carrierTracking.carrier = carrierTracking.carrier || 'ups';
+  carrierTracking.trackingNumber = carrierTracking.trackingNumber || order.trackingNumber || null;
+  carrierTracking.trackingStatus = normalized;
+  carrierTracking.trackingStatusRaw = carrierTracking.trackingStatusRaw || normalized;
+  integrationDetails.carrierTracking = carrierTracking;
+  order.integrationDetails = integrationDetails;
+  order.integrations = order.integrations && typeof order.integrations === 'object'
+    ? { ...order.integrations, carrierTracking }
+    : order.integrations;
+  return normalized;
+};
+
+const extractTrackingNumberForUpsRefresh = (...orders) => {
+  for (const order of orders) {
+    if (!order || typeof order !== 'object') {
+      continue;
+    }
+
+    const shippingEstimate = order.shippingEstimate && typeof order.shippingEstimate === 'object'
+      ? order.shippingEstimate
+      : {};
+    const integrationDetails = order.integrationDetails && typeof order.integrationDetails === 'object'
+      ? order.integrationDetails
+      : (order.integrations && typeof order.integrations === 'object' ? order.integrations : {});
+    const shipStation = integrationDetails.shipStation && typeof integrationDetails.shipStation === 'object'
+      ? integrationDetails.shipStation
+      : (integrationDetails.shipstation && typeof integrationDetails.shipstation === 'object'
+        ? integrationDetails.shipstation
+        : {});
+    const carrierTracking = integrationDetails.carrierTracking && typeof integrationDetails.carrierTracking === 'object'
+      ? integrationDetails.carrierTracking
+      : (integrationDetails.carrier_tracking && typeof integrationDetails.carrier_tracking === 'object'
+        ? integrationDetails.carrier_tracking
+        : {});
+    const candidates = [
+      order.trackingNumber,
+      order.tracking_number,
+      shippingEstimate.trackingNumber,
+      shippingEstimate.tracking_number,
+      shipStation.trackingNumber,
+      shipStation.tracking_number,
+      carrierTracking.trackingNumber,
+      carrierTracking.tracking_number,
+    ];
+    for (const candidate of candidates) {
+      const text = String(candidate || '').trim();
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return null;
+};
+
+const isUpsOrderForRefresh = (...orders) => {
+  const trackingNumber = extractTrackingNumberForUpsRefresh(...orders);
+  if (looksLikeUpsTrackingNumber(trackingNumber)) {
+    return true;
+  }
+
+  for (const order of orders) {
+    if (!order || typeof order !== 'object') {
+      continue;
+    }
+    const shippingEstimate = order.shippingEstimate && typeof order.shippingEstimate === 'object'
+      ? order.shippingEstimate
+      : {};
+    const integrationDetails = order.integrationDetails && typeof order.integrationDetails === 'object'
+      ? order.integrationDetails
+      : (order.integrations && typeof order.integrations === 'object' ? order.integrations : {});
+    const shipStation = integrationDetails.shipStation && typeof integrationDetails.shipStation === 'object'
+      ? integrationDetails.shipStation
+      : (integrationDetails.shipstation && typeof integrationDetails.shipstation === 'object'
+        ? integrationDetails.shipstation
+        : {});
+    const candidates = [
+      order.shippingCarrier,
+      order.shipping_carrier,
+      shippingEstimate.carrierId,
+      shippingEstimate.carrier_id,
+      shipStation.carrierCode,
+      shipStation.carrier_code,
+    ];
+    for (const candidate of candidates) {
+      const token = String(candidate || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (token === 'ups' || token.startsWith('ups_')) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+const applyLocalUpsStateToOrder = (order, localOrder = null) => {
+  if (!order || typeof order !== 'object') {
+    return order;
+  }
+  if (!localOrder || typeof localOrder !== 'object') {
+    applyAuthoritativeUpsTrackingStatus(order);
+    return order;
+  }
+
+  if (!order.trackingNumber && localOrder.trackingNumber) {
+    order.trackingNumber = localOrder.trackingNumber;
+  }
+  if (!order.shippingCarrier && localOrder.shippingCarrier) {
+    order.shippingCarrier = localOrder.shippingCarrier;
+  }
+  if (!order.shippingService && localOrder.shippingService) {
+    order.shippingService = localOrder.shippingService;
+  }
+  if (localOrder.upsTrackingStatus !== undefined && localOrder.upsTrackingStatus !== null) {
+    order.upsTrackingStatus = localOrder.upsTrackingStatus;
+  }
+  applyAuthoritativeUpsTrackingStatus(localOrder);
+  applyAuthoritativeUpsTrackingStatus(order);
+  return order;
+};
+
 const buildLocalOrderSummary = (order) => {
   const wooOrderNumber = getWooOrderNumberFromOrder(order)
     || order.wooOrderId
@@ -1092,7 +1247,7 @@ const buildLocalOrderSummary = (order) => {
     return direct || null;
   })();
 
-  return {
+  const summary = {
     id: order.id,
     asDelegate: asDelegateLabel,
     as_delegate: asDelegateLabel,
@@ -1143,8 +1298,14 @@ const buildLocalOrderSummary = (order) => {
     wooOrderId: order.wooOrderId || order.integrationDetails?.wooCommerce?.orderId || null,
     wooOrderNumber: wooOrderNumber,
     shipStationOrderId: order.shipStationOrderId || null,
+    trackingNumber: order.trackingNumber || order.integrationDetails?.carrierTracking?.trackingNumber || order.integrationDetails?.shipStation?.trackingNumber || null,
+    shippingCarrier: order.shippingCarrier || null,
+    shippingService: order.shippingService || null,
+    upsTrackingStatus: order.upsTrackingStatus ?? null,
     physicianCertified: order.physicianCertificationAccepted === true,
   };
+  applyAuthoritativeUpsTrackingStatus(summary);
+  return summary;
 };
 
 const ensurePlainObject = (value) => {
@@ -1238,6 +1399,9 @@ const enrichOrderWithShipStation = async (order) => {
   const shipStatus = (info.status || '').toString().toLowerCase();
   const existingStatus = (order.status || '').toString().toLowerCase();
   const isCanceled = existingStatus.includes('cancel') || existingStatus === 'trash';
+  const authoritativeUpsStatus = normalizeUpsTrackingStatus(
+    order.upsTrackingStatus !== undefined ? order.upsTrackingStatus : order.ups_tracking_status,
+  );
 
   const nextOrder = {
     ...order,
@@ -1249,7 +1413,7 @@ const enrichOrderWithShipStation = async (order) => {
     nextOrder.status = shipStatus;
   }
 
-  if (shipStatus === 'shipped') {
+  if (shipStatus === 'shipped' && !authoritativeUpsStatus) {
     if (!shippingEstimate.status) {
       shippingEstimate.status = 'shipped';
     }
@@ -1275,7 +1439,133 @@ const enrichOrderWithShipStation = async (order) => {
     nextOrder.trackingNumber = info.trackingNumber;
   }
 
+  if (authoritativeUpsStatus) {
+    nextOrder.upsTrackingStatus = authoritativeUpsStatus;
+  }
+  applyAuthoritativeUpsTrackingStatus(nextOrder);
+
   return nextOrder;
+};
+
+const findLocalSqlOrderForDetail = async (order) => {
+  if (!order || typeof order !== 'object' || !mysqlClient.isEnabled()) {
+    return null;
+  }
+
+  const wooOrderId = order.wooOrderId || order.id || null;
+  if (wooOrderId && typeof orderSqlRepository.fetchByWooOrderId === 'function') {
+    try {
+      const match = await orderSqlRepository.fetchByWooOrderId(wooOrderId);
+      if (match) {
+        return match;
+      }
+    } catch (error) {
+      logger.warn({ err: error, wooOrderId }, 'Order detail local SQL lookup by Woo id failed');
+    }
+  }
+
+  const wooOrderNumber = getWooOrderNumberFromOrder(order) || order.number || null;
+  if (wooOrderNumber && typeof orderSqlRepository.fetchByWooOrderNumber === 'function') {
+    try {
+      const match = await orderSqlRepository.fetchByWooOrderNumber(wooOrderNumber);
+      if (match) {
+        return match;
+      }
+    } catch (error) {
+      logger.warn({ err: error, wooOrderNumber }, 'Order detail local SQL lookup by Woo number failed');
+    }
+  }
+
+  return null;
+};
+
+const refreshAuthoritativeUpsStatusForOrderView = async (order, { localOrder = null } = {}) => {
+  if (!order || typeof order !== 'object') {
+    return localOrder;
+  }
+
+  applyLocalUpsStateToOrder(order, localOrder);
+
+  const trackingNumber = extractTrackingNumberForUpsRefresh(order, localOrder);
+  if (!trackingNumber || !isUpsOrderForRefresh(order, localOrder) || !isUpsConfigured()) {
+    return localOrder;
+  }
+
+  let info = null;
+  try {
+    info = await fetchUpsTrackingStatus(trackingNumber);
+  } catch (error) {
+    logger.warn(
+      {
+        err: error,
+        trackingNumber,
+        orderId: localOrder?.id || order.id || null,
+      },
+      'UPS live status refresh failed',
+    );
+    return localOrder;
+  }
+
+  if (!info || typeof info !== 'object') {
+    return localOrder;
+  }
+
+  const normalized = normalizeUpsTrackingStatus(info.trackingStatus || info.trackingStatusRaw);
+  if (!normalized) {
+    return localOrder;
+  }
+
+  const liveTrackingNumber = String(info.trackingNumber || trackingNumber).trim() || trackingNumber;
+  const currentStatus = normalizeUpsTrackingStatus(
+    order.upsTrackingStatus !== undefined ? order.upsTrackingStatus : localOrder?.upsTrackingStatus,
+  );
+  let refreshedLocalOrder = localOrder;
+
+  if (localOrder?.id && currentStatus !== normalized && typeof orderSqlRepository.updateUpsTrackingStatus === 'function') {
+    try {
+      refreshedLocalOrder = await orderSqlRepository.updateUpsTrackingStatus(localOrder.id, {
+        upsTrackingStatus: normalized,
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          err: error,
+          orderId: localOrder.id,
+          trackingNumber: liveTrackingNumber,
+          upsTrackingStatus: normalized,
+        },
+        'Failed to persist refreshed UPS tracking status',
+      );
+    }
+  }
+
+  for (const target of [order, localOrder, refreshedLocalOrder]) {
+    if (!target || typeof target !== 'object') {
+      continue;
+    }
+    target.trackingNumber = liveTrackingNumber;
+    target.upsTrackingStatus = normalized;
+    const integrationDetails = target.integrationDetails && typeof target.integrationDetails === 'object'
+      ? { ...target.integrationDetails }
+      : {};
+    integrationDetails.carrierTracking = {
+      ...(integrationDetails.carrierTracking && typeof integrationDetails.carrierTracking === 'object'
+        ? integrationDetails.carrierTracking
+        : {}),
+      ...info,
+      carrier: info.carrier || 'ups',
+      trackingNumber: liveTrackingNumber,
+      trackingStatus: normalized,
+      trackingStatusRaw: info.trackingStatusRaw || normalized,
+    };
+    target.integrationDetails = integrationDetails;
+    if (target.integrations && typeof target.integrations === 'object') {
+      target.integrations = { ...target.integrations, carrierTracking: integrationDetails.carrierTracking };
+    }
+    applyAuthoritativeUpsTrackingStatus(target);
+  }
+
+  return refreshedLocalOrder;
 };
 
 const normalizeWooOrderId = (rawId) => {
@@ -4006,7 +4296,11 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
     try {
       const wooOrder = await wooCommerceClient.fetchOrderById(numericId);
       const baseSummary = buildWooOrderSummary(wooOrder);
+      let localOrder = await findLocalSqlOrderForDetail(baseSummary);
+      applyLocalUpsStateToOrder(baseSummary, localOrder);
       const summary = await enrichOrderWithShipStation(baseSummary);
+      localOrder = await refreshAuthoritativeUpsStatusForOrderView(summary, { localOrder });
+      applyLocalUpsStateToOrder(summary, localOrder);
       logger.debug(
         {
           orderId: numericId,
@@ -4039,7 +4333,11 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
           },
           'Sales rep detail fetched via Woo email fallback',
         );
+        let localOrder = await findLocalSqlOrderForDetail(candidate);
+        applyLocalUpsStateToOrder(candidate, localOrder);
         const enrichedCandidate = await enrichOrderWithShipStation(candidate);
+        localOrder = await refreshAuthoritativeUpsStatusForOrderView(enrichedCandidate, { localOrder });
+        applyLocalUpsStateToOrder(enrichedCandidate, localOrder);
         return enrichedCandidate;
       }
     } catch (error) {
@@ -4050,12 +4348,17 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
   // Fallback for non-Woo IDs (e.g. local/MySQL PepPro order IDs).
   const localOrder = orderRepository.findById(orderId);
   if (localOrder) {
-    return buildLocalOrderSummary(localOrder);
+    const summary = buildLocalOrderSummary(localOrder);
+    const refreshedLocalOrder = await refreshAuthoritativeUpsStatusForOrderView(summary, { localOrder });
+    applyLocalUpsStateToOrder(summary, refreshedLocalOrder || localOrder);
+    return summary;
   }
 
   if (typeof orderSqlRepository.fetchById === 'function') {
     const sqlOrder = await orderSqlRepository.fetchById(orderId);
     if (sqlOrder) {
+      await refreshAuthoritativeUpsStatusForOrderView(sqlOrder, { localOrder: sqlOrder });
+      applyLocalUpsStateToOrder(sqlOrder, sqlOrder);
       return sqlOrder;
     }
   }

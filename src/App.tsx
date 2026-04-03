@@ -53,7 +53,8 @@ import {
 		  ExternalLink,
 		  CalendarDays,
 			  Loader2,
-			  Plus,
+	  Plus,
+          Pencil,
 				  Package,
 				  Upload,
 				  Download,
@@ -8071,8 +8072,43 @@ function MainApp() {
           }),
         [buildSalesDoctorContactHref],
       );
+      const renderSalesDoctorSingleContactValue = useCallback(
+        (value: string, kind: "email" | "phone") => {
+          const normalized = String(value || "").trim();
+          if (!normalized) {
+            return <span>—</span>;
+          }
+          const href = buildSalesDoctorContactHref(normalized, kind);
+          return href ? (
+            <a href={href} className="hover:underline">
+              {normalized}
+            </a>
+          ) : (
+            <span>{normalized}</span>
+          );
+        },
+        [buildSalesDoctorContactHref],
+      );
+      const getSalesDoctorContactValidationError = useCallback(
+        (kind: "email" | "phone", value: string) => {
+          const normalized = String(value || "").trim();
+          if (!normalized) {
+            return null;
+          }
+          if (kind === "email") {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+              ? null
+              : "Enter one valid email address.";
+          }
+          const digits = normalized.replace(/\D/g, "");
+          if (!/^\+?[\d\s().-]+$/.test(normalized) || digits.length < 10 || digits.length > 15) {
+            return "Enter one valid phone number.";
+          }
+          return null;
+        },
+        [],
+      );
       const salesDoctorDetailEmailDisplay = salesDoctorDetailEmailValues.join(", ");
-      const salesDoctorDetailPhoneDisplay = salesDoctorDetailPhoneValues.join(", ");
 	  const [salesDoctorCommissionRange, setSalesDoctorCommissionRange] = useState<
 	    DateRange | undefined
 	  >(undefined);
@@ -8648,8 +8684,8 @@ function MainApp() {
 		    user?.role,
 		  ]);
 	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
-	  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
-	  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
+  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
+  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
 	  const triggerSalesDoctorNotesSaved = useCallback(() => {
     setSalesDoctorNotesSaved(true);
     if (salesDoctorNotesSavedTimeoutRef.current) {
@@ -8660,8 +8696,8 @@ function MainApp() {
       salesDoctorNotesSavedTimeoutRef.current = null;
     }, 1000);
   }, []);
-  const [salesDoctorPhoneDraft, setSalesDoctorPhoneDraft] = useState<string>("");
-  const [salesDoctorPhoneSaving, setSalesDoctorPhoneSaving] = useState(false);
+  const [salesDoctorAddingEmailRow, setSalesDoctorAddingEmailRow] = useState(false);
+  const [salesDoctorAddingPhoneRow, setSalesDoctorAddingPhoneRow] = useState(false);
   const [salesDoctorAddressDraft, setSalesDoctorAddressDraft] = useState<string>("");
   const [salesDoctorAddressSaving, setSalesDoctorAddressSaving] = useState(false);
 	
@@ -8875,19 +8911,16 @@ function MainApp() {
 
   useEffect(() => {
     if (!salesDoctorDetail?.doctorId) {
-      setSalesDoctorPhoneDraft("");
-      return;
-    }
-    setSalesDoctorPhoneDraft(salesDoctorDetail.phone || "");
-  }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.phone]);
-
-  useEffect(() => {
-    if (!salesDoctorDetail?.doctorId) {
       setSalesDoctorAddressDraft("");
       return;
     }
     setSalesDoctorAddressDraft(salesDoctorDetail.address || "");
   }, [salesDoctorDetail?.address, salesDoctorDetail?.doctorId]);
+
+  useEffect(() => {
+    setSalesDoctorAddingEmailRow(false);
+    setSalesDoctorAddingPhoneRow(false);
+  }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.referralId]);
 
 	  useEffect(() => {
 	    return () => {
@@ -8949,40 +8982,134 @@ function MainApp() {
     user,
   ]);
 
-  const saveSalesDoctorPhone = useCallback(async () => {
-    if (!salesDoctorDetail?.doctorId) {
-      return;
-    }
-    const trimmed = salesDoctorPhoneDraft.trim();
-    const existing = salesDoctorDetail.phone || "";
-    if (trimmed === existing) {
-      return;
-    }
-    setSalesDoctorPhoneSaving(true);
-    try {
-      await settingsAPI.updateUserProfile(salesDoctorDetail.doctorId, {
-        phone: trimmed || null,
-      });
-      setSalesDoctorDetail((current) =>
-        current ? { ...current, phone: trimmed || null } : current,
+  const patchSalesDoctorDetailContacts = useCallback(
+    (kind: "email" | "phone", nextValues: string[]) => {
+      const normalizedValues = normalizeSalesDoctorContactValues(nextValues);
+      const nextPrimaryValue = normalizedValues[0] || null;
+      const patch =
+        kind === "email"
+          ? {
+              email: nextPrimaryValue,
+              contactEmails: normalizedValues,
+            }
+          : {
+              phone: nextPrimaryValue,
+              contactPhones: normalizedValues,
+            };
+      const currentDoctorId = String(salesDoctorDetail?.doctorId || "");
+      const currentReferralId = String(salesDoctorDetail?.referralId || "");
+      setSalesDoctorDetail((current) => (current ? { ...current, ...patch } : current));
+      setSalesDoctorDetailStack((current) =>
+        current.map((entry) => {
+          const entryDoctorId = String(entry.doctorId || "");
+          const entryReferralId = String(entry.referralId || "");
+          if (
+            entryDoctorId !== currentDoctorId ||
+            entryReferralId !== currentReferralId
+          ) {
+            return entry;
+          }
+          return { ...entry, ...patch };
+        }),
       );
-      toast.success("Phone number updated.");
-    } catch (error: any) {
-      console.warn("[SalesDoctor] Failed to update phone number", error);
-      toast.error(
-        typeof error?.message === "string" && error.message
-          ? error.message
-          : "Unable to update phone number right now.",
-      );
-    } finally {
-      setSalesDoctorPhoneSaving(false);
-    }
-  }, [
-    salesDoctorDetail?.doctorId,
-    salesDoctorDetail?.phone,
-    salesDoctorPhoneDraft,
-    settingsAPI,
-  ]);
+    },
+    [
+      normalizeSalesDoctorContactValues,
+      salesDoctorDetail?.doctorId,
+      salesDoctorDetail?.referralId,
+    ],
+  );
+
+  const saveSalesDoctorLeadContactValues = useCallback(
+    async (kind: "email" | "phone", nextValues: string[]) => {
+      const detail = salesDoctorDetail;
+      if (!detail?.doctorId) {
+        return;
+      }
+      const referralId = String(detail.referralId || "").trim();
+      const doctorId = String(detail.doctorId || "").trim();
+      const updateIdentifier =
+        referralId ||
+        (doctorId.startsWith("manual:") || doctorId.startsWith("contact_form:")
+          ? doctorId
+          : "");
+      if (!updateIdentifier) {
+        throw new Error("Lead contact editing requires referral context.");
+      }
+      const normalizedValues = normalizeSalesDoctorContactValues(nextValues);
+      const payload =
+        kind === "email"
+          ? {
+              referredContactEmail:
+                normalizedValues.length > 0 ? normalizedValues.join(", ") : "",
+            }
+          : {
+              referredContactPhone:
+                normalizedValues.length > 0 ? normalizedValues.join(", ") : "",
+            };
+      try {
+        await referralAPI.updateReferral(updateIdentifier, payload);
+        patchSalesDoctorDetailContacts(kind, normalizedValues);
+        toast.success(kind === "email" ? "Lead emails updated." : "Lead phones updated.");
+      } catch (error: any) {
+        console.warn("[SalesDoctor] Failed to update lead contact values", error);
+        toast.error(
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : kind === "email"
+              ? "Unable to update lead emails right now."
+              : "Unable to update lead phones right now.",
+        );
+        throw error;
+      }
+    },
+    [
+      normalizeSalesDoctorContactValues,
+      patchSalesDoctorDetailContacts,
+      referralAPI,
+      salesDoctorDetail,
+    ],
+  );
+
+  const saveSalesDoctorPhoneValue = useCallback(
+    async (nextPhone: string) => {
+      if (!salesDoctorDetail?.doctorId) {
+        return;
+      }
+      const trimmed = nextPhone.trim();
+      const validationError = getSalesDoctorContactValidationError("phone", trimmed);
+      if (validationError) {
+        toast.error(validationError);
+        throw new Error(validationError);
+      }
+      const existing = String(salesDoctorDetail.phone || "").trim();
+      if (trimmed === existing) {
+        return;
+      }
+      try {
+        await settingsAPI.updateUserProfile(salesDoctorDetail.doctorId, {
+          phone: trimmed || null,
+        });
+        patchSalesDoctorDetailContacts("phone", trimmed ? [trimmed] : []);
+        toast.success("Phone number updated.");
+      } catch (error: any) {
+        console.warn("[SalesDoctor] Failed to update phone number", error);
+        toast.error(
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Unable to update phone number right now.",
+        );
+        throw error;
+      }
+    },
+    [
+      getSalesDoctorContactValidationError,
+      patchSalesDoctorDetailContacts,
+      salesDoctorDetail?.doctorId,
+      salesDoctorDetail?.phone,
+      settingsAPI,
+    ],
+  );
 
 	  const saveSalesDoctorAddress = useCallback(async () => {
 	    if (!salesDoctorDetail?.doctorId) {
@@ -34687,96 +34814,205 @@ function MainApp() {
                   <p className="text-sm font-semibold text-slate-700">
                     Contact
                   </p>
-	                  <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
-	                    <div className="min-w-0">
-	                      <span className="font-semibold text-slate-800">Email: </span>
-	                      {salesDoctorDetailEmailDisplay ? (
-	                        <span className="inline-block max-w-full align-middle">
-                            <span className="block max-w-full overflow-x-auto whitespace-nowrap">
-                              <span className="inline-block min-w-max">
-                                {renderSalesDoctorContactLinks(
-                                  salesDoctorDetailEmailValues,
-                                  "email",
-                                  "inline hover:underline",
-                                )}
-                              </span>
-                            </span>
-                          </span>
-	                      ) : (
-	                        <span>Unavailable</span>
-	                      )}
-	                    </div>
-	                    <div>
-	                      <span className="font-semibold text-slate-800">Phone: </span>
-	                      {(() => {
-	                        const canEditPhone =
-                          Boolean(
-                            !hideRepViewerSalesActorCommerceSections &&
-                            salesDoctorDetail &&
-                              (isAdmin(user?.role) ||
-                                (isRep(user?.role) &&
-                                  userSalesRepId &&
-                                  salesDoctorDetail.ownerSalesRepId &&
-                                  userSalesRepId ===
-                                    salesDoctorDetail.ownerSalesRepId)),
-                          );
-                        const trimmedDraft = salesDoctorPhoneDraft.trim();
-                        const existingPhone = salesDoctorDetail.phone || "";
-                        const hasChanges = trimmedDraft !== existingPhone.trim();
-                        if (!canEditPhone) {
-                          return salesDoctorDetailPhoneValues.length ? (
-                            <span className="inline-block max-w-full align-middle">
-                              <span className="block max-w-full overflow-x-auto whitespace-nowrap">
-                                <span className="inline-block min-w-max">
-                                  {renderSalesDoctorContactLinks(
-                                    salesDoctorDetailPhoneValues,
-                                    "phone",
-                                    "inline hover:underline",
+	                  {(() => {
+                      const canManageContactFields = Boolean(
+                        !hideRepViewerSalesActorCommerceSections &&
+                          salesDoctorDetail &&
+                          (isAdmin(user?.role) ||
+                            (isRep(user?.role) &&
+                              userSalesRepId &&
+                              salesDoctorDetail.ownerSalesRepId &&
+                              userSalesRepId === salesDoctorDetail.ownerSalesRepId)),
+                      );
+                      const referralId = String(salesDoctorDetail?.referralId || "").trim();
+                      const doctorId = String(salesDoctorDetail?.doctorId || "").trim();
+                      const canEditLeadContactLists =
+                        canManageContactFields &&
+                        (Boolean(referralId) ||
+                          doctorId.startsWith("manual:") ||
+                          doctorId.startsWith("contact_form:"));
+                      const canEditPrimaryPhone =
+                        canManageContactFields && !canEditLeadContactLists;
+                      const emailRows = salesDoctorDetailEmailValues.map((value) => ({
+                        value,
+                        isNew: false,
+                      }));
+                      const phoneRows = salesDoctorDetailPhoneValues.map((value) => ({
+                        value,
+                        isNew: false,
+                      }));
+                      if (canEditLeadContactLists && salesDoctorAddingEmailRow) {
+                        emailRows.push({ value: "", isNew: true });
+                      }
+                      if (canEditLeadContactLists && salesDoctorAddingPhoneRow) {
+                        phoneRows.push({ value: "", isNew: true });
+                      }
+                      return (
+                        <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
+                          <div className="space-y-0.5">
+                            <div className="pl-4 space-y-0.5">
+                              {emailRows.length > 0 ? emailRows.map((row, index) => (
+                                <InlineEditableValueRow
+                                  key={`sales-doctor-email-${index}-${row.isNew ? "new" : row.value || "empty"}`}
+                                  label={`Email ${index + 1}`}
+                                  value={row.value}
+                                  type="email"
+                                  autoComplete="email"
+                                  editable={canEditLeadContactLists}
+                                  startEditing={row.isNew}
+                                  displayValue={renderSalesDoctorSingleContactValue(
+                                    row.value,
+                                    "email",
                                   )}
-                                </span>
-                              </span>
-                            </span>
-                          ) : (
-                            <span>Unavailable</span>
-                          );
-                        }
-                        return (
-                          <div className="flex flex-col gap-2">
-                            {salesDoctorDetailPhoneDisplay &&
-                              salesDoctorDetailPhoneDisplay !== existingPhone && (
-                                <p className="text-xs text-slate-500">
-                                  Stored:{" "}
-                                  {renderSalesDoctorContactLinks(
-                                    salesDoctorDetailPhoneValues,
-                                    "phone",
-                                    "hover:underline",
-                                  )}
-                                </p>
+                                  onSave={
+                                    canEditLeadContactLists
+                                      ? async (nextValue) => {
+                                          const validationError =
+                                            getSalesDoctorContactValidationError(
+                                              "email",
+                                              nextValue,
+                                            );
+                                          if (validationError) {
+                                            toast.error(validationError);
+                                            throw new Error(validationError);
+                                          }
+                                          const nextValues = [...salesDoctorDetailEmailValues];
+                                          const trimmed = nextValue.trim();
+                                          if (row.isNew) {
+                                            if (trimmed) {
+                                              nextValues.push(trimmed);
+                                            }
+                                          } else if (index < nextValues.length) {
+                                            if (trimmed) {
+                                              nextValues[index] = trimmed;
+                                            } else {
+                                              nextValues.splice(index, 1);
+                                            }
+                                          }
+                                          await saveSalesDoctorLeadContactValues(
+                                            "email",
+                                            nextValues,
+                                          );
+                                          setSalesDoctorAddingEmailRow(false);
+                                        }
+                                      : undefined
+                                  }
+                                  onCancel={
+                                    row.isNew
+                                      ? () => setSalesDoctorAddingEmailRow(false)
+                                      : undefined
+                                  }
+                                />
+                              )) : (
+                                <div className="text-sm text-slate-500">—</div>
                               )}
-                            <Input
-                              type="tel"
-                              value={salesDoctorPhoneDraft}
-                              onChange={(event) =>
-                                setSalesDoctorPhoneDraft(event.target.value)
-                              }
-                              className="block w-full rounded-md border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
-                              placeholder="Enter phone number"
-                            />
-                            <Button
-                              type="button"
-                              size="xs"
-                              variant="outline"
-                              className="self-start whitespace-nowrap px-4 py-2"
-                              onClick={() => void saveSalesDoctorPhone()}
-                              disabled={salesDoctorPhoneSaving || !hasChanges}
-                            >
-                              {salesDoctorPhoneSaving ? "Saving…" : "Save"}
-                            </Button>
+                              {canEditLeadContactLists ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSalesDoctorAddingEmailRow(true)}
+                                  disabled={salesDoctorAddingEmailRow}
+                                  className={clsx(
+                                    "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
+                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
+                                    salesDoctorAddingEmailRow ? "cursor-not-allowed opacity-60" : "",
+                                  )}
+                                  aria-label="Add email line"
+                                  title="Add email line"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
+                          <div className="border-t border-slate-200/80 pt-2 space-y-0.5">
+                            <div className="pl-4 space-y-0.5">
+                              {phoneRows.length > 0 ? phoneRows.map((row, index) => {
+                                const canEditRow =
+                                  canEditLeadContactLists ||
+                                  (canEditPrimaryPhone && index === 0);
+                                return (
+                                  <InlineEditableValueRow
+                                    key={`sales-doctor-phone-${index}-${row.isNew ? "new" : row.value || "empty"}`}
+                                    label={`Phone ${index + 1}`}
+                                    value={row.value}
+                                    type="tel"
+                                    autoComplete="tel"
+                                    editable={canEditRow}
+                                    startEditing={row.isNew}
+                                    displayValue={renderSalesDoctorSingleContactValue(
+                                      row.value,
+                                      "phone",
+                                    )}
+                                    onSave={
+                                      canEditRow
+                                        ? async (nextValue) => {
+                                            const validationError =
+                                              getSalesDoctorContactValidationError(
+                                                "phone",
+                                                nextValue,
+                                              );
+                                            if (validationError) {
+                                              toast.error(validationError);
+                                              throw new Error(validationError);
+                                            }
+                                            if (canEditLeadContactLists) {
+                                              const nextValues = [
+                                                ...salesDoctorDetailPhoneValues,
+                                              ];
+                                              const trimmed = nextValue.trim();
+                                              if (row.isNew) {
+                                                if (trimmed) {
+                                                  nextValues.push(trimmed);
+                                                }
+                                              } else if (index < nextValues.length) {
+                                                if (trimmed) {
+                                                  nextValues[index] = trimmed;
+                                                } else {
+                                                  nextValues.splice(index, 1);
+                                                }
+                                              }
+                                              await saveSalesDoctorLeadContactValues(
+                                                "phone",
+                                                nextValues,
+                                              );
+                                              setSalesDoctorAddingPhoneRow(false);
+                                              return;
+                                            }
+                                            await saveSalesDoctorPhoneValue(nextValue);
+                                          }
+                                        : undefined
+                                    }
+                                    onCancel={
+                                      row.isNew
+                                        ? () => setSalesDoctorAddingPhoneRow(false)
+                                        : undefined
+                                    }
+                                  />
+                                );
+                              }) : (
+                                <div className="text-sm text-slate-500">—</div>
+                              )}
+                              {canEditLeadContactLists ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSalesDoctorAddingPhoneRow(true)}
+                                  disabled={salesDoctorAddingPhoneRow}
+                                  className={clsx(
+                                    "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
+                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
+                                    salesDoctorAddingPhoneRow ? "cursor-not-allowed opacity-60" : "",
+                                  )}
+                                  aria-label="Add phone line"
+                                  title="Add phone line"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                 </div>
                 <div className="min-w-0 space-y-2">
                   <p className="text-sm font-semibold text-slate-700">
@@ -36267,6 +36503,126 @@ function MainApp() {
         pricingMarkupPercent={delegatePricingMarkupPercent}
         proposalMode={isDelegateMode}
       />
+    </div>
+  );
+}
+
+function InlineEditableValueRow({
+  label,
+  value,
+  type = "text",
+  autoComplete,
+  editable = false,
+  startEditing = false,
+  displayValue,
+  onSave,
+  onCancel,
+}: {
+  label: string;
+  value: string;
+  type?: string;
+  autoComplete?: string;
+  editable?: boolean;
+  startEditing?: boolean;
+  displayValue?: ReactNode;
+  onSave?: (next: string) => Promise<void> | void;
+  onCancel?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [next, setNext] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setNext(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (!editable && editing) {
+      setEditing(false);
+    }
+  }, [editable, editing]);
+
+  useEffect(() => {
+    if (editable && startEditing) {
+      setEditing(true);
+    }
+  }, [editable, startEditing]);
+
+  const saveValue = useCallback(async () => {
+    if (!editable || !onSave || saving) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch {
+      // Keep the row in edit mode when validation or save fails.
+    } finally {
+      setSaving(false);
+    }
+  }, [editable, next, onSave, saving]);
+
+  return (
+    <div className="editable-row group flex items-center gap-3">
+      <div className="min-w-[7rem] self-center text-sm font-medium text-slate-700">
+        {label}
+      </div>
+      <div className="flex-1 flex items-center gap-2 flex-wrap">
+        {editing ? (
+          <input
+            className="w-full h-9 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            value={next}
+            type={type}
+            autoComplete={autoComplete}
+            onChange={(event) => setNext(event.currentTarget.value)}
+            onKeyDown={async (event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                await saveValue();
+              }
+            }}
+          />
+        ) : (
+          <div className="text-sm text-slate-700 flex items-center gap-2 min-w-0 flex-wrap">
+            <span className="min-w-0 break-all">{displayValue ?? (value || "—")}</span>
+            {editable && onSave ? (
+              <button
+                type="button"
+                className={clsx("inline-edit-button", editing && "is-active")}
+                onClick={() => setEditing(true)}
+                aria-label={`Edit ${label}`}
+                title={`Edit ${label}`}
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            ) : null}
+          </div>
+        )}
+        {editing ? (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="squircle-sm"
+              disabled={saving}
+              onClick={() => void saveValue()}
+            >
+              {saving ? "Saving…" : "Save"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="squircle-sm"
+              onClick={() => {
+                setNext(value);
+                setEditing(false);
+                onCancel?.();
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

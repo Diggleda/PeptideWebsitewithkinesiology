@@ -139,6 +139,12 @@ const start = async () => {
       logger.error({ err: error }, 'Failed to start ShipStation status sync job');
     }
     try {
+      const { startUpsStatusSyncJob } = require('./services/upsStatusSyncService');
+      startUpsStatusSyncJob();
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to start UPS status sync job');
+    }
+    try {
       const { startSeamlessReconciliationJob } = require('./services/crmSeamlessService');
       startSeamlessReconciliationJob();
     } catch (error) {

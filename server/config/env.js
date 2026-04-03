@@ -270,6 +270,22 @@ const env = {
     lookbackDays: toNumber(process.env.SHIPSTATION_STATUS_SYNC_LOOKBACK_DAYS, 60),
     maxOrders: toNumber(process.env.SHIPSTATION_STATUS_SYNC_MAX_ORDERS, 80),
   },
+  ups: {
+    clientId: process.env.UPS_CLIENT_ID || '',
+    clientSecret: process.env.UPS_CLIENT_SECRET || '',
+    merchantId: process.env.UPS_MERCHANT_ID || '',
+    useCie: parseBooleanEnv(process.env.UPS_USE_CIE) === true,
+    locale: process.env.UPS_LOCALE || 'en_US',
+    transactionSrc: process.env.UPS_TRANSACTION_SRC || 'peppro',
+    requestTimeoutMs: toNumber(process.env.UPS_REQUEST_TIMEOUT_MS, 15_000),
+  },
+  upsSync: {
+    enabled: process.env.UPS_STATUS_SYNC_ENABLED !== 'false',
+    intervalMs: toNumber(process.env.UPS_STATUS_SYNC_INTERVAL_MS, 5 * 60 * 1000),
+    lookbackDays: toNumber(process.env.UPS_STATUS_SYNC_LOOKBACK_DAYS, 60),
+    maxOrders: toNumber(process.env.UPS_STATUS_SYNC_MAX_ORDERS, 50),
+    throttleMs: toNumber(process.env.UPS_STATUS_SYNC_THROTTLE_MS, 150),
+  },
   orderSync: {
     enabled: process.env.ORDER_SYNC_ENABLED !== 'false',
     // Background task to keep MySQL in sync with WooCommerce/local orders

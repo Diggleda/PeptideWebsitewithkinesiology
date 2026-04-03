@@ -180,3 +180,77 @@ test('fetchById decrypts legacy orders payload with orders AAD', async () => {
     },
   );
 });
+
+test('persistOrder and fetchById round-trip ups_tracking_status as authoritative shipping status', async () => {
+  const calls = [];
+  const mysqlClient = {
+    isEnabled: () => true,
+    execute: async (query, params) => {
+      calls.push({ query, params });
+      return 1;
+    },
+    fetchAll: async () => [],
+    fetchOne: async (query) => {
+      if (query.includes('FROM peppro_orders')) {
+        return {
+          id: 'order-ups-1',
+          user_id: 'user-1',
+          pricing_mode: 'wholesale',
+          total: 120.5,
+          shipping_total: 9.72,
+          shipping_carrier: 'ups',
+          shipping_service: 'UPS 2nd Day Air',
+          ups_tracking_status: 'delivered',
+          payload: 'cipher-order-ups-1',
+          created_at: '2026-03-24T12:00:00Z',
+          updated_at: '2026-03-24T12:05:00Z',
+        };
+      }
+      return null;
+    },
+  };
+
+  await withFreshRepository(
+    {
+      mysqlClient,
+      encryptJson: (value) => `cipher:${value?.order?.id || 'none'}`,
+      decryptJson: (value) => {
+        if (value === 'cipher-order-ups-1') {
+          return {
+            order: {
+              id: 'order-ups-1',
+              shippingEstimate: {},
+              trackingNumber: '1Z999AA10123456784',
+            },
+          };
+        }
+        return null;
+      },
+    },
+    async (repository) => {
+      await repository.persistOrder({
+        order: {
+          id: 'order-ups-1',
+          userId: 'user-1',
+          status: 'completed',
+          trackingNumber: '1Z999AA10123456784',
+          upsTrackingStatus: 'Delivered',
+          shippingEstimate: { carrierId: 'ups', serviceType: 'UPS 2nd Day Air' },
+          items: [],
+          createdAt: '2026-03-24T12:00:00Z',
+        },
+        wooOrderId: '1491',
+        shipStationOrderId: 'ss-1',
+      });
+
+      const order = await repository.fetchById('order-ups-1');
+
+      assert.equal(calls.length, 1);
+      assert.match(calls[0].query, /ups_tracking_status/);
+      assert.equal(calls[0].params.upsTrackingStatus, 'delivered');
+      assert.equal(order.upsTrackingStatus, 'delivered');
+      assert.equal(order.shippingEstimate.status, 'delivered');
+      assert.equal(order.integrationDetails.carrierTracking.trackingStatus, 'delivered');
+    },
+  );
+});

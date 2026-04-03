@@ -1,197 +1,376 @@
 const axios = require('axios');
+const crypto = require('crypto');
+const { env } = require('../config/env');
 const { logger } = require('../config/logger');
 
-const UPS_TRACK_PAGE_URL = 'https://www.ups.com/track';
-const UPS_TRACK_STATUS_API_URL = 'https://www.ups.com/track/api/Track/GetStatus';
+const UPS_CIE_BASE_URL = 'https://wwwcie.ups.com';
+const UPS_PROD_BASE_URL = 'https://onlinetools.ups.com';
+const UPS_TOKEN_PATH = '/security/v1/oauth/token';
+const UPS_TRACK_PATH = '/api/track/v1/details';
+const TRACKING_CACHE_TTL_MS = 5 * 60 * 1000;
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const cache = new Map(); // trackingNumber -> { expiresAt, value }
+const trackingCache = new Map(); // trackingNumber -> { value, expiresAt }
+const tokenCache = {
+  accessToken: null,
+  expiresAt: 0,
+};
 
 const safeString = (value) => {
-  if (value === null || value === undefined) return null;
+  if (value === null || value === undefined) {
+    return null;
+  }
   const str = String(value).trim();
   return str.length > 0 ? str : null;
 };
 
 const deepGet = (obj, ...path) => {
-  let cur = obj;
+  let current = obj;
   for (const key of path) {
-    if (cur === null || cur === undefined) return null;
-    if (Array.isArray(cur) && Number.isInteger(key)) {
-      if (key < 0 || key >= cur.length) return null;
-      cur = cur[key];
+    if (current === null || current === undefined) {
+      return null;
+    }
+    if (Array.isArray(current) && Number.isInteger(key)) {
+      if (key < 0 || key >= current.length) {
+        return null;
+      }
+      current = current[key];
       continue;
     }
-    if (typeof cur === 'object' && cur !== null) {
-      cur = cur[key];
+    if (typeof current === 'object') {
+      current = current[key];
       continue;
     }
     return null;
   }
-  return cur;
+  return current;
 };
 
 const sanitizeTrackingNumber = (value) => String(value || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
+const looksLikeUpsTrackingNumber = (value) => {
+  const normalized = sanitizeTrackingNumber(value);
+  return normalized.startsWith('1Z') && normalized.length >= 8;
+};
+
 const normalizeStatusToken = (value) => {
   const raw = safeString(value);
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
   return raw
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, '_')
-    .replace(/-+/g, '_')
-    .replace(/_+/g, '_');
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
 };
 
-const mapStatusToPepPro = (rawStatus) => {
-  const token = normalizeStatusToken(rawStatus);
-  if (!token) return null;
-  if (token.includes('delivered')) return 'delivered';
-  if (token.includes('out_for_delivery') || token.includes('outfordelivery')) return 'out_for_delivery';
-  if (token.includes('in_transit') || token.includes('intransit')) return 'in_transit';
-  if (token.includes('label_created') || token.includes('labelcreated')) return 'label_created';
-  if (token.includes('exception')) return 'exception';
-  if (token.includes('shipped')) return 'shipped';
-  return token;
+const normalizeTrackingStatus = (value) => {
+  const token = normalizeStatusToken(value);
+  if (!token) {
+    return null;
+  }
+  if (token.includes('delivered')) {
+    return 'delivered';
+  }
+  if (token.includes('out_for_delivery') || token.includes('outfordelivery')) {
+    return 'out_for_delivery';
+  }
+  if (['exception', 'delay', 'delayed', 'hold', 'held'].some((part) => token.includes(part))) {
+    return 'exception';
+  }
+  if (
+    [
+      'label_created',
+      'shipment_ready_for_ups',
+      'order_processed',
+      'billing_information_received',
+      'manifest_picked_up',
+      'shipment_information_received',
+    ].some((part) => token.includes(part))
+  ) {
+    return 'label_created';
+  }
+  if (
+    [
+      'in_transit',
+      'intransit',
+      'on_the_way',
+      'ontheway',
+      'departed',
+      'arrived',
+      'pickup_scan',
+      'origin_scan',
+      'destination_scan',
+      'processing_at_ups_facility',
+      'loaded_on_delivery_vehicle',
+      'received_by_post_office_for_delivery',
+    ].some((part) => token.includes(part))
+  ) {
+    return 'in_transit';
+  }
+  return 'unknown';
+};
+
+const isConfigured = () => Boolean(env.ups?.clientId && env.ups?.clientSecret);
+
+const resolveBaseUrl = () => (env.ups?.useCie === true ? UPS_CIE_BASE_URL : UPS_PROD_BASE_URL);
+
+const getCachedTrackingStatus = (trackingNumber) => {
+  const cached = trackingCache.get(trackingNumber);
+  if (!cached) {
+    return null;
+  }
+  if (Date.now() >= cached.expiresAt) {
+    trackingCache.delete(trackingNumber);
+    return null;
+  }
+  return cached.value;
+};
+
+const setCachedTrackingStatus = (trackingNumber, value) => {
+  trackingCache.set(trackingNumber, {
+    value,
+    expiresAt: Date.now() + TRACKING_CACHE_TTL_MS,
+  });
+};
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(String(value || '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const getCachedAccessToken = () => {
+  if (!tokenCache.accessToken || Date.now() >= tokenCache.expiresAt) {
+    return null;
+  }
+  return tokenCache.accessToken;
+};
+
+const setCachedAccessToken = (accessToken, expiresIn) => {
+  const ttlSeconds = parsePositiveInt(expiresIn, 3600);
+  const refreshBufferSeconds = Math.max(30, Math.min(Math.trunc(ttlSeconds * 0.1), 300));
+  tokenCache.accessToken = accessToken;
+  tokenCache.expiresAt = Date.now() + (Math.max(30, ttlSeconds - refreshBufferSeconds) * 1000);
+};
+
+const requestAccessToken = async () => {
+  if (!isConfigured()) {
+    throw new Error('UPS credentials are not configured');
+  }
+
+  const clientId = String(env.ups.clientId);
+  const clientSecret = String(env.ups.clientSecret);
+  const merchantId = safeString(env.ups.merchantId);
+  const authValue = Buffer.from(`${clientId}:${clientSecret}`, 'utf8').toString('base64');
+  const response = await axios.post(
+    `${resolveBaseUrl()}${UPS_TOKEN_PATH}`,
+    new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
+    {
+      timeout: env.ups?.requestTimeoutMs || 15_000,
+      validateStatus: () => true,
+      headers: {
+        Authorization: `Basic ${authValue}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...(merchantId ? { 'x-merchant-id': merchantId } : {}),
+      },
+    },
+  );
+
+  if (response.status < 200 || response.status >= 300) {
+    const error = new Error(`UPS OAuth failed with status ${response.status}`);
+    error.status = response.status;
+    error.details = response.data;
+    throw error;
+  }
+
+  const accessToken = safeString(response.data?.access_token);
+  if (!accessToken) {
+    throw new Error('UPS token response did not include access_token');
+  }
+
+  setCachedAccessToken(accessToken, response.data?.expires_in);
+  return accessToken;
+};
+
+const getAccessToken = async () => {
+  const cached = getCachedAccessToken();
+  if (cached) {
+    return cached;
+  }
+  return requestAccessToken();
+};
+
+const firstPackage = (payload) => {
+  const pkg = deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0);
+  return pkg && typeof pkg === 'object' ? pkg : {};
+};
+
+const extractStatusObject = (payload) => {
+  const candidates = [
+    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'currentStatus'),
+    deepGet(payload, 'trackResponse', 'shipment', 0, 'currentStatus'),
+    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'activity', 0, 'status'),
+  ];
+  return candidates.find((candidate) => candidate && typeof candidate === 'object') || {};
 };
 
 const extractUpsStatus = (payload) => {
-  const candidates = [
-    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'currentStatus', 'description'),
-    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'currentStatus', 'statusCode'),
+  const pkg = firstPackage(payload);
+  const statusObject = extractStatusObject(payload);
+  const rawStatusCandidates = [
+    statusObject?.simplifiedTextDescription,
+    statusObject?.description,
+    pkg?.statusDescription,
+    pkg?.currentStatusDescription,
+    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'activity', 0, 'status', 'simplifiedTextDescription'),
     deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'activity', 0, 'status', 'description'),
-    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'activity', 0, 'status', 'statusCode'),
-    deepGet(payload, 'trackResponse', 'shipment', 0, 'currentStatus', 'description'),
-    deepGet(payload, 'trackResponse', 'shipment', 0, 'currentStatus', 'statusCode'),
-    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'statusType', 'description'),
-    deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'statusType', 'statusCode'),
   ];
-  for (const candidate of candidates) {
-    const text = safeString(candidate);
-    if (text) return text;
+  const rawStatus = rawStatusCandidates.map(safeString).find(Boolean) || null;
+  const statusCode = safeString(statusObject?.statusCode || statusObject?.code);
+  return { rawStatus, statusCode };
+};
+
+const formatActivityDateTime = (dateValue, timeValue, gmtOffset = null) => {
+  const dateText = safeString(dateValue);
+  if (!dateText || dateText.length !== 8 || !/^\d{8}$/.test(dateText)) {
+    return null;
   }
-  return null;
+  const baseTime = (safeString(timeValue) || '000000').padStart(6, '0');
+  if (!/^\d{6}$/.test(baseTime)) {
+    return null;
+  }
+  const stamp =
+    `${dateText.slice(0, 4)}-${dateText.slice(4, 6)}-${dateText.slice(6, 8)}`
+    + `T${baseTime.slice(0, 2)}:${baseTime.slice(2, 4)}:${baseTime.slice(4, 6)}`;
+  const offsetText = safeString(gmtOffset);
+  if (offsetText && /^[+-]\d{2}:\d{2}$/.test(offsetText)) {
+    const withOffset = `${stamp}${offsetText}`;
+    const parsed = Date.parse(withOffset);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : withOffset;
+  }
+  const parsed = Date.parse(`${stamp}Z`);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : stamp;
 };
 
 const extractDeliveredAt = (payload) => {
-  const activities = deepGet(payload, 'trackResponse', 'shipment', 0, 'package', 0, 'activity');
-  if (!Array.isArray(activities)) return null;
+  const pkg = firstPackage(payload);
+  const deliveryDates = Array.isArray(pkg?.deliveryDate) ? pkg.deliveryDate : [];
+  const deliveredDateEntry = deliveryDates.find((entry) => entry && entry.type === 'DEL');
+  const deliveredDate = deliveredDateEntry?.date || null;
+  const deliveryTime = pkg?.deliveryTime && typeof pkg.deliveryTime === 'object' ? pkg.deliveryTime : null;
+  if (deliveredDate && deliveryTime?.type === 'DEL') {
+    const formatted = formatActivityDateTime(deliveredDate, deliveryTime?.endTime);
+    if (formatted) {
+      return formatted;
+    }
+  }
+  if (deliveredDate) {
+    const formatted = formatActivityDateTime(deliveredDate, '000000');
+    if (formatted) {
+      return formatted;
+    }
+  }
+
+  const activities = Array.isArray(pkg?.activity) ? pkg.activity : [];
   for (const entry of activities) {
-    const statusDesc = safeString(deepGet(entry, 'status', 'description')) || '';
-    if (statusDesc.toLowerCase().includes('delivered')) {
-      return safeString(entry?.dateTime) || safeString(entry?.datetime) || safeString(entry?.date) || null;
+    const rawStatus =
+      safeString(entry?.status?.simplifiedTextDescription)
+      || safeString(entry?.status?.description)
+      || '';
+    if (normalizeTrackingStatus(rawStatus) !== 'delivered') {
+      continue;
+    }
+    const formatted = formatActivityDateTime(
+      entry?.gmtDate || entry?.date,
+      entry?.gmtTime || entry?.time,
+      entry?.gmtOffset,
+    );
+    if (formatted) {
+      return formatted;
     }
   }
   return null;
 };
 
-const buildCookieHeader = (setCookieHeader) => {
-  const setCookies = Array.isArray(setCookieHeader)
-    ? setCookieHeader
-    : (typeof setCookieHeader === 'string' ? [setCookieHeader] : []);
-  const pairs = setCookies
-    .map((cookie) => String(cookie || '').split(';')[0].trim())
-    .filter(Boolean);
-  return pairs.length ? pairs.join('; ') : '';
-};
-
-const parseCookieValue = (cookieHeader, name) => {
-  if (!cookieHeader) return null;
-  const parts = String(cookieHeader).split(';').map((part) => part.trim());
-  for (const part of parts) {
-    const [key, ...rest] = part.split('=');
-    if (key === name) {
-      const value = rest.join('=');
-      return value ? decodeURIComponent(value) : null;
-    }
+const createTransactionId = () => {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
   }
-  return null;
-};
-
-const getCached = (trackingNumber) => {
-  const entry = cache.get(trackingNumber);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    cache.delete(trackingNumber);
-    return null;
-  }
-  return entry.value;
-};
-
-const setCached = (trackingNumber, value) => {
-  cache.set(trackingNumber, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+  return crypto.randomBytes(16).toString('hex');
 };
 
 const fetchUpsTrackingStatus = async (trackingNumber) => {
   const normalized = sanitizeTrackingNumber(trackingNumber);
-  if (!normalized) return null;
+  if (!normalized || !isConfigured()) {
+    return null;
+  }
 
-  const cached = getCached(normalized);
-  if (cached) return cached;
-
-  const client = axios.create({
-    timeout: 15_000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-    validateStatus: () => true,
-  });
+  const cached = getCachedTrackingStatus(normalized);
+  if (cached) {
+    return cached;
+  }
 
   try {
-    const pageResp = await client.get(UPS_TRACK_PAGE_URL, {
-      params: { loc: 'en_US', tracknum: normalized, requester: 'ST/trackdetails' },
-      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-      maxRedirects: 5,
-    });
-
-    const cookieHeader = buildCookieHeader(pageResp.headers?.['set-cookie']);
-    const xsrf = parseCookieValue(cookieHeader, 'XSRF-TOKEN') || parseCookieValue(cookieHeader, 'xsrf-token');
-
-    const apiHeaders = {
-      Accept: 'application/json, text/plain, */*',
-      'Content-Type': 'application/json',
-      Origin: 'https://www.ups.com',
-      Referer: `${UPS_TRACK_PAGE_URL}?loc=en_US&tracknum=${normalized}&requester=ST/trackdetails`,
-      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-      ...(xsrf ? { 'X-XSRF-TOKEN': xsrf } : {}),
-    };
-
-    const apiResp = await client.post(
-      UPS_TRACK_STATUS_API_URL,
-      { Locale: 'en_US', TrackingNumber: [normalized] },
-      { params: { loc: 'en_US' }, headers: apiHeaders, maxRedirects: 0 },
+    const accessToken = await getAccessToken();
+    const response = await axios.get(
+      `${resolveBaseUrl()}${UPS_TRACK_PATH}/${encodeURIComponent(normalized)}`,
+      {
+        timeout: env.ups?.requestTimeoutMs || 15_000,
+        validateStatus: () => true,
+        params: {
+          locale: env.ups?.locale || 'en_US',
+        },
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          transId: createTransactionId(),
+          transactionSrc: env.ups?.transactionSrc || 'peppro',
+        },
+      },
     );
 
-    if (apiResp.status < 200 || apiResp.status >= 300) {
-      logger.warn({ status: apiResp.status, trackingNumber: normalized }, 'UPS tracking lookup failed');
+    if (response.status < 200 || response.status >= 300) {
+      logger.warn(
+        { status: response.status, trackingNumber: normalized, body: response.data },
+        'UPS tracking lookup failed',
+      );
       return null;
     }
 
-    const payload = apiResp.data || {};
-    const rawStatus = extractUpsStatus(payload);
-    const mapped = mapStatusToPepPro(rawStatus);
-    const deliveredAt = extractDeliveredAt(payload);
-
+    const payload = response.data || {};
+    const { rawStatus, statusCode } = extractUpsStatus(payload);
+    const trackingStatus = normalizeTrackingStatus(rawStatus || statusCode);
     const result = {
       carrier: 'ups',
       trackingNumber: normalized,
-      trackingStatus: mapped,
+      trackingStatus,
       trackingStatusRaw: rawStatus,
-      deliveredAt,
+      trackingStatusCode: statusCode,
+      deliveredAt: extractDeliveredAt(payload),
       checkedAt: new Date().toISOString(),
     };
-    setCached(normalized, result);
+    setCachedTrackingStatus(normalized, result);
     return result;
   } catch (error) {
-    logger.warn({ err: error, trackingNumber: trackingNumber || null }, 'UPS tracking lookup errored');
+    logger.warn({ err: error, trackingNumber: normalized }, 'UPS tracking lookup errored');
     return null;
   }
 };
 
-module.exports = {
-  fetchUpsTrackingStatus,
-  sanitizeTrackingNumber,
+const clearCachesForTest = () => {
+  trackingCache.clear();
+  tokenCache.accessToken = null;
+  tokenCache.expiresAt = 0;
 };
 
+module.exports = {
+  clearCachesForTest,
+  fetchUpsTrackingStatus,
+  isConfigured,
+  looksLikeUpsTrackingNumber,
+  normalizeTrackingStatus,
+  sanitizeTrackingNumber,
+};

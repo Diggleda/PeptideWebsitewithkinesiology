@@ -10,6 +10,47 @@ from python_backend import config
 
 
 class ConfigRuntimeEnvTests(unittest.TestCase):
+    def test_development_fallback_loads_repo_dotenv_without_python_dotenv(self) -> None:
+        original_base_dir = config.BASE_DIR
+        original_loader = config.load_dotenv
+        try:
+            with TemporaryDirectory() as tempdir:
+                base_dir = Path(tempdir)
+                (base_dir / ".env").write_text(
+                    "UPS_CLIENT_ID=test-client\nUPS_CLIENT_SECRET=test-secret\nUPS_USE_CIE=true\n",
+                    encoding="utf-8",
+                )
+                config.BASE_DIR = base_dir
+                config.load_dotenv = None
+                with patch.dict(os.environ, {}, clear=True):
+                    config._load_dotenv("development")
+                    self.assertEqual(os.environ.get("UPS_CLIENT_ID"), "test-client")
+                    self.assertEqual(os.environ.get("UPS_CLIENT_SECRET"), "test-secret")
+                    self.assertEqual(os.environ.get("UPS_USE_CIE"), "true")
+        finally:
+            config.BASE_DIR = original_base_dir
+            config.load_dotenv = original_loader
+
+    def test_external_dotenv_override_uses_fallback_loader_without_python_dotenv(self) -> None:
+        original_loader = config.load_dotenv
+        try:
+            with TemporaryDirectory() as tempdir:
+                external_path = Path(tempdir) / "peppr-api.env"
+                external_path.write_text("UPS_CLIENT_ID=external-client\n", encoding="utf-8")
+                config.load_dotenv = None
+                with patch.dict(
+                    os.environ,
+                    {
+                        "NODE_ENV": "production",
+                        "DOTENV_CONFIG_PATH": str(external_path),
+                    },
+                    clear=True,
+                ):
+                    config._load_dotenv("production")
+                    self.assertEqual(os.environ.get("UPS_CLIENT_ID"), "external-client")
+        finally:
+            config.load_dotenv = original_loader
+
     def test_production_skips_repo_dotenv_without_override(self) -> None:
         calls: list[Path] = []
         original_base_dir = config.BASE_DIR

@@ -53,6 +53,7 @@ const STATEMENTS = [
       status VARCHAR(50) NOT NULL DEFAULT 'pending',
       order_placed_at DATETIME NULL,
       shipped_at DATETIME NULL,
+      ups_tracking_status VARCHAR(32) NULL,
       status_normalized VARCHAR(64)
         GENERATED ALWAYS AS (LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')))
         STORED,
@@ -756,6 +757,13 @@ const ensureOrderColumns = async () => {
       ddl: `
         ALTER TABLE peppro_orders
         ADD COLUMN shipped_at DATETIME NULL AFTER order_placed_at
+      `,
+    },
+    {
+      name: 'ups_tracking_status',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN ups_tracking_status VARCHAR(32) NULL AFTER shipped_at
       `,
     },
   ];
