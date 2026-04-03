@@ -926,6 +926,159 @@ def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
     return normalized
 
 
+def _extract_tracking_number_for_ups_refresh(*orders: Optional[Dict]) -> Optional[str]:
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        candidates = [
+            order.get("trackingNumber"),
+            order.get("tracking_number"),
+        ]
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        candidates.extend(
+            [
+                estimate.get("trackingNumber"),
+                estimate.get("tracking_number"),
+            ]
+        )
+        integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        shipstation = _ensure_dict(integrations.get("shipStation") or integrations.get("shipstation"))
+        candidates.extend(
+            [
+                shipstation.get("trackingNumber"),
+                shipstation.get("tracking_number"),
+            ]
+        )
+        for candidate in candidates:
+            text = str(candidate or "").strip()
+            if text:
+                return text
+    return None
+
+
+def _is_ups_order_for_refresh(*orders: Optional[Dict]) -> bool:
+    tracking_number = _extract_tracking_number_for_ups_refresh(*orders)
+    if ups_tracking.looks_like_ups_tracking_number(tracking_number):
+        return True
+
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        candidates = [
+            order.get("shippingCarrier"),
+            order.get("shipping_carrier"),
+        ]
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        candidates.extend(
+            [
+                estimate.get("carrierId"),
+                estimate.get("carrier_id"),
+            ]
+        )
+        integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        shipstation = _ensure_dict(integrations.get("shipStation") or integrations.get("shipstation"))
+        candidates.extend(
+            [
+                shipstation.get("carrierCode"),
+                shipstation.get("carrier_code"),
+            ]
+        )
+        for candidate in candidates:
+            token = str(candidate or "").strip().lower().replace("-", "_").replace(" ", "_")
+            if token == "ups" or token.startswith("ups_"):
+                return True
+    return False
+
+
+def _resolve_peppro_order_id_for_ups_refresh(order: Dict, local_order: Optional[Dict]) -> Optional[str]:
+    candidates: List[Any] = []
+    if isinstance(local_order, dict):
+        candidates.append(local_order.get("id"))
+
+    if isinstance(order, dict):
+        candidates.append(order.get("pepproOrderId"))
+        integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
+        candidates.extend(
+            [
+                woo_details.get("pepproOrderId"),
+                woo_details.get("peppro_order_id"),
+            ]
+        )
+
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order: Optional[Dict] = None) -> Optional[Dict]:
+    if not isinstance(order, dict):
+        return local_order
+
+    tracking_number = _extract_tracking_number_for_ups_refresh(order, local_order)
+    if not tracking_number or not _is_ups_order_for_refresh(order, local_order):
+        return local_order
+
+    try:
+        info = ups_tracking.fetch_tracking_status(tracking_number)
+    except Exception:
+        logger.warning(
+            "UPS live status refresh failed",
+            exc_info=True,
+            extra={
+                "trackingNumber": tracking_number,
+                "orderId": (
+                    (local_order or {}).get("id")
+                    or _resolve_peppro_order_id_for_ups_refresh(order, local_order)
+                    or order.get("id")
+                ),
+            },
+        )
+        return local_order
+
+    if not isinstance(info, dict):
+        return local_order
+
+    normalized = _normalize_ups_tracking_status(info.get("trackingStatus") or info.get("trackingStatusRaw"))
+    if not normalized:
+        return local_order
+
+    live_tracking_number = str(info.get("trackingNumber") or tracking_number).strip() or tracking_number
+    current_status = (
+        _normalize_ups_tracking_status(order.get("upsTrackingStatus") if order.get("upsTrackingStatus") is not None else order.get("ups_tracking_status"))
+        or _normalize_ups_tracking_status(
+            (local_order or {}).get("upsTrackingStatus")
+            if isinstance(local_order, dict) and (local_order or {}).get("upsTrackingStatus") is not None
+            else (local_order or {}).get("ups_tracking_status") if isinstance(local_order, dict) else None
+        )
+    )
+
+    refreshed_local_order = local_order
+    peppro_order_id = _resolve_peppro_order_id_for_ups_refresh(order, local_order)
+    if peppro_order_id and current_status != normalized:
+        try:
+            persisted = order_repository.update_ups_tracking_status(peppro_order_id, ups_tracking_status=normalized)
+            if isinstance(persisted, dict):
+                refreshed_local_order = persisted
+        except Exception:
+            logger.warning(
+                "Failed to persist refreshed UPS tracking status",
+                exc_info=True,
+                extra={"orderId": peppro_order_id, "trackingNumber": live_tracking_number, "upsTrackingStatus": normalized},
+            )
+
+    for target in (order, local_order, refreshed_local_order):
+        if not isinstance(target, dict):
+            continue
+        target["trackingNumber"] = live_tracking_number
+        target["upsTrackingStatus"] = normalized
+        _apply_authoritative_ups_tracking_status(target)
+
+    return refreshed_local_order
+
+
 def _validate_items(items: Optional[List[Dict]]) -> bool:
     return bool(
         isinstance(items, list)
@@ -4067,6 +4220,8 @@ def get_sales_rep_order_detail(
             _apply_authoritative_ups_tracking_status(mapped)
     except Exception:
         pass
+
+    local_order = _refresh_authoritative_ups_status_for_order_view(mapped, local_order=local_order)
 
     if resolved_doctor:
         mapped["doctorId"] = resolved_doctor.get("id")

@@ -221,6 +221,96 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
 
+    def test_detail_refreshes_live_ups_status_before_return(self):
+        service = self.order_service
+        original_is_configured = service.woo_commerce.is_configured
+        original_fetch_order = service.woo_commerce.fetch_order
+        original_fetch_by_number = service.woo_commerce.fetch_order_by_number
+        original_invoice_url = service.woo_commerce._build_invoice_url
+        original_shipstation = service.ship_station.fetch_order_status
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_find_by_id = service.order_repository.find_by_id
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
+        original_find_email = service.user_repository.find_by_email
+        original_find_user_by_id = service.user_repository.find_by_id
+        try:
+            local_order = {
+                "id": "local-ups-1492",
+                "userId": "doctor-1",
+                "wooOrderId": "9002",
+                "wooOrderNumber": "1492",
+                "trackingNumber": "1ZTEST001",
+                "shippingCarrier": "ups",
+                "shippingEstimate": {"status": "in_transit", "carrierId": "ups"},
+                "upsTrackingStatus": "in_transit",
+                "status": "completed",
+            }
+            persisted_updates = []
+
+            service.woo_commerce.is_configured = lambda: True
+            service.woo_commerce._build_invoice_url = lambda *_args, **_kwargs: None
+            service.woo_commerce.fetch_order = lambda candidate: {
+                "id": 9002,
+                "number": "1492",
+                "status": "completed",
+                "total": "212.02",
+                "shipping_total": "0",
+                "payment_method_title": "",
+                "payment_method": "",
+                "billing": {"email": "orders@peppro.example"},
+                "shipping": {},
+                "meta_data": [{"key": "peppro_order_id", "value": "local-ups-1492"}],
+                "line_items": [],
+            } if str(candidate) == "9002" else None
+            service.woo_commerce.fetch_order_by_number = lambda _candidate: None
+            service.ship_station.fetch_order_status = lambda _order_number: None
+            service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"1492", "9002"} else None
+            service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-ups-1492" else None
+            service.order_repository.update_ups_tracking_status = (
+                lambda order_id, *, ups_tracking_status: persisted_updates.append((order_id, ups_tracking_status)) or {
+                    **local_order,
+                    "upsTrackingStatus": ups_tracking_status,
+                    "shippingEstimate": {"status": ups_tracking_status, "carrierId": "ups"},
+                }
+            )
+            service.ups_tracking.fetch_tracking_status = lambda tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": tracking_number,
+                "trackingStatus": "Delivered",
+                "trackingStatusRaw": "Delivered",
+            }
+            service.user_repository.find_by_email = lambda _email: None
+            service.user_repository.find_by_id = (
+                lambda value: {
+                    "id": "doctor-1",
+                    "name": "Jennifer Ellen Blankenship",
+                    "email": "jen@example.com",
+                    "salesRepId": "rep-1",
+                }
+                if str(value) == "doctor-1"
+                else None
+            )
+
+            result = service.get_sales_rep_order_detail("1492", "admin-1", token_role="admin")
+
+            self.assertEqual(persisted_updates, [("local-ups-1492", "delivered")])
+            self.assertEqual(result["upsTrackingStatus"], "delivered")
+            self.assertEqual(result["shippingEstimate"]["status"], "delivered")
+            self.assertEqual(result["trackingNumber"], "1ZTEST001")
+        finally:
+            service.woo_commerce.is_configured = original_is_configured
+            service.woo_commerce.fetch_order = original_fetch_order
+            service.woo_commerce.fetch_order_by_number = original_fetch_by_number
+            service.woo_commerce._build_invoice_url = original_invoice_url
+            service.ship_station.fetch_order_status = original_shipstation
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.find_by_id = original_find_by_id
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
+            service.user_repository.find_by_email = original_find_email
+            service.user_repository.find_by_id = original_find_user_by_id
+
     def test_modal_detail_uses_sales_rep_phone_fallback_for_summary_profiles(self):
         service = self.order_service
         actor = {
