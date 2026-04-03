@@ -8036,7 +8036,41 @@ function MainApp() {
           ),
         [normalizeSalesDoctorContactValues, salesDoctorDetail?.contactPhones, salesDoctorDetail?.phone],
       );
-      const salesDoctorDetailPrimaryEmail = salesDoctorDetailEmailValues[0] || null;
+      const buildSalesDoctorContactHref = useCallback(
+        (value: string, kind: "email" | "phone") => {
+          const normalized = String(value || "").trim();
+          if (!normalized) return null;
+          if (kind === "phone") {
+            const telValue = normalized.replace(/[^0-9+]/g, "");
+            return telValue ? `tel:${telValue}` : null;
+          }
+          return `mailto:${normalized}`;
+        },
+        [],
+      );
+      const renderSalesDoctorContactLinks = useCallback(
+        (
+          values: string[],
+          kind: "email" | "phone",
+          anchorClassName: string,
+        ) =>
+          values.map((value, index) => {
+            const href = buildSalesDoctorContactHref(value, kind);
+            return (
+              <Fragment key={`${kind}:${value}`}>
+                {index > 0 ? <span aria-hidden="true">, </span> : null}
+                {href ? (
+                  <a href={href} className={anchorClassName}>
+                    {value}
+                  </a>
+                ) : (
+                  <span>{value}</span>
+                )}
+              </Fragment>
+            );
+          }),
+        [buildSalesDoctorContactHref],
+      );
       const salesDoctorDetailEmailDisplay = salesDoctorDetailEmailValues.join(", ");
       const salesDoctorDetailPhoneDisplay = salesDoctorDetailPhoneValues.join(", ");
 	  const [salesDoctorCommissionRange, setSalesDoctorCommissionRange] = useState<
@@ -33782,12 +33816,13 @@ function MainApp() {
 				                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
 				                  <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap text-sm font-normal text-slate-600">
 				                    {salesDoctorDetailEmailDisplay ? (
-				                      <a
-                                href={`mailto:${salesDoctorDetailPrimaryEmail || salesDoctorDetailEmailDisplay}`}
-                                className="inline-block min-w-max hover:underline"
-                              >
-				                        {salesDoctorDetailEmailDisplay}
-				                      </a>
+                              <span className="inline-block min-w-max">
+                                {renderSalesDoctorContactLinks(
+                                  salesDoctorDetailEmailValues,
+                                  "email",
+                                  "hover:underline",
+                                )}
+                              </span>
 				                    ) : (
 				                      "—"
 				                    )}
@@ -34658,12 +34693,13 @@ function MainApp() {
 	                      {salesDoctorDetailEmailDisplay ? (
 	                        <span className="inline-block max-w-full align-middle">
                             <span className="block max-w-full overflow-x-auto whitespace-nowrap">
-                            <a
-                              href={`mailto:${salesDoctorDetailPrimaryEmail || salesDoctorDetailEmailDisplay}`}
-                              className="inline-block min-w-max"
-                            >
-	                            {salesDoctorDetailEmailDisplay}
-	                          </a>
+                              <span className="inline-block min-w-max">
+                                {renderSalesDoctorContactLinks(
+                                  salesDoctorDetailEmailValues,
+                                  "email",
+                                  "inline hover:underline",
+                                )}
+                              </span>
                             </span>
                           </span>
 	                      ) : (
@@ -34688,8 +34724,20 @@ function MainApp() {
                         const existingPhone = salesDoctorDetail.phone || "";
                         const hasChanges = trimmedDraft !== existingPhone.trim();
                         if (!canEditPhone) {
-                          return (
-                            <span>{salesDoctorDetailPhoneDisplay || "Unavailable"}</span>
+                          return salesDoctorDetailPhoneValues.length ? (
+                            <span className="inline-block max-w-full align-middle">
+                              <span className="block max-w-full overflow-x-auto whitespace-nowrap">
+                                <span className="inline-block min-w-max">
+                                  {renderSalesDoctorContactLinks(
+                                    salesDoctorDetailPhoneValues,
+                                    "phone",
+                                    "inline hover:underline",
+                                  )}
+                                </span>
+                              </span>
+                            </span>
+                          ) : (
+                            <span>Unavailable</span>
                           );
                         }
                         return (
@@ -34697,7 +34745,12 @@ function MainApp() {
                             {salesDoctorDetailPhoneDisplay &&
                               salesDoctorDetailPhoneDisplay !== existingPhone && (
                                 <p className="text-xs text-slate-500">
-                                  Stored: {salesDoctorDetailPhoneDisplay}
+                                  Stored:{" "}
+                                  {renderSalesDoctorContactLinks(
+                                    salesDoctorDetailPhoneValues,
+                                    "phone",
+                                    "hover:underline",
+                                  )}
                                 </p>
                               )}
                             <Input

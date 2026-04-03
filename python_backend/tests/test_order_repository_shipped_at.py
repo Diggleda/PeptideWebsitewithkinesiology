@@ -20,6 +20,30 @@ if "python_backend.storage" not in sys.modules:
     storage_stub.order_store = None
     sys.modules["python_backend.storage"] = storage_stub
 
+if "cryptography" not in sys.modules:
+    cryptography = types.ModuleType("cryptography")
+    hazmat = types.ModuleType("cryptography.hazmat")
+    primitives = types.ModuleType("cryptography.hazmat.primitives")
+    ciphers = types.ModuleType("cryptography.hazmat.primitives.ciphers")
+    aead = types.ModuleType("cryptography.hazmat.primitives.ciphers.aead")
+
+    class AESGCM:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def encrypt(self, _iv, data, _aad):
+            return data
+
+        def decrypt(self, _iv, data, _aad):
+            return data
+
+    aead.AESGCM = AESGCM
+    sys.modules["cryptography"] = cryptography
+    sys.modules["cryptography.hazmat"] = hazmat
+    sys.modules["cryptography.hazmat.primitives"] = primitives
+    sys.modules["cryptography.hazmat.primitives.ciphers"] = ciphers
+    sys.modules["cryptography.hazmat.primitives.ciphers.aead"] = aead
+
 from python_backend.repositories import order_repository
 
 
@@ -62,6 +86,29 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         )
 
         self.assertIsNone(params["shipped_at"])
+
+    def test_to_db_params_persists_explicit_ups_tracking_status(self):
+        params = order_repository._to_db_params(
+            {
+                "id": "order-ups-1",
+                "userId": "user-ups-1",
+                "upsTrackingStatus": "out_for_delivery",
+            }
+        )
+
+        self.assertEqual(params["ups_tracking_status"], "out_for_delivery")
+
+    def test_to_db_params_does_not_invent_ups_tracking_status_from_shipping_estimate(self):
+        params = order_repository._to_db_params(
+            {
+                "id": "order-ups-2",
+                "userId": "user-ups-2",
+                "trackingNumber": "1Z999",
+                "shippingEstimate": {"status": "delivered"},
+            }
+        )
+
+        self.assertIsNone(params["ups_tracking_status"])
 
     @patch("python_backend.repositories.order_repository.find_by_id", return_value={"id": "order-3"})
     @patch("python_backend.repositories.order_repository.mysql_client.execute")
@@ -175,6 +222,32 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertEqual(order["shippingAddress"], {"email": "doctor@example.com"})
         self.assertEqual(order["items"], [{"name": "BPC-157"}])
         self.assertTrue(order["handDelivery"])
+
+    def test_row_to_order_mirrors_ups_tracking_status_into_shipping_estimate(self):
+        order = order_repository._row_to_order(
+            {
+                "id": "order-8",
+                "user_id": "user-8",
+                "pricing_mode": "wholesale",
+                "items": "[]",
+                "total": 0,
+                "items_subtotal": 0,
+                "shipping_total": 0,
+                "shipping_rate": '{"status":"shipped"}',
+                "integrations": "{}",
+                "shipping_address": "{}",
+                "tracking_number": "1Z999",
+                "ups_tracking_status": "delivered",
+                "shipped_at": None,
+                "physician_certified": 0,
+                "status": "completed",
+                "created_at": datetime(2026, 3, 1, 12, 0, 0),
+                "updated_at": datetime(2026, 3, 1, 12, 0, 0),
+            }
+        )
+
+        self.assertEqual(order["upsTrackingStatus"], "delivered")
+        self.assertEqual(order["shippingEstimate"]["status"], "delivered")
 
 
 if __name__ == "__main__":
