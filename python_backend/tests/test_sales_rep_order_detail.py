@@ -268,10 +268,15 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"1492", "9002"} else None
             service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-ups-1492" else None
             service.order_repository.update_ups_tracking_status = (
-                lambda order_id, *, ups_tracking_status: persisted_updates.append((order_id, ups_tracking_status)) or {
+                lambda order_id, *, ups_tracking_status, delivered_at=None: persisted_updates.append((order_id, ups_tracking_status, delivered_at)) or {
                     **local_order,
                     "upsTrackingStatus": ups_tracking_status,
-                    "shippingEstimate": {"status": ups_tracking_status, "carrierId": "ups"},
+                    "upsDeliveredAt": delivered_at,
+                    "shippingEstimate": {
+                        "status": ups_tracking_status,
+                        "carrierId": "ups",
+                        **({"deliveredAt": delivered_at} if delivered_at else {}),
+                    },
                 }
             )
             service.ups_tracking.fetch_tracking_status = lambda tracking_number: {
@@ -279,6 +284,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
                 "trackingNumber": tracking_number,
                 "trackingStatus": "Delivered",
                 "trackingStatusRaw": "Delivered",
+                "deliveredAt": "2026-04-02T10:15:00",
             }
             service.user_repository.find_by_email = lambda _email: None
             service.user_repository.find_by_id = (
@@ -294,9 +300,10 @@ class SalesRepOrderDetailTests(unittest.TestCase):
 
             result = service.get_sales_rep_order_detail("1492", "admin-1", token_role="admin")
 
-            self.assertEqual(persisted_updates, [("local-ups-1492", "delivered")])
+            self.assertEqual(persisted_updates, [("local-ups-1492", "delivered", "2026-04-02T10:15:00")])
             self.assertEqual(result["upsTrackingStatus"], "delivered")
             self.assertEqual(result["shippingEstimate"]["status"], "delivered")
+            self.assertEqual(result["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
             self.assertEqual(result["trackingNumber"], "1ZTEST001")
         finally:
             service.woo_commerce.is_configured = original_is_configured

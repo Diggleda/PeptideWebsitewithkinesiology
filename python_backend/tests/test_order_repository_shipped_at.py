@@ -249,6 +249,87 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertEqual(order["upsTrackingStatus"], "delivered")
         self.assertEqual(order["shippingEstimate"]["status"], "delivered")
 
+    def test_row_to_order_treats_unknown_ups_tracking_status_as_absent(self):
+        order = order_repository._row_to_order(
+            {
+                "id": "order-8b",
+                "user_id": "user-8b",
+                "pricing_mode": "wholesale",
+                "items": "[]",
+                "total": 0,
+                "items_subtotal": 0,
+                "shipping_total": 0,
+                "shipping_rate": '{"status":"shipped"}',
+                "integrations": "{}",
+                "shipping_address": "{}",
+                "tracking_number": "1Z999",
+                "ups_tracking_status": "unknown",
+                "shipped_at": None,
+                "physician_certified": 0,
+                "status": "completed",
+                "created_at": datetime(2026, 3, 1, 12, 0, 0),
+                "updated_at": datetime(2026, 3, 1, 12, 0, 0),
+            }
+        )
+
+        self.assertIsNone(order["upsTrackingStatus"])
+        self.assertEqual(order["shippingEstimate"]["status"], "shipped")
+
+    @patch("python_backend.repositories.order_repository.update")
+    @patch(
+        "python_backend.repositories.order_repository.find_by_id",
+        return_value={
+            "id": "order-10",
+            "shippingEstimate": {"carrierId": "ups"},
+            "upsTrackingStatus": "in_transit",
+        },
+    )
+    def test_update_ups_tracking_status_persists_delivered_at_in_shipping_estimate(self, _find_by_id, mock_update):
+        mock_update.side_effect = lambda order: order
+
+        result = order_repository.update_ups_tracking_status(
+            "order-10",
+            ups_tracking_status="delivered",
+            delivered_at="2026-04-02T10:15:00",
+        )
+
+        self.assertEqual(result["upsTrackingStatus"], "delivered")
+        self.assertEqual(result["upsDeliveredAt"], "2026-04-02T10:15:00")
+        self.assertEqual(result["shippingEstimate"]["status"], "delivered")
+        self.assertEqual(result["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
+
+    @patch("python_backend.repositories.order_repository.mysql_client.fetch_one")
+    @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)
+    def test_find_by_order_identifier_matches_hash_prefixed_woo_number(self, _using_mysql, mock_fetch_one):
+        mock_fetch_one.return_value = {
+            "id": "order-9",
+            "user_id": "user-9",
+            "pricing_mode": "wholesale",
+            "items": "[]",
+            "total": 0,
+            "items_subtotal": 0,
+            "shipping_total": 0,
+            "shipping_rate": "{}",
+            "integrations": "{}",
+            "shipping_address": "{}",
+            "tracking_number": None,
+            "ups_tracking_status": None,
+            "shipped_at": None,
+            "physician_certified": 0,
+            "status": "completed",
+            "woo_order_number": "#1396",
+            "created_at": datetime(2026, 3, 1, 12, 0, 0),
+            "updated_at": datetime(2026, 3, 1, 12, 0, 0),
+        }
+
+        order = order_repository.find_by_order_identifier("1396")
+
+        self.assertIsNotNone(order)
+        query, params = mock_fetch_one.call_args[0]
+        self.assertIn("woo_order_number IN", query)
+        self.assertIn("1396", params.values())
+        self.assertIn("#1396", params.values())
+
 
 if __name__ == "__main__":
     unittest.main()

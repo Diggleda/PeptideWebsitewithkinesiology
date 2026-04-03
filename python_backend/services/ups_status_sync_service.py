@@ -220,7 +220,9 @@ def _normalize_text(value: Any) -> str:
 
 def _normalize_ups_status(value: Any) -> Optional[str]:
     normalized = ups_tracking.normalize_tracking_status(value)
-    return normalized or None
+    if not normalized or normalized == "unknown":
+        return None
+    return normalized
 
 
 def _parse_order_datetime(value: Any) -> Optional[datetime]:
@@ -458,6 +460,7 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     missing += 1
                     continue
                 next_status = _normalize_ups_status(info.get("trackingStatus") or info.get("trackingStatusRaw"))
+                delivered_at = str(info.get("deliveredAt") or "").strip() or None
                 if not next_status:
                     if info.get("error"):
                         failed += 1
@@ -465,9 +468,25 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                         missing += 1
                     continue
                 current_status = _normalize_ups_status(order.get("upsTrackingStatus") or order.get("ups_tracking_status"))
-                if current_status == next_status:
+                current_delivered_at = str(
+                    (
+                        (order.get("shippingEstimate") or {}).get("deliveredAt")
+                        if isinstance(order.get("shippingEstimate"), dict)
+                        else None
+                    )
+                    or order.get("upsDeliveredAt")
+                    or order.get("ups_delivered_at")
+                    or ""
+                ).strip() or None
+                if current_status == next_status and (
+                    next_status != "delivered" or not delivered_at or current_delivered_at == delivered_at
+                ):
                     continue
-                order_repository.update_ups_tracking_status(order_id, ups_tracking_status=next_status)
+                order_repository.update_ups_tracking_status(
+                    order_id,
+                    ups_tracking_status=next_status,
+                    delivered_at=delivered_at,
+                )
                 updated += 1
             except Exception as exc:
                 failed += 1

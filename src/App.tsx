@@ -774,6 +774,7 @@ interface AccountShippingEstimate {
   carrierId?: string | null;
   serviceCode?: string | null;
   serviceType?: string | null;
+  status?: string | null;
   estimatedDeliveryDays?: number | null;
   deliveryDateGuaranteed?: string | null;
   rate?: number | null;
@@ -782,6 +783,7 @@ interface AccountShippingEstimate {
   packageDimensions?: { length?: number | null; width?: number | null; height?: number | null } | null;
   weightOz?: number | null;
   estimatedArrivalDate?: string | null;
+  deliveredAt?: string | null;
   meta?: Record<string, any> | null;
 }
 
@@ -849,6 +851,8 @@ interface AccountOrderSummary {
   wooOrderId?: string | null;
   cancellationId?: string | null;
   expectedShipmentWindow?: string | null;
+  upsTrackingStatus?: string | null;
+  upsDeliveredAt?: string | null;
 }
 
 const humanizeAccountOrderStatus = (status?: string | null): string => {
@@ -859,6 +863,95 @@ const humanizeAccountOrderStatus = (status?: string | null): string => {
     .split(/[_\s]+/)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(" ");
+};
+
+const normalizeTrackingStatusToken = (value?: string | null) => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  return raw.replace(/[\s-]+/g, "_");
+};
+
+const formatTrackingDeliveredDate = (value?: string | null) => {
+  const date = parseBackendTimestamp(value);
+  if (!date) return null;
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const resolveOrderDeliveredAt = (order?: AccountOrderSummary | null): string | null => {
+  if (!order || typeof order !== "object") {
+    return null;
+  }
+  const shippingEstimate =
+    order.shippingEstimate && typeof order.shippingEstimate === "object"
+      ? order.shippingEstimate
+      : null;
+  const integrations = parseMaybeJson(order.integrationDetails || order.integrations || null) || {};
+  const carrierTracking = parseMaybeJson(
+    (integrations as any)?.carrierTracking || (integrations as any)?.carrier_tracking || null,
+  ) || {};
+  const candidates = [
+    (order as any).upsDeliveredAt,
+    (order as any).ups_delivered_at,
+    shippingEstimate?.deliveredAt,
+    (shippingEstimate as any)?.delivered_at,
+    carrierTracking?.deliveredAt,
+    carrierTracking?.delivered_at,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
+const resolveOrderTrackingStatusRaw = (order?: AccountOrderSummary | null): string | null => {
+  if (!order || typeof order !== "object") {
+    return null;
+  }
+  const shippingEstimate =
+    order.shippingEstimate && typeof order.shippingEstimate === "object"
+      ? order.shippingEstimate
+      : null;
+  const integrations = parseMaybeJson(order.integrationDetails || order.integrations || null) || {};
+  const carrierTracking = parseMaybeJson(
+    (integrations as any)?.carrierTracking || (integrations as any)?.carrier_tracking || null,
+  ) || {};
+  const candidates = [
+    (order as any).upsTrackingStatus,
+    (order as any).ups_tracking_status,
+    shippingEstimate?.status,
+    carrierTracking?.trackingStatusRaw,
+    carrierTracking?.trackingStatus,
+    carrierTracking?.tracking_status,
+    carrierTracking?.status,
+    carrierTracking?.deliveryStatus,
+    carrierTracking?.delivery_status,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
+const buildOrderTrackingStatusLine = (order?: AccountOrderSummary | null): string | null => {
+  const rawStatus = resolveOrderTrackingStatusRaw(order);
+  if (!rawStatus) {
+    return null;
+  }
+  const deliveredDateLabel = formatTrackingDeliveredDate(resolveOrderDeliveredAt(order));
+  const normalizedStatus = normalizeTrackingStatusToken(rawStatus);
+  const label = humanizeAccountOrderStatus(rawStatus);
+  if (deliveredDateLabel && normalizedStatus?.includes("delivered")) {
+    return `${label} on ${deliveredDateLabel}`;
+  }
+  return label;
 };
 
 const formatPepProPaymentMethodLabel = (value?: string | null): string | null => {
@@ -2168,6 +2261,10 @@ const normalizeShippingEstimateField = (
     carrierId: estimate.carrierId || estimate.carrier_id || null,
     serviceCode: estimate.serviceCode || estimate.service_code || null,
     serviceType: estimate.serviceType || estimate.service_type || null,
+    status:
+      typeof estimate.status === "string" && estimate.status.trim().length > 0
+        ? estimate.status.trim()
+        : null,
     estimatedDeliveryDays: Number.isFinite(
       Number(estimate.estimatedDeliveryDays),
     )
@@ -2182,6 +2279,12 @@ const normalizeShippingEstimateField = (
         ? normalizeDateToIso(estimate.estimatedArrivalDate)
         : typeof estimate.estimated_arrival_date === "string"
           ? normalizeDateToIso(estimate.estimated_arrival_date)
+          : null,
+    deliveredAt:
+      typeof estimate.deliveredAt === "string"
+        ? estimate.deliveredAt.trim() || null
+        : typeof estimate.delivered_at === "string"
+          ? estimate.delivered_at.trim() || null
           : null,
     packageCode:
       estimate.packageCode ||
@@ -2371,6 +2474,14 @@ const mergeAccountOrderSummaryPreservingSeed = (
     normalizeStringField(resolveTrackingNumber(baseOrder)) ||
     null;
   merged.shippingEstimate = incomingOrder.shippingEstimate || baseOrder.shippingEstimate || null;
+  merged.upsTrackingStatus =
+    normalizeStringField(incomingOrder.upsTrackingStatus) ||
+    normalizeStringField(baseOrder.upsTrackingStatus) ||
+    null;
+  merged.upsDeliveredAt =
+    normalizeStringField(incomingOrder.upsDeliveredAt) ||
+    normalizeStringField(baseOrder.upsDeliveredAt) ||
+    null;
   merged.shippingAddress = pickAddress(incomingOrder.shippingAddress, baseOrder.shippingAddress);
   merged.billingAddress = pickAddress(incomingOrder.billingAddress, baseOrder.billingAddress);
   merged.integrations =
@@ -2485,6 +2596,12 @@ const mergeWooSummaryIntoLocal = (
   }
   if (!localOrder.shippingEstimate && wooOrder.shippingEstimate) {
     localOrder.shippingEstimate = wooOrder.shippingEstimate;
+  }
+  if (!localOrder.upsTrackingStatus && wooOrder.upsTrackingStatus) {
+    localOrder.upsTrackingStatus = wooOrder.upsTrackingStatus;
+  }
+  if (!localOrder.upsDeliveredAt && wooOrder.upsDeliveredAt) {
+    localOrder.upsDeliveredAt = wooOrder.upsDeliveredAt;
   }
   const localExpectedShipmentWindow = normalizeStringField(
     localOrder.expectedShipmentWindow ?? (localOrder as any).expected_shipment_window,
@@ -2648,6 +2765,10 @@ const normalizeAccountOrdersResponse = (
             order?.shippingEstimate || order?.shipping_estimate,
             { fallbackDate: createdAt || null },
           ),
+          upsTrackingStatus:
+            normalizeStringField(order?.upsTrackingStatus ?? order?.ups_tracking_status) || null,
+          upsDeliveredAt:
+            normalizeStringField(order?.upsDeliveredAt ?? order?.ups_delivered_at) || null,
           shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
           taxTotal: coerceNumber(order?.taxTotal) ?? null,
           physicianCertified: order?.physicianCertified === true,
@@ -2739,6 +2860,10 @@ const normalizeAccountOrdersResponse = (
             order?.shippingEstimate || order?.shipping_estimate,
             { fallbackDate: createdAt || null },
           ),
+          upsTrackingStatus:
+            normalizeStringField(order?.upsTrackingStatus ?? order?.ups_tracking_status) || null,
+          upsDeliveredAt:
+            normalizeStringField(order?.upsDeliveredAt ?? order?.ups_delivered_at) || null,
           shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
           taxTotal: coerceNumber(order?.taxTotal) ?? null,
           physicianCertified: order?.physicianCertified === true,
@@ -2842,6 +2967,10 @@ const normalizeAccountOrdersResponse = (
                 null,
             },
           ),
+          upsTrackingStatus:
+            normalizeStringField(order?.upsTrackingStatus ?? order?.ups_tracking_status) || null,
+          upsDeliveredAt:
+            normalizeStringField(order?.upsDeliveredAt ?? order?.ups_delivered_at) || null,
           shippingTotal:
             coerceNumber(order?.shippingTotal ?? order?.shipping_total) ?? null,
           taxTotal:
@@ -7944,11 +8073,17 @@ function MainApp() {
           salesOrdersLoaded?: boolean;
 		    phone?: string | null;
             contactPhones?: string[] | null;
-		    address?: string | null;
-		    addressOrigin?: "prospect" | "user" | "order" | "unknown" | null;
-        leadTypeLabel?: string | null;
-		    lastOrderDate?: string | null;
-		    avgOrderValue?: number | null;
+					    address?: string | null;
+					    addressOrigin?: "prospect" | "user" | "order" | "unknown" | null;
+              officeAddressLine1?: string | null;
+              officeAddressLine2?: string | null;
+              officeCity?: string | null;
+              officeState?: string | null;
+              officePostalCode?: string | null;
+              officeCountry?: string | null;
+	        leadTypeLabel?: string | null;
+					    lastOrderDate?: string | null;
+					    avgOrderValue?: number | null;
 		    role: string;
 		    ownerSalesRepId?: string | null;
 		    ownerSalesRepName?: string | null;
@@ -7967,10 +8102,18 @@ function MainApp() {
       >([]);
       const salesDoctorDetailRef = useRef<typeof salesDoctorDetail>(null);
       const salesDoctorDetailStackRef = useRef<NonNullable<typeof salesDoctorDetail>[]>([]);
-      const normalizeSalesDoctorContactValues = useCallback((...values: unknown[]) => {
-        const normalized: string[] = [];
-        const pushValue = (value: unknown) => {
-          const text = String(value || "").trim();
+      type SalesDoctorAddressFieldKey =
+        | "officeAddressLine1"
+        | "officeAddressLine2"
+        | "officeCity"
+        | "officeState"
+        | "officePostalCode"
+        | "officeCountry";
+      type SalesDoctorAddressFields = Record<SalesDoctorAddressFieldKey, string | null>;
+	      const normalizeSalesDoctorContactValues = useCallback((...values: unknown[]) => {
+	        const normalized: string[] = [];
+	        const pushValue = (value: unknown) => {
+	          const text = String(value || "").trim();
           if (!text || normalized.includes(text)) {
             return;
           }
@@ -8005,8 +8148,156 @@ function MainApp() {
           }
           pushValue(value);
         };
-        values.forEach(visit);
-        return normalized;
+	        values.forEach(visit);
+	        return normalized;
+	      }, []);
+      const normalizeSalesDoctorTextValue = useCallback((...values: unknown[]) => {
+        for (const value of values) {
+          if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (trimmed) {
+              return trimmed;
+            }
+            continue;
+          }
+          if (typeof value === "number" && Number.isFinite(value)) {
+            return String(value);
+          }
+        }
+        return null;
+      }, []);
+      const buildSalesDoctorOfficeAddress = useCallback((fields: Partial<SalesDoctorAddressFields>) => {
+        const parts = [
+          fields.officeAddressLine1,
+          fields.officeAddressLine2,
+          [fields.officeCity, fields.officeState, fields.officePostalCode]
+            .filter((part) => typeof part === "string" && part.trim().length > 0)
+            .join(", "),
+          fields.officeCountry,
+        ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+        return parts.length > 0 ? parts.join("\n") : null;
+      }, []);
+      const hasSalesDoctorOfficeAddressFields = useCallback((fields: SalesDoctorAddressFields) => {
+        return Object.values(fields).some(
+          (value) => typeof value === "string" && value.trim().length > 0,
+        );
+      }, []);
+      const resolveSalesDoctorAddressFields = useCallback(
+        (...sources: any[]): SalesDoctorAddressFields => {
+          const candidates = sources.filter(Boolean);
+          const pick = (
+            ...resolverValues: Array<(source: any) => unknown>
+          ) => {
+            const values: unknown[] = [];
+            candidates.forEach((source) => {
+              resolverValues.forEach((resolver) => values.push(resolver(source)));
+            });
+            return normalizeSalesDoctorTextValue(...values);
+          };
+          return {
+            officeAddressLine1: pick(
+              (source) => source?.officeAddressLine1,
+              (source) => source?.office_address_line1,
+              (source) => source?.addressLine1,
+              (source) => source?.address_line1,
+              (source) => source?.address1,
+              (source) => source?.address_1,
+            ),
+            officeAddressLine2: pick(
+              (source) => source?.officeAddressLine2,
+              (source) => source?.office_address_line2,
+              (source) => source?.addressLine2,
+              (source) => source?.address_line2,
+              (source) => source?.address2,
+              (source) => source?.address_2,
+            ),
+            officeCity: pick(
+              (source) => source?.officeCity,
+              (source) => source?.office_city,
+              (source) => source?.city,
+            ),
+            officeState: pick(
+              (source) => source?.officeState,
+              (source) => source?.office_state,
+              (source) => source?.state,
+            ),
+            officePostalCode: pick(
+              (source) => source?.officePostalCode,
+              (source) => source?.office_postal_code,
+              (source) => source?.postalCode,
+              (source) => source?.postal_code,
+              (source) => source?.postcode,
+            ),
+            officeCountry: pick(
+              (source) => source?.officeCountry,
+              (source) => source?.office_country,
+              (source) => source?.country,
+            ),
+          };
+        },
+        [normalizeSalesDoctorTextValue],
+      );
+      const parseSalesDoctorOfficeAddress = useCallback((value: string | null | undefined): SalesDoctorAddressFields => {
+        const emptyFields: SalesDoctorAddressFields = {
+          officeAddressLine1: null,
+          officeAddressLine2: null,
+          officeCity: null,
+          officeState: null,
+          officePostalCode: null,
+          officeCountry: null,
+        };
+        const normalizedLines = String(value || "")
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+        if (normalizedLines.length === 0) {
+          return emptyFields;
+        }
+        const lastLine = normalizedLines[normalizedLines.length - 1] || "";
+        const hasCountryLine = normalizedLines.length >= 2 && !lastLine.includes(",");
+        const country = hasCountryLine ? lastLine : null;
+        const withoutCountry = hasCountryLine
+          ? normalizedLines.slice(0, Math.max(0, normalizedLines.length - 1))
+          : normalizedLines;
+        const cityStateZipIndex = withoutCountry.findIndex((line) => line.includes(","));
+        const targetIndex = cityStateZipIndex >= 0 ? cityStateZipIndex : withoutCountry.length - 1;
+        const cityStateZipLine = targetIndex >= 0 ? withoutCountry[targetIndex] : null;
+        const parseCityStatePostal = (line: string | null) => {
+          if (!line) {
+            return {
+              officeCity: null,
+              officeState: null,
+              officePostalCode: null,
+            };
+          }
+          const parts = line.split(",").map((part) => part.trim()).filter(Boolean);
+          if (parts.length === 0) {
+            return {
+              officeCity: null,
+              officeState: null,
+              officePostalCode: null,
+            };
+          }
+          const city = parts[0] || null;
+          const rest = parts.slice(1).join(" ").trim();
+          const tokens = rest.split(/\s+/).filter(Boolean);
+          return {
+            officeCity: city,
+            officeState: tokens.length > 0 ? tokens[0] : null,
+            officePostalCode: tokens.length > 1 ? tokens.slice(1).join(" ") : null,
+          };
+        };
+        const remainingLines =
+          targetIndex >= 0 ? withoutCountry.filter((_, index) => index !== targetIndex) : withoutCountry;
+        const parsedLocation = parseCityStatePostal(cityStateZipLine);
+        return {
+          officeAddressLine1: remainingLines[0] || null,
+          officeAddressLine2: remainingLines.length > 1 ? remainingLines.slice(1).join(", ") : null,
+          officeCity: parsedLocation.officeCity,
+          officeState: parsedLocation.officeState,
+          officePostalCode: parsedLocation.officePostalCode,
+          officeCountry: country,
+        };
       }, []);
       useEffect(() => {
         salesDoctorDetailRef.current = salesDoctorDetail;
@@ -8029,17 +8320,28 @@ function MainApp() {
           ),
         [normalizeSalesDoctorContactValues, salesDoctorDetail?.contactEmails, salesDoctorDetail?.email],
       );
-      const salesDoctorDetailPhoneValues = useMemo(
-        () =>
-          normalizeSalesDoctorContactValues(
-            salesDoctorDetail?.contactPhones,
-            salesDoctorDetail?.phone,
-          ),
-        [normalizeSalesDoctorContactValues, salesDoctorDetail?.contactPhones, salesDoctorDetail?.phone],
-      );
-      const buildSalesDoctorContactHref = useCallback(
-        (value: string, kind: "email" | "phone") => {
-          const normalized = String(value || "").trim();
+	      const salesDoctorDetailPhoneValues = useMemo(
+	        () =>
+	          normalizeSalesDoctorContactValues(
+	            salesDoctorDetail?.contactPhones,
+	            salesDoctorDetail?.phone,
+	          ),
+	        [normalizeSalesDoctorContactValues, salesDoctorDetail?.contactPhones, salesDoctorDetail?.phone],
+	      );
+      const salesDoctorResolvedAddressFields = useMemo(() => {
+        const directFields = resolveSalesDoctorAddressFields(salesDoctorDetail);
+        return hasSalesDoctorOfficeAddressFields(directFields)
+          ? directFields
+          : parseSalesDoctorOfficeAddress(salesDoctorDetail?.address);
+      }, [
+        hasSalesDoctorOfficeAddressFields,
+        parseSalesDoctorOfficeAddress,
+        resolveSalesDoctorAddressFields,
+        salesDoctorDetail,
+      ]);
+	      const buildSalesDoctorContactHref = useCallback(
+	        (value: string, kind: "email" | "phone") => {
+	          const normalized = String(value || "").trim();
           if (!normalized) return null;
           if (kind === "phone") {
             const telValue = normalized.replace(/[^0-9+]/g, "");
@@ -8684,8 +8986,8 @@ function MainApp() {
 		    user?.role,
 		  ]);
 	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
-  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
-  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
+	  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
+	  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
 	  const triggerSalesDoctorNotesSaved = useCallback(() => {
     setSalesDoctorNotesSaved(true);
     if (salesDoctorNotesSavedTimeoutRef.current) {
@@ -8695,12 +8997,10 @@ function MainApp() {
       setSalesDoctorNotesSaved(false);
       salesDoctorNotesSavedTimeoutRef.current = null;
     }, 1000);
-  }, []);
-  const [salesDoctorAddingEmailRow, setSalesDoctorAddingEmailRow] = useState(false);
-  const [salesDoctorAddingPhoneRow, setSalesDoctorAddingPhoneRow] = useState(false);
-  const [salesDoctorAddressDraft, setSalesDoctorAddressDraft] = useState<string>("");
-  const [salesDoctorAddressSaving, setSalesDoctorAddressSaving] = useState(false);
-	
+	  }, []);
+	  const [salesDoctorAddingEmailRow, setSalesDoctorAddingEmailRow] = useState(false);
+	  const [salesDoctorAddingPhoneRow, setSalesDoctorAddingPhoneRow] = useState(false);
+		
 		  useEffect(() => {
 		    if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
 		      setSalesDoctorNoteDraft("");
@@ -8822,12 +9122,17 @@ function MainApp() {
 			        const prospectOfficeAddress = buildOfficeAddress(prospect);
 			        const userOfficeAddress =
 			          buildOfficeAddress(userRecord) || buildAddressFallback(userRecord);
-			        const resolvedAddress = userOfficeAddress || prospectOfficeAddress || null;
-			        const resolvedAddressOrigin: "prospect" | "user" | null = userOfficeAddress
-			          ? "user"
-			          : prospectOfficeAddress
-			            ? "prospect"
-			            : null;
+				        const resolvedAddress = userOfficeAddress || prospectOfficeAddress || null;
+				        const resolvedAddressOrigin: "prospect" | "user" | null = userOfficeAddress
+				          ? "user"
+				          : prospectOfficeAddress
+				            ? "prospect"
+				            : null;
+                const resolvedOfficeAddressFields = hasSalesDoctorOfficeAddressFields(
+                  resolveSalesDoctorAddressFields(userRecord, prospect),
+                )
+                  ? resolveSalesDoctorAddressFields(userRecord, prospect)
+                  : parseSalesDoctorOfficeAddress(resolvedAddress);
 
 			        const resolvedName =
 			          typeof userRecord?.name === "string" && userRecord.name.trim()
@@ -8880,12 +9185,18 @@ function MainApp() {
 			              if (resolvedPhone) {
 			                next.phone = resolvedPhone;
 			              }
-			              if (resolvedAddress) {
-			                next.address = resolvedAddress;
-			                next.addressOrigin = resolvedAddressOrigin;
-			              }
-			              return next;
-			            });
+				              if (resolvedAddress) {
+				                next.address = resolvedAddress;
+				                next.addressOrigin = resolvedAddressOrigin;
+				              }
+                      next.officeAddressLine1 = resolvedOfficeAddressFields.officeAddressLine1;
+                      next.officeAddressLine2 = resolvedOfficeAddressFields.officeAddressLine2;
+                      next.officeCity = resolvedOfficeAddressFields.officeCity;
+                      next.officeState = resolvedOfficeAddressFields.officeState;
+                      next.officePostalCode = resolvedOfficeAddressFields.officePostalCode;
+                      next.officeCountry = resolvedOfficeAddressFields.officeCountry;
+				              return next;
+				            });
 			          }
 			          setSalesDoctorNotesLoading(false);
 			          setSalesDoctorNotesSaved(false);
@@ -8903,23 +9214,18 @@ function MainApp() {
 	      canceled = true;
 	    };
 	  }, [
+        hasSalesDoctorOfficeAddressFields,
+        parseSalesDoctorOfficeAddress,
+        resolveSalesDoctorAddressFields,
 	    salesDoctorDetail?.doctorId,
 	    salesDoctorDetail?.referralId,
 	    salesDoctorDetail?.role,
 	    salesDoctorNotes,
 	  ]);
 
-  useEffect(() => {
-    if (!salesDoctorDetail?.doctorId) {
-      setSalesDoctorAddressDraft("");
-      return;
-    }
-    setSalesDoctorAddressDraft(salesDoctorDetail.address || "");
-  }, [salesDoctorDetail?.address, salesDoctorDetail?.doctorId]);
-
-  useEffect(() => {
-    setSalesDoctorAddingEmailRow(false);
-    setSalesDoctorAddingPhoneRow(false);
+	  useEffect(() => {
+	    setSalesDoctorAddingEmailRow(false);
+	    setSalesDoctorAddingPhoneRow(false);
   }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.referralId]);
 
 	  useEffect(() => {
@@ -9111,121 +9417,87 @@ function MainApp() {
     ],
   );
 
-	  const saveSalesDoctorAddress = useCallback(async () => {
-	    if (!salesDoctorDetail?.doctorId) {
-	      return;
-	    }
-	    const doctorId = String(salesDoctorDetail.doctorId).trim();
-	    if (!doctorId) return;
-	    const trimmed = salesDoctorAddressDraft.trim();
-	    const existing = (salesDoctorDetail.address || "").trim();
-	    if (trimmed === existing) {
-	      return;
-	    }
-    setSalesDoctorAddressSaving(true);
-    try {
-      const normalizedLines = salesDoctorAddressDraft
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-
-      const rawCountry = normalizedLines.length > 0 ? normalizedLines[normalizedLines.length - 1] : "";
-      const countryLooksLikeUs =
-        Boolean(rawCountry) &&
-        (/^(us|usa|united states|united states of america)$/i.test(rawCountry) || rawCountry.toUpperCase() === "US");
-
-      const country = countryLooksLikeUs ? "US" : null;
-      const withoutCountry =
-        country ? normalizedLines.slice(0, Math.max(0, normalizedLines.length - 1)) : normalizedLines;
-
-      const cityStateZipIndex = withoutCountry.findIndex((line) => line.includes(","));
-      const cityStateZipLine = cityStateZipIndex >= 0 ? withoutCountry[cityStateZipIndex] : null;
-
-      const parseCityStatePostal = (value: string | null) => {
-        if (!value) return { city: null, state: null, postalCode: null };
-        const parts = value.split(",").map((p) => p.trim()).filter(Boolean);
-        if (parts.length === 0) return { city: null, state: null, postalCode: null };
-        const city = parts[0] || null;
-        const rest = parts.slice(1).join(" ").trim();
-        const tokens = rest.split(/\s+/).filter(Boolean);
-        const state = tokens.length > 0 ? tokens[0] : null;
-        const postalCandidate =
-          tokens.length > 1 ? tokens[tokens.length - 1] : parts.length > 2 ? parts[parts.length - 1] : null;
-        const postalCode = postalCandidate || null;
-        return { city, state, postalCode };
+  const saveSalesDoctorAddressField = useCallback(
+    async (fieldKey: SalesDoctorAddressFieldKey, nextValue: string) => {
+      if (!salesDoctorDetail?.doctorId) {
+        return;
+      }
+      const doctorId = String(salesDoctorDetail.doctorId).trim();
+      if (!doctorId) {
+        return;
+      }
+      const normalizedNextValue = nextValue.trim() || null;
+      if ((salesDoctorResolvedAddressFields[fieldKey] || null) === normalizedNextValue) {
+        return;
+      }
+      const nextFields: SalesDoctorAddressFields = {
+        ...salesDoctorResolvedAddressFields,
+        [fieldKey]: normalizedNextValue,
       };
-
-      const { city, state, postalCode } = parseCityStatePostal(cityStateZipLine);
-      const withoutCityStateZip =
-        cityStateZipIndex >= 0 ? withoutCountry.filter((_, idx) => idx !== cityStateZipIndex) : withoutCountry;
-
-      const officeAddressLine1 = withoutCityStateZip.length > 0 ? withoutCityStateZip[0] : null;
-	      const officeAddressLine2 =
-	        withoutCityStateZip.length > 1 ? withoutCityStateZip.slice(1).join(", ") : null;
-
-	      const addressPayload = {
-	        officeAddressLine1: officeAddressLine1 || null,
-	        officeAddressLine2: officeAddressLine2 || null,
-	        officeCity: city || null,
-	        officeState: state || null,
-	        officePostalCode: postalCode || null,
-	        officeCountry: country || null,
-	      };
-
+      const addressPayload = {
+        officeAddressLine1: nextFields.officeAddressLine1,
+        officeAddressLine2: nextFields.officeAddressLine2,
+        officeCity: nextFields.officeCity,
+        officeState: nextFields.officeState,
+        officePostalCode: nextFields.officePostalCode,
+        officeCountry: nextFields.officeCountry,
+      };
+	      const nextAddress = buildSalesDoctorOfficeAddress(nextFields);
 	      const looksLikeProspectId =
 	        doctorId.startsWith("contact_form:") || doctorId.startsWith("manual:");
 	      let updatedProspect = false;
-	      try {
-	        if (!looksLikeProspectId) {
-	          await settingsAPI.updateUserProfile(doctorId, addressPayload);
-	        } else {
-	          throw new Error("PROSPECT_ADDRESS");
+        try {
+	        try {
+	          if (!looksLikeProspectId) {
+	            await settingsAPI.updateUserProfile(doctorId, addressPayload);
+	          } else {
+	            throw new Error("PROSPECT_ADDRESS");
+	          }
+	        } catch (error: any) {
+	          const status = typeof error?.status === "number" ? error.status : null;
+	          const message = typeof error?.message === "string" ? error.message : "";
+	          const doctorAccessRequired =
+	            status === 403 &&
+	            typeof message === "string" &&
+	            message.toLowerCase().includes("doctor access required");
+	          const shouldFallbackToProspect =
+	            looksLikeProspectId || status === 404 || status === 400 || doctorAccessRequired;
+	          if (!shouldFallbackToProspect) {
+	            throw error;
+	          }
+	          await referralAPI.upsertSalesProspect(doctorId, addressPayload);
+	          updatedProspect = true;
 	        }
-	      } catch (error: any) {
-	        const status = typeof error?.status === "number" ? error.status : null;
-	        const message = typeof error?.message === "string" ? error.message : "";
-	        const doctorAccessRequired =
-	          status === 403 &&
-	          typeof message === "string" &&
-	          message.toLowerCase().includes("doctor access required");
-	        const shouldFallbackToProspect =
-	          looksLikeProspectId || status === 404 || status === 400 || doctorAccessRequired;
-	        if (!shouldFallbackToProspect) {
-	          throw error;
-	        }
-	        await referralAPI.upsertSalesProspect(doctorId, addressPayload);
-	        updatedProspect = true;
-	      }
 
-      const nextAddressParts = [
-        officeAddressLine1,
-        officeAddressLine2,
-        [city, state, postalCode].filter(Boolean).join(", "),
-        country,
-      ].filter((part) => typeof part === "string" && part.trim().length > 0);
-      const nextAddress = nextAddressParts.length > 0 ? nextAddressParts.join("\n") : null;
-
-	      setSalesDoctorDetail((current) =>
-	        current ? { ...current, address: nextAddress } : current,
-	      );
-	      toast.success(updatedProspect ? "Lead address updated." : "Address updated.");
-	    } catch (error: any) {
-	      console.warn("[SalesDoctor] Failed to update address", error);
-	      toast.error(
-        typeof error?.message === "string" && error.message
-          ? error.message
-          : "Unable to update address right now.",
-      );
-    } finally {
-      setSalesDoctorAddressSaving(false);
-    }
-	  }, [
-	    salesDoctorAddressDraft,
-	    salesDoctorDetail?.address,
-	    salesDoctorDetail?.doctorId,
-	    referralAPI,
-	    settingsAPI,
-	  ]);
+	        setSalesDoctorDetail((current) =>
+	          current
+	            ? {
+	                ...current,
+	                ...nextFields,
+	                address: nextAddress,
+	                addressOrigin: updatedProspect ? "prospect" : "user",
+	              }
+	            : current,
+	        );
+	        toast.success(updatedProspect ? "Lead address updated." : "Address updated.");
+        } catch (error: any) {
+          console.warn("[SalesDoctor] Failed to update address", error);
+          toast.error(
+            typeof error?.message === "string" && error.message
+              ? error.message
+              : "Unable to update address right now.",
+          );
+          throw error;
+        }
+	    },
+    [
+      buildSalesDoctorOfficeAddress,
+      referralAPI,
+      salesDoctorDetail?.doctorId,
+      salesDoctorResolvedAddressFields,
+      settingsAPI,
+    ],
+  );
   const mergeSalesOrderDetail = useCallback(
     (detail: AccountOrderSummary | null) => {
       if (!detail) return;
@@ -9935,21 +10207,32 @@ function MainApp() {
         };
       };
 
-      const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
-        const aTime = resolveOrderSortTimeMs(a as any);
-        const bTime = resolveOrderSortTimeMs(b as any);
-        return bTime - aTime;
-      });
-      const latestOrder = ordersSorted[0];
-      const addressSource =
-        (latestOrder as any)?.shippingAddress ||
-        (latestOrder as any)?.shipping ||
-        (latestOrder as any)?.billingAddress ||
-        (latestOrder as any)?.billing ||
-        null;
-      const addressFromOrder =
-        addressSource &&
-        [
+	      const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
+	        const aTime = resolveOrderSortTimeMs(a as any);
+	        const bTime = resolveOrderSortTimeMs(b as any);
+	        return bTime - aTime;
+	      });
+      const currentDetail = salesDoctorDetailRef.current;
+      const currentDetailMatchesBucket =
+        Boolean(currentDetail) &&
+        String(currentDetail?.doctorId || "").trim().length > 0 &&
+        String(currentDetail?.doctorId || "").trim() === String(bucket?.doctorId || "").trim();
+	      const latestOrder = ordersSorted[0];
+	      const addressSource =
+	        (latestOrder as any)?.shippingAddress ||
+	        (latestOrder as any)?.shipping ||
+	        (latestOrder as any)?.billingAddress ||
+	        (latestOrder as any)?.billing ||
+	        null;
+      const resolvedOfficeAddressFields = resolveSalesDoctorAddressFields(
+        currentDetailMatchesBucket ? currentDetail : null,
+        bucket,
+        addressSource,
+      );
+      const addressFromFields = buildSalesDoctorOfficeAddress(resolvedOfficeAddressFields);
+	      const addressFromOrder =
+	        addressSource &&
+	        [
           [addressSource.firstName, addressSource.lastName]
             .filter(Boolean)
             .join(" ")
@@ -9963,10 +10246,10 @@ function MainApp() {
         ]
           .filter((part) => typeof part === "string" && part.trim().length > 0)
           .join("\n");
-	      const address =
-	        bucket.doctorAddress && bucket.doctorAddress.trim().length > 0
-	          ? bucket.doctorAddress
-	          : addressFromOrder || null;
+		      const address =
+		        bucket.doctorAddress && bucket.doctorAddress.trim().length > 0
+		          ? bucket.doctorAddress
+		          : addressFromFields || addressFromOrder || null;
 	      const addressOrigin: "prospect" | "user" | "order" | "unknown" | null =
 	        (bucket as any).addressOrigin ||
 	        (bucket.doctorAddress && bucket.doctorAddress.trim().length > 0
@@ -9982,12 +10265,7 @@ function MainApp() {
 	        relevantOrders.length > 0
 	          ? bucket.total / relevantOrders.length
 	          : null;
-      const normalizedRole = normalizeRole(sourceRole || "doctor") || "doctor";
-      const currentDetail = salesDoctorDetailRef.current;
-      const currentDetailMatchesBucket =
-        Boolean(currentDetail) &&
-        String(currentDetail?.doctorId || "").trim().length > 0 &&
-        String(currentDetail?.doctorId || "").trim() === String(bucket?.doctorId || "").trim();
+	      const normalizedRole = normalizeRole(sourceRole || "doctor") || "doctor";
       const contactEmails = normalizeSalesDoctorContactValues(
         currentDetailMatchesBucket ? currentDetail?.contactEmails : null,
         (bucket as any)?.contactEmails,
@@ -10095,16 +10373,22 @@ function MainApp() {
 	        orders: bucket.orders,
 	        personalOrders: Array.isArray(bucket.personalOrders) ? bucket.personalOrders : undefined,
 	        salesOrders: Array.isArray(bucket.salesOrders) ? bucket.salesOrders : undefined,
-	        phone:
-              contactPhones[0] ||
-	          bucket.doctorPhone ||
-	          (addressSource as any)?.phone ||
-	          (addressSource as any)?.phoneNumber ||
-	          null,
-            contactPhones,
-	        address,
-	        addressOrigin,
-          leadTypeLabel:
+		        phone:
+		          contactPhones[0] ||
+		          bucket.doctorPhone ||
+		          (addressSource as any)?.phone ||
+		          (addressSource as any)?.phoneNumber ||
+		          null,
+	            contactPhones,
+		        address,
+		        addressOrigin,
+            officeAddressLine1: resolvedOfficeAddressFields.officeAddressLine1,
+            officeAddressLine2: resolvedOfficeAddressFields.officeAddressLine2,
+            officeCity: resolvedOfficeAddressFields.officeCity,
+            officeState: resolvedOfficeAddressFields.officeState,
+            officePostalCode: resolvedOfficeAddressFields.officePostalCode,
+            officeCountry: resolvedOfficeAddressFields.officeCountry,
+	          leadTypeLabel:
             typeof (bucket as any)?.leadTypeLabel === "string"
               ? (bucket as any).leadTypeLabel
               : null,
@@ -10202,17 +10486,8 @@ function MainApp() {
         Number.isFinite(options.salesRepRetailRevenue)
           ? options.salesRepRetailRevenue
           : null;
-      const entryAddress =
-        [
-          entry?.officeAddressLine1,
-          entry?.officeAddressLine2,
-          [entry?.officeCity, entry?.officeState, entry?.officePostalCode]
-            .filter(Boolean)
-            .join(", "),
-          entry?.officeCountry,
-        ]
-          .filter((part) => typeof part === "string" && part.trim().length > 0)
-          .join("\n") || null;
+      const entryOfficeAddressFields = resolveSalesDoctorAddressFields(entry);
+	      const entryAddress = buildSalesDoctorOfficeAddress(entryOfficeAddressFields);
 
       openSalesDoctorDetail(
         {
@@ -10226,11 +10501,17 @@ function MainApp() {
           studyFocus:
             typeof entry?.studyFocus === "string" ? entry.studyFocus : null,
           bio: typeof entry?.bio === "string" ? entry.bio : null,
-          doctorPhone:
-            entry?.phone || entry?.phoneNumber || entry?.phone_number || null,
-          doctorAddress: entryAddress,
-          addressOrigin: entryAddress ? "user" : null,
-          ownerSalesRepId:
+	          doctorPhone:
+	            entry?.phone || entry?.phoneNumber || entry?.phone_number || null,
+	          doctorAddress: entryAddress,
+	          addressOrigin: entryAddress ? "user" : null,
+            officeAddressLine1: entryOfficeAddressFields.officeAddressLine1,
+            officeAddressLine2: entryOfficeAddressFields.officeAddressLine2,
+            officeCity: entryOfficeAddressFields.officeCity,
+            officeState: entryOfficeAddressFields.officeState,
+            officePostalCode: entryOfficeAddressFields.officePostalCode,
+            officeCountry: entryOfficeAddressFields.officeCountry,
+	          ownerSalesRepId:
             entry?.ownerSalesRepId ||
             entry?.owner_sales_rep_id ||
             entry?.salesRepId ||
@@ -10339,13 +10620,19 @@ function MainApp() {
               },
             }));
 
-            const supplementalPatch: Partial<NonNullable<typeof salesDoctorDetail>> = {
-              avatar: supplementalAvatar,
-              greaterArea: supplementalGreaterArea,
-              studyFocus: supplementalStudyFocus,
-              bio: supplementalBio,
-              hasResellerPermitUploaded: supplementalHasResellerPermitUploaded,
-            };
+	            const supplementalPatch: Partial<NonNullable<typeof salesDoctorDetail>> = {
+	              avatar: supplementalAvatar,
+	              greaterArea: supplementalGreaterArea,
+	              studyFocus: supplementalStudyFocus,
+	              bio: supplementalBio,
+	              hasResellerPermitUploaded: supplementalHasResellerPermitUploaded,
+                officeAddressLine1: supplementalProfile?.officeAddressLine1 ?? null,
+                officeAddressLine2: supplementalProfile?.officeAddressLine2 ?? null,
+                officeCity: supplementalProfile?.officeCity ?? null,
+                officeState: supplementalProfile?.officeState ?? null,
+                officePostalCode: supplementalProfile?.officePostalCode ?? null,
+                officeCountry: supplementalProfile?.officeCountry ?? null,
+	            };
             if (supplementalPhone) {
               supplementalPatch.phone = supplementalPhone;
             }
@@ -10483,10 +10770,20 @@ function MainApp() {
                       : typeof entry?.bio === "string"
                         ? entry.bio
                         : null,
-	                doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
-	                doctorAddress,
-	                addressOrigin: doctorAddress ? "user" : null,
-                ownerSalesRepId:
+		                doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
+		                doctorAddress,
+		                addressOrigin: doctorAddress ? "user" : null,
+                    officeAddressLine1:
+                      doctorFromList?.officeAddressLine1 ?? entry?.officeAddressLine1 ?? null,
+                    officeAddressLine2:
+                      doctorFromList?.officeAddressLine2 ?? entry?.officeAddressLine2 ?? null,
+                    officeCity: doctorFromList?.officeCity ?? entry?.officeCity ?? null,
+                    officeState: doctorFromList?.officeState ?? entry?.officeState ?? null,
+                    officePostalCode:
+                      doctorFromList?.officePostalCode ?? entry?.officePostalCode ?? null,
+                    officeCountry:
+                      doctorFromList?.officeCountry ?? entry?.officeCountry ?? null,
+	                ownerSalesRepId:
                   doctorFromList?.ownerSalesRepId ||
                   doctorFromList?.owner_sales_rep_id ||
                   doctorFromList?.salesRepId ||
@@ -10620,14 +10917,20 @@ function MainApp() {
                   : typeof entry?.bio === "string"
                     ? entry.bio
                   : null,
-              phone:
-                refreshedDoctorFromList?.phone ||
-                refreshedDoctorFromList?.phoneNumber ||
-                refreshedDoctorFromList?.phone_number ||
-                null,
-              address: refreshedDoctorAddress,
-              addressOrigin: refreshedDoctorAddress ? "user" : null,
-              ownerSalesRepId:
+	              phone:
+	                refreshedDoctorFromList?.phone ||
+	                refreshedDoctorFromList?.phoneNumber ||
+	                refreshedDoctorFromList?.phone_number ||
+	                null,
+	              address: refreshedDoctorAddress,
+	              addressOrigin: refreshedDoctorAddress ? "user" : null,
+                officeAddressLine1: refreshedDoctorFromList?.officeAddressLine1 ?? null,
+                officeAddressLine2: refreshedDoctorFromList?.officeAddressLine2 ?? null,
+                officeCity: refreshedDoctorFromList?.officeCity ?? null,
+                officeState: refreshedDoctorFromList?.officeState ?? null,
+                officePostalCode: refreshedDoctorFromList?.officePostalCode ?? null,
+                officeCountry: refreshedDoctorFromList?.officeCountry ?? null,
+	              ownerSalesRepId:
                 refreshedDoctorFromList?.ownerSalesRepId ||
                 refreshedDoctorFromList?.owner_sales_rep_id ||
                 refreshedDoctorFromList?.salesRepId ||
@@ -10890,9 +11193,15 @@ function MainApp() {
                 entry?.phoneNumber ||
                 entry?.phone_number ||
                 null,
-              doctorAddress: address,
-              addressOrigin: address ? "user" : null,
-              ownerSalesRepId:
+	              doctorAddress: address,
+	              addressOrigin: address ? "user" : null,
+                officeAddressLine1: profile?.officeAddressLine1 ?? null,
+                officeAddressLine2: profile?.officeAddressLine2 ?? null,
+                officeCity: profile?.officeCity ?? null,
+                officeState: profile?.officeState ?? null,
+                officePostalCode: profile?.officePostalCode ?? null,
+                officeCountry: profile?.officeCountry ?? null,
+	              ownerSalesRepId:
                 modalResp?.ownerSalesRepId ||
                 profile?.salesRepId ||
                 profile?.sales_rep_id ||
@@ -30060,10 +30369,18 @@ function MainApp() {
                                 );
                                 return parts.length > 0 ? parts.join("\n") : null;
                               })();
-                              const doctorAddress = prospectAddress || accountAddress || null;
-                              const addressOrigin =
-                                prospectAddress ? "prospect" : accountAddress ? "user" : null;
-                              const contactEmails = normalizeSalesDoctorContactValues(
+	                              const doctorAddress = prospectAddress || accountAddress || null;
+	                              const addressOrigin =
+	                                prospectAddress ? "prospect" : accountAddress ? "user" : null;
+                                const addressFieldSource = prospectAddress
+                                  ? (record as any)
+                                  : accountAddress
+                                    ? (leadAccountProfile as any)
+                                    : null;
+                                const officeAddressFields = resolveSalesDoctorAddressFields(
+                                  addressFieldSource,
+                                );
+	                              const contactEmails = normalizeSalesDoctorContactValues(
                                 (record as any)?.contactEmails,
                                 (record as any)?.contact_emails_json,
                                 (record as any)?.referredContactEmail,
@@ -30100,10 +30417,16 @@ function MainApp() {
                                     ? leadAccountProfile?.profileImageUrl ?? null
                                     : null,
                                   doctorPhone: contactPhones[0] || record.referredContactPhone || null,
-                                  contactPhones,
-                                  doctorAddress,
-                                  addressOrigin,
-                                  leadTypeLabel,
+	                                  contactPhones,
+	                                  doctorAddress,
+	                                  addressOrigin,
+                                      officeAddressLine1: officeAddressFields.officeAddressLine1,
+                                      officeAddressLine2: officeAddressFields.officeAddressLine2,
+                                      officeCity: officeAddressFields.officeCity,
+                                      officeState: officeAddressFields.officeState,
+                                      officePostalCode: officeAddressFields.officePostalCode,
+                                      officeCountry: officeAddressFields.officeCountry,
+	                                  leadTypeLabel,
                                   ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
                                   orders: [],
                                   total: 0,
@@ -34906,25 +35229,27 @@ function MainApp() {
                               )) : (
                                 <div className="text-sm text-slate-500">—</div>
                               )}
-                              {canEditLeadContactLists ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setSalesDoctorAddingEmailRow(true)}
-                                  disabled={salesDoctorAddingEmailRow}
-                                  className={clsx(
-                                    "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
-                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
-                                    salesDoctorAddingEmailRow ? "cursor-not-allowed opacity-60" : "",
-                                  )}
-                                  aria-label="Add email line"
-                                  title="Add email line"
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </button>
+	                              {canEditLeadContactLists ? (
+	                                <div className="mb-1 pb-1 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSalesDoctorAddingEmailRow(true)}
+                                    disabled={salesDoctorAddingEmailRow}
+                                    className={clsx(
+                                      "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
+                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
+                                      salesDoctorAddingEmailRow ? "cursor-not-allowed opacity-60" : "",
+                                    )}
+                                    aria-label="Add email line"
+                                    title="Add email line"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </button>
+                                </div>
                               ) : null}
                             </div>
                           </div>
-                          <div className="border-t border-slate-200/80 pt-2 space-y-0.5">
+                          <div className="border-t border-slate-200/80 pt-2.5 space-y-0.5">
                             <div className="pl-4 space-y-0.5">
                               {phoneRows.length > 0 ? phoneRows.map((row, index) => {
                                 const canEditRow =
@@ -34992,21 +35317,23 @@ function MainApp() {
                               }) : (
                                 <div className="text-sm text-slate-500">—</div>
                               )}
-                              {canEditLeadContactLists ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setSalesDoctorAddingPhoneRow(true)}
-                                  disabled={salesDoctorAddingPhoneRow}
-                                  className={clsx(
-                                    "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
-                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
-                                    salesDoctorAddingPhoneRow ? "cursor-not-allowed opacity-60" : "",
-                                  )}
-                                  aria-label="Add phone line"
-                                  title="Add phone line"
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </button>
+		                              {canEditLeadContactLists ? (
+		                                <div className="mb-1 pb-4 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSalesDoctorAddingPhoneRow(true)}
+                                    disabled={salesDoctorAddingPhoneRow}
+                                    className={clsx(
+                                      "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
+                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
+                                      salesDoctorAddingPhoneRow ? "cursor-not-allowed opacity-60" : "",
+                                    )}
+                                    aria-label="Add phone line"
+                                    title="Add phone line"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </button>
+                                </div>
                               ) : null}
                             </div>
                           </div>
@@ -35018,55 +35345,73 @@ function MainApp() {
                   <p className="text-sm font-semibold text-slate-700">
                     Address
                   </p>
-	                  {(() => {
-	                    const canEditAddress = Boolean(
-                        !hideRepViewerSalesActorCommerceSections &&
-	                      salesDoctorDetail &&
-	                        !String(salesDoctorDetail.doctorId || "").startsWith("anon:") &&
-	                        (isAdmin(user?.role) ||
-	                          isSalesLead(user?.role) ||
-	                          (isRep(user?.role) &&
-	                            userSalesRepId &&
-                            salesDoctorDetail.ownerSalesRepId &&
-                            userSalesRepId === salesDoctorDetail.ownerSalesRepId)),
-                    );
-                    const trimmedDraft = salesDoctorAddressDraft.trim();
-                    const existingAddress = (salesDoctorDetail.address || "").trim();
-                    const hasChanges = trimmedDraft !== existingAddress;
-                    if (!canEditAddress) {
-                      return (
-                        <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700">
-                          <div className="min-w-max whitespace-pre">
-                            {salesDoctorDetail.address || "Unavailable"}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
-                        <div className="flex h-full min-h-0 flex-col gap-2">
-                        <Textarea
-                          value={salesDoctorAddressDraft}
-                          onChange={(event) => setSalesDoctorAddressDraft(event.target.value)}
-                          rows={4}
-                          placeholder="Address line 1&#10;Address line 2&#10;City, State ZIP&#10;Country"
-                          className="block min-h-0 flex-1 w-full rounded-md border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100 whitespace-pre-line"
-                        />
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="outline"
-                          className="self-start whitespace-nowrap px-4 py-2"
-                          onClick={() => void saveSalesDoctorAddress()}
-                          disabled={salesDoctorAddressSaving || !hasChanges}
-                        >
-                          {salesDoctorAddressSaving ? "Saving…" : "Save"}
-                        </Button>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
+		                  {(() => {
+		                    const canEditAddress = Boolean(
+	                        !hideRepViewerSalesActorCommerceSections &&
+		                      salesDoctorDetail &&
+		                        !String(salesDoctorDetail.doctorId || "").startsWith("anon:") &&
+		                        (isAdmin(user?.role) ||
+		                          isSalesLead(user?.role) ||
+		                          (isRep(user?.role) &&
+		                            userSalesRepId &&
+		                            salesDoctorDetail.ownerSalesRepId &&
+		                            userSalesRepId === salesDoctorDetail.ownerSalesRepId)),
+	                    );
+                        const addressRows: Array<{
+                          key: SalesDoctorAddressFieldKey;
+                          label: string;
+                          autoComplete: string;
+                        }> = [
+                          {
+                            key: "officeAddressLine1",
+                            label: "Street",
+                            autoComplete: "shipping address-line1",
+                          },
+                          {
+                            key: "officeAddressLine2",
+                            label: "Suite / Unit",
+                            autoComplete: "shipping address-line2",
+                          },
+                          {
+                            key: "officeCity",
+                            label: "City",
+                            autoComplete: "shipping address-level2",
+                          },
+                          {
+                            key: "officeState",
+                            label: "State",
+                            autoComplete: "shipping address-level1",
+                          },
+                          {
+                            key: "officePostalCode",
+                            label: "Postal Code",
+                            autoComplete: "shipping postal-code",
+                          },
+                        ];
+	                    return (
+	                      <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
+	                        <div className="pl-4 space-y-0.5">
+                            {addressRows.map(({ key, label, autoComplete }) => (
+                              <InlineEditableValueRow
+                                key={`sales-doctor-address-${key}`}
+                                label={label}
+                                value={salesDoctorResolvedAddressFields[key] || ""}
+                                autoComplete={autoComplete}
+                                editable={canEditAddress}
+                                onSave={
+                                  canEditAddress
+                                    ? async (nextValue) => {
+                                        await saveSalesDoctorAddressField(key, nextValue);
+                                      }
+                                    : undefined
+                                }
+                              />
+                            ))}
+	                        </div>
+	                      </div>
+	                    );
+	                  })()}
+	                </div>
                 {canSeeSalesDoctorFullModalDetails && isDoctorRole(salesDoctorDetail.role) ? (
                   <div className="min-w-0 space-y-2 sm:col-span-2 xl:col-span-1">
                     <p className="text-sm font-semibold text-slate-700">
@@ -35640,16 +35985,17 @@ function MainApp() {
 	                                  row?.contact_phone,
 					                                  doctorPhone,
 					                                );
-					                                const ownerSalesRepId =
-					                                  row?.ownerSalesRepId ||
-					                                  row?.owner_sales_rep_id ||
-					                                  row?.salesRepId ||
-					                                  row?.sales_rep_id ||
-					                                  row?.assignedSalesRepId ||
-					                                  row?.assigned_sales_rep_id ||
-					                                  null;
+						                                const ownerSalesRepId =
+						                                  row?.ownerSalesRepId ||
+						                                  row?.owner_sales_rep_id ||
+						                                  row?.salesRepId ||
+						                                  row?.sales_rep_id ||
+						                                  row?.assignedSalesRepId ||
+						                                  row?.assigned_sales_rep_id ||
+						                                  null;
+                                        const officeAddressFields = resolveSalesDoctorAddressFields(row);
 
-						                                openSalesDoctorDetail(
+							                                openSalesDoctorDetail(
 						                                  {
 						                                    doctorId: String(doctorId || ""),
 						                                    referralId:
@@ -35702,11 +36048,17 @@ function MainApp() {
                                               }
                                               return null;
                                             })(),
-						                                    doctorPhone: contactPhones[0] || doctorPhone,
-                                            contactPhones,
-						                                    doctorAddress: prospectAddress,
-						                                    addressOrigin: prospectAddress ? "prospect" : null,
-						                                    ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
+								                                    doctorPhone: contactPhones[0] || doctorPhone,
+	                                            contactPhones,
+								                                    doctorAddress: prospectAddress,
+								                                    addressOrigin: prospectAddress ? "prospect" : null,
+                                                officeAddressLine1: officeAddressFields.officeAddressLine1,
+                                                officeAddressLine2: officeAddressFields.officeAddressLine2,
+                                                officeCity: officeAddressFields.officeCity,
+                                                officeState: officeAddressFields.officeState,
+                                                officePostalCode: officeAddressFields.officePostalCode,
+                                                officeCountry: officeAddressFields.officeCountry,
+								                                    ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
 						                                    orders: [],
 						                                    total: 0,
 						                                  },
@@ -36034,6 +36386,12 @@ function MainApp() {
                 const expectedDelivery = expectedDeliveryDateRaw
                   ? formatDate(expectedDeliveryDateRaw)
                   : null;
+                const deliveredAtLabel = formatTrackingDeliveredDate(
+                  resolveOrderDeliveredAt(salesOrderDetail as any),
+                );
+                const trackingStatusLine = buildOrderTrackingStatusLine(
+                  salesOrderDetail as any,
+                );
                 const trackingLabel = resolveTrackingNumber(salesOrderDetail);
                 const estimateRangeLabel =
                   normalizeEstimateDisplayLabel(expectedShipmentWindow) ||
@@ -36041,6 +36399,8 @@ function MainApp() {
                   "";
                 const deliverySummaryLabel = isSalesOrderHandDelivered(salesOrderDetail as any)
                   ? "Hand delivery"
+                  : deliveredAtLabel
+                    ? `Delivered on ${deliveredAtLabel}`
                   : estimateRangeLabel
                     ? estimateRangeLabel
                     : isShippedDetail && shippedDate
@@ -36068,11 +36428,6 @@ function MainApp() {
                     (integrationsParsed as any)?.carrier_tracking ||
                     null,
                 );
-                const carrierTrackingLabel =
-                  carrierTracking?.trackingStatusRaw ||
-                  carrierTracking?.trackingStatus ||
-                  carrierTracking?.status ||
-                  null;
                 const trackingHref = trackingLabel
                   ? buildTrackingUrl(
                       trackingLabel,
@@ -36154,6 +36509,12 @@ function MainApp() {
 	                        </h4>
 	                        {renderAddressLines(shippingAddress)}
 	                        <div className="text-sm text-slate-700 space-y-1">
+                          {shippedDate && (
+                            <p>
+                              <span className="font-semibold">Shipped:</span>{" "}
+                              {shippedDate}
+                            </p>
+                          )}
                           {shippingServiceLabel && (
                             <p>
                               <span className="font-semibold">Service:</span>{" "}
@@ -36175,33 +36536,12 @@ function MainApp() {
                               trackingLabel || "Provided when shipped"
                             )}
                           </p>
-                          {carrierTrackingLabel && (
+                          {trackingStatusLine && (
                             <p>
-                              <span className="font-semibold">Tracking status:</span>{" "}
-                              {humanizeAccountOrderStatus(String(carrierTrackingLabel))}
+                              <span className="font-semibold">Tracking Status:</span>{" "}
+                              {trackingStatusLine}
                             </p>
                           )}
-                          {shippedDate && (
-                            <p>
-                              <span className="font-semibold">Shipped:</span>{" "}
-                              {shippedDate}
-                            </p>
-                          )}
-                          {Number.isFinite(shippingTotal) && (
-                            <p>
-                              <span className="font-semibold">Shipping:</span>{" "}
-                              {formatCurrency(
-                                shippingTotal,
-                                salesOrderDetail.currency || "USD",
-                              )}
-                            </p>
-                          )}
-                          {estimateRangeLabel && (
-                            <p>
-                              <span className="font-semibold">Estimate:</span>{" "}
-                              {estimateRangeLabel}
-	                            </p>
-	                          )}
 	                        </div>
 
 	                        {(() => {
@@ -36514,7 +36854,12 @@ function InlineEditableValueRow({
   autoComplete,
   editable = false,
   startEditing = false,
+  multiline = false,
+  rows = 4,
+  alignStart = false,
   displayValue,
+  displayClassName,
+  editorClassName,
   onSave,
   onCancel,
 }: {
@@ -36524,7 +36869,12 @@ function InlineEditableValueRow({
   autoComplete?: string;
   editable?: boolean;
   startEditing?: boolean;
+  multiline?: boolean;
+  rows?: number;
+  alignStart?: boolean;
   displayValue?: ReactNode;
+  displayClassName?: string;
+  editorClassName?: string;
   onSave?: (next: string) => Promise<void> | void;
   onCancel?: () => void;
 }) {
@@ -36564,27 +36914,64 @@ function InlineEditableValueRow({
   }, [editable, next, onSave, saving]);
 
   return (
-    <div className="editable-row group flex items-center gap-3">
-      <div className="min-w-[7rem] self-center text-sm font-medium text-slate-700">
+    <div
+      className={clsx(
+        "editable-row group flex gap-3",
+        alignStart ? "items-start" : "items-center",
+      )}
+    >
+      <div
+        className={clsx(
+          "min-w-[7rem] text-sm font-medium text-slate-700",
+          alignStart ? "self-start pt-1" : "self-center",
+        )}
+      >
         {label}
       </div>
-      <div className="flex-1 flex items-center gap-2 flex-wrap">
+      <div
+        className={clsx(
+          "flex-1 flex gap-2 flex-wrap",
+          alignStart ? "items-start" : "items-center",
+        )}
+      >
         {editing ? (
-          <input
-            className="w-full h-9 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-            value={next}
-            type={type}
-            autoComplete={autoComplete}
-            onChange={(event) => setNext(event.currentTarget.value)}
-            onKeyDown={async (event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                await saveValue();
-              }
-            }}
-          />
+          multiline ? (
+            <Textarea
+              className={clsx(
+                "w-full min-h-[160px] squircle-sm border border-slate-200/70 bg-white/96 px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 whitespace-pre-line",
+                editorClassName,
+              )}
+              value={next}
+              autoComplete={autoComplete}
+              rows={rows}
+              onChange={(event) => setNext(event.currentTarget.value)}
+            />
+          ) : (
+            <input
+              className={clsx(
+                "w-full h-9 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30",
+                editorClassName,
+              )}
+              value={next}
+              type={type}
+              autoComplete={autoComplete}
+              onChange={(event) => setNext(event.currentTarget.value)}
+              onKeyDown={async (event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  await saveValue();
+                }
+              }}
+            />
+          )
         ) : (
-          <div className="text-sm text-slate-700 flex items-center gap-2 min-w-0 flex-wrap">
+          <div
+            className={clsx(
+              "text-sm text-slate-700 flex gap-2 min-w-0 flex-wrap",
+              alignStart ? "items-start" : "items-center",
+              displayClassName,
+            )}
+          >
             <span className="min-w-0 break-all">{displayValue ?? (value || "—")}</span>
             {editable && onSave ? (
               <button

@@ -123,6 +123,53 @@ class TestUpsTracking(unittest.TestCase):
         self.assertEqual(result["trackingStatus"], "out_for_delivery")
         self.assertEqual(result["trackingStatusRaw"], "Out for Delivery")
 
+    @patch("python_backend.integrations.ups_tracking.get_config")
+    @patch("python_backend.integrations.ups_tracking._get_access_token", return_value="token-1")
+    @patch("python_backend.integrations.ups_tracking.http_client.get")
+    def test_fetch_tracking_status_maps_shipper_created_label_phrase(
+        self, mock_get, _mock_token, mock_get_config
+    ):
+        mock_get_config.return_value = SimpleNamespace(
+            ups={"client_id": "client-id", "client_secret": "client-secret", "merchant_id": "", "use_cie": False}
+        )
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "trackResponse": {
+                "shipment": [
+                    {
+                        "inquiryNumber": "1ZTEST789",
+                        "package": [
+                            {
+                                "currentStatus": {
+                                    "description": "Package progress",
+                                    "statusCode": "M",
+                                },
+                                "activity": [
+                                    {
+                                        "status": {
+                                            "description": "Shipper created a label, UPS has not received the package yet.",
+                                        },
+                                        "date": "20260402",
+                                        "time": "071500",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = response
+
+        result = ups_tracking.fetch_tracking_status("1ZTEST789")
+
+        self.assertEqual(result["trackingStatus"], "label_created")
+        self.assertEqual(
+            result["trackingStatusRaw"],
+            "Shipper created a label, UPS has not received the package yet.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -162,6 +162,122 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
             service.order_repository.update = original_update
             service.storage.order_store = original_order_store
 
+    def test_refresh_ups_status_resolves_local_order_by_hash_prefixed_woo_number(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
+        try:
+            lookups = []
+
+            service.order_repository.find_by_order_identifier = lambda value: (
+                lookups.append(str(value))
+                or (
+                    {
+                        "id": "local-ups-1396",
+                        "wooOrderNumber": "#1396",
+                        "trackingNumber": "1ZTEST1396",
+                        "shippingCarrier": "ups",
+                        "shippingEstimate": {"status": "in_transit", "carrierId": "ups"},
+                    }
+                    if str(value) == "#1396"
+                    else None
+                )
+            )
+            persisted = []
+            service.order_repository.update_ups_tracking_status = (
+                lambda order_id, *, ups_tracking_status, delivered_at=None: persisted.append((order_id, ups_tracking_status, delivered_at)) or {
+                    "id": order_id,
+                    "wooOrderNumber": "#1396",
+                    "trackingNumber": "1ZTEST1396",
+                    "upsTrackingStatus": ups_tracking_status,
+                    "upsDeliveredAt": delivered_at,
+                    "shippingEstimate": {
+                        "status": ups_tracking_status,
+                        "carrierId": "ups",
+                        **({"deliveredAt": delivered_at} if delivered_at else {}),
+                    },
+                }
+            )
+            service.ups_tracking.fetch_tracking_status = lambda _tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": "1ZTEST1396",
+                "trackingStatus": "Delivered",
+                "trackingStatusRaw": "Delivered",
+                "deliveredAt": "2026-04-02T10:15:00",
+            }
+
+            order = {
+                "id": "1396",
+                "number": "1396",
+                "wooOrderNumber": "1396",
+                "trackingNumber": "1ZTEST1396",
+                "shippingCarrier": "ups",
+                "shippingEstimate": {"carrierId": "ups"},
+            }
+
+            refreshed = service._refresh_authoritative_ups_status_for_order_view(order, local_order=None)
+
+            self.assertEqual(persisted, [("local-ups-1396", "delivered", "2026-04-02T10:15:00")])
+            self.assertIn("1396", lookups)
+            self.assertIn("#1396", lookups)
+            self.assertEqual(order["upsTrackingStatus"], "delivered")
+            self.assertEqual(order["shippingEstimate"]["status"], "delivered")
+            self.assertEqual(order["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
+            self.assertEqual(refreshed["upsTrackingStatus"], "delivered")
+            self.assertEqual(refreshed["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
+
+    def test_refresh_ups_status_does_not_overwrite_known_status_with_unknown(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
+        try:
+            local_order = {
+                "id": "local-ups-2001",
+                "wooOrderNumber": "#2001",
+                "trackingNumber": "1ZTEST2001",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "in_transit",
+                "shippingEstimate": {"status": "in_transit", "carrierId": "ups"},
+            }
+            persisted = []
+
+            service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"2001", "#2001"} else None
+            service.order_repository.update_ups_tracking_status = (
+                lambda order_id, *, ups_tracking_status, delivered_at=None: persisted.append((order_id, ups_tracking_status, delivered_at)) or local_order
+            )
+            service.ups_tracking.fetch_tracking_status = lambda _tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": "1ZTEST2001",
+                "trackingStatus": "Unknown",
+                "trackingStatusRaw": "Unknown",
+            }
+
+            order = {
+                "id": "2001",
+                "wooOrderNumber": "2001",
+                "trackingNumber": "1ZTEST2001",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "in_transit",
+                "shippingEstimate": {"status": "in_transit", "carrierId": "ups"},
+            }
+
+            refreshed = service._refresh_authoritative_ups_status_for_order_view(order, local_order=local_order)
+
+            self.assertEqual(persisted, [])
+            self.assertEqual(order["upsTrackingStatus"], "in_transit")
+            self.assertEqual(order["shippingEstimate"]["status"], "in_transit")
+            self.assertEqual(refreshed["upsTrackingStatus"], "in_transit")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
+
 
 if __name__ == "__main__":
     unittest.main()

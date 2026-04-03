@@ -387,11 +387,13 @@ interface AccountShippingEstimate {
   carrierId?: string | null;
   serviceCode?: string | null;
   serviceType?: string | null;
+  status?: string | null;
   estimatedDeliveryDays?: number | null;
   deliveryDateGuaranteed?: string | null;
   rate?: number | null;
   currency?: string | null;
   estimatedArrivalDate?: string | null;
+  deliveredAt?: string | null;
   packageCode?: string | null;
   packageDimensions?: { length?: number | null; width?: number | null; height?: number | null } | null;
   weightOz?: number | null;
@@ -429,6 +431,8 @@ interface AccountOrderSummary {
   taxTotal?: number | null;
   physicianCertified?: boolean | null;
   expectedShipmentWindow?: string | null;
+  upsTrackingStatus?: string | null;
+  upsDeliveredAt?: string | null;
 }
 
 const hasUploadedResellerPermit = (...values: unknown[]): boolean =>
@@ -564,6 +568,37 @@ const resolveOrderPlacedAt = (order?: AccountOrderSummary | null): string | null
     ignoreExplicitTimezone: true,
   });
   return parsed ? parsed.toISOString() : null;
+};
+
+const resolveOrderShippedAt = (order?: AccountOrderSummary | null): string | null => {
+  if (!order || typeof order !== 'object') return null;
+  const candidates = [
+    (order as any)?.shipped_at,
+    (order as any)?.shippedAt,
+    (order as any)?.orders?.shipped_at,
+    (order as any)?.orders?.shippedAt,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
+const formatOrderShippedAtForLocalDisplay = (order?: AccountOrderSummary | null) => {
+  const raw = resolveOrderShippedAt(order);
+  if (!raw) return null;
+  const parsed = parseBackendTimestamp(raw);
+  if (!parsed) return raw;
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
 };
 
 const formatLinkDateTime = (value?: string | null) => {
@@ -1020,6 +1055,83 @@ const humanizeOrderStatus = (status?: string | null) => {
     .split(/[_\s]+/)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(' ');
+};
+
+const normalizeTrackingStatusToken = (value?: string | null) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  return raw.replace(/[\s-]+/g, '_');
+};
+
+const formatDeliveryDateLabel = (value?: string | null) => {
+  const date = parseBackendTimestamp(value);
+  if (!date) return null;
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const resolveOrderDeliveredAt = (order?: AccountOrderSummary | null) => {
+  if (!order || typeof order !== 'object') return null;
+  const shippingEstimate = order.shippingEstimate && typeof order.shippingEstimate === 'object'
+    ? order.shippingEstimate
+    : null;
+  const integrations = parseMaybeJson((order as any).integrationDetails || (order as any).integrations || null) || {};
+  const carrierTracking = parseMaybeJson((integrations as any)?.carrierTracking || (integrations as any)?.carrier_tracking || null) || {};
+  const candidates = [
+    (order as any).upsDeliveredAt,
+    (order as any).ups_delivered_at,
+    shippingEstimate?.deliveredAt,
+    (shippingEstimate as any)?.delivered_at,
+    carrierTracking?.deliveredAt,
+    carrierTracking?.delivered_at,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
+const resolveTrackingStatusRaw = (order?: AccountOrderSummary | null) => {
+  if (!order || typeof order !== 'object') return null;
+  const shippingEstimate = order.shippingEstimate && typeof order.shippingEstimate === 'object'
+    ? order.shippingEstimate
+    : null;
+  const integrations = parseMaybeJson((order as any).integrationDetails || (order as any).integrations || null) || {};
+  const carrierTracking = parseMaybeJson((integrations as any)?.carrierTracking || (integrations as any)?.carrier_tracking || null) || {};
+  const candidates = [
+    (order as any).upsTrackingStatus,
+    (order as any).ups_tracking_status,
+    shippingEstimate?.status,
+    carrierTracking?.trackingStatusRaw,
+    carrierTracking?.trackingStatus,
+    carrierTracking?.tracking_status,
+    carrierTracking?.status,
+    carrierTracking?.deliveryStatus,
+    carrierTracking?.delivery_status,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
+const buildTrackingStatusLine = (order?: AccountOrderSummary | null) => {
+  const rawStatus = resolveTrackingStatusRaw(order);
+  if (!rawStatus) return null;
+  const deliveredAtLabel = formatDeliveryDateLabel(resolveOrderDeliveredAt(order));
+  const normalizedStatus = normalizeTrackingStatusToken(rawStatus);
+  const label = humanizeOrderStatus(rawStatus);
+  if (deliveredAtLabel && normalizedStatus?.includes('delivered')) {
+    return `${label} on ${deliveredAtLabel}`;
+  }
+  return label;
 };
 
 const normalizeStringField = (value: unknown) => {
@@ -6059,11 +6171,14 @@ export function Header({
     const wooShippingAddress = convertWooAddress(wooResponse?.shipping || wooPayload?.shipping);
     const wooBillingAddress = convertWooAddress(wooResponse?.billing || wooPayload?.billing);
     const trackingNumber = resolveTrackingNumber(selectedOrder);
+    const shippedAtLabel = formatOrderShippedAtForLocalDisplay(selectedOrder);
+    const deliveredAtLabel = formatDeliveryDateLabel(resolveOrderDeliveredAt(selectedOrder));
+    const trackingStatusLine = buildTrackingStatusLine(selectedOrder);
     const estimateRangeLabel =
       normalizeEstimateDisplayLabel(expectedShipmentWindow) ||
       normalizeEstimateDisplayLabel(expectedDelivery) ||
       '';
-    const showEstimateDetails = Boolean(estimateRangeLabel && !trackingNumber);
+    const showEstimateDetails = Boolean(estimateRangeLabel && !trackingNumber && !deliveredAtLabel);
     const wooService = wooShippingLine?.method_title || wooShippingLine?.method_id || '';
     const carrierCode =
       selectedOrder.shippingEstimate?.carrierId ||
@@ -6295,7 +6410,14 @@ export function Header({
                   {renderOrderTextOrShimmer(formatOrderDate(resolveOrderPlacedAt(selectedOrder)), 'w-28')}
                 </div>
               </div>
-              {showEstimateDetails && (
+              {deliveredAtLabel ? (
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Delivery</p>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {renderOrderTextOrShimmer(deliveredAtLabel, 'w-32')}
+                  </div>
+                </div>
+              ) : showEstimateDetails && (
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Estimate</p>
                   <div className="text-sm font-semibold text-slate-900">
@@ -6318,10 +6440,21 @@ export function Header({
 	                <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
 	                {renderAddressLinesForOrderDetail(shippingAddress)}
 	                <div className="text-sm text-slate-700 space-y-1">
-	                  {trackingNumber && (
+	                  {shippedAtLabel && (
 	                    <p>
-	                      <span className="font-semibold">Tracking:</span>{' '}
-	                      {trackingHref ? (
+	                      <span className="font-semibold">Shipped:</span>{' '}
+	                      {shippedAtLabel}
+	                    </p>
+	                  )}
+	                  {shippingMethod && (
+	                    <p>
+	                      <span className="font-semibold">Service:</span> {shippingMethod}
+	                    </p>
+	                  )}
+	                  <p>
+	                    <span className="font-semibold">Tracking:</span>{' '}
+	                    {trackingNumber ? (
+	                      trackingHref ? (
 	                        <a
 	                          href={trackingHref}
 	                          target="_blank"
@@ -6332,51 +6465,15 @@ export function Header({
 	                        </a>
 	                      ) : (
 	                        trackingNumber
-	                      )}
-	                    </p>
-	                  )}
-	                  {(() => {
-	                    const carrierTracking =
-	                      (selectedOrder.integrationDetails as any)?.carrierTracking ||
-	                      (selectedOrder.integrationDetails as any)?.carrier_tracking ||
-	                      null;
-	                    const label =
-	                      carrierTracking?.trackingStatusRaw ||
-	                      carrierTracking?.trackingStatus ||
-	                      carrierTracking?.tracking_status ||
-	                      carrierTracking?.status ||
-	                      carrierTracking?.deliveryStatus ||
-	                      carrierTracking?.delivery_status ||
-	                      null;
-	                    if (!label) return null;
-	                    return (
-	                      <p>
-	                        <span className="font-semibold">Tracking status:</span>{' '}
-	                        {humanizeOrderStatus(String(label))}
-	                      </p>
-	                    );
-	                  })()}
-	                  {shippingMethod && (
+	                      )
+	                    ) : (
+	                      'Provided when shipped'
+	                    )}
+	                  </p>
+	                  {trackingStatusLine && (
 	                    <p>
-	                      <span className="font-semibold">Service:</span> {shippingMethod}
-	                    </p>
-	                  )}
-	                  {Number.isFinite(shippingTotal) && (
-	                    <p>
-	                      <span className="font-semibold">Shipping:</span>{' '}
-	                      {formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}
-	                    </p>
-	                  )}
-	                  {Number.isFinite(taxTotal) && taxTotal > 0 && (
-	                    <p>
-	                      <span className="font-semibold">Estimated tax:</span>{' '}
-	                      {formatCurrency(taxTotal, selectedOrder.currency || 'USD')}
-	                    </p>
-	                  )}
-	                  {showEstimateDetails && (
-	                    <p>
-	                      <span className="font-semibold">Estimate:</span>{' '}
-	                      {estimateRangeLabel}
+	                      <span className="font-semibold">Tracking Status:</span>{' '}
+	                      {trackingStatusLine}
 	                    </p>
 	                  )}
 	                </div>

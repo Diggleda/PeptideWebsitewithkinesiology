@@ -908,20 +908,60 @@ def _ensure_dict(value):
 
 def _normalize_ups_tracking_status(value: Any) -> Optional[str]:
     normalized = ups_tracking.normalize_tracking_status(value)
-    return normalized or None
+    if not normalized or normalized == "unknown":
+        return None
+    return normalized
+
+
+def _normalize_ups_delivered_at(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _extract_ups_delivered_at(*orders: Optional[Dict]) -> Optional[str]:
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        carrier_tracking = _ensure_dict(integrations.get("carrierTracking") or integrations.get("carrier_tracking"))
+        for candidate in (
+            order.get("upsDeliveredAt"),
+            order.get("ups_delivered_at"),
+            estimate.get("deliveredAt"),
+            estimate.get("delivered_at"),
+            carrier_tracking.get("deliveredAt"),
+            carrier_tracking.get("delivered_at"),
+        ):
+            normalized = _normalize_ups_delivered_at(candidate)
+            if normalized:
+                return normalized
+    return None
 
 
 def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
     if not isinstance(order, dict):
         return None
-    normalized = _normalize_ups_tracking_status(
-        order.get("upsTrackingStatus") if order.get("upsTrackingStatus") is not None else order.get("ups_tracking_status")
-    )
-    if not normalized:
-        return None
+    raw_status = order.get("upsTrackingStatus") if order.get("upsTrackingStatus") is not None else order.get("ups_tracking_status")
+    normalized = _normalize_ups_tracking_status(raw_status)
+    delivered_at = _extract_ups_delivered_at(order)
     order["upsTrackingStatus"] = normalized
+    order["upsDeliveredAt"] = delivered_at
+    if not normalized:
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        raw_estimate_status = str(estimate.get("status") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        raw_status_token = str(raw_status or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if raw_status_token == "unknown" or raw_estimate_status == "unknown":
+            estimate.pop("status", None)
+            order["shippingEstimate"] = estimate
+        return None
     estimate = _ensure_dict(order.get("shippingEstimate"))
     estimate["status"] = normalized
+    if normalized == "delivered" and delivered_at:
+        estimate["deliveredAt"] = delivered_at
+    elif normalized != "delivered":
+        estimate.pop("deliveredAt", None)
+        order["upsDeliveredAt"] = None
     order["shippingEstimate"] = estimate
     return normalized
 
@@ -996,6 +1036,7 @@ def _resolve_peppro_order_id_for_ups_refresh(order: Dict, local_order: Optional[
         candidates.append(local_order.get("id"))
 
     if isinstance(order, dict):
+        candidates.append(order.get("id"))
         candidates.append(order.get("pepproOrderId"))
         integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
         woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
@@ -1013,10 +1054,76 @@ def _resolve_peppro_order_id_for_ups_refresh(order: Dict, local_order: Optional[
     return None
 
 
+def _iter_order_identifier_candidates_for_ups_refresh(*orders: Optional[Dict]) -> List[str]:
+    seen: set[str] = set()
+    result: List[str] = []
+
+    def add_candidate(value: Any) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+        variants = [text]
+        base = text[1:] if text.startswith("#") else text
+        if base:
+            variants.append(base)
+            variants.append(f"#{base}")
+        normalized_woo = _normalize_woo_order_id(text)
+        if normalized_woo:
+            variants.append(normalized_woo)
+            variants.append(f"#{normalized_woo}")
+        for variant in variants:
+            cleaned = str(variant or "").strip()
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                result.append(cleaned)
+
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
+        response = _ensure_dict(woo_details.get("response"))
+        payload = _ensure_dict(woo_details.get("payload"))
+        for candidate in (
+            order.get("id"),
+            order.get("pepproOrderId"),
+            order.get("wooOrderId"),
+            order.get("woo_order_id"),
+            order.get("wooOrderNumber"),
+            order.get("woo_order_number"),
+            order.get("number"),
+            woo_details.get("pepproOrderId"),
+            woo_details.get("peppro_order_id"),
+            woo_details.get("id"),
+            woo_details.get("orderId"),
+            woo_details.get("orderNumber"),
+            response.get("id"),
+            response.get("number"),
+            payload.get("id"),
+            payload.get("number"),
+        ):
+            add_candidate(candidate)
+    return result
+
+
+def _resolve_local_order_for_ups_refresh(order: Dict, local_order: Optional[Dict]) -> Optional[Dict]:
+    if isinstance(local_order, dict) and str(local_order.get("id") or "").strip():
+        return local_order
+    for candidate in _iter_order_identifier_candidates_for_ups_refresh(local_order, order):
+        try:
+            resolved = order_repository.find_by_order_identifier(candidate)
+        except Exception:
+            resolved = None
+        if isinstance(resolved, dict):
+            return resolved
+    return local_order
+
+
 def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order: Optional[Dict] = None) -> Optional[Dict]:
     if not isinstance(order, dict):
         return local_order
 
+    local_order = _resolve_local_order_for_ups_refresh(order, local_order)
     tracking_number = _extract_tracking_number_for_ups_refresh(order, local_order)
     if not tracking_number or not _is_ups_order_for_refresh(order, local_order):
         return local_order
@@ -1046,6 +1153,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
         return local_order
 
     live_tracking_number = str(info.get("trackingNumber") or tracking_number).strip() or tracking_number
+    delivered_at = _normalize_ups_delivered_at(info.get("deliveredAt"))
     current_status = (
         _normalize_ups_tracking_status(order.get("upsTrackingStatus") if order.get("upsTrackingStatus") is not None else order.get("ups_tracking_status"))
         or _normalize_ups_tracking_status(
@@ -1054,12 +1162,20 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
             else (local_order or {}).get("ups_tracking_status") if isinstance(local_order, dict) else None
         )
     )
+    current_delivered_at = _extract_ups_delivered_at(order, local_order)
 
     refreshed_local_order = local_order
     peppro_order_id = _resolve_peppro_order_id_for_ups_refresh(order, local_order)
-    if peppro_order_id and current_status != normalized:
+    should_persist = current_status != normalized or (
+        normalized == "delivered" and delivered_at and current_delivered_at != delivered_at
+    )
+    if peppro_order_id and should_persist:
         try:
-            persisted = order_repository.update_ups_tracking_status(peppro_order_id, ups_tracking_status=normalized)
+            persisted = order_repository.update_ups_tracking_status(
+                peppro_order_id,
+                ups_tracking_status=normalized,
+                delivered_at=delivered_at,
+            )
             if isinstance(persisted, dict):
                 refreshed_local_order = persisted
         except Exception:
@@ -1074,6 +1190,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
             continue
         target["trackingNumber"] = live_tracking_number
         target["upsTrackingStatus"] = normalized
+        target["upsDeliveredAt"] = delivered_at if normalized == "delivered" else None
         _apply_authoritative_ups_tracking_status(target)
 
     return refreshed_local_order
@@ -2220,10 +2337,12 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
                 "createdAt": local.get("createdAt") or None,
                 "updatedAt": local.get("updatedAt") or None,
                 "shippingAddress": local.get("shippingAddress") or None,
+                "shippingEstimate": local.get("shippingEstimate") or None,
                 "expectedShipmentWindow": local.get("expectedShipmentWindow") or None,
                 "shippingCarrier": local.get("shippingCarrier") or None,
                 "shippingService": local.get("shippingService") or None,
                 "upsTrackingStatus": local.get("upsTrackingStatus") or None,
+                "upsDeliveredAt": local.get("upsDeliveredAt") or None,
                 "lineItems": local.get("items") or [],
                 "source": "peppro",
             }
@@ -2346,6 +2465,8 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
             order["trackingNumber"] = local_order.get("trackingNumber")
         if local_order.get("upsTrackingStatus") is not None:
             order["upsTrackingStatus"] = local_order.get("upsTrackingStatus")
+        if local_order.get("upsDeliveredAt") is not None:
+            order["upsDeliveredAt"] = local_order.get("upsDeliveredAt")
 
         if local_order.get("shippingCarrier") is not None:
             order["shippingCarrier"] = local_order.get("shippingCarrier")
@@ -4185,8 +4306,12 @@ def get_sales_rep_order_detail(
                 mapped["notes"] = local_order.get("notes")
             if local_order.get("trackingNumber") is not None:
                 mapped["trackingNumber"] = local_order.get("trackingNumber")
+            if local_order.get("shippingEstimate"):
+                mapped["shippingEstimate"] = local_order.get("shippingEstimate")
             if local_order.get("upsTrackingStatus") is not None:
                 mapped["upsTrackingStatus"] = local_order.get("upsTrackingStatus")
+            if local_order.get("upsDeliveredAt") is not None:
+                mapped["upsDeliveredAt"] = local_order.get("upsDeliveredAt")
             if local_order.get("shippingCarrier") is not None:
                 mapped["shippingCarrier"] = local_order.get("shippingCarrier")
                 mapped.setdefault("shippingEstimate", {})

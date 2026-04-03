@@ -65,18 +65,39 @@ def _normalize_ups_tracking_status(value: object) -> Optional[str]:
     text = text.replace("-", "_").replace(" ", "_")
     while "__" in text:
         text = text.replace("__", "_")
-    return text or None
+    if not text or text == "unknown":
+        return None
+    return text
 
 
 def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
     normalized = _normalize_ups_tracking_status(status)
     order["upsTrackingStatus"] = normalized
-    if not normalized:
-        return order
     shipping_estimate = order.get("shippingEstimate")
     if not isinstance(shipping_estimate, dict):
         shipping_estimate = {}
+    delivered_at = _normalize_optional_string(
+        order.get("upsDeliveredAt")
+        if order.get("upsDeliveredAt") is not None
+        else order.get("ups_delivered_at")
+    ) or _normalize_optional_string(
+        shipping_estimate.get("deliveredAt")
+        if isinstance(shipping_estimate, dict) and shipping_estimate.get("deliveredAt") is not None
+        else shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None
+    )
+    order["upsDeliveredAt"] = delivered_at
+    if not normalized:
+        raw_estimate_status = str(shipping_estimate.get("status") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if raw_estimate_status == "unknown":
+            shipping_estimate.pop("status", None)
+        order["shippingEstimate"] = shipping_estimate
+        return order
     shipping_estimate["status"] = normalized
+    if normalized == "delivered" and delivered_at:
+        shipping_estimate["deliveredAt"] = delivered_at
+    elif normalized != "delivered":
+        shipping_estimate.pop("deliveredAt", None)
+        order["upsDeliveredAt"] = None
     order["shippingEstimate"] = shipping_estimate
     return order
 
@@ -228,34 +249,49 @@ def find_by_order_identifier(identifier: str) -> Optional[Dict]:
     if not normalized:
         return None
 
+    base = normalized[1:] if normalized.startswith("#") else normalized
+    variants = []
+    for candidate in (normalized, base, f"#{base}" if base else None):
+        text = str(candidate or "").strip()
+        if text and text not in variants:
+            variants.append(text)
+    if not variants:
+        return None
+
     if _using_mysql():
+        params = {f"value_{idx}": value for idx, value in enumerate(variants)}
+        placeholders = ", ".join(f"%({name})s" for name in params)
         try:
             row = mysql_client.fetch_one(
-                """
+                f"""
                 SELECT * FROM orders
-                WHERE id = %(value)s OR woo_order_id = %(value)s OR woo_order_number = %(value)s
+                WHERE id IN ({placeholders})
+                   OR woo_order_id IN ({placeholders})
+                   OR woo_order_number IN ({placeholders})
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """,
-                {"value": normalized},
+                params,
             )
             if row:
                 return _row_to_order(row)
         except Exception:
             row = mysql_client.fetch_one(
-                "SELECT * FROM orders WHERE id = %(value)s ORDER BY updated_at DESC LIMIT 1",
-                {"value": normalized},
+                f"SELECT * FROM orders WHERE id IN ({placeholders}) ORDER BY updated_at DESC LIMIT 1",
+                params,
             )
             if row:
                 return _row_to_order(row)
         return None
 
     for order in _load():
-        if str(order.get("id") or "").strip() == normalized:
-            return order
-        if str(order.get("wooOrderId") or order.get("woo_order_id") or "").strip() == normalized:
-            return order
-        if str(order.get("wooOrderNumber") or order.get("woo_order_number") or "").strip() == normalized:
+        candidates = {
+            str(order.get("id") or "").strip(),
+            str(order.get("wooOrderId") or order.get("woo_order_id") or "").strip(),
+            str(order.get("wooOrderNumber") or order.get("woo_order_number") or "").strip(),
+        }
+        candidates.discard("")
+        if any(candidate in candidates for candidate in variants):
             return order
     return None
 
@@ -360,6 +396,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         payload = _read_order_json_field(row, "payload", {}) if row.get("payload") is not None else {}
         if not isinstance(payload, dict):
             payload = {}
+        shipping_estimate = _parse_json(row.get("shipping_rate"), {})
         entry = {
             "id": row.get("id"),
             "items": _parse_json(row.get("items"), []) if row.get("items") is not None else [],
@@ -437,7 +474,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 )
             ),
             "shippingTotal": float(row.get("shipping_total") or 0),
-            "shippingEstimate": {},
+            "shippingEstimate": shipping_estimate,
             "handDelivery": bool(payload.get("handDelivery")),
             "fulfillmentMethod": _normalize_fulfillment_method(
                 row.get("fulfillment_method"),
@@ -449,6 +486,12 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 row.get("ups_tracking_status")
                 or payload.get("upsTrackingStatus")
                 or payload.get("ups_tracking_status")
+            ),
+            "upsDeliveredAt": _normalize_optional_string(
+                payload.get("upsDeliveredAt")
+                or payload.get("ups_delivered_at")
+                or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
+                or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
             ),
             "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
             "status": row.get("status"),
@@ -516,26 +559,16 @@ def update_status_fields(
             return
 
 
-def update_ups_tracking_status(order_id: str, *, ups_tracking_status: str | None) -> Optional[Dict]:
+def update_ups_tracking_status(
+    order_id: str,
+    *,
+    ups_tracking_status: str | None,
+    delivered_at: str | None = None,
+) -> Optional[Dict]:
     normalized = _normalize_ups_tracking_status(ups_tracking_status)
+    normalized_delivered_at = _normalize_optional_string(delivered_at)
     if not order_id:
         return None
-
-    if _using_mysql():
-        try:
-            mysql_client.execute(
-                """
-                UPDATE orders
-                SET
-                    ups_tracking_status = %(ups_tracking_status)s,
-                    updated_at = NOW()
-                WHERE id = %(id)s
-                """,
-                {"id": order_id, "ups_tracking_status": normalized},
-            )
-            return find_by_id(order_id)
-        except Exception:
-            pass
 
     existing = find_by_id(order_id)
     if not existing:
@@ -549,7 +582,21 @@ def update_ups_tracking_status(order_id: str, *, ups_tracking_status: str | None
         estimate["status"] = normalized
     elif "status" in estimate:
         estimate.pop("status", None)
+    if normalized == "delivered":
+        if normalized_delivered_at:
+            estimate["deliveredAt"] = normalized_delivered_at
+        elif _normalize_optional_string(estimate.get("deliveredAt")):
+            pass
+    else:
+        estimate.pop("deliveredAt", None)
     updated["shippingEstimate"] = estimate
+    updated["upsDeliveredAt"] = (
+        normalized_delivered_at
+        if normalized == "delivered" and normalized_delivered_at
+        else _normalize_optional_string(estimate.get("deliveredAt"))
+        if normalized == "delivered"
+        else None
+    )
     updated["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return update(updated)
 
@@ -1304,7 +1351,12 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         return str(value)
 
     payload = _read_order_json_field(row, "payload", {})
+    integrations_payload = _parse_json(row.get("integrations"), {})
     payload_order = payload.get("order") if isinstance(payload, dict) and isinstance(payload.get("order"), dict) else None
+    shipping_estimate = _parse_json(
+        row.get("shipping_rate"),
+        integrations_payload.get("shippingRate", {}) if isinstance(integrations_payload, dict) else {},
+    )
     tax_exempt_source = _normalize_optional_string(
         row.get("tax_exempt_source")
         or (payload_order.get("taxExemptSource") if isinstance(payload_order, dict) else None)
@@ -1382,7 +1434,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "total": float(row.get("total") or 0),
         "itemsSubtotal": float(row.get("items_subtotal") or 0) if row.get("items_subtotal") is not None else None,
         "shippingTotal": float(row.get("shipping_total") or 0),
-        "shippingEstimate": _parse_json(row.get("shipping_rate"), _parse_json(row.get("integrations"), {}).get("shippingRate", {})),
+        "shippingEstimate": shipping_estimate,
         "shippingAddress": _read_order_json_field(row, "shipping_address", None),
         "handDelivery": bool(payload.get("handDelivery")) if isinstance(payload, dict) else False,
         "fulfillmentMethod": row.get("fulfillment_method"),
@@ -1390,13 +1442,21 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
         "upsTrackingStatus": ups_tracking_status,
+        "upsDeliveredAt": _normalize_optional_string(
+            (payload_order.get("upsDeliveredAt") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("ups_delivered_at") if isinstance(payload_order, dict) else None)
+            or (payload.get("upsDeliveredAt") if isinstance(payload, dict) else None)
+            or (payload.get("ups_delivered_at") if isinstance(payload, dict) else None)
+            or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
+            or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
+        ),
         "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
         "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),
         "status": row.get("status"),
         "referrerBonus": _parse_json(row.get("referrer_bonus"), None),
         "firstOrderBonus": _parse_json(row.get("first_order_bonus"), None),
-        "integrations": _parse_json(row.get("integrations"), {}),
+        "integrations": integrations_payload,
         "expectedShipmentWindow": row.get("expected_shipment_window") or None,
         "notes": row.get("notes") if row.get("notes") is not None else None,
         "wooOrderId": row.get("woo_order_id") or None,

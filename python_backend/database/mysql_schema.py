@@ -774,6 +774,13 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE orders ADD COLUMN fulfillment_method VARCHAR(32) NULL")
         if not _column_exists("orders", "ups_tracking_status"):
             mysql_client.execute("ALTER TABLE orders ADD COLUMN ups_tracking_status VARCHAR(32) NULL")
+        mysql_client.execute(
+            """
+            UPDATE orders
+            SET ups_tracking_status = NULL
+            WHERE LOWER(TRIM(ups_tracking_status)) = 'unknown'
+            """
+        )
     except Exception:
         pass
 

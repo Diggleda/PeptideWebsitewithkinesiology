@@ -83,9 +83,38 @@ def normalize_tracking_status(value: Any) -> Optional[str]:
 
     if "delivered" in token:
         return "delivered"
-    if "out_for_delivery" in token or "outfordelivery" in token:
+    if (
+        "out_for_delivery" in token
+        or "outfordelivery" in token
+        or "delivery_vehicle" in token
+        or "follow_your_delivery" in token
+    ):
         return "out_for_delivery"
-    if any(part in token for part in ("exception", "delay", "delayed", "hold", "held")):
+    if any(
+        part in token
+        for part in (
+            "exception",
+            "delay",
+            "delayed",
+            "hold",
+            "held",
+            "return_to_sender",
+            "returned_to_sender",
+            "returning_to_sender",
+            "damaged",
+            "damage",
+            "mis_sort",
+            "missort",
+            "unable_to_deliver",
+            "not_delivered",
+            "delivery_attempted",
+            "delivery_change_requested",
+            "address_information_required",
+            "clearance_information_required",
+            "rescheduled_delivery",
+            "contact_receiver",
+        )
+    ):
         return "exception"
     if any(
         part in token
@@ -96,7 +125,22 @@ def normalize_tracking_status(value: Any) -> Optional[str]:
             "billing_information_received",
             "manifest_picked_up",
             "shipment_information_received",
+            "information_received",
+            "pre_transit",
+            "ready_for_ups",
+            "shipper_created_a_label",
+            "shipment_ready",
+            "ups_has_not_received",
+            "has_not_received_the_package",
+            "awaiting_item",
+            "awaiting_package",
         )
+    ):
+        return "label_created"
+    if (
+        ("label" in token and ("created" in token or "printed" in token))
+        or ("not_received" in token and "package" in token)
+        or ("not_received" in token and "ups" in token)
     ):
         return "label_created"
     if any(
@@ -114,8 +158,28 @@ def normalize_tracking_status(value: Any) -> Optional[str]:
             "processing_at_ups_facility",
             "loaded_on_delivery_vehicle",
             "received_by_post_office_for_delivery",
+            "picked_up",
+            "pickup",
+            "drop_off",
+            "dropped_off",
+            "tendered",
+            "package_received_for_processing",
+            "package_transferred",
+            "arrived_at_facility",
+            "departed_from_facility",
+            "warehouse_scan",
+            "weve_correctly_addressed_the_package",
+            "corrected_the_package_address",
+            "address_corrected",
+            "transferred_to_post_office",
+            "received_by_post_office",
+            "sortation",
         )
     ):
+        return "in_transit"
+    if "facility" in token and any(part in token for part in ("arrived", "departed", "processing", "scan")):
+        return "in_transit"
+    if "address" in token and "correct" in token:
         return "in_transit"
     return "unknown"
 
@@ -232,19 +296,35 @@ def _extract_status_obj(payload: Any) -> Dict[str, Any]:
 def _extract_ups_status(payload: Any) -> Tuple[Optional[str], Optional[str]]:
     package = _first_package(payload)
     status_obj = _extract_status_obj(payload)
+    activities = package.get("activity") if isinstance(package.get("activity"), list) else []
     raw_status_candidates = [
         status_obj.get("simplifiedTextDescription"),
         status_obj.get("description"),
         package.get("statusDescription"),
         package.get("currentStatusDescription"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity", 0, "status", "simplifiedTextDescription"),
-        _deep_get(payload, "trackResponse", "shipment", 0, "package", 0, "activity", 0, "status", "description"),
     ]
+    for entry in activities:
+        if not isinstance(entry, dict):
+            continue
+        status = entry.get("status") if isinstance(entry.get("status"), dict) else {}
+        raw_status_candidates.extend(
+            [
+                status.get("simplifiedTextDescription"),
+                status.get("description"),
+            ]
+        )
+
+    fallback_text: Optional[str] = None
     for candidate in raw_status_candidates:
         text = _safe_string(candidate)
-        if text:
+        if not text:
+            continue
+        if fallback_text is None:
+            fallback_text = text
+        normalized = normalize_tracking_status(text)
+        if normalized and normalized != "unknown":
             return text, _safe_string(status_obj.get("statusCode") or status_obj.get("code"))
-    return None, _safe_string(status_obj.get("statusCode") or status_obj.get("code"))
+    return fallback_text, _safe_string(status_obj.get("statusCode") or status_obj.get("code"))
 
 
 def _format_activity_datetime(date_value: Any, time_value: Any, gmt_offset: Any = None) -> Optional[str]:
