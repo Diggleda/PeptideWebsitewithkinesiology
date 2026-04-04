@@ -31,6 +31,26 @@ def _normalize_optional_string_max(value: object, max_len: int) -> Optional[str]
     return text[:max_len].rstrip() or None
 
 
+def _normalize_timestamp_like_string(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    text = _normalize_optional_string(value)
+    if not text:
+        return None
+    normalized = text
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    if " " in normalized and "T" not in normalized:
+        normalized = normalized.replace(" ", "T", 1)
+    try:
+        datetime.fromisoformat(normalized)
+    except Exception:
+        return None
+    return normalized
+
+
 def _coerce_optional_bool(value: object) -> Optional[bool]:
     if value is None or value == "":
         return None
@@ -219,6 +239,12 @@ def _resolve_persisted_delivery_date(order: Dict) -> Optional[str]:
     candidates = [
         order.get("deliveryDate"),
         order.get("delivery_date"),
+        order.get("expectedShipmentWindow"),
+        order.get("expected_shipment_window"),
+        shipping_estimate.get("deliveryDateGuaranteed"),
+        shipping_estimate.get("delivery_date_guaranteed"),
+        shipping_estimate.get("estimatedArrivalDate"),
+        shipping_estimate.get("estimated_arrival_date"),
         order.get("upsDeliveredAt"),
         shipping_estimate.get("deliveredAt"),
         shipping_estimate.get("delivered_at"),
@@ -230,19 +256,49 @@ def _resolve_persisted_delivery_date(order: Dict) -> Optional[str]:
     return None
 
 
+def _resolve_persisted_ups_delivered_at(order: Dict) -> Optional[str]:
+    if not isinstance(order, dict):
+        return None
+    shipping_estimate = _coerce_object(order.get("shippingEstimate") or order.get("shipping"))
+    candidates = [
+        order.get("upsDeliveredAt"),
+        shipping_estimate.get("deliveredAt"),
+        shipping_estimate.get("delivered_at"),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_optional_string(candidate)
+        if normalized:
+            return normalized
+    if _resolve_persisted_ups_tracking_status(order) == "delivered":
+        for candidate in (
+            order.get("deliveryDate"),
+            order.get("delivery_date"),
+        ):
+            normalized = _normalize_timestamp_like_string(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
 def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
     normalized = _normalize_ups_tracking_status(status)
     order["upsTrackingStatus"] = normalized
     shipping_estimate = order.get("shippingEstimate")
     if not isinstance(shipping_estimate, dict):
         shipping_estimate = {}
-    delivered_at = _resolve_persisted_delivery_date(
+    delivery_date = _resolve_persisted_delivery_date(
         {
             **order,
             "shippingEstimate": shipping_estimate,
         }
     )
-    order["deliveryDate"] = delivered_at
+    delivered_at = _resolve_persisted_ups_delivered_at(
+        {
+            **order,
+            "shippingEstimate": shipping_estimate,
+        }
+    )
+    order["deliveryDate"] = delivery_date
     order["upsDeliveredAt"] = delivered_at
     if not normalized:
         raw_estimate_status = str(shipping_estimate.get("status") or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -259,7 +315,6 @@ def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
         order["expectedShipmentWindow"] = None
     else:
         shipping_estimate.pop("deliveredAt", None)
-        order["deliveryDate"] = None
         order["upsDeliveredAt"] = None
     order["shippingEstimate"] = shipping_estimate
     return order
@@ -621,6 +676,11 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             return value.replace(tzinfo=timezone.utc).isoformat()
         return str(value)
 
+    def fmt_delivery_date(value):
+        if isinstance(value, datetime):
+            return fmt_datetime(value)
+        return _normalize_optional_string(value)
+
     result: List[Dict] = []
     for row in rows or []:
         payload = _read_order_json_field(row, "payload", {}) if row.get("payload") is not None else {}
@@ -712,19 +772,29 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             )
             or ("hand_delivered" if bool(payload.get("handDelivery")) else "shipping"),
             "trackingNumber": row.get("tracking_number") or None,
+            "delivery_date": fmt_delivery_date(row.get("delivery_date")),
             "upsTrackingStatus": _normalize_ups_tracking_status(
                 row.get("ups_tracking_status")
                 or payload.get("upsTrackingStatus")
                 or payload.get("ups_tracking_status")
             ),
             "upsDeliveredAt": _normalize_optional_string(
-                fmt_datetime(row.get("delivery_date"))
-                or payload.get("upsDeliveredAt")
-                or payload.get("delivery_date")
+                payload.get("upsDeliveredAt")
                 or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
                 or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
             ),
-            "deliveryDate": _normalize_optional_string(fmt_datetime(row.get("delivery_date"))),
+            "deliveryDate": _normalize_optional_string(
+                fmt_delivery_date(row.get("delivery_date"))
+                or payload.get("deliveryDate")
+                or payload.get("delivery_date")
+                or row.get("expected_shipment_window")
+                or (shipping_estimate.get("deliveryDateGuaranteed") if isinstance(shipping_estimate, dict) else None)
+                or (shipping_estimate.get("delivery_date_guaranteed") if isinstance(shipping_estimate, dict) else None)
+                or (shipping_estimate.get("estimatedArrivalDate") if isinstance(shipping_estimate, dict) else None)
+                or (shipping_estimate.get("estimated_arrival_date") if isinstance(shipping_estimate, dict) else None)
+                or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
+                or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
+            ),
             "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
             "status": row.get("status"),
             "notes": row.get("notes") if row.get("notes") is not None else None,
@@ -738,6 +808,9 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             "createdAt": fmt_datetime(row.get("created_at")),
             "updatedAt": fmt_datetime(row.get("updated_at")),
         }
+        entry["upsTrackingStatus"] = _resolve_persisted_ups_tracking_status(entry)
+        if not entry.get("upsDeliveredAt") and entry.get("upsTrackingStatus") == "delivered":
+            entry["upsDeliveredAt"] = _normalize_timestamp_like_string(entry.get("deliveryDate"))
         result.append(_apply_ups_status_to_order(entry, entry.get("upsTrackingStatus")))
     return result
 
@@ -804,7 +877,7 @@ def update_ups_tracking_status(
     normalized_delivered_at = _normalize_optional_string(delivered_at)
     normalized_estimated_arrival_date = _normalize_optional_string(estimated_arrival_date)
     normalized_delivery_date_guaranteed = _normalize_optional_string(delivery_date_guaranteed)
-    normalized_expected_shipment_window = _normalize_optional_string_max(expected_shipment_window, 64)
+    normalized_expected_shipment_window = _normalize_optional_string_max(expected_shipment_window, 128)
     if not order_id:
         return None
 
@@ -816,8 +889,9 @@ def update_ups_tracking_status(
     existing_delivery_date = _normalize_optional_string(
         updated.get("deliveryDate")
         or updated.get("delivery_date")
-        or updated.get("upsDeliveredAt")
+        or updated.get("expectedShipmentWindow")
     )
+    existing_delivered_at = _resolve_persisted_ups_delivered_at(updated)
     estimate = updated.get("shippingEstimate")
     if not isinstance(estimate, dict):
         estimate = {}
@@ -828,8 +902,8 @@ def update_ups_tracking_status(
     if normalized == "delivered":
         if normalized_delivered_at:
             estimate["deliveredAt"] = normalized_delivered_at
-        elif existing_delivery_date:
-            estimate["deliveredAt"] = existing_delivery_date
+        elif existing_delivered_at:
+            estimate["deliveredAt"] = existing_delivered_at
         elif _normalize_optional_string(estimate.get("deliveredAt")):
             pass
         estimate.pop("estimatedArrivalDate", None)
@@ -845,16 +919,26 @@ def update_ups_tracking_status(
             updated["expectedShipmentWindow"] = normalized_expected_shipment_window
     updated["shippingEstimate"] = estimate
     resolved_delivery_date = (
+        normalized_expected_shipment_window
+        or normalized_delivery_date_guaranteed
+        or normalized_estimated_arrival_date
+        or (
+            normalized_delivered_at
+            if normalized == "delivered" and normalized_delivered_at
+            else _normalize_optional_string(estimate.get("deliveredAt"))
+            if normalized == "delivered"
+            else None
+        )
+        or existing_delivery_date
+    )
+    resolved_delivered_at = (
         normalized_delivered_at
         if normalized == "delivered" and normalized_delivered_at
-        else (
-            _normalize_optional_string(estimate.get("deliveredAt"))
-            or existing_delivery_date
-        )
+        else _normalize_optional_string(estimate.get("deliveredAt"))
         if normalized == "delivered"
         else None
     )
-    updated["upsDeliveredAt"] = resolved_delivery_date
+    updated["upsDeliveredAt"] = resolved_delivered_at
     updated["deliveryDate"] = resolved_delivery_date
     updated["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return update(updated)
@@ -1697,6 +1781,9 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
+        "delivery_date": (
+            fmt_datetime(row.get("delivery_date")) if isinstance(row.get("delivery_date"), datetime) else row.get("delivery_date")
+        ),
         "upsTrackingStatus": _normalize_ups_tracking_status(
             row.get("ups_tracking_status")
             or (payload_order.get("upsTrackingStatus") if isinstance(payload_order, dict) else None)
@@ -1705,15 +1792,25 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             or (payload.get("ups_tracking_status") if isinstance(payload, dict) else None)
         ),
         "upsDeliveredAt": _normalize_optional_string(
-            fmt_datetime(row.get("delivery_date"))
-            or (payload_order.get("upsDeliveredAt") if isinstance(payload_order, dict) else None)
-            or (payload_order.get("delivery_date") if isinstance(payload_order, dict) else None)
+            (payload_order.get("upsDeliveredAt") if isinstance(payload_order, dict) else None)
             or (payload.get("upsDeliveredAt") if isinstance(payload, dict) else None)
-            or (payload.get("delivery_date") if isinstance(payload, dict) else None)
             or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
             or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
         ),
-        "deliveryDate": _normalize_optional_string(fmt_datetime(row.get("delivery_date"))),
+        "deliveryDate": _normalize_optional_string(
+            (fmt_datetime(row.get("delivery_date")) if isinstance(row.get("delivery_date"), datetime) else row.get("delivery_date"))
+            or (payload_order.get("deliveryDate") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("delivery_date") if isinstance(payload_order, dict) else None)
+            or (payload.get("deliveryDate") if isinstance(payload, dict) else None)
+            or (payload.get("delivery_date") if isinstance(payload, dict) else None)
+            or row.get("expected_shipment_window")
+            or (shipping_estimate.get("deliveryDateGuaranteed") if isinstance(shipping_estimate, dict) else None)
+            or (shipping_estimate.get("delivery_date_guaranteed") if isinstance(shipping_estimate, dict) else None)
+            or (shipping_estimate.get("estimatedArrivalDate") if isinstance(shipping_estimate, dict) else None)
+            or (shipping_estimate.get("estimated_arrival_date") if isinstance(shipping_estimate, dict) else None)
+            or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
+            or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
+        ),
         "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
         "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),
@@ -1730,6 +1827,8 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
     order["upsTrackingStatus"] = _resolve_persisted_ups_tracking_status(order)
+    if not order.get("upsDeliveredAt") and order.get("upsTrackingStatus") == "delivered":
+        order["upsDeliveredAt"] = _normalize_timestamp_like_string(order.get("deliveryDate"))
     if isinstance(payload, dict) and payload:
         if payload.get("handDelivery") is not None:
             order["handDelivery"] = bool(payload.get("handDelivery"))
@@ -1971,7 +2070,7 @@ def _to_db_params(order: Dict) -> Dict:
         ),
         "tracking_number": tracking_number,
         "ups_tracking_status": ups_tracking_status,
-        "delivery_date": parse_dt(_resolve_persisted_delivery_date(order)),
+        "delivery_date": _normalize_optional_string_max(_resolve_persisted_delivery_date(order), 128),
         "shipped_at": _resolve_shipped_at(order),
         "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),

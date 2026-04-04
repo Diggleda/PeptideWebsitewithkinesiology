@@ -429,6 +429,98 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
             service.order_repository.update_ups_tracking_status = original_update_ups_status
             service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
 
+    def test_refresh_ups_status_persists_delivery_date_when_only_display_field_exists(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
+        try:
+            local_order = {
+                "id": "local-ups-2002b",
+                "wooOrderNumber": "#2002b",
+                "trackingNumber": "1ZTEST2002B",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "in_transit",
+                "deliveryDate": "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+                "shippingEstimate": {
+                    "status": "in_transit",
+                    "carrierId": "ups",
+                    "estimatedArrivalDate": "2026-04-07T18:00:00",
+                    "deliveryDateGuaranteed": "2026-04-07T00:00:00",
+                },
+                "expectedShipmentWindow": "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+            }
+            persisted = []
+
+            service.order_repository.find_by_order_identifier = (
+                lambda value: local_order if str(value) in {"2002b", "#2002b"} else None
+            )
+            service.order_repository.update_ups_tracking_status = (
+                lambda order_id, *, ups_tracking_status, delivered_at=None, estimated_arrival_date=None, delivery_date_guaranteed=None, expected_shipment_window=None: (
+                    persisted.append(
+                        (
+                            order_id,
+                            ups_tracking_status,
+                            delivered_at,
+                            estimated_arrival_date,
+                            delivery_date_guaranteed,
+                            expected_shipment_window,
+                        )
+                    )
+                    or {
+                        **local_order,
+                        "delivery_date": expected_shipment_window,
+                        "deliveryDate": expected_shipment_window,
+                    }
+                )
+            )
+            service.ups_tracking.fetch_tracking_status = lambda _tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": "1ZTEST2002B",
+                "trackingStatus": "In Transit",
+                "trackingStatusRaw": "On the Way",
+                "estimatedArrivalDate": "2026-04-07T18:00:00",
+                "deliveryDateGuaranteed": "2026-04-07T00:00:00",
+                "expectedShipmentWindow": "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+            }
+
+            order = {
+                "id": "2002b",
+                "wooOrderNumber": "2002b",
+                "trackingNumber": "1ZTEST2002B",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "in_transit",
+                "deliveryDate": "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+                "shippingEstimate": {
+                    "status": "in_transit",
+                    "carrierId": "ups",
+                    "estimatedArrivalDate": "2026-04-07T18:00:00",
+                    "deliveryDateGuaranteed": "2026-04-07T00:00:00",
+                },
+                "expectedShipmentWindow": "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+            }
+
+            refreshed = service._refresh_authoritative_ups_status_for_order_view(order, local_order=local_order)
+
+            self.assertEqual(
+                persisted,
+                [
+                    (
+                        "local-ups-2002b",
+                        "in_transit",
+                        None,
+                        "2026-04-07T18:00:00",
+                        "2026-04-07T00:00:00",
+                        "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+                    )
+                ],
+            )
+            self.assertEqual(refreshed["delivery_date"], "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
+
     def test_refresh_ups_status_persists_delivery_date_when_only_sql_column_is_missing(self):
         service = self.order_service
         original_find_identifier = service.order_repository.find_by_order_identifier

@@ -134,7 +134,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
             }
         )
 
-        self.assertEqual(params["delivery_date"], "2026-04-02 10:15:00")
+        self.assertEqual(params["delivery_date"], "2026-04-02T10:15:00")
 
     @patch("python_backend.repositories.order_repository.find_by_id", return_value={"id": "order-3"})
     @patch("python_backend.repositories.order_repository.mysql_client.execute")
@@ -205,7 +205,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertIn("ups_tracking_status", mock_execute.call_args_list[2][0][0])
         self.assertIn("delivery_date", mock_execute.call_args_list[2][0][0])
         self.assertEqual(mock_execute.call_args_list[2][0][1]["ups_tracking_status"], "in_transit")
-        self.assertEqual(mock_execute.call_args_list[2][0][1]["delivery_date"], "2026-04-02 10:15:00")
+        self.assertEqual(mock_execute.call_args_list[2][0][1]["delivery_date"], "2026-04-02T10:15:00")
 
     def test_row_to_order_formats_naive_mysql_datetime_in_order_timezone(self):
         with patch.dict("os.environ", {"ORDER_TIMEZONE": "America/Los_Angeles"}):
@@ -246,6 +246,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
                 "integrations": "{}",
                 "shipping_address": "{}",
                 "tracking_number": "1Z999",
+                "ups_tracking_status": "delivered",
                 "delivery_date": datetime(2026, 4, 2, 10, 15, 0),
                 "shipped_at": None,
                 "physician_certified": 0,
@@ -466,6 +467,10 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertEqual(result["shippingEstimate"]["deliveryDateGuaranteed"], "2026-04-07T00:00:00")
         self.assertEqual(
             result["expectedShipmentWindow"],
+            "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+        )
+        self.assertEqual(
+            result["deliveryDate"],
             "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
         )
 

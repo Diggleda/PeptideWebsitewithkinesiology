@@ -271,7 +271,6 @@ def _extract_estimated_arrival_date(order: Dict[str, Any]) -> Optional[str]:
         estimate.get("estimated_arrival_date"),
         estimate.get("deliveryDateGuaranteed"),
         estimate.get("delivery_date_guaranteed"),
-        estimate.get("delivery_date"),
     ):
         normalized = _normalize_optional_text(candidate)
         if normalized:
@@ -286,7 +285,6 @@ def _extract_delivery_date_guaranteed(order: Dict[str, Any]) -> Optional[str]:
     for candidate in (
         estimate.get("deliveryDateGuaranteed"),
         estimate.get("delivery_date_guaranteed"),
-        estimate.get("delivery_date"),
         estimate.get("estimatedArrivalDate"),
         estimate.get("estimated_arrival_date"),
     ):
@@ -309,7 +307,6 @@ def _extract_expected_shipment_window(order: Dict[str, Any]) -> Optional[str]:
 
 def _extract_persisted_delivery_date(order: Dict[str, Any]) -> Optional[str]:
     for candidate in (
-        order.get("deliveryDate"),
         order.get("delivery_date"),
     ):
         normalized = _normalize_optional_text(candidate)
@@ -318,9 +315,35 @@ def _extract_persisted_delivery_date(order: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _normalize_timestamp_like_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    text = _normalize_optional_text(value)
+    if not text:
+        return None
+    normalized = text
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    if " " in normalized and "T" not in normalized:
+        normalized = normalized.replace(" ", "T", 1)
+    try:
+        datetime.fromisoformat(normalized)
+    except Exception:
+        return None
+    return normalized
+
+
 def _extract_known_delivery_date(order: Dict[str, Any]) -> Optional[str]:
     estimate = order.get("shippingEstimate")
     for candidate in (
+        order.get("expectedShipmentWindow"),
+        order.get("expected_shipment_window"),
+        (estimate.get("deliveryDateGuaranteed") if isinstance(estimate, dict) else None),
+        (estimate.get("delivery_date_guaranteed") if isinstance(estimate, dict) else None),
+        (estimate.get("estimatedArrivalDate") if isinstance(estimate, dict) else None),
+        (estimate.get("estimated_arrival_date") if isinstance(estimate, dict) else None),
         (estimate.get("deliveredAt") if isinstance(estimate, dict) else None),
         (estimate.get("delivered_at") if isinstance(estimate, dict) else None),
         order.get("deliveryDate"),
@@ -331,6 +354,47 @@ def _extract_known_delivery_date(order: Dict[str, Any]) -> Optional[str]:
         if normalized:
             return normalized
     return None
+
+
+def _extract_known_delivered_at(order: Dict[str, Any]) -> Optional[str]:
+    estimate = order.get("shippingEstimate")
+    for candidate in (
+        (estimate.get("deliveredAt") if isinstance(estimate, dict) else None),
+        (estimate.get("delivered_at") if isinstance(estimate, dict) else None),
+        order.get("upsDeliveredAt"),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized:
+            return normalized
+    delivered_status = _normalize_ups_status(
+        order.get("upsTrackingStatus")
+        if order.get("upsTrackingStatus") is not None
+        else order.get("ups_tracking_status") or (estimate.get("status") if isinstance(estimate, dict) else None)
+    )
+    if delivered_status == "delivered":
+        for candidate in (
+            order.get("deliveryDate"),
+            order.get("delivery_date"),
+        ):
+            normalized = _normalize_timestamp_like_value(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
+def _resolve_known_delivery_date_value(
+    *,
+    delivered_at: Optional[str] = None,
+    estimated_arrival_date: Optional[str] = None,
+    delivery_date_guaranteed: Optional[str] = None,
+    expected_shipment_window: Optional[str] = None,
+) -> Optional[str]:
+    return (
+        _normalize_optional_text(expected_shipment_window)
+        or _normalize_optional_text(delivery_date_guaranteed)
+        or _normalize_optional_text(estimated_arrival_date)
+        or _normalize_optional_text(delivered_at)
+    )
 
 
 def _is_hand_delivery_order(order: Dict[str, Any]) -> bool:
@@ -551,7 +615,7 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     order_repository.update_ups_tracking_status(
                         order_id,
                         ups_tracking_status="delivered",
-                        delivered_at=current_known_delivery_date,
+                        delivered_at=_extract_known_delivered_at(order),
                         estimated_arrival_date=None,
                         delivery_date_guaranteed=None,
                         expected_shipment_window=None,
@@ -569,10 +633,16 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     info.get("estimatedArrivalDate") or info.get("estimated_arrival_date")
                 )
                 delivery_date_guaranteed = _normalize_optional_text(
-                    info.get("deliveryDateGuaranteed") or info.get("delivery_date_guaranteed") or info.get("delivery_date")
+                    info.get("deliveryDateGuaranteed") or info.get("delivery_date_guaranteed")
                 )
                 expected_shipment_window = _normalize_optional_text(
                     info.get("expectedShipmentWindow") or info.get("expected_shipment_window")
+                )
+                delivery_date = _resolve_known_delivery_date_value(
+                    delivered_at=delivered_at,
+                    estimated_arrival_date=estimated_arrival_date,
+                    delivery_date_guaranteed=delivery_date_guaranteed,
+                    expected_shipment_window=expected_shipment_window,
                 )
                 if not next_status:
                     if info.get("error"):
@@ -580,24 +650,14 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     else:
                         missing += 1
                     continue
-                current_delivered_at = str(
-                    (
-                        (order.get("shippingEstimate") or {}).get("deliveredAt")
-                        if isinstance(order.get("shippingEstimate"), dict)
-                        else None
-                    )
-                    or order.get("delivery_date")
-                    or order.get("deliveryDate")
-                    or order.get("upsDeliveredAt")
-                    or ""
-                ).strip() or None
+                current_delivered_at = _extract_known_delivered_at(order)
                 current_estimated_arrival_date = _extract_estimated_arrival_date(order)
                 current_delivery_date_guaranteed = _extract_delivery_date_guaranteed(order)
                 current_expected_shipment_window = _extract_expected_shipment_window(order)
                 if current_status == next_status and (
-                    next_status != "delivered" or not delivered_at or (
-                        current_delivered_at == delivered_at and current_persisted_delivery_date == delivered_at
-                    )
+                    not delivery_date or current_persisted_delivery_date == delivery_date
+                ) and (
+                    next_status != "delivered" or not delivered_at or current_delivered_at == delivered_at
                 ) and (
                     next_status == "delivered"
                     or (

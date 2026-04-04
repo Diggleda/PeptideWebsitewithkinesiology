@@ -80,6 +80,7 @@ class TestUpsStatusSyncService(unittest.TestCase):
                 "trackingNumber": "1ZTEST002",
                 "shippingCarrier": "ups",
                 "upsTrackingStatus": "delivered",
+                "delivery_date": "2026-04-02T10:15:00",
                 "deliveryDate": "2026-04-02T10:15:00",
                 "status": "processing",
                 "createdAt": "2026-04-01T12:00:00Z",
