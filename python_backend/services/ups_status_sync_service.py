@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
+_INITIAL_BACKFILL_STARTED = False
 
 _SYNC_LOCK = threading.Lock()
 _IN_FLIGHT = False
@@ -97,6 +98,15 @@ def _max_runtime_seconds() -> int:
     except Exception:
         value = 45
     return max(10, min(value, 15 * 60))
+
+
+def _startup_passes() -> int:
+    raw = str(os.environ.get("UPS_STATUS_SYNC_STARTUP_PASSES", "2")).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        value = 2
+    return max(1, min(value, 10))
 
 
 def _parse_settings_json_value(raw: Any) -> Any:
@@ -659,13 +669,42 @@ def _worker() -> None:
         time.sleep(_interval_seconds())
 
 
+def _startup_backfill_worker() -> None:
+    passes = _startup_passes()
+    logger.info("[ups-status-sync] startup backfill started", extra={"passes": passes})
+    for attempt in range(1, passes + 1):
+        try:
+            result = run_sync_once(ignore_cooldown=True)
+        except Exception:
+            logger.error("[ups-status-sync] startup backfill failed", exc_info=True, extra={"attempt": attempt})
+            return
+
+        status = str(result.get("status") or "").strip().lower()
+        updated = int(result.get("updated") or 0)
+        processed = int(result.get("processed") or 0)
+        reason = str(result.get("reason") or "").strip().lower()
+        if status != "success":
+            if reason not in {"cooldown"}:
+                return
+        if updated <= 0 or processed <= 0:
+            return
+
+
 def start_ups_status_sync() -> None:
-    global _THREAD_STARTED
+    global _THREAD_STARTED, _INITIAL_BACKFILL_STARTED
     if not _enabled():
         return
     with _THREAD_LOCK:
         if _THREAD_STARTED:
             return
         _THREAD_STARTED = True
+        if not _INITIAL_BACKFILL_STARTED:
+            _INITIAL_BACKFILL_STARTED = True
+            startup_thread = threading.Thread(
+                target=_startup_backfill_worker,
+                name="ups-status-sync-startup",
+                daemon=True,
+            )
+            startup_thread.start()
         thread = threading.Thread(target=_worker, name="ups-status-sync", daemon=True)
         thread.start()
