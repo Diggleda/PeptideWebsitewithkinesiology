@@ -216,6 +216,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
             }
         )
 
+        self.assertEqual(order["deliveryDate"], "2026-04-02T10:15:00-07:00")
         self.assertEqual(order["upsDeliveredAt"], "2026-04-02T10:15:00-07:00")
 
     def test_to_db_params_encrypts_payload_and_shipping_address_inline(self):
@@ -373,8 +374,32 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         )
 
         self.assertEqual(result["upsTrackingStatus"], "delivered")
+        self.assertEqual(result["deliveryDate"], "2026-04-02T10:15:00")
         self.assertEqual(result["upsDeliveredAt"], "2026-04-02T10:15:00")
         self.assertEqual(result["shippingEstimate"]["status"], "delivered")
+        self.assertEqual(result["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
+
+    @patch("python_backend.repositories.order_repository.update")
+    @patch(
+        "python_backend.repositories.order_repository.find_by_id",
+        return_value={
+            "id": "order-10a",
+            "shippingEstimate": {"carrierId": "ups", "status": "delivered"},
+            "upsTrackingStatus": "delivered",
+            "deliveryDate": "2026-04-02T10:15:00",
+        },
+    )
+    def test_update_ups_tracking_status_preserves_existing_delivery_date_column(self, _find_by_id, mock_update):
+        mock_update.side_effect = lambda order: order
+
+        result = order_repository.update_ups_tracking_status(
+            "order-10a",
+            ups_tracking_status="delivered",
+            delivered_at=None,
+        )
+
+        self.assertEqual(result["deliveryDate"], "2026-04-02T10:15:00")
+        self.assertEqual(result["upsDeliveredAt"], "2026-04-02T10:15:00")
         self.assertEqual(result["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
 
     @patch("python_backend.repositories.order_repository.update")

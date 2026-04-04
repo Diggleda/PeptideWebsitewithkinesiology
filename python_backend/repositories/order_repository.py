@@ -241,6 +241,7 @@ def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
             "shippingEstimate": shipping_estimate,
         }
     )
+    order["deliveryDate"] = delivered_at
     order["upsDeliveredAt"] = delivered_at
     if not normalized:
         raw_estimate_status = str(shipping_estimate.get("status") or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -257,6 +258,7 @@ def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
         order["expectedShipmentWindow"] = None
     else:
         shipping_estimate.pop("deliveredAt", None)
+        order["deliveryDate"] = None
         order["upsDeliveredAt"] = None
     order["shippingEstimate"] = shipping_estimate
     return order
@@ -655,6 +657,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
                 or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
             ),
+            "deliveryDate": _normalize_optional_string(fmt_datetime(row.get("delivery_date"))),
             "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
             "status": row.get("status"),
             "notes": row.get("notes") if row.get("notes") is not None else None,
@@ -743,6 +746,11 @@ def update_ups_tracking_status(
         return None
     updated = dict(existing)
     updated["upsTrackingStatus"] = normalized
+    existing_delivery_date = _normalize_optional_string(
+        updated.get("deliveryDate")
+        or updated.get("delivery_date")
+        or updated.get("upsDeliveredAt")
+    )
     estimate = updated.get("shippingEstimate")
     if not isinstance(estimate, dict):
         estimate = {}
@@ -753,6 +761,8 @@ def update_ups_tracking_status(
     if normalized == "delivered":
         if normalized_delivered_at:
             estimate["deliveredAt"] = normalized_delivered_at
+        elif existing_delivery_date:
+            estimate["deliveredAt"] = existing_delivery_date
         elif _normalize_optional_string(estimate.get("deliveredAt")):
             pass
         estimate.pop("estimatedArrivalDate", None)
@@ -767,13 +777,18 @@ def update_ups_tracking_status(
         if normalized_expected_shipment_window:
             updated["expectedShipmentWindow"] = normalized_expected_shipment_window
     updated["shippingEstimate"] = estimate
-    updated["upsDeliveredAt"] = (
+    resolved_delivery_date = (
         normalized_delivered_at
         if normalized == "delivered" and normalized_delivered_at
-        else _normalize_optional_string(estimate.get("deliveredAt"))
+        else (
+            _normalize_optional_string(estimate.get("deliveredAt"))
+            or existing_delivery_date
+        )
         if normalized == "delivered"
         else None
     )
+    updated["upsDeliveredAt"] = resolved_delivery_date
+    updated["deliveryDate"] = resolved_delivery_date
     updated["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return update(updated)
 
@@ -1629,6 +1644,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
             or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
         ),
+        "deliveryDate": _normalize_optional_string(fmt_datetime(row.get("delivery_date"))),
         "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
         "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),

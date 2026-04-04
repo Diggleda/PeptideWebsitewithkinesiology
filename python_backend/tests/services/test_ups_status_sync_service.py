@@ -64,7 +64,7 @@ if "cryptography" not in sys.modules:
 
 
 class TestUpsStatusSyncService(unittest.TestCase):
-    def test_fetch_orders_for_sync_filters_non_ups_terminal_and_delivered_orders(self):
+    def test_fetch_orders_for_sync_filters_non_ups_terminal_and_only_skips_delivered_with_persisted_date(self):
         from python_backend.services import ups_status_sync_service as svc
 
         orders = [
@@ -80,6 +80,16 @@ class TestUpsStatusSyncService(unittest.TestCase):
                 "trackingNumber": "1ZTEST002",
                 "shippingCarrier": "ups",
                 "upsTrackingStatus": "delivered",
+                "deliveryDate": "2026-04-02T10:15:00",
+                "status": "processing",
+                "createdAt": "2026-04-01T12:00:00Z",
+            },
+            {
+                "id": "ups-3",
+                "trackingNumber": "1ZTEST003",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "delivered",
+                "shippingEstimate": {"status": "delivered", "deliveredAt": "2026-04-03T10:15:00"},
                 "status": "processing",
                 "createdAt": "2026-04-01T12:00:00Z",
             },
@@ -110,7 +120,7 @@ class TestUpsStatusSyncService(unittest.TestCase):
         with patch.object(svc.order_repository, "list_recent", return_value=orders):
             selected = svc._fetch_orders_for_sync(lookback_days=60, max_orders=10)
 
-        self.assertEqual([order["id"] for order in selected], ["ups-1"])
+        self.assertEqual([order["id"] for order in selected], ["ups-1", "ups-3"])
 
     def test_run_sync_once_updates_persisted_ups_tracking_status(self):
         from python_backend.services import ups_status_sync_service as svc
@@ -183,6 +193,47 @@ class TestUpsStatusSyncService(unittest.TestCase):
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["processed"], 1)
         self.assertEqual(result["updated"], 1)
+        update_status.assert_called_once_with(
+            "ups-1",
+            ups_tracking_status="delivered",
+            delivered_at="2026-04-02T10:15:00",
+            estimated_arrival_date=None,
+            delivery_date_guaranteed=None,
+            expected_shipment_window=None,
+        )
+
+    def test_run_sync_once_backfills_delivery_date_from_existing_known_value(self):
+        from python_backend.services import ups_status_sync_service as svc
+
+        candidate_orders = [
+            {
+                "id": "ups-1",
+                "trackingNumber": "1ZTEST001",
+                "shippingCarrier": "ups",
+                "status": "processing",
+                "upsTrackingStatus": "delivered",
+                "shippingEstimate": {"status": "delivered", "deliveredAt": "2026-04-02T10:15:00"},
+                "createdAt": "2026-04-01T12:00:00Z",
+            }
+        ]
+
+        with patch.object(svc, "_enabled", return_value=True), \
+            patch.object(svc.ups_tracking, "is_configured", return_value=True), \
+            patch.object(svc, "_try_acquire_lease", return_value="lease-1"), \
+            patch.object(svc, "_release_lease"), \
+            patch.object(svc, "_get_last_run_at", return_value=None), \
+            patch.object(svc, "_set_last_run_at"), \
+            patch.object(svc, "_fetch_orders_for_sync", return_value=candidate_orders), \
+            patch.object(svc, "_max_runtime_seconds", return_value=45), \
+            patch.object(svc, "_throttle_ms", return_value=0), \
+            patch.object(svc.ups_tracking, "fetch_tracking_status") as fetch_tracking_status, \
+            patch.object(svc.order_repository, "update_ups_tracking_status") as update_status:
+            result = svc.run_sync_once(ignore_cooldown=True)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["updated"], 1)
+        fetch_tracking_status.assert_not_called()
         update_status.assert_called_once_with(
             "ups-1",
             ups_tracking_status="delivered",

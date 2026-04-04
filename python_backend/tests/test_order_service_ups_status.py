@@ -429,6 +429,73 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
             service.order_repository.update_ups_tracking_status = original_update_ups_status
             service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
 
+    def test_refresh_ups_status_persists_delivery_date_when_only_sql_column_is_missing(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
+        try:
+            local_order = {
+                "id": "local-ups-2003",
+                "wooOrderNumber": "#2003",
+                "trackingNumber": "1ZTEST2003",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "delivered",
+                "shippingEstimate": {
+                    "status": "delivered",
+                    "carrierId": "ups",
+                    "deliveredAt": "2026-04-02T10:15:00",
+                },
+            }
+            persisted = []
+
+            service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"2003", "#2003"} else None
+            service.order_repository.update_ups_tracking_status = (
+                lambda order_id, *, ups_tracking_status, delivered_at=None, estimated_arrival_date=None, delivery_date_guaranteed=None, expected_shipment_window=None: (
+                    persisted.append((order_id, ups_tracking_status, delivered_at))
+                    or {
+                        **local_order,
+                        "deliveryDate": delivered_at,
+                        "upsTrackingStatus": ups_tracking_status,
+                        "upsDeliveredAt": delivered_at,
+                        "shippingEstimate": {
+                            "status": ups_tracking_status,
+                            "carrierId": "ups",
+                            "deliveredAt": delivered_at,
+                        },
+                    }
+                )
+            )
+            service.ups_tracking.fetch_tracking_status = lambda _tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": "1ZTEST2003",
+                "trackingStatus": "Delivered",
+                "trackingStatusRaw": "Delivered",
+                "deliveredAt": "2026-04-02T10:15:00",
+            }
+
+            order = {
+                "id": "2003",
+                "wooOrderNumber": "2003",
+                "trackingNumber": "1ZTEST2003",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "delivered",
+                "shippingEstimate": {
+                    "status": "delivered",
+                    "carrierId": "ups",
+                    "deliveredAt": "2026-04-02T10:15:00",
+                },
+            }
+
+            refreshed = service._refresh_authoritative_ups_status_for_order_view(order, local_order=local_order)
+
+            self.assertEqual(persisted, [("local-ups-2003", "delivered", "2026-04-02T10:15:00")])
+            self.assertEqual(refreshed["deliveryDate"], "2026-04-02T10:15:00")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
+
 
 if __name__ == "__main__":
     unittest.main()

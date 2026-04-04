@@ -297,6 +297,32 @@ def _extract_expected_shipment_window(order: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _extract_persisted_delivery_date(order: Dict[str, Any]) -> Optional[str]:
+    for candidate in (
+        order.get("deliveryDate"),
+        order.get("delivery_date"),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _extract_known_delivery_date(order: Dict[str, Any]) -> Optional[str]:
+    estimate = order.get("shippingEstimate")
+    for candidate in (
+        (estimate.get("deliveredAt") if isinstance(estimate, dict) else None),
+        (estimate.get("delivered_at") if isinstance(estimate, dict) else None),
+        order.get("deliveryDate"),
+        order.get("delivery_date"),
+        order.get("upsDeliveredAt"),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
 def _is_hand_delivery_order(order: Dict[str, Any]) -> bool:
     if order.get("handDelivery") is True:
         return True
@@ -387,7 +413,10 @@ def _fetch_orders_for_sync(*, lookback_days: int, max_orders: int) -> List[Dict[
             continue
         if _is_terminal_local_status(order.get("status")):
             continue
-        if _normalize_ups_status(order.get("upsTrackingStatus") or order.get("ups_tracking_status")) == "delivered":
+        if (
+            _normalize_ups_status(order.get("upsTrackingStatus") or order.get("ups_tracking_status")) == "delivered"
+            and _extract_persisted_delivery_date(order)
+        ):
             continue
         tracking_number = order.get("trackingNumber") or order.get("tracking_number")
         if not tracking_number or not _is_ups_order(order):
@@ -505,6 +534,21 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
 
             processed += 1
             try:
+                current_status = _normalize_ups_status(order.get("upsTrackingStatus") or order.get("ups_tracking_status"))
+                current_persisted_delivery_date = _extract_persisted_delivery_date(order)
+                current_known_delivery_date = _extract_known_delivery_date(order)
+                if current_status == "delivered" and current_known_delivery_date and current_persisted_delivery_date != current_known_delivery_date:
+                    order_repository.update_ups_tracking_status(
+                        order_id,
+                        ups_tracking_status="delivered",
+                        delivered_at=current_known_delivery_date,
+                        estimated_arrival_date=None,
+                        delivery_date_guaranteed=None,
+                        expected_shipment_window=None,
+                    )
+                    updated += 1
+                    continue
+
                 info = ups_tracking.fetch_tracking_status(tracking_number)
                 if not info:
                     missing += 1
@@ -526,7 +570,6 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     else:
                         missing += 1
                     continue
-                current_status = _normalize_ups_status(order.get("upsTrackingStatus") or order.get("ups_tracking_status"))
                 current_delivered_at = str(
                     (
                         (order.get("shippingEstimate") or {}).get("deliveredAt")
@@ -534,6 +577,7 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                         else None
                     )
                     or order.get("delivery_date")
+                    or order.get("deliveryDate")
                     or order.get("upsDeliveredAt")
                     or ""
                 ).strip() or None
@@ -541,7 +585,9 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                 current_delivery_date_guaranteed = _extract_delivery_date_guaranteed(order)
                 current_expected_shipment_window = _extract_expected_shipment_window(order)
                 if current_status == next_status and (
-                    next_status != "delivered" or not delivered_at or current_delivered_at == delivered_at
+                    next_status != "delivered" or not delivered_at or (
+                        current_delivered_at == delivered_at and current_persisted_delivery_date == delivered_at
+                    )
                 ) and (
                     next_status == "delivered"
                     or (

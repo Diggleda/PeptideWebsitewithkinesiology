@@ -940,12 +940,27 @@ def _extract_delivery_date(*orders: Optional[Dict]) -> Optional[str]:
         integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
         carrier_tracking = _ensure_dict(integrations.get("carrierTracking") or integrations.get("carrier_tracking"))
         for candidate in (
+            order.get("deliveryDate"),
             order.get("delivery_date"),
             order.get("upsDeliveredAt"),
             estimate.get("deliveredAt"),
             estimate.get("delivered_at"),
             carrier_tracking.get("deliveredAt"),
             carrier_tracking.get("delivered_at"),
+        ):
+            normalized = _normalize_delivery_date(candidate)
+            if normalized:
+                return normalized
+    return None
+
+
+def _extract_persisted_delivery_date(*orders: Optional[Dict]) -> Optional[str]:
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        for candidate in (
+            order.get("deliveryDate"),
+            order.get("delivery_date"),
         ):
             normalized = _normalize_delivery_date(candidate)
             if normalized:
@@ -1035,6 +1050,7 @@ def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
     normalized = _normalize_ups_tracking_status(raw_status)
     delivered_at = _extract_delivery_date(order)
     order["upsTrackingStatus"] = normalized
+    order["deliveryDate"] = delivered_at
     order["upsDeliveredAt"] = delivered_at
     if not normalized:
         estimate = _ensure_dict(order.get("shippingEstimate"))
@@ -1052,6 +1068,7 @@ def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
         _apply_ups_delivery_estimate(order, clear=True)
     else:
         estimate.pop("deliveredAt", None)
+        order["deliveryDate"] = None
         order["upsDeliveredAt"] = None
     order["shippingEstimate"] = estimate
     return normalized
@@ -1263,6 +1280,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
         )
     )
     current_delivered_at = _extract_delivery_date(order, local_order)
+    current_persisted_delivery_date = _extract_persisted_delivery_date(order, local_order)
     current_estimated_arrival_date = _extract_ups_estimated_arrival_date(order, local_order)
     current_delivery_date_guaranteed = _extract_ups_delivery_date_guaranteed(order, local_order)
     current_expected_shipment_window = _extract_ups_expected_shipment_window(order, local_order)
@@ -1270,7 +1288,10 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
     refreshed_local_order = local_order
     peppro_order_id = _resolve_peppro_order_id_for_ups_refresh(order, local_order)
     should_persist = current_status != normalized or (
-        normalized == "delivered" and delivered_at and current_delivered_at != delivered_at
+        normalized == "delivered" and delivered_at and (
+            current_delivered_at != delivered_at
+            or current_persisted_delivery_date != delivered_at
+        )
     ) or (
         normalized != "delivered" and (
             (estimated_arrival_date and current_estimated_arrival_date != estimated_arrival_date)
@@ -1302,6 +1323,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
             continue
         target["trackingNumber"] = live_tracking_number
         target["upsTrackingStatus"] = normalized
+        target["deliveryDate"] = delivered_at if normalized == "delivered" else None
         target["upsDeliveredAt"] = delivered_at if normalized == "delivered" else None
         _apply_ups_delivery_estimate(
             target,
@@ -2461,6 +2483,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
                 "shippingCarrier": local.get("shippingCarrier") or None,
                 "shippingService": local.get("shippingService") or None,
                 "upsTrackingStatus": local.get("upsTrackingStatus") or None,
+                "deliveryDate": local.get("deliveryDate") or None,
                 "upsDeliveredAt": local.get("upsDeliveredAt") or None,
                 "lineItems": local.get("items") or [],
                 "source": "peppro",
@@ -2584,6 +2607,8 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
             order["trackingNumber"] = local_order.get("trackingNumber")
         if local_order.get("upsTrackingStatus") is not None:
             order["upsTrackingStatus"] = local_order.get("upsTrackingStatus")
+        if local_order.get("deliveryDate") is not None:
+            order["deliveryDate"] = local_order.get("deliveryDate")
         if local_order.get("upsDeliveredAt") is not None:
             order["upsDeliveredAt"] = local_order.get("upsDeliveredAt")
 
@@ -4457,6 +4482,8 @@ def get_sales_rep_order_detail(
                 mapped["shippingEstimate"] = local_order.get("shippingEstimate")
             if local_order.get("upsTrackingStatus") is not None:
                 mapped["upsTrackingStatus"] = local_order.get("upsTrackingStatus")
+            if local_order.get("deliveryDate") is not None:
+                mapped["deliveryDate"] = local_order.get("deliveryDate")
             if local_order.get("upsDeliveredAt") is not None:
                 mapped["upsDeliveredAt"] = local_order.get("upsDeliveredAt")
             if local_order.get("shippingCarrier") is not None:
