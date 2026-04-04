@@ -12,6 +12,7 @@ from .. import storage
 from ..utils.crypto_envelope import decrypt_json, encrypt_json
 
 HAND_DELIVERY_SERVICE_LABEL = "Hand Delivered"
+_ORDERS_COLUMNS_CACHE: Optional[set[str]] = None
 
 
 def _normalize_optional_string(value: object) -> Optional[str]:
@@ -302,6 +303,72 @@ _SALES_TRACKING_SELECT_COLUMNS = """
 
 def _using_mysql() -> bool:
     return bool(get_config().mysql.get("enabled"))
+
+
+def _orders_columns() -> set[str]:
+    global _ORDERS_COLUMNS_CACHE
+    if _ORDERS_COLUMNS_CACHE is not None:
+        return _ORDERS_COLUMNS_CACHE
+    if not _using_mysql():
+        _ORDERS_COLUMNS_CACHE = set()
+        return _ORDERS_COLUMNS_CACHE
+    try:
+        rows = mysql_client.fetch_all(
+            """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'orders'
+            """,
+        )
+        cols = {str((row or {}).get("COLUMN_NAME") or "").strip() for row in (rows or [])}
+        _ORDERS_COLUMNS_CACHE = {c for c in cols if c}
+    except Exception:
+        _ORDERS_COLUMNS_CACHE = {
+            "tracking_number",
+            "ups_tracking_status",
+            "delivery_date",
+            "shipping_rate",
+            "expected_shipment_window",
+            "updated_at",
+        }
+    return _ORDERS_COLUMNS_CACHE
+
+
+def _sync_tracking_fields_after_fallback(params: Dict) -> None:
+    if not _using_mysql():
+        return
+    columns = _orders_columns()
+    ordered_columns = [
+        "tracking_number",
+        "ups_tracking_status",
+        "delivery_date",
+        "shipping_rate",
+        "expected_shipment_window",
+        "updated_at",
+    ]
+    assignments = [f"{column} = %({column})s" for column in ordered_columns if column in columns]
+    if not assignments:
+        return
+    try:
+        mysql_client.execute(
+            f"UPDATE orders SET {', '.join(assignments)} WHERE id = %(id)s",
+            params,
+        )
+        return
+    except Exception:
+        pass
+
+    for column in ordered_columns:
+        if column not in columns:
+            continue
+        try:
+            mysql_client.execute(
+                f"UPDATE orders SET {column} = %({column})s WHERE id = %(id)s",
+                params,
+            )
+        except Exception:
+            continue
 
 
 def _is_hand_delivery_order(order: Dict) -> bool:
@@ -1381,6 +1448,7 @@ def insert(order: Dict) -> Dict:
                 """,
                 params,
             )
+            _sync_tracking_fields_after_fallback(params)
         return find_by_id(order["id"])
 
     orders = _load()
@@ -1469,6 +1537,7 @@ def update(order: Dict) -> Optional[Dict]:
                 """,
                 params,
             )
+            _sync_tracking_fields_after_fallback(params)
         return find_by_id(order.get("id"))
 
     orders = _load()

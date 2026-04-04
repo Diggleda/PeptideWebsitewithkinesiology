@@ -49,6 +49,7 @@ from python_backend.repositories import order_repository
 
 class TestOrderRepositoryShippedAt(unittest.TestCase):
     def setUp(self):
+        order_repository._ORDERS_COLUMNS_CACHE = None
         self.encrypt_json_patcher = patch(
             "python_backend.repositories.order_repository.encrypt_json",
             side_effect=lambda value, aad=None: f"cipher:{aad['field']}" if value is not None else None,
@@ -57,6 +58,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
 
     def tearDown(self):
         self.encrypt_json_patcher.stop()
+        order_repository._ORDERS_COLUMNS_CACHE = None
 
     def test_to_db_params_uses_explicit_shipstation_ship_date(self):
         params = order_repository._to_db_params(
@@ -167,6 +169,43 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertIn("delivery_date", sql)
         self.assertNotIn("ups_delivered_at", sql)
         self.assertIn("WHEN %(shipped_at)s IS NOT NULL THEN %(shipped_at)s", sql)
+
+    @patch("python_backend.repositories.order_repository.find_by_id", return_value={"id": "order-4b"})
+    @patch("python_backend.repositories.order_repository.mysql_client.fetch_all")
+    @patch("python_backend.repositories.order_repository.mysql_client.execute")
+    @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)
+    def test_update_fallback_still_syncs_tracking_columns(self, _using_mysql, mock_execute, mock_fetch_all, _find_by_id):
+        mock_fetch_all.return_value = [
+            {"COLUMN_NAME": "tracking_number"},
+            {"COLUMN_NAME": "ups_tracking_status"},
+            {"COLUMN_NAME": "delivery_date"},
+            {"COLUMN_NAME": "shipping_rate"},
+            {"COLUMN_NAME": "expected_shipment_window"},
+            {"COLUMN_NAME": "updated_at"},
+        ]
+        mock_execute.side_effect = [
+            Exception("missing newer schema column"),
+            1,
+            1,
+        ]
+
+        order_repository.update(
+            {
+                "id": "order-4b",
+                "userId": "user-4b",
+                "trackingNumber": "1Z999",
+                "upsTrackingStatus": "in_transit",
+                "deliveryDate": "2026-04-02T10:15:00",
+                "shippingEstimate": {"status": "in_transit", "carrierId": "ups"},
+                "status": "completed",
+            }
+        )
+
+        self.assertEqual(mock_execute.call_count, 3)
+        self.assertIn("ups_tracking_status", mock_execute.call_args_list[2][0][0])
+        self.assertIn("delivery_date", mock_execute.call_args_list[2][0][0])
+        self.assertEqual(mock_execute.call_args_list[2][0][1]["ups_tracking_status"], "in_transit")
+        self.assertEqual(mock_execute.call_args_list[2][0][1]["delivery_date"], "2026-04-02 10:15:00")
 
     def test_row_to_order_formats_naive_mysql_datetime_in_order_timezone(self):
         with patch.dict("os.environ", {"ORDER_TIMEZONE": "America/Los_Angeles"}):
