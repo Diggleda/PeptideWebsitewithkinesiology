@@ -220,6 +220,7 @@ CREATE_TABLE_STATEMENTS = [
         shipping_service VARCHAR(128) NULL,
         tracking_number VARCHAR(64) NULL,
         ups_tracking_status VARCHAR(32) NULL,
+        delivery_date DATETIME NULL,
         shipped_at DATETIME NULL,
         physician_certified TINYINT(1) NOT NULL DEFAULT 0,
         referral_code VARCHAR(8) NULL,
@@ -774,6 +775,10 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE orders ADD COLUMN fulfillment_method VARCHAR(32) NULL")
         if not _column_exists("orders", "ups_tracking_status"):
             mysql_client.execute("ALTER TABLE orders ADD COLUMN ups_tracking_status VARCHAR(32) NULL")
+        if _column_exists("orders", "ups_delivered_at") and not _column_exists("orders", "delivery_date"):
+            mysql_client.execute("ALTER TABLE orders CHANGE COLUMN ups_delivered_at delivery_date DATETIME NULL")
+        if not _column_exists("orders", "delivery_date"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN delivery_date DATETIME NULL")
         mysql_client.execute(
             """
             UPDATE orders
@@ -815,6 +820,35 @@ def ensure_schema() -> None:
                 OR LOWER(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.carrierId')), ''), '-', '_')) LIKE 'ups%%'
                 OR LOWER(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.serviceType')), ''), '-', '_')) LIKE 'ups%%'
               )
+            """
+        )
+        mysql_client.execute(
+            """
+            UPDATE orders
+            SET delivery_date = STR_TO_DATE(
+                LEFT(
+                    REPLACE(
+                        REPLACE(
+                            COALESCE(
+                                NULLIF(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.deliveredAt')), ''),
+                                NULLIF(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.delivered_at')), '')
+                            ),
+                            'T',
+                            ' '
+                        ),
+                        'Z',
+                        ''
+                    ),
+                    19
+                ),
+                '%Y-%m-%d %H:%i:%s'
+            )
+            WHERE delivery_date IS NULL
+              AND JSON_VALID(shipping_rate)
+              AND COALESCE(
+                    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.deliveredAt')), ''),
+                    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.delivered_at')), '')
+                  ) IS NOT NULL
             """
         )
     except Exception:

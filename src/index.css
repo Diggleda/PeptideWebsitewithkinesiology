@@ -5064,7 +5064,7 @@ html {
   background: rgba(95, 179, 249, 0.1);
   border-color: rgba(95, 179, 249, 0.45);
   color: rgb(95, 179, 249);
-  padding: 0.22rem 0.7rem;
+  padding: 0.16rem 0.55rem;
 }
 
 .lead-source-pill--manual {
@@ -6740,6 +6740,18 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 .header-home-button svg {
   width: 1.25rem;
   height: 1.25rem;
+}
+
+.admin-dashboard-link-button {
+  background-color: transparent !important;
+  color: rgb(15, 23, 42) !important;
+}
+
+.admin-dashboard-link-button:hover,
+.admin-dashboard-link-button:focus-visible,
+.admin-dashboard-link-button[data-state="open"],
+.admin-dashboard-link-button[aria-expanded="true"] {
+  color: #ffffff !important;
 }
 
 .header-search-input {

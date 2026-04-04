@@ -533,8 +533,8 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                         if isinstance(order.get("shippingEstimate"), dict)
                         else None
                     )
+                    or order.get("delivery_date")
                     or order.get("upsDeliveredAt")
-                    or order.get("ups_delivered_at")
                     or ""
                 ).strip() or None
                 current_estimated_arrival_date = _extract_estimated_arrival_date(order)

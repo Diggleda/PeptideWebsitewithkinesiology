@@ -211,20 +211,35 @@ def _resolve_persisted_ups_tracking_status(order: Dict) -> Optional[str]:
     return None
 
 
+def _resolve_persisted_delivery_date(order: Dict) -> Optional[str]:
+    if not isinstance(order, dict):
+        return None
+    shipping_estimate = _coerce_object(order.get("shippingEstimate") or order.get("shipping"))
+    candidates = [
+        order.get("deliveryDate"),
+        order.get("delivery_date"),
+        order.get("upsDeliveredAt"),
+        shipping_estimate.get("deliveredAt"),
+        shipping_estimate.get("delivered_at"),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_optional_string(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
 def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
     normalized = _normalize_ups_tracking_status(status)
     order["upsTrackingStatus"] = normalized
     shipping_estimate = order.get("shippingEstimate")
     if not isinstance(shipping_estimate, dict):
         shipping_estimate = {}
-    delivered_at = _normalize_optional_string(
-        order.get("upsDeliveredAt")
-        if order.get("upsDeliveredAt") is not None
-        else order.get("ups_delivered_at")
-    ) or _normalize_optional_string(
-        shipping_estimate.get("deliveredAt")
-        if isinstance(shipping_estimate, dict) and shipping_estimate.get("deliveredAt") is not None
-        else shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None
+    delivered_at = _resolve_persisted_delivery_date(
+        {
+            **order,
+            "shippingEstimate": shipping_estimate,
+        }
     )
     order["upsDeliveredAt"] = delivered_at
     if not normalized:
@@ -267,6 +282,7 @@ _SALES_TRACKING_SELECT_COLUMNS = """
     shipping_service,
     tracking_number,
     ups_tracking_status,
+    delivery_date,
     shipped_at,
     physician_certified,
     referral_code,
@@ -633,8 +649,9 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 or payload.get("ups_tracking_status")
             ),
             "upsDeliveredAt": _normalize_optional_string(
-                payload.get("upsDeliveredAt")
-                or payload.get("ups_delivered_at")
+                fmt_datetime(row.get("delivery_date"))
+                or payload.get("upsDeliveredAt")
+                or payload.get("delivery_date")
                 or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
                 or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
             ),
@@ -1247,7 +1264,7 @@ def insert(order: Dict) -> Dict:
                     reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
                     items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
                     facility_pickup, fulfillment_method,
-                    tracking_number, ups_tracking_status, shipped_at,
+                    tracking_number, ups_tracking_status, delivery_date, shipped_at,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
@@ -1256,7 +1273,7 @@ def insert(order: Dict) -> Dict:
                     %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
                     %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
                     %(facility_pickup)s, %(fulfillment_method)s,
-                    %(tracking_number)s, %(ups_tracking_status)s, %(shipped_at)s,
+                    %(tracking_number)s, %(ups_tracking_status)s, %(delivery_date)s, %(shipped_at)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
                     %(created_at)s, %(updated_at)s
@@ -1281,6 +1298,7 @@ def insert(order: Dict) -> Dict:
                     fulfillment_method = VALUES(fulfillment_method),
                     tracking_number = VALUES(tracking_number),
                     ups_tracking_status = VALUES(ups_tracking_status),
+                    delivery_date = VALUES(delivery_date),
                     shipped_at = CASE
                         WHEN VALUES(shipped_at) IS NOT NULL THEN VALUES(shipped_at)
                         ELSE shipped_at
@@ -1383,6 +1401,7 @@ def update(order: Dict) -> Optional[Dict]:
                     fulfillment_method = %(fulfillment_method)s,
                     tracking_number = %(tracking_number)s,
                     ups_tracking_status = %(ups_tracking_status)s,
+                    delivery_date = %(delivery_date)s,
                     shipped_at = CASE
                         WHEN %(shipped_at)s IS NOT NULL THEN %(shipped_at)s
                         ELSE shipped_at
@@ -1602,10 +1621,11 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             or (payload.get("ups_tracking_status") if isinstance(payload, dict) else None)
         ),
         "upsDeliveredAt": _normalize_optional_string(
-            (payload_order.get("upsDeliveredAt") if isinstance(payload_order, dict) else None)
-            or (payload_order.get("ups_delivered_at") if isinstance(payload_order, dict) else None)
+            fmt_datetime(row.get("delivery_date"))
+            or (payload_order.get("upsDeliveredAt") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("delivery_date") if isinstance(payload_order, dict) else None)
             or (payload.get("upsDeliveredAt") if isinstance(payload, dict) else None)
-            or (payload.get("ups_delivered_at") if isinstance(payload, dict) else None)
+            or (payload.get("delivery_date") if isinstance(payload, dict) else None)
             or (shipping_estimate.get("deliveredAt") if isinstance(shipping_estimate, dict) else None)
             or (shipping_estimate.get("delivered_at") if isinstance(shipping_estimate, dict) else None)
         ),
@@ -1866,6 +1886,7 @@ def _to_db_params(order: Dict) -> Dict:
         ),
         "tracking_number": tracking_number,
         "ups_tracking_status": ups_tracking_status,
+        "delivery_date": parse_dt(_resolve_persisted_delivery_date(order)),
         "shipped_at": _resolve_shipped_at(order),
         "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),

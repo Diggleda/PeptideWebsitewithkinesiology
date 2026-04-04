@@ -25605,7 +25605,7 @@ function MainApp() {
 		                  href="https://shop.peppro.net/wp-admin/"
 		                  target="_blank"
 		                  rel="noopener noreferrer"
-		                  className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md bg-white/80 px-4 text-sm font-semibold leading-none text-slate-900 transition-colors hover:bg-white sm:w-auto sm:min-w-[220px]"
+		                  className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
 		                  title="Open Woocommerce dashboard"
 		                >
 	                    <img
@@ -25622,7 +25622,7 @@ function MainApp() {
                     href={shipStationDashboardUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md bg-white/80 px-4 text-sm font-semibold leading-none text-slate-900 transition-colors hover:bg-white sm:w-auto sm:min-w-[220px]"
+                    className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
                     title="Open ShipStation Dashboard"
                   >
                     <img
@@ -25639,7 +25639,7 @@ function MainApp() {
                     href="https://admin.google.com/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md bg-white/80 px-4 text-sm font-semibold leading-none text-slate-900 transition-colors hover:bg-white sm:w-auto sm:min-w-[220px]"
+                    className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
                     title="Open Google Workspace Admin"
                   >
                     <img

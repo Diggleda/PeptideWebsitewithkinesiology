@@ -913,7 +913,7 @@ def _normalize_ups_tracking_status(value: Any) -> Optional[str]:
     return normalized
 
 
-def _normalize_ups_delivered_at(value: Any) -> Optional[str]:
+def _normalize_delivery_date(value: Any) -> Optional[str]:
     text = str(value or "").strip()
     return text or None
 
@@ -932,7 +932,7 @@ def _normalize_ups_expected_shipment_window(value: Any) -> Optional[str]:
     return text[:64].rstrip() or None
 
 
-def _extract_ups_delivered_at(*orders: Optional[Dict]) -> Optional[str]:
+def _extract_delivery_date(*orders: Optional[Dict]) -> Optional[str]:
     for order in orders:
         if not isinstance(order, dict):
             continue
@@ -940,14 +940,14 @@ def _extract_ups_delivered_at(*orders: Optional[Dict]) -> Optional[str]:
         integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
         carrier_tracking = _ensure_dict(integrations.get("carrierTracking") or integrations.get("carrier_tracking"))
         for candidate in (
+            order.get("delivery_date"),
             order.get("upsDeliveredAt"),
-            order.get("ups_delivered_at"),
             estimate.get("deliveredAt"),
             estimate.get("delivered_at"),
             carrier_tracking.get("deliveredAt"),
             carrier_tracking.get("delivered_at"),
         ):
-            normalized = _normalize_ups_delivered_at(candidate)
+            normalized = _normalize_delivery_date(candidate)
             if normalized:
                 return normalized
     return None
@@ -1033,7 +1033,7 @@ def _apply_authoritative_ups_tracking_status(order: Dict) -> Optional[str]:
         return None
     raw_status = order.get("upsTrackingStatus") if order.get("upsTrackingStatus") is not None else order.get("ups_tracking_status")
     normalized = _normalize_ups_tracking_status(raw_status)
-    delivered_at = _extract_ups_delivered_at(order)
+    delivered_at = _extract_delivery_date(order)
     order["upsTrackingStatus"] = normalized
     order["upsDeliveredAt"] = delivered_at
     if not normalized:
@@ -1244,7 +1244,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
         return local_order
 
     live_tracking_number = str(info.get("trackingNumber") or tracking_number).strip() or tracking_number
-    delivered_at = _normalize_ups_delivered_at(info.get("deliveredAt"))
+    delivered_at = _normalize_delivery_date(info.get("deliveredAt"))
     estimated_arrival_date = _normalize_ups_estimated_delivery_value(
         info.get("estimatedArrivalDate") or info.get("estimated_arrival_date")
     )
@@ -1262,7 +1262,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
             else (local_order or {}).get("ups_tracking_status") if isinstance(local_order, dict) else None
         )
     )
-    current_delivered_at = _extract_ups_delivered_at(order, local_order)
+    current_delivered_at = _extract_delivery_date(order, local_order)
     current_estimated_arrival_date = _extract_ups_estimated_arrival_date(order, local_order)
     current_delivery_date_guaranteed = _extract_ups_delivery_date_guaranteed(order, local_order)
     current_expected_shipment_window = _extract_ups_expected_shipment_window(order, local_order)
@@ -3990,10 +3990,38 @@ def _persist_shipping_update(
     """
     if not order_id:
         return
+
+    candidates: List[str] = []
+
+    def add_candidate(value: Any) -> None:
+        text = str(value or "").strip()
+        if text and text not in candidates:
+            candidates.append(text)
+
+    add_candidate(order_id)
+    if isinstance(shipstation_info, dict):
+        add_candidate(shipstation_info.get("orderNumber"))
+        add_candidate(shipstation_info.get("orderId"))
+
+    existing = None
+    resolved_order_id = str(order_id).strip()
     try:
-        existing = order_repository.find_by_id(str(order_id))
+        existing = order_repository.find_by_id(resolved_order_id)
     except Exception:
         existing = None
+    if not existing:
+        for candidate in candidates:
+            try:
+                existing = (
+                    order_repository.find_by_order_identifier(candidate)
+                    or _find_order_by_woo_id(candidate)
+                    or None
+                )
+            except Exception:
+                existing = None
+            if isinstance(existing, dict):
+                resolved_order_id = str(existing.get("id") or resolved_order_id).strip() or resolved_order_id
+                break
     if not existing:
         return
 
@@ -4021,7 +4049,7 @@ def _persist_shipping_update(
         logger.warning(
             "Failed to persist shipping update to primary store",
             exc_info=True,
-            extra={"orderId": order_id},
+            extra={"orderId": resolved_order_id or order_id},
         )
 
     # Best-effort local JSON update for testing
@@ -4031,7 +4059,7 @@ def _persist_shipping_update(
             orders = list(store.read())
             updated = False
             for idx, entry in enumerate(orders):
-                if str(entry.get("id")) == str(order_id):
+                if str(entry.get("id")) == str(resolved_order_id or order_id):
                     orders[idx] = {**entry, **merged}
                     updated = True
                     break
@@ -4042,7 +4070,7 @@ def _persist_shipping_update(
         logger.warning(
             "Failed to persist shipping update to local JSON store",
             exc_info=True,
-            extra={"orderId": order_id},
+            extra={"orderId": resolved_order_id or order_id},
         )
 
 

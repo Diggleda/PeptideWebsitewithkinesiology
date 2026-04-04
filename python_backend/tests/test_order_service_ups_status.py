@@ -125,7 +125,9 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
         service = self.order_service
         original_shipstation = service.ship_station.fetch_order_status
         original_find_by_id = service.order_repository.find_by_id
+        original_find_by_identifier = service.order_repository.find_by_order_identifier
         original_update = service.order_repository.update
+        original_find_by_woo_id = service._find_order_by_woo_id
         original_order_store = service.storage.order_store
         try:
             order = {
@@ -149,7 +151,9 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
                 "upsTrackingStatus": "delivered",
                 "shippingEstimate": {"status": "delivered"},
             }
+            service.order_repository.find_by_order_identifier = lambda _value: None
             service.order_repository.update = lambda value: persisted.append(dict(value)) or value
+            service._find_order_by_woo_id = lambda _value: None
             service.storage.order_store = None
 
             service._enrich_with_shipstation(order)
@@ -159,7 +163,66 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
         finally:
             service.ship_station.fetch_order_status = original_shipstation
             service.order_repository.find_by_id = original_find_by_id
+            service.order_repository.find_by_order_identifier = original_find_by_identifier
             service.order_repository.update = original_update
+            service._find_order_by_woo_id = original_find_by_woo_id
+            service.storage.order_store = original_order_store
+
+    def test_enrich_with_shipstation_persists_status_to_resolved_local_order(self):
+        service = self.order_service
+        original_shipstation = service.ship_station.fetch_order_status
+        original_find_by_id = service.order_repository.find_by_id
+        original_find_by_identifier = service.order_repository.find_by_order_identifier
+        original_update = service.order_repository.update
+        original_find_by_woo_id = service._find_order_by_woo_id
+        original_order_store = service.storage.order_store
+        try:
+            order = {
+                "id": "9002",
+                "number": "1492",
+                "wooOrderNumber": "1492",
+                "trackingNumber": "1ZTEST002",
+                "shippingEstimate": {"carrierId": "ups"},
+            }
+            local_order = {
+                "id": "local-1492",
+                "wooOrderId": "9002",
+                "wooOrderNumber": "1492",
+                "trackingNumber": "1ZTEST002",
+                "shippingEstimate": {"carrierId": "ups"},
+            }
+            persisted = []
+
+            service.ship_station.fetch_order_status = lambda _order_number: {
+                "status": "shipped",
+                "trackingStatus": "In Transit",
+                "trackingNumber": "1ZTEST002",
+                "carrierCode": "ups",
+                "serviceCode": "ups_2nd_day_air",
+                "shipDate": "2026-04-03",
+                "orderNumber": "1492",
+                "orderId": "9002",
+            }
+            service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-1492" else None
+            service.order_repository.find_by_order_identifier = (
+                lambda value: local_order if str(value) in {"1492", "9002"} else None
+            )
+            service.order_repository.update = lambda value: persisted.append(dict(value)) or value
+            service._find_order_by_woo_id = lambda value: local_order if str(value) in {"1492", "9002"} else None
+            service.storage.order_store = None
+
+            service._enrich_with_shipstation(order)
+
+            self.assertTrue(persisted)
+            self.assertEqual(persisted[-1]["id"], "local-1492")
+            self.assertEqual(persisted[-1]["shippingEstimate"]["status"], "in_transit")
+            self.assertEqual(persisted[-1]["integrationDetails"]["shipStation"]["trackingStatus"], "In Transit")
+        finally:
+            service.ship_station.fetch_order_status = original_shipstation
+            service.order_repository.find_by_id = original_find_by_id
+            service.order_repository.find_by_order_identifier = original_find_by_identifier
+            service.order_repository.update = original_update
+            service._find_order_by_woo_id = original_find_by_woo_id
             service.storage.order_store = original_order_store
 
     def test_refresh_ups_status_resolves_local_order_by_hash_prefixed_woo_number(self):

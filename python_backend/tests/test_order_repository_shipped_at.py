@@ -123,6 +123,17 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
 
         self.assertIsNone(params["ups_tracking_status"])
 
+    def test_to_db_params_persists_delivery_date(self):
+        params = order_repository._to_db_params(
+            {
+                "id": "order-ups-2c",
+                "userId": "user-ups-2c",
+                "upsDeliveredAt": "2026-04-02T10:15:00",
+            }
+        )
+
+        self.assertEqual(params["delivery_date"], "2026-04-02 10:15:00")
+
     @patch("python_backend.repositories.order_repository.find_by_id", return_value={"id": "order-3"})
     @patch("python_backend.repositories.order_repository.mysql_client.execute")
     @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)
@@ -136,6 +147,8 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         )
 
         sql = mock_execute.call_args[0][0]
+        self.assertIn("delivery_date", sql)
+        self.assertNotIn("ups_delivered_at", sql)
         self.assertIn("WHEN VALUES(shipped_at) IS NOT NULL THEN VALUES(shipped_at)", sql)
 
     @patch("python_backend.repositories.order_repository.find_by_id", return_value={"id": "order-4"})
@@ -151,6 +164,8 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         )
 
         sql = mock_execute.call_args[0][0]
+        self.assertIn("delivery_date", sql)
+        self.assertNotIn("ups_delivered_at", sql)
         self.assertIn("WHEN %(shipped_at)s IS NOT NULL THEN %(shipped_at)s", sql)
 
     def test_row_to_order_formats_naive_mysql_datetime_in_order_timezone(self):
@@ -177,6 +192,31 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
             )
 
         self.assertEqual(order["shippedAt"], "2026-03-05T00:00:00-08:00")
+
+    def test_row_to_order_reads_delivery_date_column(self):
+        order = order_repository._row_to_order(
+            {
+                "id": "order-5b",
+                "user_id": "user-5b",
+                "pricing_mode": "wholesale",
+                "items": "[]",
+                "total": 0,
+                "items_subtotal": 0,
+                "shipping_total": 0,
+                "shipping_rate": "{}",
+                "integrations": "{}",
+                "shipping_address": "{}",
+                "tracking_number": "1Z999",
+                "delivery_date": datetime(2026, 4, 2, 10, 15, 0),
+                "shipped_at": None,
+                "physician_certified": 0,
+                "status": "completed",
+                "created_at": datetime(2026, 4, 1, 12, 0, 0),
+                "updated_at": datetime(2026, 4, 1, 12, 0, 0),
+            }
+        )
+
+        self.assertEqual(order["upsDeliveredAt"], "2026-04-02T10:15:00-07:00")
 
     def test_to_db_params_encrypts_payload_and_shipping_address_inline(self):
         params = order_repository._to_db_params(
