@@ -25605,15 +25605,14 @@ function MainApp() {
 		                  href="https://shop.peppro.net/wp-admin/"
 		                  target="_blank"
 		                  rel="noopener noreferrer"
-		                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-4 py-[2px] text-sm font-semibold leading-none text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto sm:min-w-[220px]"
+		                  className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md bg-white/80 px-4 text-sm font-semibold leading-none text-slate-900 transition-colors hover:bg-white sm:w-auto sm:min-w-[220px]"
 		                  title="Open Woocommerce dashboard"
 		                >
 	                    <img
 	                      src="/logos/woocommerce.svg"
 	                      alt=""
 	                      aria-hidden="true"
-	                      className="h-5 w-5"
-                        style={{ width: "50px", height: "50px" }}
+	                      className="h-6 w-auto shrink-0 object-contain"
 	                      loading="lazy"
 	                      decoding="async"
 	                    />
@@ -25623,15 +25622,14 @@ function MainApp() {
                     href={shipStationDashboardUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-4 py-[2px] text-sm font-semibold leading-none text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto sm:min-w-[220px]"
+                    className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md bg-white/80 px-4 text-sm font-semibold leading-none text-slate-900 transition-colors hover:bg-white sm:w-auto sm:min-w-[220px]"
                     title="Open ShipStation Dashboard"
                   >
                     <img
                       src="/logos/shipstation.svg"
                       alt=""
                       aria-hidden="true"
-                      className="h-5 w-5"
-                      style={{ width: "22.36px", height: "22.36px" }}
+                      className="h-6 w-auto shrink-0 object-contain"
                       loading="lazy"
                       decoding="async"
                     />
@@ -25641,15 +25639,14 @@ function MainApp() {
                     href="https://admin.google.com/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-4 py-[2px] text-sm font-semibold leading-none text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto sm:min-w-[220px]"
+                    className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md bg-white/80 px-4 text-sm font-semibold leading-none text-slate-900 transition-colors hover:bg-white sm:w-auto sm:min-w-[220px]"
                     title="Open Google Workspace Admin"
                   >
                     <img
                       src="https://www.gstatic.com/images/branding/product/1x/admin_2020q4_48dp.png"
                       alt=""
                       aria-hidden="true"
-                      className="h-5 w-5"
-                      style={{ width: "22.36px", height: "22.36px" }}
+                      className="h-6 w-auto shrink-0 object-contain"
                       loading="lazy"
                       decoding="async"
                     />

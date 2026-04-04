@@ -781,6 +781,42 @@ def ensure_schema() -> None:
             WHERE LOWER(TRIM(ups_tracking_status)) = 'unknown'
             """
         )
+        mysql_client.execute(
+            """
+            UPDATE orders
+            SET ups_tracking_status = CASE
+                WHEN LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%delivered%' THEN 'delivered'
+                WHEN LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%out_for_delivery%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%outfordelivery%' THEN 'out_for_delivery'
+                WHEN LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%in_transit%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%intransit%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%on_the_way%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%ontheway%' THEN 'in_transit'
+                WHEN LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) IN ('shipped') THEN 'shipped'
+                WHEN LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) IN ('awaiting', 'awaiting_shipment') THEN 'awaiting_shipment'
+                WHEN LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%label_created%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%shipment_ready_for_ups%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%shipment_information_received%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%information_received%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%billing_information_received%' THEN 'label_created'
+                WHEN LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%exception%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%delay%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%held%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%hold%'
+                  OR LOWER(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '-', '_'), ' ', '_')) LIKE '%error%' THEN 'exception'
+                ELSE ups_tracking_status
+            END
+            WHERE (ups_tracking_status IS NULL OR TRIM(ups_tracking_status) = '')
+              AND JSON_VALID(shipping_rate)
+              AND TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.status')), '')) <> ''
+              AND (
+                UPPER(COALESCE(tracking_number, '')) LIKE '1Z%%'
+                OR LOWER(REPLACE(COALESCE(shipping_carrier, ''), '-', '_')) LIKE 'ups%%'
+                OR LOWER(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.carrierId')), ''), '-', '_')) LIKE 'ups%%'
+                OR LOWER(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(shipping_rate, '$.serviceType')), ''), '-', '_')) LIKE 'ups%%'
+              )
+            """
+        )
     except Exception:
         pass
 

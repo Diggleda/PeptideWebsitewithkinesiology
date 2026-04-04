@@ -5061,9 +5061,10 @@ html {
 }
 
 .lead-source-pill--contact {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: rgba(16, 185, 129, 0.35);
-  color: rgb(4, 120, 87);
+  background: rgba(95, 179, 249, 0.1);
+  border-color: rgba(95, 179, 249, 0.45);
+  color: rgb(95, 179, 249);
+  padding: 0.22rem 0.7rem;
 }
 
 .lead-source-pill--manual {

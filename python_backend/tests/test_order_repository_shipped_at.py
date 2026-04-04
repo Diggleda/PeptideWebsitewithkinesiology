@@ -98,13 +98,26 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
 
         self.assertEqual(params["ups_tracking_status"], "out_for_delivery")
 
-    def test_to_db_params_does_not_invent_ups_tracking_status_from_shipping_estimate(self):
+    def test_to_db_params_derives_ups_tracking_status_from_shipping_estimate_for_ups_orders(self):
         params = order_repository._to_db_params(
             {
                 "id": "order-ups-2",
                 "userId": "user-ups-2",
                 "trackingNumber": "1Z999",
                 "shippingEstimate": {"status": "delivered"},
+            }
+        )
+
+        self.assertEqual(params["ups_tracking_status"], "delivered")
+
+    def test_to_db_params_does_not_invent_ups_tracking_status_for_non_ups_orders(self):
+        params = order_repository._to_db_params(
+            {
+                "id": "order-ups-2b",
+                "userId": "user-ups-2b",
+                "trackingNumber": "9400111202555012345678",
+                "shippingCarrier": "usps",
+                "shippingEstimate": {"status": "delivered", "carrierId": "usps"},
             }
         )
 
@@ -249,7 +262,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertEqual(order["upsTrackingStatus"], "delivered")
         self.assertEqual(order["shippingEstimate"]["status"], "delivered")
 
-    def test_row_to_order_treats_unknown_ups_tracking_status_as_absent(self):
+    def test_row_to_order_treats_unknown_ups_tracking_status_as_fallback_shipping_status(self):
         order = order_repository._row_to_order(
             {
                 "id": "order-8b",
@@ -269,11 +282,37 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
                 "status": "completed",
                 "created_at": datetime(2026, 3, 1, 12, 0, 0),
                 "updated_at": datetime(2026, 3, 1, 12, 0, 0),
+                }
+            )
+
+        self.assertEqual(order["upsTrackingStatus"], "shipped")
+        self.assertEqual(order["shippingEstimate"]["status"], "shipped")
+
+    def test_row_to_order_derives_ups_tracking_status_from_shipping_estimate_for_ups_rows(self):
+        order = order_repository._row_to_order(
+            {
+                "id": "order-8c",
+                "user_id": "user-8c",
+                "pricing_mode": "wholesale",
+                "items": "[]",
+                "total": 0,
+                "items_subtotal": 0,
+                "shipping_total": 0,
+                "shipping_rate": '{"status":"in_transit","carrierId":"ups"}',
+                "integrations": "{}",
+                "shipping_address": "{}",
+                "tracking_number": "1Z999",
+                "ups_tracking_status": None,
+                "shipped_at": None,
+                "physician_certified": 0,
+                "status": "completed",
+                "created_at": datetime(2026, 3, 1, 12, 0, 0),
+                "updated_at": datetime(2026, 3, 1, 12, 0, 0),
             }
         )
 
-        self.assertIsNone(order["upsTrackingStatus"])
-        self.assertEqual(order["shippingEstimate"]["status"], "shipped")
+        self.assertEqual(order["upsTrackingStatus"], "in_transit")
+        self.assertEqual(order["shippingEstimate"]["status"], "in_transit")
 
     @patch("python_backend.repositories.order_repository.update")
     @patch(

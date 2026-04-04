@@ -76,7 +76,139 @@ def _normalize_ups_tracking_status(value: object) -> Optional[str]:
         text = text.replace("__", "_")
     if not text or text == "unknown":
         return None
+    if "delivered" in text:
+        return "delivered"
+    if "out_for_delivery" in text or "outfordelivery" in text:
+        return "out_for_delivery"
+    if "in_transit" in text or "intransit" in text or "on_the_way" in text or "ontheway" in text:
+        return "in_transit"
+    if text in {"shipped", "awaiting_shipment", "awaiting"}:
+        return "awaiting_shipment" if text in {"awaiting_shipment", "awaiting"} else "shipped"
+    if any(
+        token in text
+        for token in (
+            "label_created",
+            "shipment_ready_for_ups",
+            "shipment_information_received",
+            "information_received",
+            "billing_information_received",
+        )
+    ):
+        return "label_created"
+    if any(token in text for token in ("exception", "delay", "held", "hold", "error")):
+        return "exception"
     return text
+
+
+def _coerce_object(value: object) -> Dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        return _parse_json(value, {})
+    return {}
+
+
+def _normalize_tracking_number(value: object) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isalnum()).upper()
+
+
+def _looks_like_ups_order(order: Dict) -> bool:
+    if not isinstance(order, dict):
+        return False
+
+    tracking_number = _normalize_tracking_number(
+        order.get("trackingNumber") if order.get("trackingNumber") is not None else order.get("tracking_number")
+    )
+    if tracking_number.startswith("1Z"):
+        return True
+
+    shipping_estimate = _coerce_object(order.get("shippingEstimate") or order.get("shipping"))
+    integrations = _coerce_object(order.get("integrationDetails") or order.get("integrations"))
+    shipstation = _coerce_object(integrations.get("shipStation") or integrations.get("shipstation"))
+    carrier_tracking = _coerce_object(integrations.get("carrierTracking") or integrations.get("carrier_tracking"))
+    candidates = [
+        order.get("shippingCarrier"),
+        order.get("shipping_carrier"),
+        order.get("shippingService"),
+        order.get("shipping_service"),
+        shipping_estimate.get("carrierId"),
+        shipping_estimate.get("carrier_id"),
+        shipping_estimate.get("serviceType"),
+        shipping_estimate.get("service_type"),
+        shipping_estimate.get("serviceCode"),
+        shipping_estimate.get("service_code"),
+        shipstation.get("carrierCode"),
+        shipstation.get("carrier_code"),
+        carrier_tracking.get("carrier"),
+    ]
+    for candidate in candidates:
+        token = str(candidate or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if token == "ups" or token.startswith("ups_"):
+            return True
+    return False
+
+
+def _resolve_persisted_ups_tracking_status(order: Dict) -> Optional[str]:
+    if not isinstance(order, dict):
+        return None
+
+    shipping_estimate = _coerce_object(order.get("shippingEstimate") or order.get("shipping"))
+    integrations = _coerce_object(order.get("integrationDetails") or order.get("integrations"))
+    carrier_tracking = _coerce_object(integrations.get("carrierTracking") or integrations.get("carrier_tracking"))
+    shipstation = _coerce_object(integrations.get("shipStation") or integrations.get("shipstation"))
+
+    candidates = [
+        order.get("upsTrackingStatus"),
+        order.get("ups_tracking_status"),
+    ]
+
+    if _looks_like_ups_order(
+        {
+            **order,
+            "shippingEstimate": shipping_estimate,
+            "integrationDetails": integrations,
+        }
+    ):
+        candidates.extend(
+            [
+                shipping_estimate.get("status"),
+                carrier_tracking.get("trackingStatusRaw"),
+                carrier_tracking.get("trackingStatus"),
+                carrier_tracking.get("tracking_status"),
+                carrier_tracking.get("status"),
+                carrier_tracking.get("deliveryStatus"),
+                carrier_tracking.get("delivery_status"),
+                shipstation.get("trackingStatus"),
+                shipstation.get("tracking_status"),
+                shipstation.get("deliveryStatus"),
+                shipstation.get("delivery_status"),
+                shipstation.get("shipmentStatus"),
+                shipstation.get("shipment_status"),
+                shipstation.get("status"),
+            ]
+        )
+        shipments = shipstation.get("shipments")
+        if isinstance(shipments, list):
+            for entry in shipments:
+                if not isinstance(entry, dict) or entry.get("voided") is True:
+                    continue
+                candidates.extend(
+                    [
+                        entry.get("trackingStatus"),
+                        entry.get("tracking_status"),
+                        entry.get("deliveryStatus"),
+                        entry.get("delivery_status"),
+                        entry.get("shipmentStatus"),
+                        entry.get("shipment_status"),
+                        entry.get("status"),
+                    ]
+                )
+
+    for candidate in candidates:
+        normalized = _normalize_ups_tracking_status(candidate)
+        if normalized:
+            return normalized
+    return None
 
 
 def _apply_ups_status_to_order(order: Dict, status: object) -> Dict:
@@ -1437,13 +1569,6 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             )
         )
     )
-    ups_tracking_status = _normalize_ups_tracking_status(
-        row.get("ups_tracking_status")
-        or (payload_order.get("upsTrackingStatus") if isinstance(payload_order, dict) else None)
-        or (payload_order.get("ups_tracking_status") if isinstance(payload_order, dict) else None)
-        or (payload.get("upsTrackingStatus") if isinstance(payload, dict) else None)
-        or (payload.get("ups_tracking_status") if isinstance(payload, dict) else None)
-    )
     order: Dict = {
         "id": row.get("id"),
         "userId": row.get("user_id"),
@@ -1469,7 +1594,13 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
-        "upsTrackingStatus": ups_tracking_status,
+        "upsTrackingStatus": _normalize_ups_tracking_status(
+            row.get("ups_tracking_status")
+            or (payload_order.get("upsTrackingStatus") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("ups_tracking_status") if isinstance(payload_order, dict) else None)
+            or (payload.get("upsTrackingStatus") if isinstance(payload, dict) else None)
+            or (payload.get("ups_tracking_status") if isinstance(payload, dict) else None)
+        ),
         "upsDeliveredAt": _normalize_optional_string(
             (payload_order.get("upsDeliveredAt") if isinstance(payload_order, dict) else None)
             or (payload_order.get("ups_delivered_at") if isinstance(payload_order, dict) else None)
@@ -1493,6 +1624,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "createdAt": fmt_datetime(row.get("created_at")),
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
+    order["upsTrackingStatus"] = _resolve_persisted_ups_tracking_status(order)
     if isinstance(payload, dict) and payload:
         if payload.get("handDelivery") is not None:
             order["handDelivery"] = bool(payload.get("handDelivery"))
@@ -1670,11 +1802,7 @@ def _to_db_params(order: Dict) -> Dict:
     grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
     grand_total = max(0.0, grand_total)
     tracking_number = _resolve_tracking_number(order)
-    ups_tracking_status = _normalize_ups_tracking_status(
-        order.get("upsTrackingStatus")
-        if order.get("upsTrackingStatus") is not None
-        else order.get("ups_tracking_status")
-    )
+    ups_tracking_status = _resolve_persisted_ups_tracking_status(order)
     hand_delivery = bool(order.get("handDelivery") is True)
     fulfillment_method = _normalize_fulfillment_method(
         order.get("fulfillmentMethod"),
