@@ -19,6 +19,7 @@ import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
 import { DoctorProfileForm } from "./components/DoctorProfileForm";
 import { FeaturedSection } from "./components/FeaturedSection";
+import { PhysicianNetworkMap } from "./components/PhysicianNetworkMap";
 import { ProductCard } from "./components/ProductCard";
 import { ImageWithFallback } from "./components/ImageWithFallback";
 import type { Product as CardProduct } from "./components/ProductCard";
@@ -32283,6 +32284,25 @@ function MainApp() {
               {/* Info Container - After Login */}
               {postLoginHold && user ? (
                 <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
+                  <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
+                    <div className="grid gap-5 md:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] md:items-center md:gap-8">
+                      <div className="space-y-2">
+                        <h2
+                          className="text-4xl font-semibold leading-tight sm:text-5xl"
+                          style={{ color: "rgb(95, 179, 249)" }}
+                        >
+                          Our growing network across the United States
+                        </h2>
+                        <p
+                          className="text-2xl leading-relaxed sm:text-3xl"
+                          style={{ color: "rgb(95, 179, 249)" }}
+                        >
+                          Hover over your peers to see their bios
+                        </p>
+                      </div>
+                      <PhysicianNetworkMap />
+                    </div>
+                  </div>
                   <div className="post-login-layout">
                     <div
                       className="post-login-news space-y-4"

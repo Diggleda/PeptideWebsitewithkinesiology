@@ -245,6 +245,34 @@ const serializeUserProfile = (user) => {
   };
 };
 
+const buildPhysicianNetworkEntries = () => userRepository
+  .getAll()
+  .filter((candidate) => (
+    isDoctorUser(candidate)
+    && normalizeBooleanFlag(candidate?.profileOnboarding ?? candidate?.profile_onboarding)
+  ))
+  .map((doctor) => {
+    const profile = serializeUserProfile(doctor);
+    return {
+      id: profile?.id || '',
+      name: profile?.name || profile?.email || 'Physician',
+      profileImageUrl: profile?.profileImageUrl || null,
+      greaterArea: profile?.greaterArea || null,
+      studyFocus: profile?.studyFocus || null,
+      bio: profile?.bio || null,
+      officeCity: profile?.officeCity || null,
+      officeState: profile?.officeState || null,
+    };
+  })
+  .filter((doctor) => doctor.id)
+  .sort((a, b) => {
+    const stateCompare = String(a.officeState || '').localeCompare(String(b.officeState || ''));
+    if (stateCompare !== 0) {
+      return stateCompare;
+    }
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+
 const buildDoctorOwnershipSet = async (ownerIds = []) => {
   const ownedDoctorIds = new Set();
   const ownedEmails = new Set();
@@ -370,6 +398,15 @@ router.get('/patient-links/doctors', authenticate, requireAdmin, async (_req, re
       delegateLinksEnabled: doctor.delegateLinksEnabled,
     })),
     mysqlEnabled: mysqlClient.isEnabled(),
+  });
+});
+
+router.get('/network/doctors', authenticate, async (_req, res) => {
+  const doctors = buildPhysicianNetworkEntries();
+  res.json({
+    generatedAt: new Date().toISOString(),
+    doctors,
+    total: doctors.length,
   });
 });
 

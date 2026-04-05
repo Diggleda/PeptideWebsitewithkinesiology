@@ -1336,6 +1336,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getNetworkDoctors: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/network/doctors`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   getCrmStatus: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/crm`, {
       method: 'GET',
