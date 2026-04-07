@@ -1364,6 +1364,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getPhysicianMapStatus: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/physician-map`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   getTestPaymentsOverrideStatus: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/test-payments-override`, {
       method: 'GET',
@@ -1412,6 +1419,12 @@ export const settingsAPI = {
   },
   updateResearchStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/research`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  updatePhysicianMapStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/physician-map`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     });

@@ -12,6 +12,8 @@ const {
   setPeptideForumEnabled,
   getResearchDashboardEnabled,
   setResearchDashboardEnabled,
+  getPhysicianMapEnabled,
+  setPhysicianMapEnabled,
   getCrmEnabled,
   setCrmEnabled,
   getTestPaymentsOverrideEnabled,
@@ -178,6 +180,7 @@ const isDoctorUser = (user) => {
   const role = normalizeRole(user?.role);
   return role === 'doctor' || role === 'test_doctor';
 };
+const isTestDoctorUser = (user) => normalizeRole(user?.role) === 'test_doctor';
 
 const normalizeOwnershipIds = (values = []) =>
   Array.from(new Set(values
@@ -401,7 +404,12 @@ router.get('/patient-links/doctors', authenticate, requireAdmin, async (_req, re
   });
 });
 
-router.get('/network/doctors', authenticate, async (_req, res) => {
+router.get('/network/doctors', authenticate, async (req, res) => {
+  const enabled = await getPhysicianMapEnabled();
+  const currentUser = req.currentUser || req.user || null;
+  if (!enabled && !isTestDoctorUser(currentUser)) {
+    return res.status(403).json({ error: 'Physician map is disabled' });
+  }
   const doctors = buildPhysicianNetworkEntries();
   res.json({
     generatedAt: new Date().toISOString(),
@@ -418,6 +426,11 @@ router.get('/forum', async (_req, res) => {
 router.get('/research', async (_req, res) => {
   const enabled = await getResearchDashboardEnabled();
   res.json({ researchDashboardEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.get('/physician-map', async (_req, res) => {
+  const enabled = await getPhysicianMapEnabled();
+  res.json({ physicianMapEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/crm', async (_req, res) => {
@@ -493,6 +506,12 @@ router.put('/research', authenticate, requireAdmin, async (req, res) => {
   const enabled = req.body?.researchDashboardEnabled ?? req.body?.enabled;
   const confirmed = await setResearchDashboardEnabled(Boolean(enabled));
   res.json({ researchDashboardEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.put('/physician-map', authenticate, requireAdmin, async (req, res) => {
+  const enabled = req.body?.physicianMapEnabled ?? req.body?.enabled;
+  const confirmed = await setPhysicianMapEnabled(Boolean(enabled));
+  res.json({ physicianMapEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.put('/crm', authenticate, requireAdmin, async (req, res) => {

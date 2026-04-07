@@ -1063,6 +1063,58 @@ const normalizeTrackingStatusToken = (value?: string | null) => {
   return raw.replace(/[\s-]+/g, '_');
 };
 
+const normalizeCarrierTrackingStatusToken = (value?: string | null) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+
+  let normalized = raw.replace(/[\s-]+/g, '_');
+  normalized = normalized.replace(/_+/g, '_');
+  if (!normalized || normalized === 'unknown') {
+    return null;
+  }
+
+  if (normalized.includes('delivered')) {
+    return 'delivered';
+  }
+  if (normalized.includes('out_for_delivery') || normalized.includes('outfordelivery')) {
+    return 'out_for_delivery';
+  }
+  if (
+    normalized.includes('in_transit') ||
+    normalized.includes('intransit') ||
+    normalized.includes('on_the_way') ||
+    normalized.includes('ontheway')
+  ) {
+    return 'in_transit';
+  }
+  if (normalized === 'shipped') {
+    return 'shipped';
+  }
+  if (normalized === 'awaiting_shipment' || normalized === 'awaiting') {
+    return 'awaiting_shipment';
+  }
+  if (
+    normalized.includes('label_created') ||
+    normalized.includes('shipment_ready_for_ups') ||
+    normalized.includes('shipment_information_received') ||
+    normalized.includes('information_received') ||
+    normalized.includes('billing_information_received')
+  ) {
+    return 'label_created';
+  }
+  if (
+    normalized.includes('exception') ||
+    normalized.includes('delay') ||
+    normalized.includes('held') ||
+    normalized.includes('hold') ||
+    normalized.includes('error')
+  ) {
+    return 'exception';
+  }
+
+  return normalized;
+};
+
 const formatDeliveryDateLabel = (value?: string | null) => {
   const date = parseBackendTimestamp(value);
   if (!date) return null;
@@ -1096,14 +1148,15 @@ const resolveOrderDeliveredAt = (order?: AccountOrderSummary | null) => {
   return null;
 };
 
-const resolveTrackingStatusRaw = (order?: AccountOrderSummary | null) => {
-  if (!order || typeof order !== 'object') return null;
+const collectTrackingStatusCandidates = (order?: AccountOrderSummary | null) => {
+  if (!order || typeof order !== 'object') return [];
   const shippingEstimate = order.shippingEstimate && typeof order.shippingEstimate === 'object'
     ? order.shippingEstimate
     : null;
   const integrations = parseMaybeJson((order as any).integrationDetails || (order as any).integrations || null) || {};
   const carrierTracking = parseMaybeJson((integrations as any)?.carrierTracking || (integrations as any)?.carrier_tracking || null) || {};
-  const candidates = [
+  const shipStation = parseMaybeJson((integrations as any)?.shipStation || (integrations as any)?.shipstation || null) || {};
+  const candidates: unknown[] = [
     (order as any).upsTrackingStatus,
     (order as any).ups_tracking_status,
     shippingEstimate?.status,
@@ -1113,8 +1166,40 @@ const resolveTrackingStatusRaw = (order?: AccountOrderSummary | null) => {
     carrierTracking?.status,
     carrierTracking?.deliveryStatus,
     carrierTracking?.delivery_status,
+    shipStation?.trackingStatus,
+    shipStation?.tracking_status,
+    shipStation?.deliveryStatus,
+    shipStation?.delivery_status,
+    shipStation?.shipmentStatus,
+    shipStation?.shipment_status,
+    shipStation?.status,
   ];
-  for (const candidate of candidates) {
+
+  const shipments = Array.isArray(shipStation?.shipments)
+    ? shipStation.shipments
+    : Array.isArray(shipStation?.shipment)
+      ? shipStation.shipment
+      : [];
+
+  for (const entry of shipments) {
+    if (!entry || entry.voided === true) continue;
+    candidates.push(
+      entry?.trackingStatus,
+      entry?.tracking_status,
+      entry?.deliveryStatus,
+      entry?.delivery_status,
+      entry?.shipmentStatus,
+      entry?.shipment_status,
+      entry?.status,
+    );
+  }
+
+  return candidates;
+};
+
+const resolveTrackingStatusRaw = (order?: AccountOrderSummary | null) => {
+  if (!order || typeof order !== 'object') return null;
+  for (const candidate of collectTrackingStatusCandidates(order)) {
     if (typeof candidate === 'string' && candidate.trim().length > 0) {
       return candidate.trim();
     }
@@ -1122,17 +1207,39 @@ const resolveTrackingStatusRaw = (order?: AccountOrderSummary | null) => {
   return null;
 };
 
-const buildTrackingStatusLine = (order?: AccountOrderSummary | null) => {
+const resolveTrackingStatusToken = (order?: AccountOrderSummary | null) => {
+  for (const candidate of collectTrackingStatusCandidates(order)) {
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) continue;
+    const normalized = normalizeCarrierTrackingStatusToken(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+};
+
+const buildTrackingStatusLabel = (
+  order?: AccountOrderSummary | null,
+  options?: { includeDeliveredDate?: boolean },
+) => {
   const rawStatus = resolveTrackingStatusRaw(order);
-  if (!rawStatus) return null;
+  const statusToken = resolveTrackingStatusToken(order);
+  if (!rawStatus && !statusToken) return null;
+  const trackingNumber = resolveTrackingNumber(order);
   const deliveredAtLabel = formatDeliveryDateLabel(resolveOrderDeliveredAt(order));
-  const normalizedStatus = normalizeTrackingStatusToken(rawStatus);
-  const label = humanizeOrderStatus(rawStatus);
-  if (deliveredAtLabel && normalizedStatus?.includes('delivered')) {
+  const normalizedStatus = statusToken || normalizeTrackingStatusToken(rawStatus);
+  if (!trackingNumber && normalizedStatus === 'exception') {
+    return 'Processing';
+  }
+  const label = humanizeOrderStatus(statusToken || rawStatus);
+  if (options?.includeDeliveredDate !== false && deliveredAtLabel && normalizedStatus?.includes('delivered')) {
     return `${label} on ${deliveredAtLabel}`;
   }
   return label;
 };
+
+const buildTrackingStatusLine = (order?: AccountOrderSummary | null) =>
+  buildTrackingStatusLabel(order, { includeDeliveredDate: true });
 
 const normalizeStringField = (value: unknown) => {
   if (typeof value === 'string') {
@@ -1267,17 +1374,25 @@ const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined)
 };
 
 const describeOrderStatus = (order: AccountOrderSummary | null | undefined): string => {
-  const raw = resolveOrderStatusSource(order);
-  const statusRaw = raw ? String(raw) : '';
-  const normalized = statusRaw.trim().toLowerCase();
-  if (normalized === 'trash' || normalized === 'canceled' || normalized === 'cancelled') {
+  const orderStatusRaw = order?.status ? String(order.status) : '';
+  const orderStatusNormalized = orderStatusRaw.trim().toLowerCase();
+  if (orderStatusNormalized === 'trash' || orderStatusNormalized === 'canceled' || orderStatusNormalized === 'cancelled') {
     return 'Canceled';
   }
-  if (normalized === 'refunded') {
+  if (orderStatusNormalized === 'refunded') {
     return 'Refunded';
   }
 
-  const tracking = typeof order?.trackingNumber === 'string' ? order.trackingNumber.trim() : '';
+  const trackingStatusLabel = buildTrackingStatusLabel(order, { includeDeliveredDate: false });
+  if (trackingStatusLabel) {
+    return trackingStatusLabel;
+  }
+
+  const raw = resolveOrderStatusSource(order);
+  const statusRaw = raw ? String(raw) : '';
+  const normalized = statusRaw.trim().toLowerCase();
+
+  const tracking = resolveTrackingNumber(order) || '';
   const eta = (order?.shippingEstimate as any)?.estimatedArrivalDate || null;
   const hasEta = typeof eta === 'string' && eta.trim().length > 0;
 

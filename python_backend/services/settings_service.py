@@ -16,6 +16,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "betaServices": [],
     "peptideForumEnabled": True,
     "researchDashboardEnabled": False,
+    "physicianMapEnabled": False,
     # When enabled, show Delegate Links tab for all doctors (test doctors always have access).
     "patientLinksEnabled": False,
     # Optional doctor user ids that should receive the Delegate Links tab.
@@ -47,6 +48,7 @@ _BETA_SERVICE_KEYS = {
     "crm",
     "forum",
     "research",
+    "physicianMap",
     "testPaymentsOverride",
 }
 
@@ -187,6 +189,7 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged["betaServices"] = _normalize_beta_services(merged.get("betaServices"))
     merged["peptideForumEnabled"] = _to_bool(merged.get("peptideForumEnabled", True))
     merged["researchDashboardEnabled"] = _to_bool(merged.get("researchDashboardEnabled", False))
+    merged["physicianMapEnabled"] = _to_bool(merged.get("physicianMapEnabled", False))
     merged["patientLinksEnabled"] = _to_bool(merged.get("patientLinksEnabled", False))
     merged["patientLinksDoctorUserIds"] = _normalize_optional_user_ids(
         merged.get("patientLinksDoctorUserIds")

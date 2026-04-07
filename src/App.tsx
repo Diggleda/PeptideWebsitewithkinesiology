@@ -6874,6 +6874,14 @@ function MainApp() {
 	      setResearchDashboardEnabled(false);
 	    }
       try {
+        const stored = localStorage.getItem("peppro:physician-map-enabled");
+        if (stored !== null) {
+          setPhysicianMapEnabled(stored === "true");
+        }
+      } catch {
+        setPhysicianMapEnabled(false);
+      }
+      try {
         const stored = localStorage.getItem("peppro:test-payments-override-enabled");
         if (stored !== null) {
           setTestPaymentsOverrideEnabled(stored === "true");
@@ -6897,12 +6905,21 @@ function MainApp() {
 		    let cancelled = false;
 		    const fetchSetting = async () => {
 			      try {
-			        const [shopResult, patientLinksResult, crmResult, forumResult, researchResult, betaServicesResult] = await Promise.allSettled([
+			        const [
+                shopResult,
+                patientLinksResult,
+                crmResult,
+                forumResult,
+                researchResult,
+                physicianMapResult,
+                betaServicesResult,
+              ] = await Promise.allSettled([
 			          settingsAPI.getShopStatus(),
 	              settingsAPI.getPatientLinksStatus(),
 	              settingsAPI.getCrmStatus(),
 			          settingsAPI.getForumStatus(),
 			          settingsAPI.getResearchStatus(),
+                settingsAPI.getPhysicianMapStatus(),
                 settingsAPI.getBetaServices(),
 			        ]);
 		        if (cancelled) return;
@@ -6973,6 +6990,21 @@ function MainApp() {
 		            }
 		          }
 		        }
+
+            if (physicianMapResult.status === "fulfilled") {
+              const physicianMap = physicianMapResult.value as any;
+              if (physicianMap && typeof physicianMap.physicianMapEnabled === "boolean") {
+                setPhysicianMapEnabled(physicianMap.physicianMapEnabled);
+                try {
+                  localStorage.setItem(
+                    "peppro:physician-map-enabled",
+                    physicianMap.physicianMapEnabled ? "true" : "false",
+                  );
+                } catch {
+                  // ignore
+                }
+              }
+            }
 
             if (betaServicesResult.status === "fulfilled") {
               const betaInfo = betaServicesResult.value as any;
@@ -7352,6 +7384,59 @@ function MainApp() {
 	    },
 	    [user?.role],
 	  );
+
+  const handlePhysicianMapToggle = useCallback(
+    async (value: boolean) => {
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+      setSettingsSaving((prev) => ({ ...prev, physicianMap: true }));
+      let previousValue = false;
+      setPhysicianMapEnabled((prev) => {
+        previousValue = prev;
+        return value;
+      });
+      try {
+        localStorage.setItem(
+          "peppro:physician-map-enabled",
+          value ? "true" : "false",
+        );
+      } catch {
+        // ignore
+      }
+      try {
+        const updated = await settingsAPI.updatePhysicianMapStatus(value);
+        const confirmed =
+          updated && typeof (updated as any).physicianMapEnabled === "boolean"
+            ? (updated as any).physicianMapEnabled
+            : value;
+        setPhysicianMapEnabled(confirmed);
+        try {
+          localStorage.setItem(
+            "peppro:physician-map-enabled",
+            confirmed ? "true" : "false",
+          );
+        } catch {
+          // ignore
+        }
+      } catch (error) {
+        console.warn("[Settings] Failed to update physician map setting", error);
+        toast.error("Unable to update physician map setting right now.");
+        setPhysicianMapEnabled(previousValue);
+        try {
+          localStorage.setItem(
+            "peppro:physician-map-enabled",
+            previousValue ? "true" : "false",
+          );
+        } catch {
+          // ignore
+        }
+      } finally {
+        setSettingsSaving((prev) => ({ ...prev, physicianMap: false }));
+      }
+    },
+    [user?.role],
+  );
 
 		  const handleTestPaymentsOverrideToggle = useCallback(
 	    async (value: boolean) => {
@@ -9919,6 +10004,7 @@ function MainApp() {
     "crm",
     "forum",
     "research",
+    "physicianMap",
     "testPaymentsOverride",
   ] as const;
 
@@ -9929,6 +10015,7 @@ function MainApp() {
     crm: "CRM",
     forum: "The Peptide Forum",
     research: "Research Dashboard",
+    physicianMap: "Physician Network Map",
     testPaymentsOverride: "Test Payments Override",
   };
   const ADMIN_DELEGATE_LINK_FUNNEL_STAGES = [
@@ -13620,8 +13707,11 @@ function MainApp() {
   const [receiveClientOrderUpdateEmails, setReceiveClientOrderUpdateEmails] =
     useState(false);
   const [accountIndicatorTotal, setAccountIndicatorTotal] = useState(0);
-	  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
+  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
 	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
+  const [physicianMapEnabled, setPhysicianMapEnabled] = useState(false);
+  const shouldShowPhysicianMapCard =
+    physicianMapEnabled || isTestDoctor(user?.role);
 	  const [settingsSupport, setSettingsSupport] = useState<{
 	    research: boolean;
 	  }>({ research: true });
@@ -13631,6 +13721,7 @@ function MainApp() {
 	    crm: boolean;
     forum: boolean;
     research: boolean;
+    physicianMap: boolean;
     testPaymentsOverride: boolean;
     receiveClientOrderUpdateEmails: boolean;
 	  }>({
@@ -13639,6 +13730,7 @@ function MainApp() {
     crm: false,
     forum: false,
     research: false,
+    physicianMap: false,
 		    testPaymentsOverride: false,
 		    receiveClientOrderUpdateEmails: false,
 		  });
@@ -27122,6 +27214,43 @@ function MainApp() {
                             {renderPortalControlBetaToggle("forum")}
 			                    </div>
 			                  </div>
+
+                      <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+                        <div
+                          className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
+                        >
+                          <div className="flex min-w-0 items-start gap-3">
+                            <input
+                              type="checkbox"
+                              aria-label="Enable physician network map card"
+                              checked={physicianMapEnabled}
+                              onChange={(e) =>
+                                handlePhysicianMapToggle(e.target.checked)
+                              }
+                              className="brand-checkbox mt-0.5"
+                              disabled={!isAdmin(user.role) || settingsSaving.physicianMap}
+                            />
+                            <span className="min-w-0">
+                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+                                <span>Physician network map card</span>
+                                <span className="text-xs font-semibold text-slate-500">
+                                  {"\u00A0"}(
+                                  {settingsSaving.physicianMap
+                                    ? "Saving…"
+                                    : physicianMapEnabled
+                                      ? "Enabled"
+                                      : "Disabled"}
+                                  )
+                                </span>
+                              </span>
+                              <span className="block text-xs text-slate-600">
+                                When disabled, only test doctors still see the physician network map on the info page.
+                              </span>
+                            </span>
+                          </div>
+                          {renderPortalControlBetaToggle("physicianMap")}
+                        </div>
+                      </div>
 			
 			                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
 			                    <div
@@ -32284,25 +32413,27 @@ function MainApp() {
               {/* Info Container - After Login */}
               {postLoginHold && user ? (
                 <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
-                  <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
-                    <div className="grid gap-5 md:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] md:items-center md:gap-8">
-                      <div className="space-y-2">
-                        <h2
-                          className="text-4xl font-semibold leading-tight sm:text-5xl"
-                          style={{ color: "rgb(95, 179, 249)" }}
-                        >
-                          Our growing network across the United States
-                        </h2>
-                        <p
-                          className="text-2xl leading-relaxed sm:text-3xl"
-                          style={{ color: "rgb(95, 179, 249)" }}
-                        >
-                          Hover over your peers to see their bios
-                        </p>
+                  {shouldShowPhysicianMapCard ? (
+                    <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
+                      <div className="grid gap-5 md:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] md:items-center md:gap-8">
+                        <div className="space-y-2">
+                          <h2
+                            className="text-4xl font-semibold leading-tight sm:text-5xl"
+                            style={{ color: "rgb(95, 179, 249)" }}
+                          >
+                            Our growing network across the United States
+                          </h2>
+                          <p
+                            className="text-2xl leading-relaxed sm:text-3xl"
+                            style={{ color: "rgb(95, 179, 249)" }}
+                          >
+                            Hover over your peers to see their bios
+                          </p>
+                        </div>
+                        <PhysicianNetworkMap />
                       </div>
-                      <PhysicianNetworkMap />
                     </div>
-                  </div>
+                  ) : null}
                   <div className="post-login-layout">
                     <div
                       className="post-login-news space-y-4"

@@ -650,6 +650,14 @@ def _is_hand_delivery_role(role: str) -> bool:
     return normalized in ("sales_rep", "sales_partner", "sales_lead", "admin")
 
 
+def _is_doctor_user(user: dict) -> bool:
+    role = _normalize_role(user.get("role"))
+    return role in ("doctor", "test_doctor")
+
+def _is_test_doctor_user(user: dict | None) -> bool:
+    return _normalize_role((user or {}).get("role")) == "test_doctor"
+
+
 def _get_delegate_links_doctors() -> list[dict]:
     doctors = []
     for user in user_repository.get_all() or []:
@@ -699,6 +707,35 @@ def _migrate_legacy_delegate_links_to_users() -> None:
         migrated_any = True
     if migrated_any:
         settings_service.update_settings({"patientLinksDoctorUserIds": []})
+
+
+def _build_physician_network_entries() -> list[dict]:
+    doctors: list[dict] = []
+    for user in user_repository.get_all() or []:
+        if not isinstance(user, dict):
+            continue
+        if not _is_doctor_user(user):
+            continue
+        if not _normalize_bool(user.get("profileOnboarding", user.get("profile_onboarding"))):
+            continue
+        profile = _public_user_profile(user)
+        doctor_id = str(profile.get("id") or "").strip()
+        if not doctor_id:
+            continue
+        doctors.append(
+            {
+                "id": doctor_id,
+                "name": profile.get("name") or profile.get("email") or "Physician",
+                "profileImageUrl": profile.get("profileImageUrl") or None,
+                "greaterArea": profile.get("greaterArea") or None,
+                "studyFocus": profile.get("studyFocus") or None,
+                "bio": profile.get("bio") or None,
+                "officeCity": profile.get("officeCity") or None,
+                "officeState": profile.get("officeState") or None,
+            }
+        )
+    doctors.sort(key=lambda row: (str(row.get("officeState") or ""), str(row.get("name") or "")))
+    return doctors
 
 
 def _build_sales_rep_indexes(reps: list[dict]) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
@@ -1345,6 +1382,37 @@ def get_research():
 
     return handle_action(action)
 
+
+@blueprint.get("/physician-map")
+def get_physician_map():
+    def action():
+        settings = settings_service.get_settings()
+        return {
+            "physicianMapEnabled": bool(settings.get("physicianMapEnabled", False)),
+            "mysqlEnabled": _mysql_enabled(),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.get("/network/doctors")
+@require_auth
+def get_network_doctors():
+    def action():
+        settings = settings_service.get_settings()
+        current_user = getattr(g, "current_user", None) or {}
+        if not bool(settings.get("physicianMapEnabled", False)) and not _is_test_doctor_user(current_user):
+            raise service_error("Physician map is disabled", 403)
+        doctors = _build_physician_network_entries()
+        return {
+            "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "doctors": doctors,
+            "total": len(doctors),
+        }
+
+    return handle_action(action)
+
+
 @blueprint.get("/patient-links")
 def get_patient_links():
     def action():
@@ -1466,6 +1534,23 @@ def update_research():
         }
 
     return handle_action(action)
+
+
+@blueprint.put("/physician-map")
+@require_auth
+def update_physician_map():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("physicianMapEnabled", payload.get("enabled", False)))
+        updated = settings_service.update_settings({"physicianMapEnabled": enabled})
+        return {
+            "physicianMapEnabled": bool(updated.get("physicianMapEnabled", False)),
+            "mysqlEnabled": _mysql_enabled(),
+        }
+
+    return handle_action(action)
+
 
 @blueprint.put("/patient-links")
 @require_auth

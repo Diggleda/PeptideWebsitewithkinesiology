@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
   patientLinksEnabled: false,
   peptideForumEnabled: true,
   researchDashboardEnabled: false,
+  physicianMapEnabled: false,
   crmEnabled: true,
   testPaymentsOverrideEnabled: false,
   stripeMode: null, // null = follow env
@@ -25,6 +26,7 @@ const BETA_SERVICE_KEYS = new Set([
   'crm',
   'forum',
   'research',
+  'physicianMap',
   'testPaymentsOverride',
 ]);
 
@@ -60,6 +62,9 @@ const normalizeSettings = (settings = {}) => {
   );
   merged.researchDashboardEnabled = Boolean(
     raw.researchDashboardEnabled ?? DEFAULT_SETTINGS.researchDashboardEnabled,
+  );
+  merged.physicianMapEnabled = Boolean(
+    raw.physicianMapEnabled ?? DEFAULT_SETTINGS.physicianMapEnabled,
   );
   merged.crmEnabled = Boolean(raw.crmEnabled ?? DEFAULT_SETTINGS.crmEnabled);
   merged.testPaymentsOverrideEnabled = Boolean(
@@ -193,6 +198,11 @@ const getResearchDashboardEnabled = async () => {
   return Boolean(settings.researchDashboardEnabled);
 };
 
+const getPhysicianMapEnabled = async () => {
+  const settings = await getSettings();
+  return Boolean(settings.physicianMapEnabled);
+};
+
 const getCrmEnabled = async () => {
   const settings = await getSettings();
   return Boolean(settings.crmEnabled);
@@ -278,6 +288,22 @@ const setResearchDashboardEnabled = async (enabled) => {
   }
   persistToStore(next);
   return Boolean(next.researchDashboardEnabled);
+};
+
+const setPhysicianMapEnabled = async (enabled) => {
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    physicianMapEnabled: Boolean(enabled),
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.physicianMapEnabled);
+  }
+  persistToStore(next);
+  return Boolean(next.physicianMapEnabled);
 };
 
 const setCrmEnabled = async (enabled) => {
@@ -918,6 +944,8 @@ module.exports = {
   setPeptideForumEnabled,
   getResearchDashboardEnabled,
   setResearchDashboardEnabled,
+  getPhysicianMapEnabled,
+  setPhysicianMapEnabled,
   getCrmEnabled,
   setCrmEnabled,
   getTestPaymentsOverrideEnabled,

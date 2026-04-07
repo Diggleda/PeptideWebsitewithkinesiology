@@ -55,6 +55,7 @@ class TestSettingsControls(unittest.TestCase):
             "crmEnabled": False,
             "peptideForumEnabled": True,
             "researchDashboardEnabled": True,
+            "physicianMapEnabled": False,
         }), \
             patch.object(settings, "_get_delegate_links_doctors", return_value=[
                 {"userId": "doctor-1", "delegateLinksEnabled": True},
@@ -93,6 +94,98 @@ class TestSettingsControls(unittest.TestCase):
                 self.assertEqual(
                     response.get_json(),
                     {"researchDashboardEnabled": True, "mysqlEnabled": True},
+                )
+
+            with self.app.test_request_context("/api/settings/physician-map", method="GET"):
+                response = self._make_response(settings.get_physician_map())
+                self.assertEqual(
+                    response.get_json(),
+                    {"physicianMapEnabled": False, "mysqlEnabled": True},
+                )
+
+    def test_physician_map_routes_and_network_feed_respect_toggle(self):
+        settings = self.settings
+
+        with patch.object(settings.settings_service, "get_settings", return_value={
+            "physicianMapEnabled": False,
+        }), \
+            patch.object(settings, "_mysql_enabled", return_value=True):
+            with self.app.test_request_context("/api/settings/network/doctors", method="GET"):
+                g.current_user = {"id": "doctor-1", "role": "doctor"}
+                response = self._make_response(settings.get_network_doctors.__wrapped__())
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(
+                    response.get_json(),
+                    {"error": "Physician map is disabled", "code": "FORBIDDEN"},
+                )
+
+        with patch.object(settings.settings_service, "get_settings", return_value={
+            "physicianMapEnabled": False,
+        }), \
+            patch.object(settings, "_build_physician_network_entries", return_value=[
+                {
+                    "id": "doctor-1",
+                    "name": "Dr. Example",
+                    "profileImageUrl": None,
+                    "greaterArea": "Midwest",
+                    "studyFocus": "Longevity",
+                    "bio": "Bio",
+                    "officeCity": "Indianapolis",
+                    "officeState": "IN",
+                }
+            ]):
+            with self.app.test_request_context("/api/settings/network/doctors", method="GET"):
+                g.current_user = {"id": "doctor-2", "role": "test_doctor"}
+                response = self._make_response(settings.get_network_doctors.__wrapped__())
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(payload["doctors"][0]["id"], "doctor-1")
+                self.assertEqual(payload["total"], 1)
+
+        with patch.object(settings.settings_service, "get_settings", return_value={
+            "physicianMapEnabled": True,
+        }), \
+            patch.object(settings.settings_service, "update_settings", return_value={
+                "physicianMapEnabled": True,
+            }), \
+            patch.object(settings, "_build_physician_network_entries", return_value=[
+                {
+                    "id": "doctor-1",
+                    "name": "Dr. Example",
+                    "profileImageUrl": None,
+                    "greaterArea": "Midwest",
+                    "studyFocus": "Longevity",
+                    "bio": "Bio",
+                    "officeCity": "Indianapolis",
+                    "officeState": "IN",
+                }
+            ]), \
+            patch.object(settings, "_mysql_enabled", return_value=True):
+            with self.app.test_request_context("/api/settings/network/doctors", method="GET"):
+                g.current_user = {"id": "doctor-1", "role": "doctor"}
+                response = self._make_response(settings.get_network_doctors.__wrapped__())
+                payload = response.get_json()
+                self.assertEqual(payload["doctors"][0]["id"], "doctor-1")
+                self.assertEqual(payload["total"], 1)
+                self.assertTrue(isinstance(payload.get("generatedAt"), str) and payload["generatedAt"])
+
+            with self.app.test_request_context("/api/settings/physician-map", method="GET"):
+                response = self._make_response(settings.get_physician_map())
+                self.assertEqual(
+                    response.get_json(),
+                    {"physicianMapEnabled": True, "mysqlEnabled": True},
+                )
+
+            with self.app.test_request_context(
+                "/api/settings/physician-map",
+                method="PUT",
+                json={"enabled": True},
+            ):
+                g.current_user = {"id": "admin-1", "role": "admin"}
+                response = self._make_response(settings.update_physician_map.__wrapped__())
+                self.assertEqual(
+                    response.get_json(),
+                    {"physicianMapEnabled": True, "mysqlEnabled": True},
                 )
 
     def test_admin_beta_and_test_payment_routes_include_mysql_enabled(self):
@@ -227,10 +320,10 @@ class TestSettingsControls(unittest.TestCase):
         from python_backend.services import settings_service
 
         normalized = settings_service.normalize_settings({
-            "betaServices": ["shop", "crm", "invalid", "shop", None, "research"],
+            "betaServices": ["shop", "crm", "invalid", "shop", None, "research", "physicianMap"],
         })
 
-        self.assertEqual(normalized["betaServices"], ["shop", "crm", "research"])
+        self.assertEqual(normalized["betaServices"], ["shop", "crm", "research", "physicianMap"])
         self.assertIn("betaServices", settings_service.DEFAULT_SETTINGS)
 
     def test_admin_database_visualizer_route_returns_table_and_column_metadata(self):
