@@ -12,7 +12,7 @@ import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
-import { withStaticAssetStamp } from '../lib/assetUrl';
+import { resolveStaticAssetUrl, withStaticAssetStamp } from '../lib/assetUrl';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
 import { DoctorProfileForm } from './DoctorProfileForm';
@@ -339,6 +339,7 @@ interface HeaderUser {
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
+  networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
   zelleContact?: string | null;
@@ -2022,10 +2023,12 @@ export function Header({
       };
 
       try {
-        // Frontend-only throughput: fetch a static asset from `/public` so this does not
-        // rely on the backend. Use a cache-busting query param to avoid cached responses.
+        // Frontend-only throughput: fetch a bundled static asset so this does not rely on
+        // the backend. Use a cache-busting query param to avoid cached responses.
+        const leafTextureUrl = resolveStaticAssetUrl('/leafTexture.jpg');
+        const separator = leafTextureUrl.includes('?') ? '&' : '?';
         const downloadMbps = await measureFetchMbps({
-          url: `/leafTexture.jpg?networkTest=1&t=${Date.now()}`,
+          url: `${leafTextureUrl}${separator}networkTest=1&t=${Date.now()}`,
         });
 
         if (!mounted || requestId !== throughputRequestId) {

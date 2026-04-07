@@ -188,6 +188,45 @@ class TestSettingsControls(unittest.TestCase):
                     {"physicianMapEnabled": True, "mysqlEnabled": True},
                 )
 
+    def test_physician_network_entries_require_presence_agreement(self):
+        settings = self.settings
+
+        with patch.object(settings.user_repository, "get_all", return_value=[
+            {
+                "id": "doctor-visible",
+                "role": "doctor",
+                "name": "Visible Doctor",
+                "email": "visible@example.com",
+                "profileOnboarding": True,
+                "networkPresenceAgreement": True,
+                "bio": "Visible bio",
+                "officeState": "IN",
+            },
+            {
+                "id": "doctor-hidden",
+                "role": "doctor",
+                "name": "Hidden Doctor",
+                "email": "hidden@example.com",
+                "profileOnboarding": True,
+                "networkPresenceAgreement": False,
+                "bio": "Hidden bio",
+                "officeState": "CA",
+            },
+            {
+                "id": "doctor-no-onboarding",
+                "role": "doctor",
+                "name": "Incomplete Doctor",
+                "email": "incomplete@example.com",
+                "profileOnboarding": False,
+                "networkPresenceAgreement": True,
+                "bio": "Incomplete bio",
+                "officeState": "FL",
+            },
+        ]):
+            doctors = settings._build_physician_network_entries()
+
+        self.assertEqual([entry["id"] for entry in doctors], ["doctor-visible"])
+
     def test_admin_beta_and_test_payment_routes_include_mysql_enabled(self):
         settings = self.settings
 

@@ -13,7 +13,7 @@ import {
 } from "react";
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
-import { withStaticAssetStamp } from "./lib/assetUrl";
+import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
@@ -276,6 +276,7 @@ interface User {
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
+  networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
   hasPasskeys?: boolean;
@@ -1406,7 +1407,7 @@ const deriveShippingAddressFromOrders = (
   return undefined;
 };
 
-const WOO_PLACEHOLDER_IMAGE = "/PepPro_icon.png";
+const WOO_PLACEHOLDER_IMAGE = resolveStaticAssetUrl("/PepPro_icon.png");
 
 const normalizeWooImageUrl = (value?: string | null): string | null => {
   if (typeof value !== "string") {
@@ -6591,6 +6592,7 @@ function MainApp() {
       greaterArea: string | null;
       studyFocus: string | null;
       bio: string | null;
+      networkPresenceAgreement: boolean;
     }) => {
       if (!user || !isDoctorRole(user.role)) {
         return;
@@ -31931,7 +31933,7 @@ function MainApp() {
           left: "-6vw",
           width: "112vw",
           height: "140vh",
-          backgroundImage: "url(/leafTexture.jpg)",
+          backgroundImage: `url(${resolveStaticAssetUrl("/leafTexture.jpg")})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
@@ -32085,7 +32087,7 @@ function MainApp() {
           <DoctorProfileForm
             user={user}
             avatarStyle="compact-circle"
-            preActionsNote={'By clicking "Save and continue" you allow your profile to be visible to the PepPro network, and understand that these details are able to be toggled and modified by you within your account settings at anytime.'}
+            preActionsNote={'Use the network toggle above to control whether your profile can appear in the PepPro physician network. These details can be updated anytime in your account settings.'}
             submitLabel="Save and Continue"
             submittingLabel="Saving profile…"
             skipLabel="Skip for now"

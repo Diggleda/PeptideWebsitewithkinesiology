@@ -54,23 +54,30 @@ sys.modules.setdefault("cryptography.hazmat", fake_hazmat)
 sys.modules.setdefault("cryptography.hazmat.primitives", fake_primitives)
 sys.modules.setdefault("cryptography.hazmat.primitives.ciphers", fake_ciphers)
 sys.modules.setdefault("cryptography.hazmat.primitives.ciphers.aead", fake_aead)
-fake_flask = types.ModuleType("flask")
-fake_flask.Response = object
-fake_flask.jsonify = lambda value=None, *args, **kwargs: value
-fake_flask.request = types.SimpleNamespace(headers={}, args={}, json=None)
-fake_flask.g = types.SimpleNamespace(current_user=None)
-sys.modules.setdefault("flask", fake_flask)
-fake_werkzeug = types.ModuleType("werkzeug")
-fake_werkzeug_exceptions = types.ModuleType("werkzeug.exceptions")
+try:
+    import flask  # noqa: F401
+except ModuleNotFoundError:
+    fake_flask = types.ModuleType("flask")
+    fake_flask.Response = object
+    fake_flask.jsonify = lambda value=None, *args, **kwargs: value
+    fake_flask.request = types.SimpleNamespace(headers={}, args={}, json=None)
+    fake_flask.g = types.SimpleNamespace(current_user=None)
+    sys.modules.setdefault("flask", fake_flask)
 
-class _FakeHTTPException(Exception):
-    code = None
+try:
+    from werkzeug import exceptions as _werkzeug_exceptions  # noqa: F401
+except ModuleNotFoundError:
+    fake_werkzeug = types.ModuleType("werkzeug")
+    fake_werkzeug_exceptions = types.ModuleType("werkzeug.exceptions")
+
+    class _FakeHTTPException(Exception):
+        code = None
 
 
-fake_werkzeug_exceptions.HTTPException = _FakeHTTPException
-fake_werkzeug.exceptions = fake_werkzeug_exceptions
-sys.modules.setdefault("werkzeug", fake_werkzeug)
-sys.modules.setdefault("werkzeug.exceptions", fake_werkzeug_exceptions)
+    fake_werkzeug_exceptions.HTTPException = _FakeHTTPException
+    fake_werkzeug.exceptions = fake_werkzeug_exceptions
+    sys.modules.setdefault("werkzeug", fake_werkzeug)
+    sys.modules.setdefault("werkzeug.exceptions", fake_werkzeug_exceptions)
 
 from python_backend.services import auth_service
 
@@ -165,6 +172,35 @@ class AuthServiceTests(unittest.TestCase):
         ):
             self.assertEqual(saved_payloads[0][field], expected, field)
             self.assertEqual(updated[field], expected, field)
+
+    def test_update_profile_persists_network_presence_agreement(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "networkPresenceAgreement": False,
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.update_profile(
+                "doctor-1",
+                {"networkPresenceAgreement": True},
+            )
+
+        self.assertEqual(len(saved_payloads), 1)
+        self.assertTrue(saved_payloads[0]["networkPresenceAgreement"])
+        self.assertTrue(updated["networkPresenceAgreement"])
 
 
 if __name__ == "__main__":

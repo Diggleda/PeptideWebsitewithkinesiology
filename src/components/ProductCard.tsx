@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
 import { ShoppingCart, Minus, Plus, Loader2, Download, X } from 'lucide-react';
 import { api, wooAPI } from '../services/api';
+import { resolveStaticAssetUrl } from '../lib/assetUrl';
 import protixaIonSystemDossierPdf from '../content/documents/ProtixaIONSystemDossierS.pdf';
 
 const AUTO_OPEN_STRENGTH_ENABLED = (() => {
@@ -46,7 +47,7 @@ const AUTO_CYCLE_STRENGTH_DELAY_MS = (() => {
 })();
 
 const PLACEHOLDER_VARIATION_ID = '__peppro_needs_variant__';
-const PLACEHOLDER_IMAGE_SRC = '/PepPro_icon.png';
+const PLACEHOLDER_IMAGE_SRC = resolveStaticAssetUrl('/PepPro_icon.png');
 
 const roundCurrency = (value: number) =>
   Math.round((value + Number.EPSILON) * 100) / 100;

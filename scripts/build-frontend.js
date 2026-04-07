@@ -38,6 +38,15 @@ const viteBin =
     ? path.join("node_modules", ".bin", "vite.cmd")
     : path.join("node_modules", ".bin", "vite");
 
+const syncRuntimeAssetsResult = spawnSync(process.execPath, [path.join("scripts", "sync-runtime-assets.js")], {
+  stdio: "inherit",
+  env,
+});
+
+if (syncRuntimeAssetsResult.status !== 0) {
+  process.exit(typeof syncRuntimeAssetsResult.status === "number" ? syncRuntimeAssetsResult.status : 1);
+}
+
 const viteResult = spawnSync(viteBin, ["build"], {
   stdio: "inherit",
   env,

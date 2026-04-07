@@ -549,6 +549,7 @@ def register(data: Dict) -> Dict:
             "researchTermsAgreement": False,
             "delegateOptIn": False,
             "profileOnboarding": False,
+            "networkPresenceAgreement": False,
             "resellerPermitOnboardingPresented": False,
             "greaterArea": None,
             "studyFocus": None,
@@ -954,6 +955,11 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         if "profileOnboarding" in data
         else _normalize_bool(user.get("profileOnboarding"))
     )
+    network_presence_agreement = (
+        _normalize_bool(data.get("networkPresenceAgreement"))
+        if "networkPresenceAgreement" in data
+        else _normalize_bool(user.get("networkPresenceAgreement"))
+    )
     reseller_permit_onboarding_presented = (
         _normalize_bool(data.get("resellerPermitOnboardingPresented"))
         if "resellerPermitOnboardingPresented" in data
@@ -993,6 +999,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "researchTermsAgreement": research_terms_agreement,
         "delegateOptIn": delegate_opt_in,
         "profileOnboarding": profile_onboarding,
+        "networkPresenceAgreement": network_presence_agreement,
         "resellerPermitOnboardingPresented": reseller_permit_onboarding_presented,
         "greaterArea": greater_area,
         "studyFocus": study_focus,
@@ -1144,6 +1151,11 @@ def _sanitize_user(user: Dict) -> Dict:
         sanitized.get("profileOnboarding")
         if "profileOnboarding" in sanitized
         else sanitized.get("profile_onboarding")
+    )
+    sanitized["networkPresenceAgreement"] = _normalize_bool(
+        sanitized.get("networkPresenceAgreement")
+        if "networkPresenceAgreement" in sanitized
+        else sanitized.get("network_presence_agreement")
     )
     sanitized["resellerPermitOnboardingPresented"] = _normalize_bool(
         sanitized.get("resellerPermitOnboardingPresented")

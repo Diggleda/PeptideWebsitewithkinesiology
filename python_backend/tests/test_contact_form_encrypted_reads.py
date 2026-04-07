@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 def _install_test_stubs() -> None:
@@ -258,6 +259,81 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
             services_package.get_config = original_get_config
             service.mysql_client.fetch_all = original_fetch_all
             service.decrypt_text = original_decrypt
+
+    def test_resolve_referred_contact_account_skips_woo_fallback_by_default(self):
+        service = self.referral_service
+        with patch.object(
+            service.user_repository,
+            "find_by_email",
+            return_value={"id": "doctor-1", "email": "lead@example.com"},
+        ), patch.object(
+            service.order_repository,
+            "count_by_user_id",
+            return_value=0,
+        ), patch.object(
+            service.woo_commerce,
+            "fetch_orders_by_email",
+            side_effect=AssertionError("Woo fallback should not run for dashboard reads"),
+        ):
+            account, order_count = service._resolve_referred_contact_account(
+                {"referredContactEmail": "lead@example.com"}
+            )
+
+        self.assertEqual(account["id"], "doctor-1")
+        self.assertEqual(order_count, 0)
+
+    def test_manually_add_credit_uses_woo_fallback_for_order_verification(self):
+        service = self.referral_service
+        with patch.object(
+            service.user_repository,
+            "find_by_id",
+            return_value={"id": "doctor-1", "salesRepId": "rep-1", "referralCredits": 100},
+        ), patch.object(
+            service.referral_repository,
+            "find_by_id",
+            return_value={"id": "ref-1", "referredContactName": "Lead", "referredContactEmail": "lead@example.com"},
+        ), patch.object(
+            service,
+            "_resolve_referred_contact_account",
+            return_value=({"id": "doctor-2"}, 1),
+        ) as mock_resolve, patch.object(
+            service.credit_ledger_repository,
+            "insert",
+            return_value={"id": "ledger-1"},
+        ), patch.object(
+            service.referral_repository,
+            "update",
+            side_effect=lambda payload: dict(payload),
+        ), patch.object(
+            service.user_repository,
+            "adjust_referral_credits",
+            return_value={"id": "doctor-1", "referralCredits": 75},
+        ), patch.object(
+            service.sales_prospect_repository,
+            "find_all_by_referral_id",
+            return_value=[],
+        ), patch.object(
+            service.sales_prospect_repository,
+            "upsert",
+            side_effect=lambda payload: dict(payload),
+        ), patch.object(
+            service.sales_prospect_repository,
+            "mark_doctor_as_nurturing_after_credit",
+            return_value=1,
+        ):
+            result = service.manually_add_credit(
+                "doctor-1",
+                25.0,
+                "manual adjustment",
+                "admin-1",
+                referral_id="ref-1",
+            )
+
+        self.assertEqual(result["ledgerEntry"]["id"], "ledger-1")
+        mock_resolve.assert_called_once_with(
+            {"id": "ref-1", "referredContactName": "Lead", "referredContactEmail": "lead@example.com"},
+            include_woo_fallback=True,
+        )
 
 
 if __name__ == "__main__":

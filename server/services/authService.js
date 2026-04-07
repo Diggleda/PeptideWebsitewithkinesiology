@@ -304,6 +304,9 @@ const sanitizeUser = (user) => {
     greaterArea: normalizeOptionalString(user.greaterArea),
     studyFocus: normalizeOptionalString(user.studyFocus),
     bio: normalizeOptionalString(user.bio),
+    networkPresenceAgreement: normalizeBooleanFlag(
+      user.networkPresenceAgreement ?? user.network_presence_agreement,
+    ),
     delegateLogoUrl: normalizeOptionalString(user.delegateLogoUrl),
     delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
     cart: normalizeCartItems(user.cart),
@@ -604,6 +607,7 @@ const register = async ({
     researchTermsAgreement: false,
     delegateOptIn: false,
     profileOnboarding: false,
+    networkPresenceAgreement: false,
     resellerPermitOnboardingPresented: false,
     greaterArea: null,
     studyFocus: null,
@@ -793,6 +797,9 @@ const updateProfile = async (userId, data) => {
   }
   if (Object.prototype.hasOwnProperty.call(data, 'profileOnboarding')) {
     next.profileOnboarding = normalizeBooleanFlag(data.profileOnboarding);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'networkPresenceAgreement')) {
+    next.networkPresenceAgreement = normalizeBooleanFlag(data.networkPresenceAgreement);
   }
   if (Object.prototype.hasOwnProperty.call(data, 'resellerPermitOnboardingPresented')) {
     next.resellerPermitOnboardingPresented = normalizeBooleanFlag(

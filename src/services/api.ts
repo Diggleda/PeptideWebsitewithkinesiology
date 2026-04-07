@@ -1007,6 +1007,7 @@ export type UpdateProfilePayload = {
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
+  networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
   officeAddressLine1?: string | null;

@@ -6,7 +6,7 @@ body::before {
   min-height: 100dvh;
   /* Try project image first; fall back to inline texture */
   background-image:
-    url('/leafTexture.jpg'),
+    url('./generated/runtime-assets/leafTexture.jpg'),
     url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\
   <defs>\
@@ -34,7 +34,7 @@ body::before {
 body.non-login-bg::before {
   /* Constant overlay: no gradient layer, just texture + pattern */
   background-image:
-    url('/leafTexture.jpg'),
+    url('./generated/runtime-assets/leafTexture.jpg'),
     url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\
   <defs>\
@@ -57,7 +57,7 @@ body.login-view::before {
   background-image:
     linear-gradient(180deg, rgba(95,179,249,0.012) 0%, rgba(95,179,249,0.016) 22%, rgba(95,179,249,0.075) 100%),
     linear-gradient(180deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.01) 20%, rgba(255,255,255,0.14) 100%),
-    url('/leafTexture.jpg'),
+    url('./generated/runtime-assets/leafTexture.jpg'),
     url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\
   <defs>\

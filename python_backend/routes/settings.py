@@ -590,6 +590,11 @@ def _public_user_profile(
         "greaterArea": user.get("greaterArea") or None,
         "studyFocus": user.get("studyFocus") or None,
         "bio": user.get("bio") or None,
+        "networkPresenceAgreement": _normalize_bool(
+            user.get("networkPresenceAgreement")
+            if "networkPresenceAgreement" in user
+            else user.get("network_presence_agreement")
+        ),
         "resellerPermitFilePath": user.get("resellerPermitFilePath") or user.get("reseller_permit_file_path") or None,
         "resellerPermitFileName": user.get("resellerPermitFileName") or user.get("reseller_permit_file_name") or None,
         "resellerPermitUploadedAt": user.get("resellerPermitUploadedAt") or user.get("reseller_permit_uploaded_at") or None,
@@ -717,6 +722,8 @@ def _build_physician_network_entries() -> list[dict]:
         if not _is_doctor_user(user):
             continue
         if not _normalize_bool(user.get("profileOnboarding", user.get("profile_onboarding"))):
+            continue
+        if not _normalize_bool(user.get("networkPresenceAgreement", user.get("network_presence_agreement"))):
             continue
         profile = _public_user_profile(user)
         doctor_id = str(profile.get("id") or "").strip()

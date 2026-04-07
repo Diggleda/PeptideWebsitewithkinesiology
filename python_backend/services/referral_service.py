@@ -691,7 +691,7 @@ def _enrich_referral(referral: Dict) -> Dict:
     return enriched
 
 
-def _resolve_referred_contact_account(referral: Dict):
+def _resolve_referred_contact_account(referral: Dict, *, include_woo_fallback: bool = False):
     email = _sanitize_email(
         referral.get("referredContactEmail")
         or referral.get("referred_contact_email")
@@ -705,14 +705,24 @@ def _resolve_referred_contact_account(referral: Dict):
     order_count = 0
     if contact_account and contact_account.get("id"):
         try:
-            order_count = count_orders_for_doctor(contact_account.get("id"))
+            order_count = count_orders_for_doctor(
+                contact_account.get("id"),
+                include_woo_fallback=include_woo_fallback,
+            )
         except Exception:
             order_count = 0
     return contact_account, order_count
 
 
-def _apply_referred_contact_account_fields(record: Dict) -> Dict:
-    contact_account, contact_order_count = _resolve_referred_contact_account(record)
+def _apply_referred_contact_account_fields(
+    record: Dict,
+    *,
+    include_woo_fallback: bool = False,
+) -> Dict:
+    contact_account, contact_order_count = _resolve_referred_contact_account(
+        record,
+        include_woo_fallback=include_woo_fallback,
+    )
     record["referredContactHasAccount"] = bool(contact_account)
     record["referredContactAccountId"] = contact_account.get("id") if contact_account else None
     record["referredContactAccountName"] = contact_account.get("name") if contact_account else None
@@ -2852,7 +2862,10 @@ def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: 
     description = referral_contact_name and f"Credited for {referral_contact_name}" or reason
 
     if referral_record:
-        contact_account, order_count = _resolve_referred_contact_account(referral_record)
+        contact_account, order_count = _resolve_referred_contact_account(
+            referral_record,
+            include_woo_fallback=True,
+        )
         if order_count <= 0:
             contact_label = referral_contact_name or referral_record.get("referredContactEmail") or "This referral"
             raise _service_error(
@@ -3015,10 +3028,12 @@ def apply_referral_credit(doctor_id: str, amount: float, order_id: str) -> Dict:
     return {"ledgerEntry": ledger_entry, "doctor": updated}
 
 
-def count_orders_for_doctor(doctor_id: str) -> int:
+def count_orders_for_doctor(doctor_id: str, *, include_woo_fallback: bool = False) -> int:
     base_count = order_repository.count_by_user_id(doctor_id)
     if base_count > 0:
         return base_count
+    if not include_woo_fallback:
+        return 0
 
     try:
         doctor = user_repository.find_by_id(str(doctor_id))

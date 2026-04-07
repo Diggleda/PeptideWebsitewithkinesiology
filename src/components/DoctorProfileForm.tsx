@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import { Textarea } from './ui/textarea';
 import { Loader2, Trash2, Upload } from 'lucide-react';
 import { toast } from '../lib/toast';
@@ -13,6 +14,7 @@ export interface DoctorProfileUser {
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
+  networkPresenceAgreement?: boolean;
 }
 
 export interface DoctorProfilePayload {
@@ -22,6 +24,7 @@ export interface DoctorProfilePayload {
   greaterArea: string | null;
   studyFocus: string | null;
   bio: string | null;
+  networkPresenceAgreement: boolean;
 }
 
 interface DoctorProfileFormProps {
@@ -108,6 +111,9 @@ export function DoctorProfileForm({
   const [greaterArea, setGreaterArea] = useState(user?.greaterArea || '');
   const [studyFocus, setStudyFocus] = useState(user?.studyFocus || '');
   const [bio, setBio] = useState(user?.bio || '');
+  const [networkPresenceAgreement, setNetworkPresenceAgreement] = useState(
+    user?.networkPresenceAgreement === true,
+  );
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(user?.profileImageUrl ?? null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -186,6 +192,7 @@ export function DoctorProfileForm({
     setGreaterArea(user?.greaterArea || '');
     setStudyFocus(user?.studyFocus || '');
     setBio(user?.bio || '');
+    setNetworkPresenceAgreement(user?.networkPresenceAgreement === true);
     setProfileImageUrl(user?.profileImageUrl ?? null);
     setError(null);
   }, [
@@ -194,6 +201,7 @@ export function DoctorProfileForm({
     user?.greaterArea,
     user?.studyFocus,
     user?.bio,
+    user?.networkPresenceAgreement,
     user?.profileImageUrl,
   ]);
 
@@ -314,6 +322,7 @@ export function DoctorProfileForm({
         greaterArea: trimmedArea || null,
         studyFocus: trimmedFocus || null,
         bio: trimmedBio || null,
+        networkPresenceAgreement,
       });
     } catch (submitError: any) {
       setError(
@@ -394,12 +403,11 @@ export function DoctorProfileForm({
               </Button>
             </div>
             {!isCompactCircleAvatar && (
-              <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
+              <p className="text-xs text-slate-500">
+                Photos must be 50MB or smaller in size. Profile photo is optional.
+              </p>
             )}
           </div>
-          {!isCompactCircleAvatar && (
-            <p className="text-xs text-slate-500">Profile photo is optional.</p>
-          )}
           <input
             ref={avatarInputRef}
             type="file"
@@ -412,6 +420,20 @@ export function DoctorProfileForm({
         </div>
 
         <div className="flex-1 space-y-3">
+          <div className="flex items-center gap-4 py-1">
+            <Switch
+              id="physician-profile-network-presence"
+              checked={networkPresenceAgreement}
+              onCheckedChange={setNetworkPresenceAgreement}
+              disabled={saving}
+              aria-label="Allow this profile to be presented as a physician in the network"
+            />
+            <div className="min-w-0">
+              <Label htmlFor="physician-profile-network-presence" className="leading-6">
+                Allow this profile to be presented as a physician in the network
+              </Label>
+            </div>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="physician-profile-name">Name</Label>

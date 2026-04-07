@@ -1,4 +1,5 @@
 import type { Product, ProductVariant, BulkPricingTier } from '../types/product';
+import { resolveStaticAssetUrl } from './assetUrl';
 
 // Dev-only loader to map tmp/woo-product-211.json into ProductCard Product shape
 export async function loadLocalProductForCard(): Promise<Product | null> {
@@ -69,8 +70,8 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
       originalPrice: undefined,
       rating: 5,
       reviews: 0,
-      image: image || '/PepPro_icon.png',
-      images: gallery.length ? gallery : [image || '/PepPro_icon.png'],
+      image: image || resolveStaticAssetUrl('/PepPro_icon.png'),
+      images: gallery.length ? gallery : [image || resolveStaticAssetUrl('/PepPro_icon.png')],
       inStock: true,
       prescription: false,
       dosage: options.length ? `${options.length} options` : 'See details',

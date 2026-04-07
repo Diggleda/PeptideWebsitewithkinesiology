@@ -277,8 +277,10 @@ export function PhysicianNetworkMap() {
       networkDoctors.map((doctor) => {
         const stateCode = normalizeStateCode(doctor.officeState);
         const displayName = normalizeText(doctor.name) || "Physician";
+        const bio = normalizeText(doctor.bio);
         return {
           ...doctor,
+          bio,
           displayName,
           stateCode,
           locationLabel: buildLocationLabel({
@@ -292,7 +294,7 @@ export function PhysicianNetworkMap() {
   );
 
   const mappedDoctors = useMemo(
-    () => normalizedDoctors.filter((doctor) => doctor.stateCode),
+    () => normalizedDoctors.filter((doctor) => doctor.stateCode && doctor.bio),
     [normalizedDoctors],
   );
 
@@ -322,27 +324,9 @@ export function PhysicianNetworkMap() {
   const activeDoctor = activeDoctorId ? doctorsById.get(activeDoctorId) || null : null;
 
   return (
-    <div className="w-full justify-self-end">
+    <div className="w-full max-w-[640px] justify-self-end">
       <div className="rounded-[30px] border border-[rgba(95,179,249,0.18)] bg-white/72 p-3 shadow-[0_30px_80px_-56px_rgba(95,179,249,0.72)] backdrop-blur-xl sm:p-4">
-        <div className="mb-3 flex flex-wrap gap-2">
-          <span className="rounded-full border border-[rgba(95,179,249,0.22)] bg-[rgba(95,179,249,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgb(95,179,249)]">
-            {mappedDoctors.length} mapped
-          </span>
-          <span className="rounded-full border border-[rgba(95,179,249,0.16)] bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgba(26,85,173,0.78)]">
-            {doctorsByState.size} states
-          </span>
-          {pinnedDoctorId ? (
-            <button
-              type="button"
-              className="rounded-full border border-[rgba(95,179,249,0.16)] bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgba(26,85,173,0.78)] transition-colors hover:border-[rgba(95,179,249,0.3)] hover:text-[rgb(95,179,249)]"
-              onClick={() => setPinnedDoctorId(null)}
-            >
-              Clear selection
-            </button>
-          ) : null}
-        </div>
-
-        <div className="mx-auto w-full max-w-[760px]">
+        <div className="mx-auto w-full max-w-[560px]">
           {loading ? (
             <div className="aspect-[1.64] w-full animate-pulse rounded-[26px] bg-[rgba(95,179,249,0.08)]" />
           ) : (
@@ -504,15 +488,26 @@ export function PhysicianNetworkMap() {
                     </p>
                   ) : null}
                 </div>
-                {activeDoctor.studyFocus ? (
-                  <span className="rounded-full border border-[rgba(95,179,249,0.22)] bg-[rgba(95,179,249,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgb(95,179,249)]">
-                    {activeDoctor.studyFocus}
-                  </span>
-                ) : null}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {activeDoctor.studyFocus ? (
+                    <span className="rounded-full border border-[rgba(95,179,249,0.22)] bg-[rgba(95,179,249,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgb(95,179,249)]">
+                      {activeDoctor.studyFocus}
+                    </span>
+                  ) : null}
+                  {pinnedDoctorId ? (
+                    <button
+                      type="button"
+                      className="rounded-full border border-[rgba(95,179,249,0.16)] bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgba(26,85,173,0.78)] transition-colors hover:border-[rgba(95,179,249,0.3)] hover:text-[rgb(95,179,249)]"
+                      onClick={() => setPinnedDoctorId(null)}
+                    >
+                      Clear selection
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <p className="max-h-28 overflow-y-auto pr-1 text-sm leading-6 text-[rgba(26,85,173,0.88)]">
-                {activeDoctor.bio || "Bio coming soon."}
+                {activeDoctor.bio}
               </p>
             </div>
           ) : (

@@ -225,6 +225,9 @@ const serializeUserProfile = (user) => {
     greaterArea: user.greaterArea || null,
     studyFocus: user.studyFocus || null,
     bio: user.bio || null,
+    networkPresenceAgreement: normalizeBooleanFlag(
+      user.networkPresenceAgreement ?? user.network_presence_agreement,
+    ),
     salesRepId: user.salesRepId || rep?.id || rep?.salesRepId || null,
     isPartner: networkFlags.isPartner,
     allowedRetail: networkFlags.allowedRetail,
@@ -253,6 +256,7 @@ const buildPhysicianNetworkEntries = () => userRepository
   .filter((candidate) => (
     isDoctorUser(candidate)
     && normalizeBooleanFlag(candidate?.profileOnboarding ?? candidate?.profile_onboarding)
+    && normalizeBooleanFlag(candidate?.networkPresenceAgreement ?? candidate?.network_presence_agreement)
   ))
   .map((doctor) => {
     const profile = serializeUserProfile(doctor);

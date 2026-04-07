@@ -538,6 +538,13 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'network_presence_agreement',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN network_presence_agreement TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
       name: 'delegate_logo_url',
       ddl: `
         ALTER TABLE users

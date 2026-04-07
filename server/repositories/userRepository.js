@@ -133,6 +133,7 @@ const syncDirectShippingToSql = (user) => {
     greaterArea: user.greaterArea || null,
     studyFocus: user.studyFocus || null,
     bio: user.bio || null,
+    networkPresenceAgreement: user.networkPresenceAgreement ? 1 : 0,
     delegateLogoUrl: user.delegateLogoUrl || null,
     delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
     delegateLinksEnabled: user.delegateLinksEnabled ? 1 : 0,
@@ -189,6 +190,7 @@ const syncDirectShippingToSql = (user) => {
           greater_area,
           study_focus,
           bio,
+          network_presence_agreement,
           delegate_logo_url,
           delegate_secondary_color,
           delegate_links_enabled,
@@ -227,6 +229,7 @@ const syncDirectShippingToSql = (user) => {
           :greaterArea,
           :studyFocus,
           :bio,
+          :networkPresenceAgreement,
           :delegateLogoUrl,
           :delegateSecondaryColor,
           :delegateLinksEnabled,
@@ -265,6 +268,7 @@ const syncDirectShippingToSql = (user) => {
           greater_area = VALUES(greater_area),
           study_focus = VALUES(study_focus),
           bio = VALUES(bio),
+          network_presence_agreement = VALUES(network_presence_agreement),
           delegate_logo_url = VALUES(delegate_logo_url),
           delegate_secondary_color = VALUES(delegate_secondary_color),
           delegate_links_enabled = VALUES(delegate_links_enabled),
@@ -476,10 +480,16 @@ const ensureUserDefaults = (user) => {
   } else {
     normalized.profileOnboarding = normalizeBooleanFlag(normalized.profileOnboarding);
   }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'networkPresenceAgreement')) {
+    normalized.networkPresenceAgreement = normalizeBooleanFlag(normalized.network_presence_agreement);
+  } else {
+    normalized.networkPresenceAgreement = normalizeBooleanFlag(normalized.networkPresenceAgreement);
+  }
   normalized.delegate_links_enabled = normalized.delegateLinksEnabled ? 1 : 0;
   normalized.research_terms_agreement = normalized.researchTermsAgreement ? 1 : 0;
   normalized.delegate_opt_in = normalized.delegateOptIn ? 1 : 0;
   normalized.profile_onboarding = normalized.profileOnboarding ? 1 : 0;
+  normalized.network_presence_agreement = normalized.networkPresenceAgreement ? 1 : 0;
   normalized.reseller_permit_onboarding_presented =
     normalized.resellerPermitOnboardingPresented ? 1 : 0;
   normalized.hand_delivered = normalized.handDelivered ? 1 : 0;
@@ -511,6 +521,8 @@ const loadUsers = ({ forWrite = false } = {}) => {
     const greaterAreaChanged = candidate.greaterArea !== user.greaterArea;
     const studyFocusChanged = candidate.studyFocus !== user.studyFocus;
     const bioChanged = candidate.bio !== user.bio;
+    const networkPresenceAgreementChanged =
+      candidate.networkPresenceAgreement !== user.networkPresenceAgreement;
     if (
       roleChanged
       || visitsChanged
@@ -522,6 +534,7 @@ const loadUsers = ({ forWrite = false } = {}) => {
       || greaterAreaChanged
       || studyFocusChanged
       || bioChanged
+      || networkPresenceAgreementChanged
     ) {
       changed = true;
     }
