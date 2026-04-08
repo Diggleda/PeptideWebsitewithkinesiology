@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import secrets
-import threading
 from datetime import datetime
 from pathlib import Path
 from time import time
@@ -24,7 +23,6 @@ from ..repositories import (
     user_repository,
 )
 from ..database import mysql_client
-from ..integrations import woo_commerce
 from ..utils.crypto_envelope import compute_blind_index, decrypt_text
 from . import get_config
 logger = logging.getLogger(__name__)
@@ -57,9 +55,6 @@ LEGACY_STATUS_ALIASES = {
     "verifying": "verified",
 }
 
-_WOO_ORDER_PRESENCE_TTL_SECONDS = 60
-_woo_order_presence_cache_lock = threading.Lock()
-_woo_order_presence_cache: Dict[str, Dict[str, object]] = {}
 DELETED_USER_ID = "0000000000000"
 DELETED_USER_NAME = "Deleted"
 
@@ -70,34 +65,6 @@ def _normalize_role(value: object) -> str:
 
 def _is_sales_rep_like_role(value: object) -> bool:
     return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "admin")
-
-
-def _has_woo_order_for_email(email: str) -> bool:
-    normalized = _sanitize_email(email) or None
-    if not normalized:
-        return False
-    if not woo_commerce.is_configured():
-        return False
-
-    now = time()
-    with _woo_order_presence_cache_lock:
-        cached = _woo_order_presence_cache.get(normalized)
-        if cached and float(cached.get("expiresAt") or 0) > now:
-            return bool(cached.get("hasOrder"))
-
-    has_order = False
-    try:
-        orders = woo_commerce.fetch_orders_by_email(normalized, per_page=1)
-        has_order = isinstance(orders, list) and len(orders) > 0
-    except Exception:
-        has_order = False
-
-    with _woo_order_presence_cache_lock:
-        _woo_order_presence_cache[normalized] = {
-            "hasOrder": has_order,
-            "expiresAt": now + _WOO_ORDER_PRESENCE_TTL_SECONDS,
-        }
-    return has_order
 
 
 def _sanitize_text(value: Optional[str], max_length: int = 190) -> Optional[str]:
@@ -691,7 +658,7 @@ def _enrich_referral(referral: Dict) -> Dict:
     return enriched
 
 
-def _resolve_referred_contact_account(referral: Dict, *, include_woo_fallback: bool = False):
+def _resolve_referred_contact_account(referral: Dict):
     email = _sanitize_email(
         referral.get("referredContactEmail")
         or referral.get("referred_contact_email")
@@ -705,24 +672,14 @@ def _resolve_referred_contact_account(referral: Dict, *, include_woo_fallback: b
     order_count = 0
     if contact_account and contact_account.get("id"):
         try:
-            order_count = count_orders_for_doctor(
-                contact_account.get("id"),
-                include_woo_fallback=include_woo_fallback,
-            )
+            order_count = count_orders_for_doctor(contact_account.get("id"))
         except Exception:
             order_count = 0
     return contact_account, order_count
 
 
-def _apply_referred_contact_account_fields(
-    record: Dict,
-    *,
-    include_woo_fallback: bool = False,
-) -> Dict:
-    contact_account, contact_order_count = _resolve_referred_contact_account(
-        record,
-        include_woo_fallback=include_woo_fallback,
-    )
+def _apply_referred_contact_account_fields(record: Dict) -> Dict:
+    contact_account, contact_order_count = _resolve_referred_contact_account(record)
     record["referredContactHasAccount"] = bool(contact_account)
     record["referredContactAccountId"] = contact_account.get("id") if contact_account else None
     record["referredContactAccountName"] = contact_account.get("name") if contact_account else None
@@ -2862,10 +2819,7 @@ def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: 
     description = referral_contact_name and f"Credited for {referral_contact_name}" or reason
 
     if referral_record:
-        contact_account, order_count = _resolve_referred_contact_account(
-            referral_record,
-            include_woo_fallback=True,
-        )
+        contact_account, order_count = _resolve_referred_contact_account(referral_record)
         if order_count <= 0:
             contact_label = referral_contact_name or referral_record.get("referredContactEmail") or "This referral"
             raise _service_error(
@@ -3028,19 +2982,8 @@ def apply_referral_credit(doctor_id: str, amount: float, order_id: str) -> Dict:
     return {"ledgerEntry": ledger_entry, "doctor": updated}
 
 
-def count_orders_for_doctor(doctor_id: str, *, include_woo_fallback: bool = False) -> int:
-    base_count = order_repository.count_by_user_id(doctor_id)
-    if base_count > 0:
-        return base_count
-    if not include_woo_fallback:
-        return 0
-
-    try:
-        doctor = user_repository.find_by_id(str(doctor_id))
-    except Exception:
-        doctor = None
-    email = (doctor.get("email") if isinstance(doctor, dict) else None) or ""
-    return 1 if _has_woo_order_for_email(email) else 0
+def count_orders_for_doctor(doctor_id: str) -> int:
+    return order_repository.count_by_user_id(doctor_id)
 
 
 

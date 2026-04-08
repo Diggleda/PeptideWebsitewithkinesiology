@@ -260,7 +260,7 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
             service.mysql_client.fetch_all = original_fetch_all
             service.decrypt_text = original_decrypt
 
-    def test_resolve_referred_contact_account_skips_woo_fallback_by_default(self):
+    def test_resolve_referred_contact_account_uses_sql_order_count(self):
         service = self.referral_service
         with patch.object(
             service.user_repository,
@@ -269,21 +269,23 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
         ), patch.object(
             service.order_repository,
             "count_by_user_id",
-            return_value=0,
-        ), patch.object(
-            service.woo_commerce,
-            "fetch_orders_by_email",
-            side_effect=AssertionError("Woo fallback should not run for dashboard reads"),
-        ):
+            return_value=3,
+        ) as mock_count:
             account, order_count = service._resolve_referred_contact_account(
                 {"referredContactEmail": "lead@example.com"}
             )
 
+        mock_count.assert_called_once_with("doctor-1")
         self.assertEqual(account["id"], "doctor-1")
-        self.assertEqual(order_count, 0)
+        self.assertEqual(order_count, 3)
 
-    def test_manually_add_credit_uses_woo_fallback_for_order_verification(self):
+    def test_manually_add_credit_uses_sql_order_verification(self):
         service = self.referral_service
+        referral_record = {
+            "id": "ref-1",
+            "referredContactName": "Lead",
+            "referredContactEmail": "lead@example.com",
+        }
         with patch.object(
             service.user_repository,
             "find_by_id",
@@ -291,7 +293,7 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
         ), patch.object(
             service.referral_repository,
             "find_by_id",
-            return_value={"id": "ref-1", "referredContactName": "Lead", "referredContactEmail": "lead@example.com"},
+            return_value=referral_record,
         ), patch.object(
             service,
             "_resolve_referred_contact_account",
@@ -330,10 +332,7 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
             )
 
         self.assertEqual(result["ledgerEntry"]["id"], "ledger-1")
-        mock_resolve.assert_called_once_with(
-            {"id": "ref-1", "referredContactName": "Lead", "referredContactEmail": "lead@example.com"},
-            include_woo_fallback=True,
-        )
+        mock_resolve.assert_called_once_with(referral_record)
 
 
 if __name__ == "__main__":
