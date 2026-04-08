@@ -2396,8 +2396,6 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
         return isinstance(order, dict) and str(order.get("status") or "").strip().lower() == "delegation_draft"
 
     local_orders = []
-    woo_orders = []
-    woo_error = None
 
     try:
         # Avoid pulling large payload columns; only load fields needed to overlay UI.
@@ -2405,112 +2403,6 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
         local_orders = [order for order in local_orders if not _is_delegation_draft(order)]
     except Exception:
         local_orders = []
-
-    email = (user.get("email") or "").strip().lower()
-    if email:
-        try:
-            t0 = time.perf_counter()
-            woo_orders = woo_commerce.fetch_orders_by_email(email, force=force)
-            woo_orders = [order for order in (woo_orders or []) if not _is_delegation_draft(order)]
-            _perf_log(
-                f"woo_commerce.fetch_orders_by_email userId={user_id} count={len(woo_orders) if isinstance(woo_orders, list) else 'n/a'}",
-                duration_ms=(time.perf_counter() - t0) * 1000,
-                threshold_ms=250.0,
-            )
-        except woo_commerce.IntegrationError as exc:
-            logger.error("WooCommerce order lookup failed", exc_info=True, extra={"userId": user_id})
-            woo_error = {
-                "message": str(exc) or "Unable to load WooCommerce orders.",
-                "details": getattr(exc, "response", None),
-                "status": getattr(exc, "status", 502),
-            }
-        except Exception as exc:  # pragma: no cover - unexpected network error path
-            logger.error("Unexpected WooCommerce order lookup error", exc_info=True, extra={"userId": user_id})
-            woo_error = {"message": "Unable to load WooCommerce orders.", "details": str(exc), "status": 502}
-
-    # Reconcile local overlay records against Woo truth:
-    # - If a Woo order was deleted, remove it from the local overlay response so it disappears from the UI.
-    # - If a Woo order exists but isn't in the first-page email lookup, fetch it by id so it still shows.
-    if (
-        _WOO_ORDER_RECONCILE_MAX_LOOKUPS > 0
-        and woo_error is None
-        and isinstance(woo_orders, list)
-        and isinstance(local_orders, list)
-        and len(local_orders) > 0
-        and woo_commerce.is_configured()
-    ):
-        def normalize_woo_id(value: object) -> str:
-            text = str(value or "").strip()
-            if text.startswith("#"):
-                text = text[1:]
-            if text.startswith("woo-"):
-                text = text.split("-", 1)[1]
-            return text.strip()
-
-        existing_woo_ids: set[str] = set()
-        for order in woo_orders:
-            if not isinstance(order, dict):
-                continue
-            woo_id = normalize_woo_id(order.get("wooOrderId"))
-            if woo_id:
-                existing_woo_ids.add(woo_id)
-
-        missing_ids: List[str] = []
-        for local in local_orders:
-            if not isinstance(local, dict):
-                continue
-            woo_id = normalize_woo_id(local.get("wooOrderId") or local.get("woo_order_id"))
-            if not woo_id or woo_id in existing_woo_ids:
-                continue
-            missing_ids.append(woo_id)
-
-        if missing_ids:
-            seen: set[str] = set()
-            missing_unique: List[str] = []
-            for woo_id in missing_ids:
-                if woo_id in seen:
-                    continue
-                seen.add(woo_id)
-                missing_unique.append(woo_id)
-
-            deleted_ids: set[str] = set()
-            added = 0
-            looked_up = 0
-            for woo_id in missing_unique[:_WOO_ORDER_RECONCILE_MAX_LOOKUPS]:
-                looked_up += 1
-                result = woo_commerce.fetch_order_summary(str(woo_id))
-                status = (result or {}).get("status")
-                if status == "success" and isinstance((result or {}).get("order"), dict):
-                    summary = (result or {}).get("order") or {}
-                    summary_woo_id = normalize_woo_id(summary.get("wooOrderId") or woo_id)
-                    if summary_woo_id and summary_woo_id not in existing_woo_ids:
-                        woo_orders.append(summary)
-                        existing_woo_ids.add(summary_woo_id)
-                        added += 1
-                elif status == "not_found":
-                    deleted_ids.add(woo_id)
-
-            if deleted_ids:
-                before = len(local_orders)
-                local_orders = [
-                    local
-                    for local in local_orders
-                    if not (
-                        isinstance(local, dict)
-                        and normalize_woo_id(local.get("wooOrderId") or local.get("woo_order_id")) in deleted_ids
-                    )
-                ]
-                removed = before - len(local_orders)
-                if removed > 0:
-                    logger.info(
-                        "[Orders] Filtered deleted Woo orders from local overlay userId=%s removed=%s lookedUp=%s added=%s",
-                        user_id,
-                        removed,
-                        looked_up,
-                        added,
-                    )
-
-    merged_woo_orders = _merge_local_details_into_woo_orders(woo_orders or [], local_orders or [])
 
     # Also return local orders as a fallback (e.g., if Woo lookup fails due to missing email).
     # The frontend will dedupe/merge local vs Woo entries.
@@ -2566,23 +2458,22 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
             }
         )
 
-    # Enrich Woo orders with ShipStation status/tracking
-    if merged_woo_orders:
+    if local_summaries:
         t0 = time.perf_counter()
-        for woo_order in merged_woo_orders:
-            _enrich_with_shipstation(woo_order)
+        for local_summary in local_summaries:
+            _enrich_with_shipstation(local_summary)
         _perf_log(
-            f"ship_station.enrich_orders userId={user_id} count={len(merged_woo_orders)}",
+            f"ship_station.enrich_orders userId={user_id} count={len(local_summaries)}",
             duration_ms=(time.perf_counter() - t0) * 1000,
             threshold_ms=250.0,
         )
 
     try:
-        sample = merged_woo_orders[0] if merged_woo_orders else {}
+        sample = local_summaries[0] if local_summaries else {}
         logger.info(
-            "[Orders] User response snapshot userId=%s wooCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
+            "[Orders] User response snapshot userId=%s localCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
             user_id,
-            len(merged_woo_orders),
+            len(local_summaries),
             sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
             sample.get("trackingNumber")
             or _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("trackingNumber"),
@@ -2593,9 +2484,9 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
 
     return {
         "local": local_summaries,
-        "woo": merged_woo_orders,
+        "woo": [],
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
-        "wooError": woo_error,
+        "wooError": None,
     }
 
 
@@ -2896,7 +2787,7 @@ def get_orders_for_sales_rep(
         scope_key,
         include_doctors,
     )
-    cache_key = f"{normalized_sales_rep_id or 'ALL'}::{scope_key}::{'withDoctors' if include_doctors else 'ordersOnly'}::{'localOnly' if local_only else 'mixed'}"
+    cache_key = f"{normalized_sales_rep_id or 'ALL'}::{scope_key}::{'withDoctors' if include_doctors else 'ordersOnly'}::sqlOnly"
     now = time.time()
     if not force and _SALES_REP_ORDERS_TTL_SECONDS > 0:
         with _sales_rep_orders_cache_lock:
@@ -3249,180 +3140,14 @@ def get_orders_for_sales_rep(
     summaries: List[Dict] = []
     seen_keys = set()
 
-    # WooCommerce orders (if configured) - single paged pull, filter by doctor email.
-    woo_enabled = woo_commerce.is_configured() and not local_only
     logger.info(
-        "[SalesRep] Doctor list computed salesRepId=%s doctorCount=%s wooEnabled=%s doctorEmails=%s",
+        "[SalesRep] Doctor list computed salesRepId=%s doctorCount=%s sqlOnly=%s doctorEmails=%s",
         normalized_sales_rep_id or "ALL",
         len(doctors),
-        woo_enabled,
+        True,
         [d.get("email") for d in doctors],
     )
-    if woo_enabled:
-        # Build lookup: normalized email -> list of doctor metadata
-        email_to_best: Dict[str, Dict[str, object]] = {}
-
-        def _meta_priority(meta: Dict[str, object]) -> int:
-            try:
-                doctor_id = str(meta.get("id") or "").strip()
-            except Exception:
-                doctor_id = ""
-            if doctor_id and doctor_id in user_by_id:
-                role = str((user_by_id.get(doctor_id) or {}).get("role") or "").lower()
-                if role in ("doctor", "test_doctor"):
-                    return 30
-            if doctor_id and not doctor_id.startswith(("contact_form:", "manual:")):
-                return 20
-            if doctor_id.startswith("contact_form:"):
-                return 10
-            return 0
-        for doctor in doctors:
-            doctor_id = doctor.get("id")
-            doctor_name = doctor.get("name") or doctor.get("email") or "Doctor"
-            doctor_email = (doctor.get("email") or "").strip()
-            candidate_emails: List[str] = []
-            primary_email = doctor_email.lower()
-            if primary_email:
-                candidate_emails.append(primary_email)
-            for key in (
-                "doctorEmail",
-                "userEmail",
-                "contactEmail",
-                "billingEmail",
-                "wooEmail",
-                "officeEmail",
-            ):
-                val = (doctor.get(key) or "").strip().lower()
-                if val:
-                    candidate_emails.append(val)
-            for key in ("emails", "alternateEmails", "altEmails", "aliases"):
-                val = doctor.get(key)
-                if isinstance(val, list):
-                    for item in val:
-                        email_candidate = (item or "").strip().lower()
-                        if email_candidate:
-                            candidate_emails.append(email_candidate)
-            normalized_emails: List[str] = []
-            for em in candidate_emails:
-                if em and em not in normalized_emails:
-                    normalized_emails.append(em)
-            if not normalized_emails:
-                logger.info(
-                    "[SalesRep] Skipping Woo fetch; missing doctor email salesRepId=%s doctorId=%s",
-                    sales_rep_id,
-                    doctor_id,
-                )
-                continue
-            for em in normalized_emails:
-                candidate = {"id": doctor_id, "name": doctor_name, "email": doctor_email}
-                existing = email_to_best.get(em)
-                if not existing or _meta_priority(candidate) > _meta_priority(existing):
-                    email_to_best[em] = candidate
-
-        email_to_doctors: Dict[str, List[Dict[str, object]]] = {
-            em: [meta] for em, meta in email_to_best.items()
-        }
-
-        per_page = 50
-        max_pages = 20
-        orders_seen = 0
-        pages_fetched = 0
-        for page in range(1, max_pages + 1):
-            payload, _meta = woo_commerce.fetch_catalog_proxy(
-                "orders",
-                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
-            )
-            orders = payload if isinstance(payload, list) else []
-            pages_fetched += 1
-            if not orders:
-                break
-
-            for woo_order in orders:
-                if not isinstance(woo_order, dict):
-                    continue
-                meta_data = woo_order.get("meta_data") or []
-                rep_id = _normalize_rep_id(_meta_value(meta_data, "peppro_sales_rep_id"))
-                billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
-                if allowed_rep_ids:
-                    if not (
-                        (rep_id and rep_id in allowed_rep_ids)
-                        or (billing_email and billing_email in email_to_doctors)
-                    ):
-                        continue
-                else:
-                    # Admin "scope=all": include any rep-attributed order, plus any order that matches
-                    # a known doctor/lead email.
-                    if include_all_doctors:
-                        if not ((rep_id and rep_id.strip()) or (billing_email and billing_email in email_to_doctors)):
-                            continue
-                    else:
-                        if not (billing_email and billing_email in email_to_doctors):
-                            continue
-
-                doctor_metas: List[Dict[str, object]] = []
-                if billing_email and billing_email in email_to_doctors:
-                    doctor_metas = email_to_doctors.get(billing_email, [])
-                else:
-                    # Fallback: resolve doctor via local PepPro order id (`peppro_order_id`).
-                    peppro_order_id = _meta_value(meta_data, "peppro_order_id")
-                    peppro_order_id = str(peppro_order_id).strip() if peppro_order_id is not None else ""
-                    local = local_by_id.get(peppro_order_id) if peppro_order_id else None
-                    if local:
-                        local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
-                        doctor_meta = doctor_lookup.get(local_user_id) if local_user_id else None
-                        if doctor_meta:
-                            doctor_metas = [doctor_meta]
-
-                if not doctor_metas:
-                    # Still show activity for rep-attributed orders even if we can't map to a doctor row.
-                    doctor_metas = [
-                        {
-                            "id": billing_email or None,
-                            "name": billing_email or "Doctor",
-                            "email": billing_email or None,
-                        }
-                    ]
-
-                for doctor_meta in doctor_metas:
-                    key = f"woo:{woo_order.get('id')}:{doctor_meta.get('id') or billing_email or ''}"
-                    if key in seen_keys:
-                        continue
-                    seen_keys.add(key)
-                    mapped = woo_commerce._map_woo_order_summary(woo_order)
-                    doctor_rep_id = _normalize_rep_id(
-                        doctor_meta.get("salesRepId") or rep_id or None
-                    )
-                    rep_rec = rep_records.get(doctor_rep_id) if doctor_rep_id else None
-                    summary = {
-                        **mapped,
-                        "doctorId": doctor_meta.get("id"),
-                        "doctorName": doctor_meta.get("name"),
-                        "doctorEmail": doctor_meta.get("email"),
-                        "doctorSalesRepId": doctor_rep_id or None,
-                        "doctorSalesRepName": (rep_rec.get("name") if isinstance(rep_rec, dict) else None)
-                        or doctor_meta.get("salesRepName"),
-                        "doctorSalesRepEmail": (rep_rec.get("email") if isinstance(rep_rec, dict) else None)
-                        or doctor_meta.get("salesRepEmail"),
-                        "userId": doctor_meta.get("id"),
-                        "source": "woocommerce",
-                    }
-                    _enrich_with_shipstation(summary)
-                    summaries.append(summary)
-                    orders_seen += 1
-
-            if len(orders) < per_page:
-                break
-
-        logger.info(
-            "[SalesRep] Woo orders fetched via paged pull salesRepId=%s pages=%s perPage=%s matchedOrders=%s",
-            sales_rep_id,
-            pages_fetched,
-            per_page,
-            orders_seen,
-        )
-
-    # If Woo is not configured, fall back to local PepPro orders so reps can still see activity.
-    if not woo_enabled and local_by_id:
+    if local_by_id:
         for local in local_by_id.values():
             local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
             doctor_meta = doctor_lookup.get(local_user_id) or {}
