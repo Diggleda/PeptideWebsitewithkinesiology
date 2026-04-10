@@ -10,6 +10,8 @@ const assetsToSync = [
   "PepPro_icon.png",
   "leafTexture.jpg",
   path.join("icons", "handshake_4233584.png"),
+  path.join("logos", "woocommerce.svg"),
+  path.join("logos", "shipstation.svg"),
   "peppro-favicon-v3.ico",
   "peppro-favicon-v3-32x32.png",
   "peppro-favicon-v3-16x16.png",

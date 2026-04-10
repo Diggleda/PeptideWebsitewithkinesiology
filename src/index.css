@@ -5800,6 +5800,24 @@ html {
   box-sizing: border-box;
 }
 
+.maintenance-mode-shell {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.maintenance-mode-shell--sales {
+  margin: 0 auto;
+  width: calc(100% - 2.5rem);
+  max-width: 100%;
+}
+
+.maintenance-mode-shell--doctor {
+  margin-left: clamp(0.75rem, 4vw, 1.5rem);
+  margin-right: clamp(0.75rem, 4vw, 1.5rem);
+  width: auto;
+  max-width: calc(100% - (2 * clamp(0.75rem, 4vw, 1.5rem)));
+}
+
 .sales-rep-dashboard .overflow-x-auto {
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
@@ -5957,6 +5975,11 @@ html {
     width: 100%;
     padding: 1.25rem;
   }
+
+  .maintenance-mode-shell--sales {
+    width: 100%;
+  }
+
   .sales-rep-dashboard-grid {
     gap: 1.1rem;
   }
@@ -5975,6 +5998,15 @@ html {
   .sales-rep-dashboard {
     padding: 1rem;
   }
+
+  .maintenance-mode-shell--doctor,
+  .maintenance-mode-shell--sales {
+    margin-left: 0;
+    margin-right: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
   .sales-rep-dashboard-grid {
     gap: 1rem;
   }
@@ -5999,6 +6031,10 @@ html {
 
 @media (min-width: 1024px) {
   .sales-rep-dashboard {
+    width: calc(100% - 5rem);
+  }
+
+  .maintenance-mode-shell--sales {
     width: calc(100% - 5rem);
   }
 }

@@ -381,6 +381,11 @@ const MAINTENANCE_TARGET_ROLES = new Set([
   "sales_partner",
   "sales_lead",
 ]);
+const MAINTENANCE_OPENER_PING_EVENT = "PEPPRO_MAINTENANCE_PING";
+const MAINTENANCE_OPENER_EXIT_EVENT = "PEPPRO_MAINTENANCE_EXIT";
+const MAINTENANCE_OPENER_PING_INTERVAL_MS = 30_000;
+const MAINTENANCE_OPENER_ACTIVITY_TTL_MS =
+  MAINTENANCE_OPENER_PING_INTERVAL_MS * 2 + 15_000;
 
 interface SeamlessRawEntry {
   id: string | number;
@@ -4672,6 +4677,7 @@ function MainApp() {
   >(getInitialLandingMode);
   const [postLoginHold, setPostLoginHold] = useState(false);
   const [maintenanceLaunchPending, setMaintenanceLaunchPending] = useState(false);
+  const [maintenanceCompanionActive, setMaintenanceCompanionActive] = useState(false);
   const [maintenanceNowMs, setMaintenanceNowMs] = useState(() => Date.now());
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [researchTermsSubmitting, setResearchTermsSubmitting] = useState(false);
@@ -4721,6 +4727,9 @@ function MainApp() {
       doctorResellerPermitPromptOpen,
   );
   const isMaintenanceMode = Boolean(user?.shadowContext?.active);
+  const maintenanceUsesSalesDashboard = Boolean(
+    user?.role && (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)),
+  );
   const maintenanceExpiresMs = useMemo(() => {
     const raw = user?.shadowContext?.expiresAt;
     if (!raw) return null;
@@ -4733,6 +4742,9 @@ function MainApp() {
         ? formatDelegateTimeRemaining(maintenanceExpiresMs, maintenanceNowMs)
         : null,
     [formatDelegateTimeRemaining, isMaintenanceMode, maintenanceExpiresMs, maintenanceNowMs],
+  );
+  const shouldPauseAdminBackgroundSync = Boolean(
+    maintenanceCompanionActive && !isMaintenanceMode && user?.role && isAdmin(user.role),
   );
   const showDoctorGatingModal =
     showResearchTermsAgreementModal
@@ -4834,6 +4846,50 @@ function MainApp() {
       window.clearInterval(intervalId);
     };
   }, [isMaintenanceMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!isMaintenanceMode) {
+      return;
+    }
+
+    const postMaintenanceSignal = (type: string) => {
+      const openerWindow =
+        window.opener && !window.opener.closed ? window.opener : null;
+      if (!openerWindow) {
+        return;
+      }
+      try {
+        openerWindow.postMessage(
+          {
+            type,
+            at: Date.now(),
+            targetUserId: user?.id || null,
+          },
+          window.location.origin,
+        );
+      } catch {
+        // ignore
+      }
+    };
+
+    postMaintenanceSignal(MAINTENANCE_OPENER_PING_EVENT);
+    const intervalId = window.setInterval(() => {
+      postMaintenanceSignal(MAINTENANCE_OPENER_PING_EVENT);
+    }, MAINTENANCE_OPENER_PING_INTERVAL_MS);
+    const handlePageExit = () => {
+      postMaintenanceSignal(MAINTENANCE_OPENER_EXIT_EVENT);
+    };
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", handlePageExit);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", handlePageExit);
+    };
+  }, [isMaintenanceMode, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -14765,15 +14821,17 @@ function MainApp() {
     }
     void fetchServerHealth({ force: true });
   }, [fetchServerHealth, postLoginHold, user?.id, user?.role]);
-  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
-	  const [isIdle, setIsIdle] = useState(false);
-	  const isIdleRef = useRef(false);
-	  const lastActivityAtRef = useRef<number>(Date.now());
-		  const idleLogoutFiredRef = useRef(false);
-		  const sessionLogoutFiredRef = useRef(false);
-		  const lastPresenceHeartbeatPingAtRef = useRef(0);
-		  const lastPresenceInteractionPingAtRef = useRef(0);
-		  const lastSessionCheckAtRef = useRef(0);
+	  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
+		  const [isIdle, setIsIdle] = useState(false);
+		  const isIdleRef = useRef(false);
+		  const lastActivityAtRef = useRef<number>(Date.now());
+			  const idleLogoutFiredRef = useRef(false);
+			  const sessionLogoutFiredRef = useRef(false);
+			  const lastPresenceHeartbeatPingAtRef = useRef(0);
+			  const lastPresenceInteractionPingAtRef = useRef(0);
+      const lastMaintenanceAdminKeepaliveAtRef = useRef(0);
+      const maintenanceCompanionReleaseTimeoutRef = useRef<number | null>(null);
+			  const lastSessionCheckAtRef = useRef(0);
       const forcedLogoutAtRef = useRef(0);
       const forcedLogoutReasonRef = useRef<string | null>(null);
 
@@ -15726,6 +15784,9 @@ function MainApp() {
     const LIVE_PRESENCE_FALLBACK_INTERVAL_MS = 8_000;
 
 		  useEffect(() => {
+		    if (shouldPauseAdminBackgroundSync) {
+		      return;
+		    }
 		    const userRole = user?.role || null;
 		    const isSalesLeadRole = isSalesLead(userRole);
 		    const isSalesRepRole = isRep(userRole);
@@ -15910,12 +15971,15 @@ function MainApp() {
 	      if (intervalId) window.clearInterval(intervalId);
 	      controller.abort();
 	    };
-	  }, [user?.role, user?.id, user?.salesRepId, hasAuthToken, liveClientsPresenceCacheKey, readPresenceSnapshot, writePresenceSnapshot]);
+		  }, [user?.role, user?.id, user?.salesRepId, hasAuthToken, liveClientsPresenceCacheKey, readPresenceSnapshot, shouldPauseAdminBackgroundSync, writePresenceSnapshot]);
 
 		  useEffect(() => {
+		    if (shouldPauseAdminBackgroundSync) {
+		      return;
+		    }
 		    if (!isAdmin(user?.role) || !hasAuthToken()) {
           adminLiveUsersInitialLoadDoneRef.current = false;
-	      setAdminLiveUsers([]);
+		      setAdminLiveUsers([]);
 	      setAdminLiveUsersLoading(false);
 	      setAdminLiveUsersError(null);
           setAdminLiveUsersUsingCachedSnapshot(false);
@@ -16056,7 +16120,7 @@ function MainApp() {
 	      if (intervalId) window.clearInterval(intervalId);
 	      controller.abort();
 	    };
-	  }, [user?.role, user?.id, hasAuthToken, adminLiveUsersPresenceCacheKey, readPresenceSnapshot, writePresenceSnapshot]);
+		  }, [user?.role, user?.id, hasAuthToken, adminLiveUsersPresenceCacheKey, readPresenceSnapshot, shouldPauseAdminBackgroundSync, writePresenceSnapshot]);
 
 		  const formatOnlineDuration = (lastLoginAt?: string | null) => {
 		    void userActivityNowTick;
@@ -19379,18 +19443,21 @@ function MainApp() {
 	  );
 
   useEffect(() => {
+    if (shouldPauseAdminBackgroundSync && userRole && isAdmin(userRole)) {
+      return;
+    }
     if (postLoginHold || !userRole || (!isRep(userRole) && !isSalesLead(userRole) && !isAdmin(userRole))) {
       return;
     }
 	    void fetchSalesTrackingOrders().catch((error) => {
 	      console.debug("[Sales Tracking] Initial refresh skipped", error);
 	    });
-  }, [fetchSalesTrackingOrders, userRole, postLoginHold]);
+  }, [fetchSalesTrackingOrders, userRole, postLoginHold, shouldPauseAdminBackgroundSync]);
 
-	  useEffect(() => {
-	    if (postLoginHold || !user || !isAdmin(user.role)) {
-	      return;
-	    }
+		  useEffect(() => {
+		    if (shouldPauseAdminBackgroundSync || postLoginHold || !user || !isAdmin(user.role)) {
+		      return;
+		    }
 	    void refreshAdminOnHoldOrders();
 	    const leaderKey = "admin-on-hold-poll";
 	    const pollIntervalMs = 25_000;
@@ -19408,12 +19475,17 @@ function MainApp() {
 	      releaseTabLeadership(leaderKey);
 	      window.clearInterval(pollHandle);
 	    };
-	  }, [postLoginHold, refreshAdminOnHoldOrders, user?.id, user?.role]);
+		  }, [postLoginHold, refreshAdminOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
 
-	  useEffect(() => {
-	    if (postLoginHold || !user || (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))) {
-	      return;
-	    }
+		  useEffect(() => {
+		    if (
+		      postLoginHold ||
+		      !user ||
+		      (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
+		      (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))
+		    ) {
+		      return;
+		    }
 	    void refreshSalesOnHoldOrders();
 	    const leaderKey = "sales-on-hold-poll";
 	    const pollIntervalMs = 25_000;
@@ -19431,7 +19503,7 @@ function MainApp() {
 	      releaseTabLeadership(leaderKey);
 	      window.clearInterval(pollHandle);
 	    };
-	  }, [postLoginHold, refreshSalesOnHoldOrders, user?.id, user?.role]);
+		  }, [postLoginHold, refreshSalesOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
 
 	  const scopedSalesTrackingOrders = useMemo(() => {
 	    if (!isAdmin(user?.role)) {
@@ -20688,6 +20760,9 @@ function MainApp() {
         return;
       }
     }
+    if (shouldPauseAdminBackgroundSync && user?.role && isAdmin(user.role)) {
+      return;
+    }
 
     let cancelled = false;
 
@@ -21120,7 +21195,7 @@ function MainApp() {
 	      }
 	      window.clearInterval(intervalId);
 	    };
-	  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateLoading, delegateError, delegateContext?.allowedProducts, user?.id]);
+		  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateIsValidated, delegateLoading, delegateError, delegateContext?.allowedProducts, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
 
   useEffect(() => {
     if (catalogEmptyTimerRef.current) {
@@ -21342,8 +21417,11 @@ function MainApp() {
   }, [catalogCategories]);
 
   useEffect(() => {
-	    if (!user) {
-	      setDoctorSummary(null);
+	    if (shouldPauseAdminBackgroundSync && user?.role && isAdmin(user.role)) {
+	      return;
+	    }
+		    if (!user) {
+		      setDoctorSummary(null);
 	      setDoctorReferrals([]);
 	      setSalesRepDashboard(null);
 	      setAdminActionState({ updatingReferral: null, error: null });
@@ -21370,7 +21448,7 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, [user, postLoginHold, refreshReferralData]);
+	  }, [user, postLoginHold, refreshReferralData, shouldPauseAdminBackgroundSync]);
 
   // Set body classes to control background per view
   useEffect(() => {
@@ -21388,6 +21466,7 @@ function MainApp() {
   useEffect(() => {
     if (
       !user ||
+      (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
       (!isRep(user.role) && !isAdmin(user.role)) ||
       postLoginHold ||
       referralPollingSuppressed
@@ -21407,6 +21486,7 @@ function MainApp() {
     postLoginHold,
     referralPollingSuppressed,
     tracedRefreshReferralData,
+    shouldPauseAdminBackgroundSync,
   ]);
 
   useEffect(() => {
@@ -21416,6 +21496,7 @@ function MainApp() {
 
     if (
       !user ||
+      (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
       (!isDoctorRole(user.role) && !isRep(user.role) && !isAdmin(user.role)) ||
       postLoginHold ||
       referralPollingSuppressed
@@ -21456,6 +21537,7 @@ function MainApp() {
     user?.role,
     postLoginHold,
     referralPollingSuppressed,
+    shouldPauseAdminBackgroundSync,
     tracedRefreshReferralData,
   ]);
 
@@ -22004,15 +22086,64 @@ function MainApp() {
     setSalesRepDashboard(null);
     setReferralStatusMessage(null);
     setReferralDataError(null);
-    setAdminActionState({ updatingReferral: null, error: null });
-    // toast.success('Logged out successfully');
+	    setAdminActionState({ updatingReferral: null, error: null });
+	    // toast.success('Logged out successfully');
   }, []);
+
+  const handleExitMaintenanceMode = useCallback(() => {
+    if (typeof window === "undefined") {
+      handleLogout();
+      return;
+    }
+
+    const openerWindow =
+      window.opener && !window.opener.closed ? window.opener : null;
+
+    handleLogout();
+
+    window.setTimeout(() => {
+      try {
+        if (openerWindow && !openerWindow.closed) {
+          openerWindow.focus();
+        }
+      } catch (error) {
+        console.warn("[Maintenance] Unable to refocus admin tab", error);
+      }
+      try {
+        window.close();
+      } catch (error) {
+        console.warn("[Maintenance] Unable to close maintenance tab", error);
+      }
+    }, 0);
+  }, [handleLogout]);
 
   const handleOpenMaintenanceView = useCallback(async () => {
     const targetUserId = String(salesDoctorDetail?.doctorId || "").trim();
     if (!targetUserId || !canOpenMaintenanceViewForSalesDoctorDetail) {
       return;
     }
+
+    // Open the tab synchronously so browsers keep it attached to the click
+    // instead of treating the eventual navigation as a blocked popup.
+    const maintenanceWindow =
+      typeof window !== "undefined" ? window.open("", "_blank") : null;
+    if (!maintenanceWindow) {
+      toast.error("Unable to open maintenance view right now.");
+      return;
+    }
+    try {
+      maintenanceWindow.sessionStorage.clear();
+    } catch {
+      // ignore
+    }
+    try {
+      maintenanceWindow.document.title = "Opening maintenance view...";
+      maintenanceWindow.document.body.innerHTML =
+        '<div style="font-family: system-ui, sans-serif; padding: 24px; color: #0f172a;">Opening maintenance view...</div>';
+    } catch {
+      // ignore
+    }
+
     setMaintenanceLaunchPending(true);
     try {
       const payload = (await authAPI.createShadowSession(targetUserId)) as any;
@@ -22025,12 +22156,18 @@ function MainApp() {
       if (!launchUrl) {
         throw new Error("Missing maintenance launch URL");
       }
-      const opened = window.open(launchUrl, "_blank", "noopener,noreferrer");
-      if (!opened) {
-        throw new Error("Popup blocked");
+      if (maintenanceWindow.closed) {
+        throw new Error("Maintenance window closed before launch completed");
       }
-      toast.success("Opened maintenance view in a new tab.");
+      maintenanceWindow.location.replace(launchUrl);
     } catch (error) {
+      try {
+        if (!maintenanceWindow.closed) {
+          maintenanceWindow.close();
+        }
+      } catch {
+        // ignore
+      }
       console.warn("[Maintenance] Failed to open maintenance view", error);
       toast.error("Unable to open maintenance view right now.");
     } finally {
@@ -22137,11 +22274,93 @@ function MainApp() {
   }, [handleLogout]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!user?.id) {
-      setIsIdle(false);
+    if (typeof window === "undefined") {
       return;
     }
+
+    const clearMaintenanceCompanionTimer = () => {
+      if (maintenanceCompanionReleaseTimeoutRef.current !== null) {
+        window.clearTimeout(maintenanceCompanionReleaseTimeoutRef.current);
+        maintenanceCompanionReleaseTimeoutRef.current = null;
+      }
+    };
+
+    const scheduleMaintenanceCompanionRelease = () => {
+      clearMaintenanceCompanionTimer();
+      maintenanceCompanionReleaseTimeoutRef.current = window.setTimeout(() => {
+        maintenanceCompanionReleaseTimeoutRef.current = null;
+        setMaintenanceCompanionActive(false);
+      }, MAINTENANCE_OPENER_ACTIVITY_TTL_MS);
+    };
+
+    const handleMaintenanceMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      const payload = event.data;
+      const type =
+        payload && typeof payload === "object" ? (payload as any).type : null;
+      if (
+        type !== MAINTENANCE_OPENER_PING_EVENT &&
+        type !== MAINTENANCE_OPENER_EXIT_EVENT
+      ) {
+        return;
+      }
+      if (isMaintenanceMode || !user?.id || !isAdmin(user.role) || !hasAuthToken()) {
+        return;
+      }
+
+      const now = Date.now();
+      lastActivityAtRef.current = now;
+      idleLogoutFiredRef.current = false;
+      isIdleRef.current = false;
+      setIsIdle(false);
+
+      if (type === MAINTENANCE_OPENER_EXIT_EVENT) {
+        clearMaintenanceCompanionTimer();
+        setMaintenanceCompanionActive(false);
+        return;
+      }
+
+      const throttleMs = 15_000;
+      if (now - lastMaintenanceAdminKeepaliveAtRef.current < throttleMs) {
+        return;
+      }
+      lastMaintenanceAdminKeepaliveAtRef.current = now;
+
+      setMaintenanceCompanionActive(true);
+      scheduleMaintenanceCompanionRelease();
+    };
+
+    window.addEventListener("message", handleMaintenanceMessage);
+    return () => {
+      clearMaintenanceCompanionTimer();
+      window.removeEventListener("message", handleMaintenanceMessage);
+    };
+  }, [isMaintenanceMode, user?.id, user?.role, hasAuthToken]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!maintenanceCompanionActive) {
+      return;
+    }
+    if (!user?.id || !isAdmin(user.role) || isMaintenanceMode) {
+      if (maintenanceCompanionReleaseTimeoutRef.current !== null) {
+        window.clearTimeout(maintenanceCompanionReleaseTimeoutRef.current);
+        maintenanceCompanionReleaseTimeoutRef.current = null;
+      }
+      setMaintenanceCompanionActive(false);
+    }
+  }, [maintenanceCompanionActive, isMaintenanceMode, user?.id, user?.role]);
+
+		  useEffect(() => {
+		    if (typeof window === "undefined") return;
+		    if (!user?.id) {
+		      setIsIdle(false);
+		      return;
+		    }
 
     const idleThresholdMs = 10_000;
     const idleLogoutMs = 60 * 60 * 1000;
@@ -22165,17 +22384,20 @@ function MainApp() {
     sessionLogoutFiredRef.current = false;
     setIsIdle(false);
 
-	    const markActivity = () => {
-	      if (!hasAuthToken()) {
-          return;
-        }
-	      lastActivityAtRef.current = Date.now();
-	      idleLogoutFiredRef.current = false;
-	      setIsIdle(false);
-	      const now = Date.now();
-	      const throttleMs = 15_000;
-	      if (now - lastPresenceInteractionPingAtRef.current < throttleMs) {
-	        return;
+		    const markActivity = () => {
+		      if (!hasAuthToken()) {
+	          return;
+	        }
+		      lastActivityAtRef.current = Date.now();
+		      idleLogoutFiredRef.current = false;
+		      setIsIdle(false);
+		      if (shouldPauseAdminBackgroundSync && user?.role && isAdmin(user.role)) {
+		        return;
+		      }
+		      const now = Date.now();
+		      const throttleMs = 15_000;
+		      if (now - lastPresenceInteractionPingAtRef.current < throttleMs) {
+		        return;
 	      }
 	      lastPresenceInteractionPingAtRef.current = now;
 	      try {
@@ -22209,13 +22431,13 @@ function MainApp() {
         return;
       }
       const nextIsIdle = idleForMs >= idleThresholdMs;
-      if (isIdleRef.current !== nextIsIdle) {
-        isIdleRef.current = nextIsIdle;
-        setIsIdle(nextIsIdle);
-        if (nextIsIdle) {
-          try {
-            void settingsAPI
-              .pingPresence({ kind: "heartbeat", isIdle: true }, { background: true })
+	      if (isIdleRef.current !== nextIsIdle) {
+	        isIdleRef.current = nextIsIdle;
+	        setIsIdle(nextIsIdle);
+	        if (nextIsIdle && !(shouldPauseAdminBackgroundSync && user?.role && isAdmin(user.role))) {
+	          try {
+	            void settingsAPI
+	              .pingPresence({ kind: "heartbeat", isIdle: true }, { background: true })
               .catch(() => undefined);
           } catch {
             // ignore
@@ -22247,17 +22469,22 @@ function MainApp() {
       document.removeEventListener("scroll", markActivity, true);
       window.clearInterval(interval);
     };
-	  }, [user?.id, handleLogout, hasAuthToken]);
+		  }, [user?.id, user?.role, handleLogout, hasAuthToken, shouldPauseAdminBackgroundSync]);
 
-		  useEffect(() => {
-		    if (typeof window === "undefined") return;
-		    if (!user?.id || postLoginHold || !hasAuthToken()) {
-		      lastPresenceHeartbeatPingAtRef.current = 0;
-		      lastPresenceInteractionPingAtRef.current = 0;
-		      return;
-		    }
+			  useEffect(() => {
+			    if (typeof window === "undefined") return;
+			    if (!user?.id || postLoginHold || !hasAuthToken()) {
+			      lastPresenceHeartbeatPingAtRef.current = 0;
+			      lastPresenceInteractionPingAtRef.current = 0;
+			      return;
+			    }
+			    if (shouldPauseAdminBackgroundSync && user?.role && isAdmin(user.role)) {
+			      lastPresenceHeartbeatPingAtRef.current = 0;
+			      lastPresenceInteractionPingAtRef.current = 0;
+			      return;
+			    }
 
-		    let cancelled = false;
+			    let cancelled = false;
 		    const heartbeatMs = 30_000;
 
 		    const sendHeartbeat = () => {
@@ -22309,13 +22536,14 @@ function MainApp() {
 		      window.removeEventListener("online", handleOnline);
 		      window.removeEventListener("focus", handleOnline);
 		    };
-		  }, [user?.id, postLoginHold, hasAuthToken]);
+			  }, [user?.id, user?.role, postLoginHold, hasAuthToken, shouldPauseAdminBackgroundSync]);
 
-	  useEffect(() => {
-	    if (typeof window === "undefined") return;
-	    if (!user) return;
+		  useEffect(() => {
+		    if (typeof window === "undefined") return;
+		    if (!user) return;
+		    if (shouldPauseAdminBackgroundSync) return;
 
-	    let cancelled = false;
+		    let cancelled = false;
 	    const intervalMs = 60_000;
 
 	    const checkSession = async () => {
@@ -22389,7 +22617,7 @@ function MainApp() {
 	      window.removeEventListener("focus", handleVisibilityOrFocus);
 	      window.removeEventListener("online", handleVisibilityOrFocus);
 	    };
-	  }, [user?.id, handleLogout, hasAuthToken]);
+		  }, [user?.id, handleLogout, hasAuthToken, shouldPauseAdminBackgroundSync]);
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
@@ -25892,7 +26120,7 @@ function MainApp() {
 		                  title="Open Woocommerce dashboard"
 		                >
 	                    <img
-	                      src="/logos/woocommerce.svg"
+	                      src={withStaticAssetStamp("/logos/woocommerce.svg")}
 	                      alt=""
 	                      aria-hidden="true"
 	                      className="h-6 w-auto shrink-0 object-contain"
@@ -25908,12 +26136,12 @@ function MainApp() {
                     className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
                     title="Open ShipStation Dashboard"
                   >
-                    <img
-                      src="/logos/shipstation.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="h-6 w-auto shrink-0 object-contain"
-                      loading="lazy"
+	                    <img
+	                      src={withStaticAssetStamp("/logos/shipstation.svg")}
+	                      alt=""
+	                      aria-hidden="true"
+	                      className="h-6 w-auto shrink-0 object-contain"
+	                      loading="lazy"
                       decoding="async"
                     />
                     <span>ShipStation Dashboard</span>
@@ -32305,14 +32533,19 @@ function MainApp() {
           onInteractOutside={(event) => event.preventDefault()}
         >
           {doctorGatingModalLogo}
-          <DialogHeader className="gap-0">
-            <DialogTitle>Reseller Permit</DialogTitle>
-            <DialogDescription className="text-muted-foreground mb-3 text-sm">
-              Upload an applicable resellers permit for tax exception.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5">
-            <div className="space-y-2">
+	          <DialogHeader className="gap-0">
+	            <DialogTitle>Reseller Permit</DialogTitle>
+	            <DialogDescription className="text-muted-foreground mb-3 text-sm">
+	              <span className="block">
+	                Upload an applicable reseller permit for tax exemption.
+	              </span>
+	              <span className="block text-xs">
+	                Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
+	              </span>
+	            </DialogDescription>
+	          </DialogHeader>
+	          <div className="space-y-5">
+	            <div className="space-y-2">
               <Input
                 id="physician-reseller-permit-upload"
                 ref={doctorResellerPermitInputRef}
@@ -32325,10 +32558,7 @@ function MainApp() {
                   setDoctorResellerPermitError("");
                 }}
               />
-              <p className="text-xs text-slate-500">
-                Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
-              </p>
-            </div>
+	            </div>
             {doctorResellerPermitFile && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                 Selected file: {doctorResellerPermitFile.name}
@@ -34124,7 +34354,13 @@ function MainApp() {
 	              }}
 	            >
                 {isMaintenanceMode && (
-                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-6">
+                  <div
+                    className={`w-full pb-6 ${
+                      maintenanceUsesSalesDashboard
+                        ? "maintenance-mode-shell maintenance-mode-shell--sales"
+                        : "maintenance-mode-shell maintenance-mode-shell--doctor"
+                    }`}
+                  >
                     <div className="glass-card squircle-lg border border-amber-300/70 bg-amber-50/90 px-5 py-4 shadow-lg">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div className="min-w-0">
@@ -34145,7 +34381,7 @@ function MainApp() {
                             type="button"
                             variant="outline"
                             className="border-amber-400 bg-white text-amber-950"
-                            onClick={handleLogout}
+                            onClick={handleExitMaintenanceMode}
                           >
                             Exit maintenance mode
                           </Button>

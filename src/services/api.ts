@@ -582,6 +582,32 @@ const rewriteBlockedAdminPaths = (url: string) => {
   return String(url || '').replace(/\/orders\/admin\/on-hold(?=[/?#]|$)/i, '/orders/on-hold');
 };
 
+const buildSameOriginApiFallbackUrl = (url: string) => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const parsed = new URL(String(url || ''), window.location.origin);
+    const currentOrigin = window.location.origin;
+    const currentHost = window.location.hostname.toLowerCase();
+    const targetHost = parsed.hostname.toLowerCase();
+    if (parsed.origin === currentOrigin) {
+      return null;
+    }
+    if (!parsed.pathname.toLowerCase().startsWith('/api/')) {
+      return null;
+    }
+    const isPepProPrimaryHost = currentHost === 'peppro.net' || currentHost === 'www.peppro.net';
+    const isPepProApiHost = targetHost === 'api.peppro.net';
+    if (!isPepProPrimaryHost || !isPepProApiHost) {
+      return null;
+    }
+    return `${currentOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+};
+
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}) => {
   const rewrittenUrl = rewriteBlockedAdminPaths(url);
@@ -640,25 +666,41 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     try {
       response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
-      const isAbort = error?.name === 'AbortError';
-      const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
-      if (
-        background &&
-        !isAbort &&
-        isNetworkLikeFetchError(error)
-      ) {
-        noteApiBackgroundThrottle({ message });
+      const fallbackUrl =
+        !background && isNetworkLikeFetchError(error)
+          ? buildSameOriginApiFallbackUrl(requestUrl)
+          : null;
+      if (fallbackUrl && fallbackUrl !== requestUrl) {
+        try {
+          requestUrl = fallbackUrl;
+          response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
+        } catch (retryError: any) {
+          error = retryError;
+        }
       }
-      if (!skipReachabilityDispatch) {
-        dispatchApiReachability({ ok: false, status: null, message });
+      if (typeof response !== 'undefined') {
+        // The same-origin retry recovered the request; continue with normal handling below.
+      } else {
+        const isAbort = error?.name === 'AbortError';
+        const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
+        if (
+          background &&
+          !isAbort &&
+          isNetworkLikeFetchError(error)
+        ) {
+          noteApiBackgroundThrottle({ message });
+        }
+        if (!skipReachabilityDispatch) {
+          dispatchApiReachability({ ok: false, status: null, message });
+        }
+        if (isAbort) {
+          const wrapped = new Error('Request timed out');
+          (wrapped as any).code = 'TIMEOUT';
+          (wrapped as any).status = null;
+          throw wrapped;
+        }
+        throw error;
       }
-      if (isAbort) {
-        const wrapped = new Error('Request timed out');
-        (wrapped as any).code = 'TIMEOUT';
-        (wrapped as any).status = null;
-        throw wrapped;
-      }
-      throw error;
     }
 
     if (response.status === 429) {
@@ -802,7 +844,7 @@ let _healthCheckLastAt = 0;
 let _healthCheckLastOk = false;
 
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
-  const requestUrl = rewriteBlockedAdminPaths(url);
+  let requestUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
   const headers: HeadersInit = {
     ...(options.headers || {}),
@@ -817,27 +859,42 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   }
 
   let response: Response;
+  const requestInit: RequestInit = {
+    cache: options.cache ?? 'no-store',
+    ...options,
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      ...headers,
+    },
+  };
+  const timeoutMs = _timeoutMsForRequest(requestUrl, method);
   try {
-    response = await _fetchWithTimeout(requestUrl, {
-      cache: options.cache ?? 'no-store',
-      ...options,
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-        ...headers,
-      },
-    }, _timeoutMsForRequest(requestUrl, method));
+    response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
   } catch (error: any) {
-    const isAbort = error?.name === 'AbortError';
-    const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
-    dispatchApiReachability({ ok: false, status: null, message });
-    if (isAbort) {
-      const wrapped = new Error('Request timed out');
-      (wrapped as any).code = 'TIMEOUT';
-      (wrapped as any).status = null;
-      throw wrapped;
+    const fallbackUrl = isNetworkLikeFetchError(error)
+      ? buildSameOriginApiFallbackUrl(requestUrl)
+      : null;
+    if (fallbackUrl && fallbackUrl !== requestUrl) {
+      try {
+        requestUrl = fallbackUrl;
+        response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
+      } catch (retryError: any) {
+        error = retryError;
+      }
     }
-    throw error;
+    if (typeof response === 'undefined') {
+      const isAbort = error?.name === 'AbortError';
+      const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
+      dispatchApiReachability({ ok: false, status: null, message });
+      if (isAbort) {
+        const wrapped = new Error('Request timed out');
+        (wrapped as any).code = 'TIMEOUT';
+        (wrapped as any).status = null;
+        throw wrapped;
+      }
+      throw error;
+    }
   }
 
   if (response.ok) {
@@ -1186,6 +1243,7 @@ export const authAPI = {
       if (token) {
         void fetch(`${API_BASE_URL}/auth/logout`, {
           method: 'POST',
+          keepalive: true,
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',

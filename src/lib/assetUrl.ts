@@ -6,6 +6,8 @@ const EMITTED_PUBLIC_ASSET_URLS: Record<string, string> = {
   "/PepPro_icon.png": new URL("../generated/runtime-assets/PepPro_icon.png", import.meta.url).href,
   "/leafTexture.jpg": new URL("../generated/runtime-assets/leafTexture.jpg", import.meta.url).href,
   "/icons/handshake_4233584.png": new URL("../generated/runtime-assets/icons/handshake_4233584.png", import.meta.url).href,
+  "/logos/woocommerce.svg": new URL("../generated/runtime-assets/logos/woocommerce.svg", import.meta.url).href,
+  "/logos/shipstation.svg": new URL("../generated/runtime-assets/logos/shipstation.svg", import.meta.url).href,
   "/peppro-favicon-v3.ico": new URL("../generated/runtime-assets/peppro-favicon-v3.ico", import.meta.url).href,
   "/peppro-favicon-v3-32x32.png": new URL("../generated/runtime-assets/peppro-favicon-v3-32x32.png", import.meta.url).href,
   "/peppro-favicon-v3-16x16.png": new URL("../generated/runtime-assets/peppro-favicon-v3-16x16.png", import.meta.url).href,
