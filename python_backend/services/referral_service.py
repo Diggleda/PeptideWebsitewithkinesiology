@@ -659,6 +659,15 @@ def _enrich_referral(referral: Dict) -> Dict:
 
 
 def _resolve_referred_contact_account(referral: Dict):
+    account_id = _normalize_optional_identifier(
+        referral.get("referredContactAccountId")
+        or referral.get("referred_contact_account_id")
+        or referral.get("convertedDoctorId")
+        or referral.get("converted_doctor_id")
+        or referral.get("doctorId")
+        or referral.get("doctor_id")
+    )
+    contact_account = user_repository.find_by_id(account_id) if account_id else None
     email = _sanitize_email(
         referral.get("referredContactEmail")
         or referral.get("referred_contact_email")
@@ -668,7 +677,8 @@ def _resolve_referred_contact_account(referral: Dict):
         or referral.get("contact_email")
         or referral.get("email")
     )
-    contact_account = user_repository.find_by_email(email) if email else None
+    if not contact_account and email:
+        contact_account = user_repository.find_by_email(email)
     order_count = 0
     if contact_account and contact_account.get("id"):
         try:
@@ -676,6 +686,26 @@ def _resolve_referred_contact_account(referral: Dict):
         except Exception:
             order_count = 0
     return contact_account, order_count
+
+
+def _lead_matches_linked_account_owner_aliases(record: Dict, aliases: set[str]) -> bool:
+    if not aliases or not isinstance(record, dict):
+        return True
+
+    contact_account, _ = _resolve_referred_contact_account(record)
+    if not isinstance(contact_account, dict):
+        return True
+
+    owner = _normalize_optional_identifier(
+        contact_account.get("salesRepId") or contact_account.get("sales_rep_id")
+    )
+    if not owner:
+        return True
+
+    owner_aliases = _resolve_sales_rep_aliases([owner])
+    if not owner_aliases:
+        owner_aliases = {owner}
+    return bool(owner_aliases.intersection(aliases))
 
 
 def _apply_referred_contact_account_fields(record: Dict) -> Dict:
@@ -1825,6 +1855,24 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     combined = [*referral_leads, *prospect_only_leads, *contact_form_leads, *manual_leads]
     combined = [_apply_deleted_prospect_label(lead) for lead in combined]
     combined = [lead for lead in combined if not _is_blank_lead(lead)]
+    if not scope_all:
+        visible_owner_aliases = _resolve_sales_rep_aliases(
+            [
+                str(sales_rep_identifier or ""),
+                str(sales_rep_id or ""),
+                str((target_user or {}).get("id") or ""),
+                str((target_user or {}).get("salesRepId") or (target_user or {}).get("sales_rep_id") or ""),
+                str((target_user or {}).get("email") or ""),
+            ]
+        )
+        if visible_owner_aliases:
+            # Once the referred contact becomes a doctor account, the account's current
+            # salesRepId becomes authoritative for "Your Leads" ownership.
+            combined = [
+                lead
+                for lead in combined
+                if _lead_matches_linked_account_owner_aliases(lead, visible_owner_aliases)
+            ]
     combined.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
 
     logger.info(
