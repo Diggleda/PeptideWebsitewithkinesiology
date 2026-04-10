@@ -446,6 +446,26 @@ CREATE_TABLE_STATEMENTS = [
         KEY idx_password_reset_tokens_expires (expires_at),
         KEY idx_password_reset_tokens_consumed (consumed_at)
     ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS admin_shadow_sessions (
+        id VARCHAR(64) PRIMARY KEY,
+        launch_token_sha256 CHAR(64) NOT NULL UNIQUE,
+        admin_user_id VARCHAR(32) NOT NULL,
+        target_user_id VARCHAR(32) NOT NULL,
+        target_role VARCHAR(32) NOT NULL,
+        created_at DATETIME NOT NULL,
+        launch_expires_at DATETIME NOT NULL,
+        launch_consumed_at DATETIME NULL,
+        session_expires_at DATETIME NOT NULL,
+        last_seen_at DATETIME NULL,
+        ended_at DATETIME NULL,
+        KEY idx_admin_shadow_sessions_admin_user (admin_user_id),
+        KEY idx_admin_shadow_sessions_target_user (target_user_id),
+        KEY idx_admin_shadow_sessions_launch_expires (launch_expires_at),
+        KEY idx_admin_shadow_sessions_session_expires (session_expires_at),
+        KEY idx_admin_shadow_sessions_ended (ended_at)
+    ) CHARACTER SET utf8mb4
     """
 ]
 

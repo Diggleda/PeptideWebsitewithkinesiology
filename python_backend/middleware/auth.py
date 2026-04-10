@@ -11,6 +11,7 @@ from flask import Response, jsonify, request, g
 
 from ..services import get_config
 from ..services import auth_service, presence_service
+from ..services import admin_shadow_session_service
 from ..repositories import user_repository
 
 F = TypeVar("F", bound=Callable)
@@ -94,6 +95,30 @@ def require_auth(func: F) -> F:
         # into a consistent underscore form used throughout the backend.
         role = re.sub(r"[\s-]+", "_", role_raw)
         payload["role"] = role
+        if payload.get("shadow") is True:
+            shadow_session_id = payload.get("shadowSessionId")
+            if not shadow_session_id or not isinstance(shadow_session_id, str):
+                return _forbidden("Invalid token", code="TOKEN_INVALID")
+            try:
+                resolved = admin_shadow_session_service.resolve_shadow_session(payload)
+            except Exception as exc:
+                code = getattr(exc, "error_code", None) or getattr(exc, "code", None)
+                if isinstance(code, str) and code.strip():
+                    return _forbidden("Token revoked", code=code.strip())
+                return _forbidden("Token revoked", code="TOKEN_REVOKED")
+
+            target_user = resolved.get("targetUser") if isinstance(resolved, dict) else None
+            if not isinstance(target_user, dict):
+                return _forbidden("Token revoked", code="TOKEN_REVOKED")
+            g.current_user = {
+                **payload,
+                "id": str(target_user.get("id") or user_id),
+                "email": target_user.get("email"),
+                "role": re.sub(r"[\s-]+", "_", str(target_user.get("role") or role).strip().lower()),
+            }
+            g.shadow_context = resolved.get("shadowContext")
+            return func(*args, **kwargs)
+
         token_session_id = payload.get("sid") or payload.get("sessionId")
         if not token_session_id or not isinstance(token_session_id, str):
             return _forbidden("Invalid token", code="TOKEN_INVALID")
@@ -180,6 +205,7 @@ def require_auth(func: F) -> F:
             return _unauthorized("Session expired", code="SESSION_IDLE_TIMEOUT")
 
         g.current_user = payload
+        g.shadow_context = None
         return func(*args, **kwargs)
 
     return wrapper  # type: ignore[return-value]

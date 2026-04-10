@@ -36,13 +36,18 @@ type AuthTabEvent = {
   at: number;
 };
 
+type AuthSessionMode = 'standard' | 'shadow';
+
 const AUTH_TAB_ID_KEY = 'peppro_tab_id_v1';
 const AUTH_SESSION_ID_KEY = 'peppro_session_id_v1';
 const AUTH_USER_ID_KEY = 'peppro_user_id_v1';
 const AUTH_EMAIL_KEY = 'peppro_auth_email_v1';
 const AUTH_SESSION_STARTED_AT_KEY = 'peppro_session_started_at_v1';
 const AUTH_EVENT_STORAGE_KEY = 'peppro_auth_event_v1';
+const AUTH_MODE_KEY = 'peppro_auth_mode_v1';
 const AUTH_EVENT_NAME = 'peppro:force-logout';
+const SHADOW_READ_ONLY_CODE = 'SHADOW_READ_ONLY';
+const SHADOW_READ_ONLY_MESSAGE = 'Maintenance mode is read-only';
 
 const MULTI_SESSION_EXEMPT_EMAIL = 'test@doctor.com';
 
@@ -82,6 +87,25 @@ const getSessionId = () => {
     return null;
   }
 };
+
+const getAuthMode = (): AuthSessionMode => {
+  try {
+    const value = sessionStorage.getItem(AUTH_MODE_KEY);
+    return value === 'shadow' ? 'shadow' : 'standard';
+  } catch {
+    return 'standard';
+  }
+};
+
+const setAuthMode = (mode: AuthSessionMode) => {
+  try {
+    sessionStorage.setItem(AUTH_MODE_KEY, mode);
+  } catch {
+    // ignore
+  }
+};
+
+export const isShadowSessionMode = () => getAuthMode() === 'shadow';
 
 const setSessionId = (sessionId: string) => {
   try {
@@ -202,6 +226,7 @@ const dispatchForceLogout = (reason: string, meta?: { authCode?: string }) => {
 
 const handleIncomingAuthEvent = (payload: AuthTabEvent | null) => {
   if (!payload || payload.type !== 'LOGIN') return;
+  if (isShadowSessionMode()) return;
   if (isMultiSessionExemptEmail(getAuthEmail())) return;
   const tabId = getOrCreateTabId();
   if (payload.tabId === tabId) return;
@@ -235,6 +260,12 @@ if (typeof window !== 'undefined') {
     const existingToken = sessionStorage.getItem('auth_token');
     if (existingToken && existingToken.trim() && !getSessionId()) {
       setSessionId(_randomId());
+    }
+    if (existingToken && existingToken.trim()) {
+      const existingMode = sessionStorage.getItem(AUTH_MODE_KEY);
+      if (existingMode !== 'shadow' && existingMode !== 'standard') {
+        setAuthMode('standard');
+      }
     }
     const startedAtRaw = sessionStorage.getItem(AUTH_SESSION_STARTED_AT_KEY);
     const startedAt = startedAtRaw ? Number(startedAtRaw) : NaN;
@@ -289,16 +320,29 @@ const getAuthToken = () => {
   return null;
 };
 
-const persistAuthToken = (token: string) => {
+const persistAuthToken = (
+  token: string,
+  options?: { mode?: AuthSessionMode; suppressBroadcast?: boolean },
+) => {
   if (!token) return;
+  const mode = options?.mode === 'shadow' ? 'shadow' : 'standard';
   try {
     sessionStorage.setItem('auth_token', token);
   } catch {
     // Ignore sessionStorage errors (Safari private mode, etc.)
   }
+  setAuthMode(mode);
 
   // Prefer scoping to account id so other accounts can remain signed in in other tabs.
   // Callers should set `peppro_user_id_v1` (via `setAuthUserId`) before persisting the token.
+
+  if (mode === 'shadow' || options?.suppressBroadcast === true) {
+    if (!getSessionId()) {
+      setSessionId(_randomId());
+    }
+    setSessionStartedAt(Date.now());
+    return;
+  }
 
   if (isMultiSessionExemptEmail(getAuthEmail())) {
     if (!getSessionId()) {
@@ -341,8 +385,28 @@ const clearAuthToken = () => {
   } catch {
     // ignore
   }
+  try {
+    sessionStorage.removeItem(AUTH_MODE_KEY);
+  } catch {
+    // ignore
+  }
   clearSessionStartedAt();
 };
+
+const isShadowReadOnlyPath = (url: string) => {
+  const normalized = String(url || '').toLowerCase();
+  return normalized.endsWith('/api/auth/logout') || normalized.includes('/api/auth/logout?');
+};
+
+const throwShadowReadOnly = (): never => {
+  const error = new Error(SHADOW_READ_ONLY_MESSAGE);
+  (error as any).status = 403;
+  (error as any).code = SHADOW_READ_ONLY_CODE;
+  throw error;
+};
+
+export const isShadowReadOnlyError = (error: unknown) =>
+  Boolean(error && typeof error === 'object' && (error as any).code === SHADOW_READ_ONLY_CODE);
 
 const throwLocalAuthRequired = (authCode: string = 'TOKEN_REQUIRED'): never => {
   clearAuthToken();
@@ -524,6 +588,9 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
   const { background = false, skipReachabilityDispatch = false, ...requestOptions } = options;
   const token = getAuthToken();
   const method = (requestOptions.method || 'GET').toUpperCase();
+  if (isShadowSessionMode() && method !== 'GET' && method !== 'HEAD' && !isShadowReadOnlyPath(rewrittenUrl)) {
+    throwShadowReadOnly();
+  }
   const headers: Record<string, string> = {
     ...((requestOptions.headers as any) || {}),
   };
@@ -740,13 +807,16 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   const headers: HeadersInit = {
     ...(options.headers || {}),
   };
+  const method = (options.method || 'GET').toUpperCase();
+  if (isShadowSessionMode() && method !== 'GET' && method !== 'HEAD' && !isShadowReadOnlyPath(requestUrl)) {
+    throwShadowReadOnly();
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
   let response: Response;
-  const method = (options.method || 'GET').toUpperCase();
   try {
     response = await _fetchWithTimeout(requestUrl, {
       cache: options.cache ?? 'no-store',
@@ -1053,7 +1123,7 @@ export const authAPI = {
 
     setAuthUserId(data?.user?.id);
     setAuthEmail(data?.user?.email ?? input.email);
-    persistAuthToken(data.token);
+    persistAuthToken(data.token, { mode: 'standard' });
     return data.user;
   },
 
@@ -1072,8 +1142,32 @@ export const authAPI = {
 
     setAuthUserId(data?.user?.id);
     setAuthEmail(data?.user?.email ?? email);
-    persistAuthToken(data.token);
+    persistAuthToken(data.token, { mode: 'standard' });
     return data.user;
+  },
+
+  createShadowSession: async (targetUserId: string) => {
+    if (!targetUserId) {
+      throw new Error('targetUserId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/auth/shadow-sessions`, {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId }),
+    });
+  },
+
+  exchangeShadowSession: async (launchToken: string) => {
+    if (!launchToken) {
+      throw new Error('launchToken is required');
+    }
+    const data = await fetchWithAuth(`${API_BASE_URL}/auth/shadow-sessions/exchange`, {
+      method: 'POST',
+      body: JSON.stringify({ launchToken }),
+    });
+    setAuthUserId(data?.user?.id);
+    setAuthEmail(data?.user?.email ?? null);
+    persistAuthToken(data?.token, { mode: 'shadow', suppressBroadcast: true });
+    return data;
   },
 
   checkEmail: async (email: string) => {
@@ -1139,6 +1233,7 @@ export const authAPI = {
         });
 	      setAuthUserId((user as any)?.id);
 	      setAuthEmail((user as any)?.email);
+        setAuthMode((user as any)?.shadowContext?.active ? 'shadow' : 'standard');
 	      return user;
 	    } catch (error) {
       const maybeAny = error as any;
@@ -1302,7 +1397,7 @@ export const authAPI = {
       const data = await response.json();
       setAuthUserId(data?.user?.id);
       setAuthEmail(data?.user?.email);
-      persistAuthToken(data.token);
+      persistAuthToken(data.token, { mode: 'standard' });
       return data.user;
     },
   },
@@ -1483,6 +1578,9 @@ export const settingsAPI = {
     options?: { background?: boolean },
   ) => {
     if (!getAuthToken()) {
+      return null;
+    }
+    if (isShadowSessionMode()) {
       return null;
     }
     return fetchWithAuth(`${API_BASE_URL}/settings/presence`, {
@@ -2279,6 +2377,9 @@ export const delegationAPI = {
 
 export const usageTrackingAPI = {
   track: async (payload: { event: string; metadata?: Record<string, unknown> | null }) => {
+    if (isShadowSessionMode()) {
+      return { ok: true, tracked: false, event: String(payload?.event || '') };
+    }
     return fetchWithAuth(`${API_BASE_URL}/usage-tracking`, {
       method: 'POST',
       body: JSON.stringify(payload || {}),

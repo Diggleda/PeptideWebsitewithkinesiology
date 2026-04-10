@@ -44,6 +44,7 @@ class AuthHttpRegressionTests(unittest.TestCase):
             "werkzeug",
             "werkzeug.exceptions",
             "python_backend.middleware.auth",
+            "python_backend.services.admin_shadow_session_service",
             "python_backend.utils.http",
             "python_backend.services.auth_service",
             "python_backend.services.presence_service",
@@ -83,17 +84,23 @@ class AuthHttpRegressionTests(unittest.TestCase):
 
         fake_auth_service = _module("python_backend.services.auth_service", logout=lambda *args, **kwargs: None)
         fake_presence_service = _module("python_backend.services.presence_service", snapshot=lambda: {})
+        fake_shadow_service = _module(
+            "python_backend.services.admin_shadow_session_service",
+            resolve_shadow_session=lambda payload: {},
+        )
         fake_user_repository = _module("python_backend.repositories.user_repository", find_by_id=lambda _user_id: None)
 
         sys.modules["python_backend.services.auth_service"] = fake_auth_service
         sys.modules["python_backend.services.presence_service"] = fake_presence_service
+        sys.modules["python_backend.services.admin_shadow_session_service"] = fake_shadow_service
         sys.modules["python_backend.repositories.user_repository"] = fake_user_repository
 
-        for attr in ("get_config", "auth_service", "presence_service"):
+        for attr in ("get_config", "auth_service", "presence_service", "admin_shadow_session_service"):
             cls._saved_service_attrs[attr] = getattr(services_pkg, attr, None)
         services_pkg.get_config = lambda: types.SimpleNamespace(jwt_secret="test-secret")
         services_pkg.auth_service = fake_auth_service
         services_pkg.presence_service = fake_presence_service
+        services_pkg.admin_shadow_session_service = fake_shadow_service
 
         cls._saved_repository_attrs["user_repository"] = getattr(repositories_pkg, "user_repository", None)
         repositories_pkg.user_repository = fake_user_repository

@@ -187,12 +187,13 @@ def _build_reset_url(token: str) -> str:
     return f"{base}/reset-password?token={token}"
 
 
-def _create_auth_token(payload: Dict) -> str:
+def _create_auth_token(payload: Dict, *, expires_in_seconds: int = 24 * 60 * 60) -> str:
     config = get_config()
     now = datetime.now(timezone.utc)
+    ttl_seconds = max(60, int(expires_in_seconds or 24 * 60 * 60))
     claims = {
         **payload,
-        "exp": now + timedelta(hours=24),
+        "exp": now + timedelta(seconds=ttl_seconds),
         "iat": now,
     }
     return jwt.encode(claims, config.jwt_secret, algorithm="HS256")

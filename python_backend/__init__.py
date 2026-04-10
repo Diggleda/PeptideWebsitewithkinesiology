@@ -15,6 +15,7 @@ def create_app() -> "Flask":
     from .logging_config import configure_logging
     from .middleware.rate_limit import init_rate_limit
     from .middleware.request_logging import init_request_logging
+    from .middleware.shadow_mode import init_shadow_mode
     from .repositories import sales_prospect_repository, user_repository
     from .routes import register_blueprints
     from .services import configure_services
@@ -58,6 +59,7 @@ def create_app() -> "Flask":
 
     init_request_logging(app)
     init_rate_limit(app)
+    init_shadow_mode(app)
     register_blueprints(app, config)
 
     return app

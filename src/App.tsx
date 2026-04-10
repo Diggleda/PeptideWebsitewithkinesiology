@@ -264,6 +264,16 @@ interface User {
   id: string;
   name: string;
   email: string;
+  shadowContext?: {
+    active: true;
+    mode: "maintenance";
+    readOnly: true;
+    adminUserId: string;
+    adminName: string | null;
+    targetUserId: string;
+    startedAt: string;
+    expiresAt: string;
+  } | null;
   profileImageUrl?: string | null;
   profileOnboarding?: boolean;
   resellerPermitOnboardingPresented?: boolean;
@@ -338,6 +348,39 @@ const hasAuthToken = () => {
   }
   return false;
 };
+
+const readShadowLaunchTokenFromLocation = (locationLike: { search?: string | null }) => {
+  try {
+    const params = new URLSearchParams(locationLike?.search || "");
+    const token = params.get("shadow");
+    if (!token) return null;
+    const normalized = token.trim();
+    return normalized.length > 0 ? normalized : null;
+  } catch {
+    return null;
+  }
+};
+
+const stripLocationQueryParam = (name: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(name)) return;
+    url.searchParams.delete(name);
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+  } catch {
+    // ignore
+  }
+};
+
+const MAINTENANCE_TARGET_ROLES = new Set([
+  "doctor",
+  "test_doctor",
+  "sales_rep",
+  "sales_partner",
+  "sales_lead",
+]);
 
 interface SeamlessRawEntry {
   id: string | number;
@@ -4524,10 +4567,17 @@ function MainApp() {
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
   const [checkoutUserSyncPending, setCheckoutUserSyncPending] = useState(false);
+  const initialShadowLaunchToken = (() => {
+    if (typeof window === "undefined") return null;
+    return readShadowLaunchTokenFromLocation(window.location);
+  })();
   const initialDelegateToken = (() => {
     if (typeof window === "undefined") return null;
     return readDelegateTokenFromLocation(window.location);
   })();
+  const [sessionBootstrapPending, setSessionBootstrapPending] = useState<boolean>(
+    () => Boolean(initialShadowLaunchToken || hasAuthToken()),
+  );
   const [delegateToken, setDelegateToken] = useState<string | null>(
     initialDelegateToken,
   );
@@ -4621,6 +4671,8 @@ function MainApp() {
     "login" | "signup" | "forgot" | "reset"
   >(getInitialLandingMode);
   const [postLoginHold, setPostLoginHold] = useState(false);
+  const [maintenanceLaunchPending, setMaintenanceLaunchPending] = useState(false);
+  const [maintenanceNowMs, setMaintenanceNowMs] = useState(() => Date.now());
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [researchTermsSubmitting, setResearchTermsSubmitting] = useState(false);
   const [researchTermsError, setResearchTermsError] = useState("");
@@ -4668,6 +4720,20 @@ function MainApp() {
       isDoctorRole(user.role) &&
       doctorResellerPermitPromptOpen,
   );
+  const isMaintenanceMode = Boolean(user?.shadowContext?.active);
+  const maintenanceExpiresMs = useMemo(() => {
+    const raw = user?.shadowContext?.expiresAt;
+    if (!raw) return null;
+    const parsed = new Date(raw).getTime();
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [user?.shadowContext?.expiresAt]);
+  const maintenanceRemainingLabel = useMemo(
+    () =>
+      isMaintenanceMode
+        ? formatDelegateTimeRemaining(maintenanceExpiresMs, maintenanceNowMs)
+        : null,
+    [formatDelegateTimeRemaining, isMaintenanceMode, maintenanceExpiresMs, maintenanceNowMs],
+  );
   const showDoctorGatingModal =
     showResearchTermsAgreementModal
     || showDoctorProfileBuilderModal
@@ -4709,6 +4775,65 @@ function MainApp() {
     marginRight: 0,
     animation: "none",
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setSessionBootstrapPending(false);
+      return;
+    }
+    let cancelled = false;
+    const launchToken = readShadowLaunchTokenFromLocation(window.location);
+    const delegateModeToken = readDelegateTokenFromLocation(window.location);
+    if (!launchToken && delegateModeToken) {
+      setSessionBootstrapPending(false);
+      return;
+    }
+    if (!launchToken && !hasAuthToken()) {
+      setSessionBootstrapPending(false);
+      return;
+    }
+    setSessionBootstrapPending(true);
+    void (async () => {
+      try {
+        if (launchToken) {
+          const exchanged = (await authAPI.exchangeShadowSession(launchToken)) as any;
+          if (cancelled) return;
+          stripLocationQueryParam("shadow");
+          setUser((exchanged?.user || null) as User | null);
+          setPostLoginHold(false);
+        } else {
+          const current = (await authAPI.getCurrentUser()) as User | null;
+          if (cancelled) return;
+          setUser(current);
+          setPostLoginHold(false);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("[Auth] Session bootstrap failed", error);
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionBootstrapPending(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMaintenanceMode) {
+      return;
+    }
+    const tick = () => setMaintenanceNowMs(Date.now());
+    tick();
+    const intervalId = window.setInterval(tick, 60_000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isMaintenanceMode]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -6315,6 +6440,10 @@ function MainApp() {
 	      if (!orderId) {
 	        return;
 	      }
+          if (isMaintenanceMode) {
+            toast.error("Maintenance mode is read-only.");
+            return;
+          }
 	      try {
 	        const result = (await ordersAPI.cancelOrder(
 	          orderId,
@@ -6346,7 +6475,7 @@ function MainApp() {
         throw error;
       }
     },
-    [loadAccountOrders],
+    [isMaintenanceMode, loadAccountOrders],
   );
 
   const toggleShowCanceledOrders = useCallback(() => {
@@ -6566,6 +6695,10 @@ function MainApp() {
     if (!user || !isDoctorRole(user.role) || researchTermsSubmitting) {
       return;
     }
+    if (isMaintenanceMode) {
+      toast.error("Maintenance mode is read-only.");
+      return;
+    }
     setResearchTermsSubmitting(true);
     setResearchTermsError("");
     try {
@@ -6582,7 +6715,7 @@ function MainApp() {
     } finally {
       setResearchTermsSubmitting(false);
     }
-  }, [researchTermsSubmitting, user]);
+  }, [isMaintenanceMode, researchTermsSubmitting, user]);
 
   const handleCompleteDoctorProfileOnboarding = useCallback(
     async (payload: {
@@ -6595,6 +6728,10 @@ function MainApp() {
       networkPresenceAgreement: boolean;
     }) => {
       if (!user || !isDoctorRole(user.role)) {
+        return;
+      }
+      if (isMaintenanceMode) {
+        toast.error("Maintenance mode is read-only.");
         return;
       }
       const updated = (await authAPI.updateMe({
@@ -6614,7 +6751,7 @@ function MainApp() {
       }
       setDoctorResellerPermitPromptOpen(false);
     },
-    [user],
+    [isMaintenanceMode, user],
   );
 
   const handleSkipDoctorResellerPermit = useCallback(() => {
@@ -6634,6 +6771,10 @@ function MainApp() {
       !doctorResellerPermitFile ||
       doctorResellerPermitSubmitting
     ) {
+      return;
+    }
+    if (isMaintenanceMode) {
+      toast.error("Maintenance mode is read-only.");
       return;
     }
 
@@ -6665,6 +6806,7 @@ function MainApp() {
   }, [
     doctorResellerPermitFile,
     doctorResellerPermitSubmitting,
+    isMaintenanceMode,
     user,
   ]);
 
@@ -8133,7 +8275,7 @@ function MainApp() {
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
-				  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
 				    doctorId: string;
 				    referralId?: string | null;
 				    name: string;
@@ -8185,6 +8327,14 @@ function MainApp() {
     lastLoginAt?: string | null;
         summaryOnly?: boolean;
 		  } | null>(null);
+      const canOpenMaintenanceViewForSalesDoctorDetail = useMemo(() => {
+        if (!isAdmin(user?.role) || !salesDoctorDetail?.doctorId) {
+          return false;
+        }
+        return MAINTENANCE_TARGET_ROLES.has(
+          normalizeRole(salesDoctorDetail.role || ""),
+        );
+      }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.role, user?.role]);
       const [salesDoctorDetailStack, setSalesDoctorDetailStack] = useState<
         NonNullable<typeof salesDoctorDetail>[]
       >([]);
@@ -21828,7 +21978,7 @@ function MainApp() {
     }
   };
 
-	  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(() => {
 	    console.debug("[Auth] Logout");
 	    authAPI.logout();
 	    setUser(null);
@@ -21857,6 +22007,36 @@ function MainApp() {
     setAdminActionState({ updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
   }, []);
+
+  const handleOpenMaintenanceView = useCallback(async () => {
+    const targetUserId = String(salesDoctorDetail?.doctorId || "").trim();
+    if (!targetUserId || !canOpenMaintenanceViewForSalesDoctorDetail) {
+      return;
+    }
+    setMaintenanceLaunchPending(true);
+    try {
+      const payload = (await authAPI.createShadowSession(targetUserId)) as any;
+      const launchUrl =
+        typeof payload?.launchUrl === "string" && payload.launchUrl.trim()
+          ? payload.launchUrl.trim()
+          : typeof payload?.launchToken === "string" && payload.launchToken.trim()
+            ? `${window.location.origin}/?shadow=${encodeURIComponent(payload.launchToken.trim())}`
+            : "";
+      if (!launchUrl) {
+        throw new Error("Missing maintenance launch URL");
+      }
+      const opened = window.open(launchUrl, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        throw new Error("Popup blocked");
+      }
+      toast.success("Opened maintenance view in a new tab.");
+    } catch (error) {
+      console.warn("[Maintenance] Failed to open maintenance view", error);
+      toast.error("Unable to open maintenance view right now.");
+    } finally {
+      setMaintenanceLaunchPending(false);
+    }
+  }, [canOpenMaintenanceViewForSalesDoctorDetail, salesDoctorDetail?.doctorId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -22328,7 +22508,7 @@ function MainApp() {
       window.clearTimeout(cartPersistTimerRef.current);
       cartPersistTimerRef.current = null;
     }
-    if (!user?.id || pendingPersistedCart !== null) {
+    if (!user?.id || pendingPersistedCart !== null || isMaintenanceMode) {
       return;
     }
 
@@ -22362,7 +22542,7 @@ function MainApp() {
         cartPersistTimerRef.current = null;
       }
     };
-  }, [user?.id, user?.cart, cartItems, pendingPersistedCart, serializeCartItems]);
+  }, [user?.id, user?.cart, cartItems, isMaintenanceMode, pendingPersistedCart, serializeCartItems]);
 
   const handleAddToCart = (
     productId: string,
@@ -22370,6 +22550,10 @@ function MainApp() {
     note?: string,
     variantId?: string | null,
   ) => {
+    if (isMaintenanceMode) {
+      toast.error("Maintenance mode is read-only.");
+      return;
+    }
     console.debug("[Cart] Add to cart requested", {
       productId,
       quantity,
@@ -22453,6 +22637,10 @@ function MainApp() {
   };
 
   const handleBuyOrderAgain = (order: AccountOrderSummary) => {
+    if (isMaintenanceMode) {
+      toast.error("Maintenance mode is read-only.");
+      return;
+    }
     if (!order?.lineItems || order.lineItems.length === 0) {
       console.debug("[Cart] Buy again ignored, no line items", {
         orderId: order?.id,
@@ -32251,8 +32439,18 @@ function MainApp() {
 	              )}
 
         <div className="flex-1 w-full flex flex-col">
+          {sessionBootstrapPending && !isDelegateMode && (
+            <div className="min-h-screen flex items-center justify-center px-4 py-12">
+              <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-xl w-full text-center">
+                <p className="text-lg font-semibold text-slate-900">Loading session…</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-700">
+                  Restoring the account portal.
+                </p>
+              </div>
+            </div>
+          )}
           {/* Landing Page - Show when not logged in */}
-          {(!user || postLoginHold) && !isDelegateMode && (
+          {!sessionBootstrapPending && (!user || postLoginHold) && !isDelegateMode && (
             <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
               {/* Logo with Welcome and Quote Containers */}
               {postLoginHold && user ? (
@@ -33925,6 +34123,37 @@ function MainApp() {
 	                paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
 	              }}
 	            >
+                {isMaintenanceMode && (
+                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-6">
+                    <div className="glass-card squircle-lg border border-amber-300/70 bg-amber-50/90 px-5 py-4 shadow-lg">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-amber-800">
+                            Read-only maintenance mode
+                          </p>
+                          <p className="mt-1 text-sm text-amber-950">
+                            Viewing {user.name || user.email}
+                            {user.email ? ` (${user.email})` : ""} as seen by the target account.
+                          </p>
+                          <p className="mt-1 text-xs text-amber-900/80">
+                            Acting admin: {user.shadowContext?.adminName || "Admin"}
+                            {maintenanceRemainingLabel ? ` • Expires in ${maintenanceRemainingLabel}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="border-amber-400 bg-white text-amber-950"
+                            onClick={handleLogout}
+                          >
+                            Exit maintenance mode
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 		              {isRep(user.role) || isAdmin(user.role)
 		                ? renderSalesRepDashboard()
 		                : renderDoctorDashboard()}
@@ -34432,7 +34661,7 @@ function MainApp() {
                 {renderSalesDoctorDetailSkeleton()}
               </>
             ) : (
-              salesDoctorDetail && (
+		              salesDoctorDetail && (
 	            <div className="space-y-4 min-w-0">
 			              <DialogHeader className="min-w-0">
 				                <DialogTitle className="space-y-0.5 min-w-0">
@@ -34698,6 +34927,19 @@ function MainApp() {
 				                    )}
 				                </DialogTitle>
 				                <DialogDescription>Account details</DialogDescription>
+                        {canOpenMaintenanceViewForSalesDoctorDetail && (
+                          <div className="pt-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="header-home-button squircle-sm bg-white text-slate-900"
+                              onClick={() => void handleOpenMaintenanceView()}
+                              disabled={maintenanceLaunchPending}
+                            >
+                              {maintenanceLaunchPending ? "Opening…" : "Open Maintenance View"}
+                            </Button>
+                          </div>
+                        )}
 				              </DialogHeader>
 		              {salesDoctorDetail &&
                     isDoctorRole(salesDoctorDetail.role) &&

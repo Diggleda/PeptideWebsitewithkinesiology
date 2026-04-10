@@ -8,6 +8,7 @@ from ..middleware.auth import require_auth
 from ..repositories import user_repository
 from ..services import get_config
 from ..services import auth_service
+from ..services import admin_shadow_session_service
 from ..services import presence_service
 from ..utils.http import handle_action
 
@@ -50,7 +51,13 @@ def check_email():
 def me():
     user_id = g.current_user.get("id")
     role = g.current_user.get("role")
-    return handle_action(lambda: auth_service.get_profile(user_id, role))
+    def action():
+        profile = auth_service.get_profile(user_id, role)
+        shadow_context = getattr(g, "shadow_context", None)
+        if isinstance(profile, dict) and shadow_context:
+            profile["shadowContext"] = shadow_context
+        return profile
+    return handle_action(action)
 
 
 @blueprint.delete("/me")
@@ -110,6 +117,19 @@ def logout():
         role = (payload.get("role") or "").strip().lower()
         token_session_id = payload.get("sid") or payload.get("sessionId")
 
+        if payload.get("shadow") is True:
+            _audit(
+                "SHADOW_LOGOUT_REQUEST_ACCEPTED",
+                {
+                    "userId": str(user_id or ""),
+                    "role": role,
+                    "expiredToken": expired_token,
+                    "shadowSessionId": str(payload.get("shadowSessionId") or ""),
+                    "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z"),
+                },
+            )
+            return admin_shadow_session_service.end_shadow_session_from_payload(payload)
+
         if not user_id or not isinstance(token_session_id, str) or not token_session_id.strip():
             _audit(
                 "LOGOUT_REQUEST_INVALID",
@@ -168,6 +188,33 @@ def logout():
         return result
 
     return handle_action(action)
+
+
+@blueprint.post("/shadow-sessions")
+@require_auth
+def create_shadow_session():
+    payload = request.get_json(force=True, silent=True) or {}
+    target_user_id = payload.get("targetUserId") or payload.get("target_user_id")
+    return handle_action(
+        lambda: admin_shadow_session_service.create_shadow_session(
+            g.current_user,
+            str(target_user_id or ""),
+        ),
+        status=201,
+    )
+
+
+@blueprint.post("/shadow-sessions/exchange")
+def exchange_shadow_session():
+    payload = request.get_json(force=True, silent=True) or {}
+    launch_token = (
+        payload.get("launchToken")
+        or payload.get("launch_token")
+        or payload.get("token")
+    )
+    return handle_action(
+        lambda: admin_shadow_session_service.exchange_shadow_session(str(launch_token or ""))
+    )
 
 
 @blueprint.post("/verify-npi")
