@@ -94,6 +94,10 @@ const getInitials = (value?: string | null) => {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const resolveNetworkPresenceAgreement = (user: DoctorProfileUser | null | undefined) => (
+  user?.networkPresenceAgreement !== false
+);
+
 export function DoctorProfileForm({
   user,
   title,
@@ -116,7 +120,7 @@ export function DoctorProfileForm({
   const [studyFocus, setStudyFocus] = useState(user?.studyFocus || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [networkPresenceAgreement, setNetworkPresenceAgreement] = useState(
-    user?.networkPresenceAgreement === true,
+    resolveNetworkPresenceAgreement(user),
   );
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(user?.profileImageUrl ?? null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -211,7 +215,7 @@ export function DoctorProfileForm({
   ]);
 
   useEffect(() => {
-    setNetworkPresenceAgreement(user?.networkPresenceAgreement === true);
+    setNetworkPresenceAgreement(resolveNetworkPresenceAgreement(user));
   }, [user?.networkPresenceAgreement]);
 
   const validate = () => {

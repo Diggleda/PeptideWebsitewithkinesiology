@@ -607,7 +607,7 @@ const register = async ({
     researchTermsAgreement: false,
     delegateOptIn: false,
     profileOnboarding: false,
-    networkPresenceAgreement: false,
+    networkPresenceAgreement: true,
     resellerPermitOnboardingPresented: false,
     greaterArea: null,
     studyFocus: null,

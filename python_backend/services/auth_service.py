@@ -550,7 +550,7 @@ def register(data: Dict) -> Dict:
             "researchTermsAgreement": False,
             "delegateOptIn": False,
             "profileOnboarding": False,
-            "networkPresenceAgreement": False,
+            "networkPresenceAgreement": True,
             "resellerPermitOnboardingPresented": False,
             "greaterArea": None,
             "studyFocus": None,

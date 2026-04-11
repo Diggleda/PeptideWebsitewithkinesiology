@@ -257,6 +257,7 @@ const buildPhysicianNetworkEntries = () => userRepository
     isDoctorUser(candidate)
     && normalizeBooleanFlag(candidate?.profileOnboarding ?? candidate?.profile_onboarding)
     && normalizeBooleanFlag(candidate?.networkPresenceAgreement ?? candidate?.network_presence_agreement)
+    && normalizeBooleanFlag(candidate?.researchTermsAgreement ?? candidate?.research_terms_agreement)
   ))
   .map((doctor) => {
     const profile = serializeUserProfile(doctor);

@@ -6821,6 +6821,8 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 .admin-dashboard-link-button {
   background-color: transparent !important;
   color: rgb(15, 23, 42) !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
 }
 
 .admin-dashboard-link-button:hover,
@@ -6828,6 +6830,7 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 .admin-dashboard-link-button[data-state="open"],
 .admin-dashboard-link-button[aria-expanded="true"] {
   color: #ffffff !important;
+  border-color: transparent !important;
 }
 
 .header-search-input {

@@ -725,6 +725,8 @@ def _build_physician_network_entries() -> list[dict]:
             continue
         if not _normalize_bool(user.get("networkPresenceAgreement", user.get("network_presence_agreement"))):
             continue
+        if not _normalize_bool(user.get("researchTermsAgreement", user.get("research_terms_agreement"))):
+            continue
         profile = _public_user_profile(user)
         doctor_id = str(profile.get("id") or "").strip()
         if not doctor_id:

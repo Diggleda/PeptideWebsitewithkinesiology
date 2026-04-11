@@ -188,7 +188,7 @@ class TestSettingsControls(unittest.TestCase):
                     {"physicianMapEnabled": True, "mysqlEnabled": True},
                 )
 
-    def test_physician_network_entries_require_presence_agreement(self):
+    def test_physician_network_entries_require_presence_and_research_agreements(self):
         settings = self.settings
 
         with patch.object(settings.user_repository, "get_all", return_value=[
@@ -199,6 +199,7 @@ class TestSettingsControls(unittest.TestCase):
                 "email": "visible@example.com",
                 "profileOnboarding": True,
                 "networkPresenceAgreement": True,
+                "researchTermsAgreement": True,
                 "bio": "Visible bio",
                 "officeState": "IN",
             },
@@ -209,8 +210,20 @@ class TestSettingsControls(unittest.TestCase):
                 "email": "hidden@example.com",
                 "profileOnboarding": True,
                 "networkPresenceAgreement": False,
+                "researchTermsAgreement": True,
                 "bio": "Hidden bio",
                 "officeState": "CA",
+            },
+            {
+                "id": "doctor-no-research-terms",
+                "role": "doctor",
+                "name": "No Research Terms Doctor",
+                "email": "noresearch@example.com",
+                "profileOnboarding": True,
+                "networkPresenceAgreement": True,
+                "researchTermsAgreement": False,
+                "bio": "No research terms bio",
+                "officeState": "OH",
             },
             {
                 "id": "doctor-no-onboarding",
@@ -219,6 +232,7 @@ class TestSettingsControls(unittest.TestCase):
                 "email": "incomplete@example.com",
                 "profileOnboarding": False,
                 "networkPresenceAgreement": True,
+                "researchTermsAgreement": True,
                 "bio": "Incomplete bio",
                 "officeState": "FL",
             },
