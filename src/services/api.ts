@@ -857,6 +857,13 @@ let _healthCheckInFlight: Promise<boolean> | null = null;
 let _healthCheckLastAt = 0;
 let _healthCheckLastOk = false;
 
+const buildServiceUnavailableError = (message: string) => {
+  const error = new Error(message);
+  (error as any).status = 503;
+  (error as any).code = 'SERVICE_UNAVAILABLE';
+  return error;
+};
+
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   let requestUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
@@ -1211,6 +1218,16 @@ export const authAPI = {
       body: JSON.stringify({ email, password }),
     });
 
+    if (
+      !data
+      || typeof data !== 'object'
+      || typeof (data as any).token !== 'string'
+      || !(data as any).user
+      || typeof (data as any).user !== 'object'
+    ) {
+      throw buildServiceUnavailableError('AUTH_LOGIN_INVALID_RESPONSE');
+    }
+
     setAuthUserId(data?.user?.id);
     setAuthEmail(data?.user?.email ?? email);
     persistAuthToken(data.token, { mode: 'standard' });
@@ -1242,13 +1259,20 @@ export const authAPI = {
   },
 
   checkEmail: async (email: string) => {
-    const response = await fetch(`${API_BASE_URL}/auth/check-email?email=${encodeURIComponent(email)}`);
-    if (!response.ok) {
-      const error = new Error('EMAIL_CHECK_FAILED');
-      (error as any).status = response.status;
-      throw error;
+    const data = await fetchWithAuth(
+      `${API_BASE_URL}/auth/check-email?email=${encodeURIComponent(email)}`,
+      {
+        method: 'GET',
+      },
+    );
+    if (
+      !data
+      || typeof data !== 'object'
+      || typeof (data as any).exists !== 'boolean'
+    ) {
+      throw buildServiceUnavailableError('EMAIL_CHECK_INVALID_RESPONSE');
     }
-    return response.json();
+    return data;
   },
 
   logout: () => {

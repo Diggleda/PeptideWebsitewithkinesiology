@@ -5080,6 +5080,12 @@ export function Header({
             bioSectionClassName="mt-2"
             submitLabel="Save profile"
             submittingLabel="Saving profile…"
+            onNetworkPresenceAgreementChange={async (networkPresenceAgreement) => {
+              await saveProfileField('Physician network visibility', {
+                networkPresenceAgreement,
+                profileOnboarding: true,
+              });
+            }}
             onSubmit={async (payload) => {
               await saveProfileField('Physician profile', {
                 ...payload,

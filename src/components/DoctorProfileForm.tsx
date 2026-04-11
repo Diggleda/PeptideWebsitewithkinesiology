@@ -38,6 +38,7 @@ interface DoctorProfileFormProps {
   skipLabel?: string;
   bioSectionClassName?: string;
   onSubmit: (payload: DoctorProfilePayload) => Promise<void>;
+  onNetworkPresenceAgreementChange?: (value: boolean) => Promise<void>;
   onSkip?: () => void;
 }
 
@@ -104,6 +105,7 @@ export function DoctorProfileForm({
   skipLabel = 'Skip for now',
   bioSectionClassName,
   onSubmit,
+  onNetworkPresenceAgreementChange,
   onSkip,
 }: DoctorProfileFormProps) {
   const isCompactCircleAvatar = avatarStyle === 'compact-circle';
@@ -197,7 +199,6 @@ export function DoctorProfileForm({
     setGreaterArea(user?.greaterArea || '');
     setStudyFocus(user?.studyFocus || '');
     setBio(user?.bio || '');
-    setNetworkPresenceAgreement(user?.networkPresenceAgreement === true);
     setProfileImageUrl(user?.profileImageUrl ?? null);
     setError(null);
   }, [
@@ -206,9 +207,12 @@ export function DoctorProfileForm({
     user?.greaterArea,
     user?.studyFocus,
     user?.bio,
-    user?.networkPresenceAgreement,
     user?.profileImageUrl,
   ]);
+
+  useEffect(() => {
+    setNetworkPresenceAgreement(user?.networkPresenceAgreement === true);
+  }, [user?.networkPresenceAgreement]);
 
   const validate = () => {
     const trimmedName = name.trim();
@@ -340,6 +344,31 @@ export function DoctorProfileForm({
     }
   };
 
+  const handleNetworkPresenceAgreementChange = async (checked: boolean) => {
+    if (saving || avatarUploading) {
+      return;
+    }
+    const previous = networkPresenceAgreement;
+    setNetworkPresenceAgreement(checked);
+    setError(null);
+    if (!onNetworkPresenceAgreementChange) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await onNetworkPresenceAgreementChange(checked);
+    } catch (submitError: any) {
+      setNetworkPresenceAgreement(previous);
+      setError(
+        typeof submitError?.message === 'string' && submitError.message.trim()
+          ? submitError.message.trim()
+          : 'Unable to update physician network visibility right now.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       {(title || description) && (
@@ -429,7 +458,9 @@ export function DoctorProfileForm({
             <Switch
               id="physician-profile-network-presence"
               checked={networkPresenceAgreement}
-              onCheckedChange={setNetworkPresenceAgreement}
+              onCheckedChange={(checked) => {
+                void handleNetworkPresenceAgreementChange(checked);
+              }}
               disabled={saving}
               aria-label="Allow this profile to be presented as a physician in the network"
             />
