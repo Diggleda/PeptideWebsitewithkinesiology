@@ -15,6 +15,7 @@ const TRACK_OFF = "rgb(203, 213, 225)";
 const TRACK_OFF_BORDER = "rgba(148, 163, 184, 0.55)";
 const TRACK_ON_BORDER = "rgba(95, 179, 249, 0.42)";
 const THUMB_BORDER = "rgba(148, 163, 184, 0.4)";
+const THUMB_FILL = "#ffffff";
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
   (
@@ -80,10 +81,11 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         <span
           data-slot="switch-thumb"
           aria-hidden="true"
-          className="block rounded-full bg-white transition-transform duration-200"
+          className="block rounded-full transition-transform duration-200"
           style={{
             width: "1.625rem",
             height: "1.625rem",
+            backgroundColor: THUMB_FILL,
             border: `1px solid ${THUMB_BORDER}`,
             boxShadow: "0 2px 6px rgba(15, 23, 42, 0.18)",
             transform: isChecked ? "translateX(1.5rem)" : "translateX(0)",

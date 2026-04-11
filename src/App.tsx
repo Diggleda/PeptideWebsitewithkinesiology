@@ -406,6 +406,9 @@ const MAINTENANCE_TARGET_ROLES = new Set([
 ]);
 const MAINTENANCE_OPENER_PING_EVENT = "PEPPRO_MAINTENANCE_PING";
 const MAINTENANCE_OPENER_EXIT_EVENT = "PEPPRO_MAINTENANCE_EXIT";
+const LOGIN_BACKEND_DOWN_TOAST_ID = "login-backend-down";
+const LOGIN_BACKEND_DOWN_MESSAGE =
+  "PepPro is unavailable right now. Please try again in a minute.";
 const MAINTENANCE_OPENER_PING_INTERVAL_MS = 30_000;
 const MAINTENANCE_OPENER_ACTIVITY_TTL_MS =
   MAINTENANCE_OPENER_PING_INTERVAL_MS * 2 + 15_000;
@@ -21665,10 +21668,11 @@ function MainApp() {
     attempt = 0,
     context?: "checkout" | null,
   ): Promise<AuthActionResult> => {
-    const loginMaintenanceMessage =
-      "Our portal is having an issue or down for maintenance. Please try again";
+    const loginMaintenanceMessage = LOGIN_BACKEND_DOWN_MESSAGE;
     const loginContextAtStart = context ?? loginContext;
     const startedAt = Date.now();
+    const browserOffline =
+      typeof navigator !== "undefined" && navigator.onLine === false;
     try {
       const user = await authAPI.login(email, password);
       applyLoginSuccessState(user);
@@ -21711,7 +21715,9 @@ function MainApp() {
       const elapsedMs = Date.now() - startedAt;
 
       if (isTimeout || isNetworkError) {
-        return { status: "error", message: "NETWORK_UNAVAILABLE" };
+        return browserOffline
+          ? { status: "error", message: "NETWORK_UNAVAILABLE" }
+          : { status: "maintenance_unavailable" };
       }
 
       if (attempt === 0 && isServerError && statusCode !== null && [502, 503, 504].includes(statusCode) && elapsedMs < 4000) {
@@ -21727,6 +21733,10 @@ function MainApp() {
         void checkServerHealth().catch(() => undefined);
         await new Promise((resolve) => setTimeout(resolve, 500));
         return loginWithRetry(email, password, attempt + 1, loginContextAtStart);
+      }
+
+      if (isServerError) {
+        return { status: "maintenance_unavailable" };
       }
 
       if (
@@ -21762,11 +21772,14 @@ function MainApp() {
             lookupCode === "TIMEOUT" || normalizedLookupMessage.includes("TIMED OUT");
           if (
             lookupStatus === 404 ||
-            (lookupStatus !== null && lookupStatus >= 500) ||
-            isLookupNetworkError ||
-            isLookupTimeout
+            (lookupStatus !== null && lookupStatus >= 500)
           ) {
             return { status: "maintenance_unavailable" };
+          }
+          if (isLookupNetworkError || isLookupTimeout) {
+            return browserOffline
+              ? { status: "error", message: "NETWORK_UNAVAILABLE" }
+              : { status: "maintenance_unavailable" };
           }
           return { status: "email_not_found" };
         }
@@ -33592,8 +33605,11 @@ function MainApp() {
 	                                );
 	                                if (res.status !== "success") {
 	                                  if (res.status === "maintenance_unavailable") {
+                                      toast.error(LOGIN_BACKEND_DOWN_MESSAGE, {
+                                        id: LOGIN_BACKEND_DOWN_TOAST_ID,
+                                      });
 	                                    setLandingLoginError(
-	                                      "Our portal is having an issue or down for maintenance. Please try again",
+	                                      LOGIN_BACKEND_DOWN_MESSAGE,
 	                                    );
 	                                  } else if (res.status === "invalid_password") {
 	                                    setLandingLoginError(
@@ -34977,14 +34993,8 @@ function MainApp() {
             ) : (
 		              salesDoctorDetail && (
 	            <div className="space-y-4 min-w-0">
-					              <DialogHeader className="sales-doctor-detail-header min-w-0 text-left">
-			                        <div
-                                className={clsx(
-                                  "sales-doctor-detail-header-row flex items-start gap-2",
-                                  canOpenMaintenanceViewForSalesDoctorDetail &&
-                                    "sales-doctor-detail-header-row--with-maintenance",
-                                )}
-                              >
+						              <DialogHeader className="sales-doctor-detail-header min-w-0 text-left">
+				                        <div className="sales-doctor-detail-header-row flex items-start gap-2">
 		                          <div className="sales-doctor-detail-header-content min-w-0">
 					                  <DialogTitle className="space-y-0.5 min-w-0">
 						                    <div className="sales-doctor-detail-header-name min-w-0 text-slate-900">

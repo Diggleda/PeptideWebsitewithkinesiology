@@ -23,6 +23,8 @@ import {
 } from '../lib/researchSupplyLinks';
 
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+const LOGIN_BACKEND_DOWN_TOAST_ID = 'login-backend-down';
+const LOGIN_BACKEND_DOWN_MESSAGE = 'PepPro is unavailable right now. Please try again in a minute.';
 const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (value === true || value === false) return value;
   if (value == null) return null;
@@ -2345,7 +2347,7 @@ export function Header({
     (async () => {
       try {
         const api = await import('../services/api');
-        const fresh = await api.authAPI.getCurrentUser();
+        const fresh = await api.authAPI.getCurrentUser({ background: true });
         if (seq !== accountDetailsRefreshSeqRef.current) return;
         if (!fresh) return;
         const nextUserState: HeaderUser = {
@@ -2579,7 +2581,7 @@ export function Header({
 	    const emailValue = loginEmailRef.current?.value ?? '';
 	    const passwordValue = loginPasswordRef.current?.value ?? '';
 
-	    const backendDownLoginMessage = 'The network is down for maintanence. Please try again.';
+	    const backendDownLoginMessage = LOGIN_BACKEND_DOWN_MESSAGE;
 	    const classifyNetworkIssue = (message?: string | null): 'offline' | 'network' | null => {
 	      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
 	        return 'offline';
@@ -2680,6 +2682,7 @@ export function Header({
     }
 
     if (result.status === 'maintenance_unavailable') {
+      toast.error(backendDownLoginMessage, { id: LOGIN_BACKEND_DOWN_TOAST_ID });
       setLoginError(backendDownLoginMessage);
       setShowLoginPassword(false);
       setShowSignupPassword(false);
@@ -3431,7 +3434,8 @@ export function Header({
 
     if (result.status === 'maintenance_unavailable') {
       setSignupError('');
-      setLoginError('The network is down for maintanence. Please try again.');
+      toast.error(LOGIN_BACKEND_DOWN_MESSAGE, { id: LOGIN_BACKEND_DOWN_TOAST_ID });
+      setLoginError(LOGIN_BACKEND_DOWN_MESSAGE);
       setAuthMode('login');
       queueLoginPrefill({ email: details.email, password: '' });
       setSignupSuffix('');

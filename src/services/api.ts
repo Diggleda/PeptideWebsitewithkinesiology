@@ -26,6 +26,7 @@ export const API_BASE_URL = (() => {
 type AuthenticatedRequestInit = RequestInit & {
   background?: boolean;
   skipReachabilityDispatch?: boolean;
+  preserveAuthOnAuthFailure?: boolean;
 };
 
 type AuthTabEvent = {
@@ -48,6 +49,7 @@ const AUTH_MODE_KEY = 'peppro_auth_mode_v1';
 const AUTH_EVENT_NAME = 'peppro:force-logout';
 const SHADOW_READ_ONLY_CODE = 'SHADOW_READ_ONLY';
 const SHADOW_READ_ONLY_MESSAGE = 'Maintenance mode is read-only';
+const AUTH_CHECK_FAILED_CODE = 'AUTH_CHECK_FAILED';
 
 const MULTI_SESSION_EXEMPT_EMAIL = 'test@doctor.com';
 
@@ -611,7 +613,12 @@ const buildSameOriginApiFallbackUrl = (url: string) => {
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}) => {
   const rewrittenUrl = rewriteBlockedAdminPaths(url);
-  const { background = false, skipReachabilityDispatch = false, ...requestOptions } = options;
+  const {
+    background = false,
+    skipReachabilityDispatch = false,
+    preserveAuthOnAuthFailure = false,
+    ...requestOptions
+  } = options;
   const token = getAuthToken();
   const method = (requestOptions.method || 'GET').toUpperCase();
   if (isShadowSessionMode() && method !== 'GET' && method !== 'HEAD' && !isShadowReadOnlyPath(rewrittenUrl)) {
@@ -772,6 +779,13 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
       const isAuthError = response.status === 401
         || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
       if (isAuthError) {
+        if (preserveAuthOnAuthFailure) {
+          (error as any).code = AUTH_CHECK_FAILED_CODE;
+          if (typeof codeField === 'string') {
+            (error as any).authCode = codeField;
+          }
+          throw error;
+        }
         clearAuthToken();
         clearSessionId();
         // Only broadcast a logout if this tab *thought* it was authenticated.
@@ -1288,6 +1302,7 @@ export const authAPI = {
           method: 'GET',
           cache: 'no-store',
           background: options?.background === true,
+          preserveAuthOnAuthFailure: options?.background === true,
         });
 	      setAuthUserId((user as any)?.id);
 	      setAuthEmail((user as any)?.email);
@@ -1299,9 +1314,13 @@ export const authAPI = {
       const code = typeof maybeAny?.code === 'string' ? maybeAny.code : null;
       const authCode = typeof maybeAny?.authCode === 'string' ? maybeAny.authCode : null;
       const isAuthFailure = code === 'AUTH_REQUIRED'
+        || code === AUTH_CHECK_FAILED_CODE
         || status === 401
         || (status === 403 && typeof authCode === 'string' && authCode.startsWith('TOKEN_'));
       if (isAuthFailure) {
+        if (options?.background === true) {
+          throw error;
+        }
         // Token already cleared by fetchWithAuth(); caller can treat null as "logged out".
         setAuthUserId(null);
         setAuthEmail(null);
