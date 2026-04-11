@@ -25894,10 +25894,10 @@ function MainApp() {
                           style={{ minWidth: 0, maxWidth: "100%" }}
                         >
                           <div
-                            className="w-full"
+                            className="relative w-full"
                             style={{
                               display: "block",
-                              overflowX: "scroll",
+                              overflowX: "auto",
                               overflowY: "hidden",
                               WebkitOverflowScrolling: "touch",
                               scrollbarGutter: "stable both-edges",
@@ -25909,11 +25909,21 @@ function MainApp() {
                               style={{
                                 width: "max-content",
                                 minWidth: "100%",
+                                borderCollapse: "separate",
+                                borderSpacing: 0,
                               }}
                             >
                               <thead className="bg-gradient-to-b from-[#f8f8f8] to-[#d1d1d1] text-[#2d5f8b]">
                                 <tr>
-                                  <th className="sticky left-0 z-[1] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap">
+                                  <th
+                                    className="sticky left-0 z-[3] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap"
+                                    style={{
+                                      left: 0,
+                                      position: "sticky",
+                                      backgroundColor: "#e6e6e6",
+                                      boxShadow: "2px 0 0 0 #c8c8c8",
+                                    }}
+                                  >
                                     #
                                   </th>
                                   {previewColumns.map((columnName) => (
@@ -25941,12 +25951,21 @@ function MainApp() {
                                 ) : (
                                   preview.rows.map((row, rowIndex) => {
                                     const rowBgClass = rowIndex % 2 === 0 ? "bg-white" : "bg-[#e9e9e9]";
+                                    const rowBgColor = rowIndex % 2 === 0 ? "#ffffff" : "#e9e9e9";
                                     return (
                                       <tr
                                         key={`${selectedTable.name}:preview:${row.rowNumber}`}
                                         className={rowBgClass}
                                       >
-                                        <td className={clsx("sticky left-0 z-[1] border-b border-r border-[#d3d3d3] px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap", rowBgClass)}>
+                                        <td
+                                          className={clsx("sticky left-0 z-[2] border-b border-r border-[#d3d3d3] px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap", rowBgClass)}
+                                          style={{
+                                            left: 0,
+                                            position: "sticky",
+                                            backgroundColor: rowBgColor,
+                                            boxShadow: "2px 0 0 0 #d3d3d3",
+                                          }}
+                                        >
                                           {row.rowNumber}
                                         </td>
                                         {previewColumns.map((columnName) => {

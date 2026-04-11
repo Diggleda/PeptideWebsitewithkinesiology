@@ -1331,9 +1331,13 @@ export const authAPI = {
   },
 
   updateMe: async (payload: UpdateProfilePayload) => {
+    const requestPayload: Record<string, unknown> = { ...payload };
+    if (Object.prototype.hasOwnProperty.call(payload, 'networkPresenceAgreement')) {
+      requestPayload.network_presence_agreement = payload.networkPresenceAgreement;
+    }
     return fetchWithAuth(`${API_BASE_URL}/auth/me`, {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
     });
   },
 

@@ -800,6 +800,10 @@ const updateProfile = async (userId, data) => {
   }
   if (Object.prototype.hasOwnProperty.call(data, 'networkPresenceAgreement')) {
     next.networkPresenceAgreement = normalizeBooleanFlag(data.networkPresenceAgreement);
+    next.network_presence_agreement = next.networkPresenceAgreement ? 1 : 0;
+  } else if (Object.prototype.hasOwnProperty.call(data, 'network_presence_agreement')) {
+    next.networkPresenceAgreement = normalizeBooleanFlag(data.network_presence_agreement);
+    next.network_presence_agreement = next.networkPresenceAgreement ? 1 : 0;
   }
   if (Object.prototype.hasOwnProperty.call(data, 'resellerPermitOnboardingPresented')) {
     next.resellerPermitOnboardingPresented = normalizeBooleanFlag(

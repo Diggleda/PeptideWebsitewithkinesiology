@@ -36,6 +36,7 @@ interface DoctorProfileFormProps {
   submitLabel?: string;
   submittingLabel?: string;
   skipLabel?: string;
+  bioSectionClassName?: string;
   onSubmit: (payload: DoctorProfilePayload) => Promise<void>;
   onSkip?: () => void;
 }
@@ -101,6 +102,7 @@ export function DoctorProfileForm({
   submitLabel = 'Save profile',
   submittingLabel = 'Saving…',
   skipLabel = 'Skip for now',
+  bioSectionClassName,
   onSubmit,
   onSkip,
 }: DoctorProfileFormProps) {
@@ -184,7 +186,10 @@ export function DoctorProfileForm({
     backgroundColor: 'rgb(241, 245, 249)',
     borderColor: 'rgb(203, 213, 225)',
   } satisfies React.CSSProperties;
-  const bioSectionClassName = isCompactCircleAvatar ? 'space-y-2 pt-4' : 'space-y-2 pt-2';
+  const bioSectionClasses = [
+    isCompactCircleAvatar ? 'space-y-2 pt-4' : 'space-y-2 pt-2',
+    bioSectionClassName,
+  ].filter(Boolean).join(' ');
 
   useEffect(() => {
     setName(user?.name || '');
@@ -492,7 +497,7 @@ export function DoctorProfileForm({
         </div>
       </div>
 
-      <div className={bioSectionClassName}>
+      <div className={bioSectionClasses}>
         <Label htmlFor="physician-profile-bio">Bio</Label>
         <Textarea
           id="physician-profile-bio"

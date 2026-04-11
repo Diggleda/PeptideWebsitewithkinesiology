@@ -115,6 +115,9 @@ const syncDirectShippingToSql = (user) => {
   const profileImageBytes = user.profileImageUrl
     ? Buffer.byteLength(String(user.profileImageUrl), 'utf8')
     : 0;
+  const networkPresenceAgreement = normalizeBooleanFlag(
+    user.networkPresenceAgreement ?? user.network_presence_agreement,
+  );
   const params = {
     id: user.id,
     email: user.email || null,
@@ -133,7 +136,7 @@ const syncDirectShippingToSql = (user) => {
     greaterArea: user.greaterArea || null,
     studyFocus: user.studyFocus || null,
     bio: user.bio || null,
-    networkPresenceAgreement: user.networkPresenceAgreement ? 1 : 0,
+    networkPresenceAgreement: networkPresenceAgreement ? 1 : 0,
     delegateLogoUrl: user.delegateLogoUrl || null,
     delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
     delegateLinksEnabled: user.delegateLinksEnabled ? 1 : 0,

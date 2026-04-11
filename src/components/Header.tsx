@@ -5077,6 +5077,7 @@ export function Header({
             user={localUser}
             title="Physician Profile"
             description="Manage the profile used for your research platform account."
+            bioSectionClassName="mt-2"
             submitLabel="Save profile"
             submittingLabel="Saving profile…"
             onSubmit={async (payload) => {
