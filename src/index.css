@@ -3792,6 +3792,47 @@ html {
   word-break: break-word;
 }
 
+.sales-doctor-detail-header {
+  position: relative;
+  padding-right: 6.25rem;
+}
+
+.sales-doctor-detail-header-row {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.sales-doctor-detail-header-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sales-doctor-detail-header-name,
+.sales-doctor-detail-header-email,
+.sales-doctor-detail-header-email a,
+.sales-doctor-detail-header-email span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.sales-doctor-detail-maintenance-button {
+  position: absolute;
+  top: 1rem;
+  right: calc(1rem + 38px + 0.5rem);
+  z-index: 10040;
+  flex: 0 0 auto;
+}
+
+@media (min-width: 640px) {
+  .sales-doctor-detail-header {
+    padding-right: 11rem;
+  }
+}
+
 /* Shared moving underline for account tabs */
 .account-tab-underline-indicator {
   position: absolute;

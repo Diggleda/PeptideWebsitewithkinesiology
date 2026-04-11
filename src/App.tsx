@@ -54,19 +54,19 @@ import {
 		  ExternalLink,
 		  CalendarDays,
 			  Loader2,
-	  Plus,
-          Pencil,
-				  Package,
-				  Upload,
-				  Download,
-				  NotebookPen,
-				  CheckSquare,
-				  Trash2,
-				Clock,
-				CheckCircle2,
-        AlertTriangle,
-				XCircle,
-				} from "lucide-react";
+		  Plus,
+	          Pencil,
+					  Package,
+					  Upload,
+					  Download,
+					  NotebookPen,
+					  CheckSquare,
+					  Trash2,
+					Clock,
+					CheckCircle2,
+	        AlertTriangle,
+					XCircle,
+					} from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { DayPicker, type DateRange } from "react-day-picker";
 import {
@@ -34962,7 +34962,10 @@ function MainApp() {
           }
         }}
 		      >
-		        <DialogContent ref={salesDoctorDialogContentRef} className="max-w-2xl">
+		        <DialogContent
+              ref={salesDoctorDialogContentRef}
+              className="sales-doctor-detail-dialog max-w-2xl"
+            >
 	          {salesDoctorDetailLoading && !salesDoctorDetail ? (
               <>
                 <VisuallyHidden>
@@ -34974,20 +34977,28 @@ function MainApp() {
             ) : (
 		              salesDoctorDetail && (
 	            <div className="space-y-4 min-w-0">
-				              <DialogHeader className="min-w-0 text-left">
-                        <div className="flex items-start gap-2 max-w-full">
-                          <div className="min-w-0">
-				                  <DialogTitle className="space-y-0.5 min-w-0">
-				                    <div className="text-slate-900">{salesDoctorDetail.name}</div>
-				                    <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap text-sm font-normal text-slate-600">
-				                      {salesDoctorDetailEmailDisplay ? (
-	                                <span className="inline-block min-w-max">
-	                                  {renderSalesDoctorContactLinks(
-	                                    salesDoctorDetailEmailValues,
-	                                    "email",
-	                                    "hover:underline",
-	                                  )}
-	                                </span>
+					              <DialogHeader className="sales-doctor-detail-header min-w-0 text-left">
+			                        <div
+                                className={clsx(
+                                  "sales-doctor-detail-header-row flex items-start gap-2",
+                                  canOpenMaintenanceViewForSalesDoctorDetail &&
+                                    "sales-doctor-detail-header-row--with-maintenance",
+                                )}
+                              >
+		                          <div className="sales-doctor-detail-header-content min-w-0">
+					                  <DialogTitle className="space-y-0.5 min-w-0">
+						                    <div className="sales-doctor-detail-header-name min-w-0 text-slate-900">
+						                      {salesDoctorDetail.name}
+						                    </div>
+						                    <div className="sales-doctor-detail-header-email min-w-0 max-w-full text-sm font-normal text-slate-600">
+						                      {salesDoctorDetailEmailDisplay ? (
+						                                <span>
+						                                  {renderSalesDoctorContactLinks(
+						                                    salesDoctorDetailEmailValues,
+						                                    "email",
+		                                    "hover:underline",
+		                                  )}
+		                                </span>
 				                      ) : (
 				                        "—"
 				                      )}
@@ -35238,25 +35249,27 @@ function MainApp() {
 							                        </div>
                                     </>
 					                      )}
-				                  </DialogTitle>
-                            <DialogDescription className="mt-2">Account details</DialogDescription>
-                          </div>
-                          {canOpenMaintenanceViewForSalesDoctorDetail && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="header-home-button squircle-sm bg-white px-3 text-slate-900 sm:px-4 sm:gap-2 shrink-0 self-start"
-                              onClick={() => void handleOpenMaintenanceView()}
-                              disabled={maintenanceLaunchPending}
-                              aria-label="Maintenance"
-                              title="Maintenance"
-                            >
-                              <UserKeyIcon className="h-4 w-4 shrink-0" />
-                              <span className="hidden sm:inline">Maintenance</span>
-                            </Button>
-	                        )}
-                        </div>
-				              </DialogHeader>
+					                  </DialogTitle>
+		                            <DialogDescription className="account-header-description mt-2">
+                                Account details
+                              </DialogDescription>
+		                          </div>
+		                          {canOpenMaintenanceViewForSalesDoctorDetail && (
+		                            <Button
+		                              type="button"
+		                              variant="outline"
+		                              className="sales-doctor-detail-maintenance-button header-home-button squircle-sm bg-white px-3 text-slate-900 sm:px-4 sm:gap-2 shrink-0 self-start"
+		                              onClick={() => void handleOpenMaintenanceView()}
+		                              disabled={maintenanceLaunchPending}
+	                              aria-label="Maintenance"
+	                              title="Maintenance"
+	                            >
+	                              <UserKeyIcon className="h-4 w-4 shrink-0" />
+	                              <span className="hidden sm:inline">Maintenance</span>
+	                            </Button>
+		                        )}
+	                        </div>
+					              </DialogHeader>
 		              {salesDoctorDetail &&
                     isDoctorRole(salesDoctorDetail.role) &&
                     (isAdmin(user?.role) || isRep(user?.role)) && (

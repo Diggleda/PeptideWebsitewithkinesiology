@@ -956,11 +956,16 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         if "profileOnboarding" in data
         else _normalize_bool(user.get("profileOnboarding"))
     )
-    network_presence_agreement = (
-        _normalize_bool(data.get("networkPresenceAgreement"))
-        if "networkPresenceAgreement" in data
-        else _normalize_bool(user.get("networkPresenceAgreement"))
-    )
+    if "networkPresenceAgreement" in data:
+        network_presence_agreement = _normalize_bool(data.get("networkPresenceAgreement"))
+    elif "network_presence_agreement" in data:
+        network_presence_agreement = _normalize_bool(data.get("network_presence_agreement"))
+    else:
+        network_presence_agreement = _normalize_bool(
+            user.get("networkPresenceAgreement")
+            if "networkPresenceAgreement" in user
+            else user.get("network_presence_agreement")
+        )
     reseller_permit_onboarding_presented = (
         _normalize_bool(data.get("resellerPermitOnboardingPresented"))
         if "resellerPermitOnboardingPresented" in data

@@ -202,6 +202,49 @@ class AuthServiceTests(unittest.TestCase):
         self.assertTrue(saved_payloads[0]["networkPresenceAgreement"])
         self.assertTrue(updated["networkPresenceAgreement"])
 
+    def test_update_profile_accepts_snake_case_network_presence_agreement(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "network_presence_agreement": 0,
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.update_profile(
+                "doctor-1",
+                {"network_presence_agreement": True},
+            )
+
+        self.assertEqual(len(saved_payloads), 1)
+        self.assertTrue(saved_payloads[0]["networkPresenceAgreement"])
+        self.assertTrue(updated["networkPresenceAgreement"])
+
+    def test_get_profile_maps_legacy_network_presence_agreement_to_camel_case(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "network_presence_agreement": 1,
+        }
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user):
+            profile = auth_service.get_profile("doctor-1")
+
+        self.assertTrue(profile["networkPresenceAgreement"])
+
 
 if __name__ == "__main__":
     unittest.main()
