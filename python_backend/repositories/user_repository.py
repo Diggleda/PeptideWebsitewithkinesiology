@@ -882,6 +882,12 @@ def _to_db_params(user: Dict) -> Dict:
     def parse_dt(value):
         return to_mysql_datetime(value)
 
+    network_presence_agreement = _normalize_bool(
+        user.get("networkPresenceAgreement")
+        if "networkPresenceAgreement" in user
+        else user.get("network_presence_agreement")
+    )
+
     return {
         "id": user.get("id"),
         "name": user.get("name"),
@@ -914,7 +920,7 @@ def _to_db_params(user: Dict) -> Dict:
         "greater_area": user.get("greaterArea"),
         "study_focus": user.get("studyFocus"),
         "bio": user.get("bio"),
-        "network_presence_agreement": 1 if _normalize_bool(user.get("networkPresenceAgreement")) else 0,
+        "network_presence_agreement": 1 if network_presence_agreement else 0,
         "delegate_logo_url": user.get("delegateLogoUrl"),
         "delegate_secondary_color": user.get("delegateSecondaryColor"),
         "delegate_links_enabled": 1 if _normalize_bool(user.get("delegateLinksEnabled")) else 0,

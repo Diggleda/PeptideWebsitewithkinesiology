@@ -37,6 +37,21 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
         self.assertEqual(params["created_at"], "2025-11-06 02:14:26")
         self.assertEqual(params["last_login_at"], "2025-11-06 02:14:26")
 
+    def test_user_repository_maps_legacy_network_presence_agreement_to_sql_param(self) -> None:
+        params = user_repository._to_db_params(
+            {
+                "id": "u1",
+                "name": "Test",
+                "email": "test@example.com",
+                "password": "pw",
+                "role": "doctor",
+                "status": "active",
+                "network_presence_agreement": 1,
+            }
+        )
+
+        self.assertEqual(params["network_presence_agreement"], 1)
+
     def test_sales_rep_repository_strips_timezone_offset(self) -> None:
         params = sales_rep_repository._to_db_params(
             {

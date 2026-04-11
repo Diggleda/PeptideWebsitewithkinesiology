@@ -1006,6 +1006,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "delegateOptIn": delegate_opt_in,
         "profileOnboarding": profile_onboarding,
         "networkPresenceAgreement": network_presence_agreement,
+        "network_presence_agreement": 1 if network_presence_agreement else 0,
         "resellerPermitOnboardingPresented": reseller_permit_onboarding_presented,
         "greaterArea": greater_area,
         "studyFocus": study_focus,

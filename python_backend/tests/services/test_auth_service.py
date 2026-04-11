@@ -200,6 +200,7 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertEqual(len(saved_payloads), 1)
         self.assertTrue(saved_payloads[0]["networkPresenceAgreement"])
+        self.assertEqual(saved_payloads[0]["network_presence_agreement"], 1)
         self.assertTrue(updated["networkPresenceAgreement"])
 
     def test_update_profile_accepts_snake_case_network_presence_agreement(self) -> None:
@@ -229,6 +230,7 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertEqual(len(saved_payloads), 1)
         self.assertTrue(saved_payloads[0]["networkPresenceAgreement"])
+        self.assertEqual(saved_payloads[0]["network_presence_agreement"], 1)
         self.assertTrue(updated["networkPresenceAgreement"])
 
     def test_get_profile_maps_legacy_network_presence_agreement_to_camel_case(self) -> None:
