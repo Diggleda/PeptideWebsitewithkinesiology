@@ -100,7 +100,7 @@ const normalizeCartItems = (value) => {
     .filter(Boolean);
 };
 
-const syncDirectShippingToSql = (user) => {
+const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
   if (!mysqlClient.isEnabled()) {
     logger.warn(
       {
@@ -110,7 +110,7 @@ const syncDirectShippingToSql = (user) => {
       },
       'MySQL not enabled, skipping direct shipping/profile sync',
     );
-    return;
+    return null;
   }
   const profileImageBytes = user.profileImageUrl
     ? Buffer.byteLength(String(user.profileImageUrl), 'utf8')
@@ -172,8 +172,8 @@ const syncDirectShippingToSql = (user) => {
     'Syncing direct shipping info to MySQL (includes profile image)',
   );
   const startedAt = Date.now();
-  mysqlClient
-    .execute(
+  try {
+    const result = await mysqlClient.execute(
       `
         INSERT INTO users (
           id,
@@ -294,33 +294,36 @@ const syncDirectShippingToSql = (user) => {
           cart = VALUES(cart)
       `,
       params,
-    )
-    .then((result) => {
-      const durationMs = Date.now() - startedAt;
-      if (!result || result.affectedRows === 0) {
-        logger.warn(
-          { userId: user.id, durationMs },
-          'No rows updated while syncing direct shipping info to MySQL',
-        );
-      } else {
-        logger.info(
-          {
-            userId: user.id,
-            profileImageUrl: params.profileImageUrl,
-            profileImageBytes,
-            affectedRows: result.affectedRows,
-            durationMs,
-          },
-          'Direct shipping info synced to MySQL (profile image included)',
-        );
-      }
-    })
-    .catch((error) => {
-      logger.error(
-        { err: error, userId: user.id },
-        'Failed to sync direct shipping info to MySQL',
+    );
+    const durationMs = Date.now() - startedAt;
+    if (!result || result.affectedRows === 0) {
+      logger.warn(
+        { userId: user.id, durationMs },
+        'No rows updated while syncing direct shipping info to MySQL',
       );
-    });
+    } else {
+      logger.info(
+        {
+          userId: user.id,
+          profileImageUrl: params.profileImageUrl,
+          profileImageBytes,
+          affectedRows: result.affectedRows,
+          durationMs,
+        },
+        'Direct shipping info synced to MySQL (profile image included)',
+      );
+    }
+    return result;
+  } catch (error) {
+    logger.error(
+      { err: error, userId: user.id },
+      'Failed to sync direct shipping info to MySQL',
+    );
+    if (throwOnError) {
+      throw error;
+    }
+    return null;
+  }
 };
 
 const normalizeRole = (role) => {
@@ -586,16 +589,18 @@ const findByPasskeyId = (credentialId) => {
     && user.passkeys.some((pk) => pk.credentialID === credentialId)) || null;
 };
 
-const insert = (user) => {
+const insert = (user, { syncToSql = true } = {}) => {
   const users = loadUsers({ forWrite: true });
   const candidate = ensureUserDefaults(user);
   users.push(candidate);
   saveUsers(users);
-  syncDirectShippingToSql(candidate);
+  if (syncToSql) {
+    void syncDirectShippingToSql(candidate);
+  }
   return candidate;
 };
 
-const update = (user) => {
+const update = (user, { syncToSql = true } = {}) => {
   const users = loadUsers({ forWrite: true });
   const index = users.findIndex((item) => item.id === user.id);
   if (index === -1) {
@@ -604,11 +609,13 @@ const update = (user) => {
   const merged = ensureUserDefaults({ ...users[index], ...user });
   users[index] = lockSalesRepIdIfAssigned(users[index], merged);
   saveUsers(users);
-  syncDirectShippingToSql(users[index]);
+  if (syncToSql) {
+    void syncDirectShippingToSql(users[index]);
+  }
   return users[index];
 };
 
-const replace = (predicate, updater) => {
+const replace = (predicate, updater, { syncToSql = true } = {}) => {
   const users = loadUsers({ forWrite: true });
   const index = users.findIndex(predicate);
   if (index === -1) {
@@ -620,7 +627,9 @@ const replace = (predicate, updater) => {
   );
   users[index] = updated;
   saveUsers(users);
-  syncDirectShippingToSql(updated);
+  if (syncToSql) {
+    void syncDirectShippingToSql(updated);
+  }
   return updated;
 };
 
@@ -646,4 +655,5 @@ module.exports = {
   findByReferralCode,
   findByNpiNumber,
   findByPasskeyId,
+  syncDirectShippingToSql,
 };

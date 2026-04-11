@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from python_backend.repositories import (
     credit_ledger_repository,
@@ -51,6 +52,36 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
         )
 
         self.assertEqual(params["network_presence_agreement"], 1)
+
+    def test_user_repository_mysql_update_persists_network_presence_agreement(self) -> None:
+        existing = {
+            "id": "u1",
+            "name": "Test",
+            "email": "test@example.com",
+            "password": "pw",
+            "role": "doctor",
+            "status": "active",
+            "networkPresenceAgreement": False,
+        }
+        executed = []
+
+        def fake_execute(query, params):
+            executed.append((query, params))
+            return 1
+
+        with patch("python_backend.repositories.user_repository.find_by_id", side_effect=[existing, {**existing, "networkPresenceAgreement": True, "network_presence_agreement": 1}]), \
+            patch("python_backend.repositories.user_repository.mysql_client.execute", side_effect=fake_execute):
+            updated = user_repository._mysql_update(
+                {
+                    "id": "u1",
+                    "networkPresenceAgreement": True,
+                    "network_presence_agreement": 1,
+                }
+            )
+
+        self.assertEqual(len(executed), 1)
+        self.assertEqual(executed[0][1]["network_presence_agreement"], 1)
+        self.assertTrue(updated["networkPresenceAgreement"])
 
     def test_sales_rep_repository_strips_timezone_offset(self) -> None:
         params = sales_rep_repository._to_db_params(

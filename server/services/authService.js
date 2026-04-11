@@ -815,7 +815,8 @@ const updateProfile = async (userId, data) => {
       next[field] = normalizeDoctorProfileTextField(field, data[field]);
     }
   });
-  const updated = userRepository.update(next) || next;
+  const updated = userRepository.update(next, { syncToSql: false }) || next;
+  await userRepository.syncDirectShippingToSql(updated, { throwOnError: true });
   logger.debug(
     {
       userId: updated.id,
@@ -825,7 +826,7 @@ const updateProfile = async (userId, data) => {
         ? Buffer.byteLength(updated.profileImageUrl, 'utf8')
         : 0,
     },
-    'Profile update persisted across stores (local + MySQL sync attempted)',
+    'Profile update persisted across stores (local + MySQL sync completed)',
   );
 
   const normalizedRole = normalizeRole(updated.role);
