@@ -1,6 +1,59 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+
 from . import mysql_client
+
+
+_NETWORK_PRESENCE_AGREEMENT_BACKFILL_KEY = "migration_network_presence_agreement_backfill_v1"
+
+
+def _backfill_network_presence_agreement_once(*, table_exists=None) -> None:
+    exists = table_exists or (lambda _table: True)
+    if not exists("settings") or not exists("users"):
+        return
+    try:
+        marker = mysql_client.fetch_one(
+            """
+            SELECT value_json
+            FROM settings
+            WHERE `key` = %(key)s
+            """,
+            {"key": _NETWORK_PRESENCE_AGREEMENT_BACKFILL_KEY},
+        )
+        if marker:
+            return
+        affected_rows = mysql_client.execute(
+            """
+            UPDATE users
+            SET network_presence_agreement = 1
+            WHERE network_presence_agreement IS NULL
+               OR network_presence_agreement <> 1
+            """
+        )
+        mysql_client.execute(
+            """
+            INSERT INTO settings (`key`, value_json, updated_at)
+            VALUES (%(key)s, %(value_json)s, %(updated_at)s)
+            ON DUPLICATE KEY UPDATE
+                value_json = VALUES(value_json),
+                updated_at = VALUES(updated_at)
+            """,
+            {
+                "key": _NETWORK_PRESENCE_AGREEMENT_BACKFILL_KEY,
+                "value_json": json.dumps(
+                    {
+                        "ranAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "affectedRows": int(affected_rows or 0),
+                    }
+                ),
+                "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
+    except Exception:
+        # Best effort; do not fail app startup on one-time backfill issues.
+        pass
 
 
 CREATE_TABLE_STATEMENTS = [
@@ -660,6 +713,7 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS study_focus VARCHAR(190) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS network_presence_agreement TINYINT(1) NOT NULL DEFAULT 1",
+        "ALTER TABLE users MODIFY COLUMN network_presence_agreement TINYINT(1) NOT NULL DEFAULT 1",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_secondary_color VARCHAR(16) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_links_enabled TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS research_terms_agreement TINYINT(1) NOT NULL DEFAULT 0",
@@ -739,6 +793,8 @@ def ensure_schema() -> None:
     except Exception:
         # Best effort; do not fail app startup on migration issues.
         pass
+
+    _backfill_network_presence_agreement_once(table_exists=_table_exists)
 
     # Ensure cross-device session invalidation support is available.
     try:
