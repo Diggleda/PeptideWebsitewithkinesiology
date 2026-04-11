@@ -6412,8 +6412,20 @@ export function Header({
         : baseGrandTotal;
     const detailTotal = Math.max(grandTotal, 0);
     const fallbackPayment =
-      selectedOrder.paymentDetails ||
-      selectedOrder.paymentMethod ||
+      normalizeStringField(
+        selectedOrder.paymentDetails ||
+        (selectedOrder as any).payment_details ||
+        (selectedOrder as any).paymentMethodTitle ||
+        (selectedOrder as any).payment_method_title ||
+        wooResponse?.payment_method_title ||
+        wooPayload?.payment_method_title ||
+        selectedOrder.paymentMethod ||
+        (selectedOrder as any).payment_method ||
+        (selectedOrder as any).rawPaymentMethod ||
+        (selectedOrder as any).raw_payment_method ||
+        wooResponse?.payment_method ||
+        wooPayload?.payment_method,
+      ) ||
       null;
     const paymentDisplay = (() => {
       if (stripeMeta?.cardLast4) {

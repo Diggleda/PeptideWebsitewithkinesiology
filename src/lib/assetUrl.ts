@@ -1,6 +1,8 @@
 const STATIC_ASSET_STAMP =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() || "";
 
+const NON_STAMPABLE_URL_PATTERN = /^(?:data|blob|javascript|mailto|tel|about|file):/i;
+
 const EMITTED_PUBLIC_ASSET_URLS: Record<string, string> = {
   "/PepPro_fulllogo.png": new URL("../generated/runtime-assets/PepPro_fulllogo.png", import.meta.url).href,
   "/PepPro_icon.png": new URL("../generated/runtime-assets/PepPro_icon.png", import.meta.url).href,
@@ -41,5 +43,6 @@ export const resolveStaticAssetUrl = (path: string): string => {
 export const withStaticAssetStamp = (path: string): string => {
   const resolved = resolveStaticAssetUrl(path);
   if (!resolved || !STATIC_ASSET_STAMP) return resolved;
+  if (NON_STAMPABLE_URL_PATTERN.test(resolved)) return resolved;
   return appendQueryParam(resolved, "v", STATIC_ASSET_STAMP);
 };

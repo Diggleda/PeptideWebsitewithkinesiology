@@ -260,6 +260,29 @@ const IdentificationIcon = ({ className, ...props }: React.SVGProps<SVGSVGElemen
   </svg>
 );
 
+const UserKeyIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={2}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" d="M20 11v6" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M20 13h2" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M3 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 2.072.578"
+    />
+    <circle cx="10" cy="7" r="4" />
+    <circle cx="20" cy="19" r="2" />
+  </svg>
+);
+
 interface User {
   id: string;
   name: string;
@@ -1920,6 +1943,62 @@ const parseObjectCandidate = (value: unknown): Record<string, any> | null => {
   return null;
 };
 
+const resolveOrderPaymentMethodField = (order: any): string | null => {
+  if (!order) return null;
+  const integrationDetails =
+    parseObjectCandidate(order?.integrationDetails) ||
+    parseObjectCandidate(order?.integrations);
+  const wooIntegration =
+    parseObjectCandidate(integrationDetails?.wooCommerce) ||
+    parseObjectCandidate(integrationDetails?.woocommerce);
+  const wooResponse = parseObjectCandidate(wooIntegration?.response);
+  const wooPayload = parseObjectCandidate(wooIntegration?.payload);
+  return (
+    normalizeStringField(
+      order?.paymentMethod ??
+      order?.payment_method ??
+      order?.rawPaymentMethod ??
+      order?.raw_payment_method ??
+      wooResponse?.payment_method ??
+      wooPayload?.payment_method ??
+      wooIntegration?.payment_method,
+    ) || null
+  );
+};
+
+const resolveOrderPaymentDetailsField = (order: any): string | null => {
+  if (!order) return null;
+  const integrationDetails =
+    parseObjectCandidate(order?.integrationDetails) ||
+    parseObjectCandidate(order?.integrations);
+  const wooIntegration =
+    parseObjectCandidate(integrationDetails?.wooCommerce) ||
+    parseObjectCandidate(integrationDetails?.woocommerce);
+  const wooResponse = parseObjectCandidate(wooIntegration?.response);
+  const wooPayload = parseObjectCandidate(wooIntegration?.payload);
+  const stripeDetails =
+    parseObjectCandidate(integrationDetails?.stripe) ||
+    parseObjectCandidate(integrationDetails?.Stripe);
+  const stripeCardLabel = normalizeStringField(
+    stripeDetails?.cardLast4
+      ? `${stripeDetails?.cardBrand || "Card"} •••• ${stripeDetails.cardLast4}`
+      : null,
+  );
+  return (
+    normalizeStringField(
+      order?.paymentDetails ??
+      order?.payment_details ??
+      order?.paymentMethodTitle ??
+      order?.payment_method_title ??
+      wooResponse?.payment_method_title ??
+      wooPayload?.payment_method_title ??
+      wooIntegration?.payment_method_title,
+    ) ||
+    stripeCardLabel ||
+    resolveOrderPaymentMethodField(order)
+  );
+};
+
 const resolveNestedMysqlCreatedAtCandidate = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
 
@@ -2543,12 +2622,12 @@ const mergeAccountOrderSummaryPreservingSeed = (
       : incomingOrder.integrations ?? baseOrder.integrations ?? null;
   merged.integrationDetails = mergedIntegrationDetails;
   merged.paymentMethod =
-    normalizeStringField(incomingOrder.paymentMethod) ||
-    normalizeStringField(baseOrder.paymentMethod) ||
+    resolveOrderPaymentMethodField(incomingOrder) ||
+    resolveOrderPaymentMethodField(baseOrder) ||
     null;
   merged.paymentDetails =
-    normalizeStringField(incomingOrder.paymentDetails) ||
-    normalizeStringField(baseOrder.paymentDetails) ||
+    resolveOrderPaymentDetailsField(incomingOrder) ||
+    resolveOrderPaymentDetailsField(baseOrder) ||
     null;
   merged.lineItems =
     Array.isArray(incomingOrder.lineItems) && incomingOrder.lineItems.length > 0
@@ -2688,8 +2767,8 @@ const mergeWooSummaryIntoLocal = (
   if (!localOrder.lineItems?.length && wooOrder.lineItems?.length) {
     localOrder.lineItems = wooOrder.lineItems;
   }
-  localOrder.paymentMethod = localOrder.paymentMethod || wooOrder.paymentMethod;
-  localOrder.paymentDetails = localOrder.paymentDetails || wooOrder.paymentDetails;
+  localOrder.paymentMethod = localOrder.paymentMethod || resolveOrderPaymentMethodField(wooOrder);
+  localOrder.paymentDetails = localOrder.paymentDetails || resolveOrderPaymentDetailsField(wooOrder);
   localOrder.integrationDetails = mergeIntegrationDetails(
     localOrder.integrationDetails,
     wooOrder.integrationDetails,
@@ -2758,6 +2837,8 @@ const normalizeAccountOrdersResponse = (
         const cancellationId = wooOrderId || identifier;
         const createdAt = resolveOrderPlacedAt(order);
         const updatedAt = resolveOrderUpdatedAt(order) || createdAt;
+        const paymentMethod = resolveOrderPaymentMethodField(order);
+        const paymentDetails = resolveOrderPaymentDetailsField(order);
         registerLocalEntry({
           id: identifier,
           asDelegate: delegateFields.asDelegate,
@@ -2798,12 +2879,8 @@ const normalizeAccountOrdersResponse = (
             order?.items || order?.lineItems || order?.line_items,
           ),
           integrations: order?.integrations || null,
-          paymentMethod: order?.paymentMethod || null,
-          paymentDetails:
-            order?.paymentDetails ||
-            (order?.integrationDetails?.stripe?.cardLast4
-              ? `${order.integrationDetails?.stripe?.cardBrand || "Card"} •••• ${order.integrationDetails.stripe.cardLast4}`
-              : order?.paymentMethod || null),
+          paymentMethod,
+          paymentDetails,
           integrationDetails: order?.integrationDetails || null,
           shippingAddress: sanitizeOrderAddress(
             order?.shippingAddress || order?.shipping_address || order?.shipping,
@@ -2853,6 +2930,8 @@ const normalizeAccountOrdersResponse = (
         const cancellationId = wooOrderId || identifier;
         const createdAt = resolveOrderPlacedAt(order);
         const updatedAt = resolveOrderUpdatedAt(order) || createdAt;
+        const paymentMethod = resolveOrderPaymentMethodField(order);
+        const paymentDetails = resolveOrderPaymentDetailsField(order);
         registerLocalEntry({
           id: identifier,
           asDelegate: delegateFields.asDelegate,
@@ -2893,12 +2972,8 @@ const normalizeAccountOrdersResponse = (
             order?.items || order?.lineItems || order?.line_items,
           ),
           integrations: order?.integrations || null,
-          paymentMethod: order?.paymentMethod || null,
-          paymentDetails:
-            order?.paymentDetails ||
-            (order?.integrationDetails?.stripe?.cardLast4
-              ? `${order.integrationDetails?.stripe?.cardBrand || "Card"} •••• ${order.integrationDetails.stripe.cardLast4}`
-              : order?.paymentMethod || null),
+          paymentMethod,
+          paymentDetails,
           integrationDetails: order?.integrationDetails || null,
           shippingAddress: sanitizeOrderAddress(
             order?.shippingAddress || order?.shipping_address || order?.shipping,
@@ -2945,6 +3020,8 @@ const normalizeAccountOrdersResponse = (
             : `woo-${Math.random().toString(36).slice(2, 10)}`;
         const createdAt = resolveOrderPlacedAt(order);
         const updatedAt = resolveOrderUpdatedAt(order) || createdAt;
+        const paymentMethod = resolveOrderPaymentMethodField(order);
+        const paymentDetails = resolveOrderPaymentDetailsField(order);
         const wooEntry: AccountOrderSummary = {
           id: identifier,
           asDelegate: delegateFields.asDelegate,
@@ -2995,11 +3072,8 @@ const normalizeAccountOrdersResponse = (
             order?.lineItems || order?.line_items || order?.items,
           ),
           integrations: order?.integrations || null,
-          paymentMethod: order?.paymentMethod || null,
-          paymentDetails:
-            normalizeStringField(order?.paymentDetails) ||
-            normalizeStringField(order?.paymentMethod) ||
-            null,
+          paymentMethod,
+          paymentDetails,
           integrationDetails: order?.integrationDetails || null,
           shippingAddress: sanitizeOrderAddress(
             order?.shippingAddress || order?.shipping || order?.shipping_address,
@@ -34361,7 +34435,7 @@ function MainApp() {
                         : "maintenance-mode-shell maintenance-mode-shell--doctor"
                     }`}
                   >
-                    <div className="glass-card squircle-lg border border-amber-300/70 bg-amber-50/90 px-5 py-4 shadow-lg">
+                    <div className="glass-card squircle-lg border border-amber-300/70 bg-amber-50/90 px-4 py-4 shadow-lg">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div className="min-w-0">
                           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-amber-800">
@@ -34380,7 +34454,8 @@ function MainApp() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="border-amber-400 bg-white text-amber-950"
+                            size="sm"
+                            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
                             onClick={handleExitMaintenanceMode}
                           >
                             Exit maintenance mode
@@ -34899,64 +34974,66 @@ function MainApp() {
             ) : (
 		              salesDoctorDetail && (
 	            <div className="space-y-4 min-w-0">
-			              <DialogHeader className="min-w-0">
-				                <DialogTitle className="space-y-0.5 min-w-0">
-				                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
-				                  <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap text-sm font-normal text-slate-600">
-				                    {salesDoctorDetailEmailDisplay ? (
-                              <span className="inline-block min-w-max">
-                                {renderSalesDoctorContactLinks(
-                                  salesDoctorDetailEmailValues,
-                                  "email",
-                                  "hover:underline",
-                                )}
-                              </span>
-				                    ) : (
-				                      "—"
-				                    )}
-				                  </div>
-                          {(() => {
-                            const viewerCanSeeSalesFlags = Boolean(
-                              isAdmin(user?.role) || isSalesLead(user?.role),
-                            );
-                            const targetIsSalesActor =
-                              isRep(salesDoctorDetail.role) ||
-                              isSalesLead(salesDoctorDetail.role) ||
-                              isAdmin(salesDoctorDetail.role);
-                            if (!viewerCanSeeSalesFlags || !targetIsSalesActor) return null;
-                            const allowedRetail = coerceOptionalBoolean(
-                              salesDoctorDetail.allowedRetail,
-                            );
-                            const formatFlag = (value: boolean | null) =>
-                              value === true ? "Yes" : value === false ? "No" : "—";
-                            const roleLabel = formatRoleLabel(salesDoctorDetail.role, {
-                              isPartner: salesDoctorDetail.isPartner,
-                              allowedRetail: salesDoctorDetail.allowedRetail,
-                            });
-                            return (
-                              <>
-                                <div className="text-sm font-normal text-slate-600">
-                                  Role: {roleLabel}
-                                </div>
-                                <div className="text-sm font-normal text-slate-600">
-                                  Allowed Retail: {formatFlag(allowedRetail)}
-                                </div>
-                              </>
-                            );
-                          })()}
-                          {salesDoctorDetail.leadTypeLabel ? (
-                            <div className="text-sm font-normal text-slate-600">
-                              Lead Type: {salesDoctorDetail.leadTypeLabel}
-                            </div>
-                          ) : null}
-						                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
-						                    isDoctorRole(salesDoctorDetail.role) && (
-                                  <>
-						                      <div className="text-sm font-normal text-slate-600">
-						                        {(() => {
-						                          const leadType = String(
-						                            salesTrackingDoctors?.get?.(salesDoctorDetail.doctorId)
-						                              ?.leadType || "",
+				              <DialogHeader className="min-w-0 text-left">
+                        <div className="flex items-start gap-2 max-w-full">
+                          <div className="min-w-0">
+				                  <DialogTitle className="space-y-0.5 min-w-0">
+				                    <div className="text-slate-900">{salesDoctorDetail.name}</div>
+				                    <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap text-sm font-normal text-slate-600">
+				                      {salesDoctorDetailEmailDisplay ? (
+	                                <span className="inline-block min-w-max">
+	                                  {renderSalesDoctorContactLinks(
+	                                    salesDoctorDetailEmailValues,
+	                                    "email",
+	                                    "hover:underline",
+	                                  )}
+	                                </span>
+				                      ) : (
+				                        "—"
+				                      )}
+				                    </div>
+                            {(() => {
+                              const viewerCanSeeSalesFlags = Boolean(
+                                isAdmin(user?.role) || isSalesLead(user?.role),
+                              );
+                              const targetIsSalesActor =
+                                isRep(salesDoctorDetail.role) ||
+                                isSalesLead(salesDoctorDetail.role) ||
+                                isAdmin(salesDoctorDetail.role);
+                              if (!viewerCanSeeSalesFlags || !targetIsSalesActor) return null;
+                              const allowedRetail = coerceOptionalBoolean(
+                                salesDoctorDetail.allowedRetail,
+                              );
+                              const formatFlag = (value: boolean | null) =>
+                                value === true ? "Yes" : value === false ? "No" : "—";
+                              const roleLabel = formatRoleLabel(salesDoctorDetail.role, {
+                                isPartner: salesDoctorDetail.isPartner,
+                                allowedRetail: salesDoctorDetail.allowedRetail,
+                              });
+                              return (
+                                <>
+                                  <div className="text-sm font-normal text-slate-600">
+                                    Role: {roleLabel}
+                                  </div>
+                                  <div className="text-sm font-normal text-slate-600">
+                                    Allowed Retail: {formatFlag(allowedRetail)}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                            {salesDoctorDetail.leadTypeLabel ? (
+                              <div className="text-sm font-normal text-slate-600">
+                                Lead Type: {salesDoctorDetail.leadTypeLabel}
+                              </div>
+                            ) : null}
+							                    {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
+							                      isDoctorRole(salesDoctorDetail.role) && (
+                                    <>
+							                        <div className="text-sm font-normal text-slate-600">
+							                          {(() => {
+							                          const leadType = String(
+							                            salesTrackingDoctors?.get?.(salesDoctorDetail.doctorId)
+							                              ?.leadType || "",
 						                          )
 						                            .trim()
 						                            .toLowerCase();
@@ -35157,25 +35234,28 @@ function MainApp() {
 					                              )}
 					                            </span>
 					                          );
-					                        })()}
-					                      </div>
-                                  </>
-				                    )}
-				                </DialogTitle>
-				                <DialogDescription>Account details</DialogDescription>
-                        {canOpenMaintenanceViewForSalesDoctorDetail && (
-                          <div className="pt-2">
+							                          })()}
+							                        </div>
+                                    </>
+					                      )}
+				                  </DialogTitle>
+                            <DialogDescription className="mt-2">Account details</DialogDescription>
+                          </div>
+                          {canOpenMaintenanceViewForSalesDoctorDetail && (
                             <Button
                               type="button"
                               variant="outline"
-                              className="header-home-button squircle-sm bg-white text-slate-900"
+                              className="header-home-button squircle-sm bg-white px-3 text-slate-900 sm:px-4 sm:gap-2 shrink-0 self-start"
                               onClick={() => void handleOpenMaintenanceView()}
                               disabled={maintenanceLaunchPending}
+                              aria-label="Maintenance"
+                              title="Maintenance"
                             >
-                              {maintenanceLaunchPending ? "Opening…" : "Open Maintenance View"}
+                              <UserKeyIcon className="h-4 w-4 shrink-0" />
+                              <span className="hidden sm:inline">Maintenance</span>
                             </Button>
-                          </div>
-                        )}
+	                        )}
+                        </div>
 				              </DialogHeader>
 		              {salesDoctorDetail &&
                     isDoctorRole(salesDoctorDetail.role) &&
