@@ -32951,7 +32951,7 @@ function MainApp() {
                 <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
                   {shouldShowPhysicianMapCard ? (
                     <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
-                      <div className="grid gap-5 md:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] md:items-center md:gap-8">
+                      <div className="grid gap-5 md:grid-cols-[minmax(280px,360px)_auto] md:items-center md:justify-between md:gap-8">
                         <div className="space-y-2">
                           <h2
                             className="text-4xl font-semibold leading-tight sm:text-5xl"
