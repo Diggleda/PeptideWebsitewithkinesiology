@@ -332,6 +332,9 @@ type DirectShippingField =
 interface HeaderUser {
   id?: string;
   name: string;
+  shadowContext?: {
+    active?: boolean;
+  } | null;
   profileImageUrl?: string | null;
   profileOnboarding?: boolean;
   resellerPermitOnboardingPresented?: boolean;
@@ -1719,6 +1722,14 @@ export function Header({
   const accountModalRequestTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (user?.shadowContext?.active) {
+      setNetworkQuality('good');
+      setNetworkSpeedSummary((prev) => ({
+        ...prev,
+        measuredAt: Date.now(),
+      }));
+      return;
+    }
     const rank: Record<NetworkQuality, number> = {
       offline: 0,
       poor: 1,
@@ -2164,7 +2175,7 @@ export function Header({
         conn.removeEventListener('change', updateFromConnection);
       }
     };
-  }, []);
+  }, [user?.shadowContext?.active]);
   const mergeOrderIntoCache = useCallback(
     (order: AccountOrderSummary | null | undefined) => {
       if (!order) return;

@@ -138,6 +138,91 @@ body {
   width: 100%;
 }
 
+.physician-network-card__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.7rem;
+}
+
+.physician-network-map-shell {
+  width: 100%;
+  max-width: 55rem;
+}
+
+.physician-network-map-card {
+  border-radius: 34px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 30px 80px -56px rgba(95, 179, 249, 0.72);
+  backdrop-filter: blur(24px);
+}
+
+.physician-network-map-loading {
+  border-radius: 30px;
+  background: rgba(95, 179, 249, 0.08);
+}
+
+.physician-network-map-frame {
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.physician-network-map-details {
+  border-radius: 30px;
+  border: 1px solid rgba(95, 179, 249, 0.18);
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(16px);
+}
+
+.physician-network-map-title,
+.physician-network-map-profile-name,
+.physician-network-map-copy,
+.physician-network-map-subtitle,
+.physician-network-map-location,
+.physician-network-map-email,
+.physician-network-map-email:hover,
+.physician-network-map-email:focus-visible,
+.physician-network-map-focus-badge,
+.physician-network-map-bio {
+  color: #000;
+}
+
+.physician-network-map-clear-button {
+  border-radius: 18px;
+}
+
+.physician-network-map-doctor-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(95, 179, 249, 0.16);
+  background: rgba(255, 255, 255, 0.8);
+  color: rgba(26, 85, 173, 0.72);
+}
+
+.physician-network-map-doctor-chip:hover,
+.physician-network-map-doctor-chip:focus-visible {
+  border-color: rgba(95, 179, 249, 0.28);
+  color: rgb(95, 179, 249);
+}
+
+.physician-network-map-doctor-chip--active,
+.physician-network-map-doctor-chip--active:hover,
+.physician-network-map-doctor-chip--active:focus-visible {
+  border-color: rgba(95, 179, 249, 0.34);
+  background: rgba(95, 179, 249, 0.12);
+  color: rgb(26, 85, 173);
+}
+
+.physician-network-map-profile-card {
+  border-radius: 26px;
+  border: 1px solid rgba(95, 179, 249, 0.14);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.physician-network-map-focus-badge {
+  border-radius: 999px;
+  border: 1px solid rgba(95, 179, 249, 0.22);
+  background: rgba(95, 179, 249, 0.08);
+}
+
 @media (min-width: 768px) {
   .post-login-layout {
     flex-direction: row;
@@ -155,12 +240,44 @@ body {
     order: 2;
     flex: 1 1 0;
   }
+
+  .physician-network-card__layout {
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 2rem;
+  }
+
+  .physician-network-card__intro {
+    flex: 3 1 0;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .physician-network-map-shell {
+    flex: 13 1 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0;
+    margin-left: auto;
+  }
 }
 
 @media (min-width: 1200px) {
   .post-login-news {
     flex-basis: 50.4%;
     max-width: 50.4%;
+  }
+
+  .physician-network-card__intro {
+    flex: 3 1 0;
+    max-width: none;
+  }
+
+  .physician-network-map-shell {
+    flex: 13 1 0 !important;
+    width: auto !important;
+    max-width: none !important;
   }
 }
 

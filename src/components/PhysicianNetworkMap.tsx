@@ -511,13 +511,13 @@ export function PhysicianNetworkMap() {
   );
 
   return (
-    <div className="w-full max-w-[640px] md:w-[28rem] md:max-w-[28rem] md:justify-self-end lg:w-[31rem] lg:max-w-[31rem] xl:w-[33rem] xl:max-w-[33rem]">
-      <div className="rounded-[34px] border border-[rgba(95,179,249,0.18)] bg-white/72 p-3 shadow-[0_30px_80px_-56px_rgba(95,179,249,0.72)] backdrop-blur-xl sm:p-4">
+    <div className="physician-network-map-shell w-full md:self-start">
+      <div className="physician-network-map-card p-3 sm:p-4">
         <div className="mx-auto w-full max-w-[560px] md:max-w-full">
           {loading ? (
-            <div className="aspect-[1.64] w-full animate-pulse rounded-[30px] bg-[rgba(95,179,249,0.08)]" />
+            <div className="physician-network-map-loading aspect-[1.64] w-full animate-pulse" />
           ) : (
-            <div className="overflow-hidden rounded-[30px] border border-[rgba(95,179,249,0.14)] bg-[rgba(255,255,255,0.76)]">
+            <div className="physician-network-map-frame overflow-hidden">
               <ComposableMap
                 width={MAP_WIDTH}
                 height={MAP_HEIGHT}
@@ -669,104 +669,102 @@ export function PhysicianNetworkMap() {
           )}
         </div>
 
-        <div className="mt-4 rounded-[30px] border border-[rgba(95,179,249,0.18)] bg-white/84 p-4 backdrop-blur-md">
-          {error ? (
-            <p className="text-sm font-medium text-[rgb(26,85,173)]">{error}</p>
-          ) : mappedDoctors.length === 0 ? (
-            <p className="text-sm font-medium text-[rgb(26,85,173)]">
-              Physician profiles are visible, but no map locations are available yet.
-            </p>
-          ) : activeCluster && activeDoctor ? (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-semibold leading-tight text-[rgb(26,85,173)]">
-                    {activeCluster.locationLabel || activeDoctor.locationLabel || activeDoctor.displayName}
-                  </h3>
-                  <p className="mt-1 text-sm font-medium text-[rgba(26,85,173,0.78)]">
-                    {activeCluster.doctors.length > 1
-                      ? `${activeCluster.doctors.length} physicians shown in this area`
-                      : "Physician network presence"}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {pinnedClusterId ? (
-                    <button
-                      type="button"
-                      className="rounded-full border border-[rgba(95,179,249,0.16)] bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgba(26,85,173,0.78)] transition-colors hover:border-[rgba(95,179,249,0.3)] hover:text-[rgb(95,179,249)]"
-                      onClick={() => setPinnedClusterId(null)}
-                    >
-                      Clear selection
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              {activeCluster.doctors.length > 1 ? (
-                <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto pr-1">
-                  {activeCluster.doctors.map((doctor) => {
-                    const isSelected = doctor.id === activeDoctor.id;
-                    return (
-                      <button
-                        key={doctor.id}
-                        type="button"
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                          isSelected
-                            ? "border-[rgba(95,179,249,0.34)] bg-[rgba(95,179,249,0.12)] text-[rgb(26,85,173)]"
-                            : "border-[rgba(95,179,249,0.16)] bg-white/80 text-[rgba(26,85,173,0.72)] hover:border-[rgba(95,179,249,0.28)] hover:text-[rgb(95,179,249)]"
-                        }`}
-                        onClick={() => {
-                          setPinnedClusterId(activeCluster.id);
-                          setSelectedDoctorId(doctor.id);
-                        }}
-                      >
-                        {doctor.displayName}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-
-              <div className="space-y-3 rounded-[26px] border border-[rgba(95,179,249,0.14)] bg-[rgba(255,255,255,0.72)] p-4">
+        {error || mappedDoctors.length > 0 ? (
+          <div className="physician-network-map-details mt-4 p-4">
+            {error ? (
+              <p className="physician-network-map-copy text-sm font-medium">{error}</p>
+            ) : activeCluster && activeDoctor ? (
+              <div className="space-y-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h4 className="text-lg font-semibold leading-tight text-[rgb(26,85,173)]">
-                      {activeDoctor.displayName}
-                    </h4>
-                    {activeDoctor.email ? (
-                      <a
-                        href={`mailto:${activeDoctor.email}`}
-                        className="mt-1 block w-fit break-all text-sm font-medium text-[rgb(95,179,249)] transition-colors hover:text-[rgb(26,85,173)]"
+                    <h3 className="physician-network-map-title text-xl font-semibold leading-tight">
+                      {activeCluster.locationLabel || activeDoctor.locationLabel || activeDoctor.displayName}
+                    </h3>
+                    <p className="physician-network-map-subtitle mt-1 text-sm font-medium">
+                      {activeCluster.doctors.length > 1
+                        ? `${activeCluster.doctors.length} physicians shown in this area`
+                        : "Physician network presence"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {pinnedClusterId ? (
+                      <button
+                        type="button"
+                        className="physician-network-map-clear-button header-home-button bg-white px-4 text-slate-900 shrink-0"
+                        onClick={() => setPinnedClusterId(null)}
                       >
-                        {activeDoctor.email}
-                      </a>
-                    ) : null}
-                    {activeDoctor.locationLabel ? (
-                      <p className="mt-1 text-sm font-medium text-[rgba(26,85,173,0.72)]">
-                        {activeDoctor.locationLabel}
-                      </p>
+                        Clear
+                      </button>
                     ) : null}
                   </div>
-                  {activeDoctor.studyFocus ? (
-                    <span className="rounded-full border border-[rgba(95,179,249,0.22)] bg-[rgba(95,179,249,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[rgb(95,179,249)]">
-                      {activeDoctor.studyFocus}
-                    </span>
-                  ) : null}
                 </div>
 
-                {activeDoctor.bio ? (
-                  <p className="max-h-28 overflow-y-auto pr-1 text-sm leading-6 text-[rgba(26,85,173,0.88)]">
-                    {activeDoctor.bio}
-                  </p>
+                {activeCluster.doctors.length > 1 ? (
+                  <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto pr-1">
+                    {activeCluster.doctors.map((doctor) => {
+                      const isSelected = doctor.id === activeDoctor.id;
+                      return (
+                        <button
+                          key={doctor.id}
+                          type="button"
+                          className={`physician-network-map-doctor-chip px-3 py-1 text-xs font-semibold transition-colors ${
+                            isSelected
+                              ? "physician-network-map-doctor-chip--active"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            setPinnedClusterId(activeCluster.id);
+                            setSelectedDoctorId(doctor.id);
+                          }}
+                        >
+                          {doctor.displayName}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : null}
+
+                <div className="physician-network-map-profile-card space-y-3 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="physician-network-map-profile-name text-lg font-semibold leading-tight">
+                        {activeDoctor.displayName}
+                      </h4>
+                      {activeDoctor.email ? (
+                        <a
+                          href={`mailto:${activeDoctor.email}`}
+                          className="physician-network-map-email mt-1 block w-fit break-all text-sm font-medium transition-colors"
+                        >
+                          {activeDoctor.email}
+                        </a>
+                      ) : null}
+                      {activeDoctor.locationLabel ? (
+                        <p className="physician-network-map-location mt-1 text-sm font-medium">
+                          {activeDoctor.locationLabel}
+                        </p>
+                      ) : null}
+                    </div>
+                    {activeDoctor.studyFocus ? (
+                      <span className="physician-network-map-focus-badge px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em]">
+                        {activeDoctor.studyFocus}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {activeDoctor.bio ? (
+                    <p className="physician-network-map-bio max-h-28 overflow-y-auto pr-1 text-sm leading-6">
+                      {activeDoctor.bio}
+                    </p>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ) : (
-            <p className="text-sm font-medium text-[rgb(26,85,173)]">
-              Hover or tap a physician marker to view profile details.
-            </p>
-          )}
-        </div>
+            ) : (
+              <p className="physician-network-map-copy text-sm font-medium">
+                Hover or tap a physician marker to view profile details.
+              </p>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

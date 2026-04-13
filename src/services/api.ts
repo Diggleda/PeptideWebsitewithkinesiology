@@ -9,6 +9,27 @@ import type {
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
+  const resolvePreferredPepProApiBase = (value: string) => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    const currentHost = window.location.hostname.toLowerCase();
+    const isPepProPrimaryHost = currentHost === 'peppro.net' || currentHost === 'www.peppro.net';
+    if (!isPepProPrimaryHost) {
+      return null;
+    }
+    try {
+      const normalized = value.replace(/\/+$/, '');
+      const parsed = new URL(normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`);
+      const targetHost = parsed.hostname.toLowerCase();
+      if (targetHost !== 'api.peppro.net' || !parsed.pathname.toLowerCase().startsWith('/api')) {
+        return null;
+      }
+      return `${window.location.origin}/api`;
+    } catch {
+      return null;
+    }
+  };
 
   if (!configured) {
     // In dev we expect the API on localhost:3001 by default.
@@ -17,6 +38,11 @@ export const API_BASE_URL = (() => {
     }
     // In production, default to relative same-origin `/api` so the bundle stays host-agnostic.
     return '/api';
+  }
+
+  const preferredPepProApiBase = resolvePreferredPepProApiBase(configured);
+  if (preferredPepProApiBase) {
+    return preferredPepProApiBase;
   }
 
   const normalized = configured.replace(/\/+$/, '');

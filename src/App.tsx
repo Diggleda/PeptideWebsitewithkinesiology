@@ -406,12 +406,42 @@ const MAINTENANCE_TARGET_ROLES = new Set([
 ]);
 const MAINTENANCE_OPENER_PING_EVENT = "PEPPRO_MAINTENANCE_PING";
 const MAINTENANCE_OPENER_EXIT_EVENT = "PEPPRO_MAINTENANCE_EXIT";
+const MAINTENANCE_OPENER_LAUNCH_FAILED_EVENT =
+  "PEPPRO_MAINTENANCE_LAUNCH_FAILED";
+const MAINTENANCE_ADMIN_SESSION_ENDED_EVENT =
+  "PEPPRO_MAINTENANCE_ADMIN_SESSION_ENDED";
+const MAINTENANCE_TAB_TITLE = "Physician's Portal - Maintenance";
+const MAINTENANCE_ALREADY_ACTIVE_TOAST =
+  "A maintenance is active. Please coordinate with yout admin team.";
 const LOGIN_BACKEND_DOWN_TOAST_ID = "login-backend-down";
 const LOGIN_BACKEND_DOWN_MESSAGE =
   "PepPro is unavailable right now. Please try again in a minute.";
 const MAINTENANCE_OPENER_PING_INTERVAL_MS = 30_000;
 const MAINTENANCE_OPENER_ACTIVITY_TTL_MS =
   MAINTENANCE_OPENER_PING_INTERVAL_MS * 2 + 15_000;
+
+const isMaintenanceLaunchConflictError = (error: unknown) => {
+  const status = typeof (error as any)?.status === "number" ? (error as any).status : null;
+  const code = String((error as any)?.code || "").trim().toUpperCase();
+  const authCode = String((error as any)?.authCode || "").trim().toUpperCase();
+  const message = String((error as any)?.message || "").trim().toUpperCase();
+  const text = [code, authCode, message].filter(Boolean).join(" ");
+  if (status === 409 || status === 423) {
+    return true;
+  }
+  return (
+    text.includes("MAINTENANCE_ACTIVE") ||
+    text.includes("MAINTENANCE ALREADY ACTIVE") ||
+    text.includes("ACTIVE MAINTENANCE") ||
+    text.includes("SHADOW_SESSION_ACTIVE") ||
+    text.includes("ACTIVE SHADOW SESSION") ||
+    text.includes("TARGET_ALREADY_LOCKED") ||
+    text.includes("TARGET LOCKED") ||
+    (text.includes("MAINTENANCE") && text.includes("ALREADY")) ||
+    (text.includes("SHADOW") && text.includes("ALREADY")) ||
+    (text.includes("ACTIVE") && text.includes("ADMIN"))
+  );
+};
 
 interface SeamlessRawEntry {
   id: string | number;
@@ -4820,6 +4850,7 @@ function MainApp() {
         : null,
     [formatDelegateTimeRemaining, isMaintenanceMode, maintenanceExpiresMs, maintenanceNowMs],
   );
+  const shouldReduceMaintenanceBackgroundFetches = isMaintenanceMode;
   const shouldPauseAdminBackgroundSync = Boolean(
     maintenanceCompanionActive && !isMaintenanceMode && user?.role && isAdmin(user.role),
   );
@@ -4899,6 +4930,32 @@ function MainApp() {
       } catch (error) {
         if (!cancelled) {
           console.warn("[Auth] Session bootstrap failed", error);
+          if (launchToken && isMaintenanceLaunchConflictError(error)) {
+            stripLocationQueryParam("shadow");
+            toast.error(MAINTENANCE_ALREADY_ACTIVE_TOAST);
+            try {
+              if (window.opener && !window.opener.closed) {
+                window.opener.postMessage(
+                  {
+                    type: MAINTENANCE_OPENER_LAUNCH_FAILED_EVENT,
+                    at: Date.now(),
+                    targetUserId: null,
+                    reason: "active",
+                  },
+                  window.location.origin,
+                );
+              }
+            } catch {
+              // ignore
+            }
+            window.setTimeout(() => {
+              try {
+                window.close();
+              } catch {
+                // ignore
+              }
+            }, 0);
+          }
           setUser(null);
         }
       } finally {
@@ -4915,6 +4972,9 @@ function MainApp() {
   useEffect(() => {
     if (!isMaintenanceMode) {
       return;
+    }
+    if (typeof document !== "undefined") {
+      document.title = MAINTENANCE_TAB_TITLE;
     }
     const tick = () => setMaintenanceNowMs(Date.now());
     tick();
@@ -4967,6 +5027,40 @@ function MainApp() {
       window.removeEventListener("beforeunload", handlePageExit);
     };
   }, [isMaintenanceMode, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!isMaintenanceMode) {
+      return;
+    }
+
+    const handleMaintenanceAdminSessionEnded = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      const payload = event.data;
+      const type =
+        payload && typeof payload === "object" ? (payload as any).type : null;
+      if (type !== MAINTENANCE_ADMIN_SESSION_ENDED_EVENT) {
+        return;
+      }
+      handleLogout();
+      window.setTimeout(() => {
+        try {
+          window.close();
+        } catch {
+          // ignore
+        }
+      }, 0);
+    };
+
+    window.addEventListener("message", handleMaintenanceAdminSessionEnded);
+    return () => {
+      window.removeEventListener("message", handleMaintenanceAdminSessionEnded);
+    };
+  }, [handleLogout, isMaintenanceMode]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -5746,6 +5840,12 @@ function MainApp() {
     if (!postLoginHold || !user) {
       return;
 	    }
+	    if (shouldReduceMaintenanceBackgroundFetches) {
+	      setPeptideForumItems([]);
+	      setPeptideForumUpdatedAt(null);
+	      setPeptideForumError(null);
+	      return;
+	    }
 	    if (!shouldShowPeptideForumCard) {
 	      setPeptideForumItems([]);
 	      setPeptideForumUpdatedAt(null);
@@ -5753,7 +5853,7 @@ function MainApp() {
 	      return;
 	    }
 	    void refreshPeptideForum();
-	  }, [postLoginHold, user?.id, refreshPeptideForum, shouldShowPeptideForumCard]);
+	  }, [postLoginHold, user?.id, refreshPeptideForum, shouldReduceMaintenanceBackgroundFetches, shouldShowPeptideForumCard]);
 
   const variationFetchInFlightRef = useRef<Map<number, Promise<WooVariation[]>>>(
     new Map(),
@@ -14907,6 +15007,7 @@ function MainApp() {
 			  const lastPresenceHeartbeatPingAtRef = useRef(0);
 			  const lastPresenceInteractionPingAtRef = useRef(0);
       const lastMaintenanceAdminKeepaliveAtRef = useRef(0);
+      const maintenanceWindowRef = useRef<Window | null>(null);
       const maintenanceCompanionReleaseTimeoutRef = useRef<number | null>(null);
 			  const lastSessionCheckAtRef = useRef(0);
       const forcedLogoutAtRef = useRef(0);
@@ -15842,6 +15943,7 @@ function MainApp() {
       const authCode =
         typeof error?.authCode === "string" ? error.authCode : null;
       return (
+        code === "AUTH_CHECK_FAILED" ||
         code === "AUTH_REQUIRED" ||
         status === 401 ||
         (status === 403 &&
@@ -20821,6 +20923,13 @@ function MainApp() {
     if (typeof window === "undefined") {
       return;
     }
+    if (shouldReduceMaintenanceBackgroundFetches) {
+      setCatalogLoading(false);
+      setCatalogError(null);
+      setCatalogRetryUntil(null);
+      setCatalogTransientIssue(false);
+      return;
+    }
     if (!user && !isDelegateMode) {
       return;
     }
@@ -21272,7 +21381,7 @@ function MainApp() {
 	      }
 	      window.clearInterval(intervalId);
 	    };
-		  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateIsValidated, delegateLoading, delegateError, delegateContext?.allowedProducts, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
+		  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateIsValidated, delegateLoading, delegateError, delegateContext?.allowedProducts, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches, user?.id, user?.role]);
 
   useEffect(() => {
     if (catalogEmptyTimerRef.current) {
@@ -21305,7 +21414,7 @@ function MainApp() {
   }, [catalogLoading, catalogProducts.length, catalogRetryUntil]);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || shouldReduceMaintenanceBackgroundFetches) {
       setPeptideNews([]);
       setPeptideNewsError(null);
       setPeptideNewsUpdatedAt(null);
@@ -21374,11 +21483,11 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [shouldReduceMaintenanceBackgroundFetches, user]);
 
   // Prepare welcome animation only on fresh sign-in
   useEffect(() => {
-    if (!user) {
+    if (!user || shouldReduceMaintenanceBackgroundFetches) {
       setShowWelcome(false);
       setShowQuote(false);
       setQuoteOfTheDay(null);
@@ -21400,11 +21509,17 @@ function MainApp() {
     setQuoteLoading(true);
     const timer = window.setTimeout(() => setShowWelcome(true), 250);
     return () => window.clearTimeout(timer);
-  }, [user]);
+  }, [shouldReduceMaintenanceBackgroundFetches, user]);
 
   // Load quote only after welcome animation completes
   useEffect(() => {
-    if (!user || !showWelcome || infoFocusActive || showQuote) {
+    if (
+      !user ||
+      shouldReduceMaintenanceBackgroundFetches ||
+      !showWelcome ||
+      infoFocusActive ||
+      showQuote
+    ) {
       return;
     }
 
@@ -21435,7 +21550,7 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, [user, showWelcome, infoFocusActive, showQuote]);
+  }, [shouldReduceMaintenanceBackgroundFetches, user, showWelcome, infoFocusActive, showQuote]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -21497,7 +21612,7 @@ function MainApp() {
 	    if (shouldPauseAdminBackgroundSync && user?.role && isAdmin(user.role)) {
 	      return;
 	    }
-		    if (!user) {
+		    if (!user || shouldReduceMaintenanceBackgroundFetches) {
 		      setDoctorSummary(null);
 	      setDoctorReferrals([]);
 	      setSalesRepDashboard(null);
@@ -21525,7 +21640,7 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-	  }, [user, postLoginHold, refreshReferralData, shouldPauseAdminBackgroundSync]);
+	  }, [user, postLoginHold, refreshReferralData, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches]);
 
   // Set body classes to control background per view
   useEffect(() => {
@@ -21543,6 +21658,7 @@ function MainApp() {
   useEffect(() => {
     if (
       !user ||
+      shouldReduceMaintenanceBackgroundFetches ||
       (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
       (!isRep(user.role) && !isAdmin(user.role)) ||
       postLoginHold ||
@@ -21564,6 +21680,7 @@ function MainApp() {
     referralPollingSuppressed,
     tracedRefreshReferralData,
     shouldPauseAdminBackgroundSync,
+    shouldReduceMaintenanceBackgroundFetches,
   ]);
 
   useEffect(() => {
@@ -21573,6 +21690,7 @@ function MainApp() {
 
     if (
       !user ||
+      shouldReduceMaintenanceBackgroundFetches ||
       (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
       (!isDoctorRole(user.role) && !isRep(user.role) && !isAdmin(user.role)) ||
       postLoginHold ||
@@ -21615,6 +21733,7 @@ function MainApp() {
     postLoginHold,
     referralPollingSuppressed,
     shouldPauseAdminBackgroundSync,
+    shouldReduceMaintenanceBackgroundFetches,
     tracedRefreshReferralData,
   ]);
 
@@ -22147,8 +22266,48 @@ function MainApp() {
     }
   };
 
+  const closeTrackedMaintenanceWindow = useCallback(
+    (reason: "logout" | "admin_session_ended" = "admin_session_ended") => {
+      if (typeof window === "undefined" || isMaintenanceMode) {
+        return;
+      }
+      const maintenanceWindow = maintenanceWindowRef.current;
+      if (!maintenanceWindow) {
+        return;
+      }
+      if (maintenanceWindow.closed) {
+        maintenanceWindowRef.current = null;
+        return;
+      }
+      try {
+        maintenanceWindow.postMessage(
+          {
+            type: MAINTENANCE_ADMIN_SESSION_ENDED_EVENT,
+            at: Date.now(),
+            reason,
+          },
+          window.location.origin,
+        );
+      } catch {
+        // ignore
+      }
+      window.setTimeout(() => {
+        try {
+          if (!maintenanceWindow.closed) {
+            maintenanceWindow.close();
+          }
+        } catch {
+          // ignore
+        }
+      }, 120);
+      maintenanceWindowRef.current = null;
+    },
+    [isMaintenanceMode],
+  );
+
   const handleLogout = useCallback(() => {
 	    console.debug("[Auth] Logout");
+      closeTrackedMaintenanceWindow("logout");
 	    authAPI.logout();
 	    setUser(null);
       setCartItems([]);
@@ -22172,10 +22331,10 @@ function MainApp() {
     setDoctorReferrals([]);
     setSalesRepDashboard(null);
     setReferralStatusMessage(null);
-    setReferralDataError(null);
+	    setReferralDataError(null);
 	    setAdminActionState({ updatingReferral: null, error: null });
 	    // toast.success('Logged out successfully');
-  }, []);
+  }, [closeTrackedMaintenanceWindow]);
 
   const handleExitMaintenanceMode = useCallback(() => {
     if (typeof window === "undefined") {
@@ -22218,13 +22377,14 @@ function MainApp() {
       toast.error("Unable to open maintenance view right now.");
       return;
     }
+    maintenanceWindowRef.current = maintenanceWindow;
     try {
       maintenanceWindow.sessionStorage.clear();
     } catch {
       // ignore
     }
     try {
-      maintenanceWindow.document.title = "Opening maintenance view...";
+      maintenanceWindow.document.title = MAINTENANCE_TAB_TITLE;
       maintenanceWindow.document.body.innerHTML =
         '<div style="font-family: system-ui, sans-serif; padding: 24px; color: #0f172a;">Opening maintenance view...</div>';
     } catch {
@@ -22234,6 +22394,9 @@ function MainApp() {
     setMaintenanceLaunchPending(true);
     try {
       const payload = (await authAPI.createShadowSession(targetUserId)) as any;
+      if (isMaintenanceLaunchConflictError(payload)) {
+        throw payload;
+      }
       const launchUrl =
         typeof payload?.launchUrl === "string" && payload.launchUrl.trim()
           ? payload.launchUrl.trim()
@@ -22244,10 +22407,12 @@ function MainApp() {
         throw new Error("Missing maintenance launch URL");
       }
       if (maintenanceWindow.closed) {
+        maintenanceWindowRef.current = null;
         throw new Error("Maintenance window closed before launch completed");
       }
       maintenanceWindow.location.replace(launchUrl);
     } catch (error) {
+      maintenanceWindowRef.current = null;
       try {
         if (!maintenanceWindow.closed) {
           maintenanceWindow.close();
@@ -22256,7 +22421,11 @@ function MainApp() {
         // ignore
       }
       console.warn("[Maintenance] Failed to open maintenance view", error);
-      toast.error("Unable to open maintenance view right now.");
+      toast.error(
+        isMaintenanceLaunchConflictError(error)
+          ? MAINTENANCE_ALREADY_ACTIVE_TOAST
+          : "Unable to open maintenance view right now.",
+      );
     } finally {
       setMaintenanceLaunchPending(false);
     }
@@ -22346,6 +22515,7 @@ function MainApp() {
         toast.info("Your session expired. Please sign in again.");
       }
 
+      closeTrackedMaintenanceWindow("admin_session_ended");
       handleLogout();
     };
     window.addEventListener(
@@ -22358,7 +22528,7 @@ function MainApp() {
         handleForcedLogout as EventListener,
       );
     };
-  }, [handleLogout]);
+  }, [closeTrackedMaintenanceWindow, handleLogout]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -22387,6 +22557,19 @@ function MainApp() {
       const payload = event.data;
       const type =
         payload && typeof payload === "object" ? (payload as any).type : null;
+      const sourceWindow =
+        event.source && typeof (event.source as WindowProxy).postMessage === "function"
+          ? (event.source as unknown as Window)
+          : null;
+      if (type === MAINTENANCE_OPENER_LAUNCH_FAILED_EVENT) {
+        if (sourceWindow && !sourceWindow.closed) {
+          maintenanceWindowRef.current = sourceWindow;
+        }
+        toast.error(MAINTENANCE_ALREADY_ACTIVE_TOAST);
+        clearMaintenanceCompanionTimer();
+        setMaintenanceCompanionActive(false);
+        return;
+      }
       if (
         type !== MAINTENANCE_OPENER_PING_EVENT &&
         type !== MAINTENANCE_OPENER_EXIT_EVENT
@@ -22404,9 +22587,20 @@ function MainApp() {
       setIsIdle(false);
 
       if (type === MAINTENANCE_OPENER_EXIT_EVENT) {
+        if (
+          sourceWindow &&
+          maintenanceWindowRef.current &&
+          sourceWindow === maintenanceWindowRef.current
+        ) {
+          maintenanceWindowRef.current = null;
+        }
         clearMaintenanceCompanionTimer();
         setMaintenanceCompanionActive(false);
         return;
+      }
+
+      if (sourceWindow && !sourceWindow.closed) {
+        maintenanceWindowRef.current = sourceWindow;
       }
 
       const throttleMs = 15_000;
@@ -22448,6 +22642,10 @@ function MainApp() {
 		      setIsIdle(false);
 		      return;
 		    }
+        if (shouldReduceMaintenanceBackgroundFetches) {
+          setIsIdle(false);
+          return;
+        }
 
     const idleThresholdMs = 10_000;
     const idleLogoutMs = 60 * 60 * 1000;
@@ -22556,11 +22754,16 @@ function MainApp() {
       document.removeEventListener("scroll", markActivity, true);
       window.clearInterval(interval);
     };
-		  }, [user?.id, user?.role, handleLogout, hasAuthToken, shouldPauseAdminBackgroundSync]);
+		  }, [user?.id, user?.role, handleLogout, hasAuthToken, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches]);
 
 			  useEffect(() => {
 			    if (typeof window === "undefined") return;
 			    if (!user?.id || postLoginHold || !hasAuthToken()) {
+			      lastPresenceHeartbeatPingAtRef.current = 0;
+			      lastPresenceInteractionPingAtRef.current = 0;
+			      return;
+			    }
+			    if (shouldReduceMaintenanceBackgroundFetches) {
 			      lastPresenceHeartbeatPingAtRef.current = 0;
 			      lastPresenceInteractionPingAtRef.current = 0;
 			      return;
@@ -22623,15 +22826,15 @@ function MainApp() {
 		      window.removeEventListener("online", handleOnline);
 		      window.removeEventListener("focus", handleOnline);
 		    };
-			  }, [user?.id, user?.role, postLoginHold, hasAuthToken, shouldPauseAdminBackgroundSync]);
+			  }, [user?.id, user?.role, postLoginHold, hasAuthToken, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches]);
 
 		  useEffect(() => {
 		    if (typeof window === "undefined") return;
 		    if (!user) return;
-		    if (shouldPauseAdminBackgroundSync) return;
+        if (shouldReduceMaintenanceBackgroundFetches) return;
 
 		    let cancelled = false;
-	    const intervalMs = 60_000;
+	    const intervalMs = shouldPauseAdminBackgroundSync ? 15_000 : 60_000;
 
 	    const checkSession = async () => {
 	      if (cancelled) return;
@@ -22648,7 +22851,7 @@ function MainApp() {
 	      try {
 	        const current = await authAPI.getCurrentUser({ background: true });
 	        if (!current && !cancelled) {
-	          handleLogout();
+          handleLogout();
 	          return;
 	        }
 	        if (current && !cancelled) {
@@ -22677,7 +22880,15 @@ function MainApp() {
 	            };
 	          });
 	        }
-      } catch {
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        if (isAuthFailureError(error)) {
+          closeTrackedMaintenanceWindow("admin_session_ended");
+          handleLogout();
+          return;
+        }
         // Ignore transient network/server failures; keep the user signed in.
       }
     };
@@ -22704,7 +22915,7 @@ function MainApp() {
 	      window.removeEventListener("focus", handleVisibilityOrFocus);
 	      window.removeEventListener("online", handleVisibilityOrFocus);
 	    };
-		  }, [user?.id, handleLogout, hasAuthToken, shouldPauseAdminBackgroundSync]);
+		  }, [user?.id, closeTrackedMaintenanceWindow, handleLogout, hasAuthToken, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches]);
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
@@ -32950,9 +33161,9 @@ function MainApp() {
               {postLoginHold && user ? (
                 <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
                   {shouldShowPhysicianMapCard ? (
-                    <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
-                      <div className="grid gap-5 md:grid-cols-[minmax(280px,360px)_auto] md:items-center md:justify-between md:gap-8">
-                        <div className="space-y-2">
+                    <div className="physician-network-card glass-card landing-glass squircle-xl mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
+                      <div className="physician-network-card__layout flex flex-col gap-5 md:flex-row md:items-center md:justify-between md:gap-8">
+                        <div className="physician-network-card__intro space-y-2">
                           <h2
                             className="text-4xl font-semibold leading-tight sm:text-5xl"
                             style={{ color: "rgb(95, 179, 249)" }}
@@ -34503,9 +34714,11 @@ function MainApp() {
 		              {isRep(user.role) || isAdmin(user.role)
 		                ? renderSalesRepDashboard()
 		                : renderDoctorDashboard()}
-                  <div ref={productSectionRef} className="product-section-scroll-stable">
-		                {renderProductSection()}
-                  </div>
+                  {!isMaintenanceMode && (
+                    <div ref={productSectionRef} className="product-section-scroll-stable">
+		                  {renderProductSection()}
+                    </div>
+                  )}
 	            </main>
 	          )}
 
