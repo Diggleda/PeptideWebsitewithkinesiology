@@ -267,18 +267,29 @@ const buildPhysicianNetworkEntries = () => userRepository
       profileImageUrl: profile?.profileImageUrl || null,
       greaterArea: profile?.greaterArea || null,
       studyFocus: profile?.studyFocus || null,
-      bio: profile?.bio || null,
-      officeCity: profile?.officeCity || null,
-      officeState: profile?.officeState || null,
-    };
+    bio: profile?.bio || null,
+    officeCity: profile?.officeCity || null,
+    officeState: profile?.officeState || null,
+    lastLoginAt: profile?.lastLoginAt || null,
+  };
   })
   .filter((doctor) => doctor.id)
   .sort((a, b) => {
-    const stateCompare = String(a.officeState || '').localeCompare(String(b.officeState || ''));
-    if (stateCompare !== 0) {
-      return stateCompare;
+    const aLastLoginMs = a.lastLoginAt ? Date.parse(a.lastLoginAt) : NaN;
+    const bLastLoginMs = b.lastLoginAt ? Date.parse(b.lastLoginAt) : NaN;
+    const aHasLastLogin = Number.isFinite(aLastLoginMs);
+    const bHasLastLogin = Number.isFinite(bLastLoginMs);
+    if (aHasLastLogin && bHasLastLogin && bLastLoginMs !== aLastLoginMs) {
+      return bLastLoginMs - aLastLoginMs;
     }
-    return String(a.name || '').localeCompare(String(b.name || ''));
+    if (aHasLastLogin !== bHasLastLogin) {
+      return aHasLastLogin ? -1 : 1;
+    }
+    const nameCompare = String(a.name || '').localeCompare(String(b.name || ''));
+    if (nameCompare !== 0) {
+      return nameCompare;
+    }
+    return String(a.id || '').localeCompare(String(b.id || ''));
   });
 
 const buildDoctorOwnershipSet = async (ownerIds = []) => {

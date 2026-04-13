@@ -21,6 +21,7 @@ type NetworkDoctorRecord = {
   bio?: string | null;
   officeCity?: string | null;
   officeState?: string | null;
+  lastLoginAt?: string | null;
 };
 
 type NormalizedDoctor = NetworkDoctorRecord & {
@@ -29,6 +30,7 @@ type NormalizedDoctor = NetworkDoctorRecord & {
   locationLabel: string | null;
   coordinates: [number, number] | null;
   locationPrecision: MapLocationPrecision;
+  lastLoginMs: number | null;
 };
 
 type ClusterEntry = {
@@ -177,6 +179,33 @@ const normalizeText = (value?: string | null) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const parseIsoTimestamp = (value?: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const compareDoctorsByRecentLogin = (a: NormalizedDoctor, b: NormalizedDoctor) => {
+  const aLastLoginMs = a.lastLoginMs;
+  const bLastLoginMs = b.lastLoginMs;
+  if (aLastLoginMs !== bLastLoginMs) {
+    if (aLastLoginMs === null) {
+      return 1;
+    }
+    if (bLastLoginMs === null) {
+      return -1;
+    }
+    return bLastLoginMs - aLastLoginMs;
+  }
+  const nameCompare = a.displayName.localeCompare(b.displayName);
+  if (nameCompare !== 0) {
+    return nameCompare;
+  }
+  return a.id.localeCompare(b.id);
+};
+
 const buildLocationLabel = (doctor: {
   officeCity?: string | null;
   greaterArea?: string | null;
@@ -231,24 +260,7 @@ const buildClusterEntries = (
     stateCode: string | null;
   };
 
-  const sortedDoctors = [...doctors].sort((a, b) => {
-    const precisionRank = (precision: MapLocationPrecision) => {
-      if (precision === "area") {
-        return 0;
-      }
-      if (precision === "city") {
-        return 1;
-      }
-      if (precision === "state") {
-        return 2;
-      }
-      return 3;
-    };
-    return (
-      precisionRank(a.locationPrecision) - precisionRank(b.locationPrecision)
-      || a.displayName.localeCompare(b.displayName)
-    );
-  });
+  const sortedDoctors = [...doctors].sort(compareDoctorsByRecentLogin);
 
   const clusters: MutableCluster[] = [];
 
@@ -307,7 +319,7 @@ const buildClusterEntries = (
   });
 
   return clusters.map((cluster) => {
-    const doctorsInCluster = [...cluster.doctors].sort((a, b) => a.displayName.localeCompare(b.displayName));
+    const doctorsInCluster = [...cluster.doctors].sort(compareDoctorsByRecentLogin);
     return {
       id: doctorsInCluster.map((doctor) => doctor.id).sort().join("__"),
       coordinates: cluster.coordinates,
@@ -403,12 +415,13 @@ export function PhysicianNetworkMap() {
   );
 
   const normalizedDoctors = useMemo<NormalizedDoctor[]>(
-    () =>
-      networkDoctors.map((doctor) => {
+    () => {
+      const nextDoctors = networkDoctors.map((doctor) => {
         const stateCode = normalizeStateCode(doctor.officeState);
         const displayName = normalizeText(doctor.name) || "Physician";
         const email = normalizeText(doctor.email);
         const bio = normalizeText(doctor.bio);
+        const lastLoginAt = normalizeText(doctor.lastLoginAt);
         const resolvedLocation = resolveApproximateUsPlaceCoordinates({
           greaterArea: doctor.greaterArea,
           officeCity: doctor.officeCity,
@@ -421,6 +434,8 @@ export function PhysicianNetworkMap() {
           bio,
           displayName,
           email,
+          lastLoginAt,
+          lastLoginMs: parseIsoTimestamp(lastLoginAt),
           stateCode,
           locationLabel: buildLocationLabel({
             officeCity: doctor.officeCity,
@@ -430,7 +445,10 @@ export function PhysicianNetworkMap() {
           coordinates: resolvedLocation.coordinates,
           locationPrecision: resolvedLocation.precision,
         };
-      }),
+      });
+      nextDoctors.sort(compareDoctorsByRecentLogin);
+      return nextDoctors;
+    },
     [networkDoctors, stateCenters],
   );
 

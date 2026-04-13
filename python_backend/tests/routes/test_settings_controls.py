@@ -202,6 +202,19 @@ class TestSettingsControls(unittest.TestCase):
                 "researchTermsAgreement": True,
                 "bio": "Visible bio",
                 "officeState": "IN",
+                "lastLoginAt": "2026-04-12T10:00:00Z",
+            },
+            {
+                "id": "doctor-visible-recent",
+                "role": "doctor",
+                "name": "Visible Recent Doctor",
+                "email": "visible-recent@example.com",
+                "profileOnboarding": True,
+                "networkPresenceAgreement": True,
+                "researchTermsAgreement": True,
+                "bio": "Visible recent bio",
+                "officeState": "CA",
+                "lastLoginAt": "2026-04-13T10:00:00Z",
             },
             {
                 "id": "doctor-hidden",
@@ -261,8 +274,12 @@ class TestSettingsControls(unittest.TestCase):
         ]):
             doctors = settings._build_physician_network_entries()
 
-        self.assertEqual([entry["id"] for entry in doctors], ["doctor-visible"])
-        self.assertEqual(doctors[0]["email"], "visible@example.com")
+        self.assertEqual(
+            [entry["id"] for entry in doctors],
+            ["doctor-visible-recent", "doctor-visible"],
+        )
+        self.assertEqual(doctors[0]["email"], "visible-recent@example.com")
+        self.assertEqual(doctors[0]["lastLoginAt"], "2026-04-13T10:00:00Z")
 
     def test_admin_beta_and_test_payment_routes_include_mysql_enabled(self):
         settings = self.settings

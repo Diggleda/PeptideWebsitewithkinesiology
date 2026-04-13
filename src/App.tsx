@@ -4808,6 +4808,7 @@ function MainApp() {
     useState(false);
   const doctorResellerPermitInputRef = useRef<HTMLInputElement | null>(null);
   const doctorProfileGateRefreshSeqRef = useRef(0);
+  const handleLogoutRef = useRef<() => void>(() => {});
   const showResearchTermsAgreementModal = Boolean(
     user && isDoctorRole(user.role) && !user.researchTermsAgreement,
   );
@@ -5046,7 +5047,7 @@ function MainApp() {
       if (type !== MAINTENANCE_ADMIN_SESSION_ENDED_EVENT) {
         return;
       }
-      handleLogout();
+      handleLogoutRef.current();
       window.setTimeout(() => {
         try {
           window.close();
@@ -5060,7 +5061,7 @@ function MainApp() {
     return () => {
       window.removeEventListener("message", handleMaintenanceAdminSessionEnded);
     };
-  }, [handleLogout, isMaintenanceMode]);
+  }, [isMaintenanceMode]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -22335,6 +22336,7 @@ function MainApp() {
 	    setAdminActionState({ updatingReferral: null, error: null });
 	    // toast.success('Logged out successfully');
   }, [closeTrackedMaintenanceWindow]);
+  handleLogoutRef.current = handleLogout;
 
   const handleExitMaintenanceMode = useCallback(() => {
     if (typeof window === "undefined") {

@@ -751,9 +751,16 @@ def _build_physician_network_entries() -> list[dict]:
                 "bio": profile.get("bio") or None,
                 "officeCity": profile.get("officeCity") or None,
                 "officeState": profile.get("officeState") or None,
+                "lastLoginAt": profile.get("lastLoginAt") or None,
             }
         )
-    doctors.sort(key=lambda row: (str(row.get("officeState") or ""), str(row.get("name") or "")))
+    def _sort_key(row: dict) -> tuple[float, str, str]:
+        raw_last_login = row.get("lastLoginAt")
+        parsed = _parse_iso_datetime(raw_last_login if isinstance(raw_last_login, str) else None)
+        timestamp = parsed.timestamp() if parsed else float("-inf")
+        return (-timestamp, str(row.get("name") or "").strip().lower(), str(row.get("id") or "").strip())
+
+    doctors.sort(key=_sort_key)
     return doctors
 
 
