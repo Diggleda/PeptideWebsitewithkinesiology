@@ -1691,6 +1691,9 @@ def update_test_payments_override():
 def record_presence():
     def action():
         current_user = getattr(g, "current_user", None) or {}
+        if current_user.get("shadow") is True or getattr(g, "shadow_context", None):
+            # Maintenance/shadow sessions must never mutate the target user's real live presence.
+            return {"ok": True, "skipped": True, "reason": "shadow_session"}
         user_id = current_user.get("id")
         if not user_id:
             err = RuntimeError("Authenticated user required")

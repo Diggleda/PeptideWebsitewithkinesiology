@@ -4785,7 +4785,15 @@ export function Header({
         onUserUpdated?.(nextUserState);
         toast.success(`${label} updated`, { id: toastId });
       } catch (error: any) {
-        if (error?.status === 413) {
+        const isMaintenanceReadOnlyError =
+          error?.code === 'SHADOW_READ_ONLY'
+          || (
+            typeof error?.message === 'string'
+            && error.message.trim().toLowerCase() === 'maintenance mode is read-only'
+          );
+        if (isMaintenanceReadOnlyError) {
+          toast.error('Unable to update in maintenance mode', { id: toastId });
+        } else if (error?.status === 413) {
           toast.error('Upload too large. Please choose a smaller image.', { id: toastId });
         } else if (error?.message === 'EMAIL_EXISTS') {
           toast.error('That email is already in use.', { id: toastId });

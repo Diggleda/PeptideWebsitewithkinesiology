@@ -69,6 +69,7 @@ const authenticate = (req, res, next) => {
       return res.status(401).json({ error: 'Session expired', code: 'SESSION_IDLE_TIMEOUT' });
     }
     req.user = { ...user, id: user.id || decoded.id, email: user.email || decoded.email || null };
+    req.authTokenPayload = decoded;
     return next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {

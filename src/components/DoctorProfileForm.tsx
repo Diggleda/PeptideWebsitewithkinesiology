@@ -98,6 +98,17 @@ const resolveNetworkPresenceAgreement = (user: DoctorProfileUser | null | undefi
   user?.networkPresenceAgreement !== false
 );
 
+const isMaintenanceReadOnlyError = (error: unknown) => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const code = (error as any)?.code;
+  const message = typeof (error as any)?.message === 'string'
+    ? (error as any).message.trim().toLowerCase()
+    : '';
+  return code === 'SHADOW_READ_ONLY' || message === 'maintenance mode is read-only';
+};
+
 export function DoctorProfileForm({
   user,
   title,
@@ -338,6 +349,10 @@ export function DoctorProfileForm({
         networkPresenceAgreement,
       });
     } catch (submitError: any) {
+      if (isMaintenanceReadOnlyError(submitError)) {
+        setError(null);
+        return;
+      }
       setError(
         typeof submitError?.message === 'string' && submitError.message.trim()
           ? submitError.message.trim()
@@ -363,6 +378,10 @@ export function DoctorProfileForm({
       await onNetworkPresenceAgreementChange(checked);
     } catch (submitError: any) {
       setNetworkPresenceAgreement(previous);
+      if (isMaintenanceReadOnlyError(submitError)) {
+        setError(null);
+        return;
+      }
       setError(
         typeof submitError?.message === 'string' && submitError.message.trim()
           ? submitError.message.trim()
@@ -560,7 +579,7 @@ export function DoctorProfileForm({
         </div>
       )}
 
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+      <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         {onSkip && (
           <Button
             type="button"

@@ -242,24 +242,22 @@ body {
   }
 
   .physician-network-card__layout {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
     align-items: stretch;
-    justify-content: space-between;
     gap: 2rem;
   }
 
   .physician-network-card__intro {
-    flex: 3 1 0;
     min-width: 0;
     max-width: none;
   }
 
   .physician-network-map-shell {
-    flex: 13 1 0 !important;
-    width: auto !important;
+    width: 100% !important;
     max-width: none !important;
     min-width: 0;
-    margin-left: auto;
+    margin-left: 0;
   }
 }
 
@@ -270,13 +268,11 @@ body {
   }
 
   .physician-network-card__intro {
-    flex: 3 1 0;
     max-width: none;
   }
 
   .physician-network-map-shell {
-    flex: 13 1 0 !important;
-    width: auto !important;
+    width: 100% !important;
     max-width: none !important;
   }
 }

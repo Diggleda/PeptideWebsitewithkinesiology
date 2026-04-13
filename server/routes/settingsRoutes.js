@@ -1547,6 +1547,9 @@ router.post('/presence', authenticate, async (req, res) => {
   if (!userId) {
     return res.status(401).json({ error: 'User not found' });
   }
+  if (req.authTokenPayload?.shadow === true) {
+    return res.json({ ok: true, skipped: true, reason: 'shadow_session' });
+  }
   const nowIso = new Date().toISOString();
   const kind = (req.body?.kind || 'heartbeat').toString();
   const isIdle = typeof req.body?.isIdle === 'boolean' ? req.body.isIdle : null;

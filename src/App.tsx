@@ -20924,16 +20924,11 @@ function MainApp() {
     if (typeof window === "undefined") {
       return;
     }
-    if (shouldReduceMaintenanceBackgroundFetches) {
-      setCatalogLoading(false);
-      setCatalogError(null);
-      setCatalogRetryUntil(null);
-      setCatalogTransientIssue(false);
-      return;
-    }
     if (!user && !isDelegateMode) {
       return;
     }
+    // Maintenance mode stays read-only at the API layer, but admins still need
+    // the catalog to load so they can inspect the Woo storefront as the user.
     // Delegate sessions should only load the catalog after the delegate link is validated.
     // If the link is revoked/expired, we render the expired-session view and skip all catalog loading.
     if (isDelegateMode) {
@@ -33165,18 +33160,18 @@ function MainApp() {
                   {shouldShowPhysicianMapCard ? (
                     <div className="physician-network-card glass-card landing-glass squircle-xl mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
                       <div className="physician-network-card__layout flex flex-col gap-5 md:flex-row md:items-center md:justify-between md:gap-8">
-                        <div className="physician-network-card__intro space-y-2">
-                          <h2
-                            className="text-4xl font-semibold leading-tight sm:text-5xl"
-                            style={{ color: "rgb(95, 179, 249)" }}
-                          >
-                            Our growing network across the United States
-                          </h2>
+                        <div className="physician-network-card__intro space-y-4">
                           <p
-                            className="text-2xl leading-relaxed sm:text-3xl"
+                            className="text-2xl font-medium leading-relaxed sm:text-3xl"
                             style={{ color: "rgb(95, 179, 249)" }}
                           >
-                            Hover over your peers to see their bios
+                            Thank you for being apart of our network of physicians across the United States that are seeing in integrity for healthcare and clinical practice. We are excited to have you join us in watching our network grow in talent.
+                          </p>
+                          <p
+                            className="text-xl leading-relaxed sm:text-2xl"
+                            style={{ color: "rgb(95, 179, 249)" }}
+                          >
+                            Connect with your peers, build relationships, and collaborate on research.
                           </p>
                         </div>
                         <PhysicianNetworkMap />
@@ -34716,11 +34711,9 @@ function MainApp() {
 		              {isRep(user.role) || isAdmin(user.role)
 		                ? renderSalesRepDashboard()
 		                : renderDoctorDashboard()}
-                  {!isMaintenanceMode && (
-                    <div ref={productSectionRef} className="product-section-scroll-stable">
-		                  {renderProductSection()}
-                    </div>
-                  )}
+                  <div ref={productSectionRef} className="product-section-scroll-stable">
+		                {renderProductSection()}
+                  </div>
 	            </main>
 	          )}
 
