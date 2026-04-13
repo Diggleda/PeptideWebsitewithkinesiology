@@ -14,6 +14,7 @@ import { settingsAPI } from "../services/api";
 type NetworkDoctorRecord = {
   id: string;
   name?: string | null;
+  email?: string | null;
   profileImageUrl?: string | null;
   greaterArea?: string | null;
   studyFocus?: string | null;
@@ -406,6 +407,7 @@ export function PhysicianNetworkMap() {
       networkDoctors.map((doctor) => {
         const stateCode = normalizeStateCode(doctor.officeState);
         const displayName = normalizeText(doctor.name) || "Physician";
+        const email = normalizeText(doctor.email);
         const bio = normalizeText(doctor.bio);
         const resolvedLocation = resolveApproximateUsPlaceCoordinates({
           greaterArea: doctor.greaterArea,
@@ -418,6 +420,7 @@ export function PhysicianNetworkMap() {
           ...doctor,
           bio,
           displayName,
+          email,
           stateCode,
           locationLabel: buildLocationLabel({
             officeCity: doctor.officeCity,
@@ -474,7 +477,7 @@ export function PhysicianNetworkMap() {
     }
   }, [clustersById, hoveredClusterId, pinnedClusterId, selectedDoctorId, mappedDoctors]);
 
-  const activeClusterId = pinnedClusterId || hoveredClusterId || clusterEntries[0]?.id || null;
+  const activeClusterId = hoveredClusterId || pinnedClusterId || clusterEntries[0]?.id || null;
   const activeCluster = activeClusterId ? clustersById.get(activeClusterId) || null : null;
   const activeDoctor = useMemo(() => {
     if (!activeCluster) {
@@ -509,162 +512,164 @@ export function PhysicianNetworkMap() {
 
   return (
     <div className="w-full max-w-[640px] md:w-[28rem] md:max-w-[28rem] md:justify-self-end lg:w-[31rem] lg:max-w-[31rem] xl:w-[33rem] xl:max-w-[33rem]">
-      <div className="rounded-[30px] border border-[rgba(95,179,249,0.18)] bg-white/72 p-3 shadow-[0_30px_80px_-56px_rgba(95,179,249,0.72)] backdrop-blur-xl sm:p-4">
+      <div className="rounded-[34px] border border-[rgba(95,179,249,0.18)] bg-white/72 p-3 shadow-[0_30px_80px_-56px_rgba(95,179,249,0.72)] backdrop-blur-xl sm:p-4">
         <div className="mx-auto w-full max-w-[560px] md:max-w-full">
           {loading ? (
-            <div className="aspect-[1.64] w-full animate-pulse rounded-[26px] bg-[rgba(95,179,249,0.08)]" />
+            <div className="aspect-[1.64] w-full animate-pulse rounded-[30px] bg-[rgba(95,179,249,0.08)]" />
           ) : (
-            <ComposableMap
-              width={MAP_WIDTH}
-              height={MAP_HEIGHT}
-              projection="geoAlbersUsa"
-              projectionConfig={{ scale: 1180 }}
-              className="h-auto w-full"
-              aria-label="United States physician network map"
-            >
-              <Geographies geography={usStatesTopologyUrl}>
-                {({ geographies }) => (
-                  <>
-                    {geographies.map((geography: any) => {
-                      const stateCode = STATE_CODE_BY_FIPS[String(geography.id).padStart(2, "0")];
-                      const hasDoctors = stateCode ? doctorsByState.has(stateCode) : false;
-                      const isActive = stateCode ? activeStateCodes.has(stateCode) : false;
+            <div className="overflow-hidden rounded-[30px] border border-[rgba(95,179,249,0.14)] bg-[rgba(255,255,255,0.76)]">
+              <ComposableMap
+                width={MAP_WIDTH}
+                height={MAP_HEIGHT}
+                projection="geoAlbersUsa"
+                projectionConfig={{ scale: 1180 }}
+                className="h-auto w-full"
+                aria-label="United States physician network map"
+              >
+                <Geographies geography={usStatesTopologyUrl}>
+                  {({ geographies }) => (
+                    <>
+                      {geographies.map((geography: any) => {
+                        const stateCode = STATE_CODE_BY_FIPS[String(geography.id).padStart(2, "0")];
+                        const hasDoctors = stateCode ? doctorsByState.has(stateCode) : false;
+                        const isActive = stateCode ? activeStateCodes.has(stateCode) : false;
 
-                      return (
-                        <Geography
-                          key={geography.rsmKey}
-                          geography={geography}
-                          style={{
-                            default: {
-                              fill: hasDoctors
-                                ? isActive
+                        return (
+                          <Geography
+                            key={geography.rsmKey}
+                            geography={geography}
+                            style={{
+                              default: {
+                                fill: hasDoctors
+                                  ? isActive
+                                    ? "rgba(95, 179, 249, 0.28)"
+                                    : "rgba(95, 179, 249, 0.14)"
+                                  : "rgba(255,255,255,0.7)",
+                                outline: "none",
+                                stroke: hasDoctors ? "rgba(95,179,249,0.9)" : "rgba(95,179,249,0.44)",
+                                strokeWidth: isActive ? 1.8 : 1.1,
+                              },
+                              hover: {
+                                fill: hasDoctors
                                   ? "rgba(95, 179, 249, 0.28)"
-                                  : "rgba(95, 179, 249, 0.14)"
-                                : "rgba(255,255,255,0.7)",
-                              outline: "none",
-                              stroke: hasDoctors ? "rgba(95,179,249,0.9)" : "rgba(95,179,249,0.44)",
-                              strokeWidth: isActive ? 1.8 : 1.1,
-                            },
-                            hover: {
-                              fill: hasDoctors
-                                ? "rgba(95, 179, 249, 0.28)"
-                                : "rgba(95, 179, 249, 0.08)",
-                              outline: "none",
-                              stroke: "rgba(95,179,249,0.92)",
-                              strokeWidth: 1.5,
-                            },
-                            pressed: {
-                              fill: hasDoctors
-                                ? "rgba(95, 179, 249, 0.32)"
-                                : "rgba(95, 179, 249, 0.10)",
-                              outline: "none",
-                              stroke: "rgba(95,179,249,0.92)",
-                              strokeWidth: 1.5,
-                            },
-                          }}
-                        />
-                      );
-                    })}
-
-                    {sortedClusterEntries.map((cluster) => {
-                      const isActive = cluster.id === activeClusterId;
-                      const clusterCount = cluster.doctors.length;
-                      const countLabel = clusterCount > 99 ? "99+" : String(clusterCount);
-                      const representative = cluster.doctors[0];
-                      const markerLabel = clusterCount > 1
-                        ? `${clusterCount} physicians${cluster.locationLabel ? ` near ${cluster.locationLabel}` : ""}`
-                        : `${representative.displayName}${representative.locationLabel ? `, ${representative.locationLabel}` : ""}`;
-
-                      return (
-                        <Marker key={cluster.id} coordinates={cluster.coordinates}>
-                          <g
-                            tabIndex={0}
-                            focusable="true"
-                            role="button"
-                            aria-label={markerLabel}
-                            style={{ cursor: "pointer", outline: "none" }}
-                            onMouseEnter={() => setHoveredClusterId(cluster.id)}
-                            onMouseLeave={() =>
-                              setHoveredClusterId((current) =>
-                                current === cluster.id ? null : current,
-                              )
-                            }
-                            onFocus={() => setHoveredClusterId(cluster.id)}
-                            onBlur={() =>
-                              setHoveredClusterId((current) =>
-                                current === cluster.id ? null : current,
-                              )
-                            }
-                            onClick={() => {
-                              setSelectedDoctorId(representative.id);
-                              setPinnedClusterId((current) => (current === cluster.id ? null : cluster.id));
+                                  : "rgba(95, 179, 249, 0.08)",
+                                outline: "none",
+                                stroke: "rgba(95,179,249,0.92)",
+                                strokeWidth: 1.5,
+                              },
+                              pressed: {
+                                fill: hasDoctors
+                                  ? "rgba(95, 179, 249, 0.32)"
+                                  : "rgba(95, 179, 249, 0.10)",
+                                outline: "none",
+                                stroke: "rgba(95,179,249,0.92)",
+                                strokeWidth: 1.5,
+                              },
                             }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
+                          />
+                        );
+                      })}
+
+                      {sortedClusterEntries.map((cluster) => {
+                        const isActive = cluster.id === activeClusterId;
+                        const clusterCount = cluster.doctors.length;
+                        const countLabel = clusterCount > 99 ? "99+" : String(clusterCount);
+                        const representative = cluster.doctors[0];
+                        const markerLabel = clusterCount > 1
+                          ? `${clusterCount} physicians${cluster.locationLabel ? ` near ${cluster.locationLabel}` : ""}`
+                          : `${representative.displayName}${representative.locationLabel ? `, ${representative.locationLabel}` : ""}`;
+
+                        return (
+                          <Marker key={cluster.id} coordinates={cluster.coordinates}>
+                            <g
+                              tabIndex={0}
+                              focusable="true"
+                              role="button"
+                              aria-label={markerLabel}
+                              style={{ cursor: "pointer", outline: "none" }}
+                              onMouseEnter={() => setHoveredClusterId(cluster.id)}
+                              onMouseLeave={() =>
+                                setHoveredClusterId((current) =>
+                                  current === cluster.id ? null : current,
+                                )
+                              }
+                              onFocus={() => setHoveredClusterId(cluster.id)}
+                              onBlur={() =>
+                                setHoveredClusterId((current) =>
+                                  current === cluster.id ? null : current,
+                                )
+                              }
+                              onClick={() => {
                                 setSelectedDoctorId(representative.id);
                                 setPinnedClusterId((current) => (current === cluster.id ? null : cluster.id));
-                              }
-                              if (event.key === "Escape") {
-                                setPinnedClusterId(null);
-                              }
-                            }}
-                          >
-                            <title>{markerLabel}</title>
-                            {clusterCount > 1 ? (
-                              <>
-                                <circle
-                                  r={isActive ? 17.5 : 15}
-                                  fill="rgba(95,179,249,0.18)"
-                                  stroke="white"
-                                  strokeWidth={isActive ? 3 : 2}
-                                />
-                                <circle
-                                  r={isActive ? 13 : 11}
-                                  fill={BRAND_BLUE}
-                                  fillOpacity={isActive ? 1 : 0.96}
-                                  stroke="rgba(26,85,173,0.18)"
-                                  strokeWidth={1}
-                                />
-                                <text
-                                  y={4.25}
-                                  textAnchor="middle"
-                                  className="select-none fill-white text-[10px] font-bold"
-                                >
-                                  {countLabel}
-                                </text>
-                              </>
-                            ) : (
-                              <>
-                                {cluster.kind === "state" ? (
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setSelectedDoctorId(representative.id);
+                                  setPinnedClusterId((current) => (current === cluster.id ? null : cluster.id));
+                                }
+                                if (event.key === "Escape") {
+                                  setPinnedClusterId(null);
+                                }
+                              }}
+                            >
+                              <title>{markerLabel}</title>
+                              {clusterCount > 1 ? (
+                                <>
                                   <circle
-                                    r={isActive ? 14 : 11.5}
-                                    fill="rgba(95,179,249,0.12)"
-                                    stroke="rgba(95,179,249,0.18)"
+                                    r={isActive ? 17.5 : 15}
+                                    fill="rgba(95,179,249,0.18)"
+                                    stroke="white"
+                                    strokeWidth={isActive ? 3 : 2}
+                                  />
+                                  <circle
+                                    r={isActive ? 13 : 11}
+                                    fill={BRAND_BLUE}
+                                    fillOpacity={isActive ? 1 : 0.96}
+                                    stroke="rgba(26,85,173,0.18)"
                                     strokeWidth={1}
                                   />
-                                ) : null}
-                                <circle
-                                  r={isActive ? 8 : 6.5}
-                                  fill={BRAND_BLUE}
-                                  fillOpacity={isActive ? 1 : 0.94}
-                                  stroke="white"
-                                  strokeWidth={isActive ? 3 : 2.25}
-                                />
-                              </>
-                            )}
-                          </g>
-                        </Marker>
-                      );
-                    })}
-                  </>
-                )}
-              </Geographies>
-            </ComposableMap>
+                                  <text
+                                    y={4.25}
+                                    textAnchor="middle"
+                                    className="select-none fill-white text-[10px] font-bold"
+                                  >
+                                    {countLabel}
+                                  </text>
+                                </>
+                              ) : (
+                                <>
+                                  {cluster.kind === "state" ? (
+                                    <circle
+                                      r={isActive ? 14 : 11.5}
+                                      fill="rgba(95,179,249,0.12)"
+                                      stroke="rgba(95,179,249,0.18)"
+                                      strokeWidth={1}
+                                    />
+                                  ) : null}
+                                  <circle
+                                    r={isActive ? 8 : 6.5}
+                                    fill={BRAND_BLUE}
+                                    fillOpacity={isActive ? 1 : 0.94}
+                                    stroke="white"
+                                    strokeWidth={isActive ? 3 : 2.25}
+                                  />
+                                </>
+                              )}
+                            </g>
+                          </Marker>
+                        );
+                      })}
+                    </>
+                  )}
+                </Geographies>
+              </ComposableMap>
+            </div>
           )}
         </div>
 
-        <div className="mt-4 rounded-[24px] border border-[rgba(95,179,249,0.18)] bg-white/84 p-4 backdrop-blur-md">
+        <div className="mt-4 rounded-[30px] border border-[rgba(95,179,249,0.18)] bg-white/84 p-4 backdrop-blur-md">
           {error ? (
             <p className="text-sm font-medium text-[rgb(26,85,173)]">{error}</p>
           ) : mappedDoctors.length === 0 ? (
@@ -722,12 +727,20 @@ export function PhysicianNetworkMap() {
                 </div>
               ) : null}
 
-              <div className="space-y-3 rounded-[22px] border border-[rgba(95,179,249,0.14)] bg-[rgba(255,255,255,0.72)] p-4">
+              <div className="space-y-3 rounded-[26px] border border-[rgba(95,179,249,0.14)] bg-[rgba(255,255,255,0.72)] p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h4 className="text-lg font-semibold leading-tight text-[rgb(26,85,173)]">
                       {activeDoctor.displayName}
                     </h4>
+                    {activeDoctor.email ? (
+                      <a
+                        href={`mailto:${activeDoctor.email}`}
+                        className="mt-1 block w-fit break-all text-sm font-medium text-[rgb(95,179,249)] transition-colors hover:text-[rgb(26,85,173)]"
+                      >
+                        {activeDoctor.email}
+                      </a>
+                    ) : null}
                     {activeDoctor.locationLabel ? (
                       <p className="mt-1 text-sm font-medium text-[rgba(26,85,173,0.72)]">
                         {activeDoctor.locationLabel}
@@ -741,9 +754,11 @@ export function PhysicianNetworkMap() {
                   ) : null}
                 </div>
 
-                <p className="max-h-28 overflow-y-auto pr-1 text-sm leading-6 text-[rgba(26,85,173,0.88)]">
-                  {activeDoctor.bio || "This physician has not added a public bio yet."}
-                </p>
+                {activeDoctor.bio ? (
+                  <p className="max-h-28 overflow-y-auto pr-1 text-sm leading-6 text-[rgba(26,85,173,0.88)]">
+                    {activeDoctor.bio}
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : (

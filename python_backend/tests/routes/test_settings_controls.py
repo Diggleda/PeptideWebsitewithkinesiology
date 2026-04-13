@@ -236,10 +236,33 @@ class TestSettingsControls(unittest.TestCase):
                 "bio": "Incomplete bio",
                 "officeState": "FL",
             },
+            {
+                "id": "doctor-test-role",
+                "role": "test_doctor",
+                "name": "Test Role Doctor",
+                "email": "testrole@example.com",
+                "profileOnboarding": True,
+                "networkPresenceAgreement": True,
+                "researchTermsAgreement": True,
+                "bio": "Test role bio",
+                "officeState": "TX",
+            },
+            {
+                "id": "doctor-test-email",
+                "role": "doctor",
+                "name": "Test Email Doctor",
+                "email": "test@doctor.com",
+                "profileOnboarding": True,
+                "networkPresenceAgreement": True,
+                "researchTermsAgreement": True,
+                "bio": "Test email bio",
+                "officeState": "WA",
+            },
         ]):
             doctors = settings._build_physician_network_entries()
 
         self.assertEqual([entry["id"] for entry in doctors], ["doctor-visible"])
+        self.assertEqual(doctors[0]["email"], "visible@example.com")
 
     def test_admin_beta_and_test_payment_routes_include_mysql_enabled(self):
         settings = self.settings

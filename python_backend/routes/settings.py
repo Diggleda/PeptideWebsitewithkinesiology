@@ -663,6 +663,13 @@ def _is_test_doctor_user(user: dict | None) -> bool:
     return _normalize_role((user or {}).get("role")) == "test_doctor"
 
 
+def _exclude_from_physician_network(user: dict | None) -> bool:
+    if _is_test_doctor_user(user):
+        return True
+    email = (_normalize_optional_text((user or {}).get("email")) or "").lower()
+    return email == "test@doctor.com"
+
+
 def _get_delegate_links_doctors() -> list[dict]:
     doctors = []
     for user in user_repository.get_all() or []:
@@ -721,6 +728,8 @@ def _build_physician_network_entries() -> list[dict]:
             continue
         if not _is_doctor_user(user):
             continue
+        if _exclude_from_physician_network(user):
+            continue
         if not _normalize_bool(user.get("profileOnboarding", user.get("profile_onboarding"))):
             continue
         if not _normalize_bool(user.get("networkPresenceAgreement", user.get("network_presence_agreement"))):
@@ -735,6 +744,7 @@ def _build_physician_network_entries() -> list[dict]:
             {
                 "id": doctor_id,
                 "name": profile.get("name") or profile.get("email") or "Physician",
+                "email": profile.get("email") or None,
                 "profileImageUrl": profile.get("profileImageUrl") or None,
                 "greaterArea": profile.get("greaterArea") or None,
                 "studyFocus": profile.get("studyFocus") or None,
