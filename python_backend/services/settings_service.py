@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import json
+import threading
+import time
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
 
@@ -10,6 +12,10 @@ from ..services import get_config
 from ..storage import settings_store
 
 logger = logging.getLogger(__name__)
+
+_SETTINGS_CACHE_TTL_SECONDS = 5.0
+_SETTINGS_CACHE_LOCK = threading.RLock()
+_SETTINGS_CACHE: Dict[str, Any] = {"value": None, "expiresAt": 0.0}
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "shopEnabled": True,
@@ -250,11 +256,9 @@ def _load_from_sql() -> Optional[Dict[str, Any]]:
         if not isinstance(rows, list):
             return None
         merged = dict(DEFAULT_SETTINGS)
-        found_keys = set()
         for row in rows:
             key = (row or {}).get("key")
             if key in DEFAULT_SETTINGS and "value_json" in row:
-                found_keys.add(key)
                 raw = row.get("value_json")
                 if isinstance(raw, (bytes, bytearray)):
                     try:
@@ -268,23 +272,6 @@ def _load_from_sql() -> Optional[Dict[str, Any]]:
                         merged[key] = raw
                 else:
                     merged[key] = raw
-        missing_defaults = [key for key in DEFAULT_SETTINGS.keys() if key not in found_keys]
-        if missing_defaults:
-            normalized_defaults = normalize_settings(DEFAULT_SETTINGS)
-            for key in missing_defaults:
-                try:
-                    mysql_client.execute(
-                        """
-                        INSERT INTO settings (`key`, value_json, updated_at)
-                        VALUES (%(key)s, %(value)s, NOW())
-                        ON DUPLICATE KEY UPDATE
-                          updated_at = IF(value_json <=> VALUES(value_json), updated_at, NOW()),
-                          value_json = VALUES(value_json)
-                        """,
-                        {"key": key, "value": json.dumps(normalized_defaults.get(key))},
-                    )
-                except Exception:
-                    logger.debug("settings SQL default sync failed", exc_info=True, extra={"key": key})
         return normalize_settings(merged)
     except Exception:
         logger.warning("settings SQL read failed", exc_info=True)
@@ -325,7 +312,7 @@ def _persist_to_sql(settings: Dict[str, Any]) -> None:
         raise
 
 
-def get_settings() -> Dict[str, Any]:
+def _read_settings_uncached() -> Dict[str, Any]:
     # Prefer MySQL when enabled (shared source of truth), otherwise use local JSON store.
     if bool(get_config().mysql.get("enabled")):
         sql = _load_from_sql()
@@ -343,6 +330,37 @@ def get_settings() -> Dict[str, Any]:
     return dict(DEFAULT_SETTINGS)
 
 
+def _cache_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+    cached = normalize_settings(settings)
+    ttl_s = max(0.0, float(_SETTINGS_CACHE_TTL_SECONDS))
+    with _SETTINGS_CACHE_LOCK:
+        _SETTINGS_CACHE["value"] = dict(cached)
+        _SETTINGS_CACHE["expiresAt"] = time.monotonic() + ttl_s if ttl_s > 0 else 0.0
+    return dict(cached)
+
+
+def _invalidate_settings_cache() -> None:
+    with _SETTINGS_CACHE_LOCK:
+        _SETTINGS_CACHE["value"] = None
+        _SETTINGS_CACHE["expiresAt"] = 0.0
+
+
+def get_settings() -> Dict[str, Any]:
+    cached = _SETTINGS_CACHE.get("value")
+    expires_at = float(_SETTINGS_CACHE.get("expiresAt") or 0.0)
+    now = time.monotonic()
+    if isinstance(cached, dict) and expires_at > now:
+        return dict(cached)
+
+    with _SETTINGS_CACHE_LOCK:
+        cached = _SETTINGS_CACHE.get("value")
+        expires_at = float(_SETTINGS_CACHE.get("expiresAt") or 0.0)
+        now = time.monotonic()
+        if isinstance(cached, dict) and expires_at > now:
+            return dict(cached)
+        return _cache_settings(_read_settings_uncached())
+
+
 def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
     current = get_settings()
     merged = normalize_settings({**current, **(patch or {})})
@@ -352,8 +370,8 @@ def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
         confirmed = _load_from_sql()
         if confirmed is not None:
             _persist_to_store(confirmed)
-            return confirmed
-    return merged
+            return _cache_settings(confirmed)
+    return _cache_settings(merged)
 
 
 def get_effective_stripe_mode() -> str:
