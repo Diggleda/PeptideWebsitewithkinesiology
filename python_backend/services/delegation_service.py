@@ -116,8 +116,9 @@ def _patient_link_max_markup_percent() -> float:
 
 
 def _normalize_capped_markup_percent(value: object) -> float:
-    capped = min(_normalize_markup_percent(value), _patient_link_max_markup_percent())
-    return round(capped + 1e-9, 2)
+    # Delegate link pricing should reflect the physician's configured markup
+    # exactly; do not silently clamp it to the legacy default 20% cap.
+    return _normalize_markup_percent(value)
 
 
 def _normalize_usage_limit(value: Any) -> Optional[int]:

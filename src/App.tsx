@@ -35512,10 +35512,8 @@ function MainApp() {
 		                        {(() => {
 		                          const status = String(delegateContext?.proposalStatus || 'pending').toLowerCase();
 		                          const meta =
-		                            status === 'accepted'
-		                              ? { Icon: CheckCircle2, label: 'Accepted', className: 'text-emerald-700', style: undefined }
-		                              : status === 'modified'
-		                                ? { Icon: NotebookPen, label: 'Modified', className: 'text-blue-700', style: undefined }
+		                            status === 'accepted' || status === 'approved' || status === 'modified'
+		                              ? { Icon: CheckCircle2, label: 'Approved', className: 'text-emerald-700', style: undefined }
 		                                : status === 'rejected'
 		                                  ? { Icon: XCircle, label: 'Rejected', className: 'text-red-700', style: undefined }
 		                                  : { Icon: Clock, label: 'Pending review', className: '', style: { color: delegateSecondaryColor } };

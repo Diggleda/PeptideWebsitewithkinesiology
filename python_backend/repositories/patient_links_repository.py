@@ -739,7 +739,11 @@ def delete_link(doctor_id: str, token: str) -> bool:
         """,
         {"doctor_id": doctor_id, **_lookup_params(raw_token)},
     )
-    return bool(getattr(result, "rowcount", 0) or (result or {}).get("affectedRows") or 0)
+    if isinstance(result, (int, float)):
+        return bool(int(result))
+    if isinstance(result, dict):
+        return bool(result.get("affectedRows") or 0)
+    return bool(getattr(result, "rowcount", 0))
 
 
 def get_doctor_markup_percent(doctor_id: str) -> float:

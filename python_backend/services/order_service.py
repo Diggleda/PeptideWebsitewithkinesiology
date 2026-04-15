@@ -4404,6 +4404,16 @@ def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
             or local_order.get("doctor_sales_rep_id")
             or None
         ),
+        "asDelegate": (
+            local_order.get("asDelegate")
+            if local_order.get("asDelegate") is not None
+            else local_order.get("as_delegate")
+        ),
+        "as_delegate": (
+            local_order.get("as_delegate")
+            if local_order.get("as_delegate") is not None
+            else local_order.get("asDelegate")
+        ),
     }
     _apply_authoritative_ups_tracking_status(mapped)
     return mapped
@@ -4656,6 +4666,14 @@ def get_sales_rep_order_detail(
 
             if local_order.get("notes") is not None:
                 mapped["notes"] = local_order.get("notes")
+            delegate_label = (
+                local_order.get("asDelegate")
+                if local_order.get("asDelegate") is not None
+                else local_order.get("as_delegate")
+            )
+            if delegate_label is not None:
+                mapped["asDelegate"] = delegate_label
+                mapped["as_delegate"] = delegate_label
             local_tracking_number = _normalize_optional_text(local_order.get("trackingNumber"))
             if local_tracking_number is not None:
                 mapped["trackingNumber"] = local_tracking_number

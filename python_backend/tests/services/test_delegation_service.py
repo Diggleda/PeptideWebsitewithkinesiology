@@ -146,6 +146,107 @@ class DelegationServiceTests(unittest.TestCase):
             service.patient_links_repository.find_by_token = original_find
             service._audit_event = original_audit
 
+    def test_get_doctor_config_preserves_markup_above_legacy_twenty_percent(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find_user = service.user_repository.find_by_id
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "markupPercent": 37.5,
+            }
+
+            config = service.get_doctor_config("doc-1")
+
+            self.assertEqual(config.get("markupPercent"), 37.5)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.user_repository.find_by_id = original_find_user
+
+    def test_create_link_preserves_explicit_markup_above_legacy_twenty_percent(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_create = service.patient_links_repository.create_link
+        original_audit = service._audit_event
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            captured: dict[str, object] = {}
+
+            def fake_create_link(doctor_id, **kwargs):
+                captured["doctor_id"] = doctor_id
+                captured["markup_percent"] = kwargs.get("markup_percent")
+                return {
+                    "token": "tok-1",
+                    "markupPercent": kwargs.get("markup_percent"),
+                    "allowedProducts": kwargs.get("allowed_products") or [],
+                    "expiresAt": None,
+                    "usageLimit": kwargs.get("usage_limit"),
+                }
+
+            service.patient_links_repository.create_link = fake_create_link
+            service._audit_event = lambda *_args, **_kwargs: None
+
+            result = service.create_link(
+                "doc-1",
+                markup_percent=37.5,
+                physician_certified=True,
+            )
+
+            self.assertEqual(captured.get("doctor_id"), "doc-1")
+            self.assertEqual(captured.get("markup_percent"), 37.5)
+            self.assertEqual(result.get("markupPercent"), 37.5)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.create_link = original_create
+            service._audit_event = original_audit
+
+    def test_resolve_delegate_token_preserves_markup_above_legacy_twenty_percent(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_find_user = service.user_repository.find_by_id
+        original_touch_last_used = service.patient_links_repository.touch_last_used
+        original_audit = service._audit_event
+        original_get_settings = service.settings_service.get_settings
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
+                "doctorId": "doc-1",
+                "revokedAt": None,
+                "status": "active",
+                "markupPercent": 37.5,
+                "allowedProducts": [],
+            }
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "role": "doctor",
+                "name": "Dr. Test",
+            }
+            service.patient_links_repository.touch_last_used = lambda *_args, **_kwargs: None
+            service._audit_event = lambda *_args, **_kwargs: None
+            service.settings_service.get_settings = lambda: {"patientLinksEnabled": True}
+
+            resolved = service.resolve_delegate_token("tok-1")
+
+            self.assertEqual(resolved.get("markupPercent"), 37.5)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.user_repository.find_by_id = original_find_user
+            service.patient_links_repository.touch_last_used = original_touch_last_used
+            service._audit_event = original_audit
+            service.settings_service.get_settings = original_get_settings
+
     def test_review_link_proposal_persists_review_notes(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql

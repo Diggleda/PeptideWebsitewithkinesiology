@@ -4298,6 +4298,7 @@ export function Header({
         hasSession
         && proposalStatus !== 'approved'
         && proposalStatus !== 'accepted'
+        && proposalStatus !== 'modified'
         && proposalStatus !== 'rejected';
       return count + (isOutstanding ? 1 : 0);
     }, 0);
@@ -7678,17 +7679,15 @@ export function Header({
                   const reviewNotesDraft = patientLinkReviewNotesDraftByToken[token] ?? proposalReviewNotes;
                   const reviewNotesDirty = reviewNotesDraft !== proposalReviewNotes;
 		              const proposalLabel =
-		                proposalStatus === 'approved' || proposalStatus === 'accepted'
-		                  ? 'Accepted'
-	                  : proposalStatus === 'modified'
-	                    ? 'Modified'
+		                proposalStatus === 'approved' || proposalStatus === 'accepted' || proposalStatus === 'modified'
+		                  ? 'Approved'
 	                    : proposalStatus === 'rejected'
 	                      ? 'Rejected'
 	                      : proposalStatus === 'pending'
 		                        ? 'Pending review'
 		                        : '';
 		              const proposalActionLabel =
-		                proposalStatus === 'approved' || proposalStatus === 'accepted' || proposalStatus === 'rejected'
+		                proposalStatus === 'approved' || proposalStatus === 'accepted' || proposalStatus === 'modified' || proposalStatus === 'rejected'
 		                  ? 'Proposal'
 		                  : 'Review Proposal';
 		              const paymentMethodDraft =

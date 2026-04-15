@@ -234,6 +234,14 @@ class PatientLinkEncryptionTests(unittest.TestCase):
         self.assertNotIn("payment_instructions_encrypted", params)
         self.assertEqual(params["token_ciphertext"], "cipher:token:token-1234")
 
+    def test_delete_link_accepts_integer_execute_result(self) -> None:
+        with patch.object(patient_links_repository, "_using_mysql", return_value=True), \
+            patch.object(patient_links_repository.mysql_client, "fetch_one", return_value={"revoked_at": "2026-04-15T20:00:00+00:00"}), \
+            patch.object(patient_links_repository.mysql_client, "execute", return_value=1):
+            deleted = patient_links_repository.delete_link("doctor-9", "token-1234")
+
+        self.assertTrue(deleted)
+
 
 if __name__ == "__main__":
     unittest.main()
