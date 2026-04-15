@@ -210,7 +210,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
 
-    def test_detail_uses_persisted_ups_status_without_live_refresh(self):
+    def test_detail_refreshes_local_only_ups_status_from_live_tracking(self):
         service = self.order_service
         original_is_configured = service.woo_commerce.is_configured
         original_fetch_order = service.woo_commerce.fetch_order
@@ -280,9 +280,12 @@ class SalesRepOrderDetailTests(unittest.TestCase):
 
             result = service.get_sales_rep_order_detail("1492", "admin-1", token_role="admin")
 
-            self.assertEqual(persisted_updates, [])
-            self.assertEqual(result["upsTrackingStatus"], "in_transit")
-            self.assertEqual(result["shippingEstimate"]["status"], "in_transit")
+            self.assertEqual(
+                persisted_updates,
+                [("local-ups-1492", "delivered", "2026-04-02T10:15:00")],
+            )
+            self.assertEqual(result["upsTrackingStatus"], "delivered")
+            self.assertEqual(result["shippingEstimate"]["status"], "delivered")
             self.assertEqual(result["trackingNumber"], "1ZTEST001")
         finally:
             service.woo_commerce.is_configured = original_is_configured
@@ -307,10 +310,13 @@ class SalesRepOrderDetailTests(unittest.TestCase):
         original_find_identifier = service.order_repository.find_by_order_identifier
         original_find_by_id = service.order_repository.find_by_id
         original_update = service.order_repository.update
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
         original_find_email = service.user_repository.find_by_email
         original_find_user_by_id = service.user_repository.find_by_id
         try:
             persisted = []
+            persisted_ups_updates = []
             local_order = {
                 "id": "local-1505",
                 "userId": "doctor-1",
@@ -348,6 +354,40 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"1505", "9505"} else None
             service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-1505" else None
             service.order_repository.update = lambda order: persisted.append(order) or order
+            service.order_repository.update_ups_tracking_status = (
+                lambda order_id, *, ups_tracking_status, delivered_at=None, estimated_arrival_date=None, delivery_date_guaranteed=None, expected_shipment_window=None: persisted_ups_updates.append(
+                    (
+                        order_id,
+                        ups_tracking_status,
+                        delivered_at,
+                        estimated_arrival_date,
+                        delivery_date_guaranteed,
+                        expected_shipment_window,
+                    )
+                )
+                or {
+                    **local_order,
+                    "trackingNumber": "1ZSHIP1505",
+                    "upsTrackingStatus": ups_tracking_status,
+                    "shippingEstimate": {
+                        **(local_order.get("shippingEstimate") or {}),
+                        "status": ups_tracking_status,
+                        "carrierId": "ups",
+                        **({"estimatedArrivalDate": estimated_arrival_date} if estimated_arrival_date else {}),
+                        **({"deliveryDateGuaranteed": delivery_date_guaranteed} if delivery_date_guaranteed else {}),
+                    },
+                }
+            )
+            service.ups_tracking.fetch_tracking_status = lambda tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": tracking_number,
+                "trackingStatus": "label_created",
+                "trackingStatusRaw": "Shipper created a label, UPS has not received the package yet.",
+                "deliveredAt": None,
+                "estimatedArrivalDate": None,
+                "deliveryDateGuaranteed": None,
+                "expectedShipmentWindow": None,
+            }
             service.user_repository.find_by_email = lambda _email: None
             service.user_repository.find_by_id = (
                 lambda value: {
@@ -363,6 +403,8 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             result = service.get_sales_rep_order_detail("1505", "admin-1", token_role="admin")
 
             self.assertEqual(result["trackingNumber"], "1ZSHIP1505")
+            self.assertEqual(result["upsTrackingStatus"], "label_created")
+            self.assertEqual(result["shippingEstimate"]["status"], "label_created")
             self.assertEqual(
                 result["integrationDetails"]["shipStation"]["trackingNumber"],
                 "1ZSHIP1505",
@@ -370,6 +412,10 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             self.assertEqual(
                 result["integrationDetails"]["wooCommerce"],
                 json.dumps({"pepproOrderId": "local-1505"}),
+            )
+            self.assertEqual(
+                persisted_ups_updates,
+                [("local-1505", "label_created", None, None, None, None)],
             )
             self.assertTrue(any(entry.get("trackingNumber") == "1ZSHIP1505" for entry in persisted))
         finally:
@@ -381,6 +427,8 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.order_repository.find_by_order_identifier = original_find_identifier
             service.order_repository.find_by_id = original_find_by_id
             service.order_repository.update = original_update
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
 

@@ -4712,8 +4712,7 @@ def get_sales_rep_order_detail(
         if persist_order_id and isinstance(local_order, dict):
             local_order["items"] = list(mapped["lineItems"])
 
-    if not use_local_detail_only:
-        local_order = _refresh_authoritative_ups_status_for_order_view(mapped, local_order=local_order)
+    local_order = _refresh_authoritative_ups_status_for_order_view(mapped, local_order=local_order)
 
     if resolved_doctor:
         mapped["doctorId"] = resolved_doctor.get("id")
