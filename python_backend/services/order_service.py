@@ -2848,8 +2848,9 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
             order["asDelegate"] = delegate_label
             order["as_delegate"] = delegate_label
 
-        if local_order.get("trackingNumber") is not None:
-            order["trackingNumber"] = local_order.get("trackingNumber")
+        local_tracking_number = _normalize_optional_text(local_order.get("trackingNumber"))
+        if local_tracking_number is not None:
+            order["trackingNumber"] = local_tracking_number
         if local_order.get("upsTrackingStatus") is not None:
             order["upsTrackingStatus"] = local_order.get("upsTrackingStatus")
         if local_order.get("deliveryDate") is not None:
@@ -4135,8 +4136,10 @@ def _persist_shipping_update(
         current_est = _ensure_dict(merged.get("shippingEstimate"))
         current_est.update(shipping_estimate)
         merged["shippingEstimate"] = current_est
-    if tracking and not merged.get("trackingNumber"):
-        merged["trackingNumber"] = tracking
+    normalized_tracking = _normalize_optional_text(tracking)
+    existing_tracking = _normalize_optional_text(merged.get("trackingNumber"))
+    if normalized_tracking and not existing_tracking:
+        merged["trackingNumber"] = normalized_tracking
     ship_date = None
     if isinstance(shipstation_info, dict):
         ship_date = shipstation_info.get("shipDate")
@@ -4550,66 +4553,66 @@ def get_sales_rep_order_detail(
         if not order_rep_candidates or order_rep_candidates.isdisjoint(allowed_rep_ids):
             raise _service_error("Order not found", 404)
 
-    if not use_local_detail_only:
-        # Enrich with ShipStation status/tracking when available.
+    # Enrich with ShipStation status/tracking when available, even for local-only detail views.
+    shipstation_info = None
+    try:
+        shipstation_info = ship_station.fetch_order_status(
+            mapped.get("number") or mapped.get("wooOrderNumber")
+        )
+    except ship_station.IntegrationError as exc:  # pragma: no cover - network path
+        logger.warning(
+            "ShipStation status lookup failed",
+            exc_info=False,
+            extra={
+                "orderId": order_id,
+                "status": getattr(exc, "status", None),
+                "error": str(exc),
+            },
+        )
+    except Exception:
+        # Non-fatal enrichment failure.
         shipstation_info = None
-        try:
-            shipstation_info = ship_station.fetch_order_status(
-                mapped.get("number") or mapped.get("wooOrderNumber")
-            )
-        except ship_station.IntegrationError as exc:  # pragma: no cover - network path
-            logger.warning(
-                "ShipStation status lookup failed",
-                exc_info=False,
-                extra={
-                    "orderId": order_id,
-                    "status": getattr(exc, "status", None),
-                    "error": str(exc),
-                },
-            )
-        except Exception:
-            # Non-fatal enrichment failure.
-            shipstation_info = None
 
-        if shipstation_info:
-            mapped.setdefault("integrationDetails", {})
-            mapped["integrationDetails"]["shipStation"] = shipstation_info
-            ship_status = (shipstation_info.get("status") or "").lower()
-            derived_shipping_status = _normalize_shipstation_delivery_status(shipstation_info)
-            authoritative_ups_status = _apply_authoritative_ups_tracking_status(mapped) or (
-                _apply_authoritative_ups_tracking_status(local_order) if isinstance(local_order, dict) else None
-            )
-            carrier_code = shipstation_info.get("carrierCode")
-            service_code = shipstation_info.get("serviceCode")
-            if ship_status == "shipped" or derived_shipping_status:
-                if ship_status == "shipped" and not mapped.get("status"):
-                    mapped["status"] = "shipped"
-                mapped.setdefault("shippingEstimate", {})
-                if not authoritative_ups_status:
-                    mapped["shippingEstimate"]["status"] = derived_shipping_status or "shipped"
-                if shipstation_info.get("shipDate"):
-                    mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
+    if shipstation_info:
+        integrations = _ensure_dict(mapped.get("integrationDetails") or mapped.get("integrations"))
+        integrations["shipStation"] = shipstation_info
+        mapped["integrationDetails"] = integrations
+        ship_status = (shipstation_info.get("status") or "").lower()
+        derived_shipping_status = _normalize_shipstation_delivery_status(shipstation_info)
+        authoritative_ups_status = _apply_authoritative_ups_tracking_status(mapped) or (
+            _apply_authoritative_ups_tracking_status(local_order) if isinstance(local_order, dict) else None
+        )
+        carrier_code = shipstation_info.get("carrierCode")
+        service_code = shipstation_info.get("serviceCode")
+        if ship_status == "shipped" or derived_shipping_status:
+            if ship_status == "shipped" and not mapped.get("status"):
+                mapped["status"] = "shipped"
             mapped.setdefault("shippingEstimate", {})
-            if carrier_code:
-                # Prefer carrierCode for display (e.g., UPS)
-                mapped["shippingEstimate"]["carrierId"] = carrier_code
-                mapped["shippingCarrier"] = carrier_code
-            if service_code:
-                mapped["shippingEstimate"]["serviceType"] = service_code
-                mapped["shippingService"] = service_code
-            if shipstation_info.get("trackingNumber"):
-                mapped["trackingNumber"] = shipstation_info["trackingNumber"]
-            peppro_order_id = (
-                _ensure_dict(mapped.get("integrationDetails") or {})
-                .get("wooCommerce", {})
-                .get("pepproOrderId")
-            ) or mapped.get("id")
-            _persist_shipping_update(
-                peppro_order_id,
-                mapped.get("shippingEstimate"),
-                mapped.get("trackingNumber"),
-                shipstation_info,
-            )
+            if not authoritative_ups_status:
+                mapped["shippingEstimate"]["status"] = derived_shipping_status or "shipped"
+            if shipstation_info.get("shipDate"):
+                mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
+        mapped.setdefault("shippingEstimate", {})
+        if carrier_code:
+            # Prefer carrierCode for display (e.g., UPS)
+            mapped["shippingEstimate"]["carrierId"] = carrier_code
+            mapped["shippingCarrier"] = carrier_code
+        if service_code:
+            mapped["shippingEstimate"]["serviceType"] = service_code
+            mapped["shippingService"] = service_code
+        if shipstation_info.get("trackingNumber"):
+            mapped["trackingNumber"] = shipstation_info["trackingNumber"]
+        peppro_order_id = (
+            _ensure_dict(mapped.get("integrationDetails") or {})
+            .get("wooCommerce", {})
+            .get("pepproOrderId")
+        ) or mapped.get("id")
+        _persist_shipping_update(
+            peppro_order_id,
+            mapped.get("shippingEstimate"),
+            mapped.get("trackingNumber"),
+            shipstation_info,
+        )
 
     # Pull local PepPro order fields for fallback detail hydration and display-only metadata.
     # This keeps the detail modal usable when Woo returns sparse billing/shipping data or when
@@ -4641,8 +4644,9 @@ def get_sales_rep_order_detail(
 
             if local_order.get("notes") is not None:
                 mapped["notes"] = local_order.get("notes")
-            if local_order.get("trackingNumber") is not None:
-                mapped["trackingNumber"] = local_order.get("trackingNumber")
+            local_tracking_number = _normalize_optional_text(local_order.get("trackingNumber"))
+            if local_tracking_number is not None:
+                mapped["trackingNumber"] = local_tracking_number
             if local_order.get("shippingEstimate"):
                 mapped["shippingEstimate"] = local_order.get("shippingEstimate")
             if local_order.get("upsTrackingStatus") is not None:

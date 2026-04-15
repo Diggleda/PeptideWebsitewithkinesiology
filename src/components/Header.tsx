@@ -13,6 +13,7 @@ import clsx from 'clsx';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { resolveStaticAssetUrl, withStaticAssetStamp } from '../lib/assetUrl';
+import { shouldDisplayShippingStatusForOrder } from '../lib/orderStatusPrecedence.mjs';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
 import { DoctorProfileForm } from './DoctorProfileForm';
@@ -1312,7 +1313,6 @@ const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined)
   if (!order) return null;
   const orderStatusRaw = order.status ? String(order.status) : '';
   const orderStatus = orderStatusRaw.trim();
-  const orderStatusNormalized = orderStatus.toLowerCase();
 
   const carrierTracking =
     (order.integrationDetails as any)?.carrierTracking ||
@@ -1326,54 +1326,16 @@ const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined)
     carrierTracking?.deliveryStatus ||
     carrierTracking?.delivery_status ||
     null;
-  const carrierTrackingStr = carrierTrackingStatusRaw ? String(carrierTrackingStatusRaw).trim() : '';
-  const carrierTrackingNormalized = carrierTrackingStr.toLowerCase();
-  const carrierTrackingMeaningful =
-    carrierTrackingNormalized.includes('in_transit') ||
-    carrierTrackingNormalized.includes('in-transit') ||
-    carrierTrackingNormalized.includes('out_for_delivery') ||
-    carrierTrackingNormalized.includes('out-for-delivery') ||
-    carrierTrackingNormalized.includes('delivered');
-  if (carrierTrackingStr && carrierTrackingMeaningful) {
-    return carrierTrackingStr;
-  }
-
-  // Always prefer the authoritative order status for terminal or explicit states.
-  // Shipping provider statuses are best used to improve display only when the order
-  // isn't already in a definitive state (e.g., Completed).
-  if (
-    isTerminalOrderStatus(orderStatus) ||
-    orderStatusNormalized === 'completed' ||
-    orderStatusNormalized === 'complete' ||
-    orderStatusNormalized === 'processing' ||
-    orderStatusNormalized === 'pending' ||
-    orderStatusNormalized === 'on-hold' ||
-    orderStatusNormalized === 'on_hold' ||
-    orderStatusNormalized === 'failed'
-  ) {
-    return orderStatus.length > 0 ? orderStatus : null;
-  }
-
   const shippingStatus =
     (order.shippingEstimate as any)?.status ||
     carrierTrackingStatusRaw ||
     (order.integrationDetails as any)?.shipStation?.status;
 
-  // Only override when the shipping provider has a meaningful "in-flight" status.
-  const shippingStr = shippingStatus ? String(shippingStatus).trim() : '';
-  const shippingNormalized = shippingStr.toLowerCase();
-  const shippingLooksMeaningful =
-    shippingNormalized.includes('in_transit') ||
-    shippingNormalized.includes('in-transit') ||
-    shippingNormalized.includes('out_for_delivery') ||
-    shippingNormalized.includes('out-for-delivery') ||
-    shippingNormalized.includes('delivered') ||
-    shippingNormalized.includes('awaiting_shipment') ||
-    shippingNormalized.includes('awaiting shipment') ||
-    shippingNormalized.includes('shipped');
-
-  if (shippingStr && shippingLooksMeaningful) {
-    return shippingStr;
+  if (shouldDisplayShippingStatusForOrder(orderStatus, shippingStatus)) {
+    const shippingStr = shippingStatus ? String(shippingStatus).trim() : '';
+    if (shippingStr) {
+      return shippingStr;
+    }
   }
 
   return orderStatus.length > 0 ? orderStatus : null;
@@ -1389,8 +1351,9 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
     return 'Refunded';
   }
 
+  const trackingStatusCandidate = resolveTrackingStatusToken(order) || resolveTrackingStatusRaw(order);
   const trackingStatusLabel = buildTrackingStatusLabel(order, { includeDeliveredDate: false });
-  if (trackingStatusLabel) {
+  if (trackingStatusLabel && shouldDisplayShippingStatusForOrder(orderStatusRaw, trackingStatusCandidate)) {
     return trackingStatusLabel;
   }
 

@@ -14,6 +14,7 @@ import {
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
+import { shouldDisplayShippingStatusForOrder } from "./lib/orderStatusPrecedence.mjs";
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
@@ -1255,16 +1256,7 @@ const resolveSalesOrderStatusSource = (
   order?: AccountOrderSummary | null,
 ): string | null => {
   if (!order) return null;
-  const normalizedOrderStatus = String(order.status || "").trim().toLowerCase();
-  if (
-    normalizedOrderStatus === "refunded" ||
-    normalizedOrderStatus === "cancelled" ||
-    normalizedOrderStatus === "canceled" ||
-    normalizedOrderStatus === "trash"
-  ) {
-    const status = String(order.status || "").trim();
-    return status.length > 0 ? status : null;
-  }
+  const orderStatus = String(order.status || "").trim();
   const integrations = parseMaybeJson(order.integrationDetails || order.integrations);
   const shipStation = parseMaybeJson(integrations?.shipStation || integrations?.shipstation);
   const carrierTracking = parseMaybeJson(
@@ -1311,7 +1303,15 @@ const resolveSalesOrderStatusSource = (
     null;
   const shippingStatus =
     (order.shippingEstimate as any)?.status || carrierTrackingStatus || shipStationStatus;
-  const candidate = shippingStatus || order.status || null;
+
+  if (shouldDisplayShippingStatusForOrder(orderStatus, shippingStatus)) {
+    const shippingCandidate = String(shippingStatus || "").trim();
+    if (shippingCandidate.length > 0) {
+      return shippingCandidate;
+    }
+  }
+
+  const candidate = orderStatus || shippingStatus || null;
   if (!candidate) return null;
   const str = String(candidate).trim();
   return str.length > 0 ? str : null;

@@ -279,8 +279,10 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
     integrations["shipStation"] = shipstation_info
     merged["integrationDetails"] = integrations
 
-    if tracking and not merged.get("trackingNumber"):
-        merged["trackingNumber"] = tracking
+    normalized_tracking = str(tracking or "").strip() or None
+    existing_tracking = str(merged.get("trackingNumber") or "").strip() or None
+    if normalized_tracking and not existing_tracking:
+        merged["trackingNumber"] = normalized_tracking
     if ship_date:
         merged["shippedAt"] = ship_date
     if status and not merged.get("status"):

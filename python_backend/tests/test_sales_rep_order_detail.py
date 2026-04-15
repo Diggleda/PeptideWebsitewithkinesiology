@@ -297,6 +297,86 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
 
+    def test_detail_keeps_shipstation_tracking_when_local_tracking_is_blank(self):
+        service = self.order_service
+        original_is_configured = service.woo_commerce.is_configured
+        original_fetch_order = service.woo_commerce.fetch_order
+        original_fetch_by_number = service.woo_commerce.fetch_order_by_number
+        original_invoice_url = service.woo_commerce._build_invoice_url
+        original_shipstation = service.ship_station.fetch_order_status
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_find_by_id = service.order_repository.find_by_id
+        original_update = service.order_repository.update
+        original_find_email = service.user_repository.find_by_email
+        original_find_user_by_id = service.user_repository.find_by_id
+        try:
+            persisted = []
+            local_order = {
+                "id": "local-1505",
+                "userId": "doctor-1",
+                "wooOrderId": "9505",
+                "wooOrderNumber": "1505",
+                "trackingNumber": "",
+                "shippingEstimate": {"status": "exception"},
+                "status": "completed",
+            }
+
+            service.woo_commerce.is_configured = lambda: True
+            service.woo_commerce._build_invoice_url = lambda *_args, **_kwargs: None
+            service.woo_commerce.fetch_order = lambda candidate: {
+                "id": 9505,
+                "number": "1505",
+                "status": "completed",
+            } if str(candidate) == "9505" else None
+            service.woo_commerce.fetch_order_by_number = lambda _candidate: None
+            service.ship_station.fetch_order_status = lambda _order_number: {
+                "status": "shipped",
+                "trackingNumber": "1ZSHIP1505",
+                "carrierCode": "ups",
+                "serviceCode": "ups_2nd_day_air_am",
+                "shipDate": "2026-04-15T12:00:00Z",
+                "shipments": [
+                    {
+                        "trackingNumber": "1ZSHIP1505",
+                        "voided": False,
+                    }
+                ],
+            }
+            service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"1505", "9505"} else None
+            service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-1505" else None
+            service.order_repository.update = lambda order: persisted.append(order) or order
+            service.user_repository.find_by_email = lambda _email: None
+            service.user_repository.find_by_id = (
+                lambda value: {
+                    "id": "doctor-1",
+                    "name": "Holly O'Quin",
+                    "email": "holly@example.com",
+                    "salesRepId": "rep-1",
+                }
+                if str(value) == "doctor-1"
+                else None
+            )
+
+            result = service.get_sales_rep_order_detail("1505", "admin-1", token_role="admin")
+
+            self.assertEqual(result["trackingNumber"], "1ZSHIP1505")
+            self.assertEqual(
+                result["integrationDetails"]["shipStation"]["trackingNumber"],
+                "1ZSHIP1505",
+            )
+            self.assertTrue(any(entry.get("trackingNumber") == "1ZSHIP1505" for entry in persisted))
+        finally:
+            service.woo_commerce.is_configured = original_is_configured
+            service.woo_commerce.fetch_order = original_fetch_order
+            service.woo_commerce.fetch_order_by_number = original_fetch_by_number
+            service.woo_commerce._build_invoice_url = original_invoice_url
+            service.ship_station.fetch_order_status = original_shipstation
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.find_by_id = original_find_by_id
+            service.order_repository.update = original_update
+            service.user_repository.find_by_email = original_find_email
+            service.user_repository.find_by_id = original_find_user_by_id
+
     def test_detail_prefers_sql_snapshot_images_and_persists_them(self):
         service = self.order_service
         original_find_identifier = service.order_repository.find_by_order_identifier
