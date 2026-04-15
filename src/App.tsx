@@ -24156,12 +24156,30 @@ function MainApp() {
 	      return response;
 	    } catch (error: any) {
       console.error("[Checkout] Failed", { error });
+      const errorCode =
+        typeof error?.code === "string" && error.code.trim().length > 0
+          ? error.code.trim()
+          : typeof error?.details?.code === "string" && error.details.code.trim().length > 0
+            ? error.details.code.trim()
+            : null;
       const message =
-        error?.message === "Request failed"
-          ? "Unable to complete purchase. Please try again."
-          : (error?.message ??
-            "Unable to complete purchase. Please try again.");
-      throw new Error(message);
+        errorCode === "WOO_ORDER_CREATE_FAILED"
+          ? "We couldn't place your order right now. Please try again."
+          : error?.message === "Request failed"
+            ? "Unable to complete purchase. Please try again."
+            : (error?.message ??
+              "Unable to complete purchase. Please try again.");
+      const wrappedError = new Error(message);
+      if (typeof error?.status === "number") {
+        (wrappedError as any).status = error.status;
+      }
+      if (errorCode) {
+        (wrappedError as any).code = errorCode;
+      }
+      if (error?.details !== undefined) {
+        (wrappedError as any).details = error.details;
+      }
+      throw wrappedError;
     }
   };
 

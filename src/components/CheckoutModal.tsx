@@ -34,6 +34,25 @@ const normalizeCheckoutPaymentMethod = (value: unknown): CheckoutPaymentMethod |
   return null;
 };
 
+const getCheckoutErrorMessage = (error: any) => {
+  const code =
+    typeof error?.code === 'string' && error.code.trim().length > 0
+      ? error.code.trim()
+      : typeof error?.details?.code === 'string' && error.details.code.trim().length > 0
+        ? error.details.code.trim()
+        : null;
+
+  if (code === 'WOO_ORDER_CREATE_FAILED') {
+    return "We couldn't place your order right now. Please try again.";
+  }
+
+  if (typeof error?.message === 'string' && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return 'Unable to complete purchase. Please try again.';
+};
+
 interface CheckoutResult {
   success?: boolean;
   message?: string | null;
@@ -1128,9 +1147,7 @@ export function CheckoutModal({
       }, 8000);
     } catch (error: any) {
       console.warn('[CheckoutModal] Checkout handler threw', error);
-      const message = typeof error?.message === 'string' && error.message.trim().length > 0
-        ? error.message
-        : 'Unable to complete purchase. Please try again.';
+      const message = getCheckoutErrorMessage(error);
       setCheckoutStatus('error');
       setCheckoutStatusMessage(message);
       toast.error(message);

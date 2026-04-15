@@ -781,6 +781,9 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
       const codeField = typeof errorDetails === 'object' && errorDetails !== null
         ? (errorDetails as any).code
         : null;
+      if (typeof codeField === 'string' && codeField.trim().length > 0) {
+        (error as any).code = codeField;
+      }
       const isAuthError = response.status === 401
         || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
       if (isAuthError) {
@@ -977,6 +980,9 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     const codeField = typeof errorDetails === 'object' && errorDetails !== null
       ? (errorDetails as any).code
       : null;
+    if (typeof codeField === 'string' && codeField.trim().length > 0) {
+      (error as any).code = codeField;
+    }
     const isAuthError = response.status === 401
       || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
     if (isAuthError) {
@@ -1087,6 +1093,9 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
     const codeField = typeof errorDetails === 'object' && errorDetails !== null
       ? (errorDetails as any).code
       : null;
+    if (typeof codeField === 'string' && codeField.trim().length > 0) {
+      (error as any).code = codeField;
+    }
     const isAuthError = response.status === 401
       || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
     if (isAuthError) {
