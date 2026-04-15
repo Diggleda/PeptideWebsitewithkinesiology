@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from ..database import mysql_client
 from ..integrations import ups_tracking
 from ..repositories import order_repository
+from . import shipping_notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -667,7 +668,7 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     )
                 ):
                     continue
-                order_repository.update_ups_tracking_status(
+                persisted = order_repository.update_ups_tracking_status(
                     order_id,
                     ups_tracking_status=next_status,
                     delivered_at=delivered_at,
@@ -675,6 +676,18 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     delivery_date_guaranteed=delivery_date_guaranteed,
                     expected_shipment_window=expected_shipment_window,
                 )
+                if current_status != next_status and next_status in {"out_for_delivery", "delivered"}:
+                    try:
+                        shipping_notification_service.notify_customer_order_shipping_status(
+                            str((persisted or {}).get("id") or order_id),
+                            next_status,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "[ups-status-sync] failed to send shipping status email",
+                            exc_info=True,
+                            extra={"orderId": order_id, "trackingNumber": tracking_number, "status": next_status},
+                        )
                 updated += 1
             except Exception as exc:
                 failed += 1

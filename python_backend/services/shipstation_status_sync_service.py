@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from ..database import mysql_client
 from ..integrations import ship_station, woo_commerce
 from ..repositories import order_repository
+from . import shipping_notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,18 @@ def _parse_settings_json_value(raw: Any) -> Any:
     return raw
 
 
+def _coerce_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def _parse_iso_utc(value: Any) -> Optional[datetime]:
     if not value or not isinstance(value, str):
         return None
@@ -257,6 +270,11 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
         return
 
     merged = dict(local_order)
+    previous_shipping_status = _normalize_shipstation_status(
+        merged.get("upsTrackingStatus")
+        or _coerce_object(merged.get("shippingEstimate")).get("status")
+        or _coerce_object(_coerce_object(merged.get("integrationDetails") or merged.get("integrations")).get("shipStation")).get("status")
+    )
     estimate = dict(merged.get("shippingEstimate") or {})
     status = shipstation_info.get("status")
     ship_date = shipstation_info.get("shipDate")
@@ -290,7 +308,25 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
     merged["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     try:
-        order_repository.update(merged)
+        persisted = order_repository.update(merged)
+        normalized_status = _normalize_shipstation_status(status)
+        persisted_order_id = str((persisted or {}).get("id") or local_order.get("id") or "").strip()
+        if (
+            persisted_order_id
+            and normalized_status in {"shipped", "out_for_delivery", "delivered"}
+            and normalized_status != previous_shipping_status
+        ):
+            try:
+                shipping_notification_service.notify_customer_order_shipping_status(
+                    persisted_order_id,
+                    normalized_status,
+                )
+            except Exception:
+                logger.warning(
+                    "[shipstation-sync] failed to send shipping status email",
+                    exc_info=True,
+                    extra={"wooOrderId": woo_order_id, "orderId": persisted_order_id, "status": normalized_status},
+                )
     except Exception:
         logger.warning(
             "[shipstation-sync] failed to persist local order shipping update",

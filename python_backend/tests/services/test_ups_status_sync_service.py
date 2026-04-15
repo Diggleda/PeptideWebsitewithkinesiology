@@ -146,7 +146,8 @@ class TestUpsStatusSyncService(unittest.TestCase):
             patch.object(svc, "_max_runtime_seconds", return_value=45), \
             patch.object(svc, "_throttle_ms", return_value=0), \
             patch.object(svc.ups_tracking, "fetch_tracking_status", return_value={"trackingStatus": "Out for Delivery"}), \
-            patch.object(svc.order_repository, "update_ups_tracking_status") as update_status:
+            patch.object(svc.order_repository, "update_ups_tracking_status", return_value={"id": "ups-1"}) as update_status, \
+            patch.object(svc.shipping_notification_service, "notify_customer_order_shipping_status") as notify_status:
             result = svc.run_sync_once(ignore_cooldown=True)
 
         self.assertEqual(result["status"], "success")
@@ -160,6 +161,7 @@ class TestUpsStatusSyncService(unittest.TestCase):
             delivery_date_guaranteed=None,
             expected_shipment_window=None,
         )
+        notify_status.assert_called_once_with("ups-1", "out_for_delivery")
 
     def test_run_sync_once_persists_delivered_at_for_delivered_orders(self):
         from python_backend.services import ups_status_sync_service as svc
@@ -188,7 +190,8 @@ class TestUpsStatusSyncService(unittest.TestCase):
                 "fetch_tracking_status",
                 return_value={"trackingStatus": "Delivered", "deliveredAt": "2026-04-02T10:15:00"},
             ), \
-            patch.object(svc.order_repository, "update_ups_tracking_status") as update_status:
+            patch.object(svc.order_repository, "update_ups_tracking_status", return_value={"id": "ups-1"}) as update_status, \
+            patch.object(svc.shipping_notification_service, "notify_customer_order_shipping_status") as notify_status:
             result = svc.run_sync_once(ignore_cooldown=True)
 
         self.assertEqual(result["status"], "success")
@@ -202,6 +205,7 @@ class TestUpsStatusSyncService(unittest.TestCase):
             delivery_date_guaranteed=None,
             expected_shipment_window=None,
         )
+        notify_status.assert_called_once_with("ups-1", "delivered")
 
     def test_run_sync_once_backfills_delivery_date_from_existing_known_value(self):
         from python_backend.services import ups_status_sync_service as svc
