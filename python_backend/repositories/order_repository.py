@@ -426,6 +426,39 @@ def _sync_tracking_fields_after_fallback(params: Dict) -> None:
             continue
 
 
+def update_items(order_id: str, items: List[Dict]) -> Optional[Dict]:
+    normalized_order_id = str(order_id or "").strip()
+    if not normalized_order_id:
+        return None
+
+    if _using_mysql():
+        mysql_client.execute(
+            """
+            UPDATE orders
+            SET items = %(items)s, updated_at = NOW()
+            WHERE id = %(id)s
+            """,
+            {
+                "id": normalized_order_id,
+                "items": json.dumps(items if isinstance(items, list) else []),
+            },
+        )
+        return find_by_id(normalized_order_id)
+
+    orders = _load()
+    updated = None
+    for order in orders:
+        if str(order.get("id") or "").strip() != normalized_order_id:
+            continue
+        order["items"] = list(items) if isinstance(items, list) else []
+        order["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        updated = order
+        break
+    if updated is not None:
+        _save(orders)
+    return updated
+
+
 def _is_hand_delivery_order(order: Dict) -> bool:
     if not isinstance(order, dict):
         return False

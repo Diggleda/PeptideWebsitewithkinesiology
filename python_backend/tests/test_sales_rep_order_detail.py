@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+import json
 from unittest.mock import patch
 
 
@@ -295,6 +296,160 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
+
+    def test_detail_prefers_sql_snapshot_images_and_persists_them(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_find_by_id = service.order_repository.find_by_id
+        original_update_items = service.order_repository.update_items
+        original_find_email = service.user_repository.find_by_email
+        original_find_user_by_id = service.user_repository.find_by_id
+        original_mysql_fetch_one = service.mysql_client.fetch_one
+        original_fetch_catalog = service.woo_commerce.fetch_catalog
+        original_find_product_by_sku = service.woo_commerce.find_product_by_sku
+        try:
+            local_order = {
+                "id": "local-1511",
+                "userId": "doctor-1",
+                "wooOrderId": "9011",
+                "wooOrderNumber": "1511",
+                "status": "processing",
+                "items": [
+                    {
+                        "id": "line-1",
+                        "productId": 1511,
+                        "sku": "SKU-1511",
+                        "name": "Peptide 1511",
+                        "quantity": 1,
+                        "total": 49.0,
+                    }
+                ],
+            }
+            persisted = []
+
+            def fake_fetch_one(query, params=None):
+                if "FROM product_documents" in query:
+                    return {
+                        "data": json.dumps(
+                            {
+                                "id": 1511,
+                                "images": [{"src": "https://img.example/sql-1511.jpg"}],
+                            }
+                        )
+                    }
+                return None
+
+            service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"1511", "9011"} else None
+            service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-1511" else None
+            service.order_repository.update_items = (
+                lambda order_id, items: persisted.append((order_id, items)) or {**local_order, "items": items}
+            )
+            service.user_repository.find_by_email = lambda _email: None
+            service.user_repository.find_by_id = (
+                lambda value: {
+                    "id": "doctor-1",
+                    "name": "Jennifer Ellen Blankenship",
+                    "email": "jen@example.com",
+                    "salesRepId": "rep-1",
+                }
+                if str(value) == "doctor-1"
+                else None
+            )
+            service.mysql_client.fetch_one = fake_fetch_one
+            service.woo_commerce.fetch_catalog = lambda *_args, **_kwargs: self.fail("Woo fallback should not run when SQL snapshot has an image")
+            service.woo_commerce.find_product_by_sku = lambda *_args, **_kwargs: self.fail("SKU fallback should not run when SQL snapshot has an image")
+
+            result = service.get_sales_rep_order_detail("1511", "admin-1", token_role="admin")
+
+            self.assertEqual(result["lineItems"][0]["image"], "https://img.example/sql-1511.jpg")
+            self.assertEqual(result["lineItems"][0]["imageUrl"], "https://img.example/sql-1511.jpg")
+            self.assertEqual(persisted[0][0], "local-1511")
+            self.assertEqual(persisted[0][1][0]["image"], "https://img.example/sql-1511.jpg")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.find_by_id = original_find_by_id
+            service.order_repository.update_items = original_update_items
+            service.user_repository.find_by_email = original_find_email
+            service.user_repository.find_by_id = original_find_user_by_id
+            service.mysql_client.fetch_one = original_mysql_fetch_one
+            service.woo_commerce.fetch_catalog = original_fetch_catalog
+            service.woo_commerce.find_product_by_sku = original_find_product_by_sku
+
+    def test_detail_falls_back_to_woo_images_when_sql_order_items_have_none(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_find_by_id = service.order_repository.find_by_id
+        original_update_items = service.order_repository.update_items
+        original_find_email = service.user_repository.find_by_email
+        original_find_user_by_id = service.user_repository.find_by_id
+        original_mysql_fetch_one = service.mysql_client.fetch_one
+        original_fetch_catalog = service.woo_commerce.fetch_catalog
+        original_find_product_by_sku = service.woo_commerce.find_product_by_sku
+        try:
+            local_order = {
+                "id": "local-1512",
+                "userId": "doctor-1",
+                "wooOrderId": "9012",
+                "wooOrderNumber": "1512",
+                "status": "processing",
+                "items": [
+                    {
+                        "id": "line-1",
+                        "productId": 1512,
+                        "sku": "SKU-1512",
+                        "name": "Peptide 1512",
+                        "quantity": 1,
+                        "total": 59.0,
+                    }
+                ],
+            }
+            persisted = []
+            fetch_endpoints = []
+
+            service.order_repository.find_by_order_identifier = lambda value: local_order if str(value) in {"1512", "9012"} else None
+            service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-1512" else None
+            service.order_repository.update_items = (
+                lambda order_id, items: persisted.append((order_id, items)) or {**local_order, "items": items}
+            )
+            service.user_repository.find_by_email = lambda _email: None
+            service.user_repository.find_by_id = (
+                lambda value: {
+                    "id": "doctor-1",
+                    "name": "Jennifer Ellen Blankenship",
+                    "email": "jen@example.com",
+                    "salesRepId": "rep-1",
+                }
+                if str(value) == "doctor-1"
+                else None
+            )
+            service.mysql_client.fetch_one = lambda *_args, **_kwargs: None
+
+            def fake_fetch_catalog(endpoint, params=None):
+                del params
+                fetch_endpoints.append(endpoint)
+                if endpoint == "products/1512":
+                    return {"id": 1512, "images": [{"src": "https://img.example/woo-1512.jpg"}]}
+                return None
+
+            service.woo_commerce.fetch_catalog = fake_fetch_catalog
+            service.woo_commerce.find_product_by_sku = lambda *_args, **_kwargs: None
+
+            result = service.get_sales_rep_order_detail("1512", "admin-1", token_role="admin")
+
+            self.assertEqual(fetch_endpoints, ["products/1512"])
+            self.assertEqual(result["lineItems"][0]["image"], "https://img.example/woo-1512.jpg")
+            self.assertEqual(result["lineItems"][0]["thumbnail"], "https://img.example/woo-1512.jpg")
+            self.assertEqual(persisted[0][0], "local-1512")
+            self.assertEqual(persisted[0][1][0]["image"], "https://img.example/woo-1512.jpg")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.find_by_id = original_find_by_id
+            service.order_repository.update_items = original_update_items
+            service.user_repository.find_by_email = original_find_email
+            service.user_repository.find_by_id = original_find_user_by_id
+            service.mysql_client.fetch_one = original_mysql_fetch_one
+            service.woo_commerce.fetch_catalog = original_fetch_catalog
+            service.woo_commerce.find_product_by_sku = original_find_product_by_sku
 
     def test_modal_detail_uses_sales_rep_phone_fallback_for_summary_profiles(self):
         service = self.order_service

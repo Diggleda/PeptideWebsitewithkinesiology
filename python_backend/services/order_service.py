@@ -906,6 +906,280 @@ def _ensure_dict(value):
     return {}
 
 
+def _extract_image_source(value: object) -> Optional[str]:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    if isinstance(value, dict):
+        for key in ("src", "url", "href", "source", "image", "imageUrl", "image_url", "thumbnail", "thumb"):
+            resolved = _extract_image_source(value.get(key))
+            if resolved:
+                return resolved
+        return None
+    if isinstance(value, list):
+        for entry in value:
+            resolved = _extract_image_source(entry)
+            if resolved:
+                return resolved
+    return None
+
+
+def _parse_positive_int(value: object) -> Optional[int]:
+    try:
+        parsed = int(str(value or "").strip())
+    except Exception:
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _decode_snapshot_product_row(row: object) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return None
+    raw = row.get("data")
+    if isinstance(raw, memoryview):
+        raw = raw.tobytes()
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode("utf-8")
+        except Exception:
+            return None
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _get_catalog_snapshot_product(*, product_id: object = None, sku: object = None) -> Optional[Dict[str, Any]]:
+    normalized_product_id = _parse_positive_int(product_id)
+    if normalized_product_id is not None:
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT data
+                FROM product_documents
+                WHERE woo_product_id = %(woo_product_id)s
+                  AND kind IN (%(kind_full)s, %(kind_light)s)
+                ORDER BY CASE WHEN kind = %(kind_full)s THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                {
+                    "woo_product_id": normalized_product_id,
+                    "kind_full": "catalog_product_full",
+                    "kind_light": "catalog_product_light",
+                },
+            )
+        except Exception:
+            row = None
+        parsed = _decode_snapshot_product_row(row)
+        if parsed:
+            return parsed
+
+    normalized_sku = _normalize_optional_text(sku)
+    if normalized_sku:
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT data
+                FROM product_documents
+                WHERE product_sku = %(product_sku)s
+                  AND kind IN (%(kind_full)s, %(kind_light)s)
+                ORDER BY CASE WHEN kind = %(kind_full)s THEN 0 ELSE 1 END,
+                         woo_synced_at DESC,
+                         updated_at DESC
+                LIMIT 1
+                """,
+                {
+                    "product_sku": normalized_sku,
+                    "kind_full": "catalog_product_full",
+                    "kind_light": "catalog_product_light",
+                },
+            )
+        except Exception:
+            row = None
+        parsed = _decode_snapshot_product_row(row)
+        if parsed:
+            return parsed
+
+    return None
+
+
+def _resolve_catalog_snapshot_line_item_image(
+    item: Dict[str, Any],
+    *,
+    snapshot_by_product_id: Dict[int, Optional[Dict[str, Any]]],
+    snapshot_by_sku: Dict[str, Optional[Dict[str, Any]]],
+) -> Optional[str]:
+    product_id = _parse_positive_int(
+        item.get("productId") or item.get("product_id") or item.get("wooProductId") or item.get("id")
+    )
+    variation_id = _parse_positive_int(
+        item.get("variationId")
+        or item.get("variation_id")
+        or item.get("variantId")
+        or item.get("variant_id")
+        or item.get("wooVariationId")
+    )
+    sku = _normalize_optional_text(item.get("sku"))
+
+    snapshot: Optional[Dict[str, Any]] = None
+    if product_id is not None:
+        if product_id not in snapshot_by_product_id:
+            snapshot_by_product_id[product_id] = _get_catalog_snapshot_product(product_id=product_id)
+        snapshot = snapshot_by_product_id.get(product_id)
+
+    normalized_sku_key = sku.lower() if sku else None
+    if snapshot is None and normalized_sku_key:
+        if normalized_sku_key not in snapshot_by_sku:
+            snapshot_by_sku[normalized_sku_key] = _get_catalog_snapshot_product(sku=sku)
+        snapshot = snapshot_by_sku.get(normalized_sku_key)
+
+    if not isinstance(snapshot, dict):
+        return None
+
+    if variation_id is not None:
+        for variation in snapshot.get("variations") or []:
+            if not isinstance(variation, dict):
+                continue
+            if _parse_positive_int(variation.get("id")) != variation_id:
+                continue
+            resolved = _extract_image_source(variation.get("image")) or _extract_image_source(variation.get("images"))
+            if resolved:
+                return resolved
+
+    return _extract_image_source(snapshot.get("image")) or _extract_image_source(snapshot.get("images"))
+
+
+def _resolve_live_woo_line_item_image(
+    item: Dict[str, Any],
+    *,
+    woo_image_cache: Dict[tuple, Optional[str]],
+) -> Optional[str]:
+    product_id = _parse_positive_int(
+        item.get("productId") or item.get("product_id") or item.get("wooProductId") or item.get("id")
+    )
+    variation_id = _parse_positive_int(
+        item.get("variationId")
+        or item.get("variation_id")
+        or item.get("variantId")
+        or item.get("variant_id")
+        or item.get("wooVariationId")
+    )
+    sku = _normalize_optional_text(item.get("sku"))
+
+    if product_id is not None and variation_id is not None:
+        variation_key = ("variation", product_id, variation_id)
+        if variation_key not in woo_image_cache:
+            try:
+                variation = woo_commerce.fetch_catalog(f"products/{product_id}/variations/{variation_id}")
+            except Exception:
+                variation = None
+            woo_image_cache[variation_key] = (
+                _extract_image_source((variation or {}).get("image"))
+                or _extract_image_source((variation or {}).get("images"))
+                if isinstance(variation, dict)
+                else None
+            )
+        if woo_image_cache.get(variation_key):
+            return woo_image_cache[variation_key]
+
+    if product_id is not None:
+        product_key = ("product", product_id)
+        if product_key not in woo_image_cache:
+            try:
+                product = woo_commerce.fetch_catalog(f"products/{product_id}")
+            except Exception:
+                product = None
+            woo_image_cache[product_key] = (
+                _extract_image_source((product or {}).get("image"))
+                or _extract_image_source((product or {}).get("images"))
+                if isinstance(product, dict)
+                else None
+            )
+        if woo_image_cache.get(product_key):
+            return woo_image_cache[product_key]
+
+    if sku:
+        sku_key = ("sku", sku.lower())
+        if sku_key not in woo_image_cache:
+            try:
+                product = woo_commerce.find_product_by_sku(sku)
+            except Exception:
+                product = None
+            woo_image_cache[sku_key] = (
+                _extract_image_source((product or {}).get("image"))
+                or _extract_image_source((product or {}).get("images"))
+                if isinstance(product, dict)
+                else None
+            )
+        if woo_image_cache.get(sku_key):
+            return woo_image_cache[sku_key]
+
+    return None
+
+
+def _hydrate_line_items_with_images(
+    line_items: object,
+    *,
+    persist_order_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    if not isinstance(line_items, list):
+        return []
+
+    snapshot_by_product_id: Dict[int, Optional[Dict[str, Any]]] = {}
+    snapshot_by_sku: Dict[str, Optional[Dict[str, Any]]] = {}
+    woo_image_cache: Dict[tuple, Optional[str]] = {}
+    updated_items: List[Dict[str, Any]] = []
+    changed = False
+
+    for raw_item in line_items:
+        if not isinstance(raw_item, dict):
+            continue
+
+        item = dict(raw_item)
+        resolved_image = (
+            _extract_image_source(item.get("image"))
+            or _extract_image_source(item.get("imageUrl"))
+            or _extract_image_source(item.get("image_url"))
+            or _extract_image_source(item.get("thumbnail"))
+            or _extract_image_source(item.get("thumb"))
+        )
+
+        if not resolved_image:
+            resolved_image = _resolve_catalog_snapshot_line_item_image(
+                item,
+                snapshot_by_product_id=snapshot_by_product_id,
+                snapshot_by_sku=snapshot_by_sku,
+            ) or _resolve_live_woo_line_item_image(item, woo_image_cache=woo_image_cache)
+
+        if resolved_image:
+            if item.get("image") != resolved_image:
+                item["image"] = resolved_image
+                changed = True
+            if _normalize_optional_text(item.get("imageUrl")) != resolved_image:
+                item["imageUrl"] = resolved_image
+                changed = True
+            if _normalize_optional_text(item.get("thumbnail")) != resolved_image:
+                item["thumbnail"] = resolved_image
+                changed = True
+
+        updated_items.append(item)
+
+    if changed and persist_order_id:
+        try:
+            order_repository.update_items(persist_order_id, updated_items)
+        except Exception:
+            logger.warning(
+                "Failed to persist order item image backfill",
+                exc_info=True,
+                extra={"orderId": persist_order_id},
+            )
+
+    return updated_items
+
+
 def _normalize_ups_tracking_status(value: Any) -> Optional[str]:
     normalized = ups_tracking.normalize_tracking_status(value)
     if not normalized or normalized == "unknown":
@@ -4410,6 +4684,17 @@ def get_sales_rep_order_detail(
             _apply_authoritative_ups_tracking_status(mapped)
     except Exception:
         pass
+
+    if isinstance(mapped.get("lineItems"), list) and mapped.get("lineItems"):
+        persist_order_id = None
+        if use_local_detail_only and isinstance(local_order, dict):
+            persist_order_id = _normalize_optional_text(local_order.get("id"))
+        mapped["lineItems"] = _hydrate_line_items_with_images(
+            mapped.get("lineItems"),
+            persist_order_id=persist_order_id,
+        )
+        if persist_order_id and isinstance(local_order, dict):
+            local_order["items"] = list(mapped["lineItems"])
 
     if not use_local_detail_only:
         local_order = _refresh_authoritative_ups_status_for_order_view(mapped, local_order=local_order)
