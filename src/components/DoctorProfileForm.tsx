@@ -570,7 +570,7 @@ export function DoctorProfileForm({
           rows={5}
           maxLength={1000}
           disabled={saving}
-          placeholder="Share a short professional bio for your research platform profile."
+          placeholder="Share a short professional bio for your research profile."
           className={profileTextareaClassName}
           style={profileFieldStyle}
         />
@@ -589,7 +589,7 @@ export function DoctorProfileForm({
         </div>
       )}
 
-      <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+      <div className="mt-3 flex flex-col-reverse gap-3 pb-2 sm:flex-row sm:justify-end">
         {onSkip && (
           <Button
             type="button"

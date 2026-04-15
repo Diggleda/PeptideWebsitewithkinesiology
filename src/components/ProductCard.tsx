@@ -728,6 +728,15 @@ function PdfPreview({
 
 export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMode = false }: ProductCardProps) {
   type DocumentationTabId = 'certificate' | 'nasals';
+  const isCheckoutAddOnCategory = useMemo(() => {
+    const normalizedCategory = String(product.category || '')
+      .trim()
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return normalizedCategory === 'add-on';
+  }, [product.category]);
   const hasNasalsDocumentation = useMemo(() => {
     const normalizedCategory = String(product.category || '')
       .trim()
@@ -1226,6 +1235,9 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   }, [coaLoading, coaObjectUrl, wooProductId]);
 
   const openDocumentationModal = () => {
+    if (isCheckoutAddOnCategory) {
+      return;
+    }
     coaLoadAttemptedRef.current = false;
     setCoaOpen(true);
     setDocumentationTab(hasNasalsDocumentation ? 'nasals' : 'certificate');
@@ -1309,14 +1321,16 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 			  const productMeta = (
 			    <>
 	      <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
-      <button
+      {!isCheckoutAddOnCategory && (
+        <button
 	        type="button"
 	        onClick={openDocumentationModal}
-        className="line-clamp-2 text-left hover:underline"
-        style={{ color: 'rgb(95, 179, 249)' }}
-      >
-        Documentation and Analysis
-      </button>
+          className="line-clamp-2 text-left hover:underline"
+          style={{ color: 'rgb(95, 179, 249)' }}
+        >
+          Documentation and Analysis
+        </button>
+      )}
       {product.manufacturer && <p className="text-xs text-gray-500">{product.manufacturer}</p>}
     </>
   );
@@ -1335,7 +1349,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   const showVariationChevron = selectableVariations.length > 1;
 
   const variationSelector =
-    product.variations && product.variations.length > 0 ? (
+    !isCheckoutAddOnCategory && product.variations && product.variations.length > 0 ? (
       <div className="space-y-1">
         <label className="text-xs text-gray-600" htmlFor={`variation-${product.id}`}>
           Strength
@@ -1545,21 +1559,22 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
         <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
       </Card>
 
+      {!isCheckoutAddOnCategory && (
 	      <Dialog
 	        open={coaOpen}
-        onOpenChange={(open) => {
-          setCoaOpen(open);
-          if (!open) {
-            coaLoadAttemptedRef.current = false;
-            setDocumentationTab('certificate');
-            setCoaError(null);
-            setCoaBlobType(null);
-            if (coaObjectUrl) {
-              URL.revokeObjectURL(coaObjectUrl);
-              setCoaObjectUrl(null);
+          onOpenChange={(open) => {
+            setCoaOpen(open);
+            if (!open) {
+              coaLoadAttemptedRef.current = false;
+              setDocumentationTab('certificate');
+              setCoaError(null);
+              setCoaBlobType(null);
+              if (coaObjectUrl) {
+                URL.revokeObjectURL(coaObjectUrl);
+                setCoaObjectUrl(null);
+              }
             }
-          }
-        }}
+          }}
 	      >
               <DialogContent
               className="checkout-modal account-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col overflow-hidden"
@@ -1773,9 +1788,10 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 		            )}
                   </div>
                 </div>
-              </div>
-		        </DialogContent>
-		      </Dialog>
-		    </>
-		  );
-		}
+            </div>
+          </DialogContent>
+      </Dialog>
+      )}
+    </>
+  );
+}

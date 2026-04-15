@@ -258,7 +258,9 @@ interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cartItems: CartItem[];
+  availableAddOnProducts?: Product[];
   forceProposalMode?: boolean;
+  onAddAddOn?: (productId: string, variantId?: string | null) => void;
   onCheckout: (payload: {
     shippingAddress: ShippingAddress | null;
     shippingRate: ShippingRate | null;
@@ -345,7 +347,9 @@ export function CheckoutModal({
   isOpen,
   onClose,
   cartItems,
+  availableAddOnProducts = [],
   forceProposalMode,
+  onAddAddOn,
   onCheckout,
   onUpdateItemQuantity,
   onRemoveItem,
@@ -906,6 +910,27 @@ export function CheckoutModal({
     if (delegateSubtotal == null) return null;
     return Math.max(0, delegateSubtotal + displayShippingCost + displayTaxAmount);
   }, [delegateSubtotal, displayShippingCost, displayTaxAmount]);
+
+  const checkoutAddOnProducts = useMemo(
+    () =>
+      (availableAddOnProducts ?? []).filter(
+        (product) => !cartItems.some((item) => item.product.id === product.id),
+      ),
+    [availableAddOnProducts, cartItems],
+  );
+
+  const resolveAddOnVariant = useCallback((product: Product) => {
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    if (variants.length === 0) {
+      return null;
+    }
+    return (
+      variants.find((variant) => variant.id === product.defaultVariantId)
+      ?? variants.find((variant) => variant.inStock)
+      ?? variants[0]
+      ?? null
+    );
+  }, []);
 
   const handleGetRates = async () => {
     if (!shippingAddressComplete) {
@@ -1843,6 +1868,118 @@ export function CheckoutModal({
                   );
                 })}
                 </div>
+                {checkoutAddOnProducts.length > 0 && (
+                  <div className="space-y-4">
+                    <h4>Available Add-ons</h4>
+                    <div className="flex w-full max-w-full flex-col gap-4 pb-2 lg:grid lg:grid-cols-2 auto-rows-fr">
+                      {checkoutAddOnProducts.map((product) => {
+                        const preferredVariant = resolveAddOnVariant(product);
+                        const showDosage =
+                          typeof product.dosage === 'string' &&
+                          product.dosage.trim().length > 0 &&
+                          product.dosage.trim().toLowerCase() !== 'see details';
+                        const baseImages = product.images.length > 0 ? product.images : [product.image];
+                        const carouselImages = preferredVariant?.image
+                          ? [preferredVariant.image, ...baseImages].filter(
+                              (src, imageIndex, self) => src && self.indexOf(src) === imageIndex,
+                            )
+                          : baseImages;
+                        const doctorUnitPrice = computeUnitPrice(product, preferredVariant, 1, {
+                          pricingMode: resolvedPricingMode,
+                          markupPercent: 0,
+                        });
+                        const delegateUnitPrice =
+                          showDualPricing && proposalMarkupPercentValue != null
+                            ? computeUnitPrice(product, preferredVariant, 1, {
+                                pricingMode: delegateComparisonPricingMode,
+                                markupPercent: proposalMarkupPercentValue,
+                              })
+                            : null;
+                        const unitPrice = computeUnitPrice(product, preferredVariant, 1, {
+                          pricingMode: resolvedPricingMode,
+                          markupPercent: pricingMarkupPercent,
+                        });
+
+                        return (
+                          <Card
+                            key={product.id}
+                            className="glass squircle-sm h-full w-full"
+                          >
+                            <CardContent className="p-3 [&:last-child]:pb-3 relative">
+                              <div className="checkout-item-scroll">
+                                <div className="checkout-item-scroll-inner">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start gap-4 min-w-0 flex-1">
+                                      <div className="checkout-item-image checkout-item-image--addon self-start">
+                                        <ProductImageCarousel
+                                          images={carouselImages}
+                                          alt={product.name}
+                                          className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2"
+                                          imageClassName="h-full w-full object-contain"
+                                          style={{ '--product-image-frame-padding': 'clamp(0.35rem, 0.75vw, 0.7rem)' } as CSSProperties}
+                                          showDots={carouselImages.length > 1}
+                                          showArrows={false}
+                                        />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <h4 className="line-clamp-1">{product.name}</h4>
+                                        {showDosage && (
+                                          <p className="text-sm text-gray-600">{product.dosage}</p>
+                                        )}
+                                        {preferredVariant && (
+                                          <p className="text-xs text-gray-500">Variant: {preferredVariant.label}</p>
+                                        )}
+                                        {product.manufacturer && (
+                                          <p className="text-xs text-gray-500">{product.manufacturer}</p>
+                                        )}
+                                        <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                                          {showDualPricing && delegateUnitPrice != null ? (
+                                            <div className="flex flex-col leading-tight">
+                                              <span className={retailPricingEnabled ? 'text-green-700 font-bold tabular-nums' : 'text-green-600 font-bold tabular-nums'}>
+                                                <span className="text-[11px] font-semibold text-slate-500 mr-1">Physician:</span>
+                                                ${doctorUnitPrice.toFixed(2)}
+                                                {retailPricingEnabled ? (
+                                                  <span className="ml-1 text-[11px] font-semibold text-green-700">(Retail)</span>
+                                                ) : null}
+                                              </span>
+                                              <span className="text-[rgb(95,179,249)] font-semibold tabular-nums text-[12px]">
+                                                <span className="text-[11px] font-semibold text-slate-500 mr-1">Delegate:</span>
+                                                ${delegateUnitPrice.toFixed(2)}
+                                              </span>
+                                            </div>
+                                          ) : (
+                                            <span className={retailPricingEnabled ? 'text-green-700 font-bold' : 'text-green-600 font-bold'}>
+                                              ${unitPrice.toFixed(2)}
+                                              {retailPricingEnabled ? (
+                                                <span className="ml-1 text-xs font-semibold text-green-700">(Retail)</span>
+                                              ) : null}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col items-end gap-3 shrink-0 text-right">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => onAddAddOn?.(product.id, preferredVariant?.id ?? null)}
+                                        disabled={!onAddAddOn}
+                                        className="header-home-button squircle-sm gap-2 bg-white text-slate-900"
+                                      >
+                                        <ShoppingCart className="mr-2 h-4 w-4" />
+                                        Add to order
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Shipping */}

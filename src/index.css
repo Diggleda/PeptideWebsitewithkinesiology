@@ -4926,6 +4926,12 @@ html {
   flex: 0 0 80px;
 }
 
+.checkout-item-image--addon {
+  width: calc(180px * 0.4);
+  height: calc(180px * 0.4);
+  flex-basis: calc(80px * 0.4);
+}
+
 .quote-line-item-image {
   width: 56px;
   height: 56px;
@@ -4971,6 +4977,12 @@ html {
     width: 180px;
     height: 180px;
     flex-basis: 96px;
+  }
+
+  .checkout-item-image--addon {
+    width: calc(180px * 0.4);
+    height: calc(180px * 0.4);
+    flex-basis: calc(96px * 0.4);
   }
 
   .quote-line-item-image {
@@ -7362,10 +7374,27 @@ body.manufacturing-standards-modal-open .header-account-avatar-shell {
   pointer-events: none;
 }
 
+body.manufacturing-standards-modal-open [data-app-header] {
+  opacity: 0;
+  pointer-events: none;
+}
+
 html.manufacturing-standards-modal-open,
 body.manufacturing-standards-modal-open {
   overflow: hidden;
   overscroll-behavior: none;
+}
+
+.manufacturing-standards-dialog-layer {
+  z-index: 11000 !important;
+}
+
+.manufacturing-standards-dialog-layer [data-slot="dialog-overlay"] {
+  z-index: 11000 !important;
+}
+
+.manufacturing-standards-dialog-layer [data-slot="dialog-content"] {
+  z-index: 11001 !important;
 }
 
 body.account-modal-open .info-highlight-card,

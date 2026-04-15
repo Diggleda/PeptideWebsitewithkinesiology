@@ -125,7 +125,7 @@ class CreateOrderTests(unittest.TestCase):
         cls.IntegrationError = IntegrationError
         cls.order_service = order_service
 
-    def _run_with_common_patches(self, forward_order_side_effect):
+    def _run_with_common_patches(self, forward_order_side_effect, *, items=None):
         service = self.order_service
         user = {
             "id": "doctor-1",
@@ -134,7 +134,7 @@ class CreateOrderTests(unittest.TestCase):
             "role": "doctor",
             "referralCredits": 0,
         }
-        items = [{"productId": 101, "name": "Test Product", "price": 25.0, "quantity": 2}]
+        items = items or [{"productId": 101, "name": "Test Product", "price": 25.0, "quantity": 2}]
 
         with contextlib.ExitStack() as stack:
             stack.enter_context(patch.object(service.user_repository, "find_by_id", return_value=user))
@@ -237,6 +237,79 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(inserted_orders[0]["status"], "processing")
         self.assertEqual(result["order"]["wooOrderId"], 9001)
         self.assertEqual(result["order"]["integrations"]["wooCommerce"], "success")
+
+    def test_create_order_forwards_add_on_items_like_regular_products(self):
+        service = self.order_service
+        submitted_orders = []
+        built_line_items = []
+        items = [
+            {"productId": 101, "name": "Primary Product", "price": 25.0, "quantity": 2},
+            {
+                "productId": 202,
+                "variantId": 303,
+                "sku": "ADD-303",
+                "name": "Accessory Pack - 5 pack",
+                "price": 12.5,
+                "quantity": 1,
+            },
+        ]
+
+        def succeed(order, _user):
+            submitted_orders.append(
+                [
+                    {
+                        "productId": item.get("productId"),
+                        "variantId": item.get("variantId"),
+                        "sku": item.get("sku"),
+                        "name": item.get("name"),
+                        "price": item.get("price"),
+                        "quantity": item.get("quantity"),
+                    }
+                    for item in (order.get("items") or [])
+                    if isinstance(item, dict)
+                ]
+            )
+            built_line_items.append(service.woo_commerce.build_line_items(order.get("items") or []))
+            return {
+                "status": "success",
+                "response": {
+                    "id": 9002,
+                    "number": "1492",
+                    "status": "processing",
+                    "orderKey": "wc_order_key_456",
+                },
+            }
+
+        with patch.object(service.order_repository, "insert", side_effect=lambda order: dict(order)), patch.object(
+            service.order_repository, "update", side_effect=lambda order: dict(order)
+        ), patch.object(
+            service.order_repository, "update_woo_fields"
+        ), patch.object(
+            service.sales_prospect_repository, "mark_doctor_as_nurturing_if_purchased"
+        ):
+            result = self._run_with_common_patches(succeed, items=items)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(len(submitted_orders), 1)
+        self.assertEqual(submitted_orders[0][0]["productId"], 101)
+        self.assertIsNone(submitted_orders[0][0]["variantId"])
+        self.assertIsNone(submitted_orders[0][0]["sku"])
+        self.assertEqual(submitted_orders[0][0]["quantity"], 2)
+        self.assertEqual(submitted_orders[0][1]["productId"], 202)
+        self.assertEqual(submitted_orders[0][1]["variantId"], 303)
+        self.assertEqual(submitted_orders[0][1]["sku"], "ADD-303")
+        self.assertEqual(submitted_orders[0][1]["quantity"], 1)
+        self.assertEqual(len(built_line_items), 1)
+        self.assertEqual(len(built_line_items[0]), 2)
+        self.assertEqual(built_line_items[0][0]["product_id"], 101)
+        self.assertNotIn("variation_id", built_line_items[0][0])
+        self.assertEqual(built_line_items[0][0]["quantity"], 2)
+        self.assertEqual(built_line_items[0][0]["total"], "50.00")
+        self.assertEqual(built_line_items[0][1]["product_id"], 202)
+        self.assertEqual(built_line_items[0][1]["variation_id"], 303)
+        self.assertEqual(built_line_items[0][1]["sku"], "ADD-303")
+        self.assertEqual(built_line_items[0][1]["quantity"], 1)
+        self.assertEqual(built_line_items[0][1]["total"], "12.50")
 
 
 if __name__ == "__main__":

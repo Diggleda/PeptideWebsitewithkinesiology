@@ -26,6 +26,7 @@ interface CategoryFilterProps {
   productCounts: Record<string, number>;
   typeCounts?: Record<string, number>;
   tagSections?: TagSection[];
+  onOpenManufacturingModal?: () => void;
 }
 
 export function CategoryFilter({
@@ -34,6 +35,7 @@ export function CategoryFilter({
   filters,
   onFiltersChange,
   productCounts,
+  onOpenManufacturingModal,
 }: CategoryFilterProps) {
   const toggleCategory = (category: string) => {
     const categoriesSet = new Set(filters.categories);
@@ -374,7 +376,15 @@ export function CategoryFilter({
 
         <p className="pt-4 border-t border-[rgba(255,255,255,0.45)] text-xs leading-relaxed text-slate-700">
           Grouping reflects areas of scientific inquiry reported in the
-          literature and ongoing physician-led research initiatives. Categories are intended to serve as a starting point for your search process.
+          literature and ongoing physician-led research initiatives. Categories are intended to serve as a starting point for your search process. Our peptides are produced by our partner{" "}
+          <button
+            type="button"
+            onClick={onOpenManufacturingModal}
+            className="font-semibold text-slate-900 underline decoration-[rgba(15,23,42,0.45)] underline-offset-2 transition hover:text-slate-700"
+          >
+            Protixa
+          </button>
+          .
         </p>
       </CardContent>
     </Card>
