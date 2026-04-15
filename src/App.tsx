@@ -30,6 +30,7 @@ import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -671,6 +672,23 @@ const hasDoctorSupplementalProfileText = (value: unknown): boolean => {
     record.studyFocus,
     record.bio,
   ].some((field) => typeof field === "string" && field.trim().length > 0);
+};
+
+const hasRequiredDoctorProfileFields = (value: unknown): boolean => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as {
+    name?: unknown;
+    email?: unknown;
+    greaterArea?: unknown;
+    greater_area?: unknown;
+  };
+  return [
+    record.name,
+    record.email,
+    record.greaterArea ?? record.greater_area,
+  ].every((field) => typeof field === "string" && field.trim().length > 0);
 };
 
 const needsSupplementalDoctorProfile = (value: unknown): boolean =>
@@ -4782,6 +4800,8 @@ function MainApp() {
   const [landingAuthMode, setLandingAuthMode] = useState<
     "login" | "signup" | "forgot" | "reset"
   >(getInitialLandingMode);
+  const [manufacturingQualityStandardsOpen, setManufacturingQualityStandardsOpen] =
+    useState(false);
   const [postLoginHold, setPostLoginHold] = useState(false);
   const [maintenanceLaunchPending, setMaintenanceLaunchPending] = useState(false);
   const [maintenanceCompanionActive, setMaintenanceCompanionActive] = useState(false);
@@ -4790,6 +4810,7 @@ function MainApp() {
   const [researchTermsSubmitting, setResearchTermsSubmitting] = useState(false);
   const [researchTermsError, setResearchTermsError] = useState("");
   const [doctorProfileGateReady, setDoctorProfileGateReady] = useState(true);
+  const [doctorProfileGateArmed, setDoctorProfileGateArmed] = useState(false);
   const [doctorProfileBuilderDismissed, setDoctorProfileBuilderDismissed] =
     useState(false);
   const [doctorResellerPermitPromptOpen, setDoctorResellerPermitPromptOpen] =
@@ -4812,12 +4833,16 @@ function MainApp() {
   const showResearchTermsAgreementModal = Boolean(
     user && isDoctorRole(user.role) && !user.researchTermsAgreement,
   );
+  const doctorProfileMeetsMinimumRequirements = Boolean(
+    user && isDoctorRole(user.role) && hasRequiredDoctorProfileFields(user),
+  );
   const showDoctorProfileBuilderModal = Boolean(
     user &&
       isDoctorRole(user.role) &&
+      doctorProfileGateArmed &&
       user.researchTermsAgreement === true &&
       doctorProfileGateReady &&
-      user.profileOnboarding !== true &&
+      !doctorProfileMeetsMinimumRequirements &&
       !doctorProfileBuilderDismissed,
   );
   const shouldPromptForDoctorResellerPermit = Boolean(
@@ -4825,7 +4850,7 @@ function MainApp() {
       isDoctorRole(user.role) &&
       doctorProfileGateReady &&
       user.researchTermsAgreement === true &&
-      user.profileOnboarding === true &&
+      doctorProfileMeetsMinimumRequirements &&
       !user.resellerPermitFilePath &&
       user.resellerPermitOnboardingPresented !== true,
   );
@@ -5067,6 +5092,7 @@ function MainApp() {
     if (!user?.id) {
       doctorProfileGateRefreshSeqRef.current += 1;
       setDoctorProfileGateReady(true);
+      setDoctorProfileGateArmed(false);
     }
     setDoctorProfileBuilderDismissed(false);
     setDoctorResellerPermitPromptOpen(false);
@@ -5075,6 +5101,29 @@ function MainApp() {
     setDoctorResellerPermitError("");
     setDoctorResellerPermitSubmitting(false);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!doctorProfileGateArmed || !user || !isDoctorRole(user.role)) {
+      return;
+    }
+    if (!doctorProfileGateReady) {
+      return;
+    }
+    if (showResearchTermsAgreementModal || showDoctorProfileBuilderModal) {
+      return;
+    }
+    if (doctorProfileMeetsMinimumRequirements || doctorProfileBuilderDismissed) {
+      setDoctorProfileGateArmed(false);
+    }
+  }, [
+    doctorProfileBuilderDismissed,
+    doctorProfileGateArmed,
+    doctorProfileGateReady,
+    doctorProfileMeetsMinimumRequirements,
+    showDoctorProfileBuilderModal,
+    showResearchTermsAgreementModal,
+    user,
+  ]);
 
   useEffect(() => {
     if (
@@ -5168,6 +5217,19 @@ function MainApp() {
       setCheckoutPricingMode("wholesale");
     }
   }, [canUseRetailPricing, checkoutPricingMode]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+    const className = "manufacturing-standards-modal-open";
+    document.body.classList.toggle(className, manufacturingQualityStandardsOpen);
+    document.documentElement.classList.toggle(className, manufacturingQualityStandardsOpen);
+    return () => {
+      document.body.classList.remove(className);
+      document.documentElement.classList.remove(className);
+    };
+  }, [manufacturingQualityStandardsOpen]);
 
   useLayoutEffect(() => {
     if (!checkoutOpen || !user?.id || !hasAuthToken()) {
@@ -6878,6 +6940,7 @@ function MainApp() {
     forcedLogoutAtRef.current = 0;
     forcedLogoutReasonRef.current = null;
     setDoctorProfileGateReady(!shouldHoldDoctorProfileGate);
+    setDoctorProfileGateArmed(shouldHoldDoctorProfileGate);
     setDoctorProfileBuilderDismissed(false);
     setUser(nextUser);
     setPostLoginHold(true);
@@ -32817,6 +32880,7 @@ function MainApp() {
           <DoctorProfileForm
             user={user}
             avatarStyle="compact-circle"
+            requireGreaterArea
             preActionsNote={'Use the network toggle above to control whether your profile can appear in the PepPro physician network. These details can be updated anytime in your account settings.'}
             submitLabel="Save and Continue"
             submittingLabel="Saving profile…"
@@ -33760,22 +33824,23 @@ function MainApp() {
                       : "mt-4 sm:mt-6 md:mt-8"
                   }`}
                 >
-                  <div
-                    className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl"
-                    style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
-                  >
+                  <div className="space-y-5">
                     <div
-                      className={
-                        landingAuthMode === "signup" ? "space-y-6" : "space-y-4"
-                      }
+                      className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl"
+                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
                     >
-                      {landingAuthMode === "login" && (
-                        <>
-                          <form
-                            id="landing-login-form"
-                            name="login"
-                            method="post"
-                            onSubmit={async (e) => {
+                      <div
+                        className={
+                          landingAuthMode === "signup" ? "space-y-6" : "space-y-4"
+                        }
+                      >
+                        {landingAuthMode === "login" && (
+                          <>
+                            <form
+                              id="landing-login-form"
+                              name="login"
+                              method="post"
+                              onSubmit={async (e) => {
 	                              e.preventDefault();
 	                              if (landingLoginPending) {
 	                                return;
@@ -33875,168 +33940,168 @@ function MainApp() {
 	                                setLandingLoginPending(false);
 	                              }
 	                            }}
-                            className="space-y-3"
-                            autoComplete="on"
-                          >
-                            <div className="space-y-2">
-                              <label
-                                htmlFor="landing-email"
-                                className="text-sm font-medium"
-                              >
-                                Email
-                              </label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  ref={landingLoginEmailRef}
-                                  id="landing-email"
-                                  name="username"
-                                  type="email"
-                                  autoComplete="username webauthn"
-                                  inputMode="email"
-                                  autoCapitalize="none"
-                                  autoCorrect="off"
-                                  spellCheck={false}
-                                  required
-                                  onFocus={handleLandingCredentialFocus}
-                                  onPointerDown={handleLandingCredentialFocus}
-                                  className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <label
-                                htmlFor="landing-password"
-                                className="text-sm font-medium"
-                              >
-                                Password
-                              </label>
-                              <div className="relative">
-                                <input
-                                  ref={landingLoginPasswordRef}
-                                  id="landing-password"
-                                  name="password"
-                                  type={
-                                    showLandingLoginPassword
-                                      ? "text"
-                                      : "password"
-                                  }
-                                  autoComplete="current-password"
-                                  autoCorrect="off"
-                                  spellCheck={false}
-                                  required
-                                  onFocus={handleLandingCredentialFocus}
-                                  onPointerDown={handleLandingCredentialFocus}
-                                  className="w-full h-10 px-3 pr-12 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setShowLandingLoginPassword((p) => !p)
-                                  }
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] btn-hover-lighter"
-                                  aria-label={
-                                    showLandingLoginPassword
-                                      ? "Hide password"
-                                      : "Show password"
-                                  }
-                                  aria-pressed={showLandingLoginPassword}
+                              className="space-y-3"
+                              autoComplete="on"
+                            >
+                              <div className="space-y-2">
+                                <label
+                                  htmlFor="landing-email"
+                                  className="text-sm font-medium"
                                 >
-                                  {showLandingLoginPassword ? (
-                                    <Eye className="h-5 w-5" />
-                                  ) : (
-                                    <EyeOff className="h-5 w-5" />
-                                  )}
-                                </button>
+                                  Email
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    ref={landingLoginEmailRef}
+                                    id="landing-email"
+                                    name="username"
+                                    type="email"
+                                    autoComplete="username webauthn"
+                                    inputMode="email"
+                                    autoCapitalize="none"
+                                    autoCorrect="off"
+                                    spellCheck={false}
+                                    required
+                                    onFocus={handleLandingCredentialFocus}
+                                    onPointerDown={handleLandingCredentialFocus}
+                                    className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                </div>
                               </div>
-                              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">
-                                <p>
-                                  Forgot your password?{" "}
+                              <div className="space-y-2">
+                                <label
+                                  htmlFor="landing-password"
+                                  className="text-sm font-medium"
+                                >
+                                  Password
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    ref={landingLoginPasswordRef}
+                                    id="landing-password"
+                                    name="password"
+                                    type={
+                                      showLandingLoginPassword
+                                        ? "text"
+                                        : "password"
+                                    }
+                                    autoComplete="current-password"
+                                    autoCorrect="off"
+                                    spellCheck={false}
+                                    required
+                                    onFocus={handleLandingCredentialFocus}
+                                    onPointerDown={handleLandingCredentialFocus}
+                                    className="w-full h-10 px-3 pr-12 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      updateLandingAuthMode("forgot")
+                                      setShowLandingLoginPassword((p) => !p)
+                                    }
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] btn-hover-lighter"
+                                    aria-label={
+                                      showLandingLoginPassword
+                                        ? "Hide password"
+                                        : "Show password"
+                                    }
+                                    aria-pressed={showLandingLoginPassword}
+                                  >
+                                    {showLandingLoginPassword ? (
+                                      <Eye className="h-5 w-5" />
+                                    ) : (
+                                      <EyeOff className="h-5 w-5" />
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">
+                                  <p>
+                                    Forgot your password?{" "}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateLandingAuthMode("forgot")
+                                      }
+                                      className="font-semibold hover:underline btn-hover-lighter"
+                                      style={{ color: "rgb(95, 179, 249)" }}
+                                    >
+                                      Reset it
+                                    </button>
+                                  </p>
+                                  {passkeySupport.platform && (
+                                    <button
+                                      type="button"
+                                      onClick={handleManualPasskeyLogin}
+                                      disabled={passkeyLoginPending}
+                                      className="inline-flex items-center gap-1 font-semibold text-transparent hover:text-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] btn-hover-lighter disabled:opacity-50 disabled:cursor-not-allowed"
+                                      aria-label="Sign in with a passkey (biometrics)"
+                                      style={{
+                                        backgroundColor: "transparent",
+                                        borderColor: "transparent",
+                                      }}
+                                    >
+                                      {passkeyLoginPending ? (
+                                        <Loader2
+                                          className="h-4 w-4 animate-spin-slow"
+                                          aria-hidden="true"
+                                        />
+                                      ) : (
+                                        <Fingerprint
+                                          className="h-4 w-4"
+                                          aria-hidden="true"
+                                        />
+                                      )}
+                                      <span className="sr-only">
+                                        Sign in with passkey
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {landingLoginError && (
+                                <p className="text-sm text-red-600" role="alert">
+                                  {landingLoginError}
+                                </p>
+                              )}
+                              <div className="space-y-2">
+                                <Button
+                                  type="submit"
+                                  size="lg"
+                                  className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                                  disabled={landingLoginPending}
+                                >
+                                  {landingLoginPending && (
+                                    <Loader2
+                                      className="h-4 w-4 animate-spin-slow text-white shrink-0"
+                                      aria-hidden="true"
+                                      style={{
+                                        transformOrigin: "center center",
+                                        transform: "translateZ(0)",
+                                      }}
+                                    />
+                                  )}
+                                  {landingLoginPending
+                                    ? "Signing in…"
+                                    : "Sign In"}
+                                </Button>
+                                <p className="text-center text-sm text-gray-600">
+                                  Have a referral code?{" "}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateLandingAuthMode("signup")
                                     }
                                     className="font-semibold hover:underline btn-hover-lighter"
                                     style={{ color: "rgb(95, 179, 249)" }}
                                   >
-                                    Reset it
+                                    Create an account
                                   </button>
                                 </p>
-                                {passkeySupport.platform && (
-                                  <button
-                                    type="button"
-                                    onClick={handleManualPasskeyLogin}
-                                    disabled={passkeyLoginPending}
-                                    className="inline-flex items-center gap-1 font-semibold text-transparent hover:text-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] btn-hover-lighter disabled:opacity-50 disabled:cursor-not-allowed"
-                                    aria-label="Sign in with a passkey (biometrics)"
-                                    style={{
-                                      backgroundColor: "transparent",
-                                      borderColor: "transparent",
-                                    }}
-                                  >
-                                    {passkeyLoginPending ? (
-                                      <Loader2
-                                        className="h-4 w-4 animate-spin-slow"
-                                        aria-hidden="true"
-                                      />
-                                    ) : (
-                                      <Fingerprint
-                                        className="h-4 w-4"
-                                        aria-hidden="true"
-                                      />
-                                    )}
-                                    <span className="sr-only">
-                                      Sign in with passkey
-                                    </span>
-                                  </button>
-                                )}
                               </div>
-                            </div>
-                            {landingLoginError && (
-                              <p className="text-sm text-red-600" role="alert">
-                                {landingLoginError}
-                              </p>
-                            )}
-                            <div className="space-y-2">
-                              <Button
-                                type="submit"
-                                size="lg"
-                                className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
-                                disabled={landingLoginPending}
-                              >
-                                {landingLoginPending && (
-                                  <Loader2
-                                    className="h-4 w-4 animate-spin-slow text-white shrink-0"
-                                    aria-hidden="true"
-                                    style={{
-                                      transformOrigin: "center center",
-                                      transform: "translateZ(0)",
-                                    }}
-                                  />
-                                )}
-                                {landingLoginPending
-                                  ? "Signing in…"
-                                  : "Sign In"}
-                              </Button>
-                              <p className="text-center text-sm text-gray-600">
-                                Have a referral code?{" "}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateLandingAuthMode("signup")
-                                  }
-                                  className="font-semibold hover:underline btn-hover-lighter"
-                                  style={{ color: "rgb(95, 179, 249)" }}
-                                >
-                                  Create an account
-                                </button>
-                              </p>
-                            </div>
-                          </form>
-                        </>
-                      )}
-                      {landingAuthMode === "forgot" && (
-                        <>
+                            </form>
+                          </>
+                        )}
+                        {landingAuthMode === "forgot" && (
+                          <>
                           <div className="text-center space-y-2">
                             <h1 className="text-2xl font-semibold">
                               Reset your password
@@ -34647,15 +34712,252 @@ function MainApp() {
                                   onClick={() => updateLandingAuthMode("login")}
                                   className="font-semibold hover:underline btn-hover-lighter"
                                   style={{ color: "rgb(95, 179, 249)" }}
-                                >
-                                  Sign in
-                                </button>
-                              </p>
-                            </div>
-                          </form>
-                        </>
-                      )}
+                            >
+                              Sign in
+                            </button>
+                          </p>
+                        </div>
+                      </form>
+                    </>
+                        )}
+                      </div>
                     </div>
+                    {landingAuthMode === "login" && (
+                      <div
+                        className="flex flex-col items-center gap-1 text-center"
+                        style={{ marginTop: "6rem" }}
+                      >
+                        <div className="flex w-full justify-center">
+                          <div className="partnered-protixa-row squircle-xl flex max-w-full flex-row flex-wrap items-center justify-center">
+                            <div
+                              className="partnered-protixa-brand flex shrink-0 flex-col items-start gap-1"
+                              style={{ boxSizing: "border-box" }}
+                            >
+                              <p className="partnered-protixa-kicker w-full text-left font-medium text-slate-600">
+                                Partnered with
+                              </p>
+                              <img
+                                src={withStaticAssetStamp("/protixa.png")}
+                                alt="Protixa logo"
+                                className="partnered-protixa-logo h-auto max-w-full"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setManufacturingQualityStandardsOpen(true)}
+                              className="partnered-protixa-cta squircle-sm inline-flex min-w-0 flex-none items-center justify-start px-0 py-0 text-left"
+                            >
+                              <span className="partnered-protixa-cta__label">
+                                <span className="partnered-protixa-cta__line">
+                                  Manufacturing &amp;
+                                </span>
+                                <span className="partnered-protixa-cta__line">
+                                  Quality Standards
+                                </span>
+                              </span>
+                            </button>
+                          </div>
+                          <Dialog
+                            open={manufacturingQualityStandardsOpen}
+                            onOpenChange={setManufacturingQualityStandardsOpen}
+                          >
+                            <DialogContent
+                              hideCloseButton
+                              containerClassName="fixed inset-0 z-[10000] flex items-stretch justify-stretch p-4"
+                              overlayClassName="bg-[rgba(4,14,21,0.64)] backdrop-blur-2xl"
+                              overlayStyle={{
+                                backdropFilter: "blur(24px) saturate(1.55)",
+                                WebkitBackdropFilter: "blur(24px) saturate(1.55)",
+                              }}
+                              className="glass-card h-[calc(100dvh-3rem)] w-full p-0 shadow-2xl sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-none"
+                              style={{
+                                maxWidth: "none",
+                                maxHeight: "none",
+                                margin: 0,
+                                overflow: "hidden",
+                                backgroundColor: "rgba(248, 252, 255, 0.995)",
+                                borderColor: "rgba(95, 179, 249, 0.6)",
+                                backdropFilter: "none",
+                                WebkitBackdropFilter: "none",
+                                isolation: "isolate",
+                              }}
+                            >
+                              <div className="flex h-full min-h-0 flex-col px-6 pb-6 pt-8">
+                                <div className="mb-8 flex shrink-0 items-start gap-4 sm:mb-10">
+                                  <DialogHeader className="min-w-0 flex-1 gap-0 text-left">
+                                    <DialogTitle className="leading-tight">
+                                      Manufacturing &amp; Quality Standards
+                                    </DialogTitle>
+                                    <DialogDescription className="leading-snug" style={{ marginTop: 0 }}>
+                                      PepPro manufacturing, testing, delivery, and compliance standards.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <DialogClose
+                                    aria-label="Close manufacturing standards modal"
+                                    className="dialog-close-btn ml-auto inline-flex shrink-0 items-center justify-center self-start text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                                    style={{
+                                      backgroundColor: "rgb(95, 179, 249)",
+                                      width: "38px",
+                                      height: "38px",
+                                      minWidth: "38px",
+                                      minHeight: "38px",
+                                      borderRadius: "9999px",
+                                    }}
+                                  >
+                                    <span aria-hidden="true" className="text-xl leading-none">
+                                      ×
+                                    </span>
+                                  </DialogClose>
+                                </div>
+                                <div className="no-scrollbar mt-2 flex-1 min-h-0 space-y-4 overflow-y-auto text-left text-sm leading-relaxed text-slate-700">
+                                  <section className="manufacturing-standards-card squircle-lg space-y-2">
+                                    <h3 className="text-base font-semibold text-slate-900">
+                                      Clinical Research-Grade Manufacturing
+                                    </h3>
+                                    <p>
+                                      PepPro partners exclusively with FDA-registered and NSF-certified
+                                      manufacturing facilities to ensure clinical research-grade quality and
+                                      consistency. All peptide formulations are produced in GMP-compliant
+                                      facilities.
+                                    </p>
+                                  </section>
+                                  <section className="manufacturing-standards-card squircle-lg space-y-2">
+                                    <h3 className="text-base font-semibold text-slate-900">
+                                      Vertically Integrated Production
+                                    </h3>
+                                    <p>
+                                      Our formulations are manufactured in collaboration with a vertically
+                                      integrated peptide innovator that controls every stage from synthesis to
+                                      final packaging. This ensures:
+                                    </p>
+                                    <ul className="space-y-1">
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Complete chain-of-custody traceability</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Batch-specific Certificates of Analysis (COAs) for purity (&gt;= 99%) and sterility</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>HPLC and endotoxin testing</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Rapid scale-up and consistent results across all delivery formats (injectable, nasal spray)</span>
+                                      </li>
+                                    </ul>
+                                  </section>
+                                  <section className="manufacturing-standards-card squircle-lg space-y-2">
+                                    <h3 className="text-base font-semibold text-slate-900">
+                                      Proprietary Delivery Technology
+                                    </h3>
+                                    <p>
+                                      PepPro utilizes Protixa ION System, an advanced ionic liquid delivery
+                                      platform designed for needle-free peptide administration.
+                                    </p>
+                                    <p>
+                                      This proprietary system enhances bioavailability through five mechanisms:
+                                    </p>
+                                    <ol className="space-y-1">
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="font-semibold text-slate-900">1.</span>
+                                        <span>Lipid layer modulation for superior absorption</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="font-semibold text-slate-900">2.</span>
+                                        <span>Dual polarity solubilization (no emulsifiers needed)</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="font-semibold text-slate-900">3.</span>
+                                        <span>Keratin modulation for transient micro-pathways</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="font-semibold text-slate-900">4.</span>
+                                        <span>Optimized molecule partitioning for deeper tissue delivery</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="font-semibold text-slate-900">5.</span>
+                                        <span>Cation exchange improving permeability</span>
+                                      </li>
+                                    </ol>
+                                  </section>
+                                  <section className="manufacturing-standards-card squircle-lg space-y-2">
+                                    <h3 className="text-base font-semibold text-slate-900">
+                                      Batch Testing &amp; COA Transparency
+                                    </h3>
+                                    <p>
+                                      Each PepPro peptide is backed by a Certificate of Analysis as well as
+                                      third party testing to verify:
+                                    </p>
+                                    <ul className="space-y-1">
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Purity (&gt;= 99%)</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Sterility &amp; absence of microorganisms</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Endotoxin level &lt; 0.5 EU/mL</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Verified dosage and stability testing</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Quantitative testing</span>
+                                      </li>
+                                    </ul>
+                                  </section>
+                                  <section className="manufacturing-standards-card squircle-lg space-y-2">
+                                    <h3 className="text-base font-semibold text-slate-900">
+                                      Quality Control &amp; Compliance
+                                    </h3>
+                                    <ul className="space-y-1">
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Good Manufacturing Practice (cGMP) and ISO-aligned quality management systems</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Lot tracking and retention samples for every batch</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Stability testing for all formulations (-20 C cold chain storage)</span>
+                                      </li>
+                                      <li className="flex gap-2 leading-snug">
+                                        <span className="mt-1 text-slate-900">•</span>
+                                        <span>Third-party verification of all finished materials</span>
+                                      </li>
+                                    </ul>
+                                  </section>
+                                  <section className="manufacturing-standards-card squircle-lg space-y-2">
+                                    <h3 className="text-base font-semibold text-slate-900">
+                                      Formulation Expertise
+                                    </h3>
+                                    <p>
+                                      Every formula is designed by a cross-disciplinary team of experts in
+                                      pharmaceutical R&amp;D, biochemistry, and regulatory compliance.
+                                    </p>
+                                    <p>
+                                      From clinical research-grade peptides to white-label consumer products,
+                                      PepPro bridges science and accessibility with full transparency and
+                                      safety.
+                                    </p>
+                                  </section>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

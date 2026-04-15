@@ -6,6 +6,7 @@ const NON_STAMPABLE_URL_PATTERN = /^(?:data|blob|javascript|mailto|tel|about|fil
 const EMITTED_PUBLIC_ASSET_URLS: Record<string, string> = {
   "/PepPro_fulllogo.png": new URL("../generated/runtime-assets/PepPro_fulllogo.png", import.meta.url).href,
   "/PepPro_icon.png": new URL("../generated/runtime-assets/PepPro_icon.png", import.meta.url).href,
+  "/protixa.png": new URL("../generated/runtime-assets/protixa.png", import.meta.url).href,
   "/leafTexture.jpg": new URL("../generated/runtime-assets/leafTexture.jpg", import.meta.url).href,
   "/icons/handshake_4233584.png": new URL("../generated/runtime-assets/icons/handshake_4233584.png", import.meta.url).href,
   "/logos/woocommerce.svg": new URL("../generated/runtime-assets/logos/woocommerce.svg", import.meta.url).href,

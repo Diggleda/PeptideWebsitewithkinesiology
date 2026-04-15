@@ -1981,7 +1981,28 @@ const createOrderInternal = async ({
     ...(idempotencyKey ? { idempotencyKey } : {}),
   };
 
-  const referralResult = referralService.applyReferralCredit({
+  let referralResult = null;
+  const integrations = {};
+
+  try {
+    integrations.wooCommerce = await wooCommerceClient.forwardOrder({
+      order,
+      customer: user,
+    });
+  } catch (error) {
+    logger.error({ err: error, orderId: order.id }, 'WooCommerce integration failed');
+    const checkoutError = new Error('Unable to submit order. WooCommerce order creation failed.');
+    checkoutError.status = error.status ?? error.cause?.status ?? 502;
+    checkoutError.code = error.code || 'WOO_ORDER_CREATE_FAILED';
+    checkoutError.cause = error.cause || serializeCause(error);
+    throw checkoutError;
+  }
+
+  const wooOrderId = integrations.wooCommerce?.response?.id || null;
+  const wooOrderNumber = integrations.wooCommerce?.response?.number || null;
+  let shipStationOrderId = null;
+
+  referralResult = referralService.applyReferralCredit({
     referralCode,
     subtotal: itemsSubtotal,
     purchaserId: userId,
@@ -1997,26 +2018,6 @@ const createOrderInternal = async ({
   }
 
   orderRepository.insert(order);
-
-  const integrations = {};
-
-  try {
-    integrations.wooCommerce = await wooCommerceClient.forwardOrder({
-      order,
-      customer: user,
-    });
-  } catch (error) {
-    logger.error({ err: error, orderId: order.id }, 'WooCommerce integration failed');
-    integrations.wooCommerce = {
-      status: 'error',
-      message: error.message,
-      details: serializeCause(error.cause),
-    };
-  }
-
-  const wooOrderId = integrations.wooCommerce?.response?.id || null;
-  const wooOrderNumber = integrations.wooCommerce?.response?.number || null;
-  let shipStationOrderId = null;
 
   try {
     integrations.shipStation = await shipStationClient.forwardOrder({

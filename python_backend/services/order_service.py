@@ -1853,6 +1853,8 @@ def create_order(
         **order_exemption_snapshot,
     }
 
+    should_record_discount_code_use = False
+
     if test_override:
         original_grand_total = round(max(0.0, items_subtotal + shipping_total_value + tax_total_value), 2)
         order["testPaymentOverride"] = {"enabled": True, "amount": 0.01, "originalGrandTotal": float(original_grand_total)}
@@ -1946,14 +1948,7 @@ def create_order(
             ),
             2,
         )
-
         should_record_discount_code_use = bool(order.get("discountCode"))
-
-    order_repository.insert(order)
-    try:
-        sales_prospect_repository.mark_doctor_as_nurturing_if_purchased(user_id)
-    except Exception:
-        pass
 
     integrations = {}
 
@@ -1977,49 +1972,58 @@ def create_order(
                 order["status"] = woo_response.get("status")
             if woo_number:
                 order["number"] = woo_number
+    except Exception as exc:  # pragma: no cover - network error path
+        logger.error("WooCommerce integration failed", exc_info=True, extra={"orderId": order["id"]})
+        err = _service_error("Unable to submit order right now. Please try again soon.", 503)
+        setattr(err, "error_code", "WOO_ORDER_CREATE_FAILED")
+        raise err from exc
+
+    order_repository.insert(order)
+    try:
+        sales_prospect_repository.mark_doctor_as_nurturing_if_purchased(user_id)
+    except Exception:
+        pass
+
+    if integrations.get("wooCommerce", {}).get("status") == "success":
+        try:
+            order_repository.update_woo_fields(
+                order_id=order.get("id"),
+                woo_order_id=order.get("wooOrderId"),
+                woo_order_number=order.get("wooOrderNumber"),
+                woo_order_key=order.get("wooOrderKey"),
+            )
+        except Exception:
+            pass
+
+        try:
+            print(
+                f"[checkout] woo linked order_id={order.get('id')} woo_id={order.get('wooOrderId')} woo_number={order.get('wooOrderNumber')} sales_rep_id={order.get('doctorSalesRepId')}",
+                flush=True,
+            )
+        except Exception:
+            pass
+
+        if should_record_discount_code_use:
             try:
-                order_repository.update_woo_fields(
-                    order_id=order.get("id"),
-                    woo_order_id=order.get("wooOrderId"),
-                    woo_order_number=order.get("wooOrderNumber"),
-                    woo_order_key=order.get("wooOrderKey"),
+                cart_quantity = _sum_cart_quantity(order.get("items"))
+                discount_code_repository.reserve_use_once(
+                    code=str(order.get("discountCode") or ""),
+                    user_id=user_id,
+                    user_name=str(user.get("name") or "").strip() or None,
+                    order_id=str(order.get("wooOrderNumber") or order.get("wooOrderId") or "").strip() or None,
+                    enforce_single_use=bool(order.get("discountCodeSingleUsePerUser", True)),
+                    items_subtotal=float(order.get("originalItemsSubtotal") or 0.0),
+                    quantity=cart_quantity,
                 )
             except Exception:
-                pass
-            try:
-                print(
-                    f"[checkout] woo linked order_id={order.get('id')} woo_id={order.get('wooOrderId')} woo_number={order.get('wooOrderNumber')} sales_rep_id={order.get('doctorSalesRepId')}",
-                    flush=True,
-                )
-            except Exception:
-                pass
-            if should_record_discount_code_use:
-                try:
-                    cart_quantity = _sum_cart_quantity(order.get("items"))
-                    discount_code_repository.reserve_use_once(
-                        code=str(order.get("discountCode") or ""),
-                        user_id=user_id,
-                        user_name=str(user.get("name") or "").strip() or None,
-                        order_id=str(order.get("wooOrderNumber") or order.get("wooOrderId") or "").strip() or None,
-                        enforce_single_use=bool(order.get("discountCodeSingleUsePerUser", True)),
-                        items_subtotal=float(order.get("originalItemsSubtotal") or 0.0),
-                        quantity=cart_quantity,
-                    )
-                except Exception:
-                    logger.error("Failed to record discount code usage", exc_info=True, extra={"orderId": order.get("id")})
-        # On successful Woo order creation, finalize referral credit deduction
+                logger.error("Failed to record discount code usage", exc_info=True, extra={"orderId": order.get("id")})
+
+        # Only deduct referral credit after Woo accepted the order.
         if order.get("appliedReferralCredit"):
             try:
                 referral_service.apply_referral_credit(user_id, float(order["appliedReferralCredit"]), order["id"])
-            except Exception as credit_exc:  # best effort; don't fail checkout
+            except Exception:
                 logger.error("Failed to apply referral credit", exc_info=True, extra={"orderId": order["id"]})
-    except Exception as exc:  # pragma: no cover - network error path
-        logger.error("WooCommerce integration failed", exc_info=True, extra={"orderId": order["id"]})
-        integrations["wooCommerce"] = {
-            "status": "error",
-            "message": str(exc),
-            "details": getattr(exc, "response", None),
-        }
 
     if order.get("wooOrderId") and normalized_payment_method != "bacs":
         try:

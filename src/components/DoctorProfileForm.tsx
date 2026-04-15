@@ -33,6 +33,7 @@ interface DoctorProfileFormProps {
   description?: ReactNode;
   preActionsNote?: ReactNode;
   avatarStyle?: 'default' | 'compact-circle';
+  requireGreaterArea?: boolean;
   submitLabel?: string;
   submittingLabel?: string;
   skipLabel?: string;
@@ -115,6 +116,7 @@ export function DoctorProfileForm({
   description,
   preActionsNote,
   avatarStyle = 'default',
+  requireGreaterArea = false,
   submitLabel = 'Save profile',
   submittingLabel = 'Saving…',
   skipLabel = 'Skip for now',
@@ -242,6 +244,9 @@ export function DoctorProfileForm({
     if (!trimmedEmail || !EMAIL_PATTERN.test(trimmedEmail)) {
       return 'Enter a valid email address.';
     }
+    if (requireGreaterArea && !trimmedArea) {
+      return 'Greater area is required.';
+    }
     if (trimmedArea.length > 190) {
       return 'Greater area must be 190 characters or fewer.';
     }
@@ -330,6 +335,11 @@ export function DoctorProfileForm({
     }
     const validationError = validate();
     if (validationError) {
+      if (validationError === 'Greater area is required.') {
+        setError(null);
+        toast.error(validationError);
+        return;
+      }
       setError(validationError);
       return;
     }
