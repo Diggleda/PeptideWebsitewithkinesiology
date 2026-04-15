@@ -1515,6 +1515,8 @@ export function Header({
   } | null>(null);
   const patientLinksPrefetchedRef = useRef(false);
   const patientLinksLoadInFlightRef = useRef(false);
+  const patientLinksQueuedReloadRef = useRef(false);
+  const loadPatientLinksRef = useRef<(() => Promise<void>) | null>(null);
   const patientLinkRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const patientLinkHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [patientLinkMarkupDraft, setPatientLinkMarkupDraft] = useState('0');
@@ -4123,8 +4125,29 @@ export function Header({
     } finally {
       setPatientLinksLoading(false);
       patientLinksLoadInFlightRef.current = false;
+      if (patientLinksQueuedReloadRef.current) {
+        patientLinksQueuedReloadRef.current = false;
+        void loadPatientLinksRef.current?.();
+      }
     }
   }, [localUser?.name, localUser?.zelleContact, normalizeMarkupPercent, showPatientLinksTab, user?.name]);
+
+  useEffect(() => {
+    loadPatientLinksRef.current = loadPatientLinks;
+  }, [loadPatientLinks]);
+
+  const requestPatientLinksRefresh = useCallback((options?: { force?: boolean }) => {
+    if (!showPatientLinksTab) {
+      return;
+    }
+    if (patientLinksLoadInFlightRef.current) {
+      if (options?.force) {
+        patientLinksQueuedReloadRef.current = true;
+      }
+      return;
+    }
+    void loadPatientLinks();
+  }, [loadPatientLinks, showPatientLinksTab]);
 
   useEffect(() => {
     if (!Array.isArray(patientLinks) || patientLinks.length === 0) {
@@ -4207,7 +4230,7 @@ export function Header({
           paymentInstructions,
         });
         toast.success('Payment settings saved.');
-        await loadPatientLinks();
+        requestPatientLinksRefresh({ force: true });
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()
@@ -4219,12 +4242,12 @@ export function Header({
       }
     },
     [
-      loadPatientLinks,
       localUser?.name,
       localUser?.zelleContact,
       patientLinkInstructionsDraftByToken,
       patientLinkPaymentMethodDraftByToken,
       patientLinksSavingPaymentToken,
+      requestPatientLinksRefresh,
       user?.name,
     ],
   );
@@ -4300,6 +4323,7 @@ export function Header({
   useEffect(() => {
     if (!showPatientLinksTab) {
       patientLinksPrefetchedRef.current = false;
+      patientLinksQueuedReloadRef.current = false;
       return;
     }
     if (patientLinksPrefetchedRef.current) {
@@ -4319,8 +4343,8 @@ export function Header({
       return;
     }
     lastPatientLinksRefreshTokenRef.current = patientLinksRefreshToken;
-    void loadPatientLinks();
-  }, [loadPatientLinks, patientLinksRefreshToken, showPatientLinksTab]);
+    requestPatientLinksRefresh({ force: true });
+  }, [patientLinksRefreshToken, requestPatientLinksRefresh, showPatientLinksTab]);
 
   const handleCreatePatientLink = useCallback(async () => {
     if (!showPatientLinksTab || patientLinksCreating) {
@@ -4381,7 +4405,7 @@ export function Header({
       setPatientLinkResearchNoteDraft('');
       setPatientLinkTermsAccepted(false);
       toast.success('Delegate link created.');
-      await loadPatientLinks();
+      requestPatientLinksRefresh({ force: true });
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
@@ -4408,6 +4432,7 @@ export function Header({
     localUser?.name,
     localUser?.zelleContact,
     onUserUpdated,
+    requestPatientLinksRefresh,
     setLocalUser,
     showPatientLinksTab,
     user?.name,
@@ -4534,7 +4559,7 @@ export function Header({
       const api = await import('../services/api');
       await api.delegationAPI.updateLink(normalized, { revoke: true });
       toast.success('Link revoked.');
-      await loadPatientLinks();
+      requestPatientLinksRefresh({ force: true });
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
@@ -4544,7 +4569,7 @@ export function Header({
     } finally {
       setPatientLinksUpdatingToken(null);
     }
-  }, [loadPatientLinks, patientLinksUpdatingToken]);
+  }, [patientLinksUpdatingToken, requestPatientLinksRefresh]);
 
   const handleDeletePatientLink = useCallback(async (token: string) => {
     const normalized = typeof token === 'string' ? token.trim() : '';
@@ -4556,7 +4581,7 @@ export function Header({
       const api = await import('../services/api');
       await api.delegationAPI.updateLink(normalized, { delete: true });
       toast.success('Link deleted.');
-      await loadPatientLinks();
+      requestPatientLinksRefresh({ force: true });
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
@@ -4566,7 +4591,7 @@ export function Header({
     } finally {
       setPatientLinksDeletingToken(null);
     }
-  }, [loadPatientLinks, patientLinksDeletingToken]);
+  }, [patientLinksDeletingToken, requestPatientLinksRefresh]);
 
   const handleSetPatientLinkPaymentReceived = useCallback(
     async (token: string, received: boolean) => {
@@ -4733,7 +4758,7 @@ export function Header({
         const api = await import('../services/api');
         await api.delegationAPI.reviewLinkProposal(normalized, { status: 'rejected' });
         toast.success('Proposal rejected.');
-        await loadPatientLinks();
+        requestPatientLinksRefresh({ force: true });
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()
@@ -4744,7 +4769,7 @@ export function Header({
         setPatientLinksProposalToken(null);
       }
     },
-    [loadPatientLinks, patientLinksProposalToken],
+    [patientLinksProposalToken, requestPatientLinksRefresh],
   );
 
   const handleSavePatientLinkReviewNotes = useCallback(
@@ -4766,7 +4791,7 @@ export function Header({
           notes,
         });
         toast.success('Proposal notes saved.');
-        await loadPatientLinks();
+        requestPatientLinksRefresh({ force: true });
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()
@@ -4777,7 +4802,7 @@ export function Header({
         setPatientLinksSavingReviewNotesToken(null);
       }
     },
-    [loadPatientLinks, patientLinkReviewNotesDraftByToken, patientLinksSavingReviewNotesToken],
+    [patientLinkReviewNotesDraftByToken, patientLinksSavingReviewNotesToken, requestPatientLinksRefresh],
   );
 
   const saveProfileField = useCallback(
@@ -6077,14 +6102,13 @@ export function Header({
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
                       <p className="order-status-row flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
                         <span>{statusDisplay}</span>
+                        {showDelegateOrderLabel && (
+                          <span className="text-xs font-semibold text-slate-500">
+                            Delegate Order
+                          </span>
+                        )}
                       </p>
                     </div>
-                    {showDelegateOrderLabel && (
-                      <div className="space-y-1">
-                        <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Type</p>
-                        <p className="text-sm font-semibold text-slate-900">Delegate Order</p>
-                      </div>
-                    )}
                     {showExpectedDelivery && (
                       <div className="space-y-1">
                         <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
@@ -7452,11 +7476,11 @@ export function Header({
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-1">
 	        <div className="flex items-start justify-between gap-3">
 	          <h3 className="text-lg font-semibold text-slate-900 leading-tight">Manage your links</h3>
-		          <Button
+	          <Button
 		            type="button"
 	            variant="outline"
 	            size="sm"
-	            onClick={() => void loadPatientLinks()}
+	            onClick={() => requestPatientLinksRefresh({ force: true })}
 	            disabled={!showPatientLinksTab || patientLinksLoading}
 	            className="header-home-button squircle-sm bg-white text-slate-900 self-start"
 	            aria-busy={patientLinksLoading}

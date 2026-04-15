@@ -4892,6 +4892,9 @@ function MainApp() {
     () => (isDelegateMode ? formatDelegateTimeRemaining(delegateExpiryMs, delegateNowMs) : null),
     [formatDelegateTimeRemaining, isDelegateMode, delegateExpiryMs, delegateNowMs],
   );
+  const delegateErrorLooksExpired = Boolean(
+    delegateError && /\bexpired\b/i.test(delegateError),
+  );
   const delegateHasSubmittedProposal = Boolean(isDelegateMode && (delegateContext?.delegateSharedAt || delegateContext?.delegateOrderId));
   const [searchQuery, setSearchQuery] = useState("");
   const productSectionRef = useRef<HTMLDivElement | null>(null);
@@ -5528,9 +5531,11 @@ function MainApp() {
       const parsed = raw ? Number(raw) : Number.NaN;
       if (Number.isFinite(parsed) && parsed > 0) {
         setDelegateExpiryMs(parsed);
+      } else {
+        setDelegateExpiryMs(null);
       }
     } catch {
-      // ignore
+      setDelegateExpiryMs(null);
     }
   }, [delegateToken]);
 
@@ -5617,15 +5622,6 @@ function MainApp() {
         const parsed = raw ? Number(raw) : Number.NaN;
         if (!isNodeDummyDelegateToken && Number.isFinite(parsed) && parsed > 0) {
           setDelegateExpiryMs(parsed);
-          if (Date.now() >= parsed) {
-            setDelegateContext(null);
-            setDelegateError("This delegate link has expired.");
-            setDelegateLoading(false);
-            setDelegateValidatedToken(delegateToken);
-            return () => {
-              cancelled = true;
-            };
-          }
         }
       } catch {
         // ignore
@@ -5678,6 +5674,13 @@ function MainApp() {
 	              // ignore
 	            }
 	          }
+	        } else {
+            setDelegateExpiryMs(null);
+            try {
+              window.sessionStorage.removeItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`);
+            } catch {
+              // ignore
+            }
 	        }
 		        setDelegateContext({
 		          token: delegateToken,
@@ -5809,7 +5812,7 @@ function MainApp() {
 	              ? resolved.expiresAt
 	              : typeof resolved?.expires_at === 'string'
 	                ? resolved.expires_at
-	                : prev.expiresAt ?? null;
+	                : null;
 	          if (nextExpiresAt) {
 	            const nextMs = new Date(nextExpiresAt).getTime();
 	            if (Number.isFinite(nextMs) && nextMs > 0) {
@@ -5820,6 +5823,13 @@ function MainApp() {
 	                // ignore
 	              }
 	            }
+	          } else {
+              setDelegateExpiryMs(null);
+              try {
+                window.sessionStorage.removeItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`);
+              } catch {
+                // ignore
+              }
 	          }
 	          return {
 	            ...prev,
@@ -24111,107 +24121,8 @@ function MainApp() {
       }
 
       void (async () => {
-        const normalizeField = (value: unknown) =>
-          typeof value === 'string' ? value.trim() : value == null ? '' : String(value).trim();
-
-        const nextShippingAddress = (() => {
-          const candidate = payload.shippingAddress;
-          if (!candidate || typeof candidate !== 'object') return null;
-          const addressLine1 = normalizeField((candidate as any).addressLine1);
-          const city = normalizeField((candidate as any).city);
-          const state = normalizeField((candidate as any).state);
-          const postalCode = normalizeField((candidate as any).postalCode);
-          const country = normalizeField((candidate as any).country) || 'US';
-          if (!addressLine1 || !city || !state || !postalCode) return null;
-          return {
-            name: normalizeField((candidate as any).name) || null,
-            addressLine1,
-            addressLine2: normalizeField((candidate as any).addressLine2) || null,
-            city,
-            state,
-            postalCode,
-            country,
-          } satisfies CheckoutShippingAddress;
-        })();
-
-        const nextShippingRate = (() => {
-          const rawCandidate = payload.shippingRate;
-          if (!rawCandidate || typeof rawCandidate !== 'object') return null;
-          const candidate =
-            ((rawCandidate as any).shippingEstimate && typeof (rawCandidate as any).shippingEstimate === 'object')
-              ? (rawCandidate as any).shippingEstimate
-              : ((rawCandidate as any).shipping_estimate && typeof (rawCandidate as any).shipping_estimate === 'object')
-                ? (rawCandidate as any).shipping_estimate
-                : ((rawCandidate as any).shippingRate && typeof (rawCandidate as any).shippingRate === 'object')
-                  ? (rawCandidate as any).shippingRate
-                  : ((rawCandidate as any).shipping_rate && typeof (rawCandidate as any).shipping_rate === 'object')
-                    ? (rawCandidate as any).shipping_rate
-                    : rawCandidate;
-          if (!candidate || typeof candidate !== 'object') return null;
-          const toNumberOrNull = (value: unknown) => {
-            const parsed = Number(value);
-            return Number.isFinite(parsed) ? parsed : null;
-          };
-          const toIntOrNull = (value: unknown) => {
-            const parsed = Number(value);
-            return Number.isFinite(parsed) ? Math.floor(parsed) : null;
-          };
-          const carrierId =
-            normalizeField(
-              (candidate as any).carrierId
-              ?? (candidate as any).carrier_id
-              ?? (candidate as any).carrierCode
-              ?? (candidate as any).carrier_code
-              ?? (candidate as any).carrier,
-            ) || null;
-          const serviceCode =
-            normalizeField(
-              (candidate as any).serviceCode
-              ?? (candidate as any).service_code
-              ?? (candidate as any).service,
-            ) || null;
-          const serviceType =
-            normalizeField(
-              (candidate as any).serviceType
-              ?? (candidate as any).service_type
-              ?? (candidate as any).serviceName
-              ?? (candidate as any).service_name,
-            ) || null;
-          const rate = toNumberOrNull(
-            (candidate as any).rate
-            ?? (candidate as any).amount
-            ?? (candidate as any).cost
-            ?? (candidate as any).price
-            ?? (candidate as any).shippingTotal
-            ?? (candidate as any).shipping_total,
-          );
-          if (!carrierId && !serviceCode && !serviceType && rate == null) return null;
-          return {
-            carrierId,
-            serviceCode,
-            serviceType,
-            estimatedDeliveryDays: toIntOrNull(
-              (candidate as any).estimatedDeliveryDays ?? (candidate as any).estimated_delivery_days,
-            ),
-            deliveryDateGuaranteed:
-              normalizeField((candidate as any).deliveryDateGuaranteed ?? (candidate as any).delivery_date_guaranteed)
-              || null,
-            rate,
-            currency: normalizeField((candidate as any).currency) || null,
-            packageCode: normalizeField((candidate as any).packageCode ?? (candidate as any).package_code) || null,
-            packageDimensions:
-              ((candidate as any).packageDimensions ?? (candidate as any).package_dimensions ?? null)
-              || null,
-            weightOz: toNumberOrNull((candidate as any).weightOz ?? (candidate as any).weight_oz),
-            estimatedArrivalDate:
-              normalizeField((candidate as any).estimatedArrivalDate ?? (candidate as any).estimated_arrival_date)
-              || null,
-            meta:
-              ((candidate as any).meta && typeof (candidate as any).meta === 'object')
-                ? (candidate as any).meta
-                : null,
-          } satisfies AccountShippingEstimate;
-        })();
+        const nextShippingAddress = null;
+        const nextShippingRate = null;
 
         const nextCart: CartItem[] = [];
         const addOrMergeCartItem = (
@@ -24439,6 +24350,8 @@ function MainApp() {
     shippingAddress?: any | null;
     shippingRate: any;
     shippingTotal?: number | null;
+    delegateAmountDue?: number | null;
+    delegateAmountDueCurrency?: string | null;
     handDelivery?: boolean;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted?: boolean;
@@ -24529,6 +24442,14 @@ function MainApp() {
 	      typeof options?.shippingTotal === "number" && options.shippingTotal >= 0
 	        ? options.shippingTotal
 	        : 0;
+      const delegateAmountDue =
+        typeof options?.delegateAmountDue === "number" && options.delegateAmountDue >= 0
+          ? roundCurrency(options.delegateAmountDue)
+          : null;
+      const delegateAmountDueCurrency =
+        typeof options?.delegateAmountDueCurrency === "string" && options.delegateAmountDueCurrency.trim()
+          ? options.delegateAmountDueCurrency.trim().toUpperCase()
+          : "USD";
 		    const total = Math.round(
 		      (itemTotal + shippingTotal + taxTotal + Number.EPSILON) * 100,
 		    ) / 100;
@@ -24548,23 +24469,6 @@ function MainApp() {
 		      const status = checkoutSignature === baseSignature ? 'accepted' : 'modified';
 		      return { token, status };
 		    })();
-        const delegationProposalAmountDue = (() => {
-          if (!delegationProposalReview) {
-            return null;
-          }
-          const rawMarkupPercent = Number(activeDelegationProposal?.markupPercent ?? 0);
-          const proposalMarkupPercent = Number.isFinite(rawMarkupPercent)
-            ? Math.max(0, rawMarkupPercent)
-            : 0;
-          const delegateSubtotal = items.reduce((sum, item) => {
-            const quantity = Math.max(1, Number(item.quantity) || 1);
-            const unitPrice = Number.isFinite(Number(item.price)) ? Number(item.price) : 0;
-            const delegateUnitPrice = roundCurrency(unitPrice * (1 + proposalMarkupPercent / 100));
-            return sum + (delegateUnitPrice * quantity);
-          }, 0);
-          return roundCurrency(delegateSubtotal + shippingTotal + taxTotal);
-        })();
-
 		    try {
 	        if (isDelegateMode && delegateToken) {
 	          const shared = await delegationAPI.shareDelegateOrder({
@@ -24664,8 +24568,8 @@ function MainApp() {
 			          await delegationAPI.reviewLinkProposal(delegationProposalReview.token, {
 			            status: delegationProposalReview.status,
 			            orderId,
-                    amountDue: delegationProposalAmountDue,
-                    amountDueCurrency: 'USD',
+                    amountDue: delegateAmountDue,
+                    amountDueCurrency: delegateAmountDue != null ? delegateAmountDueCurrency : null,
 			          });
 			        } catch (error) {
 			          console.warn('[Delegation] Failed to update proposal status after checkout', error);
@@ -31629,6 +31533,11 @@ function MainApp() {
                                         <span className="sales-tracking-row-status">
                                           {statusLabel}
                                         </span>
+                                        {delegateOrderLabel ? (
+                                          <span className="text-xs font-semibold text-slate-500">
+                                            Delegate Order
+                                          </span>
+                                        ) : null}
                                       </div>
                                     )}
                                   </div>
@@ -31642,11 +31551,6 @@ function MainApp() {
 	                                      <div className="lead-list-detail">
 	                                        {primaryDateLabel}
 	                                      </div>
-                                        {delegateOrderLabel ? (
-                                          <div className="lead-list-detail">
-                                            Type: Delegate Order
-                                          </div>
-                                        ) : null}
                                         {arrivalLabel || !trackingLabel ? (
 	                                      <div className="lead-list-detail">
 	                                        {arrivalLabel || "Tracking pending"}
@@ -35561,9 +35465,13 @@ function MainApp() {
 			            ) : delegateError ? (
 			              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
-			                  <p className="text-lg font-semibold text-slate-900">This delegate link has expired.</p>
+			                  <p className="text-lg font-semibold text-slate-900">
+                          {delegateErrorLooksExpired ? "This delegate link has expired." : "Unable to load this delegate session."}
+                        </p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-			                    Please request a new delegate link from your physician and try again.
+			                    {delegateErrorLooksExpired
+                                ? "Please request a new delegate link from your physician and try again."
+                                : delegateError}
 			                  </p>
 			                </div>
 			              </main>
@@ -37590,17 +37498,17 @@ function MainApp() {
 	                              <span className="sales-tracking-row-status shrink-0">
 	                                {describeSalesOrderStatus(order as any)}
 	                              </span>
+                                {delegateOrderLabel ? (
+                                  <span className="text-xs font-semibold text-slate-500">
+                                    Delegate Order
+                                  </span>
+                                ) : null}
 	                            </div>
 	                            <div className="text-xs text-slate-500">
 	                              {dateSummary.value
                                   ? `${dateSummary.label}: ${dateSummary.value}`
                                   : "Date unavailable"}
 	                            </div>
-                              {delegateOrderLabel ? (
-                                <div className="text-xs text-slate-500">
-                                  Type: Delegate Order
-                                </div>
-                              ) : null}
                               {orderTaxExempt && (
                                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-600">
                                   {orderTaxExempt && <span>Tax Exempt</span>}

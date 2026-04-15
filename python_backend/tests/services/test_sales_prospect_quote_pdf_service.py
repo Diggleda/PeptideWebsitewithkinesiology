@@ -156,6 +156,32 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
             ],
         )
 
+    def test_resolve_quote_item_image_data_urls_times_out_stuck_workers(self) -> None:
+        items = [
+            {"name": "First"},
+            {"name": "Second"},
+        ]
+        started = threading.Event()
+        release = threading.Event()
+
+        def resolve(item):
+            if item["name"] == "First":
+                started.set()
+                self.assertTrue(release.wait(timeout=1.0))
+                return "data:image/png;base64,first"
+            return "data:image/png;base64,second"
+
+        with patch.object(service, "_resolve_quote_item_image_data_url", side_effect=resolve), patch.object(
+            service, "_quote_item_image_resolution_timeout_seconds", return_value=0.05
+        ), patch.object(service.logger, "warning") as warning:
+            resolved = service._resolve_quote_item_image_data_urls(items)
+            self.assertTrue(started.wait(timeout=1.0))
+            release.set()
+
+        self.assertEqual(resolved[1], "data:image/png;base64,second")
+        self.assertIsNone(resolved[0])
+        self.assertEqual(warning.call_count, 1)
+
     def test_collect_quote_item_image_candidates_prefers_cached_woo_proxy_image_before_live_product_cache(self) -> None:
         item = {"sku": "SKU-123"}
         service._SKU_PRODUCT_IMAGE_CACHE["SKU-123"] = "https://cdn.example.com/products/live-fallback.png"

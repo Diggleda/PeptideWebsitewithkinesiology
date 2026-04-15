@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import glob
 import hashlib
 import html
@@ -9,6 +8,7 @@ import json
 import logging
 import mimetypes
 import os
+import queue
 import select
 import shutil
 import subprocess
@@ -40,6 +40,10 @@ _QUOTE_PDF_TEMPLATE_VERSION = "2026-03-30-physician-label-sales-rep-phone"
 _IMAGE_FETCH_ACCEPT_HEADER = "image/png,image/jpeg,image/webp,image/gif,image/*,*/*;q=0.8"
 _MAX_IMAGE_CANDIDATES_PER_ITEM = 4
 _MAX_CONCURRENT_IMAGE_RESOLVERS = 6
+_MAX_IMAGE_RESOLUTION_WINDOW_SECONDS = max(
+    5.0,
+    min(float(os.environ.get("QUOTE_PDF_IMAGE_RESOLUTION_TIMEOUT_SECONDS", "30").strip() or 30), 90.0),
+)
 _SUPPORTED_IMAGE_CONTENT_TYPES = {
     "image/gif",
     "image/jpeg",
@@ -813,6 +817,14 @@ def _resolve_quote_item_image_data_url(item: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _quote_item_image_resolution_timeout_seconds(item_count: int, worker_count: int) -> float:
+    safe_item_count = max(1, int(item_count or 0))
+    safe_worker_count = max(1, int(worker_count or 0))
+    batch_count = max(1, (safe_item_count + safe_worker_count - 1) // safe_worker_count)
+    estimated_seconds = (batch_count * _MAX_IMAGE_CANDIDATES_PER_ITEM * _REMOTE_IMAGE_FETCH_TIMEOUT_SECONDS) + 1.0
+    return min(_MAX_IMAGE_RESOLUTION_WINDOW_SECONDS, estimated_seconds)
+
+
 def _resolve_quote_item_image_data_urls(items: List[Any]) -> List[Optional[str]]:
     resolved_images: List[Optional[str]] = [None] * len(items)
     indexed_items = [(index, item) for index, item in enumerate(items) if isinstance(item, dict)]
@@ -824,17 +836,66 @@ def _resolve_quote_item_image_data_urls(items: List[Any]) -> List[Optional[str]]
         resolved_images[index] = _resolve_quote_item_image_data_url(item)
         return resolved_images
 
-    max_workers = min(_MAX_CONCURRENT_IMAGE_RESOLVERS, len(indexed_items))
-    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="quote-image") as executor:
-        future_to_index = {
-            executor.submit(_resolve_quote_item_image_data_url, item): index for index, item in indexed_items
-        }
-        for future in as_completed(future_to_index):
-            index = future_to_index[future]
+    worker_count = min(_MAX_CONCURRENT_IMAGE_RESOLVERS, len(indexed_items))
+    timeout_seconds = _quote_item_image_resolution_timeout_seconds(len(indexed_items), worker_count)
+    work_queue: queue.Queue[tuple[int, Dict[str, Any]]] = queue.Queue()
+    for index, item in indexed_items:
+        work_queue.put((index, item))
+
+    completion_lock = threading.Lock()
+    completed_count = 0
+    all_done = threading.Event()
+    stop_requested = threading.Event()
+
+    def mark_complete() -> None:
+        nonlocal completed_count
+        with completion_lock:
+            completed_count += 1
+            if completed_count >= len(indexed_items):
+                all_done.set()
+
+    def worker() -> None:
+        while not stop_requested.is_set():
             try:
-                resolved_images[index] = future.result()
+                index, item = work_queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                resolved_images[index] = _resolve_quote_item_image_data_url(item)
             except Exception:
                 logger.exception("Quote PDF image resolver failed", extra={"item_index": index})
+            finally:
+                mark_complete()
+                work_queue.task_done()
+
+    # Avoid ThreadPoolExecutor here; gunicorn gthread workers already own a thread pool,
+    # and extra executor threads can wedge interpreter shutdown during worker recycle.
+    for worker_index in range(worker_count):
+        thread = threading.Thread(
+            target=worker,
+            name=f"quote-image-{worker_index + 1}",
+            daemon=True,
+        )
+        thread.start()
+
+    if all_done.wait(timeout=timeout_seconds):
+        return resolved_images
+
+    stop_requested.set()
+    try:
+        pending_count = work_queue.qsize()
+    except Exception:
+        pending_count = None
+    logger.warning(
+        "Quote PDF image resolution timed out",
+        extra={
+            "itemCount": len(indexed_items),
+            "workerCount": worker_count,
+            "timeoutSeconds": round(timeout_seconds, 2),
+            "completedCount": completed_count,
+            "pendingCount": pending_count,
+        },
+    )
     return resolved_images
 
 

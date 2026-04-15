@@ -265,6 +265,8 @@ interface CheckoutModalProps {
     shippingAddress: ShippingAddress | null;
     shippingRate: ShippingRate | null;
     shippingTotal: number;
+    delegateAmountDue?: number | null;
+    delegateAmountDueCurrency?: string | null;
     handDelivery?: boolean;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted: boolean;
@@ -602,6 +604,7 @@ export function CheckoutModal({
   const displayShippingCost = testOverrideApplied ? 0 : effectiveShippingCost;
   const displayTaxAmount = testOverrideApplied ? 0 : taxAmount;
   const displayTotal = testOverrideApplied ? 0.01 : total;
+  const isDelegateFlow = isDelegateCheckoutFlow;
   const shippingAddressSignature = [
     shippingAddress.addressLine1,
     shippingAddress.addressLine2,
@@ -612,14 +615,17 @@ export function CheckoutModal({
   ]
     .map((value) => normalizeAddressField(value).toUpperCase())
     .join('|');
-  const shippingAddressComplete = isAddressComplete(shippingAddress);
-  const taxAddressReady = isTaxAddressReady(shippingAddress);
+  const delegateShippingHandledByPhysician = isDelegateFlow;
+  const shippingAddressComplete = delegateShippingHandledByPhysician ? true : isAddressComplete(shippingAddress);
+  const taxAddressReady = delegateShippingHandledByPhysician ? false : isTaxAddressReady(shippingAddress);
   const isPaymentValid = true;
-  const hasSelectedShippingRate = isHandDeliveryEnabled
+  const hasSelectedShippingRate = delegateShippingHandledByPhysician
+    || isHandDeliveryEnabled
     || Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
     && (isAuthenticated || allowUnauthenticatedCheckout)
+    && !delegateShippingHandledByPhysician
     && taxAddressReady
     && checkoutLineItems.length > 0
     && hasSelectedShippingRate,
@@ -656,7 +662,6 @@ export function CheckoutModal({
     discountCodeAmount,
   ]);
   const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
-  const isDelegateFlow = isDelegateCheckoutFlow;
   const proposalMode = isDelegateFlow || Boolean(forceProposalMode);
   const showDualPricing = proposalMode && !isDelegateFlow && proposalMarkupPercentValue != null;
   const delegateComparisonPricingMode: PricingMode = 'wholesale';
@@ -1031,8 +1036,13 @@ export function CheckoutModal({
             : null,
       };
     });
+    const delegateAmountDue =
+      showDualPricing && delegateTotal != null
+        ? Number(delegateTotal.toFixed(2))
+        : null;
     console.debug('[CheckoutModal] Checkout start', {
       total,
+      delegateAmountDue,
       items: checkoutItems.map((item) => ({
         cartItemId: item.cartItemId,
         productId: item.productId,
@@ -1042,28 +1052,34 @@ export function CheckoutModal({
       })),
     });
 	    setIsProcessing(true);
-	    try {
-        const handDeliveryRate: ShippingRate | null = isHandDeliveryEnabled
-          ? {
-              carrierId: 'hand_delivery',
-              serviceCode: 'hand_delivery',
+    try {
+      const handDeliveryRate: ShippingRate | null = isHandDeliveryEnabled
+        ? {
+            carrierId: 'hand_delivery',
+            serviceCode: 'hand_delivery',
               serviceType: 'Hand delivered',
               estimatedDeliveryDays: null,
               deliveryDateGuaranteed: null,
               rate: 0,
               currency: 'USD',
-              addressFingerprint: shippingAddressSignature || null,
-            }
-          : null;
-        const checkoutShippingRate = isHandDeliveryEnabled
+            addressFingerprint: shippingAddressSignature || null,
+          }
+        : null;
+      const checkoutShippingAddress = delegateShippingHandledByPhysician ? null : shippingAddress;
+      const checkoutShippingRate = delegateShippingHandledByPhysician
+        ? null
+        : isHandDeliveryEnabled
           ? handDeliveryRate
           : selectedShippingRate;
+      const checkoutShippingTotal = delegateShippingHandledByPhysician ? 0 : effectiveShippingCost;
 	      const result = await onCheckout({
-	        shippingAddress,
+	        shippingAddress: checkoutShippingAddress,
 	        shippingRate: checkoutShippingRate,
-	        shippingTotal: effectiveShippingCost,
+	        shippingTotal: checkoutShippingTotal,
+          delegateAmountDue,
+          delegateAmountDueCurrency: delegateAmountDue != null ? 'USD' : null,
           handDelivery: isHandDeliveryEnabled,
-	        expectedShipmentWindow: deliveryEstimate?.deliveryWindowLabel ?? null,
+	        expectedShipmentWindow: delegateShippingHandledByPhysician ? null : (deliveryEstimate?.deliveryWindowLabel ?? null),
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
 	        paymentMethod: paymentMethod === 'none' ? null : paymentMethod,
@@ -1188,15 +1204,15 @@ export function CheckoutModal({
       toast.error('Accept the terms to continue.');
       return;
     }
-    if (!shippingAddressComplete) {
+    if (!delegateShippingHandledByPhysician && !shippingAddressComplete) {
       toast.error('Enter the full shipping address before placing your order.');
       return;
     }
-    if (!hasSelectedShippingRate) {
+    if (!delegateShippingHandledByPhysician && !hasSelectedShippingRate) {
       toast.error('Select a shipping option before completing your purchase.');
       return;
     }
-    if (shouldFetchTax && (!taxEstimate || taxEstimatePending)) {
+    if (!delegateShippingHandledByPhysician && shouldFetchTax && (!taxEstimate || taxEstimatePending)) {
       toast.error('We are calculating taxes for this order. Please try again in a moment.');
       return;
     }
@@ -2044,136 +2060,145 @@ export function CheckoutModal({
                     </p>
                   </div>
                 )}
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="ship-name">Recipient Name</Label>
-                      <Input
-                        id="ship-name"
-                        placeholder="Full name"
-                        value={shippingAddress.name || ''}
-                        onChange={(e) => setShippingAddress((prev) => ({ ...prev, name: e.target.value }))}
-                        className="squircle-sm bg-slate-50 border-2"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="ship-line1">Address Line 1</Label>
-                      <Input
-                        id="ship-line1"
-                        placeholder="Street address"
-                        value={shippingAddress.addressLine1 || ''}
-                        onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine1: e.target.value }))}
-                        className="squircle-sm bg-slate-50 border-2"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="ship-line2">Address Line 2</Label>
-                      <Input
-                        id="ship-line2"
-                        placeholder="Apt, suite, etc. (optional)"
-                        value={shippingAddress.addressLine2 || ''}
-                        onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine2: e.target.value }))}
-                        className="squircle-sm bg-slate-50 border-2"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="ship-city">City</Label>
-                      <Input
-                        id="ship-city"
-                        placeholder="City"
-                        value={shippingAddress.city || ''}
-                        onChange={(e) => setShippingAddress((prev) => ({ ...prev, city: e.target.value }))}
-                        className="squircle-sm bg-slate-50 border-2"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="ship-state">State</Label>
-                      <Input
-                        id="ship-state"
-                        placeholder="State"
-                        value={shippingAddress.state || ''}
-                        onChange={(e) => setShippingAddress((prev) => ({ ...prev, state: e.target.value }))}
-                        className="squircle-sm bg-slate-50 border-2"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="ship-postal">Postal Code</Label>
-                      <Input
-                        id="ship-postal"
-                        placeholder="ZIP / Postal code"
-                        value={shippingAddress.postalCode || ''}
-                        onChange={(e) => setShippingAddress((prev) => ({ ...prev, postalCode: e.target.value }))}
-                        className="squircle-sm bg-slate-50 border-2"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="ship-country">Country</Label>
-                      <Input
-                        id="ship-country"
-                        placeholder="Country"
-                        value={shippingAddress.country || 'US'}
-                        onChange={(e) => setShippingAddress((prev) => ({ ...prev, country: e.target.value }))}
-                        className="squircle-sm bg-slate-50 border-2"
-                      />
-                    </div>
+                {isDelegateFlow ? (
+                  <div className="glass-card squircle-md border border-[rgba(95,179,249,0.28)] bg-[rgba(95,179,249,0.08)] px-5 py-4">
+                    <p className="text-sm font-semibold text-slate-900">Shipping is coordinated by your physician.</p>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-700">
+                      Additional shipping charges may be incurred if your physician has to ship to your address. Coordinate with your physician regarding shipping.
+                    </p>
                   </div>
-                  {!isHandDeliveryEnabled && (
-                    <div className="flex items-center gap-3">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={handleGetRates}
-                        disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
-                        className={isDelegateFlow ? 'squircle-sm border-0 text-white' : 'squircle-sm'}
-                        style={isDelegateFlow ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
-                      >
-                        {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
-                      </Button>
-                      {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-name">Recipient Name</Label>
+                        <Input
+                          id="ship-name"
+                          placeholder="Full name"
+                          value={shippingAddress.name || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, name: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-line1">Address Line 1</Label>
+                        <Input
+                          id="ship-line1"
+                          placeholder="Street address"
+                          value={shippingAddress.addressLine1 || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine1: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-line2">Address Line 2</Label>
+                        <Input
+                          id="ship-line2"
+                          placeholder="Apt, suite, etc. (optional)"
+                          value={shippingAddress.addressLine2 || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine2: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-city">City</Label>
+                        <Input
+                          id="ship-city"
+                          placeholder="City"
+                          value={shippingAddress.city || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, city: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-state">State</Label>
+                        <Input
+                          id="ship-state"
+                          placeholder="State"
+                          value={shippingAddress.state || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, state: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-postal">Postal Code</Label>
+                        <Input
+                          id="ship-postal"
+                          placeholder="ZIP / Postal code"
+                          value={shippingAddress.postalCode || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, postalCode: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-country">Country</Label>
+                        <Input
+                          id="ship-country"
+                          placeholder="Country"
+                          value={shippingAddress.country || 'US'}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, country: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
                     </div>
-                  )}
-                  {!isHandDeliveryEnabled && shippingRates && shippingRates.length > 0 && (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
-                      <select
-                        className="shipping-rate-select"
-                        value={selectedRateIndex != null ? String(selectedRateIndex) : ''}
-                        onChange={(event) => {
-                          const idx = event.target.value ? Number(event.target.value) : null;
-                          setSelectedRateIndex(idx);
-                        }}
-                      >
-                        <option value="" disabled>
-                          Choose a shipping option
-                        </option>
-                        {shippingRates.map((rate, index) => (
-                          <option key={`${rate.serviceCode}-${index}`} value={index}>
-                            {formatShippingServiceLabel(rate)} — ${Number(rate.rate || 0).toFixed(2)}
+                    {!isHandDeliveryEnabled && (
+                      <div className="flex items-center gap-3">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={handleGetRates}
+                          disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
+                          className={isDelegateFlow ? 'squircle-sm border-0 text-white' : 'squircle-sm'}
+                          style={isDelegateFlow ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
+                        >
+                          {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
+                        </Button>
+                        {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
+                      </div>
+                    )}
+                    {!isHandDeliveryEnabled && shippingRates && shippingRates.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
+                        <select
+                          className="shipping-rate-select"
+                          value={selectedRateIndex != null ? String(selectedRateIndex) : ''}
+                          onChange={(event) => {
+                            const idx = event.target.value ? Number(event.target.value) : null;
+                            setSelectedRateIndex(idx);
+                          }}
+                        >
+                          <option value="" disabled>
+                            Choose a shipping option
                           </option>
-                        ))}
-                      </select>
-                      {selectedRateIndex != null && shippingRates[selectedRateIndex] && (
-                        <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                          {deliveryEstimate && (
-                            <div className="space-y-1">
-                              <p className="text-sm font-semibold text-slate-800">
-                                Estimated delivery window: {deliveryEstimate.deliveryWindowLabel}
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                {deliveryEstimate.mathText}
-                              </p>
-                              {deliveryEstimate.disclaimer && (
-                                <p className="text-[11px] text-slate-500">
-                                  {deliveryEstimate.disclaimer}
+                          {shippingRates.map((rate, index) => (
+                            <option key={`${rate.serviceCode}-${index}`} value={index}>
+                              {formatShippingServiceLabel(rate)} — ${Number(rate.rate || 0).toFixed(2)}
+                            </option>
+                          ))}
+                        </select>
+                        {selectedRateIndex != null && shippingRates[selectedRateIndex] && (
+                          <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            {deliveryEstimate && (
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold text-slate-800">
+                                  Estimated delivery window: {deliveryEstimate.deliveryWindowLabel}
                                 </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
+                                <p className="text-xs text-slate-600">
+                                  {deliveryEstimate.mathText}
+                                </p>
+                                {deliveryEstimate.disclaimer && (
+                                  <p className="text-[11px] text-slate-500">
+                                    {deliveryEstimate.disclaimer}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
 	              {/* Payment Form */}
@@ -2426,36 +2451,44 @@ export function CheckoutModal({
                           </span>
                         </div>
                       )}
-		                {displayAppliedCredits > 0 && (
+	                {displayAppliedCredits > 0 && (
 		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
 		                    <span>Referral Credit</span>
 		                    <span>
 		                      - ${displayAppliedCredits.toFixed(2)}
 		                    </span>
-		                  </div>
+	                  </div>
 	                )}
 	                <div className="flex justify-between text-sm text-slate-700">
 	                  <span>Shipping:</span>
 	                  <span>
-                      {isHandDeliveryEnabled ? 'FREE ($0.00)' : `$${displayShippingCost.toFixed(2)}`}
+                      {isDelegateFlow
+                        ? 'Coordinated with physician'
+                        : isHandDeliveryEnabled
+                          ? 'FREE ($0.00)'
+                          : `$${displayShippingCost.toFixed(2)}`}
                     </span>
 	                </div>
-	                <div className="flex justify-between text-sm text-slate-700">
-	                  <span>Estimated tax:</span>
-	                  <span>{taxEstimatePending ? 'Calculating…' : `$${displayTaxAmount.toFixed(2)}`}</span>
-	                </div>
-                {taxEstimateError && (
-                  <div className="flex items-start justify-between text-xs text-red-600">
-                    <span className="pr-2">{taxEstimateError}</span>
-                    <button
-                      type="button"
-                      onClick={handleRetryTaxEstimate}
-                      className="underline decoration-dotted hover:text-red-700"
-                    >
-                      Retry
-                    </button>
-                  </div>
-	                )}
+                  {!isDelegateFlow && (
+                    <>
+	                  <div className="flex justify-between text-sm text-slate-700">
+	                    <span>Estimated tax:</span>
+	                    <span>{taxEstimatePending ? 'Calculating…' : `$${displayTaxAmount.toFixed(2)}`}</span>
+	                  </div>
+                    {taxEstimateError && (
+                      <div className="flex items-start justify-between text-xs text-red-600">
+                        <span className="pr-2">{taxEstimateError}</span>
+                        <button
+                          type="button"
+                          onClick={handleRetryTaxEstimate}
+                          className="underline decoration-dotted hover:text-red-700"
+                        >
+                          Retry
+                        </button>
+                      </div>
+	                  )}
+                    </>
+                  )}
 	                <Separator />
 			                <div className="flex justify-between font-bold items-baseline gap-2">
 			                  <span className="flex items-baseline gap-2">

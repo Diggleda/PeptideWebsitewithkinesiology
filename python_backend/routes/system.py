@@ -4,6 +4,7 @@ from flask import Blueprint, Response, request
 
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -276,21 +277,36 @@ def _detect_worker_count() -> int | None:
 def _parse_gunicorn_args(cmdline: str) -> dict[str, Any] | None:
     if "gunicorn" not in cmdline:
         return None
-    tokens = cmdline.split()
+    try:
+        tokens = shlex.split(cmdline)
+    except Exception:
+        tokens = cmdline.split()
     parsed: dict[str, Any] = {}
 
-    def read_flag(name: str) -> Optional[str]:
+    def read_flag(*names: str) -> Optional[str]:
         for i, tok in enumerate(tokens):
-            if tok == name and i + 1 < len(tokens):
-                return tokens[i + 1]
-            if tok.startswith(name + "="):
-                return tok.split("=", 1)[1]
+            for name in names:
+                if tok == name and i + 1 < len(tokens):
+                    return tokens[i + 1]
+                if tok.startswith(name + "="):
+                    return tok.split("=", 1)[1]
         return None
 
-    for flag, key in (("--workers", "workers"), ("--threads", "threads"), ("--timeout", "timeoutSeconds")):
+    for flag, key in (
+        ("--workers", "workers"),
+        ("--threads", "threads"),
+        ("--timeout", "timeoutSeconds"),
+        ("--graceful-timeout", "gracefulTimeoutSeconds"),
+        ("--max-requests", "maxRequests"),
+        ("--max-requests-jitter", "maxRequestsJitter"),
+        ("--keep-alive", "keepAliveSeconds"),
+    ):
         raw = read_flag(flag)
         if raw and raw.isdigit():
             parsed[key] = int(raw)
+    worker_class = read_flag("--worker-class", "-k")
+    if worker_class:
+        parsed["workerClass"] = worker_class
     return parsed or None
 
 
