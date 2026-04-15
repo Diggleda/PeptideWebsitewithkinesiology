@@ -122,7 +122,7 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
 
         cls.order_service = order_service
 
-    def test_get_orders_for_user_skips_woo_and_returns_local_payload(self):
+    def test_get_orders_for_user_skips_woo_and_shipstation_on_default_load(self):
         service = self.order_service
         local_order = {
             "id": "order-1",
@@ -159,14 +159,48 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
             result = service.get_orders_for_user("doctor-1")
 
         mock_fetch.assert_not_called()
-        mock_enrich.assert_called_once()
+        mock_enrich.assert_not_called()
         self.assertEqual(result["woo"], [])
         self.assertIsNone(result["wooError"])
         self.assertEqual(len(result["local"]), 1)
         self.assertEqual(result["local"][0]["source"], "peppro")
         self.assertEqual(result["local"][0]["wooOrderNumber"], "1491")
 
-    def test_get_orders_for_sales_rep_skips_woo_and_uses_local_orders(self):
+    def test_get_orders_for_user_enriches_shipstation_when_forced(self):
+        service = self.order_service
+        local_order = {
+            "id": "order-1",
+            "userId": "doctor-1",
+            "wooOrderId": "9001",
+            "wooOrderNumber": "1491",
+            "status": "processing",
+            "grandTotal": 125.0,
+            "itemsSubtotal": 100.0,
+            "taxTotal": 10.0,
+            "shippingTotal": 15.0,
+            "currency": "USD",
+            "createdAt": "2026-04-08T00:00:00+00:00",
+            "items": [{"name": "Test Item", "quantity": 1}],
+        }
+
+        with patch.object(
+            service.user_repository,
+            "find_by_id",
+            return_value={"id": "doctor-1", "email": "doctor@example.com"},
+        ), patch.object(
+            service.order_repository,
+            "list_user_overlay_fields",
+            return_value=[local_order],
+        ), patch.object(
+            service,
+            "_enrich_with_shipstation",
+            side_effect=lambda order: order,
+        ) as mock_enrich:
+            service.get_orders_for_user("doctor-1", force=True)
+
+        mock_enrich.assert_called_once()
+
+    def test_get_orders_for_sales_rep_skips_woo_and_shipstation_on_default_load(self):
         service = self.order_service
         doctor = {
             "id": "doctor-1",
@@ -232,11 +266,74 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
             result = service.get_orders_for_sales_rep("rep-1")
 
         mock_fetch.assert_not_called()
-        mock_enrich.assert_called_once()
+        mock_enrich.assert_not_called()
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["source"], "peppro")
         self.assertEqual(result[0]["doctorId"], "doctor-1")
         self.assertEqual(result[0]["doctorSalesRepId"], "rep-1")
+
+    def test_get_orders_for_sales_rep_enriches_shipstation_when_forced(self):
+        service = self.order_service
+        doctor = {
+            "id": "doctor-1",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "role": "doctor",
+            "salesRepId": "rep-1",
+        }
+        rep = {"id": "rep-1", "name": "Rep One", "email": "rep@example.com"}
+        local_order = {
+            "id": "order-1",
+            "userId": "doctor-1",
+            "wooOrderId": "9001",
+            "wooOrderNumber": "1491",
+            "status": "processing",
+            "grandTotal": 125.0,
+            "taxTotal": 10.0,
+            "shippingTotal": 15.0,
+            "currency": "USD",
+            "pricingMode": "wholesale",
+            "createdAt": "2026-04-08T00:00:00+00:00",
+            "items": [{"name": "Test Item", "quantity": 1}],
+            "doctorSalesRepId": "rep-1",
+        }
+
+        with patch.object(
+            service.user_repository,
+            "get_all",
+            return_value=[doctor],
+        ), patch.object(
+            service.sales_rep_repository,
+            "get_all",
+            return_value=[rep],
+        ), patch.object(
+            service.referral_service,
+            "backfill_lead_types_for_doctors",
+            return_value=[doctor],
+        ), patch.object(
+            service.sales_prospect_repository,
+            "get_all",
+            return_value=[],
+        ), patch.object(
+            service.order_repository,
+            "find_by_user_ids",
+            return_value=[local_order],
+        ), patch.object(
+            service.order_repository,
+            "list_recent_sales_tracking",
+            return_value=[],
+        ), patch.object(
+            service.sales_prospect_repository,
+            "mark_doctor_as_nurturing_if_purchased",
+            return_value=None,
+        ), patch.object(
+            service,
+            "_enrich_with_shipstation",
+            side_effect=lambda order: order,
+        ) as mock_enrich:
+            service.get_orders_for_sales_rep("rep-1", force=True)
+
+        mock_enrich.assert_called_once()
 
 
 if __name__ == "__main__":

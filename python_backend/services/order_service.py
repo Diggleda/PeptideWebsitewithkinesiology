@@ -2462,7 +2462,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
             }
         )
 
-    if local_summaries:
+    if force and local_summaries:
         t0 = time.perf_counter()
         for local_summary in local_summaries:
             _enrich_with_shipstation(local_summary)
@@ -3199,7 +3199,8 @@ def get_orders_for_sales_rep(
                 "userId": doctor_meta.get("id") or local_user_id or None,
                 "source": "peppro",
             }
-            _enrich_with_shipstation(summary)
+            if force:
+                _enrich_with_shipstation(summary)
             summaries.append(summary)
 
     summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)

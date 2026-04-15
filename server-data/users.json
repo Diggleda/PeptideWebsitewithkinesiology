@@ -106,24 +106,15 @@
     "isTaxExempt": true,
     "taxExemptSource": "RESELLER_PERMIT",
     "taxExemptReason": "Reseller permit on file",
-    "lastSeenAt": "2026-04-15T02:30:25.516Z",
-    "lastInteractionAt": "2026-04-15T02:30:25.516Z",
+    "lastSeenAt": "2026-04-15T02:42:56.477Z",
+    "lastInteractionAt": "2026-04-15T02:42:56.477Z",
     "isOnline": true,
     "isIdle": false,
     "devCommission": false,
     "receiveClientOrderUpdateEmails": false,
     "handDelivered": false,
     "hand_delivered": 0,
-    "cart": [
-      {
-        "productId": "woo-1367",
-        "productWooId": 1367,
-        "variantId": "woo-variation-1368",
-        "variantWooId": 1368,
-        "quantity": 1,
-        "note": null
-      }
-    ],
+    "cart": [],
     "delegateLinksEnabled": true,
     "delegate_links_enabled": 1,
     "resellerPermitFilePath": null,
