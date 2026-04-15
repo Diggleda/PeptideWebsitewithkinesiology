@@ -418,6 +418,71 @@ const LOGIN_BACKEND_DOWN_TOAST_ID = "login-backend-down";
 const LOGIN_BACKEND_DOWN_MESSAGE =
   "PepPro is unavailable right now. Please try again in a minute.";
 const MAINTENANCE_OPENER_PING_INTERVAL_MS = 30_000;
+
+const getErrorStatusCode = (error: any): number | null =>
+  typeof error?.status === "number" ? error.status : null;
+
+const getErrorCode = (error: any): string | null =>
+  typeof error?.code === "string" ? error.code : null;
+
+const getErrorMessageText = (error: any): string =>
+  typeof error?.message === "string" ? error.message : "";
+
+const isLikelyTransientUiError = (error: any) => {
+  const status = getErrorStatusCode(error);
+  const code = getErrorCode(error);
+  const message = getErrorMessageText(error).toLowerCase();
+  return (
+    code === "TIMEOUT" ||
+    code === "BACKGROUND_COOLDOWN_ACTIVE" ||
+    status === 408 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    message.includes("timed out") ||
+    message.includes("timeout") ||
+    message.includes("failed to fetch") ||
+    message.includes("load failed") ||
+    message.includes("networkerror") ||
+    message.includes("network request failed") ||
+    message.includes("cors") ||
+    message.includes("preflight") ||
+    message.includes("access-control") ||
+    message.includes("origin https://") ||
+    message.includes("offline") ||
+    message.includes("background requests paused")
+  );
+};
+
+const isLikelyAuthLifecycleError = (error: any) => {
+  const status = getErrorStatusCode(error);
+  const code = getErrorCode(error);
+  const authCode =
+    typeof error?.authCode === "string" ? error.authCode : null;
+  return (
+    code === "AUTH_REQUIRED" ||
+    code === "AUTH_CHECK_FAILED" ||
+    status === 401 ||
+    (status === 403 &&
+      typeof authCode === "string" &&
+      authCode.startsWith("TOKEN_"))
+  );
+};
+
+const logHandledUiIssue = (
+  label: string,
+  error: any,
+  details?: Record<string, unknown>,
+) => {
+  const payload = details ? { ...details, error } : error;
+  if (isLikelyTransientUiError(error) || isLikelyAuthLifecycleError(error)) {
+    console.debug(label, payload);
+    return;
+  }
+  console.warn(label, payload);
+};
 const MAINTENANCE_OPENER_ACTIVITY_TTL_MS =
   MAINTENANCE_OPENER_PING_INTERVAL_MS * 2 + 15_000;
 
@@ -6167,16 +6232,15 @@ function MainApp() {
           const attempt = Math.min(8, wooBackoffAttemptRef.current);
           const delayMs = Math.min(5 * 60 * 1000, 2000 * Math.pow(2, attempt - 1));
           wooBackoffUntilRef.current = Date.now() + delayMs;
-          console.warn("[Catalog] Woo backoff engaged", {
+          console.debug("[Catalog] Woo backoff engaged", {
             status: resolvedStatus,
             attempt,
             delayMs,
           });
         }
-        console.warn("[Catalog] Failed to load variants for product", {
+        logHandledUiIssue("[Catalog] Failed to load variants for product", error, {
           productId: product.id,
           wooId,
-          error,
         });
         return product;
       }
@@ -7976,8 +8040,11 @@ function MainApp() {
     Number(doctorSummary?.availableCredits ?? user?.referralCredits ?? 0),
   );
   const [doctorReferrals, setDoctorReferrals] = useState<ReferralRecord[]>([]);
+  const doctorSummaryRef = useRef<DoctorCreditSummary | null>(null);
+  const doctorReferralsRef = useRef<ReferralRecord[]>([]);
   const [salesRepDashboard, setSalesRepDashboard] =
     useState<SalesRepDashboard | null>(null);
+  const salesRepDashboardRef = useRef<SalesRepDashboard | null>(null);
   const referralCreditAmount = useMemo(() => {
     const doctorConfigured = Number(doctorSummary?.referralCreditAmount);
     if (Number.isFinite(doctorConfigured) && doctorConfigured > 0) {
@@ -8116,6 +8183,48 @@ function MainApp() {
     });
     return keys;
   }, [buildEmailIdentityKeys, buildPhoneIdentityKeys, salesRepDashboard]);
+
+  const mergeDashboardCollectionsWithFallback = useCallback(
+    (
+      nextDashboard: SalesRepDashboard | null,
+      previousDashboard: SalesRepDashboard | null,
+    ): SalesRepDashboard | null => {
+      if (!nextDashboard || typeof nextDashboard !== "object") {
+        return nextDashboard;
+      }
+      if (!previousDashboard || typeof previousDashboard !== "object") {
+        return nextDashboard;
+      }
+      const collectionKeys = [
+        "referrals",
+        "codes",
+        "users",
+        "accounts",
+        "doctors",
+        "statuses",
+        "salesReps",
+        "sales_reps",
+      ] as const;
+      let didPreserve = false;
+      const mergedDashboard: Record<string, unknown> = {
+        ...(nextDashboard as Record<string, unknown>),
+      };
+      collectionKeys.forEach((key) => {
+        const nextValue = mergedDashboard[key];
+        const previousValue = (previousDashboard as Record<string, unknown>)[key];
+        if (
+          Array.isArray(previousValue) &&
+          previousValue.length > 0 &&
+          (!Array.isArray(nextValue) || nextValue.length === 0)
+        ) {
+          mergedDashboard[key] = previousValue;
+          didPreserve = true;
+        }
+      });
+      return didPreserve ? (mergedDashboard as SalesRepDashboard) : nextDashboard;
+    },
+    [],
+  );
 
   const accountProfileLookup = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
@@ -8645,13 +8754,22 @@ function MainApp() {
         summaryOnly?: boolean;
 		  } | null>(null);
       const canOpenMaintenanceViewForSalesDoctorDetail = useMemo(() => {
-        if (!isAdmin(user?.role) || !salesDoctorDetail?.doctorId) {
+        if (
+          !isAdmin(user?.role) ||
+          !salesDoctorDetail?.doctorId ||
+          salesDoctorDetail?.referralId
+        ) {
           return false;
         }
         return MAINTENANCE_TARGET_ROLES.has(
           normalizeRole(salesDoctorDetail.role || ""),
         );
-      }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.role, user?.role]);
+      }, [
+        salesDoctorDetail?.doctorId,
+        salesDoctorDetail?.referralId,
+        salesDoctorDetail?.role,
+        user?.role,
+      ]);
       const [salesDoctorDetailStack, setSalesDoctorDetailStack] = useState<
         NonNullable<typeof salesDoctorDetail>[]
       >([]);
@@ -10111,20 +10229,26 @@ function MainApp() {
       }
     >
   >(new Map());
+  const salesTrackingDoctorsRef = useRef(salesTrackingDoctors);
   const [salesTrackingLoading, setSalesTrackingLoading] = useState(false);
   const [salesTrackingRefreshing, setSalesTrackingRefreshing] = useState(false);
+  const [salesTrackingHasSettled, setSalesTrackingHasSettled] = useState(false);
   const [salesTrackingError, setSalesTrackingError] = useState<string | null>(
     null,
   );
   const [salesOnHoldOrders, setSalesOnHoldOrders] = useState<AccountOrderSummary[]>([]);
+  const salesOnHoldOrdersRef = useRef<AccountOrderSummary[]>([]);
   const [salesOnHoldLoading, setSalesOnHoldLoading] = useState(false);
   const [salesOnHoldRefreshing, setSalesOnHoldRefreshing] = useState(false);
+  const [salesOnHoldHasSettled, setSalesOnHoldHasSettled] = useState(false);
   const [salesOnHoldError, setSalesOnHoldError] = useState<string | null>(null);
   const salesOnHoldLastFetchAtRef = useRef(0);
   const salesOnHoldInFlightRef = useRef(false);
   const [adminOnHoldOrders, setAdminOnHoldOrders] = useState<AccountOrderSummary[]>([]);
+  const adminOnHoldOrdersRef = useRef<AccountOrderSummary[]>([]);
   const [adminOnHoldLoading, setAdminOnHoldLoading] = useState(false);
   const [adminOnHoldRefreshing, setAdminOnHoldRefreshing] = useState(false);
+  const [adminOnHoldHasSettled, setAdminOnHoldHasSettled] = useState(false);
   const [adminOnHoldError, setAdminOnHoldError] = useState<string | null>(null);
   const adminOnHoldLastFetchAtRef = useRef(0);
   const adminOnHoldInFlightRef = useRef(false);
@@ -10149,6 +10273,32 @@ function MainApp() {
   useEffect(() => {
     salesTrackingOrdersRef.current = salesTrackingOrders;
   }, [salesTrackingOrders]);
+  useEffect(() => {
+    setSalesTrackingHasSettled(false);
+    setSalesOnHoldHasSettled(false);
+    setAdminOnHoldHasSettled(false);
+  }, [user?.id, user?.role]);
+  useEffect(() => {
+    salesTrackingDoctorsRef.current = salesTrackingDoctors;
+  }, [salesTrackingDoctors]);
+  useEffect(() => {
+    salesOnHoldOrdersRef.current = salesOnHoldOrders;
+  }, [salesOnHoldOrders]);
+  useEffect(() => {
+    adminOnHoldOrdersRef.current = adminOnHoldOrders;
+  }, [adminOnHoldOrders]);
+  useEffect(() => {
+    doctorSummaryRef.current = doctorSummary;
+  }, [doctorSummary]);
+  useEffect(() => {
+    doctorReferralsRef.current = doctorReferrals;
+  }, [doctorReferrals]);
+  useEffect(() => {
+    salesRepDashboardRef.current = salesRepDashboard;
+  }, [salesRepDashboard]);
+  useEffect(() => {
+    setReferralDataHasSettled(false);
+  }, [user?.id, user?.role, shouldReduceMaintenanceBackgroundFetches]);
 	  const openSalesOrderDetails = useCallback(
 	    async (order: AccountOrderSummary) => {
         const requestId = salesOrderDetailRequestIdRef.current + 1;
@@ -10214,7 +10364,10 @@ function MainApp() {
           message.includes("cors") ||
           message.includes("preflight");
         if (isTransientDetailError) {
-          console.warn("[Sales Tracking] Order detail request timed out; showing cached summary", error);
+          console.debug(
+            "[Sales Tracking] Order detail request timed out; showing cached summary",
+            error,
+          );
           applyResolvedOrder(order);
           return;
         }
@@ -11199,7 +11352,11 @@ function MainApp() {
             }
             mergeSalesDoctorDetail(requestId, supplementalPatch);
           } catch (supplementalError) {
-            console.warn("[Live User] Failed to load supplemental modal profile", supplementalError);
+            logHandledUiIssue(
+              "[Live User] Failed to load supplemental modal profile",
+              supplementalError,
+              { userId: id },
+            );
           }
         })();
       }
@@ -12331,11 +12488,19 @@ function MainApp() {
     useState<number | null>(null);
   const [salesRepSalesSummaryLoading, setSalesRepSalesSummaryLoading] =
     useState(false);
+  const salesRepSalesSummaryRef = useRef(salesRepSalesSummary);
+  const salesRepSalesSummaryMetaRef = useRef(salesRepSalesSummaryMeta);
   const [salesRepSalesCsvDownloadedAt, setSalesRepSalesCsvDownloadedAt] =
     useState<string | null>(null);
   const [salesRepSalesSummaryError, setSalesRepSalesSummaryError] = useState<
     string | null
   >(null);
+  useEffect(() => {
+    salesRepSalesSummaryRef.current = salesRepSalesSummary;
+  }, [salesRepSalesSummary]);
+  useEffect(() => {
+    salesRepSalesSummaryMetaRef.current = salesRepSalesSummaryMeta;
+  }, [salesRepSalesSummaryMeta]);
   const [adminTaxesByStateRows, setAdminTaxesByStateRows] = useState<
     {
       state: string;
@@ -13322,6 +13487,16 @@ function MainApp() {
 	      const defaults = getDefaultSalesBySalesRepPeriod();
       const periodStart = salesRepPeriodStart || defaults.start;
       const periodEnd = salesRepPeriodEnd || defaults.end;
+      const previousSummary = salesRepSalesSummaryRef.current;
+      const previousMeta = salesRepSalesSummaryMetaRef.current;
+      const previousPeriodStart = previousMeta?.periodStart ?? periodStart ?? null;
+      const previousPeriodEnd = previousMeta?.periodEnd ?? periodEnd ?? null;
+      const requestedPeriodStart = periodStart ?? null;
+      const requestedPeriodEnd = periodEnd ?? null;
+      const shouldPreserveExistingSummary =
+        previousSummary.length > 0 &&
+        previousPeriodStart === requestedPeriodStart &&
+        previousPeriodEnd === requestedPeriodEnd;
       if (!salesRepPeriodStart) {
         setSalesRepPeriodStart(periodStart);
       }
@@ -13487,24 +13662,44 @@ function MainApp() {
 	            Number(rep?.retailRevenue || 0) > 0
 	          );
 	        });
-	      if (backendError && backendStale && filteredSummary.length === 0) {
+	      if (
+          shouldPreserveExistingSummary &&
+          filteredSummary.length === 0
+        ) {
+	        setSalesRepSalesSummary(previousSummary);
+          setSalesRepSalesSummaryMeta(previousMeta);
+	      } else if (backendError && backendStale && filteredSummary.length === 0) {
 	        setSalesRepSalesSummary([]);
+          setSalesRepSalesSummaryMeta(meta);
 	      } else {
 	        setSalesRepSalesSummary(filteredSummary as any);
+          setSalesRepSalesSummaryMeta(meta);
 	      }
-	      setSalesRepSalesSummaryMeta(meta);
 	      if (backendError) {
 	        setSalesRepSalesSummaryError(backendError);
 	      }
 	      setSalesRepSalesSummaryLastFetchedAt(Date.now());
     } catch (adminError: any) {
+      const defaults = getDefaultSalesBySalesRepPeriod();
+      const requestedPeriodStart = salesRepPeriodStart || defaults.start || null;
+      const requestedPeriodEnd = salesRepPeriodEnd || defaults.end || null;
+      const previousSummary = salesRepSalesSummaryRef.current;
+      const previousMeta = salesRepSalesSummaryMetaRef.current;
+      const previousPeriodStart = previousMeta?.periodStart ?? requestedPeriodStart;
+      const previousPeriodEnd = previousMeta?.periodEnd ?? requestedPeriodEnd;
+      const shouldPreserveExistingSummary =
+        previousSummary.length > 0 &&
+        previousPeriodStart === requestedPeriodStart &&
+        previousPeriodEnd === requestedPeriodEnd;
       const message =
         typeof adminError?.message === "string"
           ? adminError.message
           : "Unable to load sales summary";
       setSalesRepSalesSummaryError(message);
-      setSalesRepSalesSummary([]);
-      setSalesRepSalesSummaryMeta(null);
+      if (!shouldPreserveExistingSummary) {
+        setSalesRepSalesSummary([]);
+        setSalesRepSalesSummaryMeta(null);
+      }
     } finally {
       setSalesRepSalesSummaryLoading(false);
     }
@@ -13948,6 +14143,7 @@ function MainApp() {
   const [prospectDetailModalProspect, setProspectDetailModalProspect] =
     useState<any | null>(null);
 		  const [referralDataLoading, setReferralDataLoading] = useState(false);
+  const [referralDataHasSettled, setReferralDataHasSettled] = useState(false);
 		  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
   const [shopEnabled, setShopEnabled] = useState(true);
   const [betaServices, setBetaServices] = useState<PortalBetaServiceKey[]>([]);
@@ -15552,7 +15748,11 @@ function MainApp() {
         });
       } catch (error) {
         if (!cancelled) {
-          console.warn("[SalesDoctor] Failed to load supplemental modal profile", error);
+          logHandledUiIssue(
+            "[SalesDoctor] Failed to load supplemental modal profile",
+            error,
+            { userId: doctorId },
+          );
         }
       } finally {
         livePresenceProfileImageRequestIdsRef.current.delete(doctorId);
@@ -19146,6 +19346,7 @@ function MainApp() {
       setSalesRepSalesSummaryError(null);
       setSalesTrackingLoading(false);
       setSalesTrackingRefreshing(false);
+      setSalesTrackingHasSettled(false);
       return;
     }
     if (postLoginHold) {
@@ -19159,6 +19360,7 @@ function MainApp() {
       setSalesRepSalesSummaryError(null);
       setSalesTrackingLoading(false);
       setSalesTrackingRefreshing(false);
+      setSalesTrackingHasSettled(false);
       return;
     }
 
@@ -19578,14 +19780,21 @@ function MainApp() {
         // Handle removals without needing per-id diff.
         changedIds.add("__list_changed__");
       }
-      salesTrackingOrderSignatureRef.current = nextSig;
+      const shouldPreserveExistingOrders =
+        !isKeyChanged && hasExistingOrders && normalizedOrders.length === 0;
+      if (!shouldPreserveExistingOrders) {
+        salesTrackingOrderSignatureRef.current = nextSig;
+      }
 
       const shouldUpdateOrders =
-        shouldShowInitialLoading ||
+        !shouldPreserveExistingOrders &&
+        (shouldShowInitialLoading ||
         changedIds.size > 0 ||
-        salesTrackingOrdersRef.current.length !== normalizedOrders.length;
+        salesTrackingOrdersRef.current.length !== normalizedOrders.length);
 
-      setSalesTrackingDoctors(doctorLookup);
+      if (!(shouldPreserveExistingOrders && doctorLookup.size === 0)) {
+        setSalesTrackingDoctors(doctorLookup);
+      }
       if (shouldUpdateOrders) {
         setSalesTrackingOrders(normalizedOrders);
       }
@@ -19663,7 +19872,7 @@ function MainApp() {
 	        salesTrackingFailureCountRef.current = 0;
 	        salesTrackingNextAllowedAtRef.current = 0;
 	      }
-	      console.error("[Sales Tracking] Unable to fetch orders", error);
+	      logHandledUiIssue("[Sales Tracking] Unable to fetch orders", error);
 	      if (transientFailure && hasExistingOrders) {
 	        setSalesTrackingError(
 	          "Store is temporarily busy. Showing last synced sales data and retrying automatically.",
@@ -19674,6 +19883,7 @@ function MainApp() {
 	    } finally {
       setSalesTrackingLoading(false);
       setSalesTrackingRefreshing(false);
+      setSalesTrackingHasSettled(true);
       salesTrackingInFlightRef.current = false;
     }
 	  }, [
@@ -19714,6 +19924,7 @@ function MainApp() {
 	        setAdminOnHoldError(null);
 	        setAdminOnHoldLoading(false);
 	        setAdminOnHoldRefreshing(false);
+          setAdminOnHoldHasSettled(false);
 	        return;
 	      }
 	      if (postLoginHold) {
@@ -19724,6 +19935,7 @@ function MainApp() {
           setAdminOnHoldError(null);
           setAdminOnHoldLoading(false);
           setAdminOnHoldRefreshing(false);
+          setAdminOnHoldHasSettled(false);
           return;
         }
 	      const now = Date.now();
@@ -19736,13 +19948,17 @@ function MainApp() {
 	      }
 	      adminOnHoldInFlightRef.current = true;
 	      adminOnHoldLastFetchAtRef.current = now;
-	      const hasExisting = adminOnHoldOrders.length > 0;
+	      const existingOrders = adminOnHoldOrdersRef.current;
+	      const hasExisting = existingOrders.length > 0;
 	      setAdminOnHoldLoading(!hasExisting);
 	      setAdminOnHoldRefreshing(Boolean(options?.force && hasExisting));
 	      setAdminOnHoldError(null);
 	      try {
 	        if (adminOnHoldEndpointUnavailableRef.current) {
-	          setAdminOnHoldOrders(buildLocalFallbackOrders());
+            const fallbackOrders = buildLocalFallbackOrders();
+	          setAdminOnHoldOrders(
+              fallbackOrders.length > 0 ? fallbackOrders : existingOrders,
+            );
 	          setAdminOnHoldError(null);
 	          return;
 	        }
@@ -19765,7 +19981,9 @@ function MainApp() {
 	            const safeB = Number.isFinite(bTime) ? bTime : 0;
 	            return safeB - safeA;
 	          });
-	        setAdminOnHoldOrders(sorted as AccountOrderSummary[]);
+          if (!(hasExisting && sorted.length === 0)) {
+	          setAdminOnHoldOrders(sorted as AccountOrderSummary[]);
+          }
 	        setAdminOnHoldError(null);
 	      } catch (error: any) {
             const authStatus = typeof error?.status === "number" ? error.status : null;
@@ -19794,7 +20012,10 @@ function MainApp() {
 	          lower.includes("cors");
 	        if (isEndpointUnavailable) {
 	          adminOnHoldEndpointUnavailableRef.current = true;
-	          setAdminOnHoldOrders(buildLocalFallbackOrders());
+            const fallbackOrders = buildLocalFallbackOrders();
+	          setAdminOnHoldOrders(
+              fallbackOrders.length > 0 ? fallbackOrders : existingOrders,
+            );
 	          setAdminOnHoldError(null);
 	          return;
 	        }
@@ -19809,6 +20030,7 @@ function MainApp() {
 	      } finally {
 	        setAdminOnHoldLoading(false);
 	        setAdminOnHoldRefreshing(false);
+          setAdminOnHoldHasSettled(true);
 	        adminOnHoldInFlightRef.current = false;
 	      }
 	    },
@@ -19823,6 +20045,7 @@ function MainApp() {
 	        setSalesOnHoldError(null);
 	        setSalesOnHoldLoading(false);
 	        setSalesOnHoldRefreshing(false);
+          setSalesOnHoldHasSettled(false);
 	        return;
 	      }
 	      if (postLoginHold) {
@@ -19833,6 +20056,7 @@ function MainApp() {
           setSalesOnHoldError(null);
           setSalesOnHoldLoading(false);
           setSalesOnHoldRefreshing(false);
+          setSalesOnHoldHasSettled(false);
           return;
         }
 	      const scope: "mine" | "all" = isAdmin(role) || isSalesLead(role) ? "all" : "mine";
@@ -19846,7 +20070,8 @@ function MainApp() {
 	      }
 	      salesOnHoldInFlightRef.current = true;
 	      salesOnHoldLastFetchAtRef.current = now;
-	      const hasExisting = salesOnHoldOrders.length > 0;
+	      const existingOrders = salesOnHoldOrdersRef.current;
+	      const hasExisting = existingOrders.length > 0;
 	      setSalesOnHoldLoading(!hasExisting);
 	      setSalesOnHoldRefreshing(Boolean(options?.force && hasExisting));
 	      setSalesOnHoldError(null);
@@ -19869,7 +20094,9 @@ function MainApp() {
 	          const safeB = Number.isFinite(bTime) ? bTime : 0;
 	          return safeB - safeA;
 	        });
+          if (!(hasExisting && sorted.length === 0)) {
 	        setSalesOnHoldOrders(sorted as AccountOrderSummary[]);
+          }
 	        setSalesOnHoldError(null);
 	      } catch (error: any) {
             const status = typeof error?.status === "number" ? error.status : null;
@@ -19897,6 +20124,7 @@ function MainApp() {
 	      } finally {
 	        setSalesOnHoldLoading(false);
 	        setSalesOnHoldRefreshing(false);
+          setSalesOnHoldHasSettled(true);
 	        salesOnHoldInFlightRef.current = false;
 	      }
 	    },
@@ -20410,6 +20638,8 @@ function MainApp() {
       try {
         setReferralDataError(null);
         if (isDoctorRole(user.role)) {
+          const previousSummary = doctorSummaryRef.current;
+          const previousReferrals = doctorReferralsRef.current;
           const response = await referralAPI.getDoctorSummary();
           const referrals = Array.isArray(response?.referrals)
             ? response.referrals
@@ -20434,14 +20664,25 @@ function MainApp() {
             ),
             ledger: Array.isArray(credits.ledger) ? credits.ledger : [],
           };
-
-          setDoctorSummary({ ...normalizedCredits });
           const normalizedReferrals = referrals.map((referral) => ({
             ...referral,
           }));
-          setDoctorReferrals(normalizedReferrals);
+          const shouldPreserveExistingReferrals =
+            previousReferrals.length > 0 && normalizedReferrals.length === 0;
+
+          setDoctorSummary(
+            shouldPreserveExistingReferrals && previousSummary
+              ? previousSummary
+              : { ...normalizedCredits },
+          );
+          setDoctorReferrals(
+            shouldPreserveExistingReferrals ? previousReferrals : normalizedReferrals,
+          );
           setUser((previous) => {
             if (!previous) {
+              return previous;
+            }
+            if (shouldPreserveExistingReferrals) {
               return previous;
             }
             const responseSalesRep = response?.salesRep && typeof response.salesRep === "object"
@@ -20500,12 +20741,16 @@ function MainApp() {
 	        } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
 	          // Sales leads should only see their own prospects (same scope as reps).
 	          const scopeAll = false;
-	          const dashboard = await referralAPI.getSalesRepDashboard({
+	          const dashboardResponse = await referralAPI.getSalesRepDashboard({
 	            salesRepId: scopeAll
 	              ? undefined
 	              : user.salesRepId || user.id,
 	            scope: scopeAll ? "all" : "mine",
 	          });
+          const dashboard = mergeDashboardCollectionsWithFallback(
+            dashboardResponse,
+            salesRepDashboardRef.current,
+          );
 	          setSalesRepDashboard(dashboard);
             const dashboardAny = dashboard && typeof dashboard === "object"
               ? (dashboard as any)
@@ -20591,11 +20836,18 @@ function MainApp() {
           referralSummaryCooldownRef.current = Date.now() + 5 * 60 * 1000; // 5 minutes
           return;
         }
-        console.warn("[Referral] Failed to load data", {
+        logHandledUiIssue("[Referral] Failed to load data", error, {
           status,
           message,
-          error,
         });
+        const hasExistingReferralData =
+          Boolean(doctorSummaryRef.current) ||
+          doctorReferralsRef.current.length > 0 ||
+          Boolean(salesRepDashboardRef.current);
+        if (isLikelyTransientUiError(error) && hasExistingReferralData) {
+          setReferralDataError(null);
+          return;
+        }
         setReferralDataError(
           <>
             There is an issue in loading your referral data. Please refresh the
@@ -20611,6 +20863,7 @@ function MainApp() {
         );
       } finally {
         referralRefreshInFlight.current = false;
+        setReferralDataHasSettled(true);
         if (shouldShowLoading) {
           setReferralDataLoading(false);
         }
@@ -22099,9 +22352,25 @@ function MainApp() {
       void storePasswordCredential(email, password, user.name || email);
       return { status: "success" };
     } catch (error: any) {
-      console.warn("[Auth] Login failed", { email, error });
       const message = error.message || "LOGIN_ERROR";
       const errorCode = typeof error?.code === "string" ? error.code : null;
+      const normalizedMessage =
+        typeof message === "string" ? message.toUpperCase() : "";
+      const isExpectedLoginFailure =
+        isLikelyTransientUiError(error) ||
+        isLikelyAuthLifecycleError(error) ||
+        message === "EMAIL_NOT_FOUND" ||
+        message === "INVALID_PASSWORD" ||
+        message === "Invalid credentials" ||
+        normalizedMessage === "INVALID_CREDENTIALS" ||
+        message === "SALES_REP_ACCOUNT_REQUIRED" ||
+        message === "EMAIL_REQUIRED" ||
+        (typeof message === "string" &&
+          message.trim() === LOGIN_BACKEND_DOWN_MESSAGE);
+      (isExpectedLoginFailure ? console.debug : console.warn)(
+        "[Auth] Login failed",
+        { email, error },
+      );
 
       if (message === "EMAIL_NOT_FOUND") {
         return { status: "email_not_found" };
@@ -22120,8 +22389,6 @@ function MainApp() {
       if (statusCode === 404) {
         return { status: "maintenance_unavailable" };
       }
-      const normalizedMessage =
-        typeof message === "string" ? message.toUpperCase() : "";
       const isNetworkError =
         message === "Failed to fetch" ||
         normalizedMessage.includes("FETCH API CANNOT LOAD") ||
@@ -22141,7 +22408,7 @@ function MainApp() {
       }
 
       if (attempt === 0 && isServerError && statusCode !== null && [502, 503, 504].includes(statusCode) && elapsedMs < 4000) {
-        console.warn(
+        console.debug(
           "[Auth] Transient login failure detected, retrying immediately after health ping",
           {
             email,
@@ -22759,7 +23026,9 @@ function MainApp() {
       } catch {
         // ignore
       }
-      console.warn("[Maintenance] Failed to open maintenance view", error);
+      logHandledUiIssue("[Maintenance] Failed to open maintenance view", error, {
+        targetUserId,
+      });
       toast.error(
         isMaintenanceLaunchConflictError(error)
           ? MAINTENANCE_ALREADY_ACTIVE_TOAST
@@ -25129,7 +25398,11 @@ function MainApp() {
                   )}
                 </div>
               </div>
-              {doctorReferrals.length === 0 ? (
+              {!referralDataHasSettled && doctorReferrals.length === 0 ? (
+                <div className="text-center py-8 glass-strong squircle-md">
+                  <p className="text-sm text-slate-600">Loading referrals…</p>
+                </div>
+              ) : doctorReferrals.length === 0 ? (
                 <div className="text-center py-8 glass-strong squircle-md">
                   <div className="flex justify-center mb-3">
                     <div className="flex h-12 w-12 items-center justify-center squircle-sm bg-slate-100">
@@ -25757,7 +26030,7 @@ function MainApp() {
 	          role="region"
 	          aria-label="Orders on-hold list"
 	        >
-	          {salesOnHoldLoading && salesOnHoldOrders.length === 0 ? (
+	          {!salesOnHoldHasSettled || (salesOnHoldLoading && salesOnHoldOrders.length === 0) ? (
 	            <div className="px-4 py-3 text-sm text-slate-500">
 	              Loading orders…
 	            </div>
@@ -25917,7 +26190,7 @@ function MainApp() {
 	          role="region"
 	          aria-label="Order on-hold list"
 	        >
-	          {adminOnHoldLoading && adminOnHoldOrders.length === 0 ? (
+	          {!adminOnHoldHasSettled || (adminOnHoldLoading && adminOnHoldOrders.length === 0) ? (
 	            <div className="px-4 py-3 text-sm text-slate-500">
 	              Loading orders…
 	            </div>
@@ -30940,7 +31213,7 @@ function MainApp() {
                 </div>
               </div>
               <div className="sales-rep-lead-grid">
-                {salesTrackingLoading && (
+                {(!salesTrackingHasSettled || salesTrackingLoading) && (
                   <ul className="space-y-4" aria-live="polite">
                     {[...Array(2)].map((_, idx) => (
                       <li
@@ -30982,19 +31255,21 @@ function MainApp() {
                     ))}
                   </ul>
                 )}
-                {!salesTrackingLoading && salesTrackingError && (
+                {salesTrackingHasSettled && !salesTrackingLoading && salesTrackingError && (
                   <p className="lead-panel-empty text-sm text-rose-600">
                     {salesTrackingError}
                   </p>
                 )}
-                {!salesTrackingLoading &&
+                {salesTrackingHasSettled &&
+                  !salesTrackingLoading &&
                   !salesTrackingError &&
                   salesTrackingOrdersByDoctor.length === 0 && (
                     <p className="lead-panel-empty text-sm text-slate-500">
                       No sales activity reported yet.
                     </p>
                   )}
-                {!salesTrackingLoading &&
+                {salesTrackingHasSettled &&
+                  !salesTrackingLoading &&
                   !salesTrackingError &&
                   salesTrackingOrdersByDoctor.length > 0 &&
 	                  salesTrackingOrdersByDoctor.map((bucket) => {
@@ -31386,7 +31661,8 @@ function MainApp() {
                     </div>
                   </div>
                   <div className="lead-panel-divider" />
-                  {referralDataLoading && filteredActiveProspects.length === 0 ? (
+                  {((!referralDataHasSettled && filteredActiveProspects.length === 0) ||
+                    (referralDataLoading && filteredActiveProspects.length === 0)) ? (
                     <p className="lead-panel-empty text-sm text-slate-500">
                       Loading leads…
                     </p>
@@ -32095,7 +32371,11 @@ function MainApp() {
                   </div>
                   <div className="lead-panel-divider" />
                   <div className="lead-list-scroll">
-                    {referralDataLoading ? (
+                    {!referralDataHasSettled && filteredSalesRepReferrals.length === 0 ? (
+                      <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
+                        Loading referrals…
+                      </p>
+                    ) : referralDataLoading && filteredSalesRepReferrals.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
                         Loading referrals…
                       </p>
@@ -32383,7 +32663,11 @@ function MainApp() {
 	                      </div>
 	                    </div>
                     <div className="lead-panel-divider" />
-                    {referralDataLoading ? (
+                    {!referralDataHasSettled && contactFormQueue.length === 0 ? (
+                      <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
+                        Loading contact forms…
+                      </p>
+                    ) : referralDataLoading && contactFormQueue.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
                         Loading contact forms…
                       </p>

@@ -585,13 +585,22 @@ const _PEPPRO_HEALTH_FAILURE_COOLDOWN_MS = 45000;
 const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
 const _PEPPRO_CHECKOUT_TIMEOUT_MS = 45000;
 const _PEPPRO_SALES_TRACKING_TIMEOUT_MS = 45000;
+const _PEPPRO_MODAL_TIMEOUT_MS = 30000;
+const _PEPPRO_REFERRAL_TIMEOUT_MS = 30000;
+const _PEPPRO_MAINTENANCE_TIMEOUT_MS = 30000;
 const _PEPPRO_QUOTE_EXPORT_TIMEOUT_MS = 90000;
 
 const _timeoutMsForRequest = (url: string, method: string) => {
   const normalized = String(url || '').toLowerCase();
   if (normalized.includes('/api/health')) return _PEPPRO_HEALTH_TIMEOUT_MS;
+  if (normalized.includes('/api/auth/shadow-sessions')) return _PEPPRO_MAINTENANCE_TIMEOUT_MS;
   if (normalized.includes('/api/auth/')) return _PEPPRO_AUTH_TIMEOUT_MS;
   if (normalized.includes('/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
+  if (normalized.includes('/api/settings/users')) return _PEPPRO_MODAL_TIMEOUT_MS;
+  if (normalized.includes('/api/orders/sales-rep/users/') && normalized.includes('/modal-detail')) {
+    return _PEPPRO_MODAL_TIMEOUT_MS;
+  }
+  if (normalized.includes('/api/referrals/dashboard')) return _PEPPRO_REFERRAL_TIMEOUT_MS;
   if (method === 'GET' && normalized.includes('/api/referrals/sales-prospects/') && normalized.includes('/quotes/') && normalized.includes('/export')) {
     return _PEPPRO_QUOTE_EXPORT_TIMEOUT_MS;
   }

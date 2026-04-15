@@ -191,7 +191,7 @@ async function catalogGet<T = unknown>(endpoint: string, params: QueryParams = {
   const startedAt = Date.now();
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeoutId = controller
-    ? globalThis.setTimeout(() => controller.abort(), Math.min(WOO_REQUEST_TIMEOUT_MS, 15000))
+    ? globalThis.setTimeout(() => controller.abort(), Math.min(WOO_REQUEST_TIMEOUT_MS, 25000))
     : null;
   try {
     if (WOO_DEBUG) {
