@@ -1514,6 +1514,7 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
+    user = user_repository.find_by_id(user_id) if user_id else None
     is_facility_pickup = bool(facility_pickup) and _can_user_use_hand_delivery_for_checkout(user)
     try:
         shipping_total_value = float(shipping_total or 0)
@@ -1560,7 +1561,6 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
-    user = user_repository.find_by_id(user_id) if user_id else None
     role = str((user or {}).get("role") or "").strip().lower()
     raw_payment_method = str(payment_method or "").strip().lower()
     normalized_payment_method = raw_payment_method
