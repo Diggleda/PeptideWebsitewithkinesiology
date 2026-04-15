@@ -44,14 +44,14 @@ def _interval_seconds() -> int:
             ms = int(raw_ms)
         except Exception:
             ms = 60_000
-        return max(60, min(int(ms / 1000), 3600))
+        return max(10, min(int(ms / 1000), 3600))
 
     raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_INTERVAL_SECONDS", "60")).strip()
     try:
         value = int(raw)
     except Exception:
         value = 60
-    return max(60, min(value, 3600))
+    return max(10, min(value, 3600))
 
 
 def _lookback_days() -> int:

@@ -33,6 +33,7 @@ type AuthTabEvent = {
   tabId: string;
   sessionId: string;
   userId?: string | null;
+  email?: string | null;
   at: number;
 };
 
@@ -184,6 +185,59 @@ const setAuthEmail = (email: string | null | undefined) => {
   }
 };
 
+const _activeAuthenticatedRequestControllers = new Set<AbortController>();
+
+const releaseAuthenticatedRequestController = (controller: AbortController | null | undefined) => {
+  if (!controller) return;
+  _activeAuthenticatedRequestControllers.delete(controller);
+};
+
+const createAuthenticatedRequestSignal = (existingSignal?: AbortSignal | null) => {
+  const controller = new AbortController();
+  const forwardAbort = () => {
+    try {
+      controller.abort((existingSignal as any)?.reason);
+    } catch {
+      controller.abort();
+    }
+  };
+  if (existingSignal) {
+    if (existingSignal.aborted) {
+      forwardAbort();
+    } else {
+      existingSignal.addEventListener('abort', forwardAbort, { once: true });
+    }
+  }
+  _activeAuthenticatedRequestControllers.add(controller);
+  return {
+    controller,
+    signal: controller.signal,
+    cleanup: () => {
+      if (existingSignal) {
+        existingSignal.removeEventListener('abort', forwardAbort);
+      }
+      releaseAuthenticatedRequestController(controller);
+    },
+  };
+};
+
+const abortAuthenticatedRequests = () => {
+  const controllers = Array.from(_activeAuthenticatedRequestControllers);
+  _activeAuthenticatedRequestControllers.clear();
+  controllers.forEach((controller) => {
+    try {
+      controller.abort(new DOMException('Authentication ended', 'AbortError'));
+    } catch {
+      try {
+        controller.abort();
+      } catch {
+        // ignore
+      }
+    }
+  });
+  _inflightGetRequests.clear();
+};
+
 const emitAuthEvent = (payload: AuthTabEvent) => {
   if (typeof window === 'undefined') return;
   try {
@@ -234,8 +288,15 @@ const handleIncomingAuthEvent = (payload: AuthTabEvent | null) => {
 
   const localUserId = getAuthUserId();
   const payloadUserId = typeof payload.userId === 'string' ? payload.userId : null;
+  const localEmail = String(getAuthEmail() || '').trim().toLowerCase();
+  const payloadEmail =
+    typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+  const matchesByUserId =
+    Boolean(localUserId) && Boolean(payloadUserId) && localUserId === payloadUserId;
+  const matchesByEmail =
+    Boolean(localEmail) && Boolean(payloadEmail) && localEmail === payloadEmail;
   // Scope cross-tab enforcement to the same account only.
-  if (!localUserId || !payloadUserId || localUserId !== payloadUserId) {
+  if (!matchesByUserId && !matchesByEmail) {
     return;
   }
 
@@ -361,11 +422,13 @@ const persistAuthToken = (
     tabId: getOrCreateTabId(),
     sessionId,
     userId: getAuthUserId(),
+    email: getAuthEmail(),
     at: Date.now(),
   });
 };
 
 const clearAuthToken = () => {
+  abortAuthenticatedRequests();
   try {
     localStorage.removeItem('auth_token');
   } catch {
@@ -579,6 +642,14 @@ const _fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: numb
 
 const _inflightGetRequests = new Map<string, Promise<any>>();
 
+const buildAuthAbortError = () => {
+  const error = new Error('Authentication ended');
+  (error as any).status = 401;
+  (error as any).code = 'AUTH_REQUIRED';
+  (error as any).authCode = 'TOKEN_ABORTED';
+  return error;
+};
+
 const rewriteBlockedAdminPaths = (url: string) => {
   return String(url || '').replace(/\/orders\/admin\/on-hold(?=[/?#]|$)/i, '/orders/on-hold');
 };
@@ -665,9 +736,13 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     }
 
     let response: Response;
+    const authenticatedSignal = token
+      ? createAuthenticatedRequestSignal(requestOptions.signal)
+      : null;
     const requestInit: RequestInit = {
       cache: requestOptions.cache ?? 'no-store',
       ...requestOptions,
+      signal: authenticatedSignal?.signal ?? requestOptions.signal,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
@@ -678,6 +753,9 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     try {
       response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
+      if (authenticatedSignal?.signal.aborted) {
+        throw buildAuthAbortError();
+      }
       const fallbackUrl =
         !background && isNetworkLikeFetchError(error)
           ? buildSameOriginApiFallbackUrl(requestUrl)
@@ -713,6 +791,8 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
         }
         throw error;
       }
+    } finally {
+      authenticatedSignal?.cleanup();
     }
 
     if (response.status === 429) {
@@ -888,9 +968,13 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   }
 
   let response: Response;
+  const authenticatedSignal = token
+    ? createAuthenticatedRequestSignal(options.signal)
+    : null;
   const requestInit: RequestInit = {
     cache: options.cache ?? 'no-store',
     ...options,
+    signal: authenticatedSignal?.signal ?? options.signal,
     headers: {
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       Pragma: 'no-cache',
@@ -901,6 +985,9 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   try {
     response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
   } catch (error: any) {
+    if (authenticatedSignal?.signal.aborted) {
+      throw buildAuthAbortError();
+    }
     const fallbackUrl = isNetworkLikeFetchError(error)
       ? buildSameOriginApiFallbackUrl(requestUrl)
       : null;
@@ -924,6 +1011,8 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
       }
       throw error;
     }
+  } finally {
+    authenticatedSignal?.cleanup();
   }
 
   if (response.ok) {
@@ -1030,10 +1119,14 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
 
   let response: Response;
   const method = (options.method || 'GET').toUpperCase();
+  const authenticatedSignal = token
+    ? createAuthenticatedRequestSignal(options.signal)
+    : null;
   try {
     response = await _fetchWithTimeout(requestUrl, {
       cache: options.cache ?? 'no-store',
       ...options,
+      signal: authenticatedSignal?.signal ?? options.signal,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
@@ -1041,6 +1134,9 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
       },
     }, _timeoutMsForRequest(requestUrl, method));
   } catch (error: any) {
+    if (authenticatedSignal?.signal.aborted) {
+      throw buildAuthAbortError();
+    }
     const isAbort = error?.name === 'AbortError';
     const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
     dispatchApiReachability({ ok: false, status: null, message });
@@ -1051,6 +1147,8 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
       throw wrapped;
     }
     throw error;
+  } finally {
+    authenticatedSignal?.cleanup();
   }
 
   if (response.ok) {
@@ -2187,6 +2285,9 @@ export const ordersAPI = {
   },
 
   getForSalesRep: async (options?: { salesRepId?: string | null; scope?: 'mine' | 'all'; localOnly?: boolean }) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (options?.salesRepId) {
       params.set('salesRepId', options.salesRepId);
@@ -2205,6 +2306,9 @@ export const ordersAPI = {
   },
 
   getOnHoldForSalesRep: async (options?: { scope?: 'mine' | 'all'; limit?: number }) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (options?.scope) {
       params.set('scope', options.scope);
@@ -2218,6 +2322,9 @@ export const ordersAPI = {
   },
 
   getSalesByRepForAdmin: async (options?: { periodStart?: string; periodEnd?: string; force?: boolean }) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (options?.periodStart) params.set('periodStart', options.periodStart);
     if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
@@ -2231,6 +2338,9 @@ export const ordersAPI = {
   },
 
   getAdminOnHoldOrders: async (options?: { limit?: number }) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     const params = new URLSearchParams();
     if (typeof options?.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
       params.set('limit', String(Math.trunc(options.limit)));

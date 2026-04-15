@@ -122,7 +122,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
 
         cls.order_service = order_service
 
-    def test_detail_uses_local_order_fallback_for_sparse_woo_payload(self):
+    def test_detail_uses_local_sql_order_without_live_woo_lookup(self):
         service = self.order_service
         original_is_configured = service.woo_commerce.is_configured
         original_fetch_order = service.woo_commerce.fetch_order
@@ -167,21 +167,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
 
             def fake_fetch_order(candidate):
                 fetch_calls.append(str(candidate))
-                if str(candidate) != "9001":
-                    return None
-                return {
-                    "id": 9001,
-                    "number": "1491",
-                    "status": "on-hold",
-                    "total": "212.02",
-                    "shipping_total": "0",
-                    "payment_method_title": "",
-                    "payment_method": "",
-                    "billing": {"email": "orders@peppro.example"},
-                    "shipping": {},
-                    "meta_data": [{"key": "peppro_order_id", "value": "local-1491"}],
-                    "line_items": [],
-                }
+                return None
 
             service.woo_commerce.fetch_order = fake_fetch_order
             service.woo_commerce.fetch_order_by_number = lambda _candidate: None
@@ -202,7 +188,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
 
             result = service.get_sales_rep_order_detail("1491", "admin-1", token_role="admin")
 
-            self.assertEqual(fetch_calls[0], "9001")
+            self.assertEqual(fetch_calls, [])
             self.assertEqual(result["doctorId"], "doctor-1")
             self.assertEqual(result["doctorEmail"], "jen@example.com")
             self.assertEqual(result["shippingAddress"]["addressLine1"], "123 Main St")
@@ -210,6 +196,8 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             self.assertEqual(result["billingEmail"], "jen@example.com")
             self.assertEqual(result["paymentMethod"], "bacs")
             self.assertEqual(result["paymentDetails"], "bacs")
+            self.assertEqual(result["number"], "1491")
+            self.assertEqual(result["wooOrderId"], "9001")
         finally:
             service.woo_commerce.is_configured = original_is_configured
             service.woo_commerce.fetch_order = original_fetch_order
@@ -221,7 +209,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
 
-    def test_detail_refreshes_live_ups_status_before_return(self):
+    def test_detail_uses_persisted_ups_status_without_live_refresh(self):
         service = self.order_service
         original_is_configured = service.woo_commerce.is_configured
         original_fetch_order = service.woo_commerce.fetch_order
@@ -253,15 +241,6 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.woo_commerce.fetch_order = lambda candidate: {
                 "id": 9002,
                 "number": "1492",
-                "status": "completed",
-                "total": "212.02",
-                "shipping_total": "0",
-                "payment_method_title": "",
-                "payment_method": "",
-                "billing": {"email": "orders@peppro.example"},
-                "shipping": {},
-                "meta_data": [{"key": "peppro_order_id", "value": "local-ups-1492"}],
-                "line_items": [],
             } if str(candidate) == "9002" else None
             service.woo_commerce.fetch_order_by_number = lambda _candidate: None
             service.ship_station.fetch_order_status = lambda _order_number: None
@@ -300,10 +279,9 @@ class SalesRepOrderDetailTests(unittest.TestCase):
 
             result = service.get_sales_rep_order_detail("1492", "admin-1", token_role="admin")
 
-            self.assertEqual(persisted_updates, [("local-ups-1492", "delivered", "2026-04-02T10:15:00")])
-            self.assertEqual(result["upsTrackingStatus"], "delivered")
-            self.assertEqual(result["shippingEstimate"]["status"], "delivered")
-            self.assertEqual(result["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
+            self.assertEqual(persisted_updates, [])
+            self.assertEqual(result["upsTrackingStatus"], "in_transit")
+            self.assertEqual(result["shippingEstimate"]["status"], "in_transit")
             self.assertEqual(result["trackingNumber"], "1ZTEST001")
         finally:
             service.woo_commerce.is_configured = original_is_configured

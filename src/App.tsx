@@ -15280,7 +15280,21 @@ function MainApp() {
               supplemental.hasResellerPermitUploaded === true,
           };
         });
-      } catch (error) {
+      } catch (error: any) {
+        const status = typeof error?.status === "number" ? error.status : null;
+        const code = typeof error?.code === "string" ? error.code : null;
+        const authCode =
+          typeof error?.authCode === "string" ? error.authCode : null;
+        if (
+          error?.name === "AbortError" ||
+          code === "AUTH_REQUIRED" ||
+          status === 401 ||
+          (status === 403 &&
+            typeof authCode === "string" &&
+            authCode.startsWith("TOKEN_"))
+        ) {
+          return;
+        }
         console.warn("[Presence] Failed to hydrate SQL-backed live profiles", error);
       } finally {
         batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.delete(userId));
@@ -15939,6 +15953,91 @@ function MainApp() {
 	    adminLiveUsersRef.current = adminLiveUsers;
 	  }, [adminLiveUsers]);
 
+  const scopedLiveClients = useMemo(() => {
+    const entries = Array.isArray(liveClients) ? liveClients : [];
+    if (!user || isAdmin(user.role) || (!isRep(user.role) && !isSalesLead(user.role))) {
+      return entries;
+    }
+
+    const currentUserId = String(user.id || "").trim();
+    const currentUserEmail = String(user.email || "").trim().toLowerCase();
+    const alreadyIncluded = entries.some((entry: any) => {
+      const entryId = String(entry?.id || "").trim();
+      const entryEmail = String(entry?.email || "").trim().toLowerCase();
+      return (
+        (currentUserId && entryId && currentUserId === entryId) ||
+        (currentUserEmail && entryEmail && currentUserEmail === entryEmail)
+      );
+    });
+    if (alreadyIncluded) {
+      return entries;
+    }
+
+    const lastInteractionAt =
+      Number.isFinite(lastActivityAtRef.current) && lastActivityAtRef.current > 0
+        ? new Date(lastActivityAtRef.current).toISOString()
+        : null;
+    const selfEntry = {
+      id: currentUserId || `self:${currentUserEmail || normalizeRole(user.role) || "user"}`,
+      name: String(user.name || user.email || "You").trim() || "You",
+      email: user.email || null,
+      role: normalizeRole(user.role) || user.role,
+      profileImageUrl:
+        typeof user.profileImageUrl === "string" && user.profileImageUrl.trim().length > 0
+          ? user.profileImageUrl.trim()
+          : null,
+      greaterArea:
+        typeof user.greaterArea === "string" && user.greaterArea.trim().length > 0
+          ? user.greaterArea.trim()
+          : null,
+      studyFocus:
+        typeof user.studyFocus === "string" && user.studyFocus.trim().length > 0
+          ? user.studyFocus.trim()
+          : null,
+      bio:
+        typeof user.bio === "string" && user.bio.trim().length > 0
+          ? user.bio.trim()
+          : null,
+      phone:
+        typeof user.phone === "string" && user.phone.trim().length > 0
+          ? user.phone.trim()
+          : null,
+      officeAddressLine1: user.officeAddressLine1 || null,
+      officeAddressLine2: user.officeAddressLine2 || null,
+      officeCity: user.officeCity || null,
+      officeState: user.officeState || null,
+      officePostalCode: user.officePostalCode || null,
+      isOnline: true,
+      isIdle,
+      idleMinutes: null,
+      lastSeenAt: lastInteractionAt,
+      lastInteractionAt,
+      lastLoginAt: null,
+      isPartner: coerceOptionalBoolean((user as any)?.isPartner ?? (user as any)?.is_partner),
+      allowedRetail: currentSalesActorAllowedRetail,
+    };
+
+    return [selfEntry, ...entries];
+  }, [
+    currentSalesActorAllowedRetail,
+    isIdle,
+    liveClients,
+    user?.bio,
+    user?.email,
+    user?.greaterArea,
+    user?.id,
+    user?.name,
+    user?.officeAddressLine1,
+    user?.officeAddressLine2,
+    user?.officeCity,
+    user?.officePostalCode,
+    user?.officeState,
+    user?.phone,
+    user?.profileImageUrl,
+    user?.role,
+    user?.studyFocus,
+  ]);
+
   const hideRepViewerSalesActorCommerceSections = useMemo(() => {
     if (salesDoctorDetail?.summaryOnly === true) {
       return true;
@@ -16110,9 +16209,17 @@ function MainApp() {
             void hydrateLivePresenceSqlProfiles(clients);
             writePresenceSnapshot(liveClientsPresenceCacheKey, clients);
             setLiveClientsUsingCachedSnapshot(false);
-		      } catch (error: any) {
-		        if (cancelled) return;
+	      } catch (error: any) {
+	        if (cancelled) return;
             if (isAuthFailureError(error)) {
+              return;
+            }
+            const hasPresenceSnapshot =
+              liveClientsRef.current.length > 0 ||
+              Boolean(cachedSnapshot && cachedSnapshot.items.length > 0);
+            if (hasPresenceSnapshot && isPresenceFetchError(error)) {
+              setLiveClientsUsingCachedSnapshot(true);
+              setLiveClientsError(null);
               return;
             }
 		        setLiveClientsError(
@@ -16212,9 +16319,17 @@ function MainApp() {
               error,
               liveClientsRetryDelayMsRef.current,
             );
-            setLiveClientsError((current) =>
-              current || getPresenceErrorMessage(error, "Unable to load clients."),
-            );
+            const hasPresenceSnapshot =
+              liveClientsRef.current.length > 0 ||
+              Boolean(cachedSnapshot && cachedSnapshot.items.length > 0);
+            if (hasPresenceSnapshot && isPresenceFetchError(error)) {
+              setLiveClientsUsingCachedSnapshot(true);
+              setLiveClientsError(null);
+            } else {
+              setLiveClientsError((current) =>
+                current || getPresenceErrorMessage(error, "Unable to load clients."),
+              );
+            }
 	          // eslint-disable-next-line no-await-in-loop
 	          await sleep(liveClientsRetryDelayMsRef.current);
 	        }
@@ -16285,6 +16400,14 @@ function MainApp() {
 	      } catch (error: any) {
 	        if (cancelled) return;
           if (isAuthFailureError(error)) {
+            return;
+          }
+          const hasPresenceSnapshot =
+            adminLiveUsersRef.current.length > 0 ||
+            Boolean(cachedSnapshot && cachedSnapshot.items.length > 0);
+          if (hasPresenceSnapshot && isPresenceFetchError(error)) {
+            setAdminLiveUsersUsingCachedSnapshot(true);
+            setAdminLiveUsersError(null);
             return;
           }
 	        setAdminLiveUsersError(
@@ -16361,9 +16484,17 @@ function MainApp() {
               error,
               adminLiveUsersRetryDelayMsRef.current,
             );
-            setAdminLiveUsersError((current) =>
-              current || getPresenceErrorMessage(error, "Unable to load users."),
-            );
+            const hasPresenceSnapshot =
+              adminLiveUsersRef.current.length > 0 ||
+              Boolean(cachedSnapshot && cachedSnapshot.items.length > 0);
+            if (hasPresenceSnapshot && isPresenceFetchError(error)) {
+              setAdminLiveUsersUsingCachedSnapshot(true);
+              setAdminLiveUsersError(null);
+            } else {
+              setAdminLiveUsersError((current) =>
+                current || getPresenceErrorMessage(error, "Unable to load users."),
+              );
+            }
 	          // eslint-disable-next-line no-await-in-loop
 	          await sleep(adminLiveUsersRetryDelayMsRef.current);
 	        }
@@ -19020,6 +19151,16 @@ function MainApp() {
     if (postLoginHold) {
       return;
     }
+    if (!hasAuthToken()) {
+      setSalesTrackingOrders([]);
+      setSalesTrackingDoctors(new Map());
+      setSalesRepSalesSummary([]);
+      setSalesTrackingError(null);
+      setSalesRepSalesSummaryError(null);
+      setSalesTrackingLoading(false);
+      setSalesTrackingRefreshing(false);
+      return;
+    }
 
     const now = Date.now();
     const cacheTtlMs = 25_000;
@@ -19493,6 +19634,21 @@ function MainApp() {
 	      salesTrackingFailureCountRef.current = 0;
 	      salesTrackingNextAllowedAtRef.current = 0;
 	    } catch (error: any) {
+        const status = typeof error?.status === "number" ? error.status : null;
+        const code = typeof error?.code === "string" ? error.code : null;
+        const authCode =
+          typeof error?.authCode === "string" ? error.authCode : null;
+        const isAuthFailure =
+          code === "AUTH_REQUIRED" ||
+          status === 401 ||
+          (status === 403 &&
+            typeof authCode === "string" &&
+            authCode.startsWith("TOKEN_"));
+        if (isAuthFailure) {
+          setSalesTrackingError(null);
+          setSalesRepSalesSummaryError(null);
+          return;
+        }
 	      const message =
 	        typeof error?.message === "string"
 	          ? error.message
@@ -19563,6 +19719,13 @@ function MainApp() {
 	      if (postLoginHold) {
 	        return;
 	      }
+        if (!hasAuthToken()) {
+          setAdminOnHoldOrders([]);
+          setAdminOnHoldError(null);
+          setAdminOnHoldLoading(false);
+          setAdminOnHoldRefreshing(false);
+          return;
+        }
 	      const now = Date.now();
 	      const ttlMs = 25_000;
 	      if (!options?.force && now - adminOnHoldLastFetchAtRef.current < ttlMs) {
@@ -19605,6 +19768,20 @@ function MainApp() {
 	        setAdminOnHoldOrders(sorted as AccountOrderSummary[]);
 	        setAdminOnHoldError(null);
 	      } catch (error: any) {
+            const authStatus = typeof error?.status === "number" ? error.status : null;
+            const authCode = typeof error?.code === "string" ? error.code : null;
+            const authFailureCode =
+              typeof error?.authCode === "string" ? error.authCode : null;
+            const isAuthFailure =
+              authCode === "AUTH_REQUIRED" ||
+              authStatus === 401 ||
+              (authStatus === 403 &&
+                typeof authFailureCode === "string" &&
+                authFailureCode.startsWith("TOKEN_"));
+            if (isAuthFailure) {
+              setAdminOnHoldError(null);
+              return;
+            }
 	        const status = typeof error?.status === "number" ? error.status : null;
 	        const messageText = typeof error?.message === "string" ? error.message : "";
 	        const lower = messageText.toLowerCase();
@@ -19651,6 +19828,13 @@ function MainApp() {
 	      if (postLoginHold) {
 	        return;
 	      }
+        if (!hasAuthToken()) {
+          setSalesOnHoldOrders([]);
+          setSalesOnHoldError(null);
+          setSalesOnHoldLoading(false);
+          setSalesOnHoldRefreshing(false);
+          return;
+        }
 	      const scope: "mine" | "all" = isAdmin(role) || isSalesLead(role) ? "all" : "mine";
 	      const now = Date.now();
 	      const ttlMs = 25_000;
@@ -19688,6 +19872,20 @@ function MainApp() {
 	        setSalesOnHoldOrders(sorted as AccountOrderSummary[]);
 	        setSalesOnHoldError(null);
 	      } catch (error: any) {
+            const status = typeof error?.status === "number" ? error.status : null;
+            const code = typeof error?.code === "string" ? error.code : null;
+            const authCode =
+              typeof error?.authCode === "string" ? error.authCode : null;
+            const isAuthFailure =
+              code === "AUTH_REQUIRED" ||
+              status === 401 ||
+              (status === 403 &&
+                typeof authCode === "string" &&
+                authCode.startsWith("TOKEN_"));
+            if (isAuthFailure) {
+              setSalesOnHoldError(null);
+              return;
+            }
 	        const message =
 	          typeof error?.message === "string" && error.message
 	            ? error.message
@@ -20445,6 +20643,28 @@ function MainApp() {
       return refreshReferralData(options);
     },
     [user, referralPollingSuppressed, postLoginHold, refreshReferralData],
+  );
+
+  const handleSalesDashboardTabClick = useCallback(
+    (tabId: SalesDashboardTabId) => {
+      setSalesDashboardTab(tabId);
+      if (tabId === "doctor_referrals_manual") {
+        if (!user || (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))) {
+          return;
+        }
+        void tracedRefreshReferralData("sales-rep-manual-refresh", {
+          showLoading: true,
+        });
+        return;
+      }
+      if (tabId !== "your_sales") {
+        return;
+      }
+      void fetchSalesTrackingOrders({ force: true }).catch((error) => {
+        console.debug("[Sales Tracking] Manual refresh skipped", error);
+      });
+    },
+    [fetchSalesTrackingOrders, tracedRefreshReferralData, user],
   );
 
 	  const handleManualProspectSubmit = useCallback(
@@ -22418,6 +22638,43 @@ function MainApp() {
   }, [closeTrackedMaintenanceWindow]);
   handleLogoutRef.current = handleLogout;
 
+  const handleEndedSession = useCallback(
+    (options?: { reason?: string | null; authCode?: string | null }) => {
+      const normalizedReason = String(options?.reason || "").trim().toLowerCase();
+      const normalizedAuthCode = String(options?.authCode || "").trim().toUpperCase();
+      const resolvedReason =
+        normalizedReason ||
+        (normalizedAuthCode === "TOKEN_REVOKED"
+          ? "token_revoked"
+          : normalizedAuthCode.startsWith("TOKEN_")
+            ? "auth_revoked"
+            : "");
+      const previousReason = String(forcedLogoutReasonRef.current || "").trim().toLowerCase();
+      const now = Date.now();
+      const shouldShowToast =
+        now - forcedLogoutAtRef.current > 2500 || previousReason !== resolvedReason;
+
+      forcedLogoutAtRef.current = now;
+      forcedLogoutReasonRef.current = resolvedReason || null;
+
+      if (shouldShowToast) {
+        const forcedByOtherLogin =
+          resolvedReason === "another_tab_login" || resolvedReason === "token_revoked";
+        if (forcedByOtherLogin) {
+          toast.error(
+            'Your account was signed in on another device, so this session was ended. If this was not you, reset your password and sign in again.',
+          );
+        } else if (resolvedReason === "auth_revoked") {
+          toast.info("Your session expired. Please sign in again.");
+        }
+      }
+
+      closeTrackedMaintenanceWindow("admin_session_ended");
+      handleLogout();
+    },
+    [closeTrackedMaintenanceWindow, handleLogout],
+  );
+
   const handleExitMaintenanceMode = useCallback(() => {
     if (typeof window === "undefined") {
       handleLogout();
@@ -22581,24 +22838,10 @@ function MainApp() {
     }
     const handleForcedLogout = (event?: Event) => {
       const detail = (event as any)?.detail || {};
-      const reason =
-        typeof detail?.reason === "string" ? detail.reason : "";
-      const forcedByOtherLogin =
-        reason === "another_tab_login" || reason === "token_revoked";
-
-      forcedLogoutAtRef.current = Date.now();
-      forcedLogoutReasonRef.current = reason || null;
-
-      if (forcedByOtherLogin) {
-        toast.error(
-          'Your account was signed in on another device, so this session was ended. If this was not you, reset your password and sign in again.',
-        );
-      } else if (reason === "auth_revoked") {
-        toast.info("Your session expired. Please sign in again.");
-      }
-
-      closeTrackedMaintenanceWindow("admin_session_ended");
-      handleLogout();
+      handleEndedSession({
+        reason: typeof detail?.reason === "string" ? detail.reason : null,
+        authCode: typeof detail?.authCode === "string" ? detail.authCode : null,
+      });
     };
     window.addEventListener(
       "peppro:force-logout",
@@ -22610,7 +22853,7 @@ function MainApp() {
         handleForcedLogout as EventListener,
       );
     };
-  }, [closeTrackedMaintenanceWindow, handleLogout]);
+  }, [handleEndedSession]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -22967,8 +23210,14 @@ function MainApp() {
           return;
         }
         if (isAuthFailureError(error)) {
-          closeTrackedMaintenanceWindow("admin_session_ended");
-          handleLogout();
+          const authCode =
+            typeof (error as any)?.authCode === "string"
+              ? (error as any).authCode
+              : null;
+          handleEndedSession({
+            reason: authCode === "TOKEN_REVOKED" ? "token_revoked" : "auth_revoked",
+            authCode,
+          });
           return;
         }
         // Ignore transient network/server failures; keep the user signed in.
@@ -22997,7 +23246,7 @@ function MainApp() {
 	      window.removeEventListener("focus", handleVisibilityOrFocus);
 	      window.removeEventListener("online", handleVisibilityOrFocus);
 	    };
-		  }, [user?.id, closeTrackedMaintenanceWindow, handleLogout, hasAuthToken, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches]);
+		  }, [user?.id, handleEndedSession, hasAuthToken, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches]);
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
@@ -26625,7 +26874,7 @@ function MainApp() {
                               )}
                               data-sales-dashboard-tab={tab.id}
                               aria-pressed={isActive}
-                              onClick={() => setSalesDashboardTab(tab.id)}
+                              onClick={() => handleSalesDashboardTabClick(tab.id)}
                             >
                               <span
                                 className="inline-flex items-center gap-2"
@@ -26993,7 +27242,7 @@ function MainApp() {
 		                      : isSalesLead(user?.role)
 		                        ? "The PepPro team and your clients."
 		                        : `Your clients, ${
-		                            (liveClients || []).filter((entry: any) =>
+		                            scopedLiveClients.filter((entry: any) =>
 		                              isSalesLead(entry?.role),
 		                            ).length === 1
 		                              ? "sales lead"
@@ -27033,13 +27282,13 @@ function MainApp() {
 	                  </div>
 	                )}
 
-	                {liveClientsLoading && liveClients.length === 0 ? (
+	                {liveClientsLoading && scopedLiveClients.length === 0 ? (
 	                  <div className="px-4 py-3 text-sm text-slate-500">
 	                    Loading clients…
 	                  </div>
 	                ) : (() => {
 		                  const normalizedQuery = liveClientsSearch.trim().toLowerCase();
-		                  const filtered = (liveClients || []).filter((entry: any) => {
+		                  const filtered = scopedLiveClients.filter((entry: any) => {
 		                    const simulated = (entry as any)?.isSimulated === true;
 		                    const id = String((entry as any)?.id || "");
 		                    if (simulated || id.startsWith("pseudo-live-")) {
@@ -27116,7 +27365,7 @@ function MainApp() {
 
 	                  return (
 	                      <div className="space-y-3">
-                          {liveClientsLoading && liveClients.length > 0 && (
+                          {liveClientsLoading && scopedLiveClients.length > 0 && (
                             <div className="px-3 py-2 text-xs text-slate-500 rounded-md border border-slate-200 bg-slate-50/70">
                               {liveClientsUsingCachedSnapshot
                                 ? "Showing a recent presence snapshot while live status refreshes."
@@ -30361,7 +30610,7 @@ function MainApp() {
                         )}
                         data-sales-dashboard-tab={tab.id}
                         aria-pressed={isActive}
-                        onClick={() => setSalesDashboardTab(tab.id)}
+                        onClick={() => handleSalesDashboardTabClick(tab.id)}
                       >
                         <span
                           className="inline-flex items-center gap-2"

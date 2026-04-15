@@ -4039,6 +4039,86 @@ def _normalize_shipstation_delivery_status(shipstation_info: Dict) -> Optional[s
     return None
 
 
+def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
+    shipping_address = _ensure_dict(local_order.get("shippingAddress") or local_order.get("shipping_address"))
+    billing_address = _ensure_dict(local_order.get("billingAddress") or local_order.get("billing_address"))
+    integrations = _ensure_dict(local_order.get("integrationDetails") or local_order.get("integrations"))
+    shipstation = _ensure_dict(integrations.get("shipStation") or integrations.get("shipstation"))
+
+    local_id = _normalize_optional_text(local_order.get("id"))
+    woo_order_id = _normalize_optional_text(local_order.get("wooOrderId") or local_order.get("woo_order_id"))
+    woo_order_number = _normalize_optional_text(
+        local_order.get("wooOrderNumber") or local_order.get("woo_order_number")
+    )
+    order_number = woo_order_number or woo_order_id or local_id
+    payment_details = (
+        _normalize_optional_text(local_order.get("paymentDetails"))
+        or _normalize_optional_text(local_order.get("paymentMethod"))
+        or None
+    )
+    billing_email = (
+        _normalize_optional_text(billing_address.get("email"))
+        or _normalize_optional_text(shipping_address.get("email"))
+        or _normalize_optional_text(local_order.get("doctorEmail") or local_order.get("doctor_email"))
+        or None
+    )
+
+    def _as_float(value: object) -> float:
+        try:
+            return float(value or 0)
+        except Exception:
+            return 0.0
+
+    mapped = {
+        "id": woo_order_id or local_id or order_number,
+        "pepproOrderId": local_id,
+        "number": order_number,
+        "wooOrderId": woo_order_id,
+        "wooOrderNumber": woo_order_number,
+        "status": _normalize_optional_text(local_order.get("status")) or "pending",
+        "currency": _normalize_optional_text(local_order.get("currency")) or "USD",
+        "total": _as_float(local_order.get("grandTotal") or local_order.get("total")),
+        "grandTotal": _as_float(local_order.get("grandTotal") or local_order.get("total")),
+        "taxTotal": _as_float(local_order.get("taxTotal")),
+        "shippingTotal": _as_float(local_order.get("shippingTotal")),
+        "itemsSubtotal": local_order.get("itemsSubtotal"),
+        "originalItemsSubtotal": local_order.get("originalItemsSubtotal"),
+        "discountCode": local_order.get("discountCode"),
+        "discountCodeAmount": local_order.get("discountCodeAmount"),
+        "appliedReferralCredit": local_order.get("appliedReferralCredit"),
+        "paymentMethod": payment_details,
+        "paymentDetails": payment_details,
+        "shippingAddress": shipping_address or None,
+        "billingAddress": billing_address or (shipping_address or None),
+        "billingEmail": billing_email,
+        "shippingEstimate": local_order.get("shippingEstimate") or None,
+        "trackingNumber": _normalize_optional_text(
+            local_order.get("trackingNumber") or shipstation.get("trackingNumber")
+        ),
+        "upsTrackingStatus": _normalize_optional_text(local_order.get("upsTrackingStatus")),
+        "deliveryDate": _normalize_optional_text(local_order.get("deliveryDate")),
+        "upsDeliveredAt": _normalize_optional_text(local_order.get("upsDeliveredAt")),
+        "shippingCarrier": _normalize_optional_text(local_order.get("shippingCarrier")),
+        "shippingService": _normalize_optional_text(local_order.get("shippingService")),
+        "expectedShipmentWindow": _normalize_optional_text(local_order.get("expectedShipmentWindow")),
+        "notes": local_order.get("notes"),
+        "lineItems": local_order.get("items") or local_order.get("lineItems") or [],
+        "integrationDetails": integrations or None,
+        "createdAt": local_order.get("createdAt"),
+        "updatedAt": local_order.get("updatedAt"),
+        "doctorId": local_order.get("userId") or local_order.get("user_id") or None,
+        "doctorSalesRepId": (
+            local_order.get("doctorSalesRepId")
+            or local_order.get("salesRepId")
+            or local_order.get("sales_rep_id")
+            or local_order.get("doctor_sales_rep_id")
+            or None
+        ),
+    }
+    _apply_authoritative_ups_tracking_status(mapped)
+    return mapped
+
+
 def get_sales_rep_order_detail(
     order_id: str,
     sales_rep_id: str,
@@ -4050,8 +4130,6 @@ def get_sales_rep_order_detail(
     Fetch a single Woo order detail and ensure it belongs to a doctor tied to this sales rep.
     """
     if not order_id:
-        return None
-    if not woo_commerce.is_configured():
         return None
 
     def _has_populated_address(value: object) -> bool:
@@ -4105,57 +4183,63 @@ def get_sales_rep_order_detail(
     except Exception:
         local_order = None
 
-    try:
-        candidates: List[str] = []
-        for raw_candidate in (
-            (local_order or {}).get("wooOrderId"),
-            (local_order or {}).get("woo_order_id"),
-            (local_order or {}).get("wooOrderNumber"),
-            (local_order or {}).get("woo_order_number"),
-            order_id,
-        ):
-            for candidate in _normalize_order_identifier(str(raw_candidate or "")):
-                if candidate not in candidates:
-                    candidates.append(candidate)
-        woo_order = None
-        logger.debug(
-            "[SalesRep] Order detail lookup start",
-            extra={"orderId": order_id, "salesRepId": sales_rep_id, "candidates": candidates},
-        )
-        for candidate in candidates:
-            woo_order = woo_commerce.fetch_order(candidate)
-            if woo_order:
-                break
-        if woo_order is None:
+    woo_order: Dict[str, Any] = {}
+    use_local_detail_only = isinstance(local_order, dict) and bool(local_order)
+    if use_local_detail_only:
+        mapped = _build_sales_rep_order_detail_from_local(local_order)
+    else:
+        if not woo_commerce.is_configured():
+            return None
+        try:
+            candidates: List[str] = []
+            for raw_candidate in (
+                (local_order or {}).get("wooOrderId"),
+                (local_order or {}).get("woo_order_id"),
+                (local_order or {}).get("wooOrderNumber"),
+                (local_order or {}).get("woo_order_number"),
+                order_id,
+            ):
+                for candidate in _normalize_order_identifier(str(raw_candidate or "")):
+                    if candidate not in candidates:
+                        candidates.append(candidate)
+            logger.debug(
+                "[SalesRep] Order detail lookup start",
+                extra={"orderId": order_id, "salesRepId": sales_rep_id, "candidates": candidates},
+            )
             for candidate in candidates:
-                woo_order = woo_commerce.fetch_order_by_number(candidate)
+                woo_order = woo_commerce.fetch_order(candidate)
                 if woo_order:
                     break
-        if not woo_order:
-            return None
-    except Exception:
-        # Avoid returning a 500 when the store is having issues; surface a clean 503.
-        raise _service_error("Unable to load order details right now. Please try again soon.", 503)
-
-    try:
-        mapped = woo_commerce._map_woo_order_summary(woo_order)
-        try:
-            logger.debug(
-                "[SalesRep] Order detail mapped",
-                extra={
-                    "orderId": order_id,
-                    "salesRepId": sales_rep_id,
-                    "mappedId": mapped.get("id"),
-                    "mappedNumber": mapped.get("number"),
-                    "mappedWooOrderNumber": mapped.get("wooOrderNumber"),
-                    "mappedWooOrderId": mapped.get("wooOrderId"),
-                    "billingEmail": (woo_order.get("billing") or {}).get("email"),
-                },
-            )
+            if not woo_order:
+                for candidate in candidates:
+                    woo_order = woo_commerce.fetch_order_by_number(candidate)
+                    if woo_order:
+                        break
+            if not woo_order:
+                return None
         except Exception:
-            pass
-    except Exception:
-        raise _service_error("Unable to load order details right now. Please try again soon.", 503)
+            # Avoid returning a 500 when the store is having issues; surface a clean 503.
+            raise _service_error("Unable to load order details right now. Please try again soon.", 503)
+
+        try:
+            mapped = woo_commerce._map_woo_order_summary(woo_order)
+            try:
+                logger.debug(
+                    "[SalesRep] Order detail mapped",
+                    extra={
+                        "orderId": order_id,
+                        "salesRepId": sales_rep_id,
+                        "mappedId": mapped.get("id"),
+                        "mappedNumber": mapped.get("number"),
+                        "mappedWooOrderNumber": mapped.get("wooOrderNumber"),
+                        "mappedWooOrderId": mapped.get("wooOrderId"),
+                        "billingEmail": (woo_order.get("billing") or {}).get("email"),
+                    },
+                )
+            except Exception:
+                pass
+        except Exception:
+            raise _service_error("Unable to load order details right now. Please try again soon.", 503)
 
     resolved_doctor = _pick_doctor(local_order)
     normalized_token_role = (token_role or "").strip().lower()
@@ -4192,65 +4276,66 @@ def get_sales_rep_order_detail(
         if not order_rep_candidates or order_rep_candidates.isdisjoint(allowed_rep_ids):
             raise _service_error("Order not found", 404)
 
-    # Enrich with ShipStation status/tracking when available
-    shipstation_info = None
-    try:
-        shipstation_info = ship_station.fetch_order_status(
-            mapped.get("number") or mapped.get("wooOrderNumber")
-        )
-    except ship_station.IntegrationError as exc:  # pragma: no cover - network path
-        logger.warning(
-            "ShipStation status lookup failed",
-            exc_info=False,
-            extra={
-                "orderId": order_id,
-                "status": getattr(exc, "status", None),
-                "error": str(exc),
-            },
-        )
-    except Exception:
-        # Non-fatal enrichment failure.
+    if not use_local_detail_only:
+        # Enrich with ShipStation status/tracking when available.
         shipstation_info = None
+        try:
+            shipstation_info = ship_station.fetch_order_status(
+                mapped.get("number") or mapped.get("wooOrderNumber")
+            )
+        except ship_station.IntegrationError as exc:  # pragma: no cover - network path
+            logger.warning(
+                "ShipStation status lookup failed",
+                exc_info=False,
+                extra={
+                    "orderId": order_id,
+                    "status": getattr(exc, "status", None),
+                    "error": str(exc),
+                },
+            )
+        except Exception:
+            # Non-fatal enrichment failure.
+            shipstation_info = None
 
-    if shipstation_info:
-        mapped.setdefault("integrationDetails", {})
-        mapped["integrationDetails"]["shipStation"] = shipstation_info
-        ship_status = (shipstation_info.get("status") or "").lower()
-        derived_shipping_status = _normalize_shipstation_delivery_status(shipstation_info)
-        authoritative_ups_status = _apply_authoritative_ups_tracking_status(mapped) or (
-            _apply_authoritative_ups_tracking_status(local_order) if isinstance(local_order, dict) else None
-        )
-        carrier_code = shipstation_info.get("carrierCode")
-        service_code = shipstation_info.get("serviceCode")
-        if ship_status == "shipped" or derived_shipping_status:
-            if ship_status == "shipped" and not mapped.get("status"):
-                mapped["status"] = "shipped"
+        if shipstation_info:
+            mapped.setdefault("integrationDetails", {})
+            mapped["integrationDetails"]["shipStation"] = shipstation_info
+            ship_status = (shipstation_info.get("status") or "").lower()
+            derived_shipping_status = _normalize_shipstation_delivery_status(shipstation_info)
+            authoritative_ups_status = _apply_authoritative_ups_tracking_status(mapped) or (
+                _apply_authoritative_ups_tracking_status(local_order) if isinstance(local_order, dict) else None
+            )
+            carrier_code = shipstation_info.get("carrierCode")
+            service_code = shipstation_info.get("serviceCode")
+            if ship_status == "shipped" or derived_shipping_status:
+                if ship_status == "shipped" and not mapped.get("status"):
+                    mapped["status"] = "shipped"
+                mapped.setdefault("shippingEstimate", {})
+                if not authoritative_ups_status:
+                    mapped["shippingEstimate"]["status"] = derived_shipping_status or "shipped"
+                if shipstation_info.get("shipDate"):
+                    mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
             mapped.setdefault("shippingEstimate", {})
-            if not authoritative_ups_status:
-                mapped["shippingEstimate"]["status"] = derived_shipping_status or "shipped"
-            if shipstation_info.get("shipDate"):
-                mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
-        mapped.setdefault("shippingEstimate", {})
-        if carrier_code:
-            # Prefer carrierCode for display (e.g., UPS)
-            mapped["shippingEstimate"]["carrierId"] = carrier_code
-            mapped["shippingCarrier"] = carrier_code
-        if service_code:
-            mapped["shippingEstimate"]["serviceType"] = service_code
-            mapped["shippingService"] = service_code
-        if shipstation_info.get("trackingNumber"):
-            mapped["trackingNumber"] = shipstation_info["trackingNumber"]
-        peppro_order_id = (
-            _ensure_dict(mapped.get("integrationDetails") or {})
-            .get("wooCommerce", {})
-            .get("pepproOrderId")
-        ) or mapped.get("id")
-        _persist_shipping_update(
-            peppro_order_id,
-            mapped.get("shippingEstimate"),
-            mapped.get("trackingNumber"),
-            shipstation_info,
-        )
+            if carrier_code:
+                # Prefer carrierCode for display (e.g., UPS)
+                mapped["shippingEstimate"]["carrierId"] = carrier_code
+                mapped["shippingCarrier"] = carrier_code
+            if service_code:
+                mapped["shippingEstimate"]["serviceType"] = service_code
+                mapped["shippingService"] = service_code
+            if shipstation_info.get("trackingNumber"):
+                mapped["trackingNumber"] = shipstation_info["trackingNumber"]
+            peppro_order_id = (
+                _ensure_dict(mapped.get("integrationDetails") or {})
+                .get("wooCommerce", {})
+                .get("pepproOrderId")
+            ) or mapped.get("id")
+            _persist_shipping_update(
+                peppro_order_id,
+                mapped.get("shippingEstimate"),
+                mapped.get("trackingNumber"),
+                shipstation_info,
+            )
 
     # Pull local PepPro order fields for fallback detail hydration and display-only metadata.
     # This keeps the detail modal usable when Woo returns sparse billing/shipping data or when
@@ -4326,7 +4411,8 @@ def get_sales_rep_order_detail(
     except Exception:
         pass
 
-    local_order = _refresh_authoritative_ups_status_for_order_view(mapped, local_order=local_order)
+    if not use_local_detail_only:
+        local_order = _refresh_authoritative_ups_status_for_order_view(mapped, local_order=local_order)
 
     if resolved_doctor:
         mapped["doctorId"] = resolved_doctor.get("id")
