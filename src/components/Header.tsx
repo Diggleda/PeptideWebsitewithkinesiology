@@ -13,6 +13,7 @@ import clsx from 'clsx';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { resolveStaticAssetUrl, withStaticAssetStamp } from '../lib/assetUrl';
+import { formatOrderStatusLabel } from '../lib/orderStatusLabels.mjs';
 import { shouldDisplayShippingStatusForOrder } from '../lib/orderStatusPrecedence.mjs';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
@@ -1056,12 +1057,7 @@ const resolveOrderLineImage = (
 
 const humanizeOrderStatus = (status?: string | null) => {
   if (!status) return 'Pending';
-  const normalized = status.trim().toLowerCase();
-  if (normalized === 'trash') return 'Canceled';
-  return status
-    .split(/[_\s]+/)
-    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-    .join(' ');
+  return formatOrderStatusLabel(status) || 'Pending';
 };
 
 const normalizeTrackingStatusToken = (value?: string | null) => {
@@ -1235,9 +1231,6 @@ const buildTrackingStatusLabel = (
   const trackingNumber = resolveTrackingNumber(order);
   const deliveredAtLabel = formatDeliveryDateLabel(resolveOrderDeliveredAt(order));
   const normalizedStatus = statusToken || normalizeTrackingStatusToken(rawStatus);
-  if (!trackingNumber && normalizedStatus === 'exception') {
-    return 'Processing';
-  }
   const label = humanizeOrderStatus(statusToken || rawStatus);
   if (options?.includeDeliveredDate !== false && deliveredAtLabel && normalizedStatus?.includes('delivered')) {
     return `${label} on ${deliveredAtLabel}`;
@@ -1366,21 +1359,36 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
   const hasEta = typeof eta === 'string' && eta.trim().length > 0;
 
   if (normalized === 'shipped') {
-    if (tracking && !hasEta) return 'Processing';
     return tracking ? 'Shipped' : 'Shipped';
   }
   if (normalized.includes('out_for_delivery') || normalized.includes('out-for-delivery')) {
     return 'Out for Delivery';
   }
   if (normalized.includes('in_transit') || normalized.includes('in-transit')) {
-    return 'In Transit';
+    return 'In transit';
   }
   if (normalized.includes('delivered')) {
     return 'Delivered';
   }
+  if (
+    normalized.includes('label_created') ||
+    normalized.includes('awaiting_shipment') ||
+    normalized.includes('awaiting')
+  ) {
+    return 'Label Created';
+  }
+  if (
+    normalized.includes('exception') ||
+    normalized.includes('delay') ||
+    normalized.includes('held') ||
+    normalized.includes('hold') ||
+    normalized.includes('error')
+  ) {
+    return 'Exception';
+  }
 
   if (tracking && !hasEta) {
-    return 'Processing';
+    return 'Shipped';
   }
   if (tracking && hasEta) {
     return 'Shipped';
@@ -1389,10 +1397,10 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
     return 'Processing';
   }
   if (normalized === 'completed' || normalized === 'complete') {
-    return 'Completed';
+    return 'Shipped';
   }
   if (normalized === 'awaiting_shipment' || normalized === 'awaiting shipment') {
-    return 'Order Received';
+    return 'Label Created';
   }
 
   if (!raw) return 'Pending';

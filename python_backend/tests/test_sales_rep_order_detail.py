@@ -316,6 +316,9 @@ class SalesRepOrderDetailTests(unittest.TestCase):
                 "userId": "doctor-1",
                 "wooOrderId": "9505",
                 "wooOrderNumber": "1505",
+                "integrationDetails": {
+                    "wooCommerce": json.dumps({"pepproOrderId": "local-1505"})
+                },
                 "trackingNumber": "",
                 "shippingEstimate": {"status": "exception"},
                 "status": "completed",
@@ -363,6 +366,10 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             self.assertEqual(
                 result["integrationDetails"]["shipStation"]["trackingNumber"],
                 "1ZSHIP1505",
+            )
+            self.assertEqual(
+                result["integrationDetails"]["wooCommerce"],
+                json.dumps({"pepproOrderId": "local-1505"}),
             )
             self.assertTrue(any(entry.get("trackingNumber") == "1ZSHIP1505" for entry in persisted))
         finally:

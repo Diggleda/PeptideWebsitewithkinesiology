@@ -14,6 +14,7 @@ import {
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
+import { formatOrderStatusLabel } from "./lib/orderStatusLabels.mjs";
 import { shouldDisplayShippingStatusForOrder } from "./lib/orderStatusPrecedence.mjs";
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
@@ -1047,12 +1048,7 @@ interface AccountOrderSummary {
 
 const humanizeAccountOrderStatus = (status?: string | null): string => {
   if (!status) return "Pending";
-  const normalized = status.trim().toLowerCase();
-  if (normalized === "trash") return "Canceled";
-  return status
-    .split(/[_\s]+/)
-    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-    .join(" ");
+  return formatOrderStatusLabel(status) || "Pending";
 };
 
 const normalizeTrackingStatusToken = (value?: string | null) => {
@@ -1432,10 +1428,26 @@ const describeSalesOrderStatus = (
     shippingNormalized.includes("in_transit") ||
     shippingNormalized.includes("in-transit")
   ) {
-    return "In Transit";
+    return "In transit";
   }
   if (shippingNormalized.includes("delivered")) {
     return "Delivered";
+  }
+  if (
+    shippingNormalized.includes("label_created") ||
+    shippingNormalized.includes("awaiting_shipment") ||
+    shippingNormalized.includes("awaiting")
+  ) {
+    return "Label Created";
+  }
+  if (
+    shippingNormalized.includes("exception") ||
+    shippingNormalized.includes("delay") ||
+    shippingNormalized.includes("held") ||
+    shippingNormalized.includes("hold") ||
+    shippingNormalized.includes("error")
+  ) {
+    return "Exception";
   }
 
   const tracking =
@@ -1458,21 +1470,37 @@ const describeSalesOrderStatus = (
     normalized.includes("in_transit") ||
     normalized.includes("in-transit")
   ) {
-    return "In Transit";
+    return "In transit";
   }
   if (normalized.includes("delivered")) {
     return "Delivered";
   }
+  if (
+    normalized.includes("label_created") ||
+    normalized.includes("awaiting_shipment") ||
+    normalized.includes("awaiting")
+  ) {
+    return "Label Created";
+  }
+  if (
+    normalized.includes("exception") ||
+    normalized.includes("delay") ||
+    normalized.includes("held") ||
+    normalized.includes("hold") ||
+    normalized.includes("error")
+  ) {
+    return "Exception";
+  }
 
   if (tracking) return "Shipped";
   if (normalized === "processing") {
-    return "Order Received";
+    return "Processing";
   }
   if (normalized === "completed" || normalized === "complete") {
     return "Shipped";
   }
   if (normalized === "awaiting_shipment" || normalized === "awaiting shipment") {
-    return "Order Received";
+    return "Label Created";
   }
 
   if (!raw) return "Pending";

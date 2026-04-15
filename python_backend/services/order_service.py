@@ -906,6 +906,20 @@ def _ensure_dict(value):
     return {}
 
 
+def _extract_woo_details(integrations_value):
+    integrations = _ensure_dict(integrations_value)
+    return _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
+
+
+def _extract_peppro_order_id_from_integrations(integrations_value, fallback=None):
+    woo_details = _extract_woo_details(integrations_value)
+    return (
+        woo_details.get("pepproOrderId")
+        or woo_details.get("peppro_order_id")
+        or fallback
+    )
+
+
 def _extract_image_source(value: object) -> Optional[str]:
     if isinstance(value, str):
         normalized = value.strip()
@@ -4236,11 +4250,10 @@ def _enrich_with_shipstation(order: Dict) -> None:
     if info.get("trackingNumber"):
         order["trackingNumber"] = info["trackingNumber"]
 
-    peppro_order_id = (
-        _ensure_dict(order.get("integrationDetails") or {})
-        .get("wooCommerce", {})
-        .get("pepproOrderId")
-    ) or order.get("id")
+    peppro_order_id = _extract_peppro_order_id_from_integrations(
+        order.get("integrationDetails") or order.get("integrations"),
+        fallback=order.get("id"),
+    )
     _persist_shipping_update(
         peppro_order_id,
         order.get("shippingEstimate"),
@@ -4602,11 +4615,10 @@ def get_sales_rep_order_detail(
             mapped["shippingService"] = service_code
         if shipstation_info.get("trackingNumber"):
             mapped["trackingNumber"] = shipstation_info["trackingNumber"]
-        peppro_order_id = (
-            _ensure_dict(mapped.get("integrationDetails") or {})
-            .get("wooCommerce", {})
-            .get("pepproOrderId")
-        ) or mapped.get("id")
+        peppro_order_id = _extract_peppro_order_id_from_integrations(
+            mapped.get("integrationDetails") or mapped.get("integrations"),
+            fallback=mapped.get("id"),
+        )
         _persist_shipping_update(
             peppro_order_id,
             mapped.get("shippingEstimate"),
@@ -4619,8 +4631,8 @@ def get_sales_rep_order_detail(
     # the order was authored before the current Woo payload shape.
     try:
         integrations = _ensure_dict(mapped.get("integrationDetails") or mapped.get("integrations"))
-        woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
-        peppro_order_id = woo_details.get("pepproOrderId") or woo_details.get("peppro_order_id") or None
+        woo_details = _extract_woo_details(integrations)
+        peppro_order_id = _extract_peppro_order_id_from_integrations(integrations)
         if peppro_order_id and not local_order:
             local_order = order_repository.find_by_id(str(peppro_order_id))
         if not local_order:
