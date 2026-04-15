@@ -397,9 +397,6 @@ def load_config() -> AppConfig:
         mysql_is_local = mysql_host in {"", "localhost", "127.0.0.1", "::1"}
         if bool(config.mysql.get("enabled")) and not bool(config.mysql.get("ssl")) and not mysql_is_local:
             raise RuntimeError("MYSQL_SSL=true is required in production when MySQL is enabled on a non-local host")
-        redis_url = str(os.environ.get("REDIS_URL") or "").strip()
-        if redis_url and not redis_url.lower().startswith("rediss://"):
-            raise RuntimeError("REDIS_URL must use rediss:// in production")
         if config.frontend_base_url and not config.frontend_base_url.lower().startswith("https://"):
             raise RuntimeError("FRONTEND_BASE_URL must use HTTPS in production")
 

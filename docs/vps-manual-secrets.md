@@ -35,7 +35,7 @@ without a dedicated data re-encryption migration.
 
 ```bash
 systemctl cat peppr-api.service
-sudo egrep '^(NODE_ENV|PORT|DATA_DIR|JWT_SECRET|DATA_ENCRYPTION_|MYSQL_|FRONTEND_BASE_URL|REDIS_URL)=' /etc/peppr-api.env
+sudo egrep '^(NODE_ENV|PORT|DATA_DIR|JWT_SECRET|DATA_ENCRYPTION_|MYSQL_|FRONTEND_BASE_URL|WOO_PRODUCT_DOC_SYNC_MODE)=' /etc/peppr-api.env
 ```
 
 The service should load `/etc/peppr-api.env` via `EnvironmentFile=`.
@@ -49,13 +49,29 @@ sudo systemctl status peppr-api.service --no-pager
 journalctl -u peppr-api.service -n 100 --no-pager
 ```
 
+## Install the catalog snapshot timer
+
+Use the example units in
+[`ops/peppr-catalog-snapshot.service.example`](../ops/peppr-catalog-snapshot.service.example)
+and
+[`ops/peppr-catalog-snapshot.timer.example`](../ops/peppr-catalog-snapshot.timer.example),
+then install them on the VPS:
+
+```bash
+sudo cp ops/peppr-catalog-snapshot.service.example /etc/systemd/system/peppr-catalog-snapshot.service
+sudo cp ops/peppr-catalog-snapshot.timer.example /etc/systemd/system/peppr-catalog-snapshot.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now peppr-catalog-snapshot.timer
+sudo systemctl list-timers --all | grep peppr-catalog-snapshot
+```
+
 ## Expected production behavior
 
 - The backend does not auto-load repo `.env` files in production.
 - New PHI-bearing writes use encrypted companion columns.
 - Woo payloads are sanitized and should not include patient names, addresses,
   phone numbers, payment instructions, or hand-delivery addresses.
-- If `REDIS_URL` is set in production, it must use `rediss://`.
+- Catalog snapshots should run from a `systemd` timer or `cron`, not a Redis/RQ worker.
 
 ## Failure modes to expect
 

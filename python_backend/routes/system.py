@@ -14,13 +14,7 @@ from typing import Any, Optional, Tuple
 from ..services import get_config
 from ..services import news_service
 from ..integrations import ship_engine, woo_commerce
-from ..middleware.auth import require_auth
-from ..queue import ping as queue_ping
-from ..queue import get_queue as get_rq_queue
-from ..queue import enqueue as queue_enqueue
-from ..jobs.product_docs import sync_product_documents
-from ..jobs.catalog_snapshot import sync_catalog_snapshot_job
-from ..utils.http import handle_action, require_admin as _require_admin_user, utc_now_iso as _now
+from ..utils.http import handle_action, utc_now_iso as _now
 
 blueprint = Blueprint("system", __name__, url_prefix="/api")
 
@@ -502,12 +496,12 @@ def _process_uptime_seconds(pid: int) -> float | None:
         return None
 
 
-def _queue_stats() -> dict[str, Any] | None:
-    try:
-        q = get_rq_queue()
-        return {"name": q.name, "length": q.count}
-    except Exception:
-        return None
+def _background_job_stats() -> dict[str, Any]:
+    return {
+        "mode": "scheduled",
+        "catalogSnapshotRunner": "python -m python_backend.scripts.sync_catalog_snapshot",
+        "productDocumentSyncMode": str(os.environ.get("WOO_PRODUCT_DOC_SYNC_MODE", "thread")).strip().lower() or "thread",
+    }
 
 
 @blueprint.get("/health")
@@ -535,7 +529,7 @@ def health():
                 "ppid": ppid,
                 "gunicorn": _parse_gunicorn_args(master_cmdline or "") if master_cmdline else None,
             }
-            queue = _queue_stats()
+            background_jobs = _background_job_stats()
         except Exception:
             # Never allow health checks to 500; return a degraded payload instead.
             build = os.environ.get("BACKEND_BUILD", "unknown")
@@ -543,7 +537,7 @@ def health():
             status = "degraded"
             mysql_enabled = None
             workers = None
-            queue = None
+            background_jobs = None
             master = None
             children = None
             uptime = None
@@ -557,38 +551,11 @@ def health():
             "workers": workers,
             "processes": {"master": master, "children": children},
             "uptime": uptime,
-            "queue": queue,
+            "backgroundJobs": background_jobs,
             "timestamp": _now(),
         }
 
     return handle_action(action)
-
-
-@blueprint.get("/queue/health")
-def queue_health():
-    return handle_action(queue_ping)
-
-
-@blueprint.post("/queue/enqueue/product-docs-sync")
-@require_auth
-def enqueue_product_docs_sync():
-    def action():
-        _require_admin_user()
-        job = queue_enqueue(sync_product_documents, description="sync_product_documents")
-        return {"ok": True, "jobId": job.id}
-
-    return handle_action(action, status=202)
-
-
-@blueprint.post("/queue/enqueue/catalog-snapshot-sync")
-@require_auth
-def enqueue_catalog_snapshot_sync():
-    def action():
-        _require_admin_user()
-        job = queue_enqueue(sync_catalog_snapshot_job, description="sync_catalog_snapshot_job")
-        return {"ok": True, "jobId": job.id}
-
-    return handle_action(action, status=202)
 
 
 @blueprint.get("/help")

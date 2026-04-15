@@ -57,8 +57,21 @@ Required production settings:
 
 Optional production settings:
 
-- `REDIS_URL=rediss://...` if Redis/RQ is used in production
 - `DATA_DIR=/opt/peppr/backend/server-data`
+- `WOO_PRODUCT_DOC_SYNC_MODE=thread` keeps Woo product-document stub syncing in
+  the web process (default)
+
+Scheduled background jobs:
+
+- Catalog snapshots no longer require Redis/RQ. Run them from `cron` or a
+  `systemd` timer with:
+  `python -m python_backend.scripts.sync_catalog_snapshot`
+- Example unit files live in:
+  [`ops/peppr-catalog-snapshot.service.example`](../ops/peppr-catalog-snapshot.service.example)
+  and
+  [`ops/peppr-catalog-snapshot.timer.example`](../ops/peppr-catalog-snapshot.timer.example).
+- The product-document sync already runs on an in-process thread by default, so
+  it does not need a separate queue worker unless you intentionally redesign it.
 
 Quote PDF renderer settings:
 

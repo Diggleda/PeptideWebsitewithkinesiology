@@ -16,7 +16,7 @@ _CONFIG: Optional[AppConfig] = None
 
 def bootstrap() -> AppConfig:
     """
-    Initialize config/services/db for non-HTTP processes (RQ workers, scripts).
+    Initialize config/services/db for non-HTTP processes such as maintenance scripts.
     Safe to call multiple times.
     """
     global _BOOTSTRAPPED, _CONFIG
@@ -36,4 +36,3 @@ def bootstrap() -> AppConfig:
         _CONFIG = config
         _BOOTSTRAPPED = True
         return config
-

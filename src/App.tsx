@@ -8745,6 +8745,7 @@ function MainApp() {
 		    ownerSalesRepName?: string | null;
 	    ownerSalesRepEmail?: string | null;
       hasResellerPermitUploaded?: boolean | null;
+      hasAccount?: boolean | null;
 	    isOnline?: boolean | null;
 	    isIdle?: boolean | null;
 	    idleMinutes?: number | null;
@@ -8754,10 +8755,19 @@ function MainApp() {
         summaryOnly?: boolean;
 		  } | null>(null);
       const canOpenMaintenanceViewForSalesDoctorDetail = useMemo(() => {
+        const doctorId = String(salesDoctorDetail?.doctorId || "").trim();
         if (
           !isAdmin(user?.role) ||
-          !salesDoctorDetail?.doctorId ||
-          salesDoctorDetail?.referralId
+          !doctorId ||
+          salesDoctorDetail?.hasAccount !== true ||
+          salesDoctorDetail?.summaryOnly === true
+        ) {
+          return false;
+        }
+        if (
+          doctorId.startsWith("contact_form:") ||
+          doctorId.startsWith("manual:") ||
+          doctorId.startsWith("anon:")
         ) {
           return false;
         }
@@ -8766,8 +8776,9 @@ function MainApp() {
         );
       }, [
         salesDoctorDetail?.doctorId,
-        salesDoctorDetail?.referralId,
+        salesDoctorDetail?.hasAccount,
         salesDoctorDetail?.role,
+        salesDoctorDetail?.summaryOnly,
         user?.role,
       ]);
       const [salesDoctorDetailStack, setSalesDoctorDetailStack] = useState<
@@ -9829,6 +9840,19 @@ function MainApp() {
 			              : typeof userRecord?.phone_number === "string" && String(userRecord.phone_number).trim()
 			                ? String(userRecord.phone_number).trim()
 			                : null;
+              const resolvedHasAccount =
+                coerceOptionalBoolean(
+                  (best?.response as any)?.hasAccount ??
+                    prospect?.hasAccount ??
+                    prospect?.referredContactHasAccount,
+                ) ??
+                Boolean(
+                  userRecord &&
+                    typeof userRecord === "object" &&
+                    String(
+                      userRecord?.id || userRecord?.doctorId || userRecord?.userId || "",
+                    ).trim(),
+                );
 
 				        if (!canceled) {
 				          setSalesDoctorNoteDraft((current) => {
@@ -9858,6 +9882,7 @@ function MainApp() {
 			              if (resolvedPhone) {
 			                next.phone = resolvedPhone;
 			              }
+                    next.hasAccount = resolvedHasAccount;
 				              if (resolvedAddress) {
 				                next.address = resolvedAddress;
 				                next.addressOrigin = resolvedAddressOrigin;
@@ -11041,6 +11066,27 @@ function MainApp() {
           : resolvePresence();
       const cachedProfile =
         livePresenceProfileImageByUserIdRef.current[String(bucket.doctorId || "").trim()] || null;
+      const normalizedBucketDoctorId = String(bucket.doctorId || "").trim();
+      const normalizedBucketLeadTypeLabel = String(
+        (bucket as any)?.leadTypeLabel || (bucket as any)?.leadType || (bucket as any)?.lead_type || "",
+      )
+        .trim()
+        .toLowerCase();
+      const bucketHasAccount =
+        coerceOptionalBoolean(
+          (bucket as any)?.hasAccount ?? (bucket as any)?.referredContactHasAccount,
+        ) ??
+        !(
+          !normalizedBucketDoctorId ||
+          normalizedBucketDoctorId.startsWith("contact_form:") ||
+          normalizedBucketDoctorId.startsWith("manual:") ||
+          normalizedBucketDoctorId.startsWith("anon:") ||
+          normalizedBucketLeadTypeLabel.includes("contact form") ||
+          normalizedBucketLeadTypeLabel.includes("contact") ||
+          normalizedBucketLeadTypeLabel.includes("house account") ||
+          normalizedBucketLeadTypeLabel.includes("house") ||
+          normalizedBucketLeadTypeLabel.includes("manual prospect")
+        );
 
         const nextDetail = {
 	        doctorId: bucket.doctorId,
@@ -11109,6 +11155,7 @@ function MainApp() {
 	        ownerSalesRepName: (bucket as any).ownerSalesRepName ?? null,
 	        ownerSalesRepEmail: (bucket as any).ownerSalesRepEmail ?? null,
           hasResellerPermitUploaded: hasUploadedResellerPermit(bucket, cachedProfile),
+          hasAccount: bucketHasAccount,
 	        isOnline: presence?.isOnline ?? null,
 	        isIdle: presence?.isIdle ?? null,
 	        idleMinutes: presence?.idleMinutes ?? null,
@@ -11206,6 +11253,7 @@ function MainApp() {
           doctorName: displayName,
           doctorEmail: entry?.email || null,
           doctorAvatar: avatarUrl,
+          hasAccount: true,
           greaterArea:
             typeof entry?.greaterArea === "string" ? entry.greaterArea : null,
           studyFocus:
@@ -11466,6 +11514,7 @@ function MainApp() {
 	                doctorName,
 	                doctorEmail: doctorFromList?.email || entry?.email || null,
 	                doctorAvatar: doctorFromList?.profileImageUrl || doctorFromList?.profile_image_url || avatarUrl,
+                  hasAccount: true,
                   greaterArea:
                     typeof doctorFromList?.greaterArea === "string"
                       ? doctorFromList.greaterArea
@@ -11896,6 +11945,7 @@ function MainApp() {
               doctorName: profile?.name || displayName,
               doctorEmail: profile?.email || entry?.email || null,
               doctorAvatar: profile?.profileImageUrl || avatarUrl,
+              hasAccount: true,
               greaterArea:
                 typeof profile?.greaterArea === "string" ? profile.greaterArea : null,
               studyFocus:
@@ -31318,6 +31368,7 @@ function MainApp() {
                                     openSalesDoctorDetail(
                                       {
                                         ...bucket,
+                                        hasAccount: true,
                                         referralId: resolveReferralIdForDoctorNotes(
                                           bucket.doctorId,
                                           bucket.doctorEmail,
@@ -31333,6 +31384,7 @@ function MainApp() {
                                       openSalesDoctorDetail(
                                         {
                                           ...bucket,
+                                          hasAccount: true,
                                           referralId: resolveReferralIdForDoctorNotes(
                                             bucket.doctorId,
                                             bucket.doctorEmail,
@@ -31944,6 +31996,7 @@ function MainApp() {
                                   doctorAvatar: hasContactAccount
                                     ? leadAccountProfile?.profileImageUrl ?? null
                                     : null,
+                                  hasAccount: hasContactAccount,
                                   doctorPhone: contactPhones[0] || record.referredContactPhone || null,
 	                                  contactPhones,
 	                                  doctorAddress,
@@ -37708,6 +37761,7 @@ function MainApp() {
 						                                    doctorEmail: contactEmails[0] || doctorEmail,
                                             contactEmails,
 						                                    doctorAvatar: avatarUrl || null,
+                                            hasAccount,
                                             prospectNotes: (() => {
                                               const contactFormIdRaw =
                                                 row?.contactFormId ||

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run PepPro catalog snapshot sync on a schedule
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=30m
+Persistent=true
+Unit=peppr-catalog-snapshot.service
+
+[Install]
+WantedBy=timers.target

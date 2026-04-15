@@ -1,0 +1,13 @@
+[Unit]
+Description=PepPro catalog snapshot sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pepproadmin
+WorkingDirectory=/opt/peppr/backend
+EnvironmentFile=/etc/peppr-api.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/peppr/backend/venv/bin/python -m python_backend.scripts.sync_catalog_snapshot
+

@@ -27,7 +27,7 @@ def _enabled() -> bool:
 
 def _mode() -> str:
     # "thread" (default): run inside the web process.
-    # "queue": disable the thread; expect an external scheduler to enqueue `jobs.product_docs.sync_product_documents`.
+    # Any other value disables the in-process thread so ops can replace it with an external scheduler.
     return str(os.environ.get("WOO_PRODUCT_DOC_SYNC_MODE", "thread")).strip().lower() or "thread"
 
 
