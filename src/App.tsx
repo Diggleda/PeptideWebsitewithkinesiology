@@ -31629,11 +31629,6 @@ function MainApp() {
                                         <span className="sales-tracking-row-status">
                                           {statusLabel}
                                         </span>
-                                        {delegateOrderLabel ? (
-                                          <span className="sales-account-indicator-badge">
-                                            {delegateOrderLabel}
-                                          </span>
-                                        ) : null}
                                       </div>
                                     )}
                                   </div>
@@ -31647,6 +31642,11 @@ function MainApp() {
 	                                      <div className="lead-list-detail">
 	                                        {primaryDateLabel}
 	                                      </div>
+                                        {delegateOrderLabel ? (
+                                          <div className="lead-list-detail">
+                                            Type: Delegate Order
+                                          </div>
+                                        ) : null}
                                         {arrivalLabel || !trackingLabel ? (
 	                                      <div className="lead-list-detail">
 	                                        {arrivalLabel || "Tracking pending"}
@@ -37590,17 +37590,17 @@ function MainApp() {
 	                              <span className="sales-tracking-row-status shrink-0">
 	                                {describeSalesOrderStatus(order as any)}
 	                              </span>
-                                {delegateOrderLabel ? (
-                                  <span className="sales-account-indicator-badge">
-                                    {delegateOrderLabel}
-                                  </span>
-                                ) : null}
 	                            </div>
 	                            <div className="text-xs text-slate-500">
 	                              {dateSummary.value
                                   ? `${dateSummary.label}: ${dateSummary.value}`
                                   : "Date unavailable"}
 	                            </div>
+                              {delegateOrderLabel ? (
+                                <div className="text-xs text-slate-500">
+                                  Type: Delegate Order
+                                </div>
+                              ) : null}
                               {orderTaxExempt && (
                                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-600">
                                   {orderTaxExempt && <span>Tax Exempt</span>}

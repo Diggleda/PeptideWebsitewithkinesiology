@@ -982,7 +982,11 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             setattr(err, "status", 404)
             raise err
         doctor_id = str(link.get("doctorId") or "").strip()
-        if not doctor_id or str(link.get("revokedAt") or "").strip():
+        if (
+            not doctor_id
+            or str(link.get("revokedAt") or "").strip()
+            or str(link.get("status") or "").strip().lower() == "expired"
+        ):
             err = ValueError("Invalid or expired delegate link")
             setattr(err, "status", 404)
             raise err

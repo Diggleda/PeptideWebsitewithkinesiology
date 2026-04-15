@@ -66,8 +66,8 @@ def sweep_once() -> Dict[str, Any]:
         return {"ok": False, "skipped": True, "reason": "lock_busy"}
 
     try:
-        deleted = int(patient_links_repository.delete_expired() or 0)
-        return {"ok": True, "deleted": deleted}
+        expired = int(patient_links_repository.delete_expired() or 0)
+        return {"ok": True, "expired": expired}
     finally:
         _release_lock(lock_name)
 
@@ -77,8 +77,8 @@ def _run_loop() -> None:
     while True:
         try:
             result = sweep_once()
-            if result.get("ok") and int(result.get("deleted") or 0) > 0:
-                logger.info("Delegate link sweep deleted expired links", extra=result)
+            if result.get("ok") and int(result.get("expired") or 0) > 0:
+                logger.info("Delegate link sweep marked expired links", extra=result)
         except Exception:
             logger.exception("Delegate link sweep failed")
         time.sleep(interval_s)

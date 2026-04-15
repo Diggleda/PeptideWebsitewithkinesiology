@@ -28,6 +28,23 @@ def _fmt_datetime(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            return None
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+    return None
+
+
 def _serialize_json(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -194,7 +211,12 @@ def _derive_status(row: Dict[str, Any]) -> str:
     usage_count = int(row.get("usage_count") or 0)
     if usage_limit is not None and usage_count >= usage_limit:
         return "exhausted"
+    expires_at = _coerce_datetime(row.get("expires_at"))
+    if isinstance(expires_at, datetime) and expires_at <= datetime.now(timezone.utc):
+        return "expired"
     status = str(row.get("status") or "").strip().lower()
+    if status == "expired":
+        return "active"
     return status or "active"
 
 
@@ -298,7 +320,18 @@ def delete_expired() -> int:
     try:
         return int(
             mysql_client.execute(
-                "DELETE FROM patient_links WHERE expires_at IS NOT NULL AND expires_at <= UTC_TIMESTAMP()",
+                """
+                UPDATE patient_links
+                SET status = 'expired'
+                WHERE expires_at IS NOT NULL
+                  AND expires_at <= UTC_TIMESTAMP()
+                  AND revoked_at IS NULL
+                  AND NOT (
+                    usage_limit IS NOT NULL
+                    AND COALESCE(usage_count, 0) >= usage_limit
+                  )
+                  AND COALESCE(status, 'active') <> 'expired'
+                """,
             )
             or 0
         )
@@ -456,11 +489,10 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
         return []
     delete_expired()
     rows = mysql_client.fetch_all(
-        f"""
+        """
         SELECT *
         FROM patient_links
         WHERE doctor_id = %(doctor_id)s
-          AND {ACTIVE_LINK_SQL}
         ORDER BY created_at DESC
         """,
         {"doctor_id": doctor_id},
@@ -477,11 +509,10 @@ def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dic
     delete_expired()
     params = _lookup_params(normalized)
     row = mysql_client.fetch_one(
-        f"""
+        """
         SELECT *
         FROM patient_links
         WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
-          AND {ACTIVE_LINK_SQL}
         LIMIT 1
         """,
         params,
@@ -493,7 +524,7 @@ def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dic
         return mapped
     if str(mapped.get("revokedAt") or "").strip():
         return None
-    if mapped.get("status") in ("revoked", "exhausted"):
+    if mapped.get("status") in ("revoked", "exhausted", "expired"):
         return None
     return mapped
 
@@ -660,18 +691,16 @@ def update_link(
             SET {", ".join(updates)}
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
-              AND {ACTIVE_LINK_SQL}
             """,
             params,
         )
 
     row = mysql_client.fetch_one(
-        f"""
+        """
         SELECT *
         FROM patient_links
         WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
           AND doctor_id = %(doctor_id)s
-          AND {ACTIVE_LINK_SQL}
         """,
         params,
     )
@@ -845,7 +874,6 @@ def set_delegate_review_status(
     allowed = {"pending", "accepted", "modified", "rejected"}
     if normalized_status not in allowed:
         return False
-    delete_expired()
     when = reviewed_at.astimezone(timezone.utc) if isinstance(reviewed_at, datetime) else datetime.now(timezone.utc)
     try:
         updates = [
@@ -879,7 +907,6 @@ def set_delegate_review_status(
                 {", ".join(updates)}
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
-              AND {ACTIVE_LINK_SQL}
             """,
             params,
         )

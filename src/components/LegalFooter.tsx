@@ -54,6 +54,17 @@ interface LegalFooterProps {
   bugReportSource?: 'footer' | 'delegate_link';
 }
 
+const normalizeBugReportSource = (
+  value: unknown,
+  fallback: 'footer' | 'delegate_link' = 'footer',
+): 'footer' | 'delegate_link' => {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
+  if (raw === 'delegate_link') {
+    return 'delegate_link';
+  }
+  return fallback === 'delegate_link' ? 'delegate_link' : 'footer';
+};
+
 export function LegalFooter({
   variant = 'full',
   showContactCTA = true,
@@ -75,6 +86,9 @@ export function LegalFooter({
   const [bugSuccess, setBugSuccess] = useState('');
   const [bugError, setBugError] = useState('');
   const [bugReport, setBugReport] = useState('');
+  const [activeBugReportSource, setActiveBugReportSource] = useState<'footer' | 'delegate_link'>(() =>
+    normalizeBugReportSource(undefined, bugReportSource),
+  );
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contactCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -264,14 +278,16 @@ export function LegalFooter({
     }
   };
 
-  const handleBugOpen = useCallback(() => {
+  const handleBugOpen = useCallback((sourceOverride?: unknown) => {
+    const resolvedBugReportSource = normalizeBugReportSource(sourceOverride, bugReportSource);
     if (bugCloseTimerRef.current) {
       clearTimeout(bugCloseTimerRef.current);
       bugCloseTimerRef.current = null;
     }
+    setActiveBugReportSource(resolvedBugReportSource);
     void usageTrackingAPI.track({
       event: 'issue_report_clicked',
-      metadata: { source: bugReportSource },
+      metadata: { source: resolvedBugReportSource },
     }).catch(() => {});
     setBugOpen(true);
     requestAnimationFrame(() => setBugVisible(true));
@@ -290,8 +306,12 @@ export function LegalFooter({
   }, [bugOpen, MODAL_FADE_MS]);
 
   useEffect(() => {
-    const openBugReport = () => {
-      handleBugOpen();
+    const openBugReport = (event: Event) => {
+      const sourceOverride =
+        event instanceof CustomEvent
+          ? (event as CustomEvent<{ source?: 'footer' | 'delegate_link' }>).detail?.source
+          : undefined;
+      handleBugOpen(sourceOverride);
     };
     window.addEventListener('peppro:open-bug-report', openBugReport);
     return () => {
@@ -310,7 +330,7 @@ export function LegalFooter({
     }
     setBugSubmitting(true);
     try {
-      const res = await api.post('/bugs', { report, source: bugReportSource });
+      const res = await api.post('/bugs', { report, source: activeBugReportSource });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 404) {
@@ -318,7 +338,7 @@ export function LegalFooter({
             name: 'Bug Report',
             email: 'support@peppro.net',
             phone: '',
-            source: bugReportSource,
+            source: activeBugReportSource,
           });
           const fallbackData = await fallbackRes.json().catch(() => ({}));
           if (!fallbackRes.ok) {

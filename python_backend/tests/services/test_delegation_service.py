@@ -335,6 +335,29 @@ class DelegationServiceTests(unittest.TestCase):
             service.user_repository.find_by_id = original_find_user
             service.email_service.send_delegate_proposal_ready_email = original_send_email
 
+    def test_resolve_delegate_token_rejects_expired_link(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
+                "doctorId": "doc-1",
+                "revokedAt": None,
+                "status": "expired",
+            }
+
+            with self.assertRaises(ValueError) as ctx:
+                service.resolve_delegate_token("tok-expired")
+
+            self.assertEqual(getattr(ctx.exception, "status", None), 404)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+
 
 if __name__ == "__main__":
     unittest.main()

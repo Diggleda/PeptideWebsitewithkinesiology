@@ -5727,24 +5727,6 @@ export function Header({
     },
     [],
   );
-  const handleDelegateLabelNavigateToPatientLink = useCallback((order: any) => {
-    if (!showPatientLinksTab) return;
-    const target = buildOrderToPatientLinkTarget(order);
-    if (
-      target.delegateTokens.length === 0
-      && target.orderIds.length === 0
-      && target.referenceLabels.length === 0
-    ) {
-      toast.message('No associated delegate link was found for this order.');
-      return;
-    }
-    setAccountTab('patient_links');
-    setPendingPatientLinkScrollTarget(target);
-    if (!patientLinksLoadInFlightRef.current) {
-      void loadPatientLinks();
-    }
-  }, [buildOrderToPatientLinkTarget, loadPatientLinks, showPatientLinksTab]);
-
   useEffect(() => {
     return () => {
       if (patientLinkHighlightTimeoutRef.current) {
@@ -6095,18 +6077,14 @@ export function Header({
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
                       <p className="order-status-row flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
                         <span>{statusDisplay}</span>
-                        {showDelegateOrderLabel && (
-                          <button
-                            type="button"
-                            className="sales-account-indicator-badge squircle-sm"
-                            onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
-                            title="Open associated delegate link"
-                          >
-                            {delegateOrderLabel}
-                          </button>
-                        )}
                       </p>
                     </div>
+                    {showDelegateOrderLabel && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Type</p>
+                        <p className="text-sm font-semibold text-slate-900">Delegate Order</p>
+                      </div>
+                    )}
                     {showExpectedDelivery && (
                       <div className="space-y-1">
                         <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
@@ -7022,7 +7000,9 @@ export function Header({
             textDecorationColor: 'rgb(95,179,249)',
             textUnderlineOffset: '2px',
           }}
-          onClick={() => window.dispatchEvent(new Event('peppro:open-bug-report'))}
+          onClick={() => window.dispatchEvent(new CustomEvent('peppro:open-bug-report', {
+            detail: { source: 'delegate_link' },
+          }))}
         >
           report
         </button>
