@@ -191,6 +191,7 @@ def update_link(token: str):
             if "expires_in_hours" in payload
             else None
         )
+        has_expires_in_hours = "expiresInHours" in payload or "expires_in_hours" in payload
         usage_limit = payload.get("usageLimit") if "usageLimit" in payload else payload.get("usage_limit") if "usage_limit" in payload else None
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
@@ -225,7 +226,13 @@ def update_link(token: str):
             markup_percent=markup_percent if markup_percent is not None else None,
             instructions=instructions if isinstance(instructions, str) else None,
             allowed_products=allowed_products,
-            expires_in_hours=expires_in_hours,
+            expires_in_hours=(
+                expires_in_hours
+                if has_expires_in_hours and expires_in_hours is not None
+                else ""
+                if has_expires_in_hours
+                else None
+            ),
             usage_limit=usage_limit,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
@@ -284,6 +291,30 @@ def review_link_proposal(token: str):
         doctor_id = _resolve_target_doctor_id(role)
         status = payload.get("status") or payload.get("proposalStatus") or None
         order_id = payload.get("orderId") or payload.get("order_id") or payload.get("doctorOrderId") or None
+        amount_due = (
+            payload.get("amountDue")
+            if "amountDue" in payload
+            else payload.get("amount_due")
+            if "amount_due" in payload
+            else payload.get("delegateAmountDue")
+            if "delegateAmountDue" in payload
+            else payload.get("delegate_amount_due")
+            if "delegate_amount_due" in payload
+            else payload.get("paymentTrackerAmount")
+            if "paymentTrackerAmount" in payload
+            else None
+        )
+        amount_due_currency = (
+            payload.get("amountDueCurrency")
+            if "amountDueCurrency" in payload
+            else payload.get("amount_due_currency")
+            if "amount_due_currency" in payload
+            else payload.get("delegateAmountDueCurrency")
+            if "delegateAmountDueCurrency" in payload
+            else payload.get("delegate_amount_due_currency")
+            if "delegate_amount_due_currency" in payload
+            else None
+        )
         notes = (
             payload.get("notes")
             or payload.get("reviewNotes")
@@ -299,6 +330,12 @@ def review_link_proposal(token: str):
             token,
             status=str(status),
             order_id=str(order_id).strip() if isinstance(order_id, str) and str(order_id).strip() else None,
+            amount_due=amount_due,
+            amount_due_currency=(
+                str(amount_due_currency).strip()
+                if isinstance(amount_due_currency, str) and str(amount_due_currency).strip()
+                else None
+            ),
             notes=str(notes).strip() if isinstance(notes, str) and str(notes).strip() else None,
         )
         usage_tracking_service.track_event(

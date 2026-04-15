@@ -70,15 +70,6 @@ const AUTO_OPEN_IMAGE_MAX_ATTEMPTS = (() => {
   return 10;
 })();
 
-const VISIBLE_VARIANT_RETRY_INTERVAL_MS = (() => {
-  const raw = String((import.meta as any).env?.VITE_VISIBLE_VARIANT_RETRY_INTERVAL_MS || '').trim();
-  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
-  if (Number.isFinite(parsed) && parsed >= 1000) {
-    return parsed;
-  }
-  return 4500;
-})();
-
 const prefetchImageOnce = (src: string, timeoutMs: number): Promise<boolean> =>
   new Promise((resolve) => {
     const img = new Image();
@@ -777,7 +768,8 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   const [bulkOpen, setBulkOpen] = useState(false);
   const [variantsLoading, setVariantsLoading] = useState(false);
   const variantsLoadTriggeredRef = useRef(false);
-  const variantRetryLastAttemptAtRef = useRef(0);
+  const variantInteractionLastAttemptAtRef = useRef(0);
+  const variantForcedInteractionRetryRef = useRef(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [isCardVisible, setIsCardVisible] = useState(false);
   const userInteractedRef = useRef(false);
@@ -954,6 +946,13 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   }, [product.id, product.variations]);
 
   useEffect(() => {
+    variantsLoadTriggeredRef.current = false;
+    variantInteractionLastAttemptAtRef.current = 0;
+    variantForcedInteractionRetryRef.current = false;
+    userInteractedRef.current = false;
+  }, [product.id]);
+
+  useEffect(() => {
     if (!AUTO_CYCLE_STRENGTH_ENABLED) {
       return;
     }
@@ -1106,29 +1105,43 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     if (!isCardVisible || !canLoadVariants || !stillNeedsVariants) {
       return;
     }
-
-    let cancelled = false;
-    const runAttempt = () => {
-      if (cancelled || variantsLoading) {
-        return;
-      }
-      const now = Date.now();
-      if (now - variantRetryLastAttemptAtRef.current < VISIBLE_VARIANT_RETRY_INTERVAL_MS) {
-        return;
-      }
-      variantRetryLastAttemptAtRef.current = now;
-      void triggerVariantLoad({ force: true });
-    };
-
-    runAttempt();
-    const timer = window.setInterval(runAttempt, VISIBLE_VARIANT_RETRY_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    if (variantsLoading || variantsLoadTriggeredRef.current) {
+      return;
+    }
+    void triggerVariantLoad();
   }, [
     canLoadVariants,
     isCardVisible,
+    needsVariants,
+    selectableVariations.length,
+    triggerVariantLoad,
+    uiVariationId,
+    variantsLoading,
+  ]);
+
+  const handleVariationFieldIntent = useCallback(() => {
+    userInteractedRef.current = true;
+    if (!canLoadVariants || variantsLoading) {
+      return;
+    }
+    if (!needsVariants && selectableVariations.length > 0 && uiVariationId) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - variantInteractionLastAttemptAtRef.current < 250) {
+      return;
+    }
+    variantInteractionLastAttemptAtRef.current = now;
+
+    const shouldForce =
+      variantsLoadTriggeredRef.current && !variantForcedInteractionRetryRef.current;
+    if (shouldForce) {
+      variantForcedInteractionRetryRef.current = true;
+    }
+    void triggerVariantLoad(shouldForce ? { force: true } : undefined);
+  }, [
+    canLoadVariants,
     needsVariants,
     selectableVariations.length,
     triggerVariantLoad,
@@ -1140,7 +1153,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     userInteractedRef.current = true;
     setUiVariationId(variationId);
     if (!variationId || variationId === PLACEHOLDER_VARIATION_ID) {
-      void triggerVariantLoad({ force: true });
+      handleVariationFieldIntent();
       return;
     }
     const variation = selectableVariations?.find((v) => v.id === variationId);
@@ -1151,6 +1164,9 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 
   useEffect(() => {
     if (!AUTO_OPEN_STRENGTH_ENABLED) {
+      return;
+    }
+    if (!isCardVisible) {
       return;
     }
     if (!needsVariants || typeof onEnsureVariants !== 'function') {
@@ -1202,7 +1218,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
       }
       await new Promise<void>((resolve) => window.setTimeout(resolve, AUTO_OPEN_STRENGTH_PACE_MS));
     });
-  }, [needsVariants, onEnsureVariants, product.id, variantsLoading]);
+  }, [isCardVisible, needsVariants, onEnsureVariants, product.id, variantsLoading]);
 
   const ensureCertificateOfAnalysisLoaded = useCallback(async () => {
     setCoaError(null);
@@ -1359,24 +1375,8 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
             id={`variation-${product.id}`}
             value={uiVariationId}
             onChange={(e) => handleVariationChange(e.target.value)}
-            onFocus={() => {
-              userInteractedRef.current = true;
-              if (needsVariants || selectableVariations.length === 0) {
-                void triggerVariantLoad({ force: true });
-              }
-            }}
-            onClick={() => {
-              userInteractedRef.current = true;
-              if (needsVariants || selectableVariations.length === 0) {
-                void triggerVariantLoad({ force: true });
-              }
-            }}
-            onMouseDown={() => {
-              userInteractedRef.current = true;
-              if (needsVariants || selectableVariations.length === 0) {
-                void triggerVariantLoad({ force: true });
-              }
-            }}
+            onFocus={handleVariationFieldIntent}
+            onMouseDown={handleVariationFieldIntent}
             disabled={variantsLoading}
             className={`w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.4)] focus:border-[rgba(95,179,249,0.6)] product-card-select${showVariationChevron ? '' : ' pr-3'}`}
             >

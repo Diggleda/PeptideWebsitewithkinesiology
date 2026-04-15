@@ -282,6 +282,59 @@ def list_sales_tracking_users_for_admin() -> List[Dict]:
     return [_row_to_user(row) for row in rows or []]
 
 
+def list_sales_modal_lookup_users() -> List[Dict]:
+    """
+    Lightweight projection for sales modal detail lookups.
+
+    The live-user modal only needs identity, attribution, and a few display fields.
+    Avoid loading heavyweight per-user blobs like password/cart/downloads for every
+    row when admins open the live presence detail panel.
+    """
+    if not _using_mysql():
+        return _load()
+
+    rows = mysql_client.fetch_all(
+        """
+        SELECT
+            id,
+            name,
+            email,
+            role,
+            status,
+            sales_rep_id,
+            referrer_doctor_id,
+            phone,
+            office_address_line1,
+            office_address_line2,
+            office_city,
+            office_state,
+            office_postal_code,
+            office_country,
+            profile_image_url,
+            greater_area,
+            study_focus,
+            bio,
+            reseller_permit_file_path,
+            reseller_permit_file_name,
+            reseller_permit_uploaded_at
+        FROM users
+        WHERE LOWER(COALESCE(role, '')) IN (
+            'admin',
+            'sales_lead',
+            'saleslead',
+            'sales-lead',
+            'sales_rep',
+            'sales_partner',
+            'test_rep',
+            'rep',
+            'doctor',
+            'test_doctor'
+        )
+        """
+    )
+    return [_row_to_user(row) for row in rows or []]
+
+
 def list_recent_users_since(cutoff: datetime) -> List[Dict]:
     """
     Lightweight user activity projection used by admin dashboards.

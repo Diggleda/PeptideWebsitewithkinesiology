@@ -12,6 +12,7 @@ from ..utils.crypto_envelope import decrypt_json, decrypt_text, encrypt_json, en
 
 TTL_HOURS = 72
 TOKEN_VERSION_HASHED = 2
+ACTIVE_LINK_SQL = "(expires_at IS NULL OR expires_at > UTC_TIMESTAMP())"
 
 
 def _using_mysql() -> bool:
@@ -297,7 +298,7 @@ def delete_expired() -> int:
     try:
         return int(
             mysql_client.execute(
-                "DELETE FROM patient_links WHERE expires_at <= UTC_TIMESTAMP()",
+                "DELETE FROM patient_links WHERE expires_at IS NOT NULL AND expires_at <= UTC_TIMESTAMP()",
             )
             or 0
         )
@@ -350,13 +351,13 @@ def create_link(
         except Exception:
             markup_percent = 0.0
 
-    hours = _normalize_optional_int(expires_in_hours) or TTL_HOURS
+    hours = _normalize_optional_int(expires_in_hours)
 
     for attempt in range(2):
         raw_token = str(uuid.uuid4())
         token_hash = _hash_token(raw_token)
         now = datetime.now(timezone.utc)
-        expires = now + timedelta(hours=hours)
+        expires = now + timedelta(hours=hours) if hours is not None else None
         token_ciphertext = encrypt_text(raw_token, aad=_field_aad(token_hash, "token"))
         params = {
             "token": token_hash,
@@ -372,7 +373,7 @@ def create_link(
             "study_label": _encrypt_field(token_hash, "study_label", study_label_value),
             "patient_reference": _encrypt_field(token_hash, "patient_reference", patient_reference_value),
             "created_at": now.replace(tzinfo=None),
-            "expires_at": expires.replace(tzinfo=None),
+            "expires_at": expires.replace(tzinfo=None) if isinstance(expires, datetime) else None,
             "markup_percent": float(markup_percent or 0.0),
             "instructions": _encrypt_field(token_hash, "instructions", instructions_value),
             "allowed_products_json": _serialize_json(allowed_products_value),
@@ -422,7 +423,7 @@ def create_link(
                 "subjectLabel": subject_label_value,
                 "studyLabel": study_label_value,
                 "createdAt": now.isoformat(),
-                "expiresAt": expires.isoformat(),
+                "expiresAt": expires.isoformat() if isinstance(expires, datetime) else None,
                 "markupPercent": float(markup_percent or 0.0),
                 "instructions": instructions_value,
                 "allowedProducts": allowed_products_value,
@@ -455,11 +456,11 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
         return []
     delete_expired()
     rows = mysql_client.fetch_all(
-        """
+        f"""
         SELECT *
         FROM patient_links
         WHERE doctor_id = %(doctor_id)s
-          AND expires_at > UTC_TIMESTAMP()
+          AND {ACTIVE_LINK_SQL}
         ORDER BY created_at DESC
         """,
         {"doctor_id": doctor_id},
@@ -476,11 +477,11 @@ def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dic
     delete_expired()
     params = _lookup_params(normalized)
     row = mysql_client.fetch_one(
-        """
+        f"""
         SELECT *
         FROM patient_links
         WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
-          AND expires_at > UTC_TIMESTAMP()
+          AND {ACTIVE_LINK_SQL}
         LIMIT 1
         """,
         params,
@@ -505,14 +506,14 @@ def touch_last_used(token: str) -> None:
         return
     try:
         mysql_client.execute(
-            """
+            f"""
             UPDATE patient_links
             SET
                 last_used_at = UTC_TIMESTAMP(),
                 last_opened_at = UTC_TIMESTAMP(),
                 open_count = COALESCE(open_count, 0) + 1
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
-              AND expires_at > UTC_TIMESTAMP()
+              AND {ACTIVE_LINK_SQL}
             """,
             _lookup_params(normalized),
         )
@@ -621,9 +622,9 @@ def update_link(
         updates.append("allowed_products_json = %(allowed_products_json)s")
 
     if expires_in_hours is not None:
-        hours = _normalize_optional_int(expires_in_hours) or TTL_HOURS
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=hours)
-        params["expires_at"] = expires_at.replace(tzinfo=None)
+        hours = _normalize_optional_int(expires_in_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=hours) if hours is not None else None
+        params["expires_at"] = expires_at.replace(tzinfo=None) if isinstance(expires_at, datetime) else None
         updates.append("expires_at = %(expires_at)s")
 
     if usage_limit is not None:
@@ -659,18 +660,18 @@ def update_link(
             SET {", ".join(updates)}
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
-              AND expires_at > UTC_TIMESTAMP()
+              AND {ACTIVE_LINK_SQL}
             """,
             params,
         )
 
     row = mysql_client.fetch_one(
-        """
+        f"""
         SELECT *
         FROM patient_links
         WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
           AND doctor_id = %(doctor_id)s
-          AND expires_at > UTC_TIMESTAMP()
+          AND {ACTIVE_LINK_SQL}
         """,
         params,
     )
@@ -721,11 +722,11 @@ def get_doctor_markup_percent(doctor_id: str) -> float:
     delete_expired()
     try:
         row = mysql_client.fetch_one(
-            """
+            f"""
             SELECT markup_percent
             FROM patient_links
             WHERE doctor_id = %(doctor_id)s
-              AND expires_at > UTC_TIMESTAMP()
+              AND {ACTIVE_LINK_SQL}
             ORDER BY created_at DESC
             LIMIT 1
             """,
@@ -746,11 +747,11 @@ def set_doctor_markup_percent(doctor_id: str, markup_percent: float) -> int:
     try:
         return int(
             mysql_client.execute(
-                """
+                f"""
                 UPDATE patient_links
                 SET markup_percent = %(markup_percent)s
                 WHERE doctor_id = %(doctor_id)s
-                  AND expires_at > UTC_TIMESTAMP()
+                  AND {ACTIVE_LINK_SQL}
                 """,
                 {"doctor_id": doctor_id, "markup_percent": float(markup_percent or 0.0)},
             )
@@ -778,7 +779,7 @@ def store_delegate_payload(
     when = shared_at.astimezone(timezone.utc) if isinstance(shared_at, datetime) else datetime.now(timezone.utc)
     try:
         affected = mysql_client.execute(
-            """
+            f"""
             UPDATE patient_links
             SET
                 delegate_cart_json = %(cart)s,
@@ -799,7 +800,7 @@ def store_delegate_payload(
                     ELSE 'active'
                 END
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
-              AND expires_at > UTC_TIMESTAMP()
+              AND {ACTIVE_LINK_SQL}
             """,
             {
                 **_lookup_params(normalized),
@@ -831,6 +832,7 @@ def set_delegate_review_status(
     status: str,
     order_id: Optional[str] = None,
     notes: Optional[str] = None,
+    delegate_payment: Optional[Any] = None,
     reviewed_at: Optional[datetime] = None,
 ) -> bool:
     if not _using_mysql():
@@ -846,30 +848,40 @@ def set_delegate_review_status(
     delete_expired()
     when = reviewed_at.astimezone(timezone.utc) if isinstance(reviewed_at, datetime) else datetime.now(timezone.utc)
     try:
+        updates = [
+            "delegate_review_status = %(status)s",
+            "delegate_reviewed_at = %(reviewed_at)s",
+            "delegate_review_order_id = %(order_id)s",
+            "delegate_review_notes = %(notes)s",
+        ]
+        params: Dict[str, Any] = {
+            **_lookup_params(normalized),
+            "doctor_id": doctor_id,
+            "status": normalized_status,
+            "reviewed_at": when.replace(tzinfo=None),
+            "order_id": str(order_id).strip() if order_id is not None and str(order_id).strip() else None,
+            "notes": _encrypt_field(
+                _hash_token(normalized),
+                "delegate_review_notes",
+                _normalize_optional_text(notes, max_len=4000),
+            ),
+        }
+        if delegate_payment is not None:
+            updates.append("delegate_payment_json = %(delegate_payment)s")
+            params["delegate_payment"] = encrypt_json(
+                delegate_payment,
+                aad=_field_aad(_hash_token(normalized), "delegate_payment_json"),
+            )
         affected = mysql_client.execute(
-            """
+            f"""
             UPDATE patient_links
             SET
-                delegate_review_status = %(status)s,
-                delegate_reviewed_at = %(reviewed_at)s,
-                delegate_review_order_id = %(order_id)s,
-                delegate_review_notes = %(notes)s
+                {", ".join(updates)}
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
-              AND expires_at > UTC_TIMESTAMP()
+              AND {ACTIVE_LINK_SQL}
             """,
-            {
-                **_lookup_params(normalized),
-                "doctor_id": doctor_id,
-                "status": normalized_status,
-                "reviewed_at": when.replace(tzinfo=None),
-                "order_id": str(order_id).strip() if order_id is not None and str(order_id).strip() else None,
-                "notes": _encrypt_field(
-                    _hash_token(normalized),
-                    "delegate_review_notes",
-                    _normalize_optional_text(notes, max_len=4000),
-                ),
-            },
+            params,
         )
         return int(affected or 0) > 0
     except Exception:

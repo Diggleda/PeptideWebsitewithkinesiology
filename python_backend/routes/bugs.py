@@ -15,6 +15,13 @@ from ..utils.http import handle_action
 blueprint = Blueprint("bugs", __name__, url_prefix="/api/bugs")
 
 
+def _normalize_bug_report_source(value: Any) -> str:
+    raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if raw == "delegate_link":
+        return "delegate_link"
+    return "footer"
+
+
 def _resolve_optional_actor() -> Dict[str, Any]:
     header = request.headers.get("Authorization", "") or ""
     if not header.strip():
@@ -63,6 +70,7 @@ def submit_bug_report():
     def action() -> Dict[str, Any]:
         payload = request.get_json(silent=True) or {}
         report = str(payload.get("report") or "").strip()
+        source = _normalize_bug_report_source(payload.get("source"))
 
         if not report:
             error = ValueError("Bug report is required.")
@@ -75,6 +83,7 @@ def submit_bug_report():
             "name": str(actor.get("name") or "").strip() or None,
             "email": str(actor.get("email") or "").strip() or None,
             "report": report,
+            "source": source,
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -88,10 +97,10 @@ def submit_bug_report():
                 cur.execute(
                     """
                     INSERT INTO bugs_reported (
-                        user_id, name, email, report
+                        user_id, name, email, report, source
                     )
                     VALUES (
-                        %(user_id)s, %(name)s, %(email)s, %(report)s
+                        %(user_id)s, %(name)s, %(email)s, %(report)s, %(source)s
                     )
                     """,
                     {
@@ -108,12 +117,17 @@ def submit_bug_report():
                             record["report"],
                             aad={"table": "bugs_reported", "field": "report"},
                         ),
+                        "source": record["source"],
                     },
                 )
         except Exception:
             raise
 
-        usage_tracking_service.track_event("issue_reported", actor=actor, metadata={"source": "bug_report"})
+        usage_tracking_service.track_event(
+            "issue_reported",
+            actor=actor,
+            metadata={"source": record["source"]},
+        )
         return {"status": "ok"}
 
     return handle_action(action)

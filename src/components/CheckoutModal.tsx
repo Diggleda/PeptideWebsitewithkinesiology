@@ -918,6 +918,7 @@ export function CheckoutModal({
       ),
     [availableAddOnProducts, cartItems],
   );
+  const showCheckoutAddOns = !isDelegateFlow && checkoutAddOnProducts.length > 0;
 
   const resolveAddOnVariant = useCallback((product: Product) => {
     const variants = Array.isArray(product.variants) ? product.variants : [];
@@ -1868,7 +1869,7 @@ export function CheckoutModal({
                   );
                 })}
                 </div>
-                {checkoutAddOnProducts.length > 0 && (
+                {showCheckoutAddOns && (
                   <div className="space-y-4">
                     <h4>Available Add-ons</h4>
                     <div className="flex w-full max-w-full flex-col gap-4 pb-2 lg:grid lg:grid-cols-2 auto-rows-fr">

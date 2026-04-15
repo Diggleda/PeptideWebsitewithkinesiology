@@ -147,7 +147,10 @@ class SecureStorageWriteTests(unittest.TestCase):
             with self.app.test_request_context(
                 "/api/bugs",
                 method="POST",
-                json={"report": "Unable to access patient order details."},
+                json={
+                    "report": "Unable to access patient order details.",
+                    "source": "delegate_link",
+                },
             ):
                 response = self._make_response(self.bugs.submit_bug_report())
 
@@ -161,6 +164,7 @@ class SecureStorageWriteTests(unittest.TestCase):
         self.assertEqual(params["name"], "cipher:name:Dr. Jane Example")
         self.assertEqual(params["email"], "cipher:email:doctor@example.com")
         self.assertEqual(params["report"], "cipher:report:Unable to access patient order details.")
+        self.assertEqual(params["source"], "delegate_link")
         self.assertNotIn("name_encrypted", params)
         self.assertNotIn("email_encrypted", params)
         self.assertNotIn("report_encrypted", params)
@@ -171,7 +175,7 @@ class SecureStorageWriteTests(unittest.TestCase):
                 "name": "Dr. Jane Example",
                 "email": "doctor@example.com",
             },
-            metadata={"source": "bug_report"},
+            metadata={"source": "delegate_link"},
         )
 
 

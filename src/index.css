@@ -7719,30 +7719,30 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
   background: linear-gradient(150deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.2));
 }
 
-/* Shop filters: force brand-blue checkbox border and checkmark. */
+/* Shop filters: keep the standard glass checkbox treatment. */
 .shop-filter-checkbox {
-  border-color: rgb(95, 179, 249) !important;
-  border-width: 0.8px !important;
-  box-shadow: inset 0 0 0 1px rgb(95, 179, 249) !important;
+  border-color: var(--shop-filter-checkbox-accent, rgb(95, 179, 249)) !important;
+  border-width: 1px !important;
+  box-shadow: inset 0 0 0 1px var(--shop-filter-checkbox-accent, rgb(95, 179, 249)) !important;
   transition: none !important;
 }
 
 .shop-filter-checkbox:hover {
-  border-color: rgb(95, 179, 249) !important;
+  border-color: var(--shop-filter-checkbox-accent, rgb(95, 179, 249)) !important;
 }
 
 .shop-filter-checkbox[data-state='checked'] {
   background: #ffffff !important;
-  border-color: rgb(95, 179, 249) !important;
-  border-width: 0.8px !important;
-  box-shadow: inset 0 0 0 1px rgb(95, 179, 249) !important;
-  color: rgb(95, 179, 249) !important;
+  border-color: var(--shop-filter-checkbox-accent, rgb(95, 179, 249)) !important;
+  border-width: 1px !important;
+  box-shadow: inset 0 0 0 1px var(--shop-filter-checkbox-accent, rgb(95, 179, 249)) !important;
+  color: var(--shop-filter-checkbox-accent, rgb(95, 179, 249)) !important;
   transition: none !important;
 }
 
 .shop-filter-checkbox[data-state='checked'] [data-slot='checkbox-indicator'],
 .shop-filter-checkbox[data-state='checked'] [data-slot='checkbox-indicator'] svg {
-  color: rgb(95, 179, 249) !important;
+  color: var(--shop-filter-checkbox-accent, rgb(95, 179, 249)) !important;
   stroke: currentColor !important;
   transition: none !important;
 }
@@ -8628,6 +8628,15 @@ a[href^="mailto:"]:hover {
   background: var(--delegate-accent-08) !important;
 }
 
+[data-delegate-theme="true"] .shop-filter-checkbox {
+  --shop-filter-checkbox-accent: var(--delegate-accent);
+  background-color: rgba(255, 255, 255, 0.65) !important;
+}
+
+[data-delegate-theme="true"] .shop-filter-checkbox[data-state='checked'] {
+  background-color: #ffffff !important;
+}
+
 [data-delegate-theme="true"] .shipping-rate-select:focus {
   border-color: var(--delegate-accent) !important;
   box-shadow: 0 0 0 3px var(--delegate-accent-18) !important;
@@ -8684,19 +8693,19 @@ a[href^="mailto:"]:hover {
 }
 [data-sonner-toast][data-styled='true']:not([data-type='error']) {
   background: rgba(255, 255, 255, 0.98) !important;
-  border: 1px solid rgba(95, 179, 249, 0.6) !important;
-  color: rgb(95, 179, 249) !important;
+  border: 1px solid var(--delegate-accent-55, rgba(95, 179, 249, 0.6)) !important;
+  color: var(--delegate-accent, rgb(95, 179, 249)) !important;
 }
 
 [data-sonner-toast][data-styled='true']:not([data-type='error']) [data-title],
 [data-sonner-toast][data-styled='true']:not([data-type='error']) [data-description],
 [data-sonner-toast][data-styled='true']:not([data-type='error']) [data-icon] {
-  color: rgb(95, 179, 249) !important;
+  color: var(--delegate-accent, rgb(95, 179, 249)) !important;
 }
 
 [data-sonner-toast][data-styled='true']:not([data-type='error']) [data-button] {
-  border-color: rgba(95, 179, 249, 0.6) !important;
-  color: rgb(95, 179, 249) !important;
+  border-color: var(--delegate-accent-55, rgba(95, 179, 249, 0.6)) !important;
+  color: var(--delegate-accent, rgb(95, 179, 249)) !important;
 }
 
 /* iOS Safari zooms text fields with font-size < 16px on focus. */

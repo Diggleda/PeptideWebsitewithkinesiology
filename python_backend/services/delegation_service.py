@@ -94,11 +94,16 @@ def _patient_link_settings() -> Dict[str, Any]:
         return {}
 
 
-def _patient_link_default_expiry_hours() -> int:
+def _patient_link_default_expiry_hours() -> Optional[int]:
+    raw = _patient_link_settings().get("patientLinkDefaultExpiryHours")
+    if raw in (None, ""):
+        return None
     try:
-        value = int(float(_patient_link_settings().get("patientLinkDefaultExpiryHours") or patient_links_repository.TTL_HOURS))
+        value = int(float(raw))
     except Exception:
-        value = patient_links_repository.TTL_HOURS
+        return None
+    if value <= 0:
+        return None
     return max(1, min(value, 24 * 30))
 
 
@@ -123,6 +128,29 @@ def _normalize_usage_limit(value: Any) -> Optional[int]:
     except Exception:
         return None
     return max(1, min(parsed, 10_000))
+
+
+def _normalize_currency_amount(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(parsed):
+        return None
+    return round(max(0.0, parsed) + 1e-9, 2)
+
+
+def _normalize_currency_code(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().upper()
+    if not normalized:
+        return None
+    if not re.fullmatch(r"[A-Z]{3}", normalized):
+        return None
+    return normalized
 
 
 def _normalize_allowed_products(value: Any) -> List[str]:
@@ -387,8 +415,8 @@ def _migrate_legacy_links_to_table() -> None:
             if not token:
                 continue
             created_dt = _parse_iso_utc(entry.get("createdAt")) or now
-            expires_dt = created_dt + timedelta(hours=patient_links_repository.TTL_HOURS)
-            if expires_dt <= now:
+            expires_dt = _parse_iso_utc(entry.get("expiresAt"))
+            if isinstance(expires_dt, datetime) and expires_dt <= now:
                 continue
             reference_label_value = entry.get("referenceLabel")
             if not (isinstance(reference_label_value, str) and str(reference_label_value).strip()):
@@ -421,7 +449,7 @@ def _migrate_legacy_links_to_table() -> None:
                         "patient_id": patient_id,
                         "reference_label": reference_label,
                         "created_at": created_dt.replace(tzinfo=None),
-                        "expires_at": expires_dt.replace(tzinfo=None),
+                        "expires_at": expires_dt.replace(tzinfo=None) if isinstance(expires_dt, datetime) else None,
                         "markup_percent": float(markup_to_persist or 0.0),
                         "last_used_at": last_used.replace(tzinfo=None) if isinstance(last_used, datetime) else None,
                         "revoked_at": revoked.replace(tzinfo=None) if isinstance(revoked, datetime) else None,
@@ -682,6 +710,12 @@ def create_link(
     if _using_mysql():
         _migrate_legacy_links_to_table()
         markup_value = None if markup_percent is None else _normalize_capped_markup_percent(markup_percent)
+        requested_expires_in_hours = _normalize_usage_limit(expires_in_hours)
+        effective_expires_in_hours = (
+            requested_expires_in_hours
+            if requested_expires_in_hours is not None
+            else _patient_link_default_expiry_hours()
+        )
         created = patient_links_repository.create_link(
             doctor_id,
             reference_label=_validate_non_phi_label(reference_label, field_name="referenceLabel"),
@@ -692,7 +726,7 @@ def create_link(
             markup_percent=markup_value,
             instructions=_validate_research_note(instructions, field_name="instructions"),
             allowed_products=_normalize_allowed_products(allowed_products),
-            expires_in_hours=_normalize_usage_limit(expires_in_hours) or _patient_link_default_expiry_hours(),
+            expires_in_hours=effective_expires_in_hours,
             usage_limit=_normalize_usage_limit(usage_limit),
             payment_method=payment_method,
             payment_instructions=_validate_research_note(payment_instructions, field_name="paymentInstructions"),
@@ -723,8 +757,17 @@ def create_link(
     patient_reference_value = _validate_non_phi_label(patient_reference or reference_label, field_name="patientReference")
     allowed_products_value = _normalize_allowed_products(allowed_products)
     usage_limit_value = _normalize_usage_limit(usage_limit)
-    expires_hours_value = _normalize_usage_limit(expires_in_hours) or _patient_link_default_expiry_hours()
-    expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours_value)).isoformat()
+    requested_expires_in_hours = _normalize_usage_limit(expires_in_hours)
+    expires_hours_value = (
+        requested_expires_in_hours
+        if requested_expires_in_hours is not None
+        else _patient_link_default_expiry_hours()
+    )
+    expires_at = (
+        (datetime.now(timezone.utc) + timedelta(hours=expires_hours_value)).isoformat()
+        if expires_hours_value is not None
+        else None
+    )
     link = {
         "token": token,
         "patientId": subject_value,
@@ -799,7 +842,7 @@ def update_link(
             markup_percent=markup_value,
             instructions=_validate_research_note(instructions, field_name="instructions") if instructions is not None else None,
             allowed_products=_normalize_allowed_products(allowed_products) if allowed_products is not None else None,
-            expires_in_hours=_normalize_usage_limit(expires_in_hours) if expires_in_hours is not None else None,
+            expires_in_hours=expires_in_hours if expires_in_hours is not None else None,
             usage_limit=_normalize_usage_limit(usage_limit) if usage_limit is not None else None,
             payment_method=payment_method,
             payment_instructions=_validate_research_note(payment_instructions, field_name="paymentInstructions") if payment_instructions is not None else None,
@@ -846,7 +889,12 @@ def update_link(
         if usage_limit is not None:
             entry["usageLimit"] = _normalize_usage_limit(usage_limit)
         if expires_in_hours is not None:
-            entry["expiresAt"] = (datetime.now(timezone.utc) + timedelta(hours=_normalize_usage_limit(expires_in_hours) or _patient_link_default_expiry_hours())).isoformat()
+            normalized_expiry_hours = _normalize_usage_limit(expires_in_hours)
+            entry["expiresAt"] = (
+                (datetime.now(timezone.utc) + timedelta(hours=normalized_expiry_hours)).isoformat()
+                if normalized_expiry_hours is not None
+                else None
+            )
         if received_payment is not None:
             if isinstance(received_payment, bool):
                 entry["receivedPayment"] = bool(received_payment)
@@ -1202,6 +1250,8 @@ def review_link_proposal(
     *,
     status: str,
     order_id: Optional[str] = None,
+    amount_due: Optional[Any] = None,
+    amount_due_currency: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
@@ -1234,6 +1284,19 @@ def review_link_proposal(
         setattr(err, "status", 409)
         raise err
     notes_value = _validate_delegate_review_notes(notes)
+    amount_due_value = _normalize_currency_amount(amount_due)
+    amount_due_currency_value = _normalize_currency_code(amount_due_currency) or "USD"
+    delegate_payment_value: Optional[Dict[str, Any]] = None
+    if amount_due_value is not None:
+        existing_delegate_payment = link.get("delegatePayment")
+        delegate_payment_value = (
+            {**existing_delegate_payment}
+            if isinstance(existing_delegate_payment, dict)
+            else {}
+        )
+        delegate_payment_value["amountDue"] = amount_due_value
+        delegate_payment_value["amountDueCurrency"] = amount_due_currency_value
+        delegate_payment_value["amountDueUpdatedAt"] = datetime.now(timezone.utc).isoformat()
 
     ok = patient_links_repository.set_delegate_review_status(
         doctor_id,
@@ -1241,6 +1304,7 @@ def review_link_proposal(
         status=status,
         order_id=order_id,
         notes=notes_value,
+        delegate_payment=delegate_payment_value,
         reviewed_at=datetime.now(timezone.utc),
     )
     if not ok:
@@ -1252,7 +1316,13 @@ def review_link_proposal(
         "proposal_reviewed",
         token=token,
         doctor_id=doctor_id,
-        payload={"status": status, "orderId": order_id, "hasNotes": bool(notes_value)},
+        payload={
+            "status": status,
+            "orderId": order_id,
+            "hasNotes": bool(notes_value),
+            "amountDue": amount_due_value,
+            "amountDueCurrency": amount_due_currency_value if amount_due_value is not None else None,
+        },
     )
 
     updated = patient_links_repository.find_by_token(token, include_inactive=True) or {}
@@ -1296,6 +1366,16 @@ def review_link_proposal(
         "proposalReviewedAt": updated.get("delegateReviewedAt"),
         "proposalReviewOrderId": updated.get("delegateReviewOrderId"),
         "proposalReviewNotes": updated.get("delegateReviewNotes"),
+        "amountDue": (
+            updated.get("delegatePayment").get("amountDue")
+            if isinstance(updated.get("delegatePayment"), dict)
+            else None
+        ),
+        "amountDueCurrency": (
+            updated.get("delegatePayment").get("amountDueCurrency")
+            if isinstance(updated.get("delegatePayment"), dict)
+            else None
+        ),
     }
 
 

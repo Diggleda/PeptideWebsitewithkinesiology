@@ -43,8 +43,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "productsCommissionCsvDownloadedAt": None,
     # Default credit amount awarded for referral first-order bonuses.
     "referralCreditAmount": 250,
-    # Research supply links default to 72h and cap physician markup to reduce compliance risk.
-    "patientLinkDefaultExpiryHours": 72,
+    # Research supply link expiration is optional; configured values still cap physician markup.
+    "patientLinkDefaultExpiryHours": None,
     "patientLinkMaxMarkupPercent": 20,
 }
 
@@ -169,12 +169,15 @@ def _normalize_referral_credit_amount(value: Any) -> float:
     return round(parsed, 2)
 
 
-def _normalize_patient_link_default_expiry_hours(value: Any) -> int:
-    default_hours = 72
+def _normalize_patient_link_default_expiry_hours(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
     try:
         parsed = int(float(value))
     except (TypeError, ValueError):
-        return default_hours
+        return None
+    if parsed <= 0:
+        return None
     return max(1, min(parsed, 24 * 30))
 
 

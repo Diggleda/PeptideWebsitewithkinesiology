@@ -609,7 +609,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             "allowedRetail": False,
         }
 
-        with patch.object(service.user_repository, "get_all", return_value=[actor, target]), \
+        with patch.object(service.user_repository, "list_sales_modal_lookup_users", return_value=[actor, target]), \
             patch.object(service.sales_rep_repository, "get_all", return_value=[rep_record]):
             result = service.get_sales_modal_detail(actor=actor, target_user_id="admin-1")
 
@@ -640,13 +640,45 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             "phone": "317-555-0101",
         }
 
-        with patch.object(service.user_repository, "get_all", return_value=[actor, target]), \
+        with patch.object(service.user_repository, "list_sales_modal_lookup_users", return_value=[actor, target]), \
             patch.object(service.sales_rep_repository, "get_all", return_value=[actor_rep_record]):
             result = service.get_sales_modal_detail(actor=actor, target_user_id="admin-1")
 
         self.assertEqual(result["summaryOnly"], True)
         self.assertEqual(result["user"]["phone"], "317-555-0199")
         self.assertEqual(result["user"]["email"], "admin@example.com")
+
+    def test_modal_detail_uses_lightweight_user_lookup_projection(self):
+        service = self.order_service
+        actor = {
+            "id": "admin-1",
+            "role": "admin",
+            "email": "admin@example.com",
+        }
+        target = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "salesRepId": "rep-1",
+        }
+        rep_record = {
+            "id": "rep-1",
+            "legacyUserId": "rep-user-1",
+            "email": "rep@example.com",
+        }
+
+        with patch.object(service.user_repository, "list_sales_modal_lookup_users", return_value=[actor, target]) as lookup_users, \
+            patch.object(service.user_repository, "get_all", side_effect=AssertionError("get_all should not be used")), \
+            patch.object(service.sales_rep_repository, "get_all", return_value=[rep_record]), \
+            patch.object(service.order_repository, "list_user_overlay_fields", return_value=[]), \
+            patch.object(service.order_repository, "find_sales_tracking_by_user_ids", return_value=[]):
+            result = service.get_sales_modal_detail(actor=actor, target_user_id="doctor-1")
+
+        lookup_users.assert_called_once_with()
+        self.assertEqual(result["user"]["id"], "doctor-1")
+        self.assertEqual(result["ownerSalesRepId"], "rep-1")
+        self.assertEqual(result["orders"], [])
 
 
 if __name__ == "__main__":

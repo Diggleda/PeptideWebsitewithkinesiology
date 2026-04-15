@@ -96,7 +96,6 @@ const normalizePatientLinkPaymentMethod = (value: unknown): PatientLinkPaymentMe
 
 const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: string | null) => {
   const createdAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const expiresAt = new Date(Date.now() + 71 * 60 * 60 * 1000).toISOString();
   return {
     token: 'node-ui-dummy-link',
     referenceLabel: 'Subject A104',
@@ -105,7 +104,7 @@ const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: s
     subjectLabel: 'Subject A104',
     studyLabel: 'GH response pilot',
     createdAt,
-    expiresAt,
+    expiresAt: null,
     usageLimit: 5,
     usageCount: 0,
     status: 'active',
@@ -1337,11 +1336,15 @@ const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined)
 const describeOrderStatus = (order: AccountOrderSummary | null | undefined): string => {
   const orderStatusRaw = order?.status ? String(order.status) : '';
   const orderStatusNormalized = orderStatusRaw.trim().toLowerCase();
+  const orderStatusToken = orderStatusNormalized.replace(/[\s-]+/g, '_');
   if (orderStatusNormalized === 'trash' || orderStatusNormalized === 'canceled' || orderStatusNormalized === 'cancelled') {
     return 'Canceled';
   }
   if (orderStatusNormalized === 'refunded') {
     return 'Refunded';
+  }
+  if (orderStatusToken === 'on_hold' || orderStatusToken === 'onhold') {
+    return 'On-Hold';
   }
 
   const trackingStatusCandidate = resolveTrackingStatusToken(order) || resolveTrackingStatusRaw(order);
@@ -1518,7 +1521,8 @@ export function Header({
   const [patientLinkSubjectLabelDraft, setPatientLinkSubjectLabelDraft] = useState('');
   const [patientLinkStudyLabelDraft, setPatientLinkStudyLabelDraft] = useState('');
   const [patientLinkReferenceDraft, setPatientLinkReferenceDraft] = useState('');
-  const [patientLinkExpiryHoursDraft, setPatientLinkExpiryHoursDraft] = useState('72');
+  const [patientLinkExpiryHoursDraft, setPatientLinkExpiryHoursDraft] = useState('');
+  const [patientLinkDefaultExpiryHours, setPatientLinkDefaultExpiryHours] = useState('');
   const [patientLinkUsageLimitDraft, setPatientLinkUsageLimitDraft] = useState('');
   const [patientLinkResearchNoteDraft, setPatientLinkResearchNoteDraft] = useState('');
   const [patientLinkTermsAccepted, setPatientLinkTermsAccepted] = useState(false);
@@ -1600,6 +1604,29 @@ export function Header({
   const isResearchFullscreen = accountTab === 'research' && researchDashboardExpanded;
   const modalFullscreenHeight =
     "calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))";
+
+  const storeAccountTabScrollPosition = useCallback((tabId: AccountTabId = accountTab) => {
+    const scrollContainer = accountModalScrollRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+    accountTabScrollTopRef.current[tabId] = scrollContainer.scrollTop;
+    restoreAccountTabScrollRef.current[tabId] = true;
+  }, [accountTab]);
+
+  const applyStoredAccountTabScrollPosition = useCallback((
+    tabId: AccountTabId = accountTab,
+    options: { clearRestoreFlag?: boolean } = {},
+  ) => {
+    const scrollContainer = accountModalScrollRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+    scrollContainer.scrollTop = accountTabScrollTopRef.current[tabId] ?? 0;
+    if (options.clearRestoreFlag) {
+      restoreAccountTabScrollRef.current[tabId] = false;
+    }
+  }, [accountTab]);
 
   const clearResearchOverlayTimeout = useCallback(() => {
     if (researchOverlayTimeoutRef.current !== null) {
@@ -3200,22 +3227,17 @@ export function Header({
       return;
     }
     if (legalModalOpen) {
-      if (accountModalScrollRef.current) {
-        accountTabScrollTopRef.current[accountTab] = accountModalScrollRef.current.scrollTop;
-        restoreAccountTabScrollRef.current[accountTab] = true;
+      if (!restoreAccountTabScrollRef.current[accountTab]) {
+        storeAccountTabScrollPosition(accountTab);
       }
+      applyStoredAccountTabScrollPosition(accountTab);
       return;
     }
     if (!restoreAccountTabScrollRef.current[accountTab]) {
       return;
     }
-    const scrollContainer = accountModalScrollRef.current;
-    if (!scrollContainer) {
-      return;
-    }
-    scrollContainer.scrollTop = accountTabScrollTopRef.current[accountTab] ?? 0;
-    restoreAccountTabScrollRef.current[accountTab] = false;
-  }, [accountTab, legalModalOpen, welcomeOpen]);
+    applyStoredAccountTabScrollPosition(accountTab, { clearRestoreFlag: true });
+  }, [accountTab, applyStoredAccountTabScrollPosition, legalModalOpen, storeAccountTabScrollPosition, welcomeOpen]);
 
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -4046,13 +4068,22 @@ export function Header({
       const links = Array.isArray((response as any)?.links) ? (response as any).links : [];
       const config = (response as any)?.config || {};
       const markupPercent = normalizeMarkupPercent((config as any).markupPercent ?? (config as any).markup_percent ?? 0);
-      const defaultExpiryHoursRaw =
-        typeof (config as any).defaultExpiryHours === 'number'
-          ? (config as any).defaultExpiryHours
-          : Number((config as any).defaultExpiryHours ?? (config as any).default_expiry_hours ?? 72);
-      const defaultExpiryHours = Number.isFinite(defaultExpiryHoursRaw) && defaultExpiryHoursRaw > 0
-        ? Math.round(defaultExpiryHoursRaw)
-        : 72;
+      const defaultExpiryHoursValue = (() => {
+        const raw =
+          (config as any).defaultExpiryHours ?? (config as any).default_expiry_hours ?? null;
+        if (typeof raw === 'number') {
+          return Number.isFinite(raw) && raw > 0 ? String(Math.round(raw)) : '';
+        }
+        if (typeof raw === 'string') {
+          const trimmed = raw.trim();
+          if (!trimmed) {
+            return '';
+          }
+          const parsed = Number(trimmed);
+          return Number.isFinite(parsed) && parsed > 0 ? String(Math.round(parsed)) : '';
+        }
+        return '';
+      })();
       const sanitizedLinks = links.filter((link: any) => {
         const token = typeof (link as any)?.token === 'string' ? (link as any).token.trim() : '';
         return !token.startsWith('node-ui-dummy-link');
@@ -4066,21 +4097,21 @@ export function Header({
         setPatientLinks(sanitizedLinks);
       }
       setPatientLinkMarkupDraft(String(markupPercent));
-      setPatientLinkExpiryHoursDraft(String(defaultExpiryHours));
+      setPatientLinkDefaultExpiryHours(defaultExpiryHoursValue);
     } catch (error: any) {
       const status = typeof error?.status === 'number' ? error.status : null;
       const delegationRouteMissing = status === 404 || status === 405;
       if (delegationRouteMissing && isNodePatientLinkDummyMode) {
         setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
-        setPatientLinkExpiryHoursDraft('72');
+        setPatientLinkDefaultExpiryHours('');
         setPatientLinksError(null);
         return;
       }
       if (isNodePatientLinkDummyMode) {
         setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
-        setPatientLinkExpiryHoursDraft('72');
+        setPatientLinkDefaultExpiryHours('');
         setPatientLinksError(null);
         return;
       }
@@ -4345,6 +4376,7 @@ export function Header({
       setPatientLinkSubjectLabelDraft('');
       setPatientLinkStudyLabelDraft('');
       setPatientLinkReferenceDraft('');
+      setPatientLinkExpiryHoursDraft('');
       setPatientLinkUsageLimitDraft('');
       setPatientLinkResearchNoteDraft('');
       setPatientLinkTermsAccepted(false);
@@ -4391,12 +4423,14 @@ export function Header({
 
   const openLegalDocument = useCallback((key: 'terms' | 'shipping' | 'privacy') => {
     if (typeof window === 'undefined') return;
+    storeAccountTabScrollPosition();
+    setLegalModalOpen(true);
     window.dispatchEvent(
       new CustomEvent('peppro:open-legal', {
         detail: { key, preserveDialogs: true },
       }),
     );
-  }, []);
+  }, [storeAccountTabScrollPosition]);
 
   const trackUsageEvent = useCallback((event: string, metadata?: Record<string, unknown>) => {
     const normalizedEvent = typeof event === 'string' ? event.trim() : '';
@@ -4540,12 +4574,40 @@ export function Header({
       if (!normalized || patientLinksPaymentReceivedToken) {
         return;
       }
+      const preservedScrollTop = accountModalScrollRef.current?.scrollTop ?? null;
       setPatientLinksPaymentReceivedToken(normalized);
       try {
         const api = await import('../services/api');
         await api.delegationAPI.updateLink(normalized, { receivedPayment: received ? 1 : 0 });
+        setPatientLinks((prev) => {
+          if (!Array.isArray(prev)) {
+            return prev;
+          }
+          return prev.map((link) => {
+            const linkToken = typeof link?.token === 'string' ? link.token.trim() : '';
+            if (linkToken !== normalized) {
+              return link;
+            }
+            return {
+              ...link,
+              receivedPayment: received,
+              received_payment: received ? 1 : 0,
+              paymentReceived: received,
+            };
+          });
+        });
+        if (preservedScrollTop !== null && typeof window !== 'undefined') {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              const scrollContainer = accountModalScrollRef.current;
+              if (!scrollContainer) {
+                return;
+              }
+              scrollContainer.scrollTop = preservedScrollTop;
+            });
+          });
+        }
         toast.success(received ? 'Marked as paid.' : 'Marked as unpaid.');
-        await loadPatientLinks();
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()
@@ -4556,7 +4618,7 @@ export function Header({
         setPatientLinksPaymentReceivedToken(null);
       }
     },
-    [loadPatientLinks, patientLinksPaymentReceivedToken],
+    [patientLinksPaymentReceivedToken],
   );
 
   const [patientLinksProposalToken, setPatientLinksProposalToken] = useState<string | null>(null);
@@ -7064,7 +7126,7 @@ export function Header({
 	            htmlFor="patient-link-expiry-hours"
 	            className="patient-link-form__label text-sm font-semibold text-slate-700"
 	          >
-	            Expiration hours
+	            Expiration hours <span className="label-paren">(optional)</span>
 	          </Label>
 	          <Input
 	            id="patient-link-expiry-hours"
@@ -7076,7 +7138,7 @@ export function Header({
                 setPatientLinkExpiryHoursDraft(next);
                 trackPatientLinkFieldEntry('expiration_hours', next);
               }}
-	            placeholder="72"
+	            placeholder={patientLinkDefaultExpiryHours ? `Uses default (${patientLinkDefaultExpiryHours}h)` : 'No expiration by default'}
             className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
 	          <Label
@@ -7531,6 +7593,51 @@ export function Header({
 	                  : (typeof (link as any)?.delegate_order_id === 'string' && (link as any).delegate_order_id.trim())
 	                    ? (link as any).delegate_order_id.trim()
 	                    : '';
+                  const proposalReviewOrderId =
+                    typeof (link as any)?.delegateReviewOrderId === 'string' && (link as any).delegateReviewOrderId.trim()
+                      ? (link as any).delegateReviewOrderId.trim()
+                      : typeof (link as any)?.proposalReviewOrderId === 'string' && (link as any).proposalReviewOrderId.trim()
+                        ? (link as any).proposalReviewOrderId.trim()
+                        : typeof (link as any)?.delegate_review_order_id === 'string' && (link as any).delegate_review_order_id.trim()
+                          ? (link as any).delegate_review_order_id.trim()
+                          : typeof (link as any)?.proposal_review_order_id === 'string' && (link as any).proposal_review_order_id.trim()
+                            ? (link as any).proposal_review_order_id.trim()
+                            : '';
+                  const delegateShipping =
+                    (link as any)?.delegateShipping && typeof (link as any).delegateShipping === 'object'
+                      ? (link as any).delegateShipping
+                      : (link as any)?.delegate_shipping && typeof (link as any).delegate_shipping === 'object'
+                        ? (link as any).delegate_shipping
+                        : null;
+                  const delegatePayment =
+                    (link as any)?.delegatePayment && typeof (link as any).delegatePayment === 'object'
+                      ? (link as any).delegatePayment
+                      : (link as any)?.delegate_payment && typeof (link as any).delegate_payment === 'object'
+                        ? (link as any).delegate_payment
+                        : null;
+                  const amountDueRaw =
+                    delegatePayment?.amountDue
+                    ?? delegatePayment?.amount_due
+                    ?? delegatePayment?.paymentTrackerAmount
+                    ?? delegateShipping?.grandTotal
+                    ?? delegateShipping?.grand_total
+                    ?? null;
+                  const amountDueValue = Number(amountDueRaw);
+                  const amountDue =
+                    Number.isFinite(amountDueValue) && amountDueValue >= 0
+                      ? amountDueValue
+                      : null;
+                  const amountDueCurrencyRaw =
+                    typeof delegatePayment?.amountDueCurrency === 'string'
+                      ? delegatePayment.amountDueCurrency
+                      : typeof delegatePayment?.amount_due_currency === 'string'
+                        ? delegatePayment.amount_due_currency
+                        : 'USD';
+                  const amountDueCurrency = amountDueCurrencyRaw.trim() || 'USD';
+                  const paymentTrackerAmountLabel =
+                    amountDue != null
+                      ? formatCurrency(amountDue, amountDueCurrency)
+                      : null;
 	              const delegateReviewStatusRaw =
 	                typeof link?.delegateReviewStatus === 'string' && link.delegateReviewStatus.trim()
 	                  ? link.delegateReviewStatus.trim().toLowerCase()
@@ -7722,6 +7829,16 @@ export function Header({
 		                          <span className="text-xs font-normal text-slate-700 whitespace-normal break-words">
 		                            Have you received payment yet?
 		                          </span>
+                              {paymentTrackerAmountLabel && (
+                                <span className="mt-1 text-xs font-semibold text-slate-900 whitespace-normal break-words">
+                                  Amount due: {paymentTrackerAmountLabel}
+                                </span>
+                              )}
+                              {!paymentTrackerAmountLabel && proposalReviewOrderId && (
+                                <span className="mt-1 text-xs font-medium text-slate-500 whitespace-normal break-words">
+                                  Final delegate amount will appear after this link refreshes.
+                                </span>
+                              )}
 		                        </div>
 		                        <div className="flex shrink-0 items-center gap-2">
 			                          <Button
@@ -7782,7 +7899,7 @@ export function Header({
                                   placeholder="Add notes for the delegate here."
                                   className="min-h-[72px] resize-y squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
                                 />
-                                <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center mb-1 justify-between gap-2">
                                   <span className="text-xs text-slate-500">
                                     These notes are shown to the delegate in their proposal status panel.
                                   </span>

@@ -2566,7 +2566,14 @@ export const delegationAPI = {
 
   reviewLinkProposal: async (
     token: string,
-    payload: { status: string; orderId?: string | null; notes?: string | null; reviewNotes?: string | null },
+    payload: {
+      status: string;
+      orderId?: string | null;
+      notes?: string | null;
+      reviewNotes?: string | null;
+      amountDue?: number | null;
+      amountDueCurrency?: string | null;
+    },
   ) => {
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) {

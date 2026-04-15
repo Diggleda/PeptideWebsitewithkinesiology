@@ -51,12 +51,14 @@ interface LegalFooterProps {
   variant?: 'full' | 'ctaOnly';
   showContactCTA?: boolean;
   hostOnly?: boolean;
+  bugReportSource?: 'footer' | 'delegate_link';
 }
 
 export function LegalFooter({
   variant = 'full',
   showContactCTA = true,
   hostOnly = false,
+  bugReportSource = 'footer',
 }: LegalFooterProps) {
   const [activeDocument, setActiveDocument] = useState<LegalDocumentKey | null>(null);
   const [isClosing, setIsClosing] = useState(false);
@@ -269,11 +271,11 @@ export function LegalFooter({
     }
     void usageTrackingAPI.track({
       event: 'issue_report_clicked',
-      metadata: { source: 'bug_report_modal_open' },
+      metadata: { source: bugReportSource },
     }).catch(() => {});
     setBugOpen(true);
     requestAnimationFrame(() => setBugVisible(true));
-  }, []);
+  }, [bugReportSource]);
 
   const handleBugClose = useCallback(() => {
     if (!bugOpen) return;
@@ -308,7 +310,7 @@ export function LegalFooter({
     }
     setBugSubmitting(true);
     try {
-      const res = await api.post('/bugs', { report });
+      const res = await api.post('/bugs', { report, source: bugReportSource });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 404) {
@@ -316,7 +318,7 @@ export function LegalFooter({
             name: 'Bug Report',
             email: 'support@peppro.net',
             phone: '',
-            source: `Bug report: ${report}`,
+            source: bugReportSource,
           });
           const fallbackData = await fallbackRes.json().catch(() => ({}));
           if (!fallbackRes.ok) {

@@ -157,7 +157,7 @@ class DelegationServiceTests(unittest.TestCase):
             service._using_mysql = lambda: True
             service._migrate_legacy_links_to_table = lambda: None
 
-            call_state = {"count": 0, "notes": None}
+            call_state = {"count": 0, "notes": None, "delegate_payment": None}
 
             def fake_find(_token, include_inactive=False):
                 call_state["count"] += 1
@@ -166,6 +166,7 @@ class DelegationServiceTests(unittest.TestCase):
                         "doctorId": "doc-1",
                         "revokedAt": None,
                         "delegateSharedAt": "2026-03-12T10:00:00+00:00",
+                        "delegatePayment": {"paymentMethod": "bacs"},
                     }
                 return {
                     "doctorId": "doc-1",
@@ -173,15 +174,17 @@ class DelegationServiceTests(unittest.TestCase):
                     "delegateReviewedAt": "2026-03-12T10:05:00+00:00",
                     "delegateReviewOrderId": None,
                     "delegateReviewNotes": call_state["notes"],
+                    "delegatePayment": call_state["delegate_payment"],
                 }
 
-            def fake_set_status(doctor_id, token, *, status, order_id=None, notes=None, reviewed_at=None):
+            def fake_set_status(doctor_id, token, *, status, order_id=None, notes=None, delegate_payment=None, reviewed_at=None):
                 self.assertEqual(doctor_id, "doc-1")
                 self.assertEqual(token, "tok-1")
                 self.assertEqual(status, "rejected")
                 self.assertIsNone(order_id)
                 self.assertIsInstance(reviewed_at, datetime)
                 call_state["notes"] = notes
+                call_state["delegate_payment"] = delegate_payment
                 return True
 
             service.patient_links_repository.find_by_token = fake_find
@@ -200,6 +203,73 @@ class DelegationServiceTests(unittest.TestCase):
                 result.get("proposalReviewNotes"),
                 "Please remove the duplicate vial and resubmit.",
             )
+            self.assertIsNone(result.get("amountDue"))
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.patient_links_repository.set_delegate_review_status = original_set_status
+            service._audit_event = original_audit
+
+    def test_review_link_proposal_persists_amount_due_in_delegate_payment(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_set_status = service.patient_links_repository.set_delegate_review_status
+        original_audit = service._audit_event
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+
+            call_state = {"count": 0, "delegate_payment": None}
+
+            def fake_find(_token, include_inactive=False):
+                call_state["count"] += 1
+                if call_state["count"] == 1:
+                    return {
+                        "doctorId": "doc-1",
+                        "revokedAt": None,
+                        "delegateSharedAt": "2026-03-12T10:00:00+00:00",
+                        "delegatePayment": {"paymentMethod": "bacs"},
+                    }
+                return {
+                    "doctorId": "doc-1",
+                    "delegateReviewStatus": "accepted",
+                    "delegateReviewedAt": "2026-03-12T10:05:00+00:00",
+                    "delegateReviewOrderId": "woo-123",
+                    "delegateReviewNotes": None,
+                    "delegatePayment": call_state["delegate_payment"],
+                }
+
+            def fake_set_status(doctor_id, token, *, status, order_id=None, notes=None, delegate_payment=None, reviewed_at=None):
+                self.assertEqual(doctor_id, "doc-1")
+                self.assertEqual(token, "tok-1")
+                self.assertEqual(status, "accepted")
+                self.assertEqual(order_id, "woo-123")
+                self.assertIsNone(notes)
+                self.assertIsInstance(reviewed_at, datetime)
+                call_state["delegate_payment"] = delegate_payment
+                return True
+
+            service.patient_links_repository.find_by_token = fake_find
+            service.patient_links_repository.set_delegate_review_status = fake_set_status
+            service._audit_event = lambda *_args, **_kwargs: None
+
+            result = service.review_link_proposal(
+                "doc-1",
+                "tok-1",
+                status="accepted",
+                order_id="woo-123",
+                amount_due="123.45",
+                amount_due_currency="usd",
+            )
+
+            self.assertEqual(call_state["delegate_payment"].get("paymentMethod"), "bacs")
+            self.assertEqual(call_state["delegate_payment"].get("amountDue"), 123.45)
+            self.assertEqual(call_state["delegate_payment"].get("amountDueCurrency"), "USD")
+            self.assertEqual(result.get("amountDue"), 123.45)
+            self.assertEqual(result.get("amountDueCurrency"), "USD")
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate

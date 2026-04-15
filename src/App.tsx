@@ -414,6 +414,7 @@ const MAINTENANCE_OPENER_LAUNCH_FAILED_EVENT =
 const MAINTENANCE_ADMIN_SESSION_ENDED_EVENT =
   "PEPPRO_MAINTENANCE_ADMIN_SESSION_ENDED";
 const MAINTENANCE_TAB_TITLE = "Physician's Portal - Maintenance";
+const DELEGATE_TAB_TITLE_SUFFIX = " - Physician Portal";
 const MAINTENANCE_ALREADY_ACTIVE_TOAST =
   "A maintenance is active. Please coordinate with yout admin team.";
 const LOGIN_BACKEND_DOWN_TOAST_ID = "login-backend-down";
@@ -1403,6 +1404,7 @@ const describeSalesOrderStatus = (
   const raw = resolveSalesOrderStatusSource(order);
   const statusRaw = raw ? String(raw) : "";
   const normalized = statusRaw.trim().toLowerCase();
+  const normalizedToken = normalized.replace(/[\s-]+/g, "_");
   const shippingStatusRaw = resolveSalesOrderShippingStatus(order);
   const shippingNormalized = shippingStatusRaw
     ? String(shippingStatusRaw).trim().toLowerCase()
@@ -1416,6 +1418,9 @@ const describeSalesOrderStatus = (
   }
   if (normalized === "refunded") {
     return "Refunded";
+  }
+  if (normalizedToken === "on_hold" || normalizedToken === "onhold") {
+    return "On-Hold";
   }
 
   if (
@@ -5122,6 +5127,23 @@ function MainApp() {
       window.clearInterval(intervalId);
     };
   }, [isMaintenanceMode]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || isMaintenanceMode) {
+      return;
+    }
+    if (!isDelegateMode || !delegateIsValidated || delegateLoading || delegateError) {
+      return;
+    }
+    document.title = `${delegateDoctorNameForShare || "Physician"}${DELEGATE_TAB_TITLE_SUFFIX}`;
+  }, [
+    delegateDoctorNameForShare,
+    delegateError,
+    delegateIsValidated,
+    delegateLoading,
+    isDelegateMode,
+    isMaintenanceMode,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -24526,6 +24548,22 @@ function MainApp() {
 		      const status = checkoutSignature === baseSignature ? 'accepted' : 'modified';
 		      return { token, status };
 		    })();
+        const delegationProposalAmountDue = (() => {
+          if (!delegationProposalReview) {
+            return null;
+          }
+          const rawMarkupPercent = Number(activeDelegationProposal?.markupPercent ?? 0);
+          const proposalMarkupPercent = Number.isFinite(rawMarkupPercent)
+            ? Math.max(0, rawMarkupPercent)
+            : 0;
+          const delegateSubtotal = items.reduce((sum, item) => {
+            const quantity = Math.max(1, Number(item.quantity) || 1);
+            const unitPrice = Number.isFinite(Number(item.price)) ? Number(item.price) : 0;
+            const delegateUnitPrice = roundCurrency(unitPrice * (1 + proposalMarkupPercent / 100));
+            return sum + (delegateUnitPrice * quantity);
+          }, 0);
+          return roundCurrency(delegateSubtotal + shippingTotal + taxTotal);
+        })();
 
 		    try {
 	        if (isDelegateMode && delegateToken) {
@@ -24626,6 +24664,8 @@ function MainApp() {
 			          await delegationAPI.reviewLinkProposal(delegationProposalReview.token, {
 			            status: delegationProposalReview.status,
 			            orderId,
+                    amountDue: delegationProposalAmountDue,
+                    amountDueCurrency: 'USD',
 			          });
 			        } catch (error) {
 			          console.warn('[Delegation] Failed to update proposal status after checkout', error);
@@ -35608,13 +35648,8 @@ function MainApp() {
 		                            {new Date(delegateContext.proposalReviewedAt).toLocaleString()}
 		                          </p>
 		                        )}
-		                        {delegateContext?.proposalReviewOrderId && (
-		                          <p>
-		                            <span className="font-semibold">Order:</span> {delegateContext.proposalReviewOrderId}
-		                          </p>
-		                        )}
                         {delegateContext?.proposalReviewNotes && (
-                          <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm text-rose-950">
+                          <div className="border-t border-black/10 pt-3 text-sm text-rose-950">
                             <p className="font-semibold text-rose-900">Physician notes</p>
                             <p className="mt-1 whitespace-pre-line">{delegateContext.proposalReviewNotes}</p>
                           </div>
@@ -35631,7 +35666,7 @@ function MainApp() {
 		        </div>
 
 	      {isDelegateMode && (!delegateIsValidated || delegateError) ? null : isDelegateMode ? (
-	        <LegalFooter showContactCTA={false} variant="full" />
+	        <LegalFooter bugReportSource="delegate_link" showContactCTA={false} variant="full" />
 	      ) : user ? (
 	        <LegalFooter showContactCTA={false} variant="full" />
 	      ) : (
@@ -38223,6 +38258,7 @@ function MainApp() {
                 const delegateOrderLabel =
                   normalizeDelegateOrderLabel(delegateFields.asDelegate) ||
                   normalizeDelegateOrderLabel(delegateFields.as_delegate);
+                const isDelegateOrder = Boolean(delegateOrderLabel);
                 const orderDetailHasResellerPermit = hasUploadedResellerPermit(
                   salesOrderDetail,
                   salesDoctorDetail,
@@ -38259,10 +38295,10 @@ function MainApp() {
 	                          <Badge variant="secondary" className="uppercase">
 	                            {describeSalesOrderStatus(salesOrderDetail as any)}
 	                          </Badge>
-                            {delegateOrderLabel ? (
-                              <span className="sales-account-indicator-badge">
-                                {delegateOrderLabel}
-                              </span>
+                            {isDelegateOrder ? (
+                              <Badge variant="secondary" className="uppercase">
+                                Delegate Order
+                              </Badge>
                             ) : null}
                           </div>
                           {orderDetailTaxExempt && (

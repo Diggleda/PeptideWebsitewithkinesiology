@@ -313,6 +313,7 @@ CREATE_TABLE_STATEMENTS = [
         name LONGTEXT NULL,
         email LONGTEXT NULL,
         report LONGTEXT NOT NULL,
+        source VARCHAR(64) NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
     """,
@@ -402,7 +403,7 @@ CREATE_TABLE_STATEMENTS = [
         study_label LONGTEXT NULL,
         patient_reference LONGTEXT NULL,
         created_at DATETIME NOT NULL,
-        expires_at DATETIME NOT NULL,
+        expires_at DATETIME NULL,
         markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
         instructions LONGTEXT NULL,
         allowed_products_json JSON NULL,
@@ -758,6 +759,7 @@ def ensure_schema() -> None:
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions LONGTEXT NULL",
         "ALTER TABLE patient_links MODIFY COLUMN patient_id LONGTEXT NULL",
+        "ALTER TABLE patient_links MODIFY COLUMN expires_at DATETIME NULL",
         "ALTER TABLE patient_links MODIFY COLUMN reference_label LONGTEXT NULL",
         "ALTER TABLE patient_links MODIFY COLUMN subject_label LONGTEXT NULL",
         "ALTER TABLE patient_links MODIFY COLUMN study_label LONGTEXT NULL",
@@ -772,6 +774,7 @@ def ensure_schema() -> None:
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) NULL",
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS name LONGTEXT NULL",
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS email LONGTEXT NULL",
+        "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS source VARCHAR(64) NULL",
     ]
     for stmt in migrations:
         try:
@@ -1093,6 +1096,7 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN last_opened_at DATETIME NULL")
         if not _column_exists("patient_links", "last_order_at"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN last_order_at DATETIME NULL")
+        mysql_client.execute("ALTER TABLE patient_links MODIFY COLUMN expires_at DATETIME NULL")
         mysql_client.execute("ALTER TABLE patient_links MODIFY COLUMN patient_id LONGTEXT NULL")
         mysql_client.execute("ALTER TABLE patient_links MODIFY COLUMN reference_label LONGTEXT NULL")
         mysql_client.execute("ALTER TABLE patient_links MODIFY COLUMN subject_label LONGTEXT NULL")
@@ -1172,8 +1176,11 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE bugs_reported ADD COLUMN name LONGTEXT NULL")
         if not _column_exists("bugs_reported", "email"):
             mysql_client.execute("ALTER TABLE bugs_reported ADD COLUMN email LONGTEXT NULL")
+        if not _column_exists("bugs_reported", "source"):
+            mysql_client.execute("ALTER TABLE bugs_reported ADD COLUMN source VARCHAR(64) NULL")
         mysql_client.execute("ALTER TABLE bugs_reported MODIFY COLUMN name LONGTEXT NULL")
         mysql_client.execute("ALTER TABLE bugs_reported MODIFY COLUMN email LONGTEXT NULL")
+        mysql_client.execute("ALTER TABLE bugs_reported MODIFY COLUMN source VARCHAR(64) NULL")
         _copy_legacy_ciphertext("bugs_reported", "name", "name_encrypted")
         _copy_legacy_ciphertext("bugs_reported", "email", "email_encrypted")
         _copy_legacy_ciphertext("bugs_reported", "report", "report_encrypted", placeholder="[ENCRYPTED]")

@@ -4,6 +4,20 @@ from unittest.mock import patch
 
 
 class TestSettingsService(unittest.TestCase):
+    def test_normalize_settings_defaults_patient_link_expiry_to_none(self):
+        try:
+            from python_backend.services import settings_service as svc
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        defaulted = svc.normalize_settings({})
+        explicit = svc.normalize_settings({"patientLinkDefaultExpiryHours": "48"})
+        blank = svc.normalize_settings({"patientLinkDefaultExpiryHours": ""})
+
+        self.assertIsNone(defaulted["patientLinkDefaultExpiryHours"])
+        self.assertEqual(explicit["patientLinkDefaultExpiryHours"], 48)
+        self.assertIsNone(blank["patientLinkDefaultExpiryHours"])
+
     def test_load_from_sql_does_not_backfill_missing_defaults_on_read(self):
         try:
             from python_backend.services import settings_service as svc

@@ -3720,7 +3720,7 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
     if not normalized_target_user_id:
         raise _service_error("USER_ID_REQUIRED", 400)
 
-    users = user_repository.get_all()
+    users = user_repository.list_sales_modal_lookup_users()
     user_by_id = {
         str(user.get("id")): user
         for user in users
