@@ -132,25 +132,27 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
 
     def test_user_repository_record_successful_login_uses_targeted_mysql_update(self) -> None:
         executed = []
+        fetched = []
 
         def fake_execute(query, params):
             executed.append((query, params))
             return 1
 
+        def fake_fetch_one(query, params):
+            fetched.append((query, params))
+            return {
+                "id": "u1",
+                "name": "Test",
+                "email": "test@example.com",
+                "role": "doctor",
+                "visits": 5,
+                "is_online": 1,
+                "must_reset_password": 0,
+            }
+
         with patch("python_backend.repositories.user_repository._using_mysql", return_value=True), \
             patch("python_backend.repositories.user_repository.mysql_client.execute", side_effect=fake_execute), \
-            patch(
-                "python_backend.repositories.user_repository.mysql_client.fetch_one",
-                return_value={
-                    "id": "u1",
-                    "name": "Test",
-                    "email": "test@example.com",
-                    "role": "doctor",
-                    "visits": 5,
-                    "is_online": 1,
-                    "must_reset_password": 0,
-                },
-            ):
+            patch("python_backend.repositories.user_repository.mysql_client.fetch_one", side_effect=fake_fetch_one):
             updated = user_repository.record_successful_login(
                 "u1",
                 session_id="session-2",
@@ -161,6 +163,9 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
         self.assertIn("visits = COALESCE(visits, 0) + 1", executed[0][0])
         self.assertEqual(executed[0][1]["session_id"], "session-2")
         self.assertEqual(executed[0][1]["at"], "2025-11-06 02:14:26")
+        self.assertEqual(len(fetched), 1)
+        self.assertNotIn("referral_code", fetched[0][0])
+        self.assertNotIn("dev_commission", fetched[0][0])
         self.assertEqual(updated["sessionId"], "session-2")
 
     def test_sales_rep_repository_strips_timezone_offset(self) -> None:

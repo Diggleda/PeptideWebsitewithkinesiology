@@ -289,7 +289,6 @@ _PROFILE_SELECT_FIELDS = """
     delegate_opt_in,
     zelle_contact,
     cart,
-    referral_code,
     referral_credits,
     total_referrals,
     visits,
@@ -309,7 +308,6 @@ _PROFILE_SELECT_FIELDS = """
     reseller_permit_file_path,
     reseller_permit_file_name,
     reseller_permit_uploaded_at,
-    dev_commission,
     receive_client_order_update_emails
 """
 
