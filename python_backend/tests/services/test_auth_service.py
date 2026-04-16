@@ -340,6 +340,24 @@ class AuthServiceTests(unittest.TestCase):
         find_profile.assert_called_once_with("doctor-1")
         find_full.assert_not_called()
 
+    def test_get_session_prefers_lightweight_lookup(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "sessionId": "session-1",
+        }
+
+        with patch.object(auth_service.user_repository, "find_session_by_id", return_value=user) as find_session, \
+            patch.object(auth_service.user_repository, "find_by_id", return_value=None) as find_full, \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: dict(value)):
+            profile = auth_service.get_session("doctor-1")
+
+        self.assertEqual(profile["id"], "doctor-1")
+        find_session.assert_called_once_with("doctor-1")
+        find_full.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

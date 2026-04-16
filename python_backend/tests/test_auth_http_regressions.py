@@ -88,7 +88,11 @@ class AuthHttpRegressionTests(unittest.TestCase):
             "python_backend.services.admin_shadow_session_service",
             resolve_shadow_session=lambda payload: {},
         )
-        fake_user_repository = _module("python_backend.repositories.user_repository", find_by_id=lambda _user_id: None)
+        fake_user_repository = _module(
+            "python_backend.repositories.user_repository",
+            find_by_id=lambda _user_id: None,
+            find_session_by_id=lambda _user_id: None,
+        )
 
         sys.modules["python_backend.services.auth_service"] = fake_auth_service
         sys.modules["python_backend.services.presence_service"] = fake_presence_service
@@ -164,7 +168,7 @@ class AuthHttpRegressionTests(unittest.TestCase):
         }
         self.auth.jwt.decode = lambda *args, **kwargs: payload
         self.auth.request.headers = {"Authorization": "Bearer token-1"}
-        self.auth.user_repository.find_by_id = lambda _user_id: {"id": "user-1", "sessionId": "session-1"}
+        self.auth.user_repository.find_session_by_id = lambda _user_id: {"id": "user-1", "sessionId": "session-1"}
         self.auth.presence_service.snapshot = lambda: {}
 
         @self.auth.require_auth

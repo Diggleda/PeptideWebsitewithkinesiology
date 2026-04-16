@@ -320,6 +320,41 @@ _AUTH_SELECT_FIELDS = """
     session_id
 """
 
+_SESSION_SELECT_FIELDS = """
+    id,
+    name,
+    email,
+    role,
+    status,
+    hand_delivered,
+    is_online,
+    sales_rep_id,
+    referrer_doctor_id,
+    session_id,
+    last_seen_at,
+    last_interaction_at,
+    last_login_at,
+    visits,
+    profile_onboarding,
+    reseller_permit_onboarding_presented,
+    network_presence_agreement,
+    delegate_links_enabled,
+    research_terms_agreement,
+    delegate_opt_in,
+    markup_percent,
+    created_at,
+    must_reset_password,
+    first_order_bonus_granted_at,
+    npi_number,
+    npi_last_verified_at,
+    npi_status,
+    npi_check_error,
+    is_tax_exempt,
+    tax_exempt_source,
+    tax_exempt_reason,
+    receive_client_order_update_emails
+"""
+
 _REFERRAL_DASHBOARD_SELECT_FIELDS = """
     id,
     name,
@@ -396,6 +431,16 @@ def find_profile_by_id(user_id: str) -> Optional[Dict]:
     if _using_mysql():
         row = mysql_client.fetch_one(
             f"SELECT {_PROFILE_SELECT_FIELDS} FROM users WHERE id = %(id)s",
+            {"id": user_id},
+        )
+        return _row_to_user(row) if row else None
+    return find_by_id(user_id)
+
+
+def find_session_by_id(user_id: str) -> Optional[Dict]:
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            f"SELECT {_SESSION_SELECT_FIELDS} FROM users WHERE id = %(id)s",
             {"id": user_id},
         )
         return _row_to_user(row) if row else None

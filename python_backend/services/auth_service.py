@@ -911,6 +911,24 @@ def get_profile(user_id: str, role: Optional[str] = None) -> Dict:
     raise _not_found("User not found")
 
 
+def get_session(user_id: str, role: Optional[str] = None) -> Dict:
+    user = None
+    try:
+        user = user_repository.find_session_by_id(user_id)
+    except Exception:
+        user = None
+    if user:
+        return _sanitize_user(user)
+
+    normalized_role = _normalize_role(role)
+    if _is_sales_rep_account_role(normalized_role):
+        rep = sales_rep_repository.find_by_id(user_id)
+        if rep:
+            return _sanitize_sales_rep(rep)
+
+    raise _not_found("User not found")
+
+
 def verify_npi(npi_number: Optional[str]) -> Dict:
     normalized = npi_service.normalize_npi(npi_number)
     if len(normalized) != 10:

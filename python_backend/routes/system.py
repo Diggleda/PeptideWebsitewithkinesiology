@@ -513,10 +513,17 @@ def _process_uptime_seconds(pid: int) -> float | None:
 
 
 def _background_job_stats() -> dict[str, Any]:
+    web_mode = str(os.environ.get("PEPPRO_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower() or "thread"
     return {
         "mode": "scheduled",
+        "webProcessMode": web_mode,
+        "backgroundRunner": "python -m python_backend.background_jobs",
         "catalogSnapshotRunner": "python -m python_backend.scripts.sync_catalog_snapshot",
         "productDocumentSyncMode": str(os.environ.get("WOO_PRODUCT_DOC_SYNC_MODE", "thread")).strip().lower() or "thread",
+        "shipstationStatusSyncMode": str(os.environ.get("SHIPSTATION_STATUS_SYNC_MODE", "thread")).strip().lower() or "thread",
+        "upsStatusSyncMode": str(os.environ.get("UPS_STATUS_SYNC_MODE", "thread")).strip().lower() or "thread",
+        "presenceSweepMode": str(os.environ.get("PRESENCE_SWEEP_MODE", "thread")).strip().lower() or "thread",
+        "patientLinksSweepMode": str(os.environ.get("PATIENT_LINKS_SWEEP_MODE", "thread")).strip().lower() or "thread",
     }
 
 

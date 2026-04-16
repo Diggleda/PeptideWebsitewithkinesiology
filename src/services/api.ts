@@ -1507,24 +1507,6 @@ export const authAPI = {
     clearAuthToken();
     clearSessionId();
   },
-  markOffline: () => {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      void fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        keepalive: true,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-      }).catch(() => null);
-    } catch {
-      // ignore
-    }
-  },
-
 	  getCurrentUser: async (options?: { background?: boolean }) => {
       if (!getAuthToken()) {
         clearAuthToken();
@@ -1558,6 +1540,45 @@ export const authAPI = {
           throw error;
         }
         // Token already cleared by fetchWithAuth(); caller can treat null as "logged out".
+        setAuthUserId(null);
+        setAuthEmail(null);
+        return null;
+      }
+      throw error;
+    }
+  },
+  getCurrentSession: async (options?: { background?: boolean }) => {
+      if (!getAuthToken()) {
+        clearAuthToken();
+        clearSessionId();
+        setAuthUserId(null);
+        setAuthEmail(null);
+        return null;
+      }
+      try {
+        const user = await fetchWithAuth(`${API_BASE_URL}/auth/session`, {
+          method: 'GET',
+          cache: 'no-store',
+          background: options?.background === true,
+          preserveAuthOnAuthFailure: options?.background === true,
+        });
+        setAuthUserId((user as any)?.id);
+        setAuthEmail((user as any)?.email);
+        setAuthMode((user as any)?.shadowContext?.active ? 'shadow' : 'standard');
+        return user;
+      } catch (error) {
+      const maybeAny = error as any;
+      const status = typeof maybeAny?.status === 'number' ? maybeAny.status : null;
+      const code = typeof maybeAny?.code === 'string' ? maybeAny.code : null;
+      const authCode = typeof maybeAny?.authCode === 'string' ? maybeAny.authCode : null;
+      const isAuthFailure = code === 'AUTH_REQUIRED'
+        || code === AUTH_CHECK_FAILED_CODE
+        || status === 401
+        || (status === 403 && typeof authCode === 'string' && authCode.startsWith('TOKEN_'));
+      if (isAuthFailure) {
+        if (options?.background === true) {
+          throw error;
+        }
         setAuthUserId(null);
         setAuthEmail(null);
         return null;

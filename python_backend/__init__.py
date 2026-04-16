@@ -1,9 +1,23 @@
 from __future__ import annotations
 
+import logging
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from flask import Flask
+
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _resolve_web_background_jobs_mode() -> str:
+    raw = str(os.environ.get("PEPPRO_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower()
+    if raw in {"", "thread", "threads", "web", "inprocess", "1", "true", "yes", "on", "enabled"}:
+        return "thread"
+    if raw in {"external", "off", "false", "no", "disabled"}:
+        return "external"
+    return "thread"
 
 
 def create_app() -> "Flask":
@@ -37,6 +51,7 @@ def create_app() -> "Flask":
     app.config["PORT"] = config.port
     app.config["DEBUG"] = not config.is_production
     app.config["APP_CONFIG"] = config
+    app.config["WEB_BACKGROUND_JOBS_MODE"] = _resolve_web_background_jobs_mode()
 
     configure_services(config)
     init_database(config)
@@ -48,11 +63,15 @@ def create_app() -> "Flask":
         user_repository.backfill_contact_form_lead_types()
     except Exception:
         pass
-    start_product_document_sync()
-    start_shipstation_status_sync()
-    start_ups_status_sync()
-    start_presence_sweep()
-    start_patient_links_sweep()
+    if app.config["WEB_BACKGROUND_JOBS_MODE"] == "thread":
+        start_product_document_sync()
+        start_shipstation_status_sync()
+        start_ups_status_sync()
+        start_presence_sweep()
+        start_patient_links_sweep()
+        _LOGGER.info("Web process background jobs enabled")
+    else:
+        _LOGGER.info("Web process background jobs disabled; use python -m python_backend.background_jobs")
 
     # Ensure JSON storage files exist before serving requests.
     init_storage(config)

@@ -46,6 +46,22 @@ def check_email():
     return handle_action(lambda: auth_service.check_email(email))
 
 
+@blueprint.get("/session")
+@require_auth
+def session():
+    user_id = g.current_user.get("id")
+    role = g.current_user.get("role")
+
+    def action():
+        payload = auth_service.get_session(user_id, role)
+        shadow_context = getattr(g, "shadow_context", None)
+        if isinstance(payload, dict) and shadow_context:
+            payload["shadowContext"] = shadow_context
+        return payload
+
+    return handle_action(action)
+
+
 @blueprint.get("/me")
 @require_auth
 def me():

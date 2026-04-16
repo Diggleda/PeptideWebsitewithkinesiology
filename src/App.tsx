@@ -7051,24 +7051,6 @@ function MainApp() {
   }, [user]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-    if (!user) {
-      return undefined;
-    }
-    const handlePageExit = () => {
-      authAPI.markOffline();
-    };
-    window.addEventListener("pagehide", handlePageExit);
-    window.addEventListener("beforeunload", handlePageExit);
-    return () => {
-      window.removeEventListener("pagehide", handlePageExit);
-      window.removeEventListener("beforeunload", handlePageExit);
-    };
-  }, [user?.id]);
-
-  useEffect(() => {
     if (postLoginHold && user && shouldAnimateInfoFocus) {
       setInfoFocusActive(true);
       const timeoutId = window.setTimeout(() => {
@@ -21940,11 +21922,6 @@ function MainApp() {
     [formatCurrency],
   );
 
-  // Always start with a clean auth slate on fresh loads
-  useEffect(() => {
-    authAPI.logout();
-  }, []);
-
   // Variation cache is loaded lazily when a variable product is opened/needed.
 
   useEffect(() => {
@@ -23926,12 +23903,12 @@ function MainApp() {
         }
 	      if (!isOnline() || !isPageVisible()) return;
 	      const now = Date.now();
-	      // Avoid hammering `/auth/me` when multiple events fire close together.
+	      // Avoid hammering the auth/session path when multiple events fire close together.
 	      const throttleMs = 15_000;
 	      if (now - lastSessionCheckAtRef.current < throttleMs) return;
 	      lastSessionCheckAtRef.current = now;
 	      try {
-	        const current = await authAPI.getCurrentUser({ background: true });
+	        const current = await authAPI.getCurrentSession({ background: true });
 	        if (!current && !cancelled) {
           handleLogout();
 	          return;

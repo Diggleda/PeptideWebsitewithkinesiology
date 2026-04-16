@@ -125,7 +125,7 @@ def require_auth(func: F) -> F:
 
         exempt_multi_session = (payload.get("email") or "").strip().lower() == "test@doctor.com"
 
-        user = user_repository.find_by_id(str(user_id))
+        user = user_repository.find_session_by_id(str(user_id))
         if not isinstance(user, dict):
             user = None
         stored_session_id = user.get("sessionId") if user else None
