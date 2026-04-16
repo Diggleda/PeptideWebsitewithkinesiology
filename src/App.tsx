@@ -12609,6 +12609,14 @@ function MainApp() {
           orderCount: number;
         }[]
       | null;
+    yearPerformanceSeries?:
+      | {
+          date: string;
+          dailyRevenue: number;
+          cumulativeRevenue: number;
+          orderCount: number;
+        }[]
+      | null;
     yearProjection?:
       | {
           year: number;
@@ -13689,6 +13697,34 @@ function MainApp() {
 	              totals: (salesSummaryResponse as any)?.totals ?? null,
                 performanceSeries: Array.isArray((salesSummaryResponse as any)?.performanceSeries)
                   ? ((salesSummaryResponse as any).performanceSeries as any[]).reduce<
+                      {
+                        date: string;
+                        dailyRevenue: number;
+                        cumulativeRevenue: number;
+                        orderCount: number;
+                      }[]
+                    >((series, point) => {
+                        const date =
+                          typeof point?.date === "string" ? String(point.date).trim() : "";
+                        if (!date) {
+                          return series;
+                        }
+                        series.push({
+                          date,
+                          dailyRevenue: parseReportNumber(point?.dailyRevenue),
+                          cumulativeRevenue: parseReportNumber(point?.cumulativeRevenue),
+                          orderCount: Math.max(
+                            0,
+                            Math.trunc(parseReportNumber(point?.orderCount)),
+                          ),
+                        });
+                        return series;
+                      }, [])
+                  : [],
+                yearPerformanceSeries: Array.isArray(
+                  (salesSummaryResponse as any)?.yearPerformanceSeries,
+                )
+                  ? ((salesSummaryResponse as any).yearPerformanceSeries as any[]).reduce<
                       {
                         date: string;
                         dailyRevenue: number;
@@ -21700,42 +21736,18 @@ function MainApp() {
       year: "numeric",
     });
   }, []);
-  const adminRevenuePerformanceChartData = useMemo(() => {
-    const rawSeries = Array.isArray(salesRepSalesSummaryMeta?.performanceSeries)
-      ? salesRepSalesSummaryMeta.performanceSeries
-      : [];
-    return rawSeries.reduce<
-      {
-        date: string;
-        shortLabel: string;
-        longLabel: string;
-        dailyRevenue: number;
-        cumulativeRevenue: number;
-        orderCount: number;
-      }[]
-    >((series, point) => {
-      const date = typeof point?.date === "string" ? point.date.trim() : "";
-      if (!date) {
-        return series;
-      }
-      const dailyRevenue = Number(point?.dailyRevenue || 0);
-      const cumulativeRevenue = Number(point?.cumulativeRevenue || 0);
-      const orderCount = Number(point?.orderCount || 0);
-      series.push({
-        date,
-        shortLabel: formatChartDateShort(date),
-        longLabel: formatChartDateLong(date),
-        dailyRevenue: Number.isFinite(dailyRevenue) ? dailyRevenue : 0,
-        cumulativeRevenue: Number.isFinite(cumulativeRevenue) ? cumulativeRevenue : 0,
-        orderCount: Number.isFinite(orderCount) ? orderCount : 0,
-      });
-      return series;
-    }, []);
-  }, [
-    formatChartDateLong,
-    formatChartDateShort,
-    salesRepSalesSummaryMeta?.performanceSeries,
-  ]);
+  const formatChartMonthShort = useCallback((value?: string | number | null) => {
+    const date =
+      typeof value === "number"
+        ? new Date(value)
+        : parseDateInputValueLocal(String(value || ""));
+    if (!date || Number.isNaN(date.getTime())) {
+      return String(value || "");
+    }
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+    });
+  }, []);
   const adminYearEndProjection = useMemo(() => {
     const raw = salesRepSalesSummaryMeta?.yearProjection;
     if (!raw || typeof raw !== "object") {
@@ -21766,8 +21778,103 @@ function MainApp() {
       timeZone: typeof raw.timeZone === "string" ? raw.timeZone : null,
     };
   }, [salesRepSalesSummaryMeta?.yearProjection]);
-  const adminRevenuePerformanceLatestPoint =
-    adminRevenuePerformanceChartData[adminRevenuePerformanceChartData.length - 1] ?? null;
+  const adminYearProjectionChartData = useMemo(() => {
+    const rawSeries = Array.isArray(salesRepSalesSummaryMeta?.yearPerformanceSeries)
+      ? salesRepSalesSummaryMeta.yearPerformanceSeries
+      : [];
+    const actualSeries = rawSeries.reduce<
+      {
+        date: string;
+        timestamp: number;
+        shortLabel: string;
+        longLabel: string;
+        dailyRevenue: number;
+        cumulativeRevenue: number;
+        orderCount: number;
+        actualCumulative: number | null;
+        projectedCumulative: number | null;
+        isProjectionPoint: boolean;
+      }[]
+    >((series, point) => {
+      const date = typeof point?.date === "string" ? point.date.trim() : "";
+      const parsedDate = parseDateInputValueLocal(date);
+      if (!date || !parsedDate) {
+        return series;
+      }
+      const dailyRevenue = Number(point?.dailyRevenue || 0);
+      const cumulativeRevenue = Number(point?.cumulativeRevenue || 0);
+      const orderCount = Number(point?.orderCount || 0);
+      series.push({
+        date,
+        timestamp: parsedDate.getTime(),
+        shortLabel: formatChartDateShort(date),
+        longLabel: formatChartDateLong(date),
+        dailyRevenue: Number.isFinite(dailyRevenue) ? dailyRevenue : 0,
+        cumulativeRevenue: Number.isFinite(cumulativeRevenue) ? cumulativeRevenue : 0,
+        orderCount: Number.isFinite(orderCount) ? orderCount : 0,
+        actualCumulative: Number.isFinite(cumulativeRevenue) ? cumulativeRevenue : 0,
+        projectedCumulative: null,
+        isProjectionPoint: false,
+      });
+      return series;
+    }, []);
+
+    if (actualSeries.length === 0) {
+      return actualSeries;
+    }
+    const lastActualIndex = actualSeries.length - 1;
+    actualSeries[lastActualIndex] = {
+      ...actualSeries[lastActualIndex],
+      projectedCumulative: actualSeries[lastActualIndex].cumulativeRevenue,
+    };
+
+    if (!adminYearEndProjection) {
+      return actualSeries;
+    }
+
+    const projectedDate = String(adminYearEndProjection.yearEnd || "").trim();
+    const lastActualDate = actualSeries[lastActualIndex]?.date || "";
+    const projectedDateParsed = parseDateInputValueLocal(projectedDate);
+    const lastActualDateParsed = parseDateInputValueLocal(lastActualDate);
+    if (!projectedDate || !projectedDateParsed || !lastActualDateParsed) {
+      return actualSeries;
+    }
+    if (projectedDateParsed.getTime() > lastActualDateParsed.getTime()) {
+      actualSeries.push({
+        date: projectedDate,
+        timestamp: projectedDateParsed.getTime(),
+        shortLabel: formatChartDateShort(projectedDate),
+        longLabel: formatChartDateLong(projectedDate),
+        dailyRevenue: 0,
+        cumulativeRevenue: adminYearEndProjection.projectedYearEndRevenue,
+        orderCount: 0,
+        actualCumulative: null,
+        projectedCumulative: adminYearEndProjection.projectedYearEndRevenue,
+        isProjectionPoint: true,
+      });
+    }
+    return actualSeries;
+  }, [
+    adminYearEndProjection,
+    formatChartDateLong,
+    formatChartDateShort,
+    salesRepSalesSummaryMeta?.yearPerformanceSeries,
+  ]);
+  const adminYearProjectionXAxisTicks = useMemo(() => {
+    const referenceYear =
+      adminYearEndProjection?.year ||
+      parseDateInputValueLocal(adminYearProjectionChartData[0]?.date || "")?.getFullYear() ||
+      0;
+    if (!referenceYear) {
+      return [] as number[];
+    }
+    return Array.from({ length: 12 }, (_, monthIndex) =>
+      new Date(referenceYear, monthIndex, 1).getTime(),
+    );
+  }, [adminYearEndProjection?.year, adminYearProjectionChartData]);
+  const adminYearProjectionLatestPoint =
+    [...adminYearProjectionChartData].reverse().find((point) => !point.isProjectionPoint) ??
+    null;
 
   const adminTaxTrackingNotifications = useMemo(
     () => adminTaxTrackingRows.filter((row) => row.warningLevel !== "none"),
@@ -29856,29 +29963,18 @@ function MainApp() {
 						              </div>
 				
 					              <div className="mt-8 space-y-6">
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(320px,1fr)]">
-                          <div className="sales-rep-leads-card sales-rep-combined-card">
+                        <div className="admin-revenue-outlook-row">
+                          <div className="admin-revenue-outlook-card sales-rep-leads-card sales-rep-combined-card">
                             <div className="sales-rep-chart-header">
                               <div>
-                                <h3>Revenue Performance</h3>
+                                <h3 className="admin-revenue-outlook-card__title">Revenue To Date</h3>
                                 <p>
-                                  Cumulative revenue across the selected timeframe.
+                                  Cumulative year-to-date revenue with a projection through Dec 31.
                                 </p>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                <span>{adminDashboardPeriodLabel}</span>
-                                {adminRevenuePerformanceLatestPoint && (
-                                  <span>
-                                    Current total:{" "}
-                                    {formatCurrency(
-                                      adminRevenuePerformanceLatestPoint.cumulativeRevenue,
-                                    )}
-                                  </span>
-                                )}
                               </div>
                             </div>
                             {salesRepSalesSummaryError &&
-                              adminRevenuePerformanceChartData.length > 0 && (
+                              adminYearProjectionChartData.length > 0 && (
                                 <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                                   {salesRepSalesSummaryError}
                                 </div>
@@ -29886,27 +29982,25 @@ function MainApp() {
                             {salesRepSalesSummaryLoading &&
                             salesRepSalesSummaryLastFetchedAt === null ? (
                               <div className="flex min-h-[280px] items-center justify-center rounded-2xl border border-slate-200/70 bg-white/55 px-4 text-sm text-slate-500">
-                                Loading performance…
+                                Loading revenue projection…
                               </div>
-                            ) : adminRevenuePerformanceChartData.length === 0 ? (
+                            ) : adminYearProjectionChartData.length === 0 ? (
                               <div className="flex min-h-[280px] items-center justify-center rounded-2xl border border-slate-200/70 bg-white/55 px-4 text-sm text-slate-500">
                                 {salesRepSalesSummaryError
                                   ? salesRepSalesSummaryError
-                                  : salesRepSalesSummaryLastFetchedAt === null
-                                    ? "Click Refresh to load revenue performance."
-                                    : "No revenue recorded for this timeframe."}
+                                  : "Year-to-date revenue is unavailable right now."}
                               </div>
                             ) : (
                               <>
                                 <div className="sales-rep-chart-body">
                                   <ResponsiveContainer width="100%" height={260}>
                                     <LineChart
-                                      data={adminRevenuePerformanceChartData}
+                                      data={adminYearProjectionChartData}
                                       margin={{ top: 16, right: 12, left: -8, bottom: 0 }}
                                     >
                                       <defs>
                                         <linearGradient
-                                          id="adminRevenuePerformanceLine"
+                                          id="adminRevenuePerformanceActualLine"
                                           x1="0"
                                           y1="0"
                                           x2="1"
@@ -29915,19 +30009,49 @@ function MainApp() {
                                           <stop offset="0%" stopColor="#5FB3F9" />
                                           <stop offset="100%" stopColor="#1D4ED8" />
                                         </linearGradient>
+                                        <linearGradient
+                                          id="adminRevenuePerformanceProjectionLine"
+                                          x1="0"
+                                          y1="0"
+                                          x2="1"
+                                          y2="0"
+                                        >
+                                          <stop offset="0%" stopColor="#1D4ED8" stopOpacity={0.85} />
+                                          <stop offset="100%" stopColor="#10B981" stopOpacity={0.9} />
+                                        </linearGradient>
                                       </defs>
                                       <CartesianGrid
                                         strokeDasharray="3 3"
                                         stroke="rgba(148, 163, 184, 0.3)"
                                       />
                                       <XAxis
-                                        dataKey="date"
+                                        type="number"
+                                        dataKey="timestamp"
+                                        scale="time"
+                                        domain={
+                                          adminYearEndProjection
+                                            ? [
+                                                parseDateInputValueLocal(
+                                                  adminYearEndProjection.yearStart,
+                                                )?.getTime() ?? "dataMin",
+                                                parseDateInputValueLocal(
+                                                  adminYearEndProjection.yearEnd,
+                                                )?.getTime() ?? "dataMax",
+                                              ]
+                                            : ["dataMin", "dataMax"]
+                                        }
+                                        ticks={adminYearProjectionXAxisTicks}
                                         tickFormatter={(value) =>
-                                          formatChartDateShort(String(value || ""))
+                                          formatChartMonthShort(
+                                            typeof value === "number"
+                                              ? value
+                                              : Number(value) || 0,
+                                          )
                                         }
                                         tick={{ fontSize: 12, fill: "#334155" }}
                                         tickLine={false}
-                                        minTickGap={24}
+                                        minTickGap={0}
+                                        interval={0}
                                       />
                                       <YAxis
                                         tickFormatter={(value) =>
@@ -29952,10 +30076,13 @@ function MainApp() {
                                             active && Array.isArray(payload) && payload.length > 0
                                               ? (payload[0]?.payload as
                                                   | {
+                                                      date?: string;
                                                       longLabel?: string;
                                                       dailyRevenue?: number;
                                                       cumulativeRevenue?: number;
                                                       orderCount?: number;
+                                                      isProjectionPoint?: boolean;
+                                                      projectedCumulative?: number | null;
                                                     }
                                                   | undefined)
                                               : undefined;
@@ -29967,6 +30094,20 @@ function MainApp() {
                                               <div className="text-sm font-semibold text-slate-900">
                                                 {point.longLabel || "Date unavailable"}
                                               </div>
+                                              {point.isProjectionPoint ? (
+                                                <div className="mt-1 text-xs text-slate-600">
+                                                  {point.date === adminYearEndProjection?.yearEnd
+                                                    ? "Projected year-end total"
+                                                    : "Projected cumulative revenue"}
+                                                  :{" "}
+                                                  <span className="font-semibold text-slate-900">
+                                                    {formatCurrency(
+                                                      point.projectedCumulative || 0,
+                                                    )}
+                                                  </span>
+                                                </div>
+                                              ) : (
+                                                <>
                                               <div className="mt-1 text-xs text-slate-600">
                                                 Day revenue:{" "}
                                                 <span className="font-semibold text-slate-900">
@@ -29987,17 +30128,19 @@ function MainApp() {
                                                   {Number(point.orderCount || 0).toLocaleString()}
                                                 </span>
                                               </div>
+                                                </>
+                                              )}
                                             </div>
                                           );
                                         }}
                                       />
                                       <Line
                                         type="linear"
-                                        dataKey="cumulativeRevenue"
-                                        stroke="url(#adminRevenuePerformanceLine)"
+                                        dataKey="actualCumulative"
+                                        stroke="url(#adminRevenuePerformanceActualLine)"
                                         strokeWidth={3}
                                         dot={
-                                          adminRevenuePerformanceChartData.length <= 16
+                                          adminYearProjectionChartData.length <= 18
                                             ? {
                                                 r: 3.5,
                                                 strokeWidth: 2,
@@ -30013,37 +30156,45 @@ function MainApp() {
                                           stroke: "#ffffff",
                                         }}
                                       />
+                                      <Line
+                                        type="linear"
+                                        dataKey="projectedCumulative"
+                                        stroke="url(#adminRevenuePerformanceProjectionLine)"
+                                        strokeWidth={3}
+                                        strokeDasharray="7 6"
+                                        dot={(props: any) => {
+                                          if (!props?.payload?.isProjectionPoint) {
+                                            return null;
+                                          }
+                                          return (
+                                            <circle
+                                              cx={props.cx}
+                                              cy={props.cy}
+                                              r={4.5}
+                                              fill="#10B981"
+                                              stroke="#ffffff"
+                                              strokeWidth={2}
+                                            />
+                                          );
+                                        }}
+                                        activeDot={{
+                                          r: 5,
+                                          strokeWidth: 2,
+                                          fill: "#10B981",
+                                          stroke: "#ffffff",
+                                        }}
+                                      />
                                     </LineChart>
                                   </ResponsiveContainer>
-                                </div>
-                                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                                  <span>
-                                    Revenue:{" "}
-                                    {formatCurrency(
-                                      salesRepSalesSummaryMeta?.totals?.totalRevenue ??
-                                        adminRevenuePerformanceLatestPoint?.cumulativeRevenue ??
-                                        0,
-                                    )}
-                                  </span>
-                                  <span>
-                                    Orders:{" "}
-                                    {Number(
-                                      salesRepSalesSummaryMeta?.totals?.totalOrders ?? 0,
-                                    ).toLocaleString()}
-                                  </span>
-                                  <span>
-                                    Final point:{" "}
-                                    {adminRevenuePerformanceLatestPoint?.longLabel || "—"}
-                                  </span>
                                 </div>
                               </>
                             )}
                           </div>
 
-                          <div className="sales-rep-leads-card sales-rep-combined-card">
-                            <div className="border-b border-slate-200/60 pb-3">
-                              <h3 className="text-lg font-semibold text-slate-900">
-                                Projected Year-End Revenue
+                          <div className="admin-revenue-outlook-card admin-revenue-outlook-summary-card sales-rep-leads-card sales-rep-combined-card">
+                            <div className="admin-revenue-outlook-card__header border-b border-slate-200/60">
+                              <h3 className="admin-revenue-outlook-card__title">
+                                Estimated Year-End Revenue
                               </h3>
                               <p className="text-sm text-slate-600">
                                 Revenue from Jan 1 to today, extrapolated linearly through Dec 31.
@@ -30062,65 +30213,60 @@ function MainApp() {
                                   : "Projection unavailable right now."}
                               </div>
                             ) : (
-                              <div className="pt-4">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                  Projected {adminYearEndProjection.year} revenue
+                              <div className="admin-revenue-outlook-summary-card__body">
+                                <div>
+                                  <div className="admin-revenue-outlook-summary-card__eyebrow">
+                                    Projected {adminYearEndProjection.year} revenue
+                                  </div>
+                                  <div className="admin-revenue-outlook-summary-card__value">
+                                    {formatCurrency(
+                                      adminYearEndProjection.projectedYearEndRevenue,
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
-                                  {formatCurrency(
-                                    adminYearEndProjection.projectedYearEndRevenue,
-                                  )}
-                                </div>
-                                <p className="mt-2 text-sm text-slate-600">
+                                <p className="admin-revenue-outlook-summary-card__context">
                                   Based on {formatCurrency(adminYearEndProjection.revenueToDate)} from{" "}
                                   {formatChartDateLong(adminYearEndProjection.yearStart)} through{" "}
                                   {formatChartDateLong(adminYearEndProjection.asOfDate)}.
                                 </p>
-                                <div className="mt-4 grid grid-cols-2 gap-3">
-                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
-                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                <div className="admin-revenue-outlook-summary-card__stats">
+                                  <div className="admin-revenue-outlook-summary-card__stat">
+                                    <div className="admin-revenue-outlook-summary-card__stat-label">
                                       Revenue To Date
                                     </div>
-                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                    <div className="admin-revenue-outlook-summary-card__stat-value">
                                       {formatCurrency(adminYearEndProjection.revenueToDate)}
                                     </div>
                                   </div>
-                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
-                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                  <div className="admin-revenue-outlook-summary-card__stat">
+                                    <div className="admin-revenue-outlook-summary-card__stat-label">
                                       Average / Day
                                     </div>
-                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                    <div className="admin-revenue-outlook-summary-card__stat-value">
                                       {formatCurrency(
                                         adminYearEndProjection.averageDailyRevenue,
                                       )}
                                     </div>
                                   </div>
-                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
-                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                  <div className="admin-revenue-outlook-summary-card__stat">
+                                    <div className="admin-revenue-outlook-summary-card__stat-label">
                                       Days Elapsed
                                     </div>
-                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                    <div className="admin-revenue-outlook-summary-card__stat-value">
                                       {adminYearEndProjection.daysElapsed.toLocaleString()} /{" "}
                                       {adminYearEndProjection.totalDaysInYear.toLocaleString()}
                                     </div>
                                   </div>
-                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
-                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                  <div className="admin-revenue-outlook-summary-card__stat">
+                                    <div className="admin-revenue-outlook-summary-card__stat-label">
                                       YTD Orders
                                     </div>
-                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                    <div className="admin-revenue-outlook-summary-card__stat-value">
                                       {Number(
                                         adminYearEndProjection.orderCount || 0,
                                       ).toLocaleString()}
                                     </div>
                                   </div>
-                                </div>
-                                <div className="mt-4 rounded-xl border border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-3 py-2 text-xs leading-relaxed text-slate-600">
-                                  Formula: revenue to date / elapsed days × total days in{" "}
-                                  {adminYearEndProjection.year}.
-                                  {adminYearEndProjection.timeZone
-                                    ? ` Source timezone: ${adminYearEndProjection.timeZone}.`
-                                    : ""}
                                 </div>
                               </div>
                             )}

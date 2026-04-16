@@ -4836,13 +4836,18 @@ def get_sales_by_rep(
     def _build_cumulative_series(
         daily_totals: Optional[Dict[str, float]] = None,
         daily_orders: Optional[Dict[str, int]] = None,
+        *,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         totals = daily_totals or {}
         orders = daily_orders or {}
         series: List[Dict[str, Any]] = []
         running_total = 0.0
-        current_date = period_start_local_date
-        while current_date <= period_end_local_date:
+        range_start = start_date or period_start_local_date
+        range_end = end_date or period_end_local_date
+        current_date = range_start
+        while current_date <= range_end:
             key = current_date.isoformat()
             daily_revenue = round(float(totals.get(key) or 0.0), 2)
             running_total = round(running_total + daily_revenue, 2)
@@ -5389,6 +5394,8 @@ def get_sales_by_rep(
         house_totals = {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0}
         performance_daily_totals: Dict[str, float] = {}
         performance_daily_orders: Dict[str, int] = {}
+        ytd_daily_totals: Dict[str, float] = {}
+        ytd_daily_orders: Dict[str, int] = {}
         ytd_revenue_total = 0.0
         ytd_order_count = 0
 
@@ -5439,6 +5446,14 @@ def get_sales_by_rep(
             if include_in_ytd:
                 ytd_revenue_total = round(ytd_revenue_total + total, 2)
                 ytd_order_count += 1
+                if local_date_key:
+                    ytd_daily_totals[local_date_key] = round(
+                        float(ytd_daily_totals.get(local_date_key) or 0.0) + total,
+                        2,
+                    )
+                    ytd_daily_orders[local_date_key] = int(
+                        ytd_daily_orders.get(local_date_key) or 0
+                    ) + 1
 
         rep_lookup: Dict[str, Dict] = {}
         # Seed with canonical user rep records.
@@ -5566,6 +5581,12 @@ def get_sales_by_rep(
             daily_totals=performance_daily_totals,
             daily_orders=performance_daily_orders,
         )
+        year_performance_series = _build_cumulative_series(
+            daily_totals=ytd_daily_totals,
+            daily_orders=ytd_daily_orders,
+            start_date=current_year_start_local.date(),
+            end_date=now_local.date(),
+        )
         year_projection = _build_year_projection(
             revenue_to_date=ytd_revenue_total,
             order_count=ytd_order_count,
@@ -5584,6 +5605,7 @@ def get_sales_by_rep(
                 "skippedRefunded": skipped_refunded,
                 "skippedOutsidePeriod": skipped_outside_period,
                 "performancePoints": len(performance_series),
+                "yearPerformancePoints": len(year_performance_series),
                 "yearProjectionRevenue": year_projection.get("projectedYearEndRevenue"),
                 "periodStart": period_meta["periodStart"],
                 "periodEnd": period_meta["periodEnd"],
@@ -5601,6 +5623,7 @@ def get_sales_by_rep(
             "orders": summary,
             "totals": totals_all,
             "performanceSeries": performance_series,
+            "yearPerformanceSeries": year_performance_series,
             "yearProjection": year_projection,
             **period_meta,
         }
@@ -5657,6 +5680,10 @@ def get_sales_by_rep(
             "orders": [],
             "totals": {"totalOrders": 0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0},
             "performanceSeries": _build_cumulative_series(),
+            "yearPerformanceSeries": _build_cumulative_series(
+                start_date=current_year_start_local.date(),
+                end_date=now_local.date(),
+            ),
             "yearProjection": _build_year_projection(),
             **period_meta,
             "stale": True,
@@ -5728,6 +5755,10 @@ def get_sales_by_rep(
             "orders": [],
             "totals": {"totalOrders": 0, "totalRevenue": 0.0},
             "performanceSeries": _build_cumulative_series(),
+            "yearPerformanceSeries": _build_cumulative_series(
+                start_date=current_year_start_local.date(),
+                end_date=now_local.date(),
+            ),
             "yearProjection": _build_year_projection(),
             **period_meta,
             "stale": True,

@@ -4464,6 +4464,93 @@ html {
   box-sizing: border-box;
 }
 
+.admin-revenue-outlook-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.admin-revenue-outlook-card {
+  height: 100%;
+}
+
+.admin-revenue-outlook-card__header {
+  padding-bottom: 0.75rem;
+}
+
+.admin-revenue-outlook-card__title,
+.sales-rep-chart-header h3.admin-revenue-outlook-card__title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgb(15, 23, 42);
+}
+
+.admin-revenue-outlook-summary-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.admin-revenue-outlook-summary-card__eyebrow {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgb(100, 116, 139);
+}
+
+.admin-revenue-outlook-summary-card__value {
+  margin-top: 0.25rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: rgb(15, 23, 42);
+}
+
+.admin-revenue-outlook-summary-card__context {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgb(71, 85, 105);
+}
+
+.admin-revenue-outlook-summary-card__stats {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-revenue-outlook-summary-card__stat {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.65);
+  padding: 0.625rem 0.875rem;
+}
+
+.admin-revenue-outlook-summary-card__stat-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: rgb(100, 116, 139);
+}
+
+.admin-revenue-outlook-summary-card__stat-value {
+  margin-top: 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: rgb(15, 23, 42);
+}
+
+@media (max-width: 1023px) {
+  .admin-revenue-outlook-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .database-visualizer-card {
   padding: 0;
   overflow: hidden;

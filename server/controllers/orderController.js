@@ -42,6 +42,312 @@ const shouldServeFakeAdminReports = () => {
 
 const WEB_DEV_COMMISSION_RATE = 0.03;
 const WEB_DEV_COMMISSION_MONTHLY_CAP = 6000;
+const FAKE_ADMIN_REPORTS_TIME_ZONE = 'America/Los_Angeles';
+
+const toDateOnly = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month, day));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+};
+
+const formatDateOnly = (value) => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  return value.toISOString().slice(0, 10);
+};
+
+const addUtcDays = (value, days) => {
+  const next = new Date(value.getTime());
+  next.setUTCDate(next.getUTCDate() + Number(days || 0));
+  return next;
+};
+
+const startOfUtcDayIso = (value) => `${formatDateOnly(value)}T00:00:00.000Z`;
+const endOfUtcDayIso = (value) => `${formatDateOnly(value)}T23:59:59.999Z`;
+
+const getFakeAdminReportsToday = () => {
+  const override = (process.env.PEPPRO_FAKE_ADMIN_REPORTS_DATE || '').trim();
+  const parsedOverride = toDateOnly(override);
+  if (parsedOverride) return parsedOverride;
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+};
+
+const getDefaultFakeSalesWindow = (today) => {
+  const year = today.getUTCFullYear();
+  const month = today.getUTCMonth();
+  const dayOfMonth = today.getUTCDate();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const midpointDay = Math.ceil(daysInMonth / 2);
+  const startDay = dayOfMonth <= midpointDay ? 1 : midpointDay;
+  return {
+    start: new Date(Date.UTC(year, month, startDay)),
+    end: new Date(Date.UTC(year, month, dayOfMonth)),
+  };
+};
+
+const getDaysBetweenInclusive = (start, end) => {
+  if (!(start instanceof Date) || !(end instanceof Date)) return 0;
+  if (end.getTime() < start.getTime()) return 0;
+  return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+};
+
+const buildFakeSalesByRepReport = ({
+  periodStart,
+  periodEnd,
+  excludeSalesRepId = null,
+  timeZone = FAKE_ADMIN_REPORTS_TIME_ZONE,
+}) => {
+  const today = getFakeAdminReportsToday();
+  const defaultWindow = getDefaultFakeSalesWindow(today);
+  const requestedStart = toDateOnly(periodStart) || defaultWindow.start;
+  const requestedEndRaw = toDateOnly(periodEnd) || defaultWindow.end;
+  const requestedEnd = requestedEndRaw.getTime() > today.getTime() ? today : requestedEndRaw;
+  const safeStart = requestedStart.getTime() <= requestedEnd.getTime() ? requestedStart : defaultWindow.start;
+  const safeEnd = requestedStart.getTime() <= requestedEnd.getTime() ? requestedEnd : defaultWindow.end;
+
+  const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+  const yearEnd = new Date(Date.UTC(today.getUTCFullYear(), 11, 31));
+  const seedSource = `${formatDateOnly(yearStart)}|${formatDateOnly(safeStart)}|${formatDateOnly(safeEnd)}`;
+  let seed = 0;
+  for (let index = 0; index < seedSource.length; index += 1) {
+    seed = ((seed * 31) + seedSource.charCodeAt(index)) >>> 0;
+  }
+  const rand = () => {
+    seed = (1664525 * seed + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+
+  const repProfiles = [
+    {
+      salesRepId: 'rep-101',
+      salesRepUserId: 'rep-101',
+      salesRepName: 'Jordan Kim',
+      salesRepEmail: 'jordan.kim@peppro.net',
+      role: 'sales_rep',
+      retailBias: 0.34,
+    },
+    {
+      salesRepId: 'rep-102',
+      salesRepUserId: 'rep-102',
+      salesRepName: 'Taylor Reed',
+      salesRepEmail: 'taylor.reed@peppro.net',
+      role: 'sales_rep',
+      retailBias: 0.41,
+    },
+    {
+      salesRepId: 'lead-201',
+      salesRepUserId: 'lead-201',
+      salesRepName: 'Alexis Harper',
+      salesRepEmail: 'alexis.harper@peppro.net',
+      role: 'sales_lead',
+      retailBias: 0.29,
+    },
+    {
+      salesRepId: 'partner-301',
+      salesRepUserId: 'partner-301',
+      salesRepName: 'Morgan Blake',
+      salesRepEmail: 'morgan.blake@peppro.net',
+      role: 'sales_partner',
+      retailBias: 0.52,
+      isPartner: true,
+      allowedRetail: true,
+    },
+    {
+      salesRepId: '__house__',
+      salesRepUserId: null,
+      salesRepName: 'House / Unassigned',
+      salesRepEmail: null,
+      role: 'admin',
+      retailBias: 0.18,
+    },
+  ].filter((rep) => String(rep.salesRepId) !== String(excludeSalesRepId || ''));
+
+  const repWeights = repProfiles.map((profile, index) => {
+    if (profile.salesRepId === '__house__') return 0.06;
+    return 0.33 - index * 0.045;
+  });
+  const totalWeight = repWeights.reduce((sum, weight) => sum + weight, 0) || 1;
+
+  const pickRep = () => {
+    let cursor = rand() * totalWeight;
+    for (let index = 0; index < repProfiles.length; index += 1) {
+      cursor -= repWeights[index];
+      if (cursor <= 0) return repProfiles[index];
+    }
+    return repProfiles[repProfiles.length - 1];
+  };
+
+  const fakeOrders = [];
+  let dayIndex = 0;
+  for (let current = new Date(yearStart.getTime()); current.getTime() <= today.getTime(); current = addUtcDays(current, 1)) {
+    const weekday = current.getUTCDay();
+    const isWeekend = weekday === 0 || weekday === 6;
+    const baseOrders = isWeekend ? 1 : 2;
+    const ordersForDay = baseOrders + (rand() < (isWeekend ? 0.08 : 0.18) ? 1 : 0);
+
+    for (let orderIndex = 0; orderIndex < ordersForDay; orderIndex += 1) {
+      const rep = pickRep();
+      const retail = rand() < Number(rep.retailBias || 0.35);
+      const baseSubtotal = 64 + dayIndex * 0.2 + orderIndex * 9 + rand() * 44;
+      const weekdayMultiplier = isWeekend ? 0.94 : weekday === 1 ? 1.06 : weekday === 4 ? 1.04 : 1;
+      const subtotal = Math.round(baseSubtotal * weekdayMultiplier * (retail ? 1.14 : 0.96) * 100) / 100;
+      const hour = 15 + ((orderIndex * 2 + dayIndex) % 6);
+      fakeOrders.push({
+        createdAt: `${formatDateOnly(current)}T${String(hour).padStart(2, '0')}:00:00.000Z`,
+        dateKey: formatDateOnly(current),
+        salesRepId: rep.salesRepId,
+        subtotal,
+        pricingMode: retail ? 'retail' : 'wholesale',
+      });
+    }
+    dayIndex += 1;
+  }
+
+  const aggregateSeries = (startDate, endDate, orders) => {
+    const byDate = new Map();
+    (orders || []).forEach((order) => {
+      const key = String(order?.dateKey || '').trim();
+      if (!key) return;
+      const current = byDate.get(key) || { dailyRevenue: 0, orderCount: 0 };
+      current.dailyRevenue += Number(order?.subtotal || 0);
+      current.orderCount += 1;
+      byDate.set(key, current);
+    });
+    const series = [];
+    let runningRevenue = 0;
+    for (let current = new Date(startDate.getTime()); current.getTime() <= endDate.getTime(); current = addUtcDays(current, 1)) {
+      const key = formatDateOnly(current);
+      const row = byDate.get(key) || { dailyRevenue: 0, orderCount: 0 };
+      const dailyRevenue = Math.round(Number(row.dailyRevenue || 0) * 100) / 100;
+      runningRevenue = Math.round((runningRevenue + dailyRevenue) * 100) / 100;
+      series.push({
+        date: key,
+        dailyRevenue,
+        cumulativeRevenue: runningRevenue,
+        orderCount: Number(row.orderCount || 0),
+      });
+    }
+    return series;
+  };
+
+  const inSelectedWindow = (order) => {
+    const orderDate = toDateOnly(order?.dateKey);
+    if (!orderDate) return false;
+    return orderDate.getTime() >= safeStart.getTime() && orderDate.getTime() <= safeEnd.getTime();
+  };
+
+  const selectedOrders = fakeOrders.filter(inSelectedWindow);
+  const repTotals = new Map();
+  selectedOrders.forEach((order) => {
+    const current = repTotals.get(order.salesRepId) || {
+      totalOrders: 0,
+      totalRevenue: 0,
+      wholesaleRevenue: 0,
+      retailRevenue: 0,
+    };
+    current.totalOrders += 1;
+    current.totalRevenue += Number(order.subtotal || 0);
+    if (String(order.pricingMode) === 'retail') {
+      current.retailRevenue += Number(order.subtotal || 0);
+    } else {
+      current.wholesaleRevenue += Number(order.subtotal || 0);
+    }
+    repTotals.set(order.salesRepId, current);
+  });
+
+  const rows = repProfiles
+    .map((rep) => {
+      const totals = repTotals.get(rep.salesRepId) || {
+        totalOrders: 0,
+        totalRevenue: 0,
+        wholesaleRevenue: 0,
+        retailRevenue: 0,
+      };
+      return {
+        salesRepId: rep.salesRepId,
+        salesRepUserId: rep.salesRepUserId,
+        salesRepName: rep.salesRepName,
+        salesRepEmail: rep.salesRepEmail,
+        role: rep.role,
+        isPartner: Boolean(rep.isPartner),
+        allowedRetail: rep.allowedRetail ?? null,
+        totalOrders: totals.totalOrders,
+        totalRevenue: Math.round(totals.totalRevenue * 100) / 100,
+        wholesaleRevenue: Math.round(totals.wholesaleRevenue * 100) / 100,
+        retailRevenue: Math.round(totals.retailRevenue * 100) / 100,
+      };
+    })
+    .filter((row) => row.totalOrders > 0 || row.totalRevenue > 0)
+    .sort((left, right) => Number(right.totalRevenue || 0) - Number(left.totalRevenue || 0));
+
+  const totals = rows.reduce((accumulator, row) => ({
+    totalOrders: accumulator.totalOrders + Number(row.totalOrders || 0),
+    totalRevenue: accumulator.totalRevenue + Number(row.totalRevenue || 0),
+    wholesaleRevenue: accumulator.wholesaleRevenue + Number(row.wholesaleRevenue || 0),
+    retailRevenue: accumulator.retailRevenue + Number(row.retailRevenue || 0),
+  }), {
+    totalOrders: 0,
+    totalRevenue: 0,
+    wholesaleRevenue: 0,
+    retailRevenue: 0,
+  });
+
+  const performanceSeries = aggregateSeries(safeStart, safeEnd, selectedOrders);
+  const yearPerformanceSeries = aggregateSeries(yearStart, today, fakeOrders);
+  const daysElapsed = getDaysBetweenInclusive(yearStart, today);
+  const totalDaysInYear = getDaysBetweenInclusive(yearStart, yearEnd);
+  const revenueToDate = Math.round(
+    fakeOrders.reduce((sum, order) => sum + Number(order.subtotal || 0), 0) * 100,
+  ) / 100;
+  const averageDailyRevenue = daysElapsed > 0
+    ? Math.round((revenueToDate / daysElapsed) * 100) / 100
+    : 0;
+  const projectedYearEndRevenue = Math.round((averageDailyRevenue * totalDaysInYear) * 100) / 100;
+
+  return {
+    orders: rows,
+    periodStart: formatDateOnly(safeStart),
+    periodEnd: formatDateOnly(safeEnd),
+    timeZone,
+    window: {
+      startUtc: startOfUtcDayIso(safeStart),
+      endUtc: endOfUtcDayIso(safeEnd),
+    },
+    totals: {
+      totalOrders: totals.totalOrders,
+      totalRevenue: Math.round(totals.totalRevenue * 100) / 100,
+      wholesaleRevenue: Math.round(totals.wholesaleRevenue * 100) / 100,
+      retailRevenue: Math.round(totals.retailRevenue * 100) / 100,
+    },
+    performanceSeries,
+    yearPerformanceSeries,
+    yearProjection: {
+      year: today.getUTCFullYear(),
+      yearStart: formatDateOnly(yearStart),
+      asOfDate: formatDateOnly(today),
+      yearEnd: formatDateOnly(yearEnd),
+      daysElapsed,
+      totalDaysInYear,
+      orderCount: fakeOrders.length,
+      revenueToDate,
+      averageDailyRevenue,
+      projectedYearEndRevenue,
+      timeZone,
+    },
+    fake: true,
+  };
+};
 
 const getDevCommissionUsers = async () => {
   if (mysqlClient.isEnabled()) {
@@ -564,12 +870,21 @@ const getSalesByRepForAdmin = async (req, res, next) => {
     const periodEnd = typeof req.query?.periodEnd === 'string' ? req.query.periodEnd.trim() : null;
     const debugRaw = typeof req.query?.debug === 'string' ? req.query.debug.trim().toLowerCase() : '';
     const debug = debugRaw === '1' || debugRaw === 'true' || debugRaw === 'yes' || debugRaw === 'on';
+    if (shouldServeFakeAdminReports()) {
+      const payload = buildFakeSalesByRepReport({
+        excludeSalesRepId: role === 'admin' ? req.user.id : null,
+        periodStart,
+        periodEnd,
+        timeZone: FAKE_ADMIN_REPORTS_TIME_ZONE,
+      });
+      return res.json(payload);
+    }
     const summary = await orderService.getSalesByRep({
       excludeSalesRepId: role === 'admin' ? req.user.id : null,
       excludeDoctorIds: role === 'admin' ? [String(req.user.id)] : [],
       periodStart,
       periodEnd,
-      timeZone: 'America/Los_Angeles',
+      timeZone: FAKE_ADMIN_REPORTS_TIME_ZONE,
       debug,
     });
     res.json(summary);
