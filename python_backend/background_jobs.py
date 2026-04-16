@@ -5,6 +5,7 @@ import threading
 import time
 
 from .logging_config import configure_logging
+from .services import quotes_service
 from .worker_bootstrap import bootstrap
 from .services.patient_links_sweep_service import start_patient_links_sweep
 from .services.presence_sweep_service import start_presence_sweep
@@ -27,6 +28,11 @@ def main() -> int:
     config = bootstrap()
     configure_logging(config)
     _install_signal_handlers()
+
+    try:
+        quotes_service.prime_daily_quote_cache()
+    except Exception:
+        pass
 
     start_product_document_sync(force=True)
     start_shipstation_status_sync(force=True)
