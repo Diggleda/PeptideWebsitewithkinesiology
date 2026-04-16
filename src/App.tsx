@@ -75,11 +75,13 @@ import { DayPicker, type DateRange } from "react-day-picker";
 import {
   ResponsiveContainer,
   BarChart,
+  LineChart,
   CartesianGrid,
   XAxis,
   YAxis,
   Tooltip,
   Bar,
+  Line,
   LabelList,
 } from "recharts@2.15.2";
 	import {
@@ -12599,6 +12601,29 @@ function MainApp() {
           retailRevenue?: number;
         }
       | null;
+    performanceSeries?:
+      | {
+          date: string;
+          dailyRevenue: number;
+          cumulativeRevenue: number;
+          orderCount: number;
+        }[]
+      | null;
+    yearProjection?:
+      | {
+          year: number;
+          yearStart: string;
+          asOfDate: string;
+          yearEnd: string;
+          daysElapsed: number;
+          totalDaysInYear: number;
+          orderCount?: number;
+          revenueToDate: number;
+          averageDailyRevenue: number;
+          projectedYearEndRevenue: number;
+          timeZone?: string | null;
+        }
+      | null;
   } | null>(null);
   const [salesRepSalesSummaryLastFetchedAt, setSalesRepSalesSummaryLastFetchedAt] =
     useState<number | null>(null);
@@ -13662,6 +13687,107 @@ function MainApp() {
 	              periodStart: (salesSummaryResponse as any)?.periodStart ?? null,
 	              periodEnd: (salesSummaryResponse as any)?.periodEnd ?? null,
 	              totals: (salesSummaryResponse as any)?.totals ?? null,
+                performanceSeries: Array.isArray((salesSummaryResponse as any)?.performanceSeries)
+                  ? ((salesSummaryResponse as any).performanceSeries as any[]).reduce<
+                      {
+                        date: string;
+                        dailyRevenue: number;
+                        cumulativeRevenue: number;
+                        orderCount: number;
+                      }[]
+                    >((series, point) => {
+                        const date =
+                          typeof point?.date === "string" ? String(point.date).trim() : "";
+                        if (!date) {
+                          return series;
+                        }
+                        series.push({
+                          date,
+                          dailyRevenue: parseReportNumber(point?.dailyRevenue),
+                          cumulativeRevenue: parseReportNumber(point?.cumulativeRevenue),
+                          orderCount: Math.max(
+                            0,
+                            Math.trunc(parseReportNumber(point?.orderCount)),
+                          ),
+                        });
+                        return series;
+                      }, [])
+                  : [],
+                yearProjection:
+                  (salesSummaryResponse as any)?.yearProjection &&
+                  typeof (salesSummaryResponse as any).yearProjection === "object"
+                    ? {
+                        year: Math.max(
+                          0,
+                          Math.trunc(
+                            parseReportNumber(
+                              (salesSummaryResponse as any).yearProjection?.year,
+                            ),
+                          ),
+                        ),
+                        yearStart:
+                          typeof (salesSummaryResponse as any).yearProjection?.yearStart ===
+                          "string"
+                            ? String(
+                                (salesSummaryResponse as any).yearProjection.yearStart,
+                              )
+                            : "",
+                        asOfDate:
+                          typeof (salesSummaryResponse as any).yearProjection?.asOfDate ===
+                          "string"
+                            ? String(
+                                (salesSummaryResponse as any).yearProjection.asOfDate,
+                              )
+                            : "",
+                        yearEnd:
+                          typeof (salesSummaryResponse as any).yearProjection?.yearEnd ===
+                          "string"
+                            ? String(
+                                (salesSummaryResponse as any).yearProjection.yearEnd,
+                              )
+                            : "",
+                        daysElapsed: Math.max(
+                          0,
+                          Math.trunc(
+                            parseReportNumber(
+                              (salesSummaryResponse as any).yearProjection?.daysElapsed,
+                            ),
+                          ),
+                        ),
+                        totalDaysInYear: Math.max(
+                          0,
+                          Math.trunc(
+                            parseReportNumber(
+                              (salesSummaryResponse as any).yearProjection?.totalDaysInYear,
+                            ),
+                          ),
+                        ),
+                        orderCount: Math.max(
+                          0,
+                          Math.trunc(
+                            parseReportNumber(
+                              (salesSummaryResponse as any).yearProjection?.orderCount,
+                            ),
+                          ),
+                        ),
+                        revenueToDate: parseReportNumber(
+                          (salesSummaryResponse as any).yearProjection?.revenueToDate,
+                        ),
+                        averageDailyRevenue: parseReportNumber(
+                          (salesSummaryResponse as any).yearProjection?.averageDailyRevenue,
+                        ),
+                        projectedYearEndRevenue: parseReportNumber(
+                          (salesSummaryResponse as any).yearProjection?.projectedYearEndRevenue,
+                        ),
+                        timeZone:
+                          typeof (salesSummaryResponse as any).yearProjection?.timeZone ===
+                          "string"
+                            ? String(
+                                (salesSummaryResponse as any).yearProjection.timeZone,
+                              )
+                            : null,
+                      }
+                    : null,
 	            }
 	          : null;
 	      const backendError =
@@ -21515,6 +21641,21 @@ function MainApp() {
     },
 	    [],
 	  );
+  const formatCompactCurrency = useCallback((amount?: number | null, currency = "USD") => {
+    if (amount === null || amount === undefined || Number.isNaN(amount)) {
+      return "—";
+    }
+    try {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        notation: "compact",
+        maximumFractionDigits: Math.abs(amount) >= 1000 ? 1 : 0,
+      }).format(amount);
+    } catch {
+      return formatCurrency(amount, currency);
+    }
+  }, [formatCurrency]);
   const formatBytes = useCallback((bytes?: number | null) => {
     if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) {
       return "—";
@@ -21538,6 +21679,95 @@ function MainApp() {
     }
     return `${Math.round(ratio * 100)}%`;
   }, []);
+  const formatChartDateShort = useCallback((value?: string | null) => {
+    const date = parseDateInputValueLocal(String(value || ""));
+    if (!date) {
+      return String(value || "");
+    }
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+  }, []);
+  const formatChartDateLong = useCallback((value?: string | null) => {
+    const date = parseDateInputValueLocal(String(value || ""));
+    if (!date) {
+      return String(value || "");
+    }
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, []);
+  const adminRevenuePerformanceChartData = useMemo(() => {
+    const rawSeries = Array.isArray(salesRepSalesSummaryMeta?.performanceSeries)
+      ? salesRepSalesSummaryMeta.performanceSeries
+      : [];
+    return rawSeries.reduce<
+      {
+        date: string;
+        shortLabel: string;
+        longLabel: string;
+        dailyRevenue: number;
+        cumulativeRevenue: number;
+        orderCount: number;
+      }[]
+    >((series, point) => {
+      const date = typeof point?.date === "string" ? point.date.trim() : "";
+      if (!date) {
+        return series;
+      }
+      const dailyRevenue = Number(point?.dailyRevenue || 0);
+      const cumulativeRevenue = Number(point?.cumulativeRevenue || 0);
+      const orderCount = Number(point?.orderCount || 0);
+      series.push({
+        date,
+        shortLabel: formatChartDateShort(date),
+        longLabel: formatChartDateLong(date),
+        dailyRevenue: Number.isFinite(dailyRevenue) ? dailyRevenue : 0,
+        cumulativeRevenue: Number.isFinite(cumulativeRevenue) ? cumulativeRevenue : 0,
+        orderCount: Number.isFinite(orderCount) ? orderCount : 0,
+      });
+      return series;
+    }, []);
+  }, [
+    formatChartDateLong,
+    formatChartDateShort,
+    salesRepSalesSummaryMeta?.performanceSeries,
+  ]);
+  const adminYearEndProjection = useMemo(() => {
+    const raw = salesRepSalesSummaryMeta?.yearProjection;
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+    const year = Number(raw.year || 0);
+    const daysElapsed = Number(raw.daysElapsed || 0);
+    const totalDaysInYear = Number(raw.totalDaysInYear || 0);
+    const orderCount = Number(raw.orderCount || 0);
+    const revenueToDate = Number(raw.revenueToDate || 0);
+    const averageDailyRevenue = Number(raw.averageDailyRevenue || 0);
+    const projectedYearEndRevenue = Number(raw.projectedYearEndRevenue || 0);
+    return {
+      year: Number.isFinite(year) ? year : 0,
+      yearStart: typeof raw.yearStart === "string" ? raw.yearStart : "",
+      asOfDate: typeof raw.asOfDate === "string" ? raw.asOfDate : "",
+      yearEnd: typeof raw.yearEnd === "string" ? raw.yearEnd : "",
+      daysElapsed: Number.isFinite(daysElapsed) ? daysElapsed : 0,
+      totalDaysInYear: Number.isFinite(totalDaysInYear) ? totalDaysInYear : 0,
+      orderCount: Number.isFinite(orderCount) ? orderCount : 0,
+      revenueToDate: Number.isFinite(revenueToDate) ? revenueToDate : 0,
+      averageDailyRevenue: Number.isFinite(averageDailyRevenue)
+        ? averageDailyRevenue
+        : 0,
+      projectedYearEndRevenue: Number.isFinite(projectedYearEndRevenue)
+        ? projectedYearEndRevenue
+        : 0,
+      timeZone: typeof raw.timeZone === "string" ? raw.timeZone : null,
+    };
+  }, [salesRepSalesSummaryMeta?.yearProjection]);
+  const adminRevenuePerformanceLatestPoint =
+    adminRevenuePerformanceChartData[adminRevenuePerformanceChartData.length - 1] ?? null;
 
   const adminTaxTrackingNotifications = useMemo(
     () => adminTaxTrackingRows.filter((row) => row.warningLevel !== "none"),
@@ -29626,6 +29856,276 @@ function MainApp() {
 						              </div>
 				
 					              <div className="mt-8 space-y-6">
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(320px,1fr)]">
+                          <div className="sales-rep-leads-card sales-rep-combined-card">
+                            <div className="sales-rep-chart-header">
+                              <div>
+                                <h3>Revenue Performance</h3>
+                                <p>
+                                  Cumulative revenue across the selected timeframe.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <span>{adminDashboardPeriodLabel}</span>
+                                {adminRevenuePerformanceLatestPoint && (
+                                  <span>
+                                    Current total:{" "}
+                                    {formatCurrency(
+                                      adminRevenuePerformanceLatestPoint.cumulativeRevenue,
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {salesRepSalesSummaryError &&
+                              adminRevenuePerformanceChartData.length > 0 && (
+                                <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                                  {salesRepSalesSummaryError}
+                                </div>
+                              )}
+                            {salesRepSalesSummaryLoading &&
+                            salesRepSalesSummaryLastFetchedAt === null ? (
+                              <div className="flex min-h-[280px] items-center justify-center rounded-2xl border border-slate-200/70 bg-white/55 px-4 text-sm text-slate-500">
+                                Loading performance…
+                              </div>
+                            ) : adminRevenuePerformanceChartData.length === 0 ? (
+                              <div className="flex min-h-[280px] items-center justify-center rounded-2xl border border-slate-200/70 bg-white/55 px-4 text-sm text-slate-500">
+                                {salesRepSalesSummaryError
+                                  ? salesRepSalesSummaryError
+                                  : salesRepSalesSummaryLastFetchedAt === null
+                                    ? "Click Refresh to load revenue performance."
+                                    : "No revenue recorded for this timeframe."}
+                              </div>
+                            ) : (
+                              <>
+                                <div className="sales-rep-chart-body">
+                                  <ResponsiveContainer width="100%" height={260}>
+                                    <LineChart
+                                      data={adminRevenuePerformanceChartData}
+                                      margin={{ top: 16, right: 12, left: -8, bottom: 0 }}
+                                    >
+                                      <defs>
+                                        <linearGradient
+                                          id="adminRevenuePerformanceLine"
+                                          x1="0"
+                                          y1="0"
+                                          x2="1"
+                                          y2="0"
+                                        >
+                                          <stop offset="0%" stopColor="#5FB3F9" />
+                                          <stop offset="100%" stopColor="#1D4ED8" />
+                                        </linearGradient>
+                                      </defs>
+                                      <CartesianGrid
+                                        strokeDasharray="3 3"
+                                        stroke="rgba(148, 163, 184, 0.3)"
+                                      />
+                                      <XAxis
+                                        dataKey="date"
+                                        tickFormatter={(value) =>
+                                          formatChartDateShort(String(value || ""))
+                                        }
+                                        tick={{ fontSize: 12, fill: "#334155" }}
+                                        tickLine={false}
+                                        minTickGap={24}
+                                      />
+                                      <YAxis
+                                        tickFormatter={(value) =>
+                                          formatCompactCurrency(
+                                            typeof value === "number"
+                                              ? value
+                                              : Number(value) || 0,
+                                          )
+                                        }
+                                        tick={{ fontSize: 12, fill: "#334155" }}
+                                        width={72}
+                                        tickMargin={6}
+                                      />
+                                      <Tooltip
+                                        cursor={{
+                                          stroke: "rgba(95, 179, 249, 0.55)",
+                                          strokeDasharray: "4 4",
+                                          strokeWidth: 1,
+                                        }}
+                                        content={({ active, payload }) => {
+                                          const point =
+                                            active && Array.isArray(payload) && payload.length > 0
+                                              ? (payload[0]?.payload as
+                                                  | {
+                                                      longLabel?: string;
+                                                      dailyRevenue?: number;
+                                                      cumulativeRevenue?: number;
+                                                      orderCount?: number;
+                                                    }
+                                                  | undefined)
+                                              : undefined;
+                                          if (!point) {
+                                            return null;
+                                          }
+                                          return (
+                                            <div className="rounded-xl border border-slate-200/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
+                                              <div className="text-sm font-semibold text-slate-900">
+                                                {point.longLabel || "Date unavailable"}
+                                              </div>
+                                              <div className="mt-1 text-xs text-slate-600">
+                                                Day revenue:{" "}
+                                                <span className="font-semibold text-slate-900">
+                                                  {formatCurrency(point.dailyRevenue || 0)}
+                                                </span>
+                                              </div>
+                                              <div className="text-xs text-slate-600">
+                                                Cumulative:{" "}
+                                                <span className="font-semibold text-slate-900">
+                                                  {formatCurrency(
+                                                    point.cumulativeRevenue || 0,
+                                                  )}
+                                                </span>
+                                              </div>
+                                              <div className="text-xs text-slate-600">
+                                                Orders:{" "}
+                                                <span className="font-semibold text-slate-900">
+                                                  {Number(point.orderCount || 0).toLocaleString()}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        }}
+                                      />
+                                      <Line
+                                        type="linear"
+                                        dataKey="cumulativeRevenue"
+                                        stroke="url(#adminRevenuePerformanceLine)"
+                                        strokeWidth={3}
+                                        dot={
+                                          adminRevenuePerformanceChartData.length <= 16
+                                            ? {
+                                                r: 3.5,
+                                                strokeWidth: 2,
+                                                fill: "#5FB3F9",
+                                                stroke: "#ffffff",
+                                              }
+                                            : false
+                                        }
+                                        activeDot={{
+                                          r: 5,
+                                          strokeWidth: 2,
+                                          fill: "#1D4ED8",
+                                          stroke: "#ffffff",
+                                        }}
+                                      />
+                                    </LineChart>
+                                  </ResponsiveContainer>
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                                  <span>
+                                    Revenue:{" "}
+                                    {formatCurrency(
+                                      salesRepSalesSummaryMeta?.totals?.totalRevenue ??
+                                        adminRevenuePerformanceLatestPoint?.cumulativeRevenue ??
+                                        0,
+                                    )}
+                                  </span>
+                                  <span>
+                                    Orders:{" "}
+                                    {Number(
+                                      salesRepSalesSummaryMeta?.totals?.totalOrders ?? 0,
+                                    ).toLocaleString()}
+                                  </span>
+                                  <span>
+                                    Final point:{" "}
+                                    {adminRevenuePerformanceLatestPoint?.longLabel || "—"}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="sales-rep-leads-card sales-rep-combined-card">
+                            <div className="border-b border-slate-200/60 pb-3">
+                              <h3 className="text-lg font-semibold text-slate-900">
+                                Projected Year-End Revenue
+                              </h3>
+                              <p className="text-sm text-slate-600">
+                                Revenue from Jan 1 to today, extrapolated linearly through Dec 31.
+                              </p>
+                            </div>
+                            {salesRepSalesSummaryLoading &&
+                            salesRepSalesSummaryLastFetchedAt === null &&
+                            !adminYearEndProjection ? (
+                              <div className="flex min-h-[280px] items-center justify-center px-4 text-sm text-slate-500">
+                                Calculating revenue pace…
+                              </div>
+                            ) : !adminYearEndProjection ? (
+                              <div className="flex min-h-[280px] items-center justify-center px-4 text-sm text-slate-500">
+                                {salesRepSalesSummaryError
+                                  ? salesRepSalesSummaryError
+                                  : "Projection unavailable right now."}
+                              </div>
+                            ) : (
+                              <div className="pt-4">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  Projected {adminYearEndProjection.year} revenue
+                                </div>
+                                <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+                                  {formatCurrency(
+                                    adminYearEndProjection.projectedYearEndRevenue,
+                                  )}
+                                </div>
+                                <p className="mt-2 text-sm text-slate-600">
+                                  Based on {formatCurrency(adminYearEndProjection.revenueToDate)} from{" "}
+                                  {formatChartDateLong(adminYearEndProjection.yearStart)} through{" "}
+                                  {formatChartDateLong(adminYearEndProjection.asOfDate)}.
+                                </p>
+                                <div className="mt-4 grid grid-cols-2 gap-3">
+                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                      Revenue To Date
+                                    </div>
+                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                      {formatCurrency(adminYearEndProjection.revenueToDate)}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                      Average / Day
+                                    </div>
+                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                      {formatCurrency(
+                                        adminYearEndProjection.averageDailyRevenue,
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                      Days Elapsed
+                                    </div>
+                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                      {adminYearEndProjection.daysElapsed.toLocaleString()} /{" "}
+                                      {adminYearEndProjection.totalDaysInYear.toLocaleString()}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-slate-200/70 bg-white/65 px-3 py-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                      YTD Orders
+                                    </div>
+                                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                                      {Number(
+                                        adminYearEndProjection.orderCount || 0,
+                                      ).toLocaleString()}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="mt-4 rounded-xl border border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-3 py-2 text-xs leading-relaxed text-slate-600">
+                                  Formula: revenue to date / elapsed days × total days in{" "}
+                                  {adminYearEndProjection.year}.
+                                  {adminYearEndProjection.timeZone
+                                    ? ` Source timezone: ${adminYearEndProjection.timeZone}.`
+                                    : ""}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
 
 				                <div className="sales-rep-leads-card sales-rep-combined-card">
 				                  <div className="flex flex-col gap-3">

@@ -22,6 +22,90 @@ export const API_BASE_URL = (() => {
   return normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
 })();
 
+const GREATER_AREA_UPPERCASE_WORDS = new Set([
+  'dc',
+  'dfw',
+  'dmv',
+  'nola',
+  'nova',
+  'nyc',
+  'sf',
+  'slc',
+  'us',
+  'usa',
+]);
+
+const normalizePhysicianGreaterArea = (value: unknown): string | null => {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = String(value).trim().replace(/\s+/g, ' ');
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.replace(/[A-Za-z]+/g, (word, offset, fullText) => {
+    const lower = word.toLowerCase();
+    const upper = word.toUpperCase();
+    let previousNonWhitespace = '';
+    for (let index = offset - 1; index >= 0; index -= 1) {
+      const candidate = fullText[index];
+      if (!/\s/.test(candidate)) {
+        previousNonWhitespace = candidate;
+        break;
+      }
+    }
+    if (GREATER_AREA_UPPERCASE_WORDS.has(lower)) {
+      return upper;
+    }
+    if (word.length === 2 && previousNonWhitespace === ',') {
+      return upper;
+    }
+    if (/^[a-z]+$/.test(word)) {
+      return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
+    }
+    if (/^[A-Z]+$/.test(word)) {
+      if (word.length <= 2) {
+        return upper;
+      }
+      return `${upper.charAt(0)}${lower.slice(1)}`;
+    }
+    return word;
+  });
+};
+
+const normalizeGreaterAreaFields = <T>(value: T): T => {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((entry) => {
+      const normalizedEntry = normalizeGreaterAreaFields(entry);
+      if (normalizedEntry !== entry) {
+        changed = true;
+      }
+      return normalizedEntry;
+    });
+    return (changed ? next : value) as T;
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  let changed = false;
+  const next: Record<string, unknown> = {};
+  Object.entries(record).forEach(([key, rawValue]) => {
+    let normalizedValue = rawValue;
+    if (key === 'greaterArea' || key === 'greater_area') {
+      normalizedValue = normalizePhysicianGreaterArea(rawValue);
+    } else if (rawValue && typeof rawValue === 'object') {
+      normalizedValue = normalizeGreaterAreaFields(rawValue);
+    }
+    if (normalizedValue !== rawValue) {
+      changed = true;
+    }
+    next[key] = normalizedValue;
+  });
+  return (changed ? next : value) as T;
+};
+
 type AuthenticatedRequestInit = RequestInit & {
   background?: boolean;
   skipReachabilityDispatch?: boolean;
@@ -918,7 +1002,7 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
       }
       try {
         const parsed = JSON.parse(text);
-        return sanitizePayloadMessages(parsed);
+        return normalizeGreaterAreaFields(sanitizePayloadMessages(parsed));
       } catch (error) {
         console.warn('[fetchWithAuth] Failed to parse JSON response', { error });
         return sanitizeServiceNames(text);
@@ -1110,7 +1194,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     if (!text) return null;
     try {
       const parsed = JSON.parse(text);
-      return sanitizePayloadMessages(parsed);
+      return normalizeGreaterAreaFields(sanitizePayloadMessages(parsed));
     } catch {
       return sanitizeServiceNames(text);
     }
@@ -1480,6 +1564,9 @@ export const authAPI = {
 
   updateMe: async (payload: UpdateProfilePayload) => {
     const requestPayload: Record<string, unknown> = { ...payload };
+    if (Object.prototype.hasOwnProperty.call(payload, 'greaterArea')) {
+      requestPayload.greaterArea = normalizePhysicianGreaterArea(payload.greaterArea);
+    }
     if (Object.prototype.hasOwnProperty.call(payload, 'networkPresenceAgreement')) {
       requestPayload.network_presence_agreement = payload.networkPresenceAgreement;
     }

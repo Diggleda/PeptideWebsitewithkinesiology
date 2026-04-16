@@ -69,6 +69,52 @@ _RESELLER_PERMIT_ALLOWED_EXTENSIONS = {
     ".gif",
 }
 
+_GREATER_AREA_UPPERCASE_WORDS = {
+    "dc",
+    "dfw",
+    "dmv",
+    "nola",
+    "nova",
+    "nyc",
+    "sf",
+    "slc",
+    "us",
+    "usa",
+}
+_GREATER_AREA_WORD_PATTERN = re.compile(r"[A-Za-z]+")
+
+
+def _normalize_greater_area_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = re.sub(r"\s+", " ", str(value).strip())
+    if not text:
+        return None
+
+    def _replace(match: re.Match[str]) -> str:
+        word = match.group(0)
+        lower = word.lower()
+        upper = word.upper()
+        previous_non_whitespace = ""
+        for index in range(match.start() - 1, -1, -1):
+            candidate = text[index]
+            if not candidate.isspace():
+                previous_non_whitespace = candidate
+                break
+        if lower in _GREATER_AREA_UPPERCASE_WORDS:
+            return upper
+        if len(word) == 2 and previous_non_whitespace == ",":
+            return upper
+        if word.islower():
+            return word[:1].upper() + word[1:]
+        if word.isupper():
+            if len(word) <= 2:
+                return upper
+            return upper[:1] + lower[1:]
+        return word
+
+    return _GREATER_AREA_WORD_PATTERN.sub(_replace, text)
+
 
 def _normalize_profile_text(value: Any, field: str) -> Optional[str]:
     if value is None:
@@ -79,6 +125,8 @@ def _normalize_profile_text(value: Any, field: str) -> Optional[str]:
     limit = _DOCTOR_PROFILE_FIELD_LIMITS[field]
     if len(text) > limit:
         raise _bad_request(f"{field.upper()}_TOO_LONG")
+    if field == "greaterArea":
+        return _normalize_greater_area_text(text)
     return text
 
 
@@ -705,7 +753,7 @@ def login(data: Dict) -> Dict:
     if not email or not password:
         raise _bad_request("Email and password required")
 
-    user = user_repository.find_by_email(email)
+    user = user_repository.find_auth_by_email(email)
     if user:
         if not _safe_check_password(password, str(user.get("password", ""))):
             raise _unauthorized("INVALID_PASSWORD")
@@ -716,22 +764,29 @@ def login(data: Dict) -> Dict:
             user.get("sessionId") if _is_multi_session_exempt(user.get("email")) else _new_session_id()
         )
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        updated = user_repository.update(
-            {
-                **user,
-                "visits": int(user.get("visits") or 1) + 1,
-                "lastLoginAt": now_iso,
-                "lastSeenAt": now_iso,
-                "lastInteractionAt": now_iso,
-                "isOnline": True,
-                "mustResetPassword": False,
-                "sessionId": new_session_id,
-            }
-        ) or user
+        updated = user_repository.record_successful_login(
+            str(user.get("id") or ""),
+            session_id=new_session_id,
+            at=now_iso,
+        ) or {
+            **user,
+            "visits": int(user.get("visits") or 0) + 1,
+            "lastLoginAt": now_iso,
+            "lastSeenAt": now_iso,
+            "lastInteractionAt": now_iso,
+            "isOnline": True,
+            "mustResetPassword": False,
+            "sessionId": new_session_id,
+        }
 
         token_role = (updated.get("role") or "doctor").lower()
         token = _create_auth_token(
-            {"id": updated["id"], "email": updated["email"], "role": token_role, "sid": updated.get("sessionId")}
+            {
+                "id": updated["id"],
+                "email": updated.get("email") or user.get("email"),
+                "role": token_role,
+                "sid": updated.get("sessionId") or new_session_id,
+            }
         )
         _audit(
             "LOGIN_SUCCESS",
@@ -1155,6 +1210,16 @@ def _sanitize_user(user: Dict) -> Dict:
     sanitized.pop("password", None)
     sanitized.pop("sessionId", None)
     sanitized.pop("downloads", None)
+    has_greater_area = "greaterArea" in sanitized or "greater_area" in sanitized
+    if has_greater_area:
+        normalized_greater_area = _normalize_greater_area_text(
+            sanitized.get("greaterArea")
+            if "greaterArea" in sanitized
+            else sanitized.get("greater_area")
+        )
+        sanitized["greaterArea"] = normalized_greater_area
+        if "greater_area" in sanitized:
+            sanitized["greater_area"] = normalized_greater_area
     sanitized["delegateOptIn"] = _normalize_bool(
         sanitized.get("delegateOptIn")
         if "delegateOptIn" in sanitized

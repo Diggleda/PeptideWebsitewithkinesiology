@@ -4790,6 +4790,13 @@ def get_sales_by_rep(
 
     start_dt, end_dt, period_meta = _resolve_report_period_bounds(period_start, period_end)
     period_cache_key = f"{period_meta['periodStart']}::{period_meta['periodEnd']}"
+    report_tz = _get_report_timezone()
+    period_start_local_date = start_dt.astimezone(report_tz).date()
+    period_end_local_date = end_dt.astimezone(report_tz).date()
+    now_local = datetime.now(report_tz)
+    current_year_start_local = datetime(now_local.year, 1, 1, 0, 0, 0, 0, tzinfo=report_tz)
+    current_year_start_dt = current_year_start_local.astimezone(timezone.utc)
+    current_year_end_date = date(now_local.year, 12, 31)
 
     def _meta_value(meta: object, key: str):
         if not isinstance(meta, list):
@@ -4822,6 +4829,54 @@ def get_sales_by_rep(
                 return float(str(value).strip() or 0)
             except Exception:
                 return 0.0
+
+    def _local_date_key(value: datetime) -> str:
+        return value.astimezone(report_tz).date().isoformat()
+
+    def _build_cumulative_series(
+        daily_totals: Optional[Dict[str, float]] = None,
+        daily_orders: Optional[Dict[str, int]] = None,
+    ) -> List[Dict[str, Any]]:
+        totals = daily_totals or {}
+        orders = daily_orders or {}
+        series: List[Dict[str, Any]] = []
+        running_total = 0.0
+        current_date = period_start_local_date
+        while current_date <= period_end_local_date:
+            key = current_date.isoformat()
+            daily_revenue = round(float(totals.get(key) or 0.0), 2)
+            running_total = round(running_total + daily_revenue, 2)
+            series.append(
+                {
+                    "date": key,
+                    "dailyRevenue": daily_revenue,
+                    "cumulativeRevenue": running_total,
+                    "orderCount": int(orders.get(key) or 0),
+                }
+            )
+            current_date += timedelta(days=1)
+        return series
+
+    def _build_year_projection(revenue_to_date: float = 0.0, order_count: int = 0) -> Dict[str, Any]:
+        year_start_date = current_year_start_local.date()
+        as_of_date = now_local.date()
+        total_days_in_year = (date(now_local.year + 1, 1, 1) - year_start_date).days
+        days_elapsed = max(1, (as_of_date - year_start_date).days + 1)
+        average_daily_revenue = float(revenue_to_date) / days_elapsed if days_elapsed > 0 else 0.0
+        projected_year_end_revenue = average_daily_revenue * total_days_in_year
+        return {
+            "year": int(now_local.year),
+            "yearStart": year_start_date.isoformat(),
+            "asOfDate": as_of_date.isoformat(),
+            "yearEnd": current_year_end_date.isoformat(),
+            "daysElapsed": int(days_elapsed),
+            "totalDaysInYear": int(total_days_in_year),
+            "orderCount": int(order_count),
+            "revenueToDate": round(float(revenue_to_date), 2),
+            "averageDailyRevenue": round(float(average_daily_revenue), 2),
+            "projectedYearEndRevenue": round(float(projected_year_end_revenue), 2),
+            "timeZone": getattr(report_tz, "key", None) or str(report_tz),
+        }
 
     def _compute_summary() -> Dict[str, Any]:
         users = user_repository.get_all()
@@ -5038,7 +5093,7 @@ def get_sales_by_rep(
             },
         )
 
-        attributed_orders: List[Dict[str, object]] = []
+        tracked_orders: List[Dict[str, object]] = []
         debug_samples: List[Dict[str, object]] = []
         rep_email_hint_by_rep_id: Dict[str, str] = {}
         debug_counts: Dict[str, int] = {}
@@ -5066,6 +5121,8 @@ def get_sales_by_rep(
         per_page = 100
         max_pages = 25
         orders_seen = 0
+        tracking_window_start_dt = start_dt if start_dt <= current_year_start_dt else current_year_start_dt
+        reached_tracking_window_start = False
         for page in range(1, max_pages + 1):
             payload, _meta = woo_commerce.fetch_catalog_proxy(
                 "orders",
@@ -5099,7 +5156,13 @@ def get_sales_by_rep(
                     # If unknown, skip rather than misattribute outside period.
                     skipped_outside_period += 1
                     continue
-                if created_at < start_dt or created_at > end_dt:
+                if created_at < tracking_window_start_dt:
+                    skipped_outside_period += 1
+                    reached_tracking_window_start = True
+                    break
+                in_report_period = start_dt <= created_at <= end_dt
+                in_ytd_period = current_year_start_dt <= created_at <= now_local.astimezone(timezone.utc)
+                if not in_report_period and not in_ytd_period:
                     skipped_outside_period += 1
                     continue
 
@@ -5197,13 +5260,16 @@ def get_sales_by_rep(
                         or _meta_value(meta_data, "pricing_mode")
                         or _meta_value(meta_data, "pricingMode")
                     )
-                    attributed_orders.append(
+                    tracked_orders.append(
                         {
                             "salesRepId": rep_id,
                             "total": total,
                             "wooId": woo_order.get("id"),
                             "wooNumber": woo_order.get("number"),
                             "pricingModeHint": pricing_mode_hint,
+                            "createdAt": created_at.isoformat(),
+                            "includeInReport": in_report_period,
+                            "includeInYtd": in_ytd_period,
                         }
                     )
                     counted_rep += 1
@@ -5222,13 +5288,16 @@ def get_sales_by_rep(
                         or _meta_value(meta_data, "pricing_mode")
                         or _meta_value(meta_data, "pricingMode")
                     )
-                    attributed_orders.append(
+                    tracked_orders.append(
                         {
                             "salesRepId": "__house__",
                             "total": total,
                             "wooId": woo_order.get("id"),
                             "wooNumber": woo_order.get("number"),
                             "pricingModeHint": pricing_mode_hint,
+                            "createdAt": created_at.isoformat(),
+                            "includeInReport": in_report_period,
+                            "includeInYtd": in_ytd_period,
                         }
                     )
                     counted_house += 1
@@ -5253,6 +5322,8 @@ def get_sales_by_rep(
 
                 orders_seen += 1
 
+            if reached_tracking_window_start:
+                break
             if len(orders) < per_page:
                 break
 
@@ -5266,7 +5337,7 @@ def get_sales_by_rep(
 
         woo_ids = []
         woo_numbers = []
-        for entry in attributed_orders:
+        for entry in tracked_orders:
             woo_id = _normalize_token(entry.get("wooId"))
             if woo_id:
                 woo_ids.append(woo_id)
@@ -5316,31 +5387,58 @@ def get_sales_by_rep(
 
         rep_totals: Dict[str, Dict[str, float]] = {}
         house_totals = {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0}
+        performance_daily_totals: Dict[str, float] = {}
+        performance_daily_orders: Dict[str, int] = {}
+        ytd_revenue_total = 0.0
+        ytd_order_count = 0
 
-        for entry in attributed_orders:
+        for entry in tracked_orders:
             rep_id = str(entry.get("salesRepId") or "").strip()
             total = _resolve_order_subtotal(entry)
             pricing_mode = _resolve_pricing_mode(entry)
-            if rep_id == "__house__":
-                house_totals["totalOrders"] += 1.0
-                house_totals["totalRevenue"] += total
-                if pricing_mode == "retail":
-                    house_totals["retailRevenue"] += total
-                else:
-                    house_totals["wholesaleRevenue"] += total
-                continue
+            created_at = _parse_datetime_utc(entry.get("createdAt"))
+            include_in_report = _is_truthy(entry.get("includeInReport"))
+            include_in_ytd = _is_truthy(entry.get("includeInYtd"))
+            local_date_key = _local_date_key(created_at) if created_at else None
 
-            current = rep_totals.get(
-                rep_id,
-                {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0},
-            )
-            current["totalOrders"] += 1.0
-            current["totalRevenue"] += total
-            if pricing_mode == "retail":
-                current["retailRevenue"] += total
-            else:
-                current["wholesaleRevenue"] += total
-            rep_totals[rep_id] = current
+            if include_in_report:
+                if rep_id == "__house__":
+                    house_totals["totalOrders"] += 1.0
+                    house_totals["totalRevenue"] += total
+                    if pricing_mode == "retail":
+                        house_totals["retailRevenue"] += total
+                    else:
+                        house_totals["wholesaleRevenue"] += total
+                else:
+                    current = rep_totals.get(
+                        rep_id,
+                        {
+                            "totalOrders": 0.0,
+                            "totalRevenue": 0.0,
+                            "wholesaleRevenue": 0.0,
+                            "retailRevenue": 0.0,
+                        },
+                    )
+                    current["totalOrders"] += 1.0
+                    current["totalRevenue"] += total
+                    if pricing_mode == "retail":
+                        current["retailRevenue"] += total
+                    else:
+                        current["wholesaleRevenue"] += total
+                    rep_totals[rep_id] = current
+
+                if local_date_key:
+                    performance_daily_totals[local_date_key] = round(
+                        float(performance_daily_totals.get(local_date_key) or 0.0) + total,
+                        2,
+                    )
+                    performance_daily_orders[local_date_key] = int(
+                        performance_daily_orders.get(local_date_key) or 0
+                    ) + 1
+
+            if include_in_ytd:
+                ytd_revenue_total = round(ytd_revenue_total + total, 2)
+                ytd_order_count += 1
 
         rep_lookup: Dict[str, Dict] = {}
         # Seed with canonical user rep records.
@@ -5464,6 +5562,14 @@ def get_sales_by_rep(
             "wholesaleRevenue": float(sum(float(r.get("wholesaleRevenue") or 0) for r in summary)),
             "retailRevenue": float(sum(float(r.get("retailRevenue") or 0) for r in summary)),
         }
+        performance_series = _build_cumulative_series(
+            daily_totals=performance_daily_totals,
+            daily_orders=performance_daily_orders,
+        )
+        year_projection = _build_year_projection(
+            revenue_to_date=ytd_revenue_total,
+            order_count=ytd_order_count,
+        )
         logger.info(
             "[SalesByRep] Summary computed",
             extra={
@@ -5477,6 +5583,8 @@ def get_sales_by_rep(
                 "skippedStatus": skipped_status,
                 "skippedRefunded": skipped_refunded,
                 "skippedOutsidePeriod": skipped_outside_period,
+                "performancePoints": len(performance_series),
+                "yearProjectionRevenue": year_projection.get("projectedYearEndRevenue"),
                 "periodStart": period_meta["periodStart"],
                 "periodEnd": period_meta["periodEnd"],
                 "debugSamples": debug_samples,
@@ -5489,7 +5597,13 @@ def get_sales_by_rep(
             )
         except Exception:
             pass
-        payload: Dict[str, Any] = {"orders": summary, "totals": totals_all, **period_meta}
+        payload: Dict[str, Any] = {
+            "orders": summary,
+            "totals": totals_all,
+            "performanceSeries": performance_series,
+            "yearProjection": year_projection,
+            **period_meta,
+        }
         if debug:
             payload["debug"] = {"counts": debug_counts, "samples": debug_samples}
         return payload
@@ -5542,6 +5656,8 @@ def get_sales_by_rep(
         return {
             "orders": [],
             "totals": {"totalOrders": 0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0},
+            "performanceSeries": _build_cumulative_series(),
+            "yearProjection": _build_year_projection(),
             **period_meta,
             "stale": True,
             "error": "Sales summary is temporarily unavailable.",
@@ -5611,6 +5727,8 @@ def get_sales_by_rep(
         return {
             "orders": [],
             "totals": {"totalOrders": 0, "totalRevenue": 0.0},
+            "performanceSeries": _build_cumulative_series(),
+            "yearProjection": _build_year_projection(),
             **period_meta,
             "stale": True,
             "error": "Sales summary is temporarily unavailable.",

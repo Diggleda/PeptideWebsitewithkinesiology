@@ -28,6 +28,19 @@ def _normalize_identifier(value: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _normalize_lookup_email(email: str) -> str:
+    candidate = (email or "").strip()
+    if candidate.lower().startswith("mailto:"):
+        candidate = candidate.split(":", 1)[-1].strip()
+    angle_match = re.search(r"<([^>]+)>", candidate)
+    if angle_match and angle_match.group(1):
+        candidate = angle_match.group(1).strip()
+    candidate = re.sub(r"\s+", "", candidate).lower()
+    if not candidate or "@" not in candidate:
+        return ""
+    return candidate
+
+
 def _normalize_bool(value) -> bool:
     if value is True or value is False:
         return value
@@ -298,6 +311,15 @@ _PROFILE_SELECT_FIELDS = """
     reseller_permit_uploaded_at,
     dev_commission,
     receive_client_order_update_emails
+"""
+
+_AUTH_SELECT_FIELDS = """
+    id,
+    email,
+    password,
+    role,
+    visits,
+    session_id
 """
 
 _REFERRAL_DASHBOARD_SELECT_FIELDS = """
@@ -705,20 +727,16 @@ def backfill_contact_form_lead_types() -> int:
 
 
 def find_by_email(email: str) -> Optional[Dict]:
-    email = (email or "").strip()
-    if email.lower().startswith("mailto:"):
-        email = email.split(":", 1)[-1].strip()
-    angle_match = re.search(r"<([^>]+)>", email)
-    if angle_match and angle_match.group(1):
-        email = angle_match.group(1).strip()
-    email = re.sub(r"\s+", "", email).lower()
+    email = _normalize_lookup_email(email)
     if not email or "@" not in email:
         return None
     if _using_mysql():
-        row = mysql_client.fetch_one(
-            "SELECT * FROM users WHERE LOWER(TRIM(email)) = %(email)s",
-            {"email": email},
-        )
+        row = mysql_client.fetch_one("SELECT * FROM users WHERE email = %(email)s LIMIT 1", {"email": email})
+        if not row:
+            row = mysql_client.fetch_one(
+                "SELECT * FROM users WHERE LOWER(TRIM(email)) = %(email)s LIMIT 1",
+                {"email": email},
+            )
         return _row_to_user(row)
     return next(
         (
@@ -728,6 +746,24 @@ def find_by_email(email: str) -> Optional[Dict]:
         ),
         None,
     )
+
+
+def find_auth_by_email(email: str) -> Optional[Dict]:
+    normalized = _normalize_lookup_email(email)
+    if not normalized:
+        return None
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            f"SELECT {_AUTH_SELECT_FIELDS} FROM users WHERE email = %(email)s LIMIT 1",
+            {"email": normalized},
+        )
+        if not row:
+            row = mysql_client.fetch_one(
+                f"SELECT {_AUTH_SELECT_FIELDS} FROM users WHERE LOWER(TRIM(email)) = %(email)s LIMIT 1",
+                {"email": normalized},
+            )
+        return _row_to_user(row) if row else None
+    return find_by_email(normalized)
 
 
 def find_by_id(user_id: str) -> Optional[Dict]:
@@ -779,6 +815,59 @@ def update(user: Dict) -> Optional[Dict]:
             _save(users)
             return merged
     return None
+
+
+def record_successful_login(user_id: str, *, session_id: Optional[str], at: Optional[str]) -> Optional[Dict]:
+    target_id = str(user_id or "").strip()
+    if not target_id:
+        return None
+
+    if _using_mysql():
+        rows = mysql_client.execute(
+            """
+            UPDATE users
+            SET
+                visits = COALESCE(visits, 0) + 1,
+                last_login_at = %(at)s,
+                last_seen_at = %(at)s,
+                last_interaction_at = %(at)s,
+                is_online = 1,
+                must_reset_password = 0,
+                session_id = %(session_id)s
+            WHERE id = %(id)s
+            """,
+            {
+                "id": target_id,
+                "at": to_mysql_datetime(at),
+                "session_id": session_id,
+            },
+        )
+        if int(rows or 0) <= 0:
+            return None
+        row = mysql_client.fetch_one(
+            f"SELECT {_PROFILE_SELECT_FIELDS} FROM users WHERE id = %(id)s",
+            {"id": target_id},
+        )
+        updated = _row_to_user(row) if row else None
+        if updated is not None:
+            updated["sessionId"] = session_id
+        return updated
+
+    existing = find_by_id(target_id)
+    if not existing:
+        return None
+    return update(
+        {
+            **existing,
+            "visits": int(existing.get("visits") or 0) + 1,
+            "lastLoginAt": at,
+            "lastSeenAt": at,
+            "lastInteractionAt": at,
+            "isOnline": True,
+            "mustResetPassword": False,
+            "sessionId": session_id,
+        }
+    )
 
 
 def remove_by_id(user_id: str) -> bool:

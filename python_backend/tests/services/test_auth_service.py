@@ -83,6 +83,37 @@ from python_backend.services import auth_service
 
 
 class AuthServiceTests(unittest.TestCase):
+    def test_login_uses_targeted_login_update(self) -> None:
+        auth_record = {
+            "id": "doctor-1",
+            "email": "doctor@example.com",
+            "password": "hashed",
+            "role": "doctor",
+            "visits": 4,
+            "sessionId": "session-old",
+        }
+        updated_record = {
+            "id": "doctor-1",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "role": "doctor",
+            "visits": 5,
+            "sessionId": "session-new",
+            "isOnline": True,
+        }
+
+        with patch.object(auth_service.user_repository, "find_auth_by_email", return_value=auth_record), \
+            patch.object(auth_service.user_repository, "record_successful_login", return_value=updated_record) as record_login, \
+            patch.object(auth_service, "_safe_check_password", return_value=True), \
+            patch.object(auth_service, "_create_auth_token", return_value="token-123"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            result = auth_service.login({"email": "doctor@example.com", "password": "secret"})
+
+        record_login.assert_called_once()
+        self.assertEqual(result["token"], "token-123")
+        self.assertEqual(result["user"]["id"], "doctor-1")
+        self.assertEqual(result["user"]["sessionId"], "session-new")
+
     def test_update_profile_clears_explicit_office_address_fields(self) -> None:
         user = {
             "id": "doctor-1",
@@ -203,6 +234,35 @@ class AuthServiceTests(unittest.TestCase):
         self.assertEqual(saved_payloads[0]["network_presence_agreement"], 1)
         self.assertTrue(updated["networkPresenceAgreement"])
 
+    def test_update_profile_normalizes_greater_area(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "greaterArea": "Midwest",
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.update_profile(
+                "doctor-1",
+                {"greaterArea": "  new   orleans, la  "},
+            )
+
+        self.assertEqual(len(saved_payloads), 1)
+        self.assertEqual(saved_payloads[0]["greaterArea"], "New Orleans, LA")
+        self.assertEqual(updated["greaterArea"], "New Orleans, LA")
+
     def test_update_profile_accepts_snake_case_network_presence_agreement(self) -> None:
         user = {
             "id": "doctor-1",
@@ -246,6 +306,22 @@ class AuthServiceTests(unittest.TestCase):
             profile = auth_service.get_profile("doctor-1")
 
         self.assertTrue(profile["networkPresenceAgreement"])
+
+    def test_get_profile_normalizes_greater_area_for_response(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "greater_area": "new orleans",
+        }
+
+        with patch.object(auth_service.user_repository, "find_profile_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_id", return_value=None):
+            profile = auth_service.get_profile("doctor-1")
+
+        self.assertEqual(profile["greaterArea"], "New Orleans")
+        self.assertEqual(profile["greater_area"], "New Orleans")
 
     def test_get_profile_prefers_projected_lookup_before_full_lookup(self) -> None:
         user = {
