@@ -600,6 +600,9 @@ const _timeoutMsForRequest = (url: string, method: string) => {
   if (normalized.includes('/api/orders/sales-rep/users/') && normalized.includes('/modal-detail')) {
     return _PEPPRO_MODAL_TIMEOUT_MS;
   }
+  if (normalized.includes('/api/orders/admin/taxes-by-state')) {
+    return _PEPPRO_SALES_TRACKING_TIMEOUT_MS;
+  }
   if (normalized.includes('/api/referrals/dashboard')) return _PEPPRO_REFERRAL_TIMEOUT_MS;
   if (method === 'GET' && normalized.includes('/api/referrals/sales-prospects/') && normalized.includes('/quotes/') && normalized.includes('/export')) {
     return _PEPPRO_QUOTE_EXPORT_TIMEOUT_MS;

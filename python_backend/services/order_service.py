@@ -59,7 +59,7 @@ _sales_rep_orders_cache: Dict[str, Dict[str, object]] = {}
 _WOO_ORDER_RECONCILE_MAX_LOOKUPS = int(os.environ.get("WOO_ORDER_RECONCILE_MAX_LOOKUPS", "10").strip() or 10)
 _WOO_ORDER_RECONCILE_MAX_LOOKUPS = max(0, min(_WOO_ORDER_RECONCILE_MAX_LOOKUPS, 25))
 
-_ADMIN_TAXES_BY_STATE_TTL_SECONDS = int(os.environ.get("ADMIN_TAXES_BY_STATE_TTL_SECONDS", "25").strip() or 25)
+_ADMIN_TAXES_BY_STATE_TTL_SECONDS = int(os.environ.get("ADMIN_TAXES_BY_STATE_TTL_SECONDS", "300").strip() or 300)
 _ADMIN_TAXES_BY_STATE_TTL_SECONDS = max(5, min(_ADMIN_TAXES_BY_STATE_TTL_SECONDS, 300))
 _admin_taxes_by_state_lock = threading.Lock()
 _admin_taxes_by_state_inflight: Optional[threading.Event] = None
@@ -5636,27 +5636,6 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
 
     start_dt, end_dt, period_meta = _resolve_report_period_bounds(period_start, period_end)
 
-    def _meta_value(meta: object, key: str):
-        if not isinstance(meta, list):
-            return None
-        for entry in meta:
-            if isinstance(entry, dict) and entry.get("key") == key:
-                return entry.get("value")
-        return None
-
-    def _is_truthy(value: object) -> bool:
-        if value is True:
-            return True
-        if value is False or value is None:
-            return False
-        if isinstance(value, (int, float)):
-            try:
-                return float(value) != 0
-            except Exception:
-                return False
-        text = str(value).strip().lower()
-        return text in ("1", "true", "yes", "y", "on")
-
     def _safe_float(value: object) -> float:
         try:
             if value is None:
@@ -5695,98 +5674,53 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
         return {"rows": [], "totals": {"orderCount": 0, "taxTotal": 0.0}, **period_meta, "stale": True}
 
     try:
-        per_page = 100
-        max_pages = 25
         bucket: Dict[str, Dict[str, float]] = {}
         order_lines: List[Dict[str, object]] = []
         order_count = 0
         tax_total_all = 0.0
 
-        for page in range(1, max_pages + 1):
-            payload, _meta = woo_commerce.fetch_catalog_proxy(
-                "orders",
-                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+        local_orders = order_repository.list_for_tax_reporting(start_dt, end_dt)
+        for local_order in local_orders:
+            if not isinstance(local_order, dict):
+                continue
+
+            status = str(local_order.get("status") or "").strip().lower()
+            if status not in ("processing", "completed"):
+                continue
+
+            created_at = _parse_datetime_utc(local_order.get("createdAt"))
+            if not created_at:
+                continue
+            if created_at > end_dt or created_at < start_dt:
+                continue
+
+            shipping = local_order.get("shippingAddress") or {}
+            billing = local_order.get("billingAddress") or {}
+            state_code, state_name = tax_tracking_service.canonicalize_state(
+                (shipping or {}).get("state") or (billing or {}).get("state") or "UNKNOWN"
             )
-            orders = payload if isinstance(payload, list) else []
-            if not orders:
-                break
 
-            reached_start = False
-            for woo_order in orders:
-                if not isinstance(woo_order, dict):
-                    continue
-                status = str(woo_order.get("status") or "").strip().lower()
-                if status not in ("processing", "completed"):
-                    continue
-                meta_data = woo_order.get("meta_data") or []
-                if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
-                    continue
-
-                created_raw = (
-                    woo_order.get("date_created_gmt")
-                    or woo_order.get("date_created")
-                    or woo_order.get("date")
-                    or None
-                )
-                created_at = _parse_datetime_utc(created_raw)
-                if not created_at:
-                    continue
-                if created_at > end_dt:
-                    continue
-                if created_at < start_dt:
-                    reached_start = True
-                    continue
-
-                shipping = woo_order.get("shipping") or {}
-                billing = woo_order.get("billing") or {}
-                state_code, state_name = tax_tracking_service.canonicalize_state(
-                    (shipping or {}).get("state") or (billing or {}).get("state") or "UNKNOWN"
-                )
-
-                tax_source = None
-                meta_tax_raw = _meta_value(meta_data, "peppro_tax_total")
-                tax_total = _safe_float(meta_tax_raw)
-                if tax_total > 0:
-                    tax_source = "meta:peppro_tax_total"
-                else:
-                    order_tax = _safe_float(woo_order.get("total_tax"))
-                    if order_tax > 0:
-                        tax_total = order_tax
-                        tax_source = "order:total_tax"
-                if tax_total <= 0:
-                    for fee in woo_order.get("fee_lines") or []:
-                        try:
-                            name = str((fee or {}).get("name") or "").strip().lower()
-                        except Exception:
-                            name = ""
-                        if name and "tax" in name:
-                            tax_total = _safe_float((fee or {}).get("total"))
-                            tax_source = "fee_lines"
-                            break
-
-                order_count += 1
-                tax_total_all += tax_total
-                current = bucket.get(state_code) or {"taxTotal": 0.0, "orderCount": 0.0, "stateName": state_name}
-                current["taxTotal"] = float(current.get("taxTotal") or 0.0) + float(tax_total or 0.0)
-                current["orderCount"] = float(current.get("orderCount") or 0.0) + 1.0
-                current["stateName"] = state_name
-                bucket[state_code] = current
-                order_lines.append(
-                    {
-                        "orderNumber": woo_order.get("number") or woo_order.get("id"),
-                        "wooId": woo_order.get("id"),
-                        "state": state_code,
-                        "stateCode": state_code,
-                        "stateName": state_name,
-                        "status": status,
-                        "createdAt": created_at.isoformat(),
-                        "taxTotal": round(float(tax_total or 0.0), 2),
-                        "taxSource": tax_source or "unknown",
-                    }
-                )
-
-            if len(orders) < per_page or reached_start:
-                break
+            tax_total = _safe_float(local_order.get("taxTotal"))
+            order_count += 1
+            tax_total_all += tax_total
+            current = bucket.get(state_code) or {"taxTotal": 0.0, "orderCount": 0.0, "stateName": state_name}
+            current["taxTotal"] = float(current.get("taxTotal") or 0.0) + float(tax_total or 0.0)
+            current["orderCount"] = float(current.get("orderCount") or 0.0) + 1.0
+            current["stateName"] = state_name
+            bucket[state_code] = current
+            order_lines.append(
+                {
+                    "orderNumber": local_order.get("wooOrderNumber") or local_order.get("wooOrderId") or local_order.get("id"),
+                    "wooId": local_order.get("wooOrderId") or local_order.get("id"),
+                    "state": state_code,
+                    "stateCode": state_code,
+                    "stateName": state_name,
+                    "status": status,
+                    "createdAt": created_at.isoformat(),
+                    "taxTotal": round(float(tax_total or 0.0), 2),
+                    "taxSource": "local:taxTotal",
+                }
+            )
 
         rows = [
             {

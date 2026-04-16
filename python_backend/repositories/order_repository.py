@@ -1126,6 +1126,168 @@ def list_for_commission(start_utc: datetime, end_utc: datetime) -> List[Dict]:
     return results
 
 
+def list_for_tax_reporting(start_utc: datetime, end_utc: datetime) -> List[Dict]:
+    """
+    Return lightweight order rows for tax and nexus reporting.
+
+    These reports only need destination state, created time, status, total, and tax total.
+    When MySQL is enabled, use a narrow SQL projection and convert the UTC bounds into the
+    local timezone used by the persisted `orders.created_at` DATETIME column.
+    """
+    if not start_utc or not end_utc:
+        return []
+
+    def normalize_dt(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def _report_local_tz():
+        try:
+            return ZoneInfo(os.environ.get("ORDER_TIMEZONE") or "America/Los_Angeles")
+        except Exception:
+            return timezone.utc
+
+    def _safe_float(value: object) -> float:
+        try:
+            if value is None or value == "":
+                return 0.0
+            return float(value)
+        except Exception:
+            try:
+                return float(str(value).strip() or 0.0)
+            except Exception:
+                return 0.0
+
+    def _fmt_datetime(value: object) -> Optional[str]:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=_report_local_tz())
+            else:
+                parsed = parsed.astimezone(_report_local_tz())
+            return parsed.isoformat()
+        return str(value)
+
+    def _payload_order(payload: object) -> Dict:
+        if not isinstance(payload, dict):
+            return {}
+        nested = payload.get("order")
+        return nested if isinstance(nested, dict) else payload
+
+    def _project_from_row(row: Dict) -> Optional[Dict]:
+        if not row:
+            return None
+        payload = _read_order_json_field(row, "payload", {})
+        order_payload = _payload_order(payload)
+        shipping_address = _read_order_json_field(row, "shipping_address", None)
+        if not isinstance(shipping_address, dict):
+            shipping_address = shipping_address if isinstance(shipping_address, dict) else None
+        billing_address = None
+        if isinstance(order_payload.get("billingAddress"), dict):
+            billing_address = order_payload.get("billingAddress")
+        elif isinstance(order_payload.get("billing_address"), dict):
+            billing_address = order_payload.get("billing_address")
+        tax_total = _safe_float(
+            order_payload.get("taxTotal")
+            or order_payload.get("tax_total")
+            or order_payload.get("totalTax")
+            or order_payload.get("total_tax")
+        )
+        total = _safe_float(
+            row.get("total")
+            or order_payload.get("grandTotal")
+            or order_payload.get("total")
+        )
+        return {
+            "id": row.get("id"),
+            "status": row.get("status"),
+            "total": total,
+            "grandTotal": total,
+            "taxTotal": tax_total,
+            "shippingAddress": shipping_address,
+            "billingAddress": billing_address,
+            "wooOrderId": row.get("woo_order_id") or None,
+            "wooOrderNumber": row.get("woo_order_number") or None,
+            "createdAt": _fmt_datetime(row.get("created_at")),
+        }
+
+    start_value = normalize_dt(start_utc)
+    end_value = normalize_dt(end_utc)
+
+    if _using_mysql():
+        local_tz = _report_local_tz()
+        start_local = start_value.astimezone(local_tz).replace(tzinfo=None)
+        end_local = end_value.astimezone(local_tz).replace(tzinfo=None)
+        rows = mysql_client.fetch_all(
+            """
+            SELECT
+                id,
+                status,
+                total,
+                shipping_address,
+                payload,
+                woo_order_id,
+                woo_order_number,
+                created_at
+            FROM orders
+            WHERE created_at >= %(start)s AND created_at <= %(end)s
+            ORDER BY created_at DESC
+            """,
+            {"start": start_local, "end": end_local},
+        )
+        return [projected for projected in (_project_from_row(row) for row in (rows or [])) if projected]
+
+    def parse_dt(value: object) -> Optional[datetime]:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            text = str(value).strip()
+            if not text:
+                return None
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            try:
+                parsed = datetime.fromisoformat(text)
+            except Exception:
+                return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    results: List[Dict] = []
+    for order in _load():
+        if not isinstance(order, dict):
+            continue
+        created_at = parse_dt(order.get("createdAt") or order.get("created_at"))
+        if not created_at or created_at < start_value or created_at > end_value:
+            continue
+        results.append(
+            {
+                "id": order.get("id"),
+                "status": order.get("status"),
+                "total": _safe_float(order.get("grandTotal") or order.get("total")),
+                "grandTotal": _safe_float(order.get("grandTotal") or order.get("total")),
+                "taxTotal": _safe_float(
+                    order.get("taxTotal")
+                    or order.get("tax_total")
+                    or order.get("totalTax")
+                    or order.get("total_tax")
+                ),
+                "shippingAddress": order.get("shippingAddress") or order.get("shipping_address"),
+                "billingAddress": order.get("billingAddress") or order.get("billing_address"),
+                "wooOrderId": order.get("wooOrderId") or order.get("woo_order_id"),
+                "wooOrderNumber": order.get("wooOrderNumber") or order.get("woo_order_number"),
+                "createdAt": order.get("createdAt") or order.get("created_at"),
+            }
+        )
+    return results
+
+
 def get_pricing_mode_lookup_by_woo(
     woo_order_ids: List[str] | None = None, woo_order_numbers: List[str] | None = None
 ) -> Dict[str, str]:

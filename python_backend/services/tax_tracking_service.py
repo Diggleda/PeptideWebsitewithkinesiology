@@ -12,15 +12,13 @@ from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from ..database import mysql_client
-from ..integrations import woo_commerce
+from ..repositories import order_repository
 
 logger = logging.getLogger(__name__)
 
-_TAX_TRACKING_TTL_SECONDS = int(os.environ.get("ADMIN_TAX_TRACKING_TTL_SECONDS", "25").strip() or 25)
+_TAX_TRACKING_TTL_SECONDS = int(os.environ.get("ADMIN_TAX_TRACKING_TTL_SECONDS", "300").strip() or 300)
 _TAX_TRACKING_TTL_SECONDS = max(5, min(_TAX_TRACKING_TTL_SECONDS, 300))
 _WARNING_RATIO = 0.9
-_MAX_PAGES = 25
-_PER_PAGE = 100
 _RULES_PATH = Path(__file__).resolve().parents[2] / "server" / "config" / "tax-tracking-rules.csv"
 
 _tax_tracking_lock = threading.Lock()
@@ -212,15 +210,6 @@ def _load_rules() -> List[Dict[str, Any]]:
     return rows
 
 
-def _meta_value(meta: object, key: str):
-    if not isinstance(meta, list):
-        return None
-    for entry in meta:
-        if isinstance(entry, dict) and entry.get("key") == key:
-            return entry.get("value")
-    return None
-
-
 def _parse_datetime_utc(value: object) -> Optional[datetime]:
     text = str(value or "").strip()
     if not text:
@@ -249,55 +238,47 @@ def _rolling_twelve_month_bounds() -> Tuple[datetime, datetime, int, str, str]:
 def _fetch_trailing_twelve_month_metrics() -> Tuple[Dict[str, Dict[str, Any]], int, str, str]:
     start_dt, end_dt, tracking_year, period_start, period_end = _rolling_twelve_month_bounds()
     bucket: Dict[str, Dict[str, Any]] = {}
+    local_orders = order_repository.list_for_tax_reporting(start_dt, end_dt)
+    for local_order in local_orders:
+        if not isinstance(local_order, dict):
+            continue
 
-    for page in range(1, _MAX_PAGES + 1):
-        payload, _meta = woo_commerce.fetch_catalog_proxy(
-            "orders",
-            {"per_page": _PER_PAGE, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+        status = str(local_order.get("status") or "").strip().lower()
+        if status not in ("processing", "completed"):
+            continue
+
+        created_at = _parse_datetime_utc(local_order.get("createdAt"))
+        if not created_at:
+            continue
+        if created_at > end_dt or created_at < start_dt:
+            continue
+
+        shipping = local_order.get("shippingAddress") or {}
+        billing = local_order.get("billingAddress") or {}
+        state_code, state_name = canonicalize_state(
+            (shipping or {}).get("state") or (billing or {}).get("state") or "UNKNOWN"
         )
-        orders = payload if isinstance(payload, list) else []
-        if not orders:
-            break
-
-        reached_start = False
-        for woo_order in orders:
-            if not isinstance(woo_order, dict):
-                continue
-            status = str(woo_order.get("status") or "").strip().lower()
-            if status not in ("processing", "completed"):
-                continue
-            meta_data = woo_order.get("meta_data") or []
-            if _parse_bool(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
-                continue
-
-            created_raw = woo_order.get("date_created_gmt") or woo_order.get("date_created") or woo_order.get("date") or None
-            created_at = _parse_datetime_utc(created_raw)
-            if not created_at:
-                continue
-            if created_at > end_dt:
-                continue
-            if created_at < start_dt:
-                reached_start = True
-                continue
-
-            shipping = woo_order.get("shipping") or {}
-            billing = woo_order.get("billing") or {}
-            state_code, state_name = canonicalize_state(
-                (shipping or {}).get("state") or (billing or {}).get("state") or "UNKNOWN"
-            )
-            total = round(max(0.0, _safe_float(woo_order.get("total"), 0.0)), 2)
-            current = bucket.get(state_code) or {
-                "stateCode": state_code,
-                "stateName": state_name,
-                "trailing12MonthRevenueUsd": 0.0,
-                "trailing12MonthTransactionCount": 0,
-            }
-            current["trailing12MonthRevenueUsd"] = round(float(current.get("trailing12MonthRevenueUsd") or 0.0) + total, 2)
-            current["trailing12MonthTransactionCount"] = int(current.get("trailing12MonthTransactionCount") or 0) + 1
-            bucket[state_code] = current
-
-        if len(orders) < _PER_PAGE or reached_start:
-            break
+        total = round(
+            max(
+                0.0,
+                _safe_float(
+                    local_order.get("grandTotal")
+                    if local_order.get("grandTotal") is not None
+                    else local_order.get("total"),
+                    0.0,
+                ),
+            ),
+            2,
+        )
+        current = bucket.get(state_code) or {
+            "stateCode": state_code,
+            "stateName": state_name,
+            "trailing12MonthRevenueUsd": 0.0,
+            "trailing12MonthTransactionCount": 0,
+        }
+        current["trailing12MonthRevenueUsd"] = round(float(current.get("trailing12MonthRevenueUsd") or 0.0) + total, 2)
+        current["trailing12MonthTransactionCount"] = int(current.get("trailing12MonthTransactionCount") or 0) + 1
+        bucket[state_code] = current
 
     return bucket, tracking_year, period_start, period_end
 
