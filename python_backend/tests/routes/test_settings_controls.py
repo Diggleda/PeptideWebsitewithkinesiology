@@ -4,6 +4,7 @@ import sys
 import types
 from datetime import datetime, timezone
 import unittest
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 try:
@@ -402,7 +403,9 @@ class TestSettingsControls(unittest.TestCase):
         self.assertEqual(payload["isPartner"], True)
         self.assertEqual(payload["allowedRetail"], False)
         self.assertEqual(payload["jurisdiction"], "local")
-        self.assertTrue(str(payload["profileImageUrl"]).endswith("/api/settings/users/rep-user-7/profile-image"))
+        payload_profile_url = urlparse(str(payload["profileImageUrl"]))
+        self.assertTrue(payload_profile_url.path.endswith("/api/settings/users/rep-user-7/profile-image"))
+        self.assertTrue(parse_qs(payload_profile_url.query).get("v"))
 
         self.assertEqual(len(users_payload), 1)
         self.assertEqual(users_payload[0]["phone"], "317-555-0101")
@@ -420,7 +423,9 @@ class TestSettingsControls(unittest.TestCase):
         self.assertEqual(users_payload[0]["resellerPermitFilePath"], "uploads/reseller-permits/permit.pdf")
         self.assertEqual(users_payload[0]["resellerPermitFileName"], "permit.pdf")
         self.assertEqual(users_payload[0]["resellerPermitUploadedAt"], "2026-04-02T12:00:00Z")
-        self.assertTrue(str(users_payload[0]["profileImageUrl"]).endswith("/api/settings/users/rep-user-7/profile-image"))
+        users_profile_url = urlparse(str(users_payload[0]["profileImageUrl"]))
+        self.assertTrue(users_profile_url.path.endswith("/api/settings/users/rep-user-7/profile-image"))
+        self.assertTrue(parse_qs(users_profile_url.query).get("v"))
         self.assertEqual(image_response.status_code, 200)
         self.assertEqual(image_response.mimetype, "image/png")
         self.assertEqual(image_response.get_data(), b"ABC")

@@ -24,7 +24,7 @@ from ..repositories import (
 )
 from ..database import mysql_client
 from ..utils.crypto_envelope import compute_blind_index, decrypt_text
-from . import get_config
+from . import get_config, user_media_service
 logger = logging.getLogger(__name__)
 
 _supports_sales_prospect_office_address_columns: Optional[bool] = None
@@ -2324,7 +2324,10 @@ def _sanitize_user_for_sales_prospect(user: Optional[Dict]) -> Optional[Dict]:
         "role": user.get("role"),
         "phone": user.get("phone") or user.get("phoneNumber") or user.get("phone_number"),
         "salesRepId": user.get("salesRepId") or user.get("sales_rep_id"),
-        "profileImageUrl": user.get("profileImageUrl") or user.get("profile_image_url"),
+        "profileImageUrl": user_media_service.resolve_admin_user_profile_image_url(
+            user.get("id"),
+            user.get("profileImageUrl") or user.get("profile_image_url"),
+        ),
         "officeAddressLine1": user.get("officeAddressLine1") or user.get("office_address_line1"),
         "officeAddressLine2": user.get("officeAddressLine2") or user.get("office_address_line2"),
         "officeCity": user.get("officeCity") or user.get("office_city"),

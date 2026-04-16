@@ -965,11 +965,15 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         profile_image_url = data.get("profileImageUrl")
     else:
         profile_image_url = user.get("profileImageUrl") or None
-    if profile_image_url is not None and not isinstance(profile_image_url, str):
-        profile_image_url = None
-    if isinstance(profile_image_url, str):
-        profile_image_url = profile_image_url.strip() or None
+    profile_image_url = user_media_service.normalize_profile_image_for_storage(
+        profile_image_url,
+        existing_value=user.get("profileImageUrl"),
+    )
     delegate_logo_url = data.get("delegateLogoUrl") if "delegateLogoUrl" in data else user.get("delegateLogoUrl") or None
+    delegate_logo_url = user_media_service.normalize_delegate_logo_for_storage(
+        delegate_logo_url,
+        existing_value=user.get("delegateLogoUrl"),
+    )
     delegate_secondary_color = (
         data.get("delegateSecondaryColor")
         if "delegateSecondaryColor" in data
@@ -977,20 +981,14 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     )
     zelle_contact = data.get("zelleContact") if "zelleContact" in data else user.get("zelleContact") or None
 
-    if delegate_logo_url is not None and not isinstance(delegate_logo_url, str):
-        delegate_logo_url = None
-    if isinstance(delegate_logo_url, str):
-        delegate_logo_url = delegate_logo_url.strip()
-        if not delegate_logo_url:
-            delegate_logo_url = None
-        if delegate_logo_url is not None:
-            # Only allow data URLs for safety; keep size bounded.
-            lowered = delegate_logo_url.lower()
-            if not lowered.startswith("data:image/"):
-                raise _bad_request("INVALID_DELEGATE_LOGO")
-            # Rough size guard (UTF-8 bytes) to avoid extremely large rows.
-            if len(delegate_logo_url.encode("utf-8")) > 750_000:
-                raise _bad_request("DELEGATE_LOGO_TOO_LARGE")
+    if delegate_logo_url is not None:
+        # Only allow data URLs for safety; keep size bounded.
+        lowered = delegate_logo_url.lower()
+        if not lowered.startswith("data:image/"):
+            raise _bad_request("INVALID_DELEGATE_LOGO")
+        # Rough size guard (UTF-8 bytes) to avoid extremely large rows.
+        if len(delegate_logo_url.encode("utf-8")) > 750_000:
+            raise _bad_request("DELEGATE_LOGO_TOO_LARGE")
 
     delegate_secondary_color = _normalize_delegate_color(delegate_secondary_color)
 
@@ -1229,10 +1227,12 @@ def _sanitize_user(user: Dict) -> Dict:
     sanitized.pop("sessionId", None)
     sanitized.pop("downloads", None)
     sanitized["profileImageUrl"] = user_media_service.resolve_self_profile_image_url(
-        sanitized.get("profileImageUrl")
+        sanitized.get("profileImageUrl"),
+        user_id=sanitized.get("id"),
     )
     sanitized["delegateLogoUrl"] = user_media_service.resolve_self_delegate_logo_url(
-        sanitized.get("delegateLogoUrl")
+        sanitized.get("delegateLogoUrl"),
+        user_id=sanitized.get("id"),
     )
     has_greater_area = "greaterArea" in sanitized or "greater_area" in sanitized
     if has_greater_area:

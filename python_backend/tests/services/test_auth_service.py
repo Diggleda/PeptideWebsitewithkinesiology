@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import types
 import unittest
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 sys.modules.setdefault("bcrypt", types.SimpleNamespace())
@@ -101,14 +102,48 @@ class AuthServiceTests(unittest.TestCase):
         with app.test_request_context("/api/auth/me", base_url="https://api.example.com"):
             sanitized = auth_service._sanitize_user(user)
 
+        profile_url = urlparse(str(sanitized["profileImageUrl"]))
+        delegate_url = urlparse(str(sanitized["delegateLogoUrl"]))
         self.assertEqual(
-            sanitized["profileImageUrl"],
+            f"{profile_url.scheme}://{profile_url.netloc}{profile_url.path}",
             "https://api.example.com/api/auth/me/profile-image",
         )
         self.assertEqual(
-            sanitized["delegateLogoUrl"],
+            f"{delegate_url.scheme}://{delegate_url.netloc}{delegate_url.path}",
             "https://api.example.com/api/auth/me/delegate-logo",
         )
+        self.assertTrue(parse_qs(profile_url.query).get("v"))
+        self.assertTrue(parse_qs(delegate_url.query).get("v"))
+
+    def test_update_profile_does_not_persist_self_profile_image_route(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "profileImageUrl": "data:image/png;base64,QUJD",
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.update_profile(
+                "doctor-1",
+                {
+                    "profileImageUrl": "https://api.example.com/api/auth/me/profile-image?v=abc123",
+                },
+            )
+
+        self.assertEqual(saved_payloads[0]["profileImageUrl"], "data:image/png;base64,QUJD")
+        self.assertEqual(updated["profileImageUrl"], "data:image/png;base64,QUJD")
 
     def test_login_uses_targeted_login_update(self) -> None:
         auth_record = {
