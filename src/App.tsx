@@ -4953,6 +4953,7 @@ function MainApp() {
   const doctorResellerPermitInputRef = useRef<HTMLInputElement | null>(null);
   const doctorProfileGateRefreshSeqRef = useRef(0);
   const handleLogoutRef = useRef<() => void>(() => {});
+  const unloadLogoutTriggeredRef = useRef(false);
   const showResearchTermsAgreementModal = Boolean(
     user && isDoctorRole(user.role) && !user.researchTermsAgreement,
   );
@@ -5193,6 +5194,44 @@ function MainApp() {
       window.removeEventListener("beforeunload", handlePageExit);
     };
   }, [isMaintenanceMode, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!hasAuthToken()) {
+      unloadLogoutTriggeredRef.current = false;
+      return;
+    }
+
+    unloadLogoutTriggeredRef.current = false;
+
+    const logoutOnPageExit = () => {
+      if (unloadLogoutTriggeredRef.current) {
+        return;
+      }
+      unloadLogoutTriggeredRef.current = true;
+      authAPI.logout();
+    };
+
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        return;
+      }
+      logoutOnPageExit();
+    };
+
+    const handleBeforeUnload = () => {
+      logoutOnPageExit();
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -23340,6 +23379,7 @@ function MainApp() {
 
   const handleLogout = useCallback(() => {
 	    console.debug("[Auth] Logout");
+      unloadLogoutTriggeredRef.current = true;
       closeTrackedMaintenanceWindow("logout");
 	    authAPI.logout();
 	    setUser(null);

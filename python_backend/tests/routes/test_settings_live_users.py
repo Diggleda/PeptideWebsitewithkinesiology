@@ -5,10 +5,17 @@ import types
 import unittest
 from unittest.mock import patch
 
+try:
+    import flask  # noqa: F401
+except ModuleNotFoundError:  # pragma: no cover - local env fallback
+    flask = None
+
 
 class TestSettingsLiveUsers(unittest.TestCase):
     @staticmethod
     def _load_settings_module():
+        if flask is None or getattr(flask, "__peppro_fake__", False):
+            raise unittest.SkipTest("flask not installed")
         try:
             import python_backend  # noqa: F401
         except ModuleNotFoundError as exc:

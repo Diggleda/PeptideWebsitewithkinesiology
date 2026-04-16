@@ -56,12 +56,16 @@ sys.modules.setdefault("cryptography.hazmat.primitives.ciphers", fake_ciphers)
 sys.modules.setdefault("cryptography.hazmat.primitives.ciphers.aead", fake_aead)
 try:
     import flask  # noqa: F401
-except ModuleNotFoundError:
+    from flask import Flask
+except (ModuleNotFoundError, ImportError):
+    Flask = None
     fake_flask = types.ModuleType("flask")
+    fake_flask.__peppro_fake__ = True
     fake_flask.Response = object
     fake_flask.jsonify = lambda value=None, *args, **kwargs: value
     fake_flask.request = types.SimpleNamespace(headers={}, args={}, json=None)
     fake_flask.g = types.SimpleNamespace(current_user=None)
+    fake_flask.has_request_context = lambda: False
     sys.modules.setdefault("flask", fake_flask)
 
 try:
@@ -83,6 +87,29 @@ from python_backend.services import auth_service
 
 
 class AuthServiceTests(unittest.TestCase):
+    def test_sanitize_user_rewrites_embedded_media_to_auth_routes(self) -> None:
+        if Flask is None:
+            self.skipTest("flask not installed")
+        app = Flask(__name__)
+        user = {
+            "id": "doctor-1",
+            "email": "doctor@example.com",
+            "profileImageUrl": "data:image/png;base64,QUJD",
+            "delegateLogoUrl": "data:image/png;base64,REVG",
+        }
+
+        with app.test_request_context("/api/auth/me", base_url="https://api.example.com"):
+            sanitized = auth_service._sanitize_user(user)
+
+        self.assertEqual(
+            sanitized["profileImageUrl"],
+            "https://api.example.com/api/auth/me/profile-image",
+        )
+        self.assertEqual(
+            sanitized["delegateLogoUrl"],
+            "https://api.example.com/api/auth/me/delegate-logo",
+        )
+
     def test_login_uses_targeted_login_update(self) -> None:
         auth_record = {
             "id": "doctor-1",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, Response, request
+from flask import Blueprint, Response, current_app, request
 
 import os
 import platform
@@ -568,6 +568,7 @@ def health():
             "status": status,
             "message": "Server is running",
             "build": build,
+            "routeSet": str(current_app.config.get("APP_ROUTE_SET") or ""),
             "mysql": {"enabled": mysql_enabled},
             "usage": usage,
             "cgroup": {"memory": _read_cgroup_memory()},

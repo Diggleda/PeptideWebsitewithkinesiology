@@ -10,6 +10,7 @@ from ..services import get_config
 from ..services import auth_service
 from ..services import admin_shadow_session_service
 from ..services import presence_service
+from ..services import user_media_service
 from ..utils.http import handle_action
 
 blueprint = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -73,6 +74,48 @@ def me():
         if isinstance(profile, dict) and shadow_context:
             profile["shadowContext"] = shadow_context
         return profile
+    return handle_action(action)
+
+
+@blueprint.get("/me/profile-image")
+@require_auth
+def me_profile_image():
+    user_id = g.current_user.get("id")
+
+    def action():
+        user = user_repository.find_by_id(str(user_id or ""))
+        if not user:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+        response = user_media_service.build_embedded_image_response(user.get("profileImageUrl"))
+        if response is None:
+            err = RuntimeError("Profile image not found")
+            setattr(err, "status", 404)
+            raise err
+        return response
+
+    return handle_action(action)
+
+
+@blueprint.get("/me/delegate-logo")
+@require_auth
+def me_delegate_logo():
+    user_id = g.current_user.get("id")
+
+    def action():
+        user = user_repository.find_by_id(str(user_id or ""))
+        if not user:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+        response = user_media_service.build_embedded_image_response(user.get("delegateLogoUrl"))
+        if response is None:
+            err = RuntimeError("Delegate logo not found")
+            setattr(err, "status", 404)
+            raise err
+        return response
+
     return handle_action(action)
 
 

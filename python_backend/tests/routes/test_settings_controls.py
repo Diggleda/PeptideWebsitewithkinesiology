@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
-from flask import Flask, g
+try:
+    from flask import Flask, g
+except (ModuleNotFoundError, ImportError):  # pragma: no cover - local env fallback
+    Flask = None
+    g = None
 
 
 class TestSettingsControls(unittest.TestCase):
@@ -40,6 +44,8 @@ class TestSettingsControls(unittest.TestCase):
         return module
 
     def setUp(self):
+        if Flask is None or g is None:
+            self.skipTest("flask not installed")
         self.app = Flask(__name__)
         self.settings = self._load_settings_module()
 
@@ -349,6 +355,7 @@ class TestSettingsControls(unittest.TestCase):
             "email": "rep.one@example.com",
             "role": "sales_rep",
             "status": "active",
+            "profileImageUrl": "data:image/png;base64,QUJD",
             "salesRepId": None,
             "phone": None,
             "officeAddressLine1": "123 Main St",
@@ -386,11 +393,16 @@ class TestSettingsControls(unittest.TestCase):
                 response = self._make_response(settings.get_user_profiles.__wrapped__())
                 users_payload = response.get_json()["users"]
 
+            with self.app.test_request_context("/api/settings/users/rep-user-7/profile-image", method="GET"):
+                g.current_user = {"id": "admin-1", "role": "admin"}
+                image_response = self._make_response(settings.get_user_profile_image.__wrapped__("rep-user-7"))
+
         self.assertEqual(payload["phone"], "317-555-0101")
         self.assertEqual(payload["salesRepId"], "rep-7")
         self.assertEqual(payload["isPartner"], True)
         self.assertEqual(payload["allowedRetail"], False)
         self.assertEqual(payload["jurisdiction"], "local")
+        self.assertTrue(str(payload["profileImageUrl"]).endswith("/api/settings/users/rep-user-7/profile-image"))
 
         self.assertEqual(len(users_payload), 1)
         self.assertEqual(users_payload[0]["phone"], "317-555-0101")
@@ -408,6 +420,10 @@ class TestSettingsControls(unittest.TestCase):
         self.assertEqual(users_payload[0]["resellerPermitFilePath"], "uploads/reseller-permits/permit.pdf")
         self.assertEqual(users_payload[0]["resellerPermitFileName"], "permit.pdf")
         self.assertEqual(users_payload[0]["resellerPermitUploadedAt"], "2026-04-02T12:00:00Z")
+        self.assertTrue(str(users_payload[0]["profileImageUrl"]).endswith("/api/settings/users/rep-user-7/profile-image"))
+        self.assertEqual(image_response.status_code, 200)
+        self.assertEqual(image_response.mimetype, "image/png")
+        self.assertEqual(image_response.get_data(), b"ABC")
 
     def test_beta_service_normalization_keeps_supported_keys_only(self):
         from python_backend.services import settings_service

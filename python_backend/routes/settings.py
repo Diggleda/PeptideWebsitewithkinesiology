@@ -20,6 +20,7 @@ from ..services import get_config
 from ..services import auth_service
 from ..services import presence_service
 from ..services import settings_service  # type: ignore[attr-defined]
+from ..services import user_media_service
 from ..utils.http import handle_action, is_admin as _is_admin, require_admin as _require_admin, service_error
 from ..utils.crypto_envelope import decrypt_text
 
@@ -604,7 +605,10 @@ def _public_user_profile(
         "isOnline": bool(user.get("isOnline")),
         "lastLoginAt": user.get("lastLoginAt") or None,
         "createdAt": user.get("createdAt") or None,
-        "profileImageUrl": user.get("profileImageUrl") or None,
+        "profileImageUrl": user_media_service.resolve_admin_user_profile_image_url(
+            user.get("id"),
+            user.get("profileImageUrl"),
+        ),
         "greaterArea": user.get("greaterArea") or None,
         "studyFocus": user.get("studyFocus") or None,
         "bio": user.get("bio") or None,
@@ -657,6 +661,28 @@ def _require_sales_rep_or_admin():
         err = RuntimeError("Sales rep access required")
         setattr(err, "status", 403)
         raise err
+
+
+def _resolve_visible_user_ids_for_current_actor(current_user: dict, current_role: str) -> set[str] | None:
+    if _is_admin_role(current_role) or _is_sales_lead_role(current_role):
+        return None
+
+    base_owner_id = str(current_user.get("id") or "").strip()
+    if not base_owner_id:
+        err = RuntimeError("salesRepId is required")
+        setattr(err, "status", 400)
+        raise err
+
+    strict_assignment = _is_sales_rep_role(current_role) and not _is_sales_lead_role(current_role)
+    payload = _compute_live_clients_payload(
+        target_sales_rep_id=base_owner_id,
+        strict_assignment=strict_assignment,
+    )
+    return {
+        str(entry.get("id") or "").strip()
+        for entry in (payload.get("clients") or [])
+        if isinstance(entry, dict) and str(entry.get("id") or "").strip()
+    }
 
 
 def _normalize_hand_delivery_role(role: object) -> str:
@@ -1940,6 +1966,42 @@ def get_user_profile(user_id: str):
     return handle_action(action)
 
 
+@blueprint.get("/users/<user_id>/profile-image")
+@require_auth
+def get_user_profile_image(user_id: str):
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        current_role = _normalize_role(current_user.get("role"))
+        _require_sales_rep_or_admin()
+
+        target_id = str(user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+
+        visible_user_ids = _resolve_visible_user_ids_for_current_actor(current_user, current_role)
+        if visible_user_ids is not None and target_id not in visible_user_ids:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        user = user_repository.find_by_id(target_id)
+        if not user:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        response = user_media_service.build_embedded_image_response(user.get("profileImageUrl"))
+        if response is None:
+            err = RuntimeError("Profile image not found")
+            setattr(err, "status", 404)
+            raise err
+        return response
+
+    return handle_action(action)
+
+
 @blueprint.get("/users")
 @require_auth
 def get_user_profiles():
@@ -1964,23 +2026,7 @@ def get_user_profiles():
             if len(requested_ids) >= 100:
                 break
 
-        visible_user_ids: set[str] | None = None
-        if not (_is_admin_role(current_role) or _is_sales_lead_role(current_role)):
-            base_owner_id = str(current_user.get("id") or "").strip()
-            if not base_owner_id:
-                err = RuntimeError("salesRepId is required")
-                setattr(err, "status", 400)
-                raise err
-            strict_assignment = _is_sales_rep_role(current_role) and not _is_sales_lead_role(current_role)
-            payload = _compute_live_clients_payload(
-                target_sales_rep_id=base_owner_id,
-                strict_assignment=strict_assignment,
-            )
-            visible_user_ids = {
-                str(entry.get("id") or "").strip()
-                for entry in (payload.get("clients") or [])
-                if isinstance(entry, dict) and str(entry.get("id") or "").strip()
-            }
+        visible_user_ids = _resolve_visible_user_ids_for_current_actor(current_user, current_role)
 
         reps = sales_rep_repository.get_all() or []
         by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)

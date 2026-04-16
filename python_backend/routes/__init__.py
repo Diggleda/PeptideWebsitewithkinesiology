@@ -3,10 +3,10 @@ from __future__ import annotations
 from flask import Flask
 from flask_cors import CORS
 
-from . import auth, integrations, orders, payments, referrals, system, woo, shipping, quotes, password_reset, contact, bugs, settings, catalog, forum, tracking, delegation, discount_codes, moderation, usage_tracking
+from . import auth, integrations, orders, payments, referrals, system, woo, shipping, quotes, password_reset, contact, bugs, settings, catalog, forum, tracking, delegation, discount_codes, moderation, usage_tracking, presence
 
 
-def register_blueprints(app: Flask, config) -> None:
+def _configure_cors(app: Flask, config) -> None:
     origins = config.cors_allow_list or ["*"]
     exposed_headers = [
         "Content-Disposition",
@@ -34,6 +34,10 @@ def register_blueprints(app: Flask, config) -> None:
     }
     CORS(app, resources=cors_config)
 
+
+def register_blueprints(app: Flask, config) -> None:
+    _configure_cors(app, config)
+
     app.register_blueprint(auth.blueprint)
     app.register_blueprint(orders.blueprint)
     app.register_blueprint(referrals.blueprint)
@@ -54,3 +58,10 @@ def register_blueprints(app: Flask, config) -> None:
     app.register_blueprint(discount_codes.blueprint)
     app.register_blueprint(moderation.blueprint)
     app.register_blueprint(usage_tracking.blueprint)
+
+
+def register_presence_blueprints(app: Flask, config) -> None:
+    _configure_cors(app, config)
+
+    app.register_blueprint(system.blueprint)
+    app.register_blueprint(presence.blueprint)

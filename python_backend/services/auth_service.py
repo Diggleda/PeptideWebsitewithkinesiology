@@ -18,7 +18,7 @@ from ..repositories import password_reset_token_repository, sales_rep_repository
 from ..repositories import sales_prospect_repository
 from ..repositories import referral_repository
 from ..utils import http_client
-from . import email_service, get_config, npi_service, referral_service, presence_service
+from . import email_service, get_config, npi_service, referral_service, presence_service, user_media_service
 from . import account_deletion_service
 
 
@@ -1228,6 +1228,12 @@ def _sanitize_user(user: Dict) -> Dict:
     sanitized.pop("password", None)
     sanitized.pop("sessionId", None)
     sanitized.pop("downloads", None)
+    sanitized["profileImageUrl"] = user_media_service.resolve_self_profile_image_url(
+        sanitized.get("profileImageUrl")
+    )
+    sanitized["delegateLogoUrl"] = user_media_service.resolve_self_delegate_logo_url(
+        sanitized.get("delegateLogoUrl")
+    )
     has_greater_area = "greaterArea" in sanitized or "greater_area" in sanitized
     if has_greater_area:
         normalized_greater_area = _normalize_greater_area_text(
