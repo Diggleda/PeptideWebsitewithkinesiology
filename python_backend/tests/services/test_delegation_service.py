@@ -167,6 +167,30 @@ class DelegationServiceTests(unittest.TestCase):
             service._migrate_legacy_links_to_table = original_migrate
             service.user_repository.find_by_id = original_find_user
 
+    def test_get_doctor_config_defaults_expiry_to_none_even_if_setting_exists(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find_user = service.user_repository.find_by_id
+        original_get_settings = service.settings_service.get_settings
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "markupPercent": 12.5,
+            }
+            service.settings_service.get_settings = lambda: {"patientLinkDefaultExpiryHours": 72}
+
+            config = service.get_doctor_config("doc-1")
+
+            self.assertIsNone(config.get("defaultExpiryHours"))
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.user_repository.find_by_id = original_find_user
+            service.settings_service.get_settings = original_get_settings
+
     def test_create_link_preserves_explicit_markup_above_legacy_twenty_percent(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
@@ -206,6 +230,45 @@ class DelegationServiceTests(unittest.TestCase):
             service._migrate_legacy_links_to_table = original_migrate
             service.patient_links_repository.create_link = original_create
             service._audit_event = original_audit
+
+    def test_create_link_does_not_apply_global_default_expiry(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_create = service.patient_links_repository.create_link
+        original_audit = service._audit_event
+        original_get_settings = service.settings_service.get_settings
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.settings_service.get_settings = lambda: {"patientLinkDefaultExpiryHours": 72}
+            captured: dict[str, object] = {}
+
+            def fake_create_link(doctor_id, **kwargs):
+                captured["doctor_id"] = doctor_id
+                captured["expires_in_hours"] = kwargs.get("expires_in_hours")
+                return {
+                    "token": "tok-1",
+                    "markupPercent": kwargs.get("markup_percent"),
+                    "allowedProducts": kwargs.get("allowed_products") or [],
+                    "expiresAt": None,
+                    "usageLimit": kwargs.get("usage_limit"),
+                }
+
+            service.patient_links_repository.create_link = fake_create_link
+            service._audit_event = lambda *_args, **_kwargs: None
+
+            result = service.create_link("doc-1", physician_certified=True)
+
+            self.assertEqual(captured.get("doctor_id"), "doc-1")
+            self.assertIsNone(captured.get("expires_in_hours"))
+            self.assertIsNone(result.get("expiresAt"))
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.create_link = original_create
+            service._audit_event = original_audit
+            service.settings_service.get_settings = original_get_settings
 
     def test_resolve_delegate_token_preserves_markup_above_legacy_twenty_percent(self):
         service = self.delegation_service

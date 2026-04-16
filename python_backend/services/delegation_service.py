@@ -95,16 +95,8 @@ def _patient_link_settings() -> Dict[str, Any]:
 
 
 def _patient_link_default_expiry_hours() -> Optional[int]:
-    raw = _patient_link_settings().get("patientLinkDefaultExpiryHours")
-    if raw in (None, ""):
-        return None
-    try:
-        value = int(float(raw))
-    except Exception:
-        return None
-    if value <= 0:
-        return None
-    return max(1, min(value, 24 * 30))
+    # Delegate links should not auto-expire unless a link-specific TTL is supplied.
+    return None
 
 
 def _patient_link_max_markup_percent() -> float:

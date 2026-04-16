@@ -1524,7 +1524,6 @@ export function Header({
   const [patientLinkStudyLabelDraft, setPatientLinkStudyLabelDraft] = useState('');
   const [patientLinkReferenceDraft, setPatientLinkReferenceDraft] = useState('');
   const [patientLinkExpiryHoursDraft, setPatientLinkExpiryHoursDraft] = useState('');
-  const [patientLinkDefaultExpiryHours, setPatientLinkDefaultExpiryHours] = useState('');
   const [patientLinkUsageLimitDraft, setPatientLinkUsageLimitDraft] = useState('');
   const [patientLinkResearchNoteDraft, setPatientLinkResearchNoteDraft] = useState('');
   const [patientLinkTermsAccepted, setPatientLinkTermsAccepted] = useState(false);
@@ -4070,22 +4069,6 @@ export function Header({
       const links = Array.isArray((response as any)?.links) ? (response as any).links : [];
       const config = (response as any)?.config || {};
       const markupPercent = normalizeMarkupPercent((config as any).markupPercent ?? (config as any).markup_percent ?? 0);
-      const defaultExpiryHoursValue = (() => {
-        const raw =
-          (config as any).defaultExpiryHours ?? (config as any).default_expiry_hours ?? null;
-        if (typeof raw === 'number') {
-          return Number.isFinite(raw) && raw > 0 ? String(Math.round(raw)) : '';
-        }
-        if (typeof raw === 'string') {
-          const trimmed = raw.trim();
-          if (!trimmed) {
-            return '';
-          }
-          const parsed = Number(trimmed);
-          return Number.isFinite(parsed) && parsed > 0 ? String(Math.round(parsed)) : '';
-        }
-        return '';
-      })();
       const sanitizedLinks = links.filter((link: any) => {
         const token = typeof (link as any)?.token === 'string' ? (link as any).token.trim() : '';
         return !token.startsWith('node-ui-dummy-link');
@@ -4099,21 +4082,18 @@ export function Header({
         setPatientLinks(sanitizedLinks);
       }
       setPatientLinkMarkupDraft(String(markupPercent));
-      setPatientLinkDefaultExpiryHours(defaultExpiryHoursValue);
     } catch (error: any) {
       const status = typeof error?.status === 'number' ? error.status : null;
       const delegationRouteMissing = status === 404 || status === 405;
       if (delegationRouteMissing && isNodePatientLinkDummyMode) {
         setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
-        setPatientLinkDefaultExpiryHours('');
         setPatientLinksError(null);
         return;
       }
       if (isNodePatientLinkDummyMode) {
         setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
-        setPatientLinkDefaultExpiryHours('');
         setPatientLinksError(null);
         return;
       }
@@ -7170,7 +7150,7 @@ export function Header({
                 setPatientLinkExpiryHoursDraft(next);
                 trackPatientLinkFieldEntry('expiration_hours', next);
               }}
-	            placeholder={patientLinkDefaultExpiryHours ? `Uses default (${patientLinkDefaultExpiryHours}h)` : 'No expiration by default'}
+	            placeholder="No expiration by default"
             className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
 	          <Label
