@@ -27,6 +27,7 @@ from . import referral_service
 from . import settings_service
 from . import discount_code_service
 from . import tax_tracking_service
+from . import user_media_service
 
 logger = logging.getLogger(__name__)
 
@@ -4025,7 +4026,10 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
             "phone": _normalize_optional_text(target_user.get("phone"))
             or _normalize_optional_text((target_sales_rep_record or {}).get("phone")),
             "role": target_user.get("role"),
-            "profileImageUrl": target_user.get("profileImageUrl"),
+            "profileImageUrl": user_media_service.resolve_admin_user_profile_image_url(
+                target_user.get("id"),
+                target_user.get("profileImageUrl"),
+            ),
             "greaterArea": target_user.get("greaterArea"),
             "studyFocus": target_user.get("studyFocus"),
             "bio": target_user.get("bio"),
