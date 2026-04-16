@@ -57,7 +57,7 @@ class AuthHttpRegressionTests(unittest.TestCase):
             "flask",
             Response=object,
             jsonify=lambda value=None, *args, **kwargs: value,
-            request=types.SimpleNamespace(headers={}, args={}, json=None, method="GET", path="/test"),
+            request=types.SimpleNamespace(headers={}, cookies={}, args={}, json=None, method="GET", path="/test", is_secure=False),
             g=types.SimpleNamespace(current_user=None),
         )
         fake_jwt = _module(
@@ -154,8 +154,10 @@ class AuthHttpRegressionTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.auth.request.headers = {}
+        self.auth.request.cookies = {}
         self.auth.request.method = "GET"
         self.auth.request.path = "/test"
+        self.auth.request.is_secure = False
         self.auth.g.current_user = None
 
     def test_require_auth_handles_missing_login_timestamps_without_name_error(self) -> None:
@@ -172,6 +174,27 @@ class AuthHttpRegressionTests(unittest.TestCase):
         self.auth.presence_service.snapshot = lambda: {}
 
         @self.auth.require_auth
+        def protected():
+            return {"ok": True}
+
+        response = protected()
+        self.assertEqual(response, {"ok": True})
+        self.assertEqual(self.auth.g.current_user["id"], "user-1")
+
+    def test_require_media_auth_accepts_media_cookie_without_authorization_header(self) -> None:
+        payload = {
+            "id": "user-1",
+            "role": "doctor",
+            "sid": "session-1",
+            "email": "doctor@example.com",
+            "iat": None,
+        }
+        self.auth.jwt.decode = lambda *args, **kwargs: payload
+        self.auth.request.cookies = {"peppro_media_token": "cookie-token"}
+        self.auth.user_repository.find_session_by_id = lambda _user_id: {"id": "user-1", "sessionId": "session-1"}
+        self.auth.presence_service.snapshot = lambda: {}
+
+        @self.auth.require_media_auth
         def protected():
             return {"ok": True}
 

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from flask import Blueprint, g, request
+from flask import Blueprint, Response, g, request
 
 import jwt
 
-from ..middleware.auth import require_auth
+from ..middleware.auth import read_request_auth_token, require_auth, require_media_auth
 from ..repositories import user_repository
 from ..services import get_config
 from ..services import auth_service
 from ..services import admin_shadow_session_service
 from ..services import presence_service
 from ..services import user_media_service
+from ..utils.auth_cookies import clear_media_auth_cookie, set_media_auth_cookie
 from ..utils.http import handle_action
 
 blueprint = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -32,13 +33,15 @@ def _audit(event: str, details: dict) -> None:
 @blueprint.post("/register")
 def register():
     payload = request.get_json(force=True, silent=True) or {}
-    return handle_action(lambda: auth_service.register(payload))
+    response = handle_action(lambda: auth_service.register(payload))
+    return _attach_media_auth_cookie(response)
 
 
 @blueprint.post("/login")
 def login():
     payload = request.get_json(force=True, silent=True) or {}
-    return handle_action(lambda: auth_service.login(payload))
+    response = handle_action(lambda: auth_service.login(payload))
+    return _attach_media_auth_cookie(response)
 
 
 @blueprint.get("/check-email")
@@ -60,7 +63,8 @@ def session():
             payload["shadowContext"] = shadow_context
         return payload
 
-    return handle_action(action)
+    response = handle_action(action)
+    return _attach_media_auth_cookie(response)
 
 
 @blueprint.get("/me")
@@ -74,11 +78,12 @@ def me():
         if isinstance(profile, dict) and shadow_context:
             profile["shadowContext"] = shadow_context
         return profile
-    return handle_action(action)
+    response = handle_action(action)
+    return _attach_media_auth_cookie(response)
 
 
 @blueprint.get("/me/profile-image")
-@require_auth
+@require_media_auth
 def me_profile_image():
     user_id = g.current_user.get("id")
 
@@ -99,7 +104,7 @@ def me_profile_image():
 
 
 @blueprint.get("/me/delegate-logo")
-@require_auth
+@require_media_auth
 def me_delegate_logo():
     user_id = g.current_user.get("id")
 
@@ -144,13 +149,11 @@ def logout():
     """
 
     def action():
-        header = request.headers.get("Authorization", "")
-        if not header:
+        token = read_request_auth_token(allow_media_cookie=True)
+        if not token:
             _audit("LOGOUT_REQUEST_NOAUTH", {"at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")})
             return {"ok": True}
 
-        parts = header.split()
-        token = parts[1] if len(parts) == 2 else parts[0]
         expired_token = False
         try:
             payload = jwt.decode(token, get_config().jwt_secret, algorithms=["HS256"])
@@ -246,7 +249,8 @@ def logout():
             pass
         return result
 
-    return handle_action(action)
+    response = handle_action(action)
+    return _clear_media_auth_cookie(response)
 
 
 @blueprint.post("/shadow-sessions")
@@ -271,9 +275,10 @@ def exchange_shadow_session():
         or payload.get("launch_token")
         or payload.get("token")
     )
-    return handle_action(
+    response = handle_action(
         lambda: admin_shadow_session_service.exchange_shadow_session(str(launch_token or ""))
     )
+    return _attach_media_auth_cookie(response)
 
 
 @blueprint.post("/verify-npi")
@@ -318,3 +323,29 @@ def update_me_cart():
     user_id = g.current_user.get("id")
     payload = request.get_json(force=True, silent=True) or {}
     return handle_action(lambda: auth_service.update_cart(user_id, payload.get("cart") or []))
+
+
+def _attach_media_auth_cookie(response):
+    def _mutate(flask_response: Response) -> Response:
+        payload = flask_response.get_json(silent=True) if getattr(flask_response, "is_json", False) else None
+        token = payload.get("token") if isinstance(payload, dict) else None
+        if not (isinstance(token, str) and token.strip()):
+            token = read_request_auth_token(allow_media_cookie=False)
+        if isinstance(token, str) and token.strip():
+            return set_media_auth_cookie(flask_response, token.strip())
+        return flask_response
+
+    return _apply_response_mutation(response, _mutate)
+
+
+def _clear_media_auth_cookie(response):
+    return _apply_response_mutation(response, clear_media_auth_cookie)
+
+
+def _apply_response_mutation(response, mutate):
+    if isinstance(response, Response):
+        return mutate(response)
+    if isinstance(response, tuple) and response and isinstance(response[0], Response):
+        mutated = mutate(response[0])
+        return (mutated, *response[1:])
+    return response

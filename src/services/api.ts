@@ -1401,6 +1401,7 @@ export const authAPI = {
   }) => {
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
+      credentials: 'include',
       body: JSON.stringify({
         name: input.name,
         email: input.email,
@@ -1427,6 +1428,7 @@ export const authAPI = {
   login: async (email: string, password: string) => {
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
+      credentials: 'include',
       body: JSON.stringify({ email, password }),
     });
 
@@ -1462,6 +1464,7 @@ export const authAPI = {
     }
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/shadow-sessions/exchange`, {
       method: 'POST',
+      credentials: 'include',
       body: JSON.stringify({ launchToken }),
     });
     setAuthUserId(data?.user?.id);
@@ -1490,17 +1493,19 @@ export const authAPI = {
   logout: () => {
     const token = getAuthToken();
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
       if (token) {
-        void fetch(`${API_BASE_URL}/auth/logout`, {
-          method: 'POST',
-          keepalive: true,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: '{}',
-        }).catch(() => null);
+        headers.Authorization = `Bearer ${token}`;
       }
+      void fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        keepalive: true,
+        credentials: 'include',
+        headers,
+        body: '{}',
+      }).catch(() => null);
     } catch {
       // ignore
     }
@@ -1726,6 +1731,7 @@ export const authAPI = {
     }) => {
       const response = await fetch(`${API_BASE_URL}/auth/passkeys/login/verify`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },

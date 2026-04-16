@@ -11,7 +11,7 @@ import threading
 
 from flask import Blueprint, Response, request, g
 
-from ..middleware.auth import require_auth
+from ..middleware.auth import require_auth, require_media_auth
 from ..database import mysql_client
 from ..repositories import user_repository
 from ..repositories import sales_rep_repository
@@ -1967,7 +1967,7 @@ def get_user_profile(user_id: str):
 
 
 @blueprint.get("/users/<user_id>/profile-image")
-@require_auth
+@require_media_auth
 def get_user_profile_image(user_id: str):
     def action():
         current_user = getattr(g, "current_user", None) or {}
