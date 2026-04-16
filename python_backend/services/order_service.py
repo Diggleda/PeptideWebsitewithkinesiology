@@ -4967,6 +4967,25 @@ def get_sales_by_rep(
                 if linked_user_id:
                     rep_user_id_by_rep_id[rep_id] = linked_user_id
 
+        def _norm_sales_code(value: object) -> str:
+            raw = str(value or "").strip()
+            if not raw:
+                return ""
+            return re.sub(r"[^A-Za-z0-9]", "", raw).upper()
+
+        rep_id_by_sales_code: Dict[str, str] = {}
+        rep_id_by_initials: Dict[str, str] = {}
+        for rep_record in rep_records_list:
+            rep_id = str(rep_record.get("id") or "").strip()
+            if not rep_id:
+                continue
+            rep_code = _norm_sales_code(rep_record.get("salesCode") or rep_record.get("sales_code"))
+            if rep_code:
+                rep_id_by_sales_code.setdefault(rep_code, rep_id)
+            rep_initials = str(rep_record.get("initials") or "").strip().upper()
+            if rep_initials:
+                rep_id_by_initials.setdefault(rep_initials, rep_id)
+
         alias_to_rep_id: Dict[str, str] = {}
         for rep_record in rep_records_list:
             rep_id = str(rep_record.get("id") or "").strip()
@@ -5089,15 +5108,6 @@ def get_sales_by_rep(
             if rep_id:
                 valid_rep_ids.add(alias_to_rep_id.get(str(rep_id), str(rep_id)))
 
-        logger.info(
-            "[SalesByRep] Begin aggregation",
-            extra={
-                "validRepCount": len(valid_rep_ids),
-                "userReps": len(reps),
-                "repoReps": len(rep_records_list),
-            },
-        )
-
         tracked_orders: List[Dict[str, object]] = []
         debug_samples: List[Dict[str, object]] = []
         rep_email_hint_by_rep_id: Dict[str, str] = {}
@@ -5121,274 +5131,421 @@ def get_sales_by_rep(
         skipped_status = 0
         skipped_refunded = 0
         skipped_outside_period = 0
-
-        # WooCommerce is the source of truth for order history.
-        per_page = 100
-        max_pages = 25
         orders_seen = 0
         tracking_window_start_dt = start_dt if start_dt <= current_year_start_dt else current_year_start_dt
-        reached_tracking_window_start = False
-        for page in range(1, max_pages + 1):
-            payload, _meta = woo_commerce.fetch_catalog_proxy(
-                "orders",
-                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
-            )
-            orders = payload if isinstance(payload, list) else []
-            if not orders:
-                break
+        tracking_window_end_dt = now_local.astimezone(timezone.utc)
 
-            for woo_order in orders:
-                if not isinstance(woo_order, dict):
-                    continue
-                status = str(woo_order.get("status") or "").strip().lower()
-                if status not in ("processing", "completed"):
-                    skipped_status += 1
-                    continue
-                meta_data = woo_order.get("meta_data") or []
-                if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
-                    skipped_refunded += 1
-                    continue
+        logger.info(
+            "[SalesByRep] Begin aggregation",
+            extra={
+                "validRepCount": len(valid_rep_ids),
+                "userReps": len(reps),
+                "repoReps": len(rep_records_list),
+                "queryStart": tracking_window_start_dt.isoformat(),
+                "queryEnd": tracking_window_end_dt.isoformat(),
+                "source": "local_orders_sql",
+            },
+        )
 
-                # Filter to the requested/computed biweekly period.
-                created_raw = (
-                    woo_order.get("date_created_gmt")
-                    or woo_order.get("date_created")
-                    or woo_order.get("date")
-                    or None
-                )
-                created_at = _parse_datetime_utc(created_raw)
-                if not created_at:
-                    # If unknown, skip rather than misattribute outside period.
-                    skipped_outside_period += 1
-                    continue
-                if created_at < tracking_window_start_dt:
-                    skipped_outside_period += 1
-                    reached_tracking_window_start = True
-                    break
-                in_report_period = start_dt <= created_at <= end_dt
-                in_ytd_period = current_year_start_dt <= created_at <= now_local.astimezone(timezone.utc)
-                if not in_report_period and not in_ytd_period:
-                    skipped_outside_period += 1
-                    continue
-
-                rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
-                rep_id = str(rep_id).strip() if rep_id is not None else ""
-                if rep_id:
-                    rep_id_raw = rep_id
-                    rep_email_hint = _norm_email(_meta_value(meta_data, "peppro_sales_rep_email"))
-                    rep_id_candidate = rep_id_raw
-                    if rep_email_hint:
-                        canonical_by_email = rep_id_by_email.get(rep_email_hint) or ""
-                        if canonical_by_email:
-                            rep_id_candidate = str(canonical_by_email).strip()
-                    rep_id = alias_to_rep_id.get(rep_id_candidate, rep_id_candidate)
-                    if rep_email_hint:
-                        rep_email_hint_by_rep_id[rep_id_raw] = rep_email_hint
-                        rep_email_hint_by_rep_id[rep_id] = rep_email_hint
-                    if debug:
-                        debug_counts["metaRepId"] += 1
-                if not rep_id:
-                    rep_code = _meta_value(meta_data, "peppro_sales_rep_code")
-                    rep_code = str(rep_code).strip() if rep_code is not None else ""
-                    if rep_code:
-                        rep_record = sales_rep_repository.find_by_sales_code(rep_code)
-                        rep_id = str((rep_record or {}).get("id") or "").strip()
-                        if rep_id:
-                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
-                            if debug:
-                                debug_counts["metaRepCode"] += 1
-                if not rep_id:
-                    rep_email = _meta_value(meta_data, "peppro_sales_rep_email")
-                    rep_email = _norm_email(rep_email)
-                    if rep_email:
-                        rep_id = rep_id_by_email.get(rep_email) or ""
-                        if rep_id:
-                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
-                            if debug:
-                                debug_counts["metaRepEmail"] += 1
-
-                billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
-                force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
-
-                if not rep_id and billing_email:
-                    rep_id = str(prospect_rep_by_email.get(billing_email, "") or "").strip()
-                    if rep_id:
-                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
-                        if debug:
-                            debug_counts["prospectEmail"] += 1
-
-                if not rep_id:
-                    # If a sales rep placed the order, it should never be counted as "house".
-                    rep_id = rep_id_by_email.get(billing_email, "")
-                    if rep_id and debug:
-                        debug_counts["billingEmailIsRep"] += 1
-
-                if not rep_id and billing_email:
-                    # Fall back to the user's assigned rep (covers all roles, not just doctors).
-                    user_match = users_by_email.get(billing_email)
-                    if user_match:
-                        rep_id = str(user_match.get("salesRepId") or "").strip()
-                        if rep_id and debug:
-                            debug_counts["userSalesRepId"] += 1
-                        if not rep_id and user_match.get("id"):
-                            rep_id = str(prospect_rep_by_doctor.get(str(user_match.get("id")), "") or "").strip()
-                            if rep_id and debug:
-                                debug_counts["prospectDoctorId"] += 1
-                        if not rep_id and _normalize_role(user_match.get("role")) in rep_like_roles:
-                            rep_id = str(user_match.get("id") or "").strip()
-                            if rep_id and debug:
-                                debug_counts["userIsRep"] += 1
-                        if rep_id:
-                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
-
-                if not rep_id:
-                    doctor = doctors_by_email.get(billing_email)
-                    rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
-                    if rep_id and debug:
-                        debug_counts["doctorSalesRepId"] += 1
-                    if not rep_id and doctor and doctor.get("id"):
-                        rep_id = str(prospect_rep_by_doctor.get(str(doctor.get("id")), "") or "").strip()
-                        if rep_id and debug:
-                            debug_counts["prospectDoctorId"] += 1
-                    if rep_id:
-                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
-
-                total = _safe_float(woo_order.get("total"))
-
-                if rep_id == "house":
-                    rep_id = "__house__"
-
-                if rep_id and rep_id != "__house__":
-                    pricing_mode_hint = (
-                        _meta_value(meta_data, "peppro_pricing_mode")
-                        or _meta_value(meta_data, "peppro_pricingMode")
-                        or _meta_value(meta_data, "pricing_mode")
-                        or _meta_value(meta_data, "pricingMode")
-                    )
-                    tracked_orders.append(
-                        {
-                            "salesRepId": rep_id,
-                            "total": total,
-                            "wooId": woo_order.get("id"),
-                            "wooNumber": woo_order.get("number"),
-                            "pricingModeHint": pricing_mode_hint,
-                            "createdAt": created_at.isoformat(),
-                            "includeInReport": in_report_period,
-                            "includeInYtd": in_ytd_period,
-                        }
-                    )
-                    counted_rep += 1
-                else:
-                    # Any un-attributed order should still be counted (House / Unassigned),
-                    # otherwise the report silently drops revenue.
-                    if not rep_id and force_house_contact_form:
-                        rep_id = "__house__"
-                    if rep_id != "__house__":
-                        rep_id = "__house__"
-                    if debug:
-                        debug_counts["fallbackHouse"] += 1
-                    pricing_mode_hint = (
-                        _meta_value(meta_data, "peppro_pricing_mode")
-                        or _meta_value(meta_data, "peppro_pricingMode")
-                        or _meta_value(meta_data, "pricing_mode")
-                        or _meta_value(meta_data, "pricingMode")
-                    )
-                    tracked_orders.append(
-                        {
-                            "salesRepId": "__house__",
-                            "total": total,
-                            "wooId": woo_order.get("id"),
-                            "wooNumber": woo_order.get("number"),
-                            "pricingModeHint": pricing_mode_hint,
-                            "createdAt": created_at.isoformat(),
-                            "includeInReport": in_report_period,
-                            "includeInYtd": in_ytd_period,
-                        }
-                    )
-                    counted_house += 1
-
-                if len(debug_samples) < 10:
-                    debug_samples.append(
-                        {
-                            "wooId": woo_order.get("id"),
-                            "wooNumber": woo_order.get("number"),
-                            "status": status,
-                            "repId": rep_id or None,
-                            "metaRepId": _meta_value(meta_data, "peppro_sales_rep_id"),
-                            "metaRepEmail": _meta_value(meta_data, "peppro_sales_rep_email"),
-                            "billingEmail": ((woo_order.get("billing") or {}) or {}).get("email"),
-                            "total": total,
-                            "pricingModeHint": _meta_value(meta_data, "peppro_pricing_mode")
-                            or _meta_value(meta_data, "peppro_pricingMode")
-                            or _meta_value(meta_data, "pricing_mode")
-                            or _meta_value(meta_data, "pricingMode"),
-                        }
-                    )
-
-                orders_seen += 1
-
-            if reached_tracking_window_start:
-                break
-            if len(orders) < per_page:
-                break
-
-        def _normalize_token(value: object) -> str:
+        def _normalize_rep_id(value: object) -> str:
             if value is None:
                 return ""
-            text = str(value).strip()
-            if not text:
+            return str(value).strip()
+
+        def _resolve_order_email(order: Dict[str, object]) -> str:
+            for key in (
+                "doctorEmail",
+                "doctor_email",
+                "billingEmail",
+                "billing_email",
+                "customerEmail",
+                "customer_email",
+            ):
+                candidate = order.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip().lower()
+            for address_key in (
+                "billingAddress",
+                "billing",
+                "billing_address",
+                "shippingAddress",
+                "shipping",
+                "shipping_address",
+            ):
+                address = order.get(address_key)
+                if isinstance(address, str):
+                    try:
+                        address = json.loads(address)
+                    except Exception:
+                        address = None
+                if isinstance(address, dict):
+                    email = address.get("email")
+                    if isinstance(email, str) and email.strip():
+                        return email.strip().lower()
+            return ""
+
+        def _resolve_rep_from_email_hint(email_hint: str) -> str:
+            if not email_hint:
                 return ""
-            return text[1:] if text.startswith("#") else text
+            resolved = rep_id_by_email.get(email_hint) or ""
+            if resolved:
+                return alias_to_rep_id.get(resolved, resolved)
+            return ""
 
-        woo_ids = []
-        woo_numbers = []
-        for entry in tracked_orders:
-            woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id:
-                woo_ids.append(woo_id)
-            woo_num = _normalize_token(entry.get("wooNumber"))
-            if woo_num:
-                woo_numbers.append(woo_num)
+        def _resolve_rep_from_code_hint(code_hint: str) -> str:
+            code = _norm_sales_code(code_hint)
+            if not code:
+                return ""
+            resolved = rep_id_by_sales_code.get(code) or ""
+            if resolved:
+                return alias_to_rep_id.get(resolved, resolved)
+            return ""
 
-        try:
-            pricing_mode_lookup = order_repository.get_pricing_mode_lookup_by_woo(woo_ids, woo_numbers)
-        except Exception:
-            pricing_mode_lookup = {}
+        def _resolve_rep_from_initials_hint(initials_hint: str) -> str:
+            initials = str(initials_hint or "").strip().upper()
+            if not initials:
+                return ""
+            resolved = rep_id_by_initials.get(initials) or ""
+            if resolved:
+                return alias_to_rep_id.get(resolved, resolved)
+            return ""
 
-        try:
-            subtotal_lookup = order_repository.get_items_subtotal_lookup_by_woo(woo_ids, woo_numbers)
-        except Exception:
-            subtotal_lookup = {}
+        def _resolve_items_list(order: Dict[str, object]) -> List[Dict[str, object]]:
+            raw = order.get("items")
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except Exception:
+                    raw = None
+            if isinstance(raw, list):
+                return [item for item in raw if isinstance(item, dict)]
+            line_items = order.get("lineItems") or order.get("line_items")
+            if isinstance(line_items, list):
+                return [item for item in line_items if isinstance(item, dict)]
+            return []
+
+        def _resolve_items_subtotal(order: Dict[str, object], items: List[Dict[str, object]]) -> float:
+            total_from_items = 0.0
+            for item in items:
+                qty = _safe_float(item.get("quantity") or item.get("qty") or 0)
+                if qty <= 0:
+                    continue
+                line_total = _safe_float(
+                    item.get("subtotal")
+                    or item.get("line_total")
+                    or item.get("priceTotal")
+                    or item.get("price_total")
+                    or item.get("total")
+                )
+                if line_total <= 0:
+                    line_total = _safe_float(item.get("price")) * qty
+                total_from_items += max(0.0, line_total)
+            if total_from_items > 0:
+                return total_from_items
+            subtotal = _safe_float(
+                order.get("itemsSubtotal")
+                or order.get("items_subtotal")
+                or order.get("itemsTotal")
+                or order.get("items_total")
+            )
+            if subtotal > 0:
+                return subtotal
+            return 0.0
+
+        local_orders = order_repository.list_for_commission(tracking_window_start_dt, tracking_window_end_dt)
+        orders_loaded = len(local_orders)
+        for local_order in local_orders:
+            if not isinstance(local_order, dict):
+                continue
+            status = str(local_order.get("status") or "").strip().lower()
+            if status not in ("processing", "completed"):
+                skipped_status += 1
+                if status == "refunded":
+                    skipped_refunded += 1
+                continue
+
+            created_at = _parse_datetime_utc(local_order.get("createdAt") or local_order.get("created_at"))
+            if not created_at:
+                skipped_outside_period += 1
+                continue
+            if created_at < tracking_window_start_dt or created_at > tracking_window_end_dt:
+                skipped_outside_period += 1
+                continue
+
+            in_report_period = start_dt <= created_at <= end_dt
+            in_ytd_period = current_year_start_dt <= created_at <= tracking_window_end_dt
+            if not in_report_period and not in_ytd_period:
+                skipped_outside_period += 1
+                continue
+
+            meta_data = local_order.get("meta_data") or local_order.get("metaData") or local_order.get("meta") or []
+            if isinstance(meta_data, str):
+                try:
+                    meta_data = json.loads(meta_data)
+                except Exception:
+                    meta_data = []
+            if not isinstance(meta_data, list):
+                meta_data = []
+            if _is_truthy(_meta_value(meta_data, "peppro_refunded")):
+                skipped_refunded += 1
+                continue
+
+            order_user_id = str(local_order.get("userId") or local_order.get("user_id") or "").strip()
+            order_user = user_lookup.get(order_user_id) if order_user_id else None
+            order_user_email = _norm_email(order_user.get("email") if isinstance(order_user, dict) else None)
+            billing_email = _resolve_order_email(local_order)
+            attribution_email = billing_email or order_user_email
+            force_house_contact_form = bool(attribution_email and attribution_email in contact_form_emails)
+
+            integrations = local_order.get("integrations") or local_order.get("integrationDetails") or {}
+            if isinstance(integrations, str):
+                try:
+                    integrations = json.loads(integrations)
+                except Exception:
+                    integrations = {}
+            if not isinstance(integrations, dict):
+                integrations = {}
+
+            rep_id = _normalize_rep_id(
+                local_order.get("doctorSalesRepId")
+                or local_order.get("salesRepId")
+                or local_order.get("sales_rep_id")
+                or local_order.get("doctor_sales_rep_id")
+            )
+            if not rep_id:
+                rep_id = _normalize_rep_id(
+                    integrations.get("salesRepId")
+                    or integrations.get("sales_rep_id")
+                    or integrations.get("doctorSalesRepId")
+                    or integrations.get("doctor_sales_rep_id")
+                )
+            rep_email_hint = _norm_email(
+                local_order.get("salesRepEmail")
+                or local_order.get("sales_rep_email")
+                or local_order.get("doctorSalesRepEmail")
+                or local_order.get("doctor_sales_rep_email")
+                or integrations.get("salesRepEmail")
+                or integrations.get("sales_rep_email")
+                or integrations.get("doctorSalesRepEmail")
+                or integrations.get("doctor_sales_rep_email")
+            )
+            rep_code_hint = str(
+                local_order.get("salesRepCode")
+                or local_order.get("sales_rep_code")
+                or local_order.get("doctorSalesRepCode")
+                or local_order.get("doctor_sales_rep_code")
+                or integrations.get("salesRepCode")
+                or integrations.get("sales_rep_code")
+                or integrations.get("doctorSalesRepCode")
+                or integrations.get("doctor_sales_rep_code")
+                or ""
+            ).strip()
+            rep_initials_hint = str(
+                local_order.get("salesRepInitials")
+                or local_order.get("sales_rep_initials")
+                or local_order.get("doctorSalesRepInitials")
+                or local_order.get("doctor_sales_rep_initials")
+                or integrations.get("salesRepInitials")
+                or integrations.get("sales_rep_initials")
+                or integrations.get("doctorSalesRepInitials")
+                or integrations.get("doctor_sales_rep_initials")
+                or ""
+            ).strip()
+
+            meta_rep_id = _normalize_rep_id(
+                _meta_value(meta_data, "peppro_sales_rep_id")
+                or _meta_value(meta_data, "sales_rep_id")
+                or _meta_value(meta_data, "salesRepId")
+                or _meta_value(meta_data, "doctor_sales_rep_id")
+                or _meta_value(meta_data, "doctorSalesRepId")
+            )
+            meta_rep_email = _norm_email(
+                _meta_value(meta_data, "peppro_sales_rep_email")
+                or _meta_value(meta_data, "sales_rep_email")
+                or _meta_value(meta_data, "salesRepEmail")
+                or _meta_value(meta_data, "doctor_sales_rep_email")
+                or _meta_value(meta_data, "doctorSalesRepEmail")
+            )
+            meta_rep_code = str(
+                _meta_value(meta_data, "peppro_sales_rep_code")
+                or _meta_value(meta_data, "sales_rep_code")
+                or _meta_value(meta_data, "salesRepCode")
+                or _meta_value(meta_data, "doctor_sales_rep_code")
+                or _meta_value(meta_data, "doctorSalesRepCode")
+                or ""
+            ).strip()
+            meta_rep_initials = str(
+                _meta_value(meta_data, "sales_rep_initials")
+                or _meta_value(meta_data, "salesRepInitials")
+                or _meta_value(meta_data, "doctor_sales_rep_initials")
+                or _meta_value(meta_data, "doctorSalesRepInitials")
+                or ""
+            ).strip()
+
+            if not rep_id and meta_rep_id:
+                rep_id = meta_rep_id
+                if debug:
+                    debug_counts["metaRepId"] += 1
+            if not rep_email_hint and meta_rep_email:
+                rep_email_hint = meta_rep_email
+            if not rep_code_hint and meta_rep_code:
+                rep_code_hint = meta_rep_code
+            if not rep_initials_hint and meta_rep_initials:
+                rep_initials_hint = meta_rep_initials
+
+            rep_id_raw = rep_id
+            if rep_id:
+                rep_id_candidate = rep_id_raw
+                if rep_email_hint:
+                    canonical_by_email = rep_id_by_email.get(rep_email_hint) or ""
+                    if canonical_by_email:
+                        rep_id_candidate = str(canonical_by_email).strip()
+                rep_id = alias_to_rep_id.get(rep_id_candidate, rep_id_candidate)
+                if rep_email_hint:
+                    rep_email_hint_by_rep_id[rep_id_raw] = rep_email_hint
+                    rep_email_hint_by_rep_id[rep_id] = rep_email_hint
+
+            if not rep_id and rep_email_hint:
+                rep_id = _resolve_rep_from_email_hint(rep_email_hint)
+                if rep_id and debug and rep_email_hint == meta_rep_email:
+                    debug_counts["metaRepEmail"] += 1
+            if not rep_id and rep_code_hint:
+                rep_id = _resolve_rep_from_code_hint(rep_code_hint)
+                if rep_id and debug:
+                    debug_counts["metaRepCode"] += 1
+            if not rep_id and rep_initials_hint:
+                rep_id = _resolve_rep_from_initials_hint(rep_initials_hint)
+
+            if not rep_id and attribution_email:
+                rep_id = str(prospect_rep_by_email.get(attribution_email, "") or "").strip()
+                if rep_id:
+                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                    if debug:
+                        debug_counts["prospectEmail"] += 1
+
+            if not rep_id and attribution_email:
+                rep_id = _resolve_rep_from_email_hint(attribution_email)
+                if rep_id and debug:
+                    debug_counts["billingEmailIsRep"] += 1
+
+            if not rep_id and (attribution_email or order_user_id):
+                user_match = users_by_email.get(attribution_email) if attribution_email else None
+                if not user_match and order_user_id:
+                    user_match = user_lookup.get(order_user_id)
+                if user_match:
+                    rep_id = _normalize_rep_id(user_match.get("salesRepId") or user_match.get("sales_rep_id"))
+                    if rep_id and debug:
+                        debug_counts["userSalesRepId"] += 1
+                    if not rep_id and user_match.get("id"):
+                        rep_id = str(prospect_rep_by_doctor.get(str(user_match.get("id")), "") or "").strip()
+                        if rep_id and debug:
+                            debug_counts["prospectDoctorId"] += 1
+                    if not rep_id and _normalize_role(user_match.get("role")) in rep_like_roles:
+                        rep_id = str(user_match.get("id") or "").strip()
+                        if rep_id and debug:
+                            debug_counts["userIsRep"] += 1
+                    if rep_id:
+                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+            if not rep_id:
+                doctor = doctors_by_email.get(attribution_email) if attribution_email else None
+                if doctor is None and isinstance(order_user, dict) and _normalize_role(order_user.get("role")) in (
+                    "doctor",
+                    "test_doctor",
+                ):
+                    doctor = order_user
+                rep_id = (
+                    _normalize_rep_id((doctor or {}).get("salesRepId") or (doctor or {}).get("sales_rep_id"))
+                    if doctor
+                    else ""
+                )
+                if rep_id and debug:
+                    debug_counts["doctorSalesRepId"] += 1
+                if not rep_id and doctor and doctor.get("id"):
+                    rep_id = str(prospect_rep_by_doctor.get(str(doctor.get("id")), "") or "").strip()
+                    if rep_id and debug:
+                        debug_counts["prospectDoctorId"] += 1
+                if rep_id:
+                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+            if str(rep_id or "").strip().lower() == "house":
+                rep_id = "__house__"
+
+            items = _resolve_items_list(local_order)
+            subtotal = _resolve_items_subtotal(local_order, items)
+            total = _safe_float(
+                local_order.get("total")
+                or local_order.get("grandTotal")
+                or local_order.get("grand_total")
+            )
+            pricing_mode_hint = (
+                local_order.get("pricingMode")
+                or local_order.get("pricing_mode")
+                or integrations.get("pricingMode")
+                or integrations.get("pricing_mode")
+                or _meta_value(meta_data, "peppro_pricing_mode")
+                or _meta_value(meta_data, "peppro_pricingMode")
+                or _meta_value(meta_data, "pricing_mode")
+                or _meta_value(meta_data, "pricingMode")
+            )
+
+            tracked_rep_id = rep_id
+            if tracked_rep_id and tracked_rep_id != "__house__":
+                counted_rep += 1
+            else:
+                if not tracked_rep_id:
+                    skipped_unattributed += 1
+                    if force_house_contact_form:
+                        tracked_rep_id = "__house__"
+                if tracked_rep_id != "__house__":
+                    tracked_rep_id = "__house__"
+                if debug:
+                    debug_counts["fallbackHouse"] += 1
+                counted_house += 1
+
+            tracked_orders.append(
+                {
+                    "salesRepId": tracked_rep_id,
+                    "itemsSubtotal": subtotal,
+                    "total": total,
+                    "wooId": local_order.get("wooOrderId"),
+                    "wooNumber": local_order.get("wooOrderNumber") or local_order.get("number"),
+                    "orderId": local_order.get("id"),
+                    "pricingModeHint": pricing_mode_hint,
+                    "createdAt": created_at.isoformat(),
+                    "includeInReport": in_report_period,
+                    "includeInYtd": in_ytd_period,
+                }
+            )
+
+            if len(debug_samples) < 10:
+                debug_samples.append(
+                    {
+                        "orderId": local_order.get("id"),
+                        "wooId": local_order.get("wooOrderId"),
+                        "wooNumber": local_order.get("wooOrderNumber") or local_order.get("number"),
+                        "status": status,
+                        "repId": tracked_rep_id or None,
+                        "metaRepId": meta_rep_id or None,
+                        "metaRepEmail": meta_rep_email or None,
+                        "billingEmail": billing_email or None,
+                        "total": total,
+                        "itemsSubtotal": subtotal,
+                        "pricingModeHint": pricing_mode_hint,
+                    }
+                )
+
+            orders_seen += 1
 
         def _resolve_pricing_mode(entry: Dict[str, object]) -> str:
             hint = str(entry.get("pricingModeHint") or "").strip().lower()
-            if hint in ("retail", "wholesale"):
-                return hint
-            woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id and woo_id in pricing_mode_lookup:
-                return pricing_mode_lookup[woo_id]
-            woo_number = _normalize_token(entry.get("wooNumber"))
-            if woo_number and woo_number in pricing_mode_lookup:
-                return pricing_mode_lookup[woo_number]
-            return "wholesale"
+            return "retail" if hint == "retail" else "wholesale"
 
         def _resolve_order_subtotal(entry: Dict[str, object]) -> float:
-            woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id and woo_id in subtotal_lookup:
-                try:
-                    return float(subtotal_lookup[woo_id])
-                except Exception:
-                    return 0.0
-            woo_number = _normalize_token(entry.get("wooNumber"))
-            if woo_number and woo_number in subtotal_lookup:
-                try:
-                    return float(subtotal_lookup[woo_number])
-                except Exception:
-                    return 0.0
-            try:
-                return float(entry.get("total") or 0.0)
-            except Exception:
-                return 0.0
+            subtotal = _safe_float(entry.get("itemsSubtotal"))
+            if subtotal > 0:
+                return subtotal
+            return _safe_float(entry.get("total"))
 
         rep_totals: Dict[str, Dict[str, float]] = {}
         house_totals = {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0}
@@ -5595,9 +5752,11 @@ def get_sales_by_rep(
             "[SalesByRep] Summary computed",
             extra={
                 "rows": len(summary),
+                "ordersLoaded": orders_loaded,
                 "ordersSeen": orders_seen,
-                "maxPages": max_pages,
-                "perPage": per_page,
+                "queryStart": tracking_window_start_dt.isoformat(),
+                "queryEnd": tracking_window_end_dt.isoformat(),
+                "source": "local_orders_sql",
                 "countedRep": counted_rep,
                 "countedHouse": counted_house,
                 "skippedUnattributed": skipped_unattributed,

@@ -13628,8 +13628,9 @@ function MainApp() {
 	    user?.role,
 	  ]);
 
-	  const refreshSalesBySalesRepSummary = useCallback(async () => {
+	  const refreshSalesBySalesRepSummary = useCallback(async (options?: { force?: boolean }) => {
 	    if (!user || (!isAdmin(user.role) && !isSalesLead(user.role))) return;
+      const force = options?.force === true;
 	    setSalesRepSalesSummaryLoading(true);
 	    setSalesRepSalesSummaryError(null);
 	    try {
@@ -13655,7 +13656,7 @@ function MainApp() {
 	      const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin({
 	        periodStart: periodStart || undefined,
 	        periodEnd: periodEnd || undefined,
-	        force: true,
+	        ...(force ? { force: true } : null),
 	      });
 	      const parseReportNumber = (value: unknown): number => {
 	        if (typeof value === "number") {
@@ -13985,6 +13986,12 @@ function MainApp() {
 
   const applyAdminDashboardPeriod = useCallback(() => {
     void refreshSalesBySalesRepSummary();
+    void refreshAdminTaxesByState();
+    void refreshAdminProductsCommission({ force: true });
+  }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
+
+  const refreshAdminDashboardReports = useCallback(() => {
+    void refreshSalesBySalesRepSummary({ force: true });
     void refreshAdminTaxesByState();
     void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
@@ -29856,113 +29863,7 @@ function MainApp() {
 
 					          {isAdmin(user?.role) && adminDashboardTab === "admin_report" && (
 						            <div className="sales-rep-leads-card sales-rep-combined-card admin-tab-panel-enter">
-						              <div className="flex flex-col gap-3">
-						                <div className="sales-rep-header-row flex w-full flex-col gap-3">
-						                  <div className="min-w-0">
-						                    <h3 className="text-lg font-semibold text-slate-900">
-						                      Admin Reports
-						                    </h3>
-						                    <p className="text-sm text-slate-600">
-						                      Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
-						                    </p>
-						                  </div>
-						                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-						                    <div
-                                        ref={adminReportsCalendarRef}
-                                        className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1"
-                                      >
-						                      <Popover.Root
-						                        open={adminDashboardPeriodPickerOpen}
-						                        onOpenChange={setAdminDashboardPeriodPickerOpen}
-						                      >
-						                        <Popover.Trigger asChild>
-						                          <Button
-						                            type="button"
-						                            variant="outline"
-						                            size="icon"
-						                            className="header-home-button squircle-sm h-9 w-9 shrink-0"
-						                            aria-label="Select dashboard date range"
-						                            title="Select date range"
-						                          >
-						                            <CalendarDays aria-hidden="true" />
-						                          </Button>
-						                        </Popover.Trigger>
-						                        <Popover.Portal>
-						                          <Popover.Content
-						                            side="bottom"
-						                            align="end"
-						                            sideOffset={8}
-						                            className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-						                          >
-						                            <div className="text-sm font-semibold text-slate-800">
-						                              Dashboard timeframe
-						                            </div>
-						                            <div className="mt-2">
-						                              <DayPicker
-						                                mode="range"
-						                                numberOfMonths={1}
-						                                selected={adminDashboardPeriodRange}
-						                                onSelect={handleAdminDashboardPeriodSelect}
-						                                defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
-						                              />
-						                            </div>
-						                            <div className="mt-3 flex items-center justify-between">
-						                              <Button
-						                                type="button"
-						                                variant="ghost"
-						                                size="sm"
-						                                className="text-slate-700"
-						                                onClick={() => {
-						                                  const defaults = getDefaultSalesBySalesRepPeriod();
-						                                  setSalesRepPeriodStart(defaults.start);
-						                                  setSalesRepPeriodEnd(defaults.end);
-						                                }}
-						                              >
-						                                Default
-						                              </Button>
-						                              <Button
-						                                type="button"
-						                                variant="outline"
-						                                size="sm"
-						                                className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-						                                onClick={() => {
-						                                  applyAdminDashboardPeriod();
-						                                  setAdminDashboardPeriodPickerOpen(false);
-						                                }}
-						                              >
-						                                Done
-						                              </Button>
-						                            </div>
-						                            <Popover.Arrow className="calendar-popover-arrow" />
-						                          </Popover.Content>
-						                        </Popover.Portal>
-						                      </Popover.Root>
-						                      <button
-                                        type="button"
-                                        onClick={scrollToAdminReportsCalendar}
-                                        className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4"
-                                        title="Jump to timeframe selector"
-                                      >
-						                        {adminDashboardPeriodLabel}
-						                      </button>
-							                      <Button
-							                        type="button"
-							                        variant="outline"
-							                        size="sm"
-							                        className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1"
-							                        onClick={applyAdminDashboardPeriod}
-							                        disabled={adminDashboardRefreshing}
-							                        aria-busy={adminDashboardRefreshing}
-							                        title="Refresh"
-							                      >
-							                        {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
-							                      </Button>
-						                    </div>
-						                  </div>
-						                </div>
-						              </div>
-				
-					              <div className="mt-8 space-y-6">
+					              <div className="space-y-6">
                         <div className="admin-revenue-outlook-row">
                           <div className="admin-revenue-outlook-card sales-rep-leads-card sales-rep-combined-card">
                             <div className="sales-rep-chart-header">
@@ -30272,6 +30173,110 @@ function MainApp() {
                             )}
                           </div>
                         </div>
+
+						                <div className="sales-rep-header-row flex w-full flex-col gap-3">
+						                  <div className="min-w-0">
+						                    <h3 className="text-lg font-semibold text-slate-900">
+						                      Produced Documents
+						                    </h3>
+						                    <p className="text-sm text-slate-600">
+						                      Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
+						                    </p>
+						                  </div>
+						                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+						                    <div
+                                        ref={adminReportsCalendarRef}
+                                        className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1"
+                                      >
+						                      <Popover.Root
+						                        open={adminDashboardPeriodPickerOpen}
+						                        onOpenChange={setAdminDashboardPeriodPickerOpen}
+						                      >
+						                        <Popover.Trigger asChild>
+						                          <Button
+						                            type="button"
+						                            variant="outline"
+						                            size="icon"
+						                            className="header-home-button squircle-sm h-9 w-9 shrink-0"
+						                            aria-label="Select dashboard date range"
+						                            title="Select date range"
+						                          >
+						                            <CalendarDays aria-hidden="true" />
+						                          </Button>
+						                        </Popover.Trigger>
+						                        <Popover.Portal>
+						                          <Popover.Content
+						                            side="bottom"
+						                            align="end"
+						                            sideOffset={8}
+						                            className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+						                          >
+						                            <div className="text-sm font-semibold text-slate-800">
+						                              Dashboard timeframe
+						                            </div>
+						                            <div className="mt-2">
+						                              <DayPicker
+						                                mode="range"
+						                                numberOfMonths={1}
+						                                selected={adminDashboardPeriodRange}
+						                                onSelect={handleAdminDashboardPeriodSelect}
+						                                defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+						                              />
+						                            </div>
+						                            <div className="mt-3 flex items-center justify-between">
+						                              <Button
+						                                type="button"
+						                                variant="ghost"
+						                                size="sm"
+						                                className="text-slate-700"
+						                                onClick={() => {
+						                                  const defaults = getDefaultSalesBySalesRepPeriod();
+						                                  setSalesRepPeriodStart(defaults.start);
+						                                  setSalesRepPeriodEnd(defaults.end);
+						                                }}
+						                              >
+						                                Default
+						                              </Button>
+						                              <Button
+						                                type="button"
+						                                variant="outline"
+						                                size="sm"
+						                                className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+						                                onClick={() => {
+						                                  applyAdminDashboardPeriod();
+						                                  setAdminDashboardPeriodPickerOpen(false);
+						                                }}
+						                              >
+						                                Done
+						                              </Button>
+						                            </div>
+						                            <Popover.Arrow className="calendar-popover-arrow" />
+						                          </Popover.Content>
+						                        </Popover.Portal>
+						                      </Popover.Root>
+						                      <button
+                                        type="button"
+                                        onClick={scrollToAdminReportsCalendar}
+                                        className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4"
+                                        title="Jump to timeframe selector"
+                                      >
+						                        {adminDashboardPeriodLabel}
+						                      </button>
+							                      <Button
+							                        type="button"
+							                        variant="outline"
+							                        size="sm"
+							                        className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1"
+							                        onClick={refreshAdminDashboardReports}
+							                        disabled={adminDashboardRefreshing}
+							                        aria-busy={adminDashboardRefreshing}
+							                        title="Refresh"
+							                      >
+							                        {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
+							                      </Button>
+						                    </div>
+						                  </div>
+						                </div>
 
 				                <div className="sales-rep-leads-card sales-rep-combined-card">
 				                  <div className="flex flex-col gap-3">

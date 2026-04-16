@@ -669,6 +669,7 @@ const _PEPPRO_HEALTH_FAILURE_COOLDOWN_MS = 45000;
 const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
 const _PEPPRO_CHECKOUT_TIMEOUT_MS = 45000;
 const _PEPPRO_SALES_TRACKING_TIMEOUT_MS = 45000;
+const _PEPPRO_SALES_SUMMARY_TIMEOUT_MS = 90000;
 const _PEPPRO_MODAL_TIMEOUT_MS = 30000;
 const _PEPPRO_REFERRAL_TIMEOUT_MS = 30000;
 const _PEPPRO_MAINTENANCE_TIMEOUT_MS = 30000;
@@ -686,6 +687,9 @@ const _timeoutMsForRequest = (url: string, method: string) => {
   }
   if (normalized.includes('/api/orders/admin/taxes-by-state')) {
     return _PEPPRO_SALES_TRACKING_TIMEOUT_MS;
+  }
+  if (normalized.includes('/api/orders/sales-rep-summary')) {
+    return _PEPPRO_SALES_SUMMARY_TIMEOUT_MS;
   }
   if (normalized.includes('/api/referrals/dashboard')) return _PEPPRO_REFERRAL_TIMEOUT_MS;
   if (method === 'GET' && normalized.includes('/api/referrals/sales-prospects/') && normalized.includes('/quotes/') && normalized.includes('/export')) {
