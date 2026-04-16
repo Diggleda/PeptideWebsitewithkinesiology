@@ -368,7 +368,8 @@ const handleIncomingAuthEvent = (payload: AuthTabEvent | null) => {
   if (isShadowSessionMode()) return;
   if (isMultiSessionExemptEmail(getAuthEmail())) return;
   const tabId = getOrCreateTabId();
-  if (payload.tabId === tabId) return;
+  const localSessionId = getSessionId();
+  if (payload.tabId === tabId && localSessionId === payload.sessionId) return;
 
   const localUserId = getAuthUserId();
   const payloadUserId = typeof payload.userId === 'string' ? payload.userId : null;
@@ -384,7 +385,6 @@ const handleIncomingAuthEvent = (payload: AuthTabEvent | null) => {
     return;
   }
 
-  const localSessionId = getSessionId();
   if (!localSessionId || localSessionId === payload.sessionId) return;
 
   // Another tab completed a login; force-logout this tab (without touching other tabs).
@@ -750,6 +750,36 @@ const buildAuthAbortError = () => {
   return error;
 };
 
+const buildStaleAuthAbortError = () => {
+  try {
+    return new DOMException('Authentication no longer applies to this request', 'AbortError');
+  } catch {
+    const error = new Error('Authentication no longer applies to this request');
+    error.name = 'AbortError';
+    return error;
+  }
+};
+
+const isCurrentAuthSnapshot = (
+  requestToken: string | null,
+  requestSessionId: string | null,
+) => {
+  if (!requestToken) {
+    return false;
+  }
+  const currentToken = getAuthToken();
+  if (!currentToken || currentToken !== requestToken) {
+    return false;
+  }
+  if (requestSessionId) {
+    const currentSessionId = getSessionId();
+    if (!currentSessionId || currentSessionId !== requestSessionId) {
+      return false;
+    }
+  }
+  return true;
+};
+
 const rewriteBlockedAdminPaths = (url: string) => {
   return String(url || '').replace(/\/orders\/admin\/on-hold(?=[/?#]|$)/i, '/orders/on-hold');
 };
@@ -796,6 +826,7 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     ...requestOptions
   } = options;
   const token = getAuthToken();
+  const sessionIdAtRequestStart = getSessionId();
   const method = (requestOptions.method || 'GET').toUpperCase();
   if (isShadowSessionMode() && method !== 'GET' && method !== 'HEAD' && !isShadowReadOnlyPath(rewrittenUrl)) {
     throwShadowReadOnly();
@@ -854,7 +885,9 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
       response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
       if (authenticatedSignal?.signal.aborted) {
-        throw buildAuthAbortError();
+        throw isCurrentAuthSnapshot(token, sessionIdAtRequestStart)
+          ? buildAuthAbortError()
+          : buildStaleAuthAbortError();
       }
       const fallbackUrl =
         !background && isNetworkLikeFetchError(error)
@@ -967,6 +1000,9 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
       const isAuthError = response.status === 401
         || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
       if (isAuthError) {
+        if (!isCurrentAuthSnapshot(token, sessionIdAtRequestStart)) {
+          throw buildStaleAuthAbortError();
+        }
         if (preserveAuthOnAuthFailure) {
           (error as any).code = AUTH_CHECK_FAILED_CODE;
           if (typeof codeField === 'string') {
@@ -1055,6 +1091,7 @@ const buildServiceUnavailableError = (message: string) => {
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   let requestUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
+  const sessionIdAtRequestStart = getSessionId();
   const headers: HeadersInit = {
     ...(options.headers || {}),
   };
@@ -1086,7 +1123,9 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
   } catch (error: any) {
     if (authenticatedSignal?.signal.aborted) {
-      throw buildAuthAbortError();
+      throw isCurrentAuthSnapshot(token, sessionIdAtRequestStart)
+        ? buildAuthAbortError()
+        : buildStaleAuthAbortError();
     }
     const fallbackUrl = isNetworkLikeFetchError(error)
       ? buildSameOriginApiFallbackUrl(requestUrl)
@@ -1175,6 +1214,9 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     const isAuthError = response.status === 401
       || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
     if (isAuthError) {
+      if (!isCurrentAuthSnapshot(token, sessionIdAtRequestStart)) {
+        throw buildStaleAuthAbortError();
+      }
       clearAuthToken();
       clearSessionId();
       if (token) {
@@ -1209,6 +1251,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
 const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?: boolean } = {}) => {
   const requestUrl = rewriteBlockedAdminPaths(url);
   const token = options.skipAuth ? null : getAuthToken();
+  const sessionIdAtRequestStart = options.skipAuth ? null : getSessionId();
   const headers: HeadersInit = {
     ...(options.headers || {}),
   };
@@ -1235,7 +1278,9 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
     }, _timeoutMsForRequest(requestUrl, method));
   } catch (error: any) {
     if (authenticatedSignal?.signal.aborted) {
-      throw buildAuthAbortError();
+      throw isCurrentAuthSnapshot(token, sessionIdAtRequestStart)
+        ? buildAuthAbortError()
+        : buildStaleAuthAbortError();
     }
     const isAbort = error?.name === 'AbortError';
     const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
@@ -1297,6 +1342,9 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
     const isAuthError = response.status === 401
       || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
     if (isAuthError) {
+      if (!isCurrentAuthSnapshot(token, sessionIdAtRequestStart)) {
+        throw buildStaleAuthAbortError();
+      }
       clearAuthToken();
       clearSessionId();
       if (token) {
@@ -1492,22 +1540,22 @@ export const authAPI = {
 
   logout: () => {
     const token = getAuthToken();
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
+    if (token) {
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        };
+        void fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          keepalive: true,
+          credentials: 'include',
+          headers,
+          body: '{}',
+        }).catch(() => null);
+      } catch {
+        // ignore
       }
-      void fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        keepalive: true,
-        credentials: 'include',
-        headers,
-        body: '{}',
-      }).catch(() => null);
-    } catch {
-      // ignore
     }
     clearAuthToken();
     clearSessionId();
@@ -2018,6 +2066,9 @@ export const settingsAPI = {
     if (!userId) {
       throw new Error('userId is required');
     }
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     return fetchWithAuth(`${API_BASE_URL}/settings/users/${encodeURIComponent(String(userId))}`, {
       method: 'GET',
     });
@@ -2028,6 +2079,9 @@ export const settingsAPI = {
       .filter((value) => value.length > 0);
     if (!ids.length) {
       return { users: [] };
+    }
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
     }
     const params = new URLSearchParams();
     params.set('ids', ids.join(','));
@@ -2938,10 +2992,16 @@ export const referralAPI = {
   },
 
   getDoctorSummary: async () => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/summary`);
   },
 
   getDoctorLedger: async () => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
     return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/ledger`);
   },
 

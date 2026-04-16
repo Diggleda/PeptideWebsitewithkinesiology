@@ -149,7 +149,7 @@ def logout():
     """
 
     def action():
-        token = read_request_auth_token(allow_media_cookie=True)
+        token = read_request_auth_token(allow_media_cookie=False)
         if not token:
             _audit("LOGOUT_REQUEST_NOAUTH", {"at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")})
             return {"ok": True}
