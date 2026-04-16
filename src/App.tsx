@@ -5389,6 +5389,11 @@ function MainApp() {
             .getSalesRepDashboard({
               salesRepId: user?.salesRepId || user?.id,
               scope: "mine",
+              include: [
+                "currentSalesRep",
+                "currentSalesRepId",
+                "currentSalesRepAllowedRetail",
+              ],
             })
             .catch(() => null)
         : Promise.resolve(null),
@@ -9461,6 +9466,7 @@ function MainApp() {
 				          salesRepId: targetSalesRepId,
 				          scope: "mine",
 				          context: "modal",
+                  include: ["users", "referrals"],
 				        });
 				        const respObj =
 				          response && typeof response === "object" ? (response as any) : null;
@@ -20851,12 +20857,22 @@ function MainApp() {
 	        } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
 	          // Sales leads should only see their own prospects (same scope as reps).
 	          const scopeAll = false;
-	          const dashboardResponse = await referralAPI.getSalesRepDashboard({
-	            salesRepId: scopeAll
-	              ? undefined
-	              : user.salesRepId || user.id,
-	            scope: scopeAll ? "all" : "mine",
-	          });
+		          const dashboardResponse = await referralAPI.getSalesRepDashboard({
+		            salesRepId: scopeAll
+		              ? undefined
+		              : user.salesRepId || user.id,
+		            scope: scopeAll ? "all" : "mine",
+                include: salesRepDashboardRef.current
+                  ? [
+                      "referrals",
+                      "statuses",
+                      "referralCreditAmount",
+                      "currentSalesRep",
+                      "currentSalesRepId",
+                      "currentSalesRepAllowedRetail",
+                    ]
+                  : undefined,
+		          });
           const dashboard = mergeDashboardCollectionsWithFallback(
             dashboardResponse,
             salesRepDashboardRef.current,

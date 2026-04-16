@@ -837,7 +837,13 @@ def check_email(email: str) -> Dict:
 
 
 def get_profile(user_id: str, role: Optional[str] = None) -> Dict:
-    user = user_repository.find_by_id(user_id)
+    user = None
+    try:
+        user = user_repository.find_profile_by_id(user_id)
+    except Exception:
+        user = None
+    if not user:
+        user = user_repository.find_by_id(user_id)
     if user:
         return _sanitize_user(user)
 

@@ -923,7 +923,7 @@ export function CheckoutModal({
       ),
     [availableAddOnProducts, cartItems],
   );
-  const showCheckoutAddOns = !isDelegateFlow && checkoutAddOnProducts.length > 0;
+  const showCheckoutAddOns = checkoutAddOnProducts.length > 0;
 
   const resolveAddOnVariant = useCallback((product: Product) => {
     const variants = Array.isArray(product.variants) ? product.variants : [];

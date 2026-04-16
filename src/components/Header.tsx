@@ -5710,6 +5710,21 @@ export function Header({
 
     return { delegateTokens, orderIds, referenceLabels };
   }, []);
+  const handleDelegateLabelNavigateToPatientLink = useCallback((order: any) => {
+    if (!showPatientLinksTab) return;
+    const target = buildOrderToPatientLinkTarget(order);
+    if (
+      target.delegateTokens.length === 0
+      && target.orderIds.length === 0
+      && target.referenceLabels.length === 0
+    ) {
+      toast.message('No associated delegate link was found for this order.');
+      return;
+    }
+    setAccountTab('patient_links');
+    setPendingPatientLinkScrollTarget(target);
+    requestPatientLinksRefresh({ force: true });
+  }, [buildOrderToPatientLinkTarget, requestPatientLinksRefresh, showPatientLinksTab]);
   const findMatchingPatientLinkToken = useCallback(
     (
       target: { delegateTokens: string[]; orderIds: string[]; referenceLabels: string[] } | null,
@@ -5983,6 +5998,7 @@ export function Header({
             const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
             const delegateOrderLabel = resolveDelegateOrderLabel(order as any);
             const showDelegateOrderLabel = Boolean(delegateOrderLabel);
+            const showDelegateOrderJumpButton = showDelegateOrderLabel && showPatientLinksTab;
             const wooShippingLine =
               (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
               (wooPayload?.shipping_lines && wooPayload.shipping_lines[0]);
@@ -6104,9 +6120,20 @@ export function Header({
                       <p className="order-status-row flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
                         <span>{statusDisplay}</span>
                         {showDelegateOrderLabel && (
-                          <span className="text-xs font-semibold text-slate-500">
-                            Delegate Order
-                          </span>
+                          showDelegateOrderJumpButton ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-[rgba(95,179,249,0.35)] bg-white px-2.5 py-1 text-xs font-semibold text-[rgb(95,179,249)] transition-colors hover:bg-[rgba(95,179,249,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.22)]"
+                              onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
+                              title="Open associated delegate link"
+                            >
+                              {delegateOrderLabel}
+                            </button>
+                          ) : (
+                            <span className="text-xs font-semibold text-slate-500">
+                              Delegate Order
+                            </span>
+                          )
                         )}
                       </p>
                     </div>

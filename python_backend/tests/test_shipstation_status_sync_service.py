@@ -105,13 +105,13 @@ class ShipStationStatusSyncServiceTests(unittest.TestCase):
 
         cls.service = shipstation_status_sync_service
 
-    def test_interval_allows_ten_second_override(self):
+    def test_interval_clamps_to_thirty_second_minimum(self):
         with patch.dict(os.environ, {"SHIPSTATION_STATUS_SYNC_INTERVAL_SECONDS": "10"}, clear=False):
-            self.assertEqual(self.service._interval_seconds(), 10)
+            self.assertEqual(self.service._interval_seconds(), 30)
 
-    def test_interval_ms_override_respects_ten_second_minimum(self):
+    def test_interval_ms_override_respects_thirty_second_minimum(self):
         with patch.dict(os.environ, {"SHIPSTATION_STATUS_SYNC_INTERVAL_MS": "5000"}, clear=False):
-            self.assertEqual(self.service._interval_seconds(), 10)
+            self.assertEqual(self.service._interval_seconds(), 30)
 
     def test_persist_local_order_shipping_update_sends_shipped_notification_once(self):
         local_order = {

@@ -240,6 +240,185 @@ def get_all() -> List[Dict]:
     return _load()
 
 
+_PROFILE_SELECT_FIELDS = """
+    id,
+    name,
+    email,
+    role,
+    status,
+    hand_delivered,
+    is_online,
+    sales_rep_id,
+    referrer_doctor_id,
+    last_seen_at,
+    last_interaction_at,
+    lead_type,
+    lead_type_source,
+    lead_type_locked_at,
+    phone,
+    office_address_line1,
+    office_address_line2,
+    office_city,
+    office_state,
+    office_postal_code,
+    office_country,
+    profile_image_url,
+    profile_onboarding,
+    reseller_permit_onboarding_presented,
+    greater_area,
+    study_focus,
+    bio,
+    network_presence_agreement,
+    delegate_logo_url,
+    delegate_secondary_color,
+    delegate_links_enabled,
+    research_terms_agreement,
+    delegate_opt_in,
+    zelle_contact,
+    cart,
+    referral_code,
+    referral_credits,
+    total_referrals,
+    visits,
+    markup_percent,
+    created_at,
+    last_login_at,
+    must_reset_password,
+    first_order_bonus_granted_at,
+    npi_number,
+    npi_last_verified_at,
+    npi_verification,
+    npi_status,
+    npi_check_error,
+    is_tax_exempt,
+    tax_exempt_source,
+    tax_exempt_reason,
+    reseller_permit_file_path,
+    reseller_permit_file_name,
+    reseller_permit_uploaded_at,
+    dev_commission,
+    receive_client_order_update_emails
+"""
+
+_REFERRAL_DASHBOARD_SELECT_FIELDS = """
+    id,
+    name,
+    email,
+    role,
+    status,
+    hand_delivered,
+    sales_rep_id,
+    referrer_doctor_id,
+    lead_type,
+    lead_type_source,
+    lead_type_locked_at,
+    phone,
+    office_address_line1,
+    office_address_line2,
+    office_city,
+    office_state,
+    office_postal_code,
+    office_country,
+    profile_image_url,
+    greater_area,
+    study_focus,
+    bio,
+    created_at,
+    last_login_at,
+    referral_credits,
+    total_referrals,
+    reseller_permit_file_path,
+    reseller_permit_file_name,
+    reseller_permit_uploaded_at
+"""
+
+_PRESENCE_SELECT_FIELDS = """
+    id,
+    name,
+    email,
+    role,
+    status,
+    hand_delivered,
+    is_online,
+    sales_rep_id,
+    referrer_doctor_id,
+    last_seen_at,
+    last_interaction_at,
+    last_login_at,
+    phone,
+    office_address_line1,
+    office_address_line2,
+    office_city,
+    office_state,
+    office_postal_code,
+    office_country,
+    profile_image_url,
+    greater_area,
+    study_focus,
+    bio,
+    network_presence_agreement,
+    created_at,
+    lead_type,
+    lead_type_source,
+    lead_type_locked_at,
+    referral_credits,
+    total_referrals,
+    reseller_permit_file_path,
+    reseller_permit_file_name,
+    reseller_permit_uploaded_at,
+    npi_number,
+    npi_status,
+    npi_last_verified_at
+"""
+
+
+def find_profile_by_id(user_id: str) -> Optional[Dict]:
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            f"SELECT {_PROFILE_SELECT_FIELDS} FROM users WHERE id = %(id)s",
+            {"id": user_id},
+        )
+        return _row_to_user(row) if row else None
+    return find_by_id(user_id)
+
+
+def list_referral_dashboard_users() -> List[Dict]:
+    """
+    Lightweight projection used by the referrals dashboard.
+
+    Avoid loading heavyweight per-user blobs like password/session/download history
+    when the dashboard only needs account identity, attribution, and profile fields.
+    """
+    if not _using_mysql():
+        return _load()
+
+    rows = mysql_client.fetch_all(
+        f"""
+        SELECT {_REFERRAL_DASHBOARD_SELECT_FIELDS}
+        FROM users
+        """
+    )
+    return [_row_to_user(row) for row in rows or []]
+
+
+def list_presence_projection_users() -> List[Dict]:
+    """
+    Minimal projection used by presence/live-user endpoints.
+
+    These routes only render lightweight identity and presence fields.
+    """
+    if not _using_mysql():
+        return _load()
+
+    rows = mysql_client.fetch_all(
+        f"""
+        SELECT {_PRESENCE_SELECT_FIELDS}
+        FROM users
+        """
+    )
+    return [_row_to_user(row) for row in rows or []]
+
+
 def list_sales_tracking_users_for_admin() -> List[Dict]:
     """
     Lightweight projection for admin sales tracking.

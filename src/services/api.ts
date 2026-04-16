@@ -2828,6 +2828,7 @@ export const referralAPI = {
     salesRepId?: string | null;
     scope?: 'mine' | 'all';
     context?: 'dashboard' | 'modal';
+    include?: string[] | null;
   }) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
@@ -2841,6 +2842,15 @@ export const referralAPI = {
     }
     if (options?.context) {
       params.set('context', options.context);
+    }
+    if (Array.isArray(options?.include) && options.include.length > 0) {
+      const include = options.include
+        .map((value) => String(value || '').trim())
+        .filter((value) => value.length > 0)
+        .join(',');
+      if (include) {
+        params.set('include', include);
+      }
     }
     const query = params.toString();
     // Use non-admin path to avoid infra path-based restrictions; backend supports both.

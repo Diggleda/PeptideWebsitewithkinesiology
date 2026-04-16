@@ -6,7 +6,30 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 _LOCK = threading.Lock()
+_CONDITION = threading.Condition(_LOCK)
 _PRESENCE: Dict[str, Dict[str, object]] = {}
+_REVISION = 0
+
+
+def _bump_revision_locked() -> None:
+    global _REVISION
+    _REVISION += 1
+    _CONDITION.notify_all()
+
+
+def current_revision() -> int:
+    with _LOCK:
+        return int(_REVISION)
+
+
+def wait_for_change(since_revision: int, *, timeout_s: float) -> int:
+    timeout = max(0.0, float(timeout_s or 0.0))
+    with _CONDITION:
+        if _REVISION != int(since_revision):
+            return int(_REVISION)
+        if timeout > 0:
+            _CONDITION.wait(timeout=timeout)
+        return int(_REVISION)
 
 def is_recent_epoch(
     ts_epoch: float | int | None,
@@ -54,7 +77,7 @@ def record_ping(
         return {}
     normalized_kind = str(kind or "heartbeat").strip().lower()
     now = time.time()
-    with _LOCK:
+    with _CONDITION:
         entry = dict(_PRESENCE.get(uid) or {})
         entry["lastHeartbeatAt"] = now
         if normalized_kind == "interaction":
@@ -66,6 +89,7 @@ def record_ping(
                 entry["lastInteractionAt"] = now
         entry["updatedAt"] = now
         _PRESENCE[uid] = entry
+        _bump_revision_locked()
         return dict(entry)
 
 
@@ -88,7 +112,7 @@ def prune_stale(*, max_age_s: float) -> int:
         return 0
     now = time.time()
     removed = 0
-    with _LOCK:
+    with _CONDITION:
         stale_ids = []
         for uid, entry in _PRESENCE.items():
             if not isinstance(entry, dict):
@@ -105,15 +129,19 @@ def prune_stale(*, max_age_s: float) -> int:
             if uid in _PRESENCE:
                 _PRESENCE.pop(uid, None)
                 removed += 1
+        if removed > 0:
+            _bump_revision_locked()
     return removed
 
 def clear_user(user_id: str) -> bool:
     uid = str(user_id or "").strip()
     if not uid:
         return False
-    with _LOCK:
+    with _CONDITION:
         existed = uid in _PRESENCE
         _PRESENCE.pop(uid, None)
+        if existed:
+            _bump_revision_locked()
         return existed
 
 

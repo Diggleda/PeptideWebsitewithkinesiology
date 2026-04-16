@@ -176,8 +176,8 @@ def _run_loop() -> None:
         time.sleep(interval_s)
 
 
-def start_presence_sweep() -> None:
-    if not _enabled() or _mode() != "thread":
+def start_presence_sweep(*, force: bool = False) -> None:
+    if not _enabled() or (not force and _mode() != "thread"):
         return
     global _THREAD_STARTED
     with _THREAD_LOCK:
@@ -186,4 +186,3 @@ def start_presence_sweep() -> None:
         thread = threading.Thread(target=_run_loop, name="presence-sweep", daemon=True)
         thread.start()
         _THREAD_STARTED = True
-

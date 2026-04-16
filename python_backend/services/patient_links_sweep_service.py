@@ -84,8 +84,8 @@ def _run_loop() -> None:
         time.sleep(interval_s)
 
 
-def start_patient_links_sweep() -> None:
-    if not _enabled() or _mode() != "thread":
+def start_patient_links_sweep(*, force: bool = False) -> None:
+    if not _enabled() or (not force and _mode() != "thread"):
         return
     global _THREAD_STARTED
     with _THREAD_LOCK:

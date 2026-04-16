@@ -291,65 +291,82 @@ def admin_dashboard():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        from ..services import get_config
-
-        config = get_config()
-        build = config.backend_build
         requested_sales_rep_id = (request.args.get("salesRepId") or user.get("salesRepId") or user.get("id") or "").strip()
         scope_all = (request.args.get("scope") or "").lower() == "all"
         token_role = (g.current_user.get("role") or "").lower()
         role = (user.get("role") or "").lower()
         can_scope_all = token_role == "admin" or role == "admin" or token_role in ("sales_lead", "saleslead", "sales-lead") or role in ("sales_lead", "saleslead", "sales-lead")
+        raw_include = str(request.args.get("include") or "").strip().lower()
+        includes = {part.strip() for part in raw_include.split(",") if part.strip()}
+
+        def wants(*names: str) -> bool:
+            if not includes:
+                return True
+            return any(name in includes for name in names)
+
         # Admins can view all referrals; sales reps stay scoped to their own assignments.
         target_sales_rep_id = user["id"] if not scope_all and not requested_sales_rep_id else requested_sales_rep_id or user["id"]
-        referrals = referral_service.list_referrals_for_sales_rep(
-            target_sales_rep_id,
-            scope_all=scope_all and can_scope_all,
-            token_role=token_role,
-        )
-        codes = (
-            referral_code_repository.get_all()
-            if scope_all and can_scope_all
-            else [code for code in referral_code_repository.get_all() if str(code.get("salesRepId")) == str(target_sales_rep_id)]
-        )
-        users = referral_service.list_accounts_for_sales_rep(
-            target_sales_rep_id,
-            scope_all=scope_all and can_scope_all,
-        )
-        can_view_sales_reps = can_scope_all
-        sales_reps = None
-        if can_view_sales_reps:
-            try:
-                sales_reps = [
-                    {
-                        "id": rep.get("id"),
-                        "name": rep.get("name"),
-                        "email": rep.get("email"),
-                    }
-                    for rep in sales_rep_repository.get_all()
-                    if rep and rep.get("id")
-                ]
-            except Exception:
-                sales_reps = None
-        current_sales_rep_payload = None
-        try:
-            current_sales_rep_payload = _build_sales_rep_payload(
-                auth_service._resolve_sales_rep_record_for_user(user)  # pylint: disable=protected-access
+
+        payload = {"version": "python_backend"}
+
+        if wants("referrals", "leads"):
+            payload["referrals"] = referral_service.list_referrals_for_sales_rep(
+                target_sales_rep_id,
+                scope_all=scope_all and can_scope_all,
+                token_role=token_role,
             )
-        except Exception:
+
+        if wants("codes"):
+            payload["codes"] = (
+                referral_code_repository.get_all()
+                if scope_all and can_scope_all
+                else [code for code in referral_code_repository.get_all() if str(code.get("salesRepId")) == str(target_sales_rep_id)]
+            )
+
+        if wants("users", "accounts", "doctors"):
+            payload["users"] = referral_service.list_accounts_for_sales_rep(
+                target_sales_rep_id,
+                scope_all=scope_all and can_scope_all,
+            )
+
+        if wants("salesreps", "sales_reps", "salesReps"):
+            can_view_sales_reps = can_scope_all
+            sales_reps = None
+            if can_view_sales_reps:
+                try:
+                    sales_reps = [
+                        {
+                            "id": rep.get("id"),
+                            "name": rep.get("name"),
+                            "email": rep.get("email"),
+                        }
+                        for rep in sales_rep_repository.get_all()
+                        if rep and rep.get("id")
+                    ]
+                except Exception:
+                    sales_reps = None
+            payload["salesReps"] = sales_reps
+
+        if wants("currentsalesrep", "current_sales_rep", "currentSalesRep", "currentSalesRepId", "currentSalesRepAllowedRetail"):
             current_sales_rep_payload = None
-        return {
-            "version": "python_backend",
-            "referrals": referrals,
-            "codes": codes,
-            "users": users,
-            "salesReps": sales_reps,
-            "currentSalesRep": current_sales_rep_payload,
-            "currentSalesRepId": current_sales_rep_payload.get("id") if current_sales_rep_payload else None,
-            "currentSalesRepAllowedRetail": current_sales_rep_payload.get("allowedRetail") if current_sales_rep_payload else None,
-            "statuses": referral_service.get_referral_status_choices(),
-            "referralCreditAmount": referral_service.get_referral_credit_amount(),
-        }
+            try:
+                current_sales_rep_payload = _build_sales_rep_payload(
+                    auth_service._resolve_sales_rep_record_for_user(user)  # pylint: disable=protected-access
+                )
+            except Exception:
+                current_sales_rep_payload = None
+            payload["currentSalesRep"] = current_sales_rep_payload
+            payload["currentSalesRepId"] = current_sales_rep_payload.get("id") if current_sales_rep_payload else None
+            payload["currentSalesRepAllowedRetail"] = (
+                current_sales_rep_payload.get("allowedRetail") if current_sales_rep_payload else None
+            )
+
+        if wants("statuses"):
+            payload["statuses"] = referral_service.get_referral_status_choices()
+        if wants("referralcreditamount", "referralCreditAmount"):
+            payload["referralCreditAmount"] = referral_service.get_referral_credit_amount()
+
+        return payload
 
     return handle_action(action)
 

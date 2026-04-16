@@ -247,6 +247,23 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertTrue(profile["networkPresenceAgreement"])
 
+    def test_get_profile_prefers_projected_lookup_before_full_lookup(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+        }
+
+        with patch.object(auth_service.user_repository, "find_profile_by_id", return_value=user) as find_profile, \
+            patch.object(auth_service.user_repository, "find_by_id", return_value=None) as find_full, \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: dict(value)):
+            profile = auth_service.get_profile("doctor-1")
+
+        self.assertEqual(profile["id"], "doctor-1")
+        find_profile.assert_called_once_with("doctor-1")
+        find_full.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

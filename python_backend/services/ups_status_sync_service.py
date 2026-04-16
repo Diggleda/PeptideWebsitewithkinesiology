@@ -39,6 +39,12 @@ def _enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def _mode() -> str:
+    # "thread" (default): run inside the web process.
+    # "external": do not start automatically in the web process; expect a dedicated runner.
+    return str(os.environ.get("UPS_STATUS_SYNC_MODE", "thread")).strip().lower() or "thread"
+
+
 def _interval_seconds() -> int:
     raw_ms = str(os.environ.get("UPS_STATUS_SYNC_INTERVAL_MS", "") or "").strip()
     if raw_ms:
@@ -763,9 +769,12 @@ def _startup_backfill_worker() -> None:
             return
 
 
-def start_ups_status_sync() -> None:
+def start_ups_status_sync(*, force: bool = False) -> None:
     global _THREAD_STARTED, _INITIAL_BACKFILL_STARTED
     if not _enabled():
+        return
+    if not force and _mode() != "thread":
+        logger.info("[ups-status-sync] thread disabled", extra={"mode": _mode()})
         return
     with _THREAD_LOCK:
         if _THREAD_STARTED:

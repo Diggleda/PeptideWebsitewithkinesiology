@@ -38,21 +38,27 @@ def _enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def _mode() -> str:
+    # "thread" (default): run inside the web process.
+    # "external": do not start automatically in the web process; expect a dedicated runner.
+    return str(os.environ.get("SHIPSTATION_STATUS_SYNC_MODE", "thread")).strip().lower() or "thread"
+
+
 def _interval_seconds() -> int:
     raw_ms = str(os.environ.get("SHIPSTATION_STATUS_SYNC_INTERVAL_MS", "") or "").strip()
     if raw_ms:
         try:
-            ms = int(raw_ms)
+            ms = int(float(raw_ms))
         except Exception:
-            ms = 60_000
-        return max(10, min(int(ms / 1000), 3600))
+            ms = 30_000
+        return max(30, min(int(ms / 1000), 3600))
 
-    raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_INTERVAL_SECONDS", "60")).strip()
+    raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_INTERVAL_SECONDS", "30")).strip()
     try:
-        value = int(raw)
+        value = int(float(raw))
     except Exception:
-        value = 60
-    return max(10, min(value, 3600))
+        value = 30
+    return max(30, min(value, 3600))
 
 
 def _lookback_days() -> int:
@@ -593,9 +599,12 @@ def _worker() -> None:
         time.sleep(_interval_seconds())
 
 
-def start_shipstation_status_sync() -> None:
+def start_shipstation_status_sync(*, force: bool = False) -> None:
     global _THREAD_STARTED
     if not _enabled():
+        return
+    if not force and _mode() != "thread":
+        logger.info("[shipstation-sync] thread disabled", extra={"mode": _mode()})
         return
     with _THREAD_LOCK:
         if _THREAD_STARTED:

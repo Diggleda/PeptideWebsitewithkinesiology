@@ -228,8 +228,8 @@ def _worker() -> None:
         time.sleep(interval)
 
 
-def start_product_document_sync() -> None:
-    if _mode() != "thread":
+def start_product_document_sync(*, force: bool = False) -> None:
+    if not force and _mode() != "thread":
         logger.info("[product-docs] sync thread disabled", extra={"mode": _mode()})
         return
     global _SYNC_THREAD_STARTED

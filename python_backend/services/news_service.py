@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 import time
 from dataclasses import dataclass
 from html import unescape
+from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urljoin
 
 import requests
 
+from . import get_config
 from ..utils import http_client
 
 try:
@@ -29,6 +32,7 @@ USER_AGENT = (
 
 _CACHE_LOCK = threading.Lock()
 _CACHE: dict[str, object] = {"items": None, "expiresAt": 0.0, "fetchedAt": 0.0}
+_CACHE_LOADED = False
 _INFLIGHT_EVENT: threading.Event | None = None
 
 
@@ -43,56 +47,70 @@ class NewsItem:
 
 def fetch_peptide_news(limit: int = 8) -> List[NewsItem]:
     """Fetch peptide related headlines from Nature and return cleaned entries."""
-    leader = False
-    wait_event: threading.Event | None = None
     stale_items: List[NewsItem] = []
-    now = time.monotonic()
-    ttl_s = _cache_ttl_seconds()
-    max_stale_s = _cache_max_stale_seconds()
+    now = time.time()
 
     with _CACHE_LOCK:
+        _load_persisted_cache_locked()
         cached_items = _coerce_cached_items(_CACHE.get("items"))
         expires_at = float(_CACHE.get("expiresAt") or 0.0)
-        fetched_at = float(_CACHE.get("fetchedAt") or 0.0)
         if cached_items and expires_at > now:
             return _limit_items(cached_items, limit)
 
         stale_items = list(cached_items)
-        global _INFLIGHT_EVENT
-        if _INFLIGHT_EVENT is not None:
-            wait_event = _INFLIGHT_EVENT
-        else:
-            wait_event = threading.Event()
-            _INFLIGHT_EVENT = wait_event
-            leader = True
-
-    if not leader:
-        if stale_items and fetched_at > 0 and (now - fetched_at) <= max_stale_s:
+        if stale_items:
+            _schedule_refresh_locked()
             return _limit_items(stale_items, limit)
-        wait_event.wait(timeout=_inflight_wait_seconds())
-        with _CACHE_LOCK:
-            refreshed_items = _coerce_cached_items(_CACHE.get("items"))
-            if refreshed_items:
-                return _limit_items(refreshed_items, limit)
-        return _limit_items(stale_items, limit)
 
+    refreshed_items = _refresh_cache_once()
+    if refreshed_items:
+        return _limit_items(refreshed_items, limit)
+    return _limit_items(stale_items, limit)
+
+
+def _schedule_refresh_locked() -> None:
+    global _INFLIGHT_EVENT
+    if _INFLIGHT_EVENT is not None:
+        return
+    event = threading.Event()
+    _INFLIGHT_EVENT = event
+    thread = threading.Thread(
+        target=_refresh_cache_worker,
+        args=(event,),
+        name="peptide-news-refresh",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _refresh_cache_worker(event: threading.Event) -> None:
     try:
-        html = _fetch_page_html()
-        if not html:
-            return _limit_items(stale_items, limit)
-
-        items = _sort_by_date(_parse_news(html))
-        with _CACHE_LOCK:
-            _CACHE["items"] = list(items)
-            _CACHE["fetchedAt"] = time.monotonic()
-            _CACHE["expiresAt"] = float(_CACHE["fetchedAt"]) + ttl_s
-        return _limit_items(items, limit)
+        _refresh_cache_once()
     finally:
         with _CACHE_LOCK:
-            event = _INFLIGHT_EVENT
-            _INFLIGHT_EVENT = None
-        if event is not None:
-            event.set()
+            global _INFLIGHT_EVENT
+            if _INFLIGHT_EVENT is event:
+                _INFLIGHT_EVENT = None
+        event.set()
+
+
+def _refresh_cache_once() -> List[NewsItem]:
+    html = _fetch_page_html()
+    if not html:
+        return []
+
+    items = _sort_by_date(_parse_news(html))
+    if not items:
+        return []
+
+    fetched_at = time.time()
+    expires_at = fetched_at + _cache_ttl_seconds()
+    with _CACHE_LOCK:
+        _CACHE["items"] = list(items)
+        _CACHE["fetchedAt"] = fetched_at
+        _CACHE["expiresAt"] = expires_at
+    _persist_cache_snapshot(items, fetched_at=fetched_at, expires_at=expires_at)
+    return list(items)
 
 
 def _limit_items(items: List[NewsItem], limit: int) -> List[NewsItem]:
@@ -125,13 +143,88 @@ def _cache_max_stale_seconds() -> float:
     return max(60.0, min(value, 24 * 3600.0))
 
 
-def _inflight_wait_seconds() -> float:
-    raw = str(os.environ.get("PEPTIDE_NEWS_INFLIGHT_WAIT_SECONDS") or "2.0").strip()
+def _cache_file_path() -> Optional[Path]:
     try:
-        value = float(raw)
+        config = get_config()
     except Exception:
-        value = 2.0
-    return max(0.1, min(value, 10.0))
+        return None
+    data_dir = Path(str(getattr(config, "data_dir", "server-data")))
+    return data_dir / "cache" / "peptide-news.json"
+
+
+def _load_persisted_cache_locked() -> None:
+    global _CACHE_LOADED
+    if _CACHE_LOADED:
+        return
+    _CACHE_LOADED = True
+
+    path = _cache_file_path()
+    if path is None or not path.exists():
+        return
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+
+    items = [
+        item
+        for item in (_deserialize_item(entry) for entry in (payload.get("items") or []))
+        if item is not None
+    ]
+    if not items:
+        return
+
+    _CACHE["items"] = items
+    _CACHE["fetchedAt"] = float(payload.get("fetchedAt") or 0.0)
+    _CACHE["expiresAt"] = float(payload.get("expiresAt") or 0.0)
+
+
+def _persist_cache_snapshot(items: List[NewsItem], *, fetched_at: float, expires_at: float) -> None:
+    path = _cache_file_path()
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "fetchedAt": float(fetched_at),
+            "expiresAt": float(expires_at),
+            "items": [_serialize_item(item) for item in items],
+        }
+        temp_path = path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temp_path.replace(path)
+    except Exception:
+        logger.debug("Unable to persist peptide news cache", exc_info=True)
+
+
+def _serialize_item(item: NewsItem) -> dict[str, Optional[str]]:
+    return {
+        "title": item.title,
+        "url": item.url,
+        "summary": item.summary,
+        "imageUrl": item.image_url,
+        "date": item.date,
+    }
+
+
+def _deserialize_item(payload: object) -> Optional[NewsItem]:
+    if not isinstance(payload, dict):
+        return None
+    title = str(payload.get("title") or "").strip()
+    url = str(payload.get("url") or "").strip()
+    if not title or not url:
+        return None
+    summary = payload.get("summary")
+    image_url = payload.get("imageUrl")
+    date = payload.get("date")
+    return NewsItem(
+        title=title,
+        url=url,
+        summary=str(summary).strip() if isinstance(summary, str) and summary.strip() else None,
+        image_url=str(image_url).strip() if isinstance(image_url, str) and image_url.strip() else None,
+        date=str(date).strip() if isinstance(date, str) and date.strip() else None,
+    )
 
 
 def _fetch_page_html() -> Optional[str]:

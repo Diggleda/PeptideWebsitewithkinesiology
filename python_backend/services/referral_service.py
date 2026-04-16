@@ -320,7 +320,7 @@ def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> L
     """
     Return user/account records to help clients detect account creation for referrals.
     """
-    all_users = user_repository.get_all()
+    all_users = user_repository.list_referral_dashboard_users()
     if scope_all:
         doctors = [u for u in all_users if (u.get("role") or "").lower() in ("doctor", "test_doctor")]
         updated_doctors = backfill_lead_types_for_doctors(doctors)

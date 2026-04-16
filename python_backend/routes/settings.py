@@ -43,6 +43,24 @@ _LIVE_USERS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_USERS_LONGPOLL_CONCU
 _LIVE_USERS_LONGPOLL_CONCURRENCY = max(1, min(_LIVE_USERS_LONGPOLL_CONCURRENCY, 20))
 _LIVE_USERS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_USERS_LONGPOLL_CONCURRENCY)
 
+
+def _presence_longpoll_wait_chunk_seconds() -> float:
+    raw = os.environ.get("PRESENCE_LONGPOLL_WAIT_CHUNK_SECONDS")
+    try:
+        value = float(raw) if raw is not None else 5.0
+    except Exception:
+        value = 5.0
+    return max(0.5, min(value, 10.0))
+
+
+def _wait_for_presence_change(previous_revision: int, *, deadline: float) -> int:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return previous_revision
+    timeout_s = min(remaining, _presence_longpoll_wait_chunk_seconds())
+    return presence_service.wait_for_change(previous_revision, timeout_s=timeout_s)
+
+
 def _mysql_enabled() -> bool:
     config = get_config()
     return bool(getattr(config, "mysql", {}).get("enabled"))
@@ -1001,7 +1019,7 @@ def _compute_allowed_sales_rep_ids(
 
     # Cross-link via email when the sales rep has both a `users` row and a `sales_reps` row.
     try:
-        users = user_repository.get_all() or []
+        users = user_repository.list_presence_projection_users() or []
     except Exception:
         users = []
 
@@ -1109,7 +1127,7 @@ def _compute_live_clients_payload(
     target_sales_rep_id: str,
     strict_assignment: bool = False,
 ) -> dict:
-    all_users = user_repository.get_all()
+    all_users = user_repository.list_presence_projection_users()
 
     allowed_rep_ids = _compute_allowed_sales_rep_ids(
         target_sales_rep_id,
@@ -1253,7 +1271,7 @@ def _compute_live_clients_cached(*, target_sales_rep_id: str) -> dict:
 
 
 def _compute_live_users_payload() -> dict:
-    users = user_repository.get_all()
+    users = user_repository.list_presence_projection_users()
     users_by_id: dict[str, dict] = {}
 
     for user in users or []:
@@ -1787,7 +1805,7 @@ def longpoll_live_clients():
             return _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
 
         try:
-            started = time.monotonic()
+            deadline = time.monotonic() + (timeout_ms / 1000.0)
             payload = (
                 _compute_live_clients_payload(
                     target_sales_rep_id=target_sales_rep_id,
@@ -1800,10 +1818,9 @@ def longpoll_live_clients():
             if not etag or etag != client_etag:
                 return payload
 
-            poll_interval_s = float(os.environ.get("LIVE_CLIENTS_LONGPOLL_INTERVAL_SECONDS") or 1.0)
-            poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
-            while (time.monotonic() - started) * 1000 < timeout_ms:
-                time.sleep(poll_interval_s)
+            revision = presence_service.current_revision()
+            while time.monotonic() < deadline:
+                revision = _wait_for_presence_change(revision, deadline=deadline)
                 payload = (
                     _compute_live_clients_payload(
                         target_sales_rep_id=target_sales_rep_id,
@@ -1854,16 +1871,15 @@ def longpoll_live_users():
             return _compute_live_users_cached()
 
         try:
-            started = time.monotonic()
+            deadline = time.monotonic() + (timeout_ms / 1000.0)
             payload = _compute_live_users_cached()
             etag = str(payload.get("etag") or "").strip() or None
             if not etag or etag != client_etag:
                 return payload
 
-            poll_interval_s = float(os.environ.get("LIVE_USERS_LONGPOLL_INTERVAL_SECONDS") or 1.0)
-            poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
-            while (time.monotonic() - started) * 1000 < timeout_ms:
-                time.sleep(poll_interval_s)
+            revision = presence_service.current_revision()
+            while time.monotonic() < deadline:
+                revision = _wait_for_presence_change(revision, deadline=deadline)
                 payload = _compute_live_users_cached()
                 etag = str(payload.get("etag") or "").strip() or None
                 if not etag or etag != client_etag:
@@ -2700,16 +2716,15 @@ def longpoll_user_activity():
             return report
 
         try:
-            started = time.monotonic()
+            deadline = time.monotonic() + (timeout_ms / 1000.0)
             report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
             etag = str(report.get("etag") or "").strip() or None
             if not etag or etag != client_etag:
                 return report
 
-            poll_interval_s = float(os.environ.get("USER_ACTIVITY_LONGPOLL_INTERVAL_SECONDS") or 1.0)
-            poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
-            while (time.monotonic() - started) * 1000 < timeout_ms:
-                time.sleep(poll_interval_s)
+            revision = presence_service.current_revision()
+            while time.monotonic() < deadline:
+                revision = _wait_for_presence_change(revision, deadline=deadline)
                 report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
                 etag = str(report.get("etag") or "").strip() or None
                 if not etag or etag != client_etag:
