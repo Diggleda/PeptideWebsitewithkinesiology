@@ -5,7 +5,6 @@ import sys
 import tempfile
 import types
 import unittest
-from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -30,7 +29,7 @@ class QuotesServiceTests(unittest.TestCase):
             (data_dir / "daily-quote.json").write_text(
                 json.dumps(
                     {
-                        "date": date.today().isoformat(),
+                        "date": quotes_service._today_key(),
                         "id": "quote-1",
                         "text": "Cached daily quote",
                         "author": "PepPro",
@@ -90,6 +89,52 @@ class QuotesServiceTests(unittest.TestCase):
             },
         )
         self.assertEqual(stored["text"], "Feed cached quote")
+
+    def test_get_daily_quote_prefers_mysql_and_rewrites_legacy_cache_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            (data_dir / "daily-quote.json").write_text(
+                json.dumps(
+                    {
+                        "date": quotes_service._today_key(),
+                        "id": 165,
+                    }
+                )
+            )
+            config = SimpleNamespace(data_dir=data_dir, quotes={}, integrations={})
+            mysql_stub = SimpleNamespace(
+                is_enabled=lambda: True,
+                fetch_all=lambda *args, **kwargs: [
+                    {
+                        "id": 165,
+                        "text": "Database quote",
+                        "author": "PepPro",
+                    }
+                ],
+            )
+
+            with patch.object(quotes_service, "get_config", return_value=config), patch.object(
+                quotes_service,
+                "mysql_client",
+                mysql_stub,
+            ), patch.object(
+                quotes_service.http_client,
+                "get",
+                side_effect=AssertionError("remote quote feed should not be fetched when MySQL is available"),
+            ):
+                result = quotes_service.get_daily_quote()
+
+            stored = json.loads((data_dir / "daily-quote.json").read_text())
+
+        self.assertEqual(
+            result,
+            {
+                "text": "Database quote",
+                "author": "PepPro",
+            },
+        )
+        self.assertEqual(stored["text"], "Database quote")
+        self.assertEqual(stored["author"], "PepPro")
 
 
 if __name__ == "__main__":

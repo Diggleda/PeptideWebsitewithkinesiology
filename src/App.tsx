@@ -2438,6 +2438,14 @@ const normalizeDelegateOrderLabel = (value: unknown): string | null => {
   return `Delegate: ${trimmed}`;
 };
 
+const resolveDelegateOrderLabel = (order: any): string | null => {
+  const delegateFields = resolveOrderAsDelegateFields(order);
+  return (
+    normalizeDelegateOrderLabel(delegateFields.asDelegate) ||
+    normalizeDelegateOrderLabel(delegateFields.as_delegate)
+  );
+};
+
 const isDelegateDraftOrder = (order: any): boolean => {
   const normalizedStatus = String(order?.status || "").trim().toLowerCase();
   if (normalizedStatus === "delegation_draft") {
@@ -12007,6 +12015,95 @@ function MainApp() {
                   .filter((part) => typeof part === "string" && part.trim().length > 0)
                   .join("\n") || null;
           const isSalesProfile = Boolean(modalResp?.isSalesProfile);
+          const modalOrders = Array.isArray(modalResp?.orders) ? modalResp.orders : [];
+          const modalPersonalOrders = Array.isArray(modalResp?.personalOrders)
+            ? modalResp.personalOrders
+            : [];
+          const modalSalesOrders = Array.isArray(modalResp?.salesOrders) ? modalResp.salesOrders : [];
+          const normalizedProfileEmail =
+            typeof (profile?.email || entry?.email) === "string"
+              ? String(profile?.email || entry?.email || "")
+                  .trim()
+                  .toLowerCase()
+              : "";
+          const modalLookupIds = new Set(
+            [
+              resolvedUserId,
+              String(profile?.id || "").trim(),
+              ...candidateIds,
+            ].filter((value) => value.length > 0),
+          );
+          const matchesModalDoctorOrder = (order: any) => {
+            const billingAddress =
+              ((order as any)?.billingAddress ?? (order as any)?.billing_address ?? {}) as any;
+            const shippingAddress =
+              ((order as any)?.shippingAddress ?? (order as any)?.shipping_address ?? {}) as any;
+            const orderDoctorId =
+              resolveOrderDoctorId(order as any) ||
+              (order as any)?.doctorId ||
+              (order as any)?.doctor_id ||
+              (order as any)?.userId ||
+              (order as any)?.user_id ||
+              null;
+            if (orderDoctorId && modalLookupIds.has(String(orderDoctorId).trim())) {
+              return true;
+            }
+            const orderEmailRaw =
+              (order as any)?.doctorEmail ||
+              (order as any)?.doctor_email ||
+              billingAddress?.email ||
+              shippingAddress?.email ||
+              null;
+            const orderEmail =
+              typeof orderEmailRaw === "string" ? orderEmailRaw.trim().toLowerCase() : "";
+            return Boolean(normalizedProfileEmail && orderEmail && normalizedProfileEmail === orderEmail);
+          };
+          const fallbackRepIds = Array.from(
+            new Set(
+              [
+                modalResp?.ownerSalesRepId,
+                profile?.salesRepId,
+                profile?.sales_rep_id,
+                entry?.ownerSalesRepId,
+                entry?.owner_sales_rep_id,
+                entry?.salesRepId,
+                entry?.sales_rep_id,
+              ]
+                .map((value) => String(value || "").trim())
+                .filter((value) => value.length > 0),
+            ),
+          );
+          const cachedRepOrdersForModal = fallbackRepIds.flatMap((repId) => {
+            const cached = salesDoctorRepFeedCacheRef.current.get(repId) || null;
+            return Array.isArray(cached?.orders) ? cached.orders : [];
+          });
+          const fallbackDoctorOrders = normalizeAccountOrdersResponse(
+            {
+              local: []
+                .concat(salesTrackingOrdersRef.current as any[])
+                .concat(cachedRepOrdersForModal as any[])
+                .filter(matchesModalDoctorOrder),
+            },
+            { includeCanceled: true },
+          );
+          const resolvedPersonalOrders =
+            modalPersonalOrders.length > 0
+              ? modalPersonalOrders
+              : !isSalesProfile && fallbackDoctorOrders.length > 0
+                ? fallbackDoctorOrders
+                : [];
+          const resolvedSalesOrders = modalSalesOrders;
+          const resolvedCombinedOrders =
+            modalOrders.length > 0
+              ? modalOrders
+              : normalizeAccountOrdersResponse(
+                  {
+                    local: []
+                      .concat(resolvedPersonalOrders as any[])
+                      .concat(resolvedSalesOrders as any[]),
+                  },
+                  { includeCanceled: true },
+                );
 
           let immediateSalesWholesaleRevenue = isSalesActorProfile ? salesWholesaleRevenue : null;
           let immediateSalesRetailRevenue = isSalesActorProfile ? salesRetailRevenue : null;
@@ -12097,21 +12194,35 @@ function MainApp() {
               lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
                 lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
                 lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
-              orders: Array.isArray(modalResp?.orders) ? modalResp.orders : [],
-              personalOrders: Array.isArray(modalResp?.personalOrders) ? modalResp.personalOrders : [],
-              salesOrders: Array.isArray(modalResp?.salesOrders) ? modalResp.salesOrders : [],
+              orders: resolvedCombinedOrders,
+              personalOrders: resolvedPersonalOrders,
+              salesOrders: resolvedSalesOrders,
               personalOrdersLoaded: modalResp?.personalOrdersLoaded !== false,
               salesOrdersLoaded: modalResp?.salesOrdersLoaded !== false,
               total:
                 typeof modalResp?.totalOrderValue === "number" &&
                 Number.isFinite(modalResp.totalOrderValue)
                   ? modalResp.totalOrderValue
-                  : 0,
+                  : resolvedCombinedOrders.reduce(
+                      (sum, order) =>
+                        shouldCountRevenueForStatus((order as any)?.status)
+                          ? sum + resolveOrderSalesSubtotal(order as any)
+                          : sum,
+                      0,
+                    ),
               personalRevenue:
                 typeof modalResp?.personalRevenue === "number" &&
                 Number.isFinite(modalResp.personalRevenue)
                   ? modalResp.personalRevenue
-                  : null,
+                  : resolvedPersonalOrders.length > 0
+                    ? resolvedPersonalOrders.reduce(
+                        (sum, order) =>
+                          shouldCountRevenueForStatus((order as any)?.status)
+                            ? sum + resolveOrderSalesSubtotal(order as any)
+                            : sum,
+                        0,
+                      )
+                    : null,
               salesRevenue:
                 typeof modalResp?.salesRevenue === "number" &&
                 Number.isFinite(modalResp.salesRevenue)
@@ -12142,19 +12253,31 @@ function MainApp() {
               orderQuantity:
                 typeof modalResp?.orderQuantity === "number" && Number.isFinite(modalResp.orderQuantity)
                   ? modalResp.orderQuantity
-                  : immediateSalesOrderCount,
+                  : resolvedCombinedOrders.filter((order) =>
+                      shouldCountRevenueForStatus((order as any)?.status),
+                    ).length || immediateSalesOrderCount,
               salesOrderCount:
                 typeof modalResp?.salesOrderCount === "number" &&
                 Number.isFinite(modalResp.salesOrderCount)
                   ? modalResp.salesOrderCount
-                  : immediateSalesOrderCount,
+                  : resolvedSalesOrders.filter((order) =>
+                      shouldCountRevenueForStatus((order as any)?.status),
+                    ).length || immediateSalesOrderCount,
               totalOrderValue:
                 typeof modalResp?.totalOrderValue === "number" &&
                 Number.isFinite(modalResp.totalOrderValue)
                   ? modalResp.totalOrderValue
-                  : 0,
+                  : resolvedCombinedOrders.reduce(
+                      (sum, order) =>
+                        shouldCountRevenueForStatus((order as any)?.status)
+                          ? sum + resolveOrderSalesSubtotal(order as any)
+                          : sum,
+                      0,
+                    ),
               lastOrderDate:
-                typeof modalResp?.lastOrderDate === "string" ? modalResp.lastOrderDate : null,
+                typeof modalResp?.lastOrderDate === "string"
+                  ? modalResp.lastOrderDate
+                  : resolvedCombinedOrders[0]?.createdAt || resolvedCombinedOrders[0]?.updatedAt || null,
               summaryOnly: modalResp?.summaryOnly === true,
             },
             roleFromProfile || "doctor",
@@ -32585,8 +32708,16 @@ function MainApp() {
                               >
                                 <div className="sales-order-card-content flex flex-col gap-2 w-full">
                                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                                    <div className="lead-list-name">
-                                      Order #{order.number ?? order.id}
+                                    <div className="lead-list-name flex flex-wrap items-center gap-2">
+                                      <span>Order #{order.number ?? order.id}</span>
+                                      {delegateOrderLabel ? (
+                                        <span
+                                          className="sales-tracking-row-status"
+                                          title={delegateOrderLabel}
+                                        >
+                                          Delegate Order
+                                        </span>
+                                      ) : null}
                                     </div>
                                     {showShimmer ? (
                                       <div className="flex items-center gap-2 justify-end w-full sm:w-auto max-w-[200px]">
@@ -32601,14 +32732,6 @@ function MainApp() {
                                         <span className="sales-tracking-row-status">
                                           {statusLabel}
                                         </span>
-                                        {delegateOrderLabel ? (
-                                          <span
-                                            className="sales-tracking-row-status"
-                                            title={delegateOrderLabel}
-                                          >
-                                            Delegate Order
-                                          </span>
-                                        ) : null}
                                       </div>
                                     )}
                                   </div>
@@ -38564,9 +38687,6 @@ function MainApp() {
 	                              <span className="font-semibold text-slate-800 truncate">
 	                                {`Order #${displayOrderNumber}`}
 	                              </span>
-	                              <span className="sales-tracking-row-status shrink-0">
-	                                {describeSalesOrderStatus(order as any)}
-	                              </span>
                                 {delegateOrderLabel ? (
                                   <span
                                     className="sales-tracking-row-status shrink-0"
@@ -38575,6 +38695,9 @@ function MainApp() {
                                     Delegate Order
                                   </span>
                                 ) : null}
+	                              <span className="sales-tracking-row-status shrink-0">
+	                                {describeSalesOrderStatus(order as any)}
+	                              </span>
 	                            </div>
 	                            <div className="text-xs text-slate-500">
 	                              {dateSummary.value
@@ -38973,10 +39096,21 @@ function MainApp() {
           {salesOrderDetail && (
             <>
               <DialogHeader>
-                <DialogTitle>
-                  {salesOrderDetail.number
-                    ? `Order #${salesOrderDetail.number}`
-                    : "Order details"}
+                <DialogTitle className="flex flex-wrap items-center gap-2">
+                  <span>
+                    {salesOrderDetail.number
+                      ? `Order #${salesOrderDetail.number}`
+                      : "Order details"}
+                  </span>
+                  {resolveDelegateOrderLabel(salesOrderDetail as any) ? (
+                    <Badge
+                      variant="secondary"
+                      className="uppercase"
+                      title={resolveDelegateOrderLabel(salesOrderDetail as any) || undefined}
+                    >
+                      Delegate Order
+                    </Badge>
+                  ) : null}
                 </DialogTitle>
                 <DialogDescription>
                   {salesOrderDetail.doctorName || salesOrderDetail.doctorEmail || ""}
@@ -39232,13 +39366,6 @@ function MainApp() {
                         : null,
                     )
                   : null;
-                const delegateFields = resolveOrderAsDelegateFields(
-                  salesOrderDetail as any,
-                );
-                const delegateOrderLabel =
-                  normalizeDelegateOrderLabel(delegateFields.asDelegate) ||
-                  normalizeDelegateOrderLabel(delegateFields.as_delegate);
-                const isDelegateOrder = Boolean(delegateOrderLabel);
                 const orderDetailHasResellerPermit = hasUploadedResellerPermit(
                   salesOrderDetail,
                   salesDoctorDetail,
@@ -39275,15 +39402,6 @@ function MainApp() {
 	                          <Badge variant="secondary" className="uppercase">
 	                            {describeSalesOrderStatus(salesOrderDetail as any)}
 	                          </Badge>
-                            {isDelegateOrder ? (
-                              <Badge
-                                variant="secondary"
-                                className="uppercase"
-                                title={delegateOrderLabel || undefined}
-                              >
-                                Delegate Order
-                              </Badge>
-                            ) : null}
                           </div>
                           {orderDetailTaxExempt && (
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-600">

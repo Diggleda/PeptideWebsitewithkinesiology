@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import random
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -12,6 +12,11 @@ import requests
 
 from . import get_config
 from ..utils import http_client
+
+try:
+    from ..database import mysql_client
+except ModuleNotFoundError:  # pragma: no cover - optional in local test/dev envs
+    mysql_client = None
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +28,10 @@ class QuoteServiceError(RuntimeError):
     def __init__(self, message: str, status: int = 500):
         super().__init__(message)
         self.status = status
+
+
+def _today_key() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 def _cache_path() -> Path:
@@ -58,6 +67,36 @@ def _normalize_quotes(raw_quotes: object) -> List[Dict]:
 
 
 def _fetch_quotes() -> List[Dict]:
+    mysql_quotes = _fetch_quotes_from_mysql()
+    if mysql_quotes:
+        return mysql_quotes
+    return _fetch_quotes_from_source()
+
+
+def _fetch_quotes_from_mysql() -> Optional[List[Dict]]:
+    if mysql_client is None:
+        return None
+    if not mysql_client.is_enabled():
+        return None
+
+    try:
+        rows = mysql_client.fetch_all(
+            """
+            SELECT id, text, author
+            FROM quotes
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 500
+            """,
+            {},
+        )
+    except Exception:
+        logger.warning("Failed to fetch quotes from MySQL; falling back to remote source", exc_info=True)
+        return None
+
+    return _normalize_quotes(rows)
+
+
+def _fetch_quotes_from_source() -> List[Dict]:
     config = get_config()
     source_url = config.quotes.get("source_url")
     if not source_url:
@@ -181,7 +220,7 @@ def _pick_quote(quotes: List[Dict], avoid_id: Optional[str]) -> Dict:
 
 def get_daily_quote() -> Dict:
     cache = _load_cache()
-    today = date.today().isoformat()
+    today = _today_key()
 
     if isinstance(cache, dict) and cache.get("date") == today:
         cached_text = cache.get("text")
@@ -240,7 +279,7 @@ def list_quotes() -> Dict:
 
 def prime_daily_quote_cache() -> Dict:
     cache = _load_cache()
-    today = date.today().isoformat()
+    today = _today_key()
     if isinstance(cache, dict) and cache.get("date") == today:
         cached_text = cache.get("text")
         if isinstance(cached_text, str) and cached_text.strip():

@@ -6088,5 +6088,231 @@
     "resellerPermitFileName": "dr-avery-mercer-20260330.pdf",
     "resellerPermitUploadedAt": "2026-03-30T15:20:00.000Z",
     "hasResellerPermitUploaded": true
+  },
+  {
+    "id": "ord_delegate_demo_1776391828878",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-1204::woo-variation-1205",
+        "productId": 1204,
+        "variantId": 1205,
+        "sku": "Phych-PT141-10mg-N",
+        "name": "[Delegate Demo] PT-141 N — 10mg",
+        "price": 93.91,
+        "quantity": 1,
+        "note": null,
+        "position": 1,
+        "weightOz": 0.06,
+        "lengthIn": null,
+        "widthIn": 1,
+        "heightIn": 4.12
+      }
+    ],
+    "total": 140.06,
+    "taxTotal": 0,
+    "itemsSubtotal": 93.91,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023",
+      "packageCode": null,
+      "weightOz": null,
+      "packageDimensions": null,
+      "meta": null,
+      "estimatedArrivalDate": "2025-12-19T07:15:09.339Z"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2026-04-17T02:10:28.878Z",
+    "physicianCertificationAccepted": true,
+    "idempotencyKey": "delegate-demo-1776391828878",
+    "integrations": {
+      "wooCommerce": "pending",
+      "stripe": "disabled",
+      "shipEngine": "skipped",
+      "shipStation": "skipped",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "pending",
+        "reason": "local_delegate_demo",
+        "draftId": "local-delegate-demo-1275",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Delegate Demo Order ord_delegate_demo_1776391828878",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "[Delegate Demo] PT-141 N — 10mg",
+              "sku": "Phych-PT141-10mg-N",
+              "quantity": 1,
+              "total": "93.91",
+              "subtotal": "93.91",
+              "total_tax": "0",
+              "subtotal_tax": "0",
+              "meta_data": [],
+              "product_id": 1204,
+              "variation_id": 1205
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_total",
+              "value": 140.06
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\",\"packageCode\":null,\"weightOz\":null,\"packageDimensions\":null,\"meta\":null,\"estimatedArrivalDate\":\"2025-12-19T07:15:09.339Z\"}"
+            },
+            {
+              "key": "peppro_package_weight_oz",
+              "value": 0
+            },
+            {
+              "key": "peppro_order_id",
+              "value": "ord_delegate_demo_1776391828878"
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2026-04-17T02:10:28.878Z"
+            },
+            {
+              "key": "_order_number",
+              "value": "1275"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1275"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1275"
+            },
+            {
+              "key": "as_delegate",
+              "value": "Delegate Order"
+            },
+            {
+              "key": "peppro_as_delegate",
+              "value": "Delegate Order"
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_ups_next_day_air",
+              "method_title": "ups_next_day_air",
+              "total": "46.15",
+              "meta_data": [
+                {
+                  "key": "peppro_service_code",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_service_type",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_estimated_delivery_days",
+                  "value": 0
+                },
+                {
+                  "key": "peppro_package_weight_oz",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "response": {
+          "id": 1275,
+          "number": "1275",
+          "status": "pending",
+          "payment_url": null,
+          "order_key": "local_delegate_demo_1275",
+          "invoiceUrl": null
+        },
+        "invoiceUrl": null
+      },
+      "shipStation": {
+        "status": "skipped",
+        "reason": "local_delegate_demo"
+      },
+      "stripe": {
+        "status": "disabled",
+        "reason": "manual_payment",
+        "message": "Local delegate demo order; no Stripe payment intent created."
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "local_delegate_demo"
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "local_delegate_demo"
+      }
+    },
+    "wooOrderId": 1275,
+    "wooOrderNumber": "1275",
+    "shipStationOrderId": null,
+    "paymentIntentId": null,
+    "number": "1275",
+    "updatedAt": "2026-04-17T02:10:28.878Z",
+    "paymentMethod": "Zelle",
+    "paymentDetails": "Zelle / Bank transfer",
+    "asDelegate": "Delegate Order",
+    "as_delegate": "Delegate Order"
   }
 ]

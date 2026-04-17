@@ -6099,31 +6099,6 @@ export function Header({
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
                       <p className="order-status-row flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
                         <span>{statusDisplay}</span>
-                        {showDelegateOrderLabel && (
-                          showDelegateOrderJumpButton ? (
-                            <Badge
-                              asChild
-                              variant="secondary"
-                              className="uppercase cursor-pointer hover:opacity-90"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
-                                title={delegateOrderLabel || "Open associated delegate link"}
-                              >
-                                Delegate Order
-                              </button>
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="secondary"
-                              className="uppercase"
-                              title={delegateOrderLabel || undefined}
-                            >
-                              Delegate Order
-                            </Badge>
-                          )
-                        )}
                       </p>
                     </div>
                     {showExpectedDelivery && (
@@ -6188,8 +6163,33 @@ export function Header({
                   <div className="space-y-4 flex-1 min-w-0">
 	                    <div className="order-number-row flex flex-wrap items-start justify-between gap-3">
 	                      <div className="flex-1 min-w-0 space-y-1">
-		                        <p className="text-base font-bold text-slate-900 break-words">
-		                          <span className="mr-2">{orderNumberLabel}</span>
+		                        <p className="text-base font-bold text-slate-900 break-words flex flex-wrap items-center gap-2">
+		                          <span>{orderNumberLabel}</span>
+                              {showDelegateOrderLabel && (
+                                showDelegateOrderJumpButton ? (
+                                  <Badge
+                                    asChild
+                                    variant="secondary"
+                                    className="uppercase cursor-pointer hover:opacity-90"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
+                                      title={delegateOrderLabel || "Open associated delegate link"}
+                                    >
+                                      Delegate Order
+                                    </button>
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="secondary"
+                                    className="uppercase"
+                                    title={delegateOrderLabel || undefined}
+                                  >
+                                    Delegate Order
+                                  </Badge>
+                                )
+                              )}
 		                          {showItemCount && (
 		                            <span className="text-slate-700 font-semibold">
 		                              {itemLabel}
@@ -6604,9 +6604,20 @@ export function Header({
 	          <div className="px-6 py-4 bg-[#f5f6f6] flex flex-wrap items-center justify-between gap-4">
 	            <div className="space-y-1">
 	              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Order</p>
-	              <p className="text-lg font-semibold text-slate-900">
-	                {selectedOrder.number ? `Order #${selectedOrder.number}` : selectedOrder.id}
-	              </p>
+	              <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-lg font-semibold text-slate-900">
+                    {selectedOrder.number ? `Order #${selectedOrder.number}` : selectedOrder.id}
+                  </p>
+                  {resolveDelegateOrderLabel(selectedOrder as any) ? (
+                    <Badge
+                      variant="secondary"
+                      className="uppercase"
+                      title={resolveDelegateOrderLabel(selectedOrder as any) || undefined}
+                    >
+                      Delegate Order
+                    </Badge>
+                  ) : null}
+                </div>
 	            </div>
 	            <div className="space-y-1 text-right">
 	              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Status</p>
