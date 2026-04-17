@@ -4045,6 +4045,7 @@ def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, obj
                 target_user.get("resellerPermitUploadedAt")
                 or target_user.get("reseller_permit_uploaded_at")
             ),
+            "supplementalProfileLoaded": True,
             "salesRepId": target_sales_rep_id,
             "isPartner": _normalize_bool(
                 target_sales_rep_record.get("isPartner")

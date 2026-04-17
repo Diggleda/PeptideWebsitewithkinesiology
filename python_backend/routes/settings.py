@@ -620,6 +620,7 @@ def _public_user_profile(
         "resellerPermitFilePath": user.get("resellerPermitFilePath") or user.get("reseller_permit_file_path") or None,
         "resellerPermitFileName": user.get("resellerPermitFileName") or user.get("reseller_permit_file_name") or None,
         "resellerPermitUploadedAt": user.get("resellerPermitUploadedAt") or user.get("reseller_permit_uploaded_at") or None,
+        "supplementalProfileLoaded": True,
         "phone": _normalize_optional_text(user.get("phone") or (rep.get("phone") if isinstance(rep, dict) else None)),
         "officeAddressLine1": user.get("officeAddressLine1") or None,
         "officeAddressLine2": user.get("officeAddressLine2") or None,
@@ -2068,6 +2069,7 @@ def get_user_profiles():
                     "resellerPermitFilePath": profile.get("resellerPermitFilePath"),
                     "resellerPermitFileName": profile.get("resellerPermitFileName"),
                     "resellerPermitUploadedAt": profile.get("resellerPermitUploadedAt"),
+                    "supplementalProfileLoaded": profile.get("supplementalProfileLoaded"),
                 }
             )
 

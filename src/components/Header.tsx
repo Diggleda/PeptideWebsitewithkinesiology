@@ -6101,18 +6101,27 @@ export function Header({
                         <span>{statusDisplay}</span>
                         {showDelegateOrderLabel && (
                           showDelegateOrderJumpButton ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center rounded-full border border-[rgba(95,179,249,0.35)] bg-white px-2.5 py-1 text-xs font-semibold text-[rgb(95,179,249)] transition-colors hover:bg-[rgba(95,179,249,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.22)]"
-                              onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
-                              title="Open associated delegate link"
+                            <Badge
+                              asChild
+                              variant="secondary"
+                              className="uppercase cursor-pointer hover:opacity-90"
                             >
-                              {delegateOrderLabel}
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
+                                title={delegateOrderLabel || "Open associated delegate link"}
+                              >
+                                Delegate Order
+                              </button>
+                            </Badge>
                           ) : (
-                            <span className="text-xs font-semibold text-slate-500">
+                            <Badge
+                              variant="secondary"
+                              className="uppercase"
+                              title={delegateOrderLabel || undefined}
+                            >
                               Delegate Order
-                            </span>
+                            </Badge>
                           )
                         )}
                       </p>

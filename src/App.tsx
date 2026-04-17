@@ -744,6 +744,13 @@ const hasDoctorSupplementalProfileText = (value: unknown): boolean => {
   ].some((field) => typeof field === "string" && field.trim().length > 0);
 };
 
+const hasLoadedDoctorSupplementalProfile = (value: unknown): boolean => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return (value as { supplementalProfileLoaded?: unknown }).supplementalProfileLoaded === true;
+};
+
 const hasRequiredDoctorProfileFields = (value: unknown): boolean => {
   if (!value || typeof value !== "object") {
     return false;
@@ -762,7 +769,8 @@ const hasRequiredDoctorProfileFields = (value: unknown): boolean => {
 };
 
 const needsSupplementalDoctorProfile = (value: unknown): boolean =>
-  !hasDoctorSupplementalProfileText(value) || !hasUploadedResellerPermit(value);
+  !hasLoadedDoctorSupplementalProfile(value) &&
+  (!hasDoctorSupplementalProfileText(value) || !hasUploadedResellerPermit(value));
 
 const isLikelyMobileBrowser = () => {
   if (typeof navigator === "undefined") {
@@ -8833,6 +8841,7 @@ function MainApp() {
 		    ownerSalesRepName?: string | null;
 	    ownerSalesRepEmail?: string | null;
       hasResellerPermitUploaded?: boolean | null;
+      supplementalProfileLoaded?: boolean | null;
       hasAccount?: boolean | null;
 	    isOnline?: boolean | null;
 	    isIdle?: boolean | null;
@@ -11463,6 +11472,8 @@ function MainApp() {
                 studyFocus: supplementalStudyFocus,
                 bio: supplementalBio,
                 hasResellerPermitUploaded: supplementalHasResellerPermitUploaded,
+                supplementalProfileLoaded:
+                  supplementalProfile?.supplementalProfileLoaded === true,
                 fetchedAt: Date.now(),
               },
             }));
@@ -11473,6 +11484,8 @@ function MainApp() {
 	              studyFocus: supplementalStudyFocus,
 	              bio: supplementalBio,
 	              hasResellerPermitUploaded: supplementalHasResellerPermitUploaded,
+                supplementalProfileLoaded:
+                  supplementalProfile?.supplementalProfileLoaded === true,
                 officeAddressLine1: supplementalProfile?.officeAddressLine1 ?? null,
                 officeAddressLine2: supplementalProfile?.officeAddressLine2 ?? null,
                 officeCity: supplementalProfile?.officeCity ?? null,
@@ -11930,6 +11943,9 @@ function MainApp() {
                           supplementalProfile.resellerPermitUploadedAt.trim().length > 0
                         ? supplementalProfile.resellerPermitUploadedAt
                         : null,
+                  supplementalProfileLoaded:
+                    profile?.supplementalProfileLoaded === true ||
+                    supplementalProfile?.supplementalProfileLoaded === true,
                 };
               }
             } catch (supplementalError) {
@@ -12069,6 +12085,7 @@ function MainApp() {
                   ? salesDoctorDetailRef.current
                   : null,
               ),
+              supplementalProfileLoaded: profile?.supplementalProfileLoaded === true,
               isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
               isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
               idleMinutes:
@@ -15674,6 +15691,7 @@ function MainApp() {
     studyFocus?: string | null;
     bio?: string | null;
     hasResellerPermitUploaded?: boolean | null;
+    supplementalProfileLoaded?: boolean | null;
     fetchedAt: number;
   };
   const LIVE_PRESENCE_NULL_AVATAR_RETRY_MS = 120_000;
@@ -15708,12 +15726,14 @@ function MainApp() {
               (typeof cachedEntry?.bio === "string" && cachedEntry.bio.trim().length > 0),
             );
             const cachedHasPermit = cachedEntry?.hasResellerPermitUploaded === true;
+            const cachedSupplementalLoaded = cachedEntry?.supplementalProfileLoaded === true;
             if (
               cachedEntry &&
               (now - cachedEntry.fetchedAt) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS &&
-              cachedHasAvatar &&
-              cachedHasSupplementalFields &&
-              cachedHasPermit
+              (
+                cachedSupplementalLoaded ||
+                (cachedHasAvatar && cachedHasSupplementalFields && cachedHasPermit)
+              )
             ) {
               return null;
             }
@@ -15763,6 +15783,7 @@ function MainApp() {
                 ? profile.bio.trim()
                 : null,
             hasResellerPermitUploaded: hasUploadedResellerPermit(profile),
+            supplementalProfileLoaded: profile?.supplementalProfileLoaded === true,
             fetchedAt,
           };
         });
@@ -15780,6 +15801,9 @@ function MainApp() {
             hasResellerPermitUploaded:
               current.hasResellerPermitUploaded === true ||
               supplemental.hasResellerPermitUploaded === true,
+            supplementalProfileLoaded:
+              current.supplementalProfileLoaded === true ||
+              supplemental.supplementalProfileLoaded === true,
           };
         });
       } catch (error: any) {
@@ -15951,6 +15975,7 @@ function MainApp() {
       (typeof cachedProfile?.bio === "string" && cachedProfile.bio.trim().length > 0),
     );
     const cachedHasPermit = cachedProfile?.hasResellerPermitUploaded === true;
+    const cachedSupplementalLoaded = cachedProfile?.supplementalProfileLoaded === true;
     const cachedProfileIsFresh =
       Boolean(cachedProfile) &&
       (Date.now() - Number(cachedProfile?.fetchedAt || 0)) < LIVE_PRESENCE_NULL_AVATAR_RETRY_MS;
@@ -15968,14 +15993,20 @@ function MainApp() {
           bio: existing.bio || cachedProfile.bio || null,
           hasResellerPermitUploaded:
             existing.hasResellerPermitUploaded === true || cachedHasPermit,
+          supplementalProfileLoaded:
+            existing.supplementalProfileLoaded === true || cachedSupplementalLoaded,
         };
       });
     }
 
     if (
-      (currentHasAvatar || cachedHasAvatar) &&
-      (currentHasSupplementalText || cachedHasSupplementalText) &&
-      (currentHasPermit || cachedHasPermit)
+      currentDetail.supplementalProfileLoaded === true ||
+      cachedSupplementalLoaded ||
+      (
+        (currentHasAvatar || cachedHasAvatar) &&
+        (currentHasSupplementalText || cachedHasSupplementalText) &&
+        (currentHasPermit || cachedHasPermit)
+      )
     ) {
       return;
     }
@@ -16035,6 +16066,7 @@ function MainApp() {
             studyFocus,
             bio,
             hasResellerPermitUploaded,
+            supplementalProfileLoaded: profile?.supplementalProfileLoaded === true,
             fetchedAt: Date.now(),
           },
         }));
@@ -16050,6 +16082,9 @@ function MainApp() {
             bio: existing.bio || bio || null,
             hasResellerPermitUploaded:
               existing.hasResellerPermitUploaded === true || hasResellerPermitUploaded,
+            supplementalProfileLoaded:
+              existing.supplementalProfileLoaded === true ||
+              profile?.supplementalProfileLoaded === true,
           };
         });
       } catch (error) {
@@ -16075,6 +16110,7 @@ function MainApp() {
     salesDoctorDetail?.doctorId,
     salesDoctorDetail?.greaterArea,
     salesDoctorDetail?.hasResellerPermitUploaded,
+    salesDoctorDetail?.supplementalProfileLoaded,
     salesDoctorDetail?.role,
     salesDoctorDetail?.studyFocus,
     user?.role,
@@ -22566,20 +22602,6 @@ function MainApp() {
     setQuoteOfTheDay(null);
     setQuoteLoading(true);
     const timer = window.setTimeout(() => setShowWelcome(true), 250);
-    return () => window.clearTimeout(timer);
-  }, [shouldReduceMaintenanceBackgroundFetches, user]);
-
-  // Load quote only after welcome animation completes
-  useEffect(() => {
-    if (
-      !user ||
-      shouldReduceMaintenanceBackgroundFetches ||
-      !showWelcome ||
-      infoFocusActive ||
-      showQuote
-    ) {
-      return;
-    }
 
     let cancelled = false;
     const loadQuote = async () => {
@@ -22599,16 +22621,37 @@ function MainApp() {
       } finally {
         if (!cancelled) {
           setQuoteLoading(false);
-          setShowQuote(true);
         }
       }
     };
 
-    loadQuote();
+    void loadQuote();
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [shouldReduceMaintenanceBackgroundFetches, user, showWelcome, infoFocusActive, showQuote]);
+  }, [shouldReduceMaintenanceBackgroundFetches, user]);
+
+  useEffect(() => {
+    if (
+      !user ||
+      shouldReduceMaintenanceBackgroundFetches ||
+      !showWelcome ||
+      infoFocusActive ||
+      showQuote ||
+      quoteLoading
+    ) {
+      return;
+    }
+    setShowQuote(true);
+  }, [
+    infoFocusActive,
+    quoteLoading,
+    shouldReduceMaintenanceBackgroundFetches,
+    showQuote,
+    showWelcome,
+    user,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -32559,7 +32602,10 @@ function MainApp() {
                                           {statusLabel}
                                         </span>
                                         {delegateOrderLabel ? (
-                                          <span className="text-xs font-semibold text-slate-500">
+                                          <span
+                                            className="sales-tracking-row-status"
+                                            title={delegateOrderLabel}
+                                          >
                                             Delegate Order
                                           </span>
                                         ) : null}
@@ -38522,7 +38568,10 @@ function MainApp() {
 	                                {describeSalesOrderStatus(order as any)}
 	                              </span>
                                 {delegateOrderLabel ? (
-                                  <span className="text-xs font-semibold text-slate-500">
+                                  <span
+                                    className="sales-tracking-row-status shrink-0"
+                                    title={delegateOrderLabel}
+                                  >
                                     Delegate Order
                                   </span>
                                 ) : null}
@@ -39227,7 +39276,11 @@ function MainApp() {
 	                            {describeSalesOrderStatus(salesOrderDetail as any)}
 	                          </Badge>
                             {isDelegateOrder ? (
-                              <Badge variant="secondary" className="uppercase">
+                              <Badge
+                                variant="secondary"
+                                className="uppercase"
+                                title={delegateOrderLabel || undefined}
+                              >
                                 Delegate Order
                               </Badge>
                             ) : null}
