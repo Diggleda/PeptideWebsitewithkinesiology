@@ -2739,13 +2739,18 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
                 "createdAt": local.get("createdAt") or None,
                 "updatedAt": local.get("updatedAt") or None,
                 "shippingAddress": local.get("shippingAddress") or None,
+                "billingAddress": local.get("billingAddress") or None,
                 "shippingEstimate": local.get("shippingEstimate") or None,
                 "expectedShipmentWindow": local.get("expectedShipmentWindow") or None,
                 "shippingCarrier": local.get("shippingCarrier") or None,
                 "shippingService": local.get("shippingService") or None,
+                "trackingNumber": local.get("trackingNumber") or None,
                 "upsTrackingStatus": local.get("upsTrackingStatus") or None,
                 "deliveryDate": local.get("deliveryDate") or None,
                 "upsDeliveredAt": local.get("upsDeliveredAt") or None,
+                "paymentMethod": local.get("paymentMethod") or None,
+                "paymentDetails": local.get("paymentDetails") or local.get("paymentMethod") or None,
+                "integrationDetails": local.get("integrationDetails") or None,
                 "lineItems": local.get("items") or [],
                 "source": "peppro",
             }
@@ -3449,6 +3454,7 @@ def get_orders_for_sales_rep(
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+            local_tracking_number = _extract_tracking_number_for_ups_refresh(local)
             local_rep_id = _normalize_rep_id(
                 local.get("doctorSalesRepId")
                 or local.get("salesRepId")
@@ -3477,6 +3483,7 @@ def get_orders_for_sales_rep(
                 "shippingAddress": local.get("shippingAddress") or None,
                 "billingAddress": local.get("billingAddress") or None,
                 "shippingEstimate": local.get("shippingEstimate") or None,
+                "trackingNumber": local_tracking_number,
                 "lineItems": local.get("items") or [],
                 "doctorId": doctor_meta.get("id") or local_user_id or None,
                 "doctorName": doctor_meta.get("name") or doctor_meta.get("email") or "Doctor",

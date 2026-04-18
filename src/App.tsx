@@ -4970,6 +4970,9 @@ function MainApp() {
   const doctorProfileGateRefreshSeqRef = useRef(0);
   const handleLogoutRef = useRef<() => void>(() => {});
   const unloadLogoutTriggeredRef = useRef(false);
+  useEffect(() => {
+    unloadLogoutTriggeredRef.current = false;
+  }, [user?.id]);
   const showResearchTermsAgreementModal = Boolean(
     user && isDoctorRole(user.role) && !user.researchTermsAgreement,
   );
@@ -5210,6 +5213,34 @@ function MainApp() {
       window.removeEventListener("beforeunload", handlePageExit);
     };
   }, [isMaintenanceMode, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!user?.id) {
+      return;
+    }
+
+    const handlePageExitLogout = () => {
+      if (unloadLogoutTriggeredRef.current) {
+        return;
+      }
+      unloadLogoutTriggeredRef.current = true;
+      try {
+        authAPI.logout();
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("pagehide", handlePageExitLogout);
+    window.addEventListener("beforeunload", handlePageExitLogout);
+    return () => {
+      window.removeEventListener("pagehide", handlePageExitLogout);
+      window.removeEventListener("beforeunload", handlePageExitLogout);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -20170,6 +20201,7 @@ function MainApp() {
         const key = String(order.id || order.number || "");
         const createdAt = resolveOrderPlacedAt(order as any) || "";
         const updatedAt = resolveOrderUpdatedAt(order as any) || "";
+        const trackingNumber = resolveTrackingNumber(order as any) || "";
         const eta =
           order?.shippingEstimate?.estimatedArrivalDate ||
           (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
@@ -20186,6 +20218,7 @@ function MainApp() {
           String(order.total || ""),
           String(createdAt || ""),
           String(updatedAt || ""),
+          String(trackingNumber || ""),
           String(eta || ""),
           String(shipStatus || ""),
         ].join("|");
@@ -20320,6 +20353,7 @@ function MainApp() {
 	    user?.email,
 	    postLoginHold,
 	    resolveOrderDoctorIdForBucket,
+        resolveTrackingNumber,
 	    enrichMissingOrderDetails,
 	    refreshSalesBySalesRepSummary,
 	  ]);

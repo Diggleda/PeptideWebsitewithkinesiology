@@ -1572,6 +1572,7 @@ export const authAPI = {
 	      const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`, {
           method: 'GET',
           cache: 'no-store',
+          credentials: 'include',
           background: options?.background === true,
           preserveAuthOnAuthFailure: options?.background === true,
         });
@@ -1612,6 +1613,7 @@ export const authAPI = {
         const user = await fetchWithAuth(`${API_BASE_URL}/auth/session`, {
           method: 'GET',
           cache: 'no-store',
+          credentials: 'include',
           background: options?.background === true,
           preserveAuthOnAuthFailure: options?.background === true,
         });
@@ -1660,6 +1662,12 @@ export const authAPI = {
     return fetchWithAuthForm(`${API_BASE_URL}/auth/me/reseller-permit`, {
       method: 'POST',
       body: formData,
+    });
+  },
+
+  downloadResellerPermit: async () => {
+    return fetchWithAuthBlob(`${API_BASE_URL}/auth/me/reseller-permit`, {
+      method: 'GET',
     });
   },
 

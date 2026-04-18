@@ -1717,6 +1717,7 @@ export function Header({
   const [avatarUploadPercent, setAvatarUploadPercent] = useState(0);
   const [showAvatarControls, setShowAvatarControls] = useState(false);
   const [resellerPermitUploading, setResellerPermitUploading] = useState(false);
+  const [resellerPermitDownloading, setResellerPermitDownloading] = useState(false);
   const [resellerPermitDeleting, setResellerPermitDeleting] = useState(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
 
@@ -2840,6 +2841,11 @@ export function Header({
     const billingChanged =
       JSON.stringify(match.billingAddress ?? null) !== JSON.stringify(selectedOrder.billingAddress ?? null);
     const trackingChanged = resolveTrackingNumber(match) !== resolveTrackingNumber(selectedOrder);
+    const paymentChanged =
+      normalize(match.paymentDetails ?? match.paymentMethod ?? '') !==
+      normalize(selectedOrder.paymentDetails ?? selectedOrder.paymentMethod ?? '');
+    const integrationChanged =
+      JSON.stringify(match.integrationDetails ?? null) !== JSON.stringify(selectedOrder.integrationDetails ?? null);
     const selectedExpectedShipmentWindow =
       selectedOrderStickyEstimateWindow ||
       resolveExpectedShipmentWindow(selectedOrder) ||
@@ -2850,7 +2856,16 @@ export function Header({
       getRememberedSelectedOrderEstimateWindow(match);
     const estimateChanged = nextExpectedShipmentWindow !== selectedExpectedShipmentWindow;
 
-    if (statusChanged || updatedAtChanged || shippingChanged || billingChanged || trackingChanged || estimateChanged) {
+    if (
+      statusChanged ||
+      updatedAtChanged ||
+      shippingChanged ||
+      billingChanged ||
+      trackingChanged ||
+      paymentChanged ||
+      integrationChanged ||
+      estimateChanged
+    ) {
       if (nextExpectedShipmentWindow) {
         rememberSelectedOrderEstimateWindow({
           ...selectedOrder,
@@ -5128,7 +5143,8 @@ export function Header({
     accountResellerPermitFileName
     || accountResellerPermitFilePath.split('/').pop()
     || 'reseller_permit';
-  const resellerPermitBusy = resellerPermitUploading || resellerPermitDeleting;
+  const resellerPermitBusy =
+    resellerPermitUploading || resellerPermitDownloading || resellerPermitDeleting;
   const accountResellerPermitUploadedLabel = useMemo(() => {
     const raw = typeof localUser?.resellerPermitUploadedAt === 'string'
       ? localUser.resellerPermitUploadedAt.trim()
@@ -5142,6 +5158,39 @@ export function Header({
     }
     return parsed.toLocaleDateString();
   }, [localUser?.resellerPermitUploadedAt]);
+  const handleAccountResellerPermitDownload = useCallback(
+    async () => {
+      if (!accountHasResellerPermitFile || resellerPermitBusy) {
+        return;
+      }
+
+      setResellerPermitDownloading(true);
+      try {
+        const api = await import('../services/api');
+        const result = await api.authAPI.downloadResellerPermit();
+        const objectUrl = URL.createObjectURL(result.blob);
+        const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          const anchor = document.createElement('a');
+          anchor.href = objectUrl;
+          anchor.download = result.filename || accountResellerPermitDisplayName || 'reseller_permit';
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+        }
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } catch (error: any) {
+        const message =
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message.trim()
+            : 'Unable to download your reseller permit right now.';
+        toast.error(message);
+      } finally {
+        setResellerPermitDownloading(false);
+      }
+    },
+    [accountHasResellerPermitFile, accountResellerPermitDisplayName, resellerPermitBusy],
+  );
 
   const accountInfoPanel = localUser ? (
     <div className="space-y-4">
@@ -5432,13 +5481,24 @@ export function Header({
             </p>
             {accountHasResellerPermitFile && (
               <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left transition-colors hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  disabled={resellerPermitBusy}
+                  aria-label="Download uploaded reseller permit"
+                  title="Download uploaded reseller permit"
+                  onClick={() => {
+                    void handleAccountResellerPermitDownload();
+                  }}
+                >
                   <span className="font-medium text-slate-900">On file:</span>{' '}
-                  <span className="break-all">{accountResellerPermitDisplayName}</span>
+                  <span className="break-all underline decoration-dotted underline-offset-2">
+                    {accountResellerPermitDisplayName}
+                  </span>
                   {accountResellerPermitUploadedLabel
                     ? ` • Uploaded ${accountResellerPermitUploadedLabel}`
                     : ''}
-                </div>
+                </button>
                 <button
                   type="button"
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-transparent text-slate-500 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
@@ -5455,6 +5515,9 @@ export function Header({
             )}
             {resellerPermitUploading && (
               <p className="text-sm text-slate-600">Uploading reseller permit…</p>
+            )}
+            {resellerPermitDownloading && (
+              <p className="text-sm text-slate-600">Downloading reseller permit…</p>
             )}
             {resellerPermitDeleting && (
               <p className="text-sm text-slate-600">Deleting reseller permit…</p>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, Response, g, request
+from flask import Blueprint, Response, g, request, send_file
 
 import jwt
 
@@ -294,6 +294,18 @@ def update_me():
     user_id = g.current_user.get("id")
     payload = request.get_json(force=True, silent=True) or {}
     return handle_action(lambda: auth_service.update_profile(user_id, payload))
+
+
+@blueprint.get("/me/reseller-permit")
+@require_auth
+def download_me_reseller_permit():
+    user_id = g.current_user.get("id")
+
+    def action():
+        abs_path, download_name = auth_service.get_reseller_permit_download(user_id)
+        return send_file(abs_path, download_name=download_name, as_attachment=False)
+
+    return handle_action(action)
 
 
 @blueprint.delete("/me/reseller-permit")

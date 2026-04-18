@@ -1205,6 +1205,18 @@ def delete_reseller_permit(user_id: str) -> Dict:
     return _sanitize_user(saved)
 
 
+def get_reseller_permit_download(user_id: str) -> Tuple[Path, str]:
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _not_found("User not found")
+
+    abs_path, download_name = _resolve_reseller_permit_file(user)
+    if abs_path is None or not abs_path.exists():
+        raise _not_found("PERMIT_NOT_FOUND")
+
+    return abs_path, download_name or abs_path.name
+
+
 def update_cart(user_id: str, cart: Any) -> Dict:
     user = user_repository.find_by_id(user_id)
     if not user:
@@ -1346,16 +1358,27 @@ def _sanitize_user(user: Dict) -> Dict:
     return sanitized
 
 
-def _delete_reseller_permit_file(user: Optional[Dict]) -> None:
+def _resolve_reseller_permit_file(user: Optional[Dict]) -> Tuple[Optional[Path], Optional[str]]:
     try:
         if not user or not user.get("resellerPermitFilePath"):
-            return
+            return None, None
         cfg = get_config()
         data_dir = Path(str(getattr(cfg, "data_dir", "server-data")))
         relative_path = str(user.get("resellerPermitFilePath") or "").lstrip("/\\")
         abs_path = (data_dir / relative_path).resolve()
         allowed_root = (data_dir / "uploads" / "reseller-permits").resolve()
         if not str(abs_path).startswith(str(allowed_root)):
+            return None, None
+        download_name = str(user.get("resellerPermitFileName") or "").strip() or abs_path.name
+        return abs_path, download_name
+    except Exception:
+        return None, None
+
+
+def _delete_reseller_permit_file(user: Optional[Dict]) -> None:
+    try:
+        abs_path, _ = _resolve_reseller_permit_file(user)
+        if abs_path is None:
             return
         if abs_path.exists():
             abs_path.unlink()

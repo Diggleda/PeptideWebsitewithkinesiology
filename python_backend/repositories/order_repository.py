@@ -651,12 +651,15 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 items_subtotal,
                 total,
                 shipping_total,
+                shipping_rate,
                 fulfillment_method,
                 tracking_number,
                 ups_tracking_status,
+                delivery_date,
                 shipped_at,
                 status,
                 notes,
+                integrations,
                 shipping_address,
                 expected_shipment_window,
                 shipping_carrier,
@@ -719,7 +722,60 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         payload = _read_order_json_field(row, "payload", {}) if row.get("payload") is not None else {}
         if not isinstance(payload, dict):
             payload = {}
+        payload_order = payload.get("order") if isinstance(payload.get("order"), dict) else payload
         shipping_estimate = _parse_json(row.get("shipping_rate"), {})
+        if not isinstance(shipping_estimate, dict):
+            shipping_estimate = {}
+        if not shipping_estimate:
+            payload_shipping_estimate = (
+                payload_order.get("shippingEstimate")
+                or payload_order.get("shipping_estimate")
+                or payload.get("shippingEstimate")
+                or payload.get("shipping_estimate")
+            )
+            if isinstance(payload_shipping_estimate, dict):
+                shipping_estimate = dict(payload_shipping_estimate)
+            elif isinstance(payload_shipping_estimate, str):
+                parsed_shipping_estimate = _parse_json(payload_shipping_estimate, {})
+                if isinstance(parsed_shipping_estimate, dict):
+                    shipping_estimate = parsed_shipping_estimate
+        integrations_payload = _parse_json(row.get("integrations"), {}) if row.get("integrations") is not None else {}
+        if not isinstance(integrations_payload, dict):
+            integrations_payload = {}
+        if not integrations_payload:
+            payload_integrations = payload_order.get("integrationDetails") or payload_order.get("integrations") or payload.get("integrationDetails") or payload.get("integrations")
+            if isinstance(payload_integrations, dict):
+                integrations_payload = dict(payload_integrations)
+            elif isinstance(payload_integrations, str):
+                parsed_integrations = _parse_json(payload_integrations, {})
+                if isinstance(parsed_integrations, dict):
+                    integrations_payload = parsed_integrations
+        billing_address = None
+        if isinstance(payload_order.get("billingAddress"), dict):
+            billing_address = payload_order.get("billingAddress")
+        elif isinstance(payload_order.get("billing_address"), dict):
+            billing_address = payload_order.get("billing_address")
+        elif isinstance(payload.get("billingAddress"), dict):
+            billing_address = payload.get("billingAddress")
+        elif isinstance(payload.get("billing_address"), dict):
+            billing_address = payload.get("billing_address")
+        payment_method = _normalize_optional_string(
+            payload_order.get("paymentMethod")
+            or payload_order.get("payment_method")
+            or payload.get("paymentMethod")
+            or payload.get("payment_method")
+        )
+        payment_details = _normalize_optional_string(
+            payload_order.get("paymentDetails")
+            or payload_order.get("payment_details")
+            or payload_order.get("paymentMethodTitle")
+            or payload_order.get("payment_method_title")
+            or payload.get("paymentDetails")
+            or payload.get("payment_details")
+            or payload.get("paymentMethodTitle")
+            or payload.get("payment_method_title")
+            or payment_method
+        )
         entry = {
             "id": row.get("id"),
             "items": _parse_json(row.get("items"), []) if row.get("items") is not None else [],
@@ -832,9 +888,13 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             "status": row.get("status"),
             "notes": row.get("notes") if row.get("notes") is not None else None,
             "shippingAddress": _read_order_json_field(row, "shipping_address", None),
+            "billingAddress": billing_address,
             "expectedShipmentWindow": row.get("expected_shipment_window") or None,
             "shippingCarrier": row.get("shipping_carrier"),
             "shippingService": row.get("shipping_service"),
+            "paymentMethod": payment_method,
+            "paymentDetails": payment_details,
+            "integrationDetails": integrations_payload or None,
             "wooOrderId": row.get("woo_order_id") or None,
             "wooOrderNumber": row.get("woo_order_number") or None,
             "wooOrderKey": row.get("woo_order_key") or None,

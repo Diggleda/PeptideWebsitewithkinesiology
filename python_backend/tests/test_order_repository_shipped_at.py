@@ -136,6 +136,53 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
 
         self.assertEqual(params["delivery_date"], "2026-04-02T10:15:00")
 
+    @patch("python_backend.repositories.order_repository.decrypt_json", return_value=None)
+    @patch("python_backend.repositories.order_repository.mysql_client.fetch_all")
+    @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)
+    def test_list_user_overlay_fields_exposes_payment_tracking_and_billing_from_payload(
+        self,
+        _using_mysql,
+        mock_fetch_all,
+        _decrypt_json,
+    ):
+        mock_fetch_all.return_value = [
+            {
+                "id": "order-1",
+                "items": "[]",
+                "items_subtotal": 100.0,
+                "total": 125.0,
+                "shipping_total": 15.0,
+                "shipping_rate": '{"carrierId":"ups","status":"delivered"}',
+                "tracking_number": "1ZPAYLOAD1491",
+                "ups_tracking_status": "delivered",
+                "delivery_date": "2026-04-10T16:30:00+00:00",
+                "shipped_at": None,
+                "status": "completed",
+                "notes": None,
+                "shipping_address": '{"name":"Doctor One","addressLine1":"123 Ship St"}',
+                "expected_shipment_window": "Delivered",
+                "shipping_carrier": "ups",
+                "shipping_service": "ups_ground",
+                "woo_order_id": "9001",
+                "woo_order_number": "1491",
+                "woo_order_key": "wc_order_test",
+                "integrations": '{"stripe":{"cardLast4":"4242","cardBrand":"Visa"}}',
+                "payload": '{"order":{"billingAddress":{"name":"Doctor One","addressLine1":"123 Main St"},"paymentMethod":"bacs","paymentDetails":"Direct bank transfer"}}',
+                "created_at": datetime(2026, 4, 8, 0, 0, 0),
+                "updated_at": datetime(2026, 4, 8, 1, 0, 0),
+            }
+        ]
+
+        result = order_repository.list_user_overlay_fields("user-1")
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["trackingNumber"], "1ZPAYLOAD1491")
+        self.assertEqual(result[0]["paymentMethod"], "bacs")
+        self.assertEqual(result[0]["paymentDetails"], "Direct bank transfer")
+        self.assertEqual(result[0]["billingAddress"]["addressLine1"], "123 Main St")
+        self.assertEqual(result[0]["shippingEstimate"]["carrierId"], "ups")
+        self.assertEqual(result[0]["integrationDetails"]["stripe"]["cardLast4"], "4242")
+
     @patch("python_backend.repositories.order_repository.find_by_id", return_value={"id": "order-3"})
     @patch("python_backend.repositories.order_repository.mysql_client.execute")
     @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)

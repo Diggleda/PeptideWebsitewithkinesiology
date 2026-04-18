@@ -15,6 +15,7 @@ def _install_test_stubs() -> None:
         flask.Response = Response
         flask.request = types.SimpleNamespace(method="GET", path="/")
         flask.g = types.SimpleNamespace(current_user=None)
+        flask.has_request_context = lambda: False
         flask.jsonify = lambda payload=None, *args, **kwargs: payload
         sys.modules["flask"] = flask
 
@@ -131,6 +132,8 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
             service._sales_by_rep_summary_cache["fetchedAtMs"] = 0
             service._sales_by_rep_summary_cache["expiresAtMs"] = 0
             service._sales_by_rep_summary_inflight = None
+        with service._sales_rep_orders_cache_lock:
+            service._sales_rep_orders_cache.clear()
 
     def test_get_orders_for_user_skips_woo_and_shipstation_on_default_load(self):
         service = self.order_service
@@ -144,6 +147,10 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
             "itemsSubtotal": 100.0,
             "taxTotal": 10.0,
             "shippingTotal": 15.0,
+            "trackingNumber": "1ZUSER1491",
+            "paymentMethod": "bacs",
+            "paymentDetails": "Direct bank transfer",
+            "billingAddress": {"name": "Doctor One", "addressLine1": "123 Main St"},
             "currency": "USD",
             "createdAt": "2026-04-08T00:00:00+00:00",
             "items": [{"name": "Test Item", "quantity": 1}],
@@ -175,6 +182,10 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
         self.assertEqual(len(result["local"]), 1)
         self.assertEqual(result["local"][0]["source"], "peppro")
         self.assertEqual(result["local"][0]["wooOrderNumber"], "1491")
+        self.assertEqual(result["local"][0]["trackingNumber"], "1ZUSER1491")
+        self.assertEqual(result["local"][0]["paymentMethod"], "bacs")
+        self.assertEqual(result["local"][0]["paymentDetails"], "Direct bank transfer")
+        self.assertEqual(result["local"][0]["billingAddress"]["addressLine1"], "123 Main St")
 
     def test_get_orders_for_user_enriches_shipstation_when_forced(self):
         service = self.order_service
@@ -229,6 +240,7 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
             "grandTotal": 125.0,
             "taxTotal": 10.0,
             "shippingTotal": 15.0,
+            "trackingNumber": "1ZSQL1491",
             "currency": "USD",
             "pricingMode": "wholesale",
             "createdAt": "2026-04-08T00:00:00+00:00",
@@ -281,6 +293,7 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
         self.assertEqual(result[0]["source"], "peppro")
         self.assertEqual(result[0]["doctorId"], "doctor-1")
         self.assertEqual(result[0]["doctorSalesRepId"], "rep-1")
+        self.assertEqual(result[0]["trackingNumber"], "1ZSQL1491")
 
     def test_get_orders_for_sales_rep_enriches_shipstation_when_forced(self):
         service = self.order_service
