@@ -296,6 +296,20 @@ def update_me():
     return handle_action(lambda: auth_service.update_profile(user_id, payload))
 
 
+@blueprint.delete("/me/reseller-permit")
+@require_auth
+def delete_me_reseller_permit():
+    user_id = g.current_user.get("id")
+    return handle_action(lambda: auth_service.delete_reseller_permit(user_id))
+
+
+@blueprint.post("/me/reseller-permit/delete")
+@require_auth
+def delete_me_reseller_permit_legacy():
+    user_id = g.current_user.get("id")
+    return handle_action(lambda: auth_service.delete_reseller_permit(user_id))
+
+
 @blueprint.post("/me/reseller-permit")
 @require_auth
 def upload_me_reseller_permit():

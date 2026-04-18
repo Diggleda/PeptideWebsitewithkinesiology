@@ -266,6 +266,40 @@ class AuthServiceTests(unittest.TestCase):
             self.assertEqual(saved_payloads[0][field], expected, field)
             self.assertEqual(updated[field], expected, field)
 
+    def test_delete_reseller_permit_clears_permit_fields_and_tax_exemption(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "email": "doctor@example.com",
+            "isTaxExempt": True,
+            "taxExemptSource": "RESELLER_PERMIT",
+            "taxExemptReason": "Reseller permit on file",
+            "resellerPermitOnboardingPresented": True,
+            "resellerPermitFilePath": "uploads/reseller-permits/permit.pdf",
+            "resellerPermitFileName": "permit.pdf",
+            "resellerPermitUploadedAt": "2026-04-02T12:00:00Z",
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service, "_delete_reseller_permit_file") as delete_file, \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.delete_reseller_permit("doctor-1")
+
+        delete_file.assert_called_once_with(user)
+        self.assertEqual(saved_payloads[0]["isTaxExempt"], False)
+        self.assertIsNone(saved_payloads[0]["taxExemptSource"])
+        self.assertIsNone(saved_payloads[0]["taxExemptReason"])
+        self.assertIsNone(saved_payloads[0]["resellerPermitFilePath"])
+        self.assertIsNone(saved_payloads[0]["resellerPermitFileName"])
+        self.assertIsNone(saved_payloads[0]["resellerPermitUploadedAt"])
+        self.assertEqual(updated["resellerPermitOnboardingPresented"], True)
+
     def test_update_profile_persists_network_presence_agreement(self) -> None:
         user = {
             "id": "doctor-1",

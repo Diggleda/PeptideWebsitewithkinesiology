@@ -2991,18 +2991,24 @@ export const referralAPI = {
     });
   },
 
-  getDoctorSummary: async () => {
+  getDoctorSummary: async (options?: { background?: boolean }) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
     }
-    return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/summary`);
+    return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/summary`, {
+      background: options?.background === true,
+      preserveAuthOnAuthFailure: options?.background === true,
+    });
   },
 
-  getDoctorLedger: async () => {
+  getDoctorLedger: async (options?: { background?: boolean }) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
     }
-    return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/ledger`);
+    return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/ledger`, {
+      background: options?.background === true,
+      preserveAuthOnAuthFailure: options?.background === true,
+    });
   },
 
   getSalesRepDashboard: async (options?: {

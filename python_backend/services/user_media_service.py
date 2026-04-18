@@ -15,6 +15,10 @@ _DATA_URL_RE = re.compile(
 _SELF_PROFILE_IMAGE_PATH_RE = re.compile(r"^/api/auth/me/profile-image/?$", re.IGNORECASE)
 _SELF_DELEGATE_LOGO_PATH_RE = re.compile(r"^/api/auth/me/delegate-logo/?$", re.IGNORECASE)
 _ADMIN_PROFILE_IMAGE_PATH_RE = re.compile(r"^/api/settings/users/[^/]+/profile-image/?$", re.IGNORECASE)
+_NETWORK_PROFILE_IMAGE_PATH_RE = re.compile(
+    r"^/api/settings/network/doctors/[^/]+/profile-image/?$",
+    re.IGNORECASE,
+)
 
 
 def is_embedded_image(value: object) -> bool:
@@ -53,6 +57,18 @@ def resolve_admin_user_profile_image_url(user_id: object, value: object) -> str 
     )
 
 
+def resolve_network_user_profile_image_url(user_id: object, value: object) -> str | None:
+    normalized_id = str(user_id or "").strip()
+    if not normalized_id:
+        return _normalize_external_media_value(value)
+    return _resolve_managed_asset_url(
+        value,
+        f"/api/settings/network/doctors/{quote(normalized_id, safe='')}/profile-image",
+        matcher=is_managed_profile_image_value,
+        cache_scope=normalized_id,
+    )
+
+
 def is_managed_profile_image_value(value: object) -> bool:
     normalized_path = _normalized_internal_path(value)
     if normalized_path is None:
@@ -60,6 +76,7 @@ def is_managed_profile_image_value(value: object) -> bool:
     return bool(
         _SELF_PROFILE_IMAGE_PATH_RE.match(normalized_path)
         or _ADMIN_PROFILE_IMAGE_PATH_RE.match(normalized_path)
+        or _NETWORK_PROFILE_IMAGE_PATH_RE.match(normalized_path)
     )
 
 

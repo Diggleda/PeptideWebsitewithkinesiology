@@ -5215,44 +5215,6 @@ function MainApp() {
     if (typeof window === "undefined") {
       return;
     }
-    if (!hasAuthToken()) {
-      unloadLogoutTriggeredRef.current = false;
-      return;
-    }
-
-    unloadLogoutTriggeredRef.current = false;
-
-    const logoutOnPageExit = () => {
-      if (unloadLogoutTriggeredRef.current) {
-        return;
-      }
-      unloadLogoutTriggeredRef.current = true;
-      authAPI.logout();
-    };
-
-    const handlePageHide = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        return;
-      }
-      logoutOnPageExit();
-    };
-
-    const handleBeforeUnload = () => {
-      logoutOnPageExit();
-    };
-
-    window.addEventListener("pagehide", handlePageHide);
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => {
-      window.removeEventListener("pagehide", handlePageHide);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
     if (!isMaintenanceMode) {
       return;
     }
@@ -21105,7 +21067,9 @@ function MainApp() {
         if (isDoctorRole(user.role)) {
           const previousSummary = doctorSummaryRef.current;
           const previousReferrals = doctorReferralsRef.current;
-          const response = await referralAPI.getDoctorSummary();
+          const response = await referralAPI.getDoctorSummary({
+            background: !shouldShowLoading && !forceRefresh,
+          });
           const referrals = Array.isArray(response?.referrals)
             ? response.referrals
             : [];

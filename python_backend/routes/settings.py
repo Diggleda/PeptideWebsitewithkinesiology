@@ -563,6 +563,7 @@ def _public_user_profile(
     by_id: dict[str, dict] | None = None,
     by_legacy_user_id: dict[str, dict] | None = None,
     by_email: dict[str, dict] | None = None,
+    profile_image_scope: str = "admin",
 ) -> dict:
     if not isinstance(user, dict):
         return {}
@@ -591,6 +592,17 @@ def _public_user_profile(
     jurisdiction = _normalize_optional_text(
         (rep.get("jurisdiction") if isinstance(rep, dict) else None) or user.get("jurisdiction")
     )
+    if profile_image_scope == "network":
+        profile_image_url = user_media_service.resolve_network_user_profile_image_url(
+            user.get("id"),
+            user.get("profileImageUrl"),
+        )
+    else:
+        profile_image_url = user_media_service.resolve_admin_user_profile_image_url(
+            user.get("id"),
+            user.get("profileImageUrl"),
+        )
+
     return {
         "id": user.get("id"),
         "name": user.get("name") or None,
@@ -605,10 +617,7 @@ def _public_user_profile(
         "isOnline": bool(user.get("isOnline")),
         "lastLoginAt": user.get("lastLoginAt") or None,
         "createdAt": user.get("createdAt") or None,
-        "profileImageUrl": user_media_service.resolve_admin_user_profile_image_url(
-            user.get("id"),
-            user.get("profileImageUrl"),
-        ),
+        "profileImageUrl": profile_image_url,
         "greaterArea": user.get("greaterArea") or None,
         "studyFocus": user.get("studyFocus") or None,
         "bio": user.get("bio") or None,
@@ -675,7 +684,7 @@ def _resolve_visible_user_ids_for_current_actor(current_user: dict, current_role
         raise err
 
     strict_assignment = _is_sales_rep_role(current_role) and not _is_sales_lead_role(current_role)
-    payload = _compute_live_clients_payload(
+    payload = _compute_live_clients_cached_with_scope(
         target_sales_rep_id=base_owner_id,
         strict_assignment=strict_assignment,
     )
@@ -713,6 +722,22 @@ def _exclude_from_physician_network(user: dict | None) -> bool:
         return True
     email = (_normalize_optional_text((user or {}).get("email")) or "").lower()
     return email == "test@doctor.com"
+
+
+def _is_physician_network_visible_user(user: dict | None) -> bool:
+    if not isinstance(user, dict):
+        return False
+    if not _is_doctor_user(user):
+        return False
+    if _exclude_from_physician_network(user):
+        return False
+    if not _normalize_bool(user.get("profileOnboarding", user.get("profile_onboarding"))):
+        return False
+    if not _normalize_bool(user.get("networkPresenceAgreement", user.get("network_presence_agreement"))):
+        return False
+    if not _normalize_bool(user.get("researchTermsAgreement", user.get("research_terms_agreement"))):
+        return False
+    return True
 
 
 def _get_delegate_links_doctors() -> list[dict]:
@@ -769,19 +794,9 @@ def _migrate_legacy_delegate_links_to_users() -> None:
 def _build_physician_network_entries() -> list[dict]:
     doctors: list[dict] = []
     for user in user_repository.get_all() or []:
-        if not isinstance(user, dict):
+        if not _is_physician_network_visible_user(user):
             continue
-        if not _is_doctor_user(user):
-            continue
-        if _exclude_from_physician_network(user):
-            continue
-        if not _normalize_bool(user.get("profileOnboarding", user.get("profile_onboarding"))):
-            continue
-        if not _normalize_bool(user.get("networkPresenceAgreement", user.get("network_presence_agreement"))):
-            continue
-        if not _normalize_bool(user.get("researchTermsAgreement", user.get("research_terms_agreement"))):
-            continue
-        profile = _public_user_profile(user)
+        profile = _public_user_profile(user, profile_image_scope="network")
         doctor_id = str(profile.get("id") or "").strip()
         if not doctor_id:
             continue
@@ -1278,11 +1293,27 @@ def _compute_live_clients_payload(
     }
 
 def _compute_live_clients_cached(*, target_sales_rep_id: str) -> dict:
+    return _compute_live_clients_cached_with_scope(
+        target_sales_rep_id=target_sales_rep_id,
+        strict_assignment=False,
+    )
+
+
+def _compute_live_clients_cached_with_scope(
+    *,
+    target_sales_rep_id: str,
+    strict_assignment: bool,
+) -> dict:
     now = time.monotonic()
     ttl_s = float(os.environ.get("LIVE_CLIENTS_CACHE_TTL_SECONDS") or 1.0)
     ttl_s = max(0.25, min(ttl_s, 5.0))
 
-    cache_key = str(target_sales_rep_id or "").strip()
+    normalized_target_sales_rep_id = str(target_sales_rep_id or "").strip()
+    cache_key = (
+        f"{normalized_target_sales_rep_id}:strict"
+        if strict_assignment
+        else normalized_target_sales_rep_id
+    )
     with _LIVE_CLIENTS_CACHE_LOCK:
         cached = _LIVE_CLIENTS_CACHE.get(cache_key) or {}
         cached_at = float(cached.get("at") or 0.0)
@@ -1291,7 +1322,10 @@ def _compute_live_clients_cached(*, target_sales_rep_id: str) -> dict:
             if isinstance(payload, dict):
                 return payload
 
-    payload = _compute_live_clients_payload(target_sales_rep_id=cache_key)
+    payload = _compute_live_clients_payload(
+        target_sales_rep_id=normalized_target_sales_rep_id,
+        strict_assignment=strict_assignment,
+    )
     with _LIVE_CLIENTS_CACHE_LOCK:
         _LIVE_CLIENTS_CACHE[cache_key] = {"at": now, "payload": payload}
     return payload
@@ -1480,6 +1514,37 @@ def get_network_doctors():
             "doctors": doctors,
             "total": len(doctors),
         }
+
+    return handle_action(action)
+
+
+@blueprint.get("/network/doctors/<user_id>/profile-image")
+@require_media_auth
+def get_network_doctor_profile_image(user_id: str):
+    def action():
+        settings = settings_service.get_settings()
+        current_user = getattr(g, "current_user", None) or {}
+        if not bool(settings.get("physicianMapEnabled", False)) and not _is_test_doctor_user(current_user):
+            raise service_error("Physician map is disabled", 403)
+
+        target_id = str(user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+
+        user = user_repository.find_by_id(target_id)
+        if not _is_physician_network_visible_user(user):
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        response = user_media_service.build_embedded_image_response(user.get("profileImageUrl"))
+        if response is None:
+            err = RuntimeError("Profile image not found")
+            setattr(err, "status", 404)
+            raise err
+        return response
 
     return handle_action(action)
 

@@ -1185,6 +1185,26 @@ def upload_reseller_permit(user_id: str, *, filename: str, content: bytes) -> Di
     return _sanitize_user(saved)
 
 
+def delete_reseller_permit(user_id: str) -> Dict:
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _not_found("User not found")
+
+    next_user = {
+        **user,
+        "isTaxExempt": False,
+        "taxExemptSource": None,
+        "taxExemptReason": None,
+        "resellerPermitOnboardingPresented": True,
+        "resellerPermitFilePath": None,
+        "resellerPermitFileName": None,
+        "resellerPermitUploadedAt": None,
+    }
+    saved = user_repository.update(next_user) or next_user
+    _delete_reseller_permit_file(user)
+    return _sanitize_user(saved)
+
+
 def update_cart(user_id: str, cart: Any) -> Dict:
     user = user_repository.find_by_id(user_id)
     if not user:

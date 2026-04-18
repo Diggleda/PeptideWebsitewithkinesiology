@@ -133,7 +133,7 @@ class TestSettingsControls(unittest.TestCase):
                 {
                     "id": "doctor-1",
                     "name": "Dr. Example",
-                    "profileImageUrl": None,
+                    "profileImageUrl": "https://api.example.com/api/settings/network/doctors/doctor-1/profile-image?v=abc123",
                     "greaterArea": "Midwest",
                     "studyFocus": "Longevity",
                     "bio": "Bio",
@@ -147,6 +147,9 @@ class TestSettingsControls(unittest.TestCase):
                 payload = response.get_json()
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(payload["doctors"][0]["id"], "doctor-1")
+                doctor_profile_url = urlparse(str(payload["doctors"][0]["profileImageUrl"]))
+                self.assertTrue(doctor_profile_url.path.endswith("/api/settings/network/doctors/doctor-1/profile-image"))
+                self.assertTrue(parse_qs(doctor_profile_url.query).get("v"))
                 self.assertEqual(payload["total"], 1)
 
         with patch.object(settings.settings_service, "get_settings", return_value={
@@ -287,6 +290,33 @@ class TestSettingsControls(unittest.TestCase):
         )
         self.assertEqual(doctors[0]["email"], "visible-recent@example.com")
         self.assertEqual(doctors[0]["lastLoginAt"], "2026-04-13T10:00:00Z")
+        visible_profile_url = urlparse(str(doctors[0]["profileImageUrl"]))
+        self.assertTrue(visible_profile_url.path.endswith("/api/settings/network/doctors/doctor-visible-recent/profile-image"))
+        self.assertTrue(parse_qs(visible_profile_url.query).get("v"))
+
+    def test_network_doctor_profile_image_route_returns_embedded_image_for_visible_doctor(self):
+        settings = self.settings
+        doctor = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "email": "doctor.one@example.com",
+            "profileOnboarding": True,
+            "networkPresenceAgreement": True,
+            "researchTermsAgreement": True,
+            "profileImageUrl": "data:image/png;base64,QUJD",
+        }
+
+        with patch.object(settings.settings_service, "get_settings", return_value={
+            "physicianMapEnabled": True,
+        }), \
+            patch.object(settings.user_repository, "find_by_id", return_value=doctor):
+            with self.app.test_request_context("/api/settings/network/doctors/doctor-1/profile-image", method="GET"):
+                g.current_user = {"id": "doctor-2", "role": "doctor"}
+                response = self._make_response(settings.get_network_doctor_profile_image.__wrapped__("doctor-1"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+        self.assertEqual(response.get_data(), b"ABC")
 
     def test_admin_beta_and_test_payment_routes_include_mysql_enabled(self):
         settings = self.settings
