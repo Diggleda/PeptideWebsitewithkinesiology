@@ -8847,6 +8847,7 @@ function MainApp() {
 	    isOnline?: boolean | null;
 	    isIdle?: boolean | null;
 	    idleMinutes?: number | null;
+        onlineSinceAt?: string | null;
 	    lastSeenAt?: string | null;
         lastInteractionAt?: string | null;
     lastLoginAt?: string | null;
@@ -11035,6 +11036,7 @@ function MainApp() {
           isOnline: typeof match?.isOnline === "boolean" ? match.isOnline : null,
           isIdle: typeof match?.isIdle === "boolean" ? match.isIdle : null,
           idleMinutes,
+          onlineSinceAt: match?.onlineSinceAt || match?.online_since_at || null,
           lastSeenAt: match?.lastSeenAt || match?.last_seen_at || null,
           lastInteractionAt: match?.lastInteractionAt || match?.last_interaction_at || null,
           lastLoginAt: match?.lastLoginAt || match?.last_login_at || null,
@@ -11142,6 +11144,12 @@ function MainApp() {
                   ? bucket.idleMinutes
                   : typeof bucket?.idleForMinutes === "number" && Number.isFinite(bucket.idleForMinutes)
                     ? bucket.idleForMinutes
+                    : null,
+              onlineSinceAt:
+                typeof bucket?.onlineSinceAt === "string"
+                  ? bucket.onlineSinceAt
+                  : typeof bucket?.online_since_at === "string"
+                    ? bucket.online_since_at
                     : null,
               lastSeenAt:
                 typeof bucket?.lastSeenAt === "string"
@@ -11258,6 +11266,7 @@ function MainApp() {
 	        isOnline: presence?.isOnline ?? null,
 	        isIdle: presence?.isIdle ?? null,
 	        idleMinutes: presence?.idleMinutes ?? null,
+            onlineSinceAt: presence?.onlineSinceAt ?? null,
 	        lastSeenAt: presence?.lastSeenAt ?? null,
         lastInteractionAt: presence?.lastInteractionAt ?? null,
         lastLoginAt: presence?.lastLoginAt ?? null,
@@ -11385,6 +11394,7 @@ function MainApp() {
               : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
                 ? entry.idleForMinutes
                 : null,
+          onlineSinceAt: entry?.onlineSinceAt || entry?.online_since_at || null,
           lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
           lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
           lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
@@ -11668,6 +11678,7 @@ function MainApp() {
                     : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
                       ? entry.idleForMinutes
                       : null,
+                onlineSinceAt: entry?.onlineSinceAt || entry?.online_since_at || null,
                 lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
                 lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
                 lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
@@ -12184,6 +12195,7 @@ function MainApp() {
                   : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
                     ? entry.idleForMinutes
                     : null,
+              onlineSinceAt: entry?.onlineSinceAt || entry?.online_since_at || null,
               lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
                 lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
                 lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
@@ -16635,6 +16647,10 @@ function MainApp() {
       Number.isFinite(lastActivityAtRef.current) && lastActivityAtRef.current > 0
         ? new Date(lastActivityAtRef.current).toISOString()
         : null;
+    const selfOnlineSinceAt =
+      typeof (user as any)?.lastLoginAt === "string" && (user as any).lastLoginAt.trim().length > 0
+        ? (user as any).lastLoginAt.trim()
+        : null;
     const selfEntry = {
       id: currentUserId || `self:${currentUserEmail || normalizeRole(user.role) || "user"}`,
       name: String(user.name || user.email || "You").trim() || "You",
@@ -16668,9 +16684,10 @@ function MainApp() {
       isOnline: true,
       isIdle,
       idleMinutes: null,
+      onlineSinceAt: selfOnlineSinceAt,
       lastSeenAt: lastInteractionAt,
       lastInteractionAt,
-      lastLoginAt: null,
+      lastLoginAt: selfOnlineSinceAt,
       isPartner: coerceOptionalBoolean((user as any)?.isPartner ?? (user as any)?.is_partner),
       allowedRetail: currentSalesActorAllowedRetail,
     };
@@ -17174,10 +17191,10 @@ function MainApp() {
 	    };
 		  }, [user?.role, user?.id, hasAuthToken, adminLiveUsersPresenceCacheKey, readPresenceSnapshot, shouldPauseAdminBackgroundSync, writePresenceSnapshot]);
 
-		  const formatOnlineDuration = (lastLoginAt?: string | null) => {
+		  const formatOnlineDuration = (onlineSinceAt?: string | null) => {
 		    void userActivityNowTick;
-		    if (!lastLoginAt) return "Online";
-	    const startedAt = new Date(lastLoginAt).getTime();
+		    if (!onlineSinceAt) return "Online";
+	    const startedAt = new Date(onlineSinceAt).getTime();
 	    if (!Number.isFinite(startedAt)) return "Online";
 	    const elapsedMs = Math.max(0, Date.now() - startedAt);
 		    const formatElapsed = (ms: number, maxParts = 2) => {
@@ -28710,7 +28727,7 @@ function MainApp() {
 		                        const offlineAnchor =
 		                          entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
 		                        const statusLine = isOnlineNow
-		                          ? formatOnlineDuration(entry.lastLoginAt)
+		                          ? formatOnlineDuration(entry?.onlineSinceAt || entry?.lastLoginAt || null)
 		                          : offlineAnchor
 		                            ? `Offline for ${formatOfflineFor(offlineAnchor)}`
 		                            : "Offline";
@@ -30101,7 +30118,7 @@ function MainApp() {
 				                              const offlineAnchor =
 				                                entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
 				                              const statusLine = isOnline
-				                                ? formatOnlineDuration(entry.lastLoginAt)
+				                                ? formatOnlineDuration(entry?.onlineSinceAt || entry?.lastLoginAt || null)
 				                                : offlineAnchor
 				                                  ? `Offline for ${formatOfflineFor(offlineAnchor)}`
 				                                  : "Offline";

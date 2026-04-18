@@ -63,7 +63,29 @@ class TestPresenceService(unittest.TestCase):
         finally:
             presence_service.clear_user(user_id)
 
+    def test_record_ping_resets_online_since_after_stale_gap(self):
+        try:
+            from python_backend.services import presence_service
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        user_id = "u-online-since"
+        presence_service.clear_user(user_id)
+        try:
+            with patch.dict("os.environ", {"USER_PRESENCE_ONLINE_SECONDS": "60"}):
+                with patch.object(presence_service.time, "time", return_value=1000.0):
+                    first = presence_service.record_ping(user_id, kind="heartbeat")
+                with patch.object(presence_service.time, "time", return_value=1020.0):
+                    second = presence_service.record_ping(user_id, kind="heartbeat")
+                with patch.object(presence_service.time, "time", return_value=1100.0):
+                    third = presence_service.record_ping(user_id, kind="heartbeat")
+
+            self.assertEqual(first.get("onlineSinceAt"), 1000.0)
+            self.assertEqual(second.get("onlineSinceAt"), 1000.0)
+            self.assertEqual(third.get("onlineSinceAt"), 1100.0)
+        finally:
+            presence_service.clear_user(user_id)
+
 
 if __name__ == "__main__":
     unittest.main()
-

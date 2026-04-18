@@ -1151,12 +1151,17 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
     if last_login_dt:
         online_minutes = max(0, int((now_epoch - float(last_login_dt.timestamp())) // 60))
 
+    online_since_at = presence_public.get("onlineSinceAt") or None
+    if not online_since_at and derived_online:
+        online_since_at = user.get("lastLoginAt") or user.get("lastSeenAt") or None
+
     last_seen_at = presence_public.get("lastSeenAt") or user.get("lastSeenAt") or None
     last_interaction_at = presence_public.get("lastInteractionAt") or user.get("lastInteractionAt") or None
 
     return {
         "isOnline": derived_online,
         "isIdle": computed_idle,
+        "onlineSinceAt": online_since_at,
         "lastLoginAt": user.get("lastLoginAt") or None,
         "lastSeenAt": last_seen_at,
         "lastInteractionAt": last_interaction_at,
@@ -1271,6 +1276,7 @@ def _compute_live_clients_payload(
             "id": entry.get("id"),
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
+            "onlineSinceAt": entry.get("onlineSinceAt") or None,
             "lastLoginAt": entry.get("lastLoginAt") or None,
             "lastSeenAt": entry.get("lastSeenAt") or None,
             "lastInteractionAt": entry.get("lastInteractionAt") or None,
@@ -1404,6 +1410,7 @@ def _compute_live_users_payload() -> dict:
             "role": entry.get("role") or "unknown",
             "isOnline": bool(entry.get("isOnline")),
             "isIdle": bool(entry.get("isIdle")),
+            "onlineSinceAt": entry.get("onlineSinceAt") or None,
             "lastLoginAt": entry.get("lastLoginAt") or None,
             "isPartner": _normalize_optional_bool(entry.get("isPartner")),
             "allowedRetail": _normalize_optional_bool(entry.get("allowedRetail")),

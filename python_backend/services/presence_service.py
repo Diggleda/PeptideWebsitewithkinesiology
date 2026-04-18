@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -66,6 +67,25 @@ def _epoch_to_iso(ts: float) -> str:
     return dt.isoformat().replace("+00:00", "Z")
 
 
+def _coerce_epoch(value: object) -> float | None:
+    try:
+        stamp = float(value) if value is not None else None
+    except Exception:
+        return None
+    if stamp is None or stamp <= 0:
+        return None
+    return stamp
+
+
+def _online_threshold_seconds() -> float:
+    raw = os.environ.get("USER_PRESENCE_ONLINE_SECONDS")
+    try:
+        threshold = float(raw) if raw is not None else 300.0
+    except Exception:
+        threshold = 300.0
+    return max(15.0, min(threshold, 60 * 60))
+
+
 def record_ping(
     user_id: str,
     *,
@@ -79,6 +99,17 @@ def record_ping(
     now = time.time()
     with _CONDITION:
         entry = dict(_PRESENCE.get(uid) or {})
+        previous_heartbeat = _coerce_epoch(entry.get("lastHeartbeatAt"))
+        online_since = _coerce_epoch(entry.get("onlineSinceAt"))
+        if not is_recent_epoch(
+            previous_heartbeat,
+            threshold_s=_online_threshold_seconds(),
+            now_epoch=now,
+        ):
+            online_since = now
+        elif online_since is None:
+            online_since = previous_heartbeat or now
+        entry["onlineSinceAt"] = online_since
         entry["lastHeartbeatAt"] = now
         if normalized_kind == "interaction":
             entry["lastInteractionAt"] = now
@@ -148,13 +179,16 @@ def clear_user(user_id: str) -> bool:
 def to_public_fields(entry: Optional[Dict[str, object]]) -> Dict[str, Optional[object]]:
     if not entry:
         return {
+            "onlineSinceAt": None,
             "lastSeenAt": None,
             "lastInteractionAt": None,
             "isIdle": None,
         }
     last_hb = entry.get("lastHeartbeatAt")
     last_interaction = entry.get("lastInteractionAt")
+    online_since = entry.get("onlineSinceAt")
     return {
+        "onlineSinceAt": _epoch_to_iso(float(online_since)) if online_since else None,
         "lastSeenAt": _epoch_to_iso(float(last_hb)) if last_hb else None,
         "lastInteractionAt": _epoch_to_iso(float(last_interaction)) if last_interaction else None,
         "isIdle": bool(entry.get("isIdle")) if isinstance(entry.get("isIdle"), bool) else None,
