@@ -213,6 +213,11 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized["resellerPermitUploadedAt"] = (
         normalized.get("resellerPermitUploadedAt") or normalized.get("reseller_permit_uploaded_at") or None
     )
+    normalized["resellerPermitApprovedByRep"] = _normalize_bool(
+        normalized.get("resellerPermitApprovedByRep")
+        if "resellerPermitApprovedByRep" in normalized
+        else normalized.get("reseller_permit_approved_by_rep")
+    )
     if "devCommission" in normalized:
         normalized["devCommission"] = _normalize_bool(normalized.get("devCommission"))
     else:
@@ -308,6 +313,7 @@ _PROFILE_SELECT_FIELDS = """
     reseller_permit_file_path,
     reseller_permit_file_name,
     reseller_permit_uploaded_at,
+    reseller_permit_approved_by_rep,
     receive_client_order_update_emails
 """
 
@@ -384,7 +390,8 @@ _REFERRAL_DASHBOARD_SELECT_FIELDS = """
     total_referrals,
     reseller_permit_file_path,
     reseller_permit_file_name,
-    reseller_permit_uploaded_at
+    reseller_permit_uploaded_at,
+    reseller_permit_approved_by_rep
 """
 
 _PRESENCE_SELECT_FIELDS = """
@@ -421,6 +428,7 @@ _PRESENCE_SELECT_FIELDS = """
     reseller_permit_file_path,
     reseller_permit_file_name,
     reseller_permit_uploaded_at,
+    reseller_permit_approved_by_rep,
     npi_number,
     npi_status,
     npi_last_verified_at
@@ -991,7 +999,8 @@ def _mysql_insert(user: Dict) -> Dict:
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error,
             is_tax_exempt, tax_exempt_source, tax_exempt_reason,
-            reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at
+            reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
+            reseller_permit_approved_by_rep
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(is_online)s, %(sales_rep_id)s,
             %(referrer_doctor_id)s, %(hand_delivered)s, %(session_id)s, %(last_seen_at)s, %(last_interaction_at)s,
@@ -1006,7 +1015,8 @@ def _mysql_insert(user: Dict) -> Dict:
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s,
             %(is_tax_exempt)s, %(tax_exempt_source)s, %(tax_exempt_reason)s,
-            %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s
+            %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
+            %(reseller_permit_approved_by_rep)s
         )
         ON DUPLICATE KEY UPDATE
             name = VALUES(name),
@@ -1067,7 +1077,8 @@ def _mysql_insert(user: Dict) -> Dict:
             tax_exempt_reason = VALUES(tax_exempt_reason),
             reseller_permit_file_path = VALUES(reseller_permit_file_path),
             reseller_permit_file_name = VALUES(reseller_permit_file_name),
-            reseller_permit_uploaded_at = VALUES(reseller_permit_uploaded_at)
+            reseller_permit_uploaded_at = VALUES(reseller_permit_uploaded_at),
+            reseller_permit_approved_by_rep = VALUES(reseller_permit_approved_by_rep)
         """,
         params,
     )
@@ -1143,7 +1154,8 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             tax_exempt_reason = %(tax_exempt_reason)s,
             reseller_permit_file_path = %(reseller_permit_file_path)s,
             reseller_permit_file_name = %(reseller_permit_file_name)s,
-            reseller_permit_uploaded_at = %(reseller_permit_uploaded_at)s
+            reseller_permit_uploaded_at = %(reseller_permit_uploaded_at)s,
+            reseller_permit_approved_by_rep = %(reseller_permit_approved_by_rep)s
         WHERE id = %(id)s
         """,
         params,
@@ -1236,6 +1248,7 @@ def _row_to_user(row: Dict) -> Dict:
             "resellerPermitFilePath": row.get("reseller_permit_file_path"),
             "resellerPermitFileName": row.get("reseller_permit_file_name"),
             "resellerPermitUploadedAt": fmt_datetime(row.get("reseller_permit_uploaded_at")),
+            "resellerPermitApprovedByRep": bool(row.get("reseller_permit_approved_by_rep")),
             "devCommission": row.get("dev_commission"),
             "receiveClientOrderUpdateEmails": row.get("receive_client_order_update_emails"),
         }
@@ -1313,6 +1326,7 @@ def _to_db_params(user: Dict) -> Dict:
         "reseller_permit_file_path": user.get("resellerPermitFilePath"),
         "reseller_permit_file_name": user.get("resellerPermitFileName"),
         "reseller_permit_uploaded_at": parse_dt(user.get("resellerPermitUploadedAt")),
+        "reseller_permit_approved_by_rep": 1 if _normalize_bool(user.get("resellerPermitApprovedByRep")) else 0,
     }
 
 

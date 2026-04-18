@@ -1170,15 +1170,20 @@ def upload_reseller_permit(user_id: str, *, filename: str, content: bytes) -> Di
     stored_path = upload_dir / stored_name
     stored_path.write_bytes(content)
 
+    preserve_manual_tax_exemption = bool(user.get("isTaxExempt")) and str(user.get("taxExemptSource") or "").strip().upper() not in (
+        "",
+        "RESELLER_PERMIT",
+    )
     next_user = {
         **user,
-        "isTaxExempt": True,
-        "taxExemptSource": "RESELLER_PERMIT",
-        "taxExemptReason": "Reseller permit on file",
+        "isTaxExempt": user.get("isTaxExempt") if preserve_manual_tax_exemption else False,
+        "taxExemptSource": user.get("taxExemptSource") if preserve_manual_tax_exemption else None,
+        "taxExemptReason": user.get("taxExemptReason") if preserve_manual_tax_exemption else None,
         "resellerPermitOnboardingPresented": True,
         "resellerPermitFilePath": str((Path("uploads") / "reseller-permits" / stored_name).as_posix()),
         "resellerPermitFileName": safe_name,
         "resellerPermitUploadedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "resellerPermitApprovedByRep": False,
     }
     saved = user_repository.update(next_user) or next_user
     _delete_reseller_permit_file(user)
@@ -1190,18 +1195,38 @@ def delete_reseller_permit(user_id: str) -> Dict:
     if not user:
         raise _not_found("User not found")
 
+    clear_tax_exemption = str(user.get("taxExemptSource") or "").strip().upper() == "RESELLER_PERMIT"
     next_user = {
         **user,
-        "isTaxExempt": False,
-        "taxExemptSource": None,
-        "taxExemptReason": None,
+        "isTaxExempt": False if clear_tax_exemption else bool(user.get("isTaxExempt")),
+        "taxExemptSource": None if clear_tax_exemption else user.get("taxExemptSource"),
+        "taxExemptReason": None if clear_tax_exemption else user.get("taxExemptReason"),
         "resellerPermitOnboardingPresented": True,
         "resellerPermitFilePath": None,
         "resellerPermitFileName": None,
         "resellerPermitUploadedAt": None,
+        "resellerPermitApprovedByRep": False,
     }
     saved = user_repository.update(next_user) or next_user
     _delete_reseller_permit_file(user)
+    return _sanitize_user(saved)
+
+
+def approve_reseller_permit(user_id: str) -> Dict:
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _not_found("User not found")
+    if not str(user.get("resellerPermitFilePath") or "").strip():
+        raise _not_found("PERMIT_NOT_FOUND")
+
+    next_user = {
+        **user,
+        "isTaxExempt": True,
+        "taxExemptSource": "RESELLER_PERMIT",
+        "taxExemptReason": "Reseller permit approved by sales rep",
+        "resellerPermitApprovedByRep": True,
+    }
+    saved = user_repository.update(next_user) or next_user
     return _sanitize_user(saved)
 
 
@@ -1295,6 +1320,11 @@ def _sanitize_user(user: Dict) -> Dict:
         sanitized.get("resellerPermitOnboardingPresented")
         if "resellerPermitOnboardingPresented" in sanitized
         else sanitized.get("reseller_permit_onboarding_presented")
+    )
+    sanitized["resellerPermitApprovedByRep"] = _normalize_bool(
+        sanitized.get("resellerPermitApprovedByRep")
+        if "resellerPermitApprovedByRep" in sanitized
+        else sanitized.get("reseller_permit_approved_by_rep")
     )
     rep_id = sanitized.get("salesRepId")
     sales_rep = _resolve_sales_rep_record_for_user(sanitized)

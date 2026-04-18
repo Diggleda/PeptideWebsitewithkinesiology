@@ -594,26 +594,27 @@ def _sync_user_permit_from_source(user: Optional[Dict], permit_source: Optional[
         return user
     if not isinstance(permit_source, dict) or not str(permit_source.get("resellerPermitFilePath") or "").strip():
         return user
-    next_source = (
-        user.get("taxExemptSource")
-        if bool(user.get("isTaxExempt")) and str(user.get("taxExemptSource") or "").strip()
-        else "RESELLER_PERMIT"
+    permit_changed = any(
+        str(user.get(key) or "").strip() != str(permit_source.get(key) or "").strip()
+        for key in ("resellerPermitFilePath", "resellerPermitFileName", "resellerPermitUploadedAt")
     )
-    next_reason = (
-        user.get("taxExemptReason")
-        if bool(user.get("isTaxExempt")) and str(user.get("taxExemptReason") or "").strip()
-        else "Reseller permit on file"
+    preserve_manual_tax_exemption = bool(user.get("isTaxExempt")) and str(user.get("taxExemptSource") or "").strip().upper() not in (
+        "",
+        "RESELLER_PERMIT",
     )
+    update_payload = {
+        "id": user.get("id"),
+        "resellerPermitFilePath": permit_source.get("resellerPermitFilePath"),
+        "resellerPermitFileName": permit_source.get("resellerPermitFileName"),
+        "resellerPermitUploadedAt": permit_source.get("resellerPermitUploadedAt"),
+    }
+    if permit_changed:
+        update_payload["resellerPermitApprovedByRep"] = False
+        update_payload["isTaxExempt"] = user.get("isTaxExempt") if preserve_manual_tax_exemption else False
+        update_payload["taxExemptSource"] = user.get("taxExemptSource") if preserve_manual_tax_exemption else None
+        update_payload["taxExemptReason"] = user.get("taxExemptReason") if preserve_manual_tax_exemption else None
     return user_repository.update(
-        {
-            "id": user.get("id"),
-            "resellerPermitFilePath": permit_source.get("resellerPermitFilePath"),
-            "resellerPermitFileName": permit_source.get("resellerPermitFileName"),
-            "resellerPermitUploadedAt": permit_source.get("resellerPermitUploadedAt"),
-            "isTaxExempt": True,
-            "taxExemptSource": next_source,
-            "taxExemptReason": next_reason,
-        }
+        update_payload
     ) or user
 
 
@@ -657,11 +658,21 @@ def _has_reseller_permit_on_file(user: Optional[Dict]) -> bool:
 def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
     if not isinstance(user, dict):
         return False
-    if bool(user.get("isTaxExempt")):
+    source = str(user.get("taxExemptSource") or user.get("tax_exempt_source") or "").strip().upper()
+    has_reseller_permit = _has_reseller_permit_on_file(user)
+    if bool(user.get("isTaxExempt")) and source not in ("", "RESELLER_PERMIT"):
+        return True
+    if bool(user.get("isTaxExempt")) and not source and not has_reseller_permit:
         return True
     if not _is_doctor_role(user.get("role")) and not _is_sales_access_role(user.get("role")):
         return False
-    return _has_reseller_permit_on_file(user)
+    if not has_reseller_permit:
+        return False
+    return _normalize_bool(
+        user.get("resellerPermitApprovedByRep")
+        if "resellerPermitApprovedByRep" in user
+        else user.get("reseller_permit_approved_by_rep")
+    )
 
 
 def _can_user_use_hand_delivery_for_checkout(user: Optional[Dict]) -> bool:
@@ -702,7 +713,7 @@ def _resolve_order_exemption_snapshot(user: Optional[Dict], tax_exempt: bool = F
     ) or ("RESELLER_PERMIT" if tax_exempt and has_reseller_permit_uploaded else None)
     tax_exempt_reason = _normalize_optional_text(
         user.get("taxExemptReason") or user.get("tax_exempt_reason")
-    ) or ("Reseller permit on file" if tax_exempt and has_reseller_permit_uploaded else None)
+    ) or ("Reseller permit approved by sales rep" if tax_exempt and has_reseller_permit_uploaded else None)
     return {
         "isTaxExempt": bool(tax_exempt),
         "taxExemptSource": tax_exempt_source,
@@ -710,6 +721,11 @@ def _resolve_order_exemption_snapshot(user: Optional[Dict], tax_exempt: bool = F
         "resellerPermitFilePath": reseller_permit_file_path,
         "resellerPermitFileName": reseller_permit_file_name,
         "resellerPermitUploadedAt": reseller_permit_uploaded_at,
+        "resellerPermitApprovedByRep": _normalize_bool(
+            user.get("resellerPermitApprovedByRep")
+            if "resellerPermitApprovedByRep" in user
+            else user.get("reseller_permit_approved_by_rep")
+        ),
         "hasResellerPermitUploaded": has_reseller_permit_uploaded,
     }
 

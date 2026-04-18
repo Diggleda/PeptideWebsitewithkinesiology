@@ -116,6 +116,7 @@ CREATE_TABLE_STATEMENTS = [
         reseller_permit_file_path LONGTEXT NULL,
         reseller_permit_file_name VARCHAR(190) NULL,
         reseller_permit_uploaded_at DATETIME NULL,
+        reseller_permit_approved_by_rep TINYINT(1) NOT NULL DEFAULT 0,
         KEY idx_users_role (role),
         KEY idx_users_sales_rep_id (sales_rep_id),
         KEY idx_users_lead_type (lead_type)
@@ -734,6 +735,7 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS reseller_permit_file_path LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS reseller_permit_file_name VARCHAR(190) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS reseller_permit_uploaded_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS reseller_permit_approved_by_rep TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE tax_tracking ADD COLUMN IF NOT EXISTS avg_combined_tax_rate DECIMAL(7,5) NULL",
         "ALTER TABLE tax_tracking ADD COLUMN IF NOT EXISTS example_tax_on_100k_sales DECIMAL(12,2) NULL",
         "ALTER TABLE tax_tracking ADD COLUMN IF NOT EXISTS tax_collection_required_after_nexus TINYINT(1) NOT NULL DEFAULT 0",
@@ -949,6 +951,10 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE orders ADD COLUMN reseller_permit_file_name VARCHAR(190) NULL")
         if not _column_exists("orders", "reseller_permit_uploaded_at"):
             mysql_client.execute("ALTER TABLE orders ADD COLUMN reseller_permit_uploaded_at DATETIME NULL")
+        if not _column_exists("users", "reseller_permit_approved_by_rep"):
+            mysql_client.execute(
+                "ALTER TABLE users ADD COLUMN reseller_permit_approved_by_rep TINYINT(1) NOT NULL DEFAULT 0"
+            )
     except Exception:
         pass
 

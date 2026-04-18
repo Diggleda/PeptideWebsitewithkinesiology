@@ -115,6 +115,11 @@ const normalizeOptionalString = (value) => {
   return text || null;
 };
 
+const isResellerPermitApprovedByRep = (user) =>
+  normalizeBooleanish(
+    user?.resellerPermitApprovedByRep ?? user?.reseller_permit_approved_by_rep,
+  );
+
 const fetchHouseLeadUsersFromSql = async () => {
   if (!mysqlClient.isEnabled()) {
     return [];
@@ -670,27 +675,43 @@ const syncUserPermitFromSource = (user, permitSource) => {
   if (!user?.id || !permitSource?.resellerPermitFilePath) {
     return user;
   }
-  const nextSource = user.isTaxExempt && user.taxExemptSource
-    ? user.taxExemptSource
-    : 'RESELLER_PERMIT';
-  const nextReason = user.isTaxExempt && user.taxExemptReason
-    ? user.taxExemptReason
-    : 'Reseller permit on file';
+  const currentPermitPath = normalizeOptionalString(
+    user?.resellerPermitFilePath ?? user?.reseller_permit_file_path,
+  );
+  const nextPermitPath = normalizeOptionalString(permitSource?.resellerPermitFilePath);
+  const preservedSource = normalizeOptionalString(
+    user?.taxExemptSource ?? user?.tax_exempt_source,
+  );
+  const preservedReason = normalizeOptionalString(
+    user?.taxExemptReason ?? user?.tax_exempt_reason,
+  );
+  const preserveNonPermitTaxState = preservedSource && preservedSource !== 'RESELLER_PERMIT';
+  const preserveApprovedPermit =
+    Boolean(currentPermitPath)
+    && Boolean(nextPermitPath)
+    && currentPermitPath === nextPermitPath
+    && isResellerPermitApprovedByRep(user);
+
   return userRepository.update({
     id: user.id,
     resellerPermitFilePath: permitSource.resellerPermitFilePath,
     resellerPermitFileName: permitSource.resellerPermitFileName || null,
     resellerPermitUploadedAt: permitSource.resellerPermitUploadedAt || null,
-    isTaxExempt: true,
-    taxExemptSource: nextSource,
-    taxExemptReason: nextReason,
+    resellerPermitApprovedByRep: preserveApprovedPermit,
+    isTaxExempt: preserveNonPermitTaxState || preserveApprovedPermit,
+    taxExemptSource: preserveNonPermitTaxState
+      ? preservedSource
+      : (preserveApprovedPermit ? 'RESELLER_PERMIT' : null),
+    taxExemptReason: preserveNonPermitTaxState
+      ? preservedReason
+      : (preserveApprovedPermit ? 'Approved reseller permit on file' : null),
   }) || user;
 };
 
 const hasResellerPermitOnFile = async (user) => {
   const directFilePath = normalizeOptionalString(user?.resellerPermitFilePath);
   if (directFilePath) {
-    return true;
+    return isResellerPermitApprovedByRep(user);
   }
   const doctorId = normalizeId(user?.id);
   const email = normalizeEmail(user?.email);
@@ -735,7 +756,7 @@ const hasResellerPermitOnFile = async (user) => {
         ? new Date(row.reseller_permit_uploaded_at).toISOString()
         : null,
     });
-    return true;
+    return false;
   }
 
   try {
@@ -760,7 +781,7 @@ const hasResellerPermitOnFile = async (user) => {
       resellerPermitFileName: matched.resellerPermitFileName || null,
       resellerPermitUploadedAt: matched.resellerPermitUploadedAt || null,
     });
-    return true;
+    return false;
   } catch {
     return false;
   }
@@ -770,7 +791,14 @@ const isUserTaxExemptForCheckout = async (user) => {
   if (!user) {
     return false;
   }
-  if (user.isTaxExempt === true) {
+  const taxExempt = normalizeBooleanish(user?.isTaxExempt ?? user?.is_tax_exempt);
+  const taxExemptSource = normalizeOptionalString(
+    user?.taxExemptSource ?? user?.tax_exempt_source,
+  );
+  if (taxExempt === true) {
+    if (taxExemptSource === 'RESELLER_PERMIT') {
+      return hasResellerPermitOnFile(user);
+    }
     return true;
   }
   if (!isDoctorRole(user.role) && !isSalesAccessRole(user.role)) {
@@ -792,12 +820,20 @@ const resolveOrderExemptionSnapshot = (user, taxExempt = false) => {
   const hasResellerPermitUploaded = Boolean(
     resellerPermitFilePath || resellerPermitFileName || resellerPermitUploadedAt,
   );
-  const taxExemptSource = normalizeOptionalString(
-    user?.taxExemptSource ?? user?.tax_exempt_source,
-  ) || (taxExempt && hasResellerPermitUploaded ? 'RESELLER_PERMIT' : null);
-  const taxExemptReason = normalizeOptionalString(
-    user?.taxExemptReason ?? user?.tax_exempt_reason,
-  ) || (taxExempt && hasResellerPermitUploaded ? 'Reseller permit on file' : null);
+  const taxExemptSource = taxExempt
+    ? (
+      normalizeOptionalString(
+        user?.taxExemptSource ?? user?.tax_exempt_source,
+      ) || (hasResellerPermitUploaded ? 'RESELLER_PERMIT' : null)
+    )
+    : null;
+  const taxExemptReason = taxExempt
+    ? (
+      normalizeOptionalString(
+        user?.taxExemptReason ?? user?.tax_exempt_reason,
+      ) || (hasResellerPermitUploaded ? 'Approved reseller permit on file' : null)
+    )
+    : null;
   return {
     isTaxExempt: taxExempt === true,
     taxExemptSource,

@@ -9,7 +9,7 @@ import re
 import time
 import threading
 
-from flask import Blueprint, Response, request, g
+from flask import Blueprint, Response, request, g, send_file
 
 from ..middleware.auth import require_auth, require_media_auth
 from ..database import mysql_client
@@ -629,6 +629,11 @@ def _public_user_profile(
         "resellerPermitFilePath": user.get("resellerPermitFilePath") or user.get("reseller_permit_file_path") or None,
         "resellerPermitFileName": user.get("resellerPermitFileName") or user.get("reseller_permit_file_name") or None,
         "resellerPermitUploadedAt": user.get("resellerPermitUploadedAt") or user.get("reseller_permit_uploaded_at") or None,
+        "resellerPermitApprovedByRep": _normalize_bool(
+            user.get("resellerPermitApprovedByRep")
+            if "resellerPermitApprovedByRep" in user
+            else user.get("reseller_permit_approved_by_rep")
+        ),
         "supplementalProfileLoaded": True,
         "phone": _normalize_optional_text(user.get("phone") or (rep.get("phone") if isinstance(rep, dict) else None)),
         "officeAddressLine1": user.get("officeAddressLine1") or None,
@@ -693,6 +698,57 @@ def _resolve_visible_user_ids_for_current_actor(current_user: dict, current_role
         for entry in (payload.get("clients") or [])
         if isinstance(entry, dict) and str(entry.get("id") or "").strip()
     }
+
+
+def _build_pending_reseller_permit_approval_entries(current_user: dict, current_role: str) -> list[dict]:
+    visible_user_ids = _resolve_visible_user_ids_for_current_actor(current_user, current_role)
+    reps = sales_rep_repository.get_all() or []
+    by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
+    entries: list[dict] = []
+    for user in user_repository.get_all() or []:
+        if not isinstance(user, dict) or not _is_doctor_role(user.get("role")):
+            continue
+        user_id = str(user.get("id") or "").strip()
+        if not user_id:
+            continue
+        if visible_user_ids is not None and user_id not in visible_user_ids:
+            continue
+        permit_path = _normalize_optional_text(
+            user.get("resellerPermitFilePath") or user.get("reseller_permit_file_path")
+        )
+        if not permit_path:
+            continue
+        if _normalize_bool(
+            user.get("resellerPermitApprovedByRep")
+            if "resellerPermitApprovedByRep" in user
+            else user.get("reseller_permit_approved_by_rep")
+        ):
+            continue
+        profile = _public_user_profile(
+            user,
+            by_id=by_id,
+            by_legacy_user_id=by_legacy_user_id,
+            by_email=by_email,
+        )
+        entries.append(
+            {
+                "userId": profile.get("id"),
+                "physicianName": profile.get("name") or profile.get("email") or "Unknown physician",
+                "physicianEmail": profile.get("email"),
+                "resellerPermitFileName": profile.get("resellerPermitFileName"),
+                "resellerPermitUploadedAt": profile.get("resellerPermitUploadedAt"),
+                "resellerPermitApprovedByRep": bool(profile.get("resellerPermitApprovedByRep")),
+            }
+        )
+    entries.sort(
+        key=lambda entry: (
+            str(entry.get("resellerPermitUploadedAt") or ""),
+            str(entry.get("physicianName") or "").lower(),
+            str(entry.get("userId") or ""),
+        ),
+        reverse=True,
+    )
+    return entries
 
 
 def _normalize_hand_delivery_role(role: object) -> str:
@@ -2141,11 +2197,101 @@ def get_user_profiles():
                     "resellerPermitFilePath": profile.get("resellerPermitFilePath"),
                     "resellerPermitFileName": profile.get("resellerPermitFileName"),
                     "resellerPermitUploadedAt": profile.get("resellerPermitUploadedAt"),
+                    "resellerPermitApprovedByRep": profile.get("resellerPermitApprovedByRep"),
                     "supplementalProfileLoaded": profile.get("supplementalProfileLoaded"),
                 }
             )
 
         return {"users": users}
+
+    return handle_action(action)
+
+
+@blueprint.get("/users/reseller-permits/pending")
+@require_auth
+def get_pending_reseller_permit_approvals():
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        current_role = _normalize_role(current_user.get("role"))
+        _require_sales_rep_or_admin()
+        entries = _build_pending_reseller_permit_approval_entries(current_user, current_role)
+        return {
+            "items": entries,
+            "total": len(entries),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.get("/users/<user_id>/reseller-permit")
+@require_auth
+def download_user_reseller_permit(user_id: str):
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        current_role = _normalize_role(current_user.get("role"))
+        _require_sales_rep_or_admin()
+
+        target_id = str(user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+
+        visible_user_ids = _resolve_visible_user_ids_for_current_actor(current_user, current_role)
+        if visible_user_ids is not None and target_id not in visible_user_ids:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        target_user = user_repository.find_by_id(target_id)
+        if not target_user or not _is_doctor_role(target_user.get("role")):
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        abs_path, download_name = auth_service.get_reseller_permit_download(target_id)
+        return send_file(abs_path, download_name=download_name, as_attachment=False)
+
+    return handle_action(action)
+
+
+@blueprint.post("/users/<user_id>/reseller-permit/approve")
+@require_auth
+def approve_user_reseller_permit(user_id: str):
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        current_role = _normalize_role(current_user.get("role"))
+        _require_sales_rep_or_admin()
+
+        target_id = str(user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+
+        visible_user_ids = _resolve_visible_user_ids_for_current_actor(current_user, current_role)
+        if visible_user_ids is not None and target_id not in visible_user_ids:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        target_user = user_repository.find_by_id(target_id)
+        if not target_user or not _is_doctor_role(target_user.get("role")):
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        updated = auth_service.approve_reseller_permit(target_id)
+        reps = sales_rep_repository.get_all() or []
+        by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
+        return {
+            "user": _public_user_profile(
+                updated,
+                by_id=by_id,
+                by_legacy_user_id=by_legacy_user_id,
+                by_email=by_email,
+            )
+        }
 
     return handle_action(action)
 

@@ -398,6 +398,7 @@ class TestSettingsControls(unittest.TestCase):
             "resellerPermitFilePath": "uploads/reseller-permits/permit.pdf",
             "resellerPermitFileName": "permit.pdf",
             "resellerPermitUploadedAt": "2026-04-02T12:00:00Z",
+            "resellerPermitApprovedByRep": False,
         }
         rep = {
             "id": "rep-7",
@@ -453,12 +454,51 @@ class TestSettingsControls(unittest.TestCase):
         self.assertEqual(users_payload[0]["resellerPermitFilePath"], "uploads/reseller-permits/permit.pdf")
         self.assertEqual(users_payload[0]["resellerPermitFileName"], "permit.pdf")
         self.assertEqual(users_payload[0]["resellerPermitUploadedAt"], "2026-04-02T12:00:00Z")
+        self.assertEqual(users_payload[0]["resellerPermitApprovedByRep"], False)
         users_profile_url = urlparse(str(users_payload[0]["profileImageUrl"]))
         self.assertTrue(users_profile_url.path.endswith("/api/settings/users/rep-user-7/profile-image"))
         self.assertTrue(parse_qs(users_profile_url.query).get("v"))
         self.assertEqual(image_response.status_code, 200)
         self.assertEqual(image_response.mimetype, "image/png")
         self.assertEqual(image_response.get_data(), b"ABC")
+
+    def test_pending_reseller_permit_routes_allow_download_and_approval(self):
+        settings = self.settings
+        doctor = {
+            "id": "doctor-1",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "role": "doctor",
+            "resellerPermitFilePath": "uploads/reseller-permits/permit.pdf",
+            "resellerPermitFileName": "permit.pdf",
+            "resellerPermitUploadedAt": "2026-04-02T12:00:00Z",
+            "resellerPermitApprovedByRep": False,
+        }
+
+        with patch.object(settings.user_repository, "get_all", return_value=[doctor]), \
+            patch.object(settings.user_repository, "find_by_id", return_value=doctor), \
+            patch.object(settings.sales_rep_repository, "get_all", return_value=[]), \
+            patch.object(settings.auth_service, "get_reseller_permit_download", return_value=(Path(__file__), "permit.pdf")), \
+            patch.object(settings.auth_service, "approve_reseller_permit", return_value={**doctor, "isTaxExempt": True, "taxExemptSource": "RESELLER_PERMIT", "taxExemptReason": "Reseller permit approved by sales rep", "resellerPermitApprovedByRep": True}):
+            with self.app.test_request_context("/api/settings/users/reseller-permits/pending", method="GET"):
+                g.current_user = {"id": "rep-1", "role": "sales_rep"}
+                response = self._make_response(settings.get_pending_reseller_permit_approvals.__wrapped__())
+                payload = response.get_json()
+                self.assertEqual(payload["total"], 1)
+                self.assertEqual(payload["items"][0]["userId"], "doctor-1")
+                self.assertEqual(payload["items"][0]["physicianName"], "Doctor One")
+
+            with self.app.test_request_context("/api/settings/users/doctor-1/reseller-permit", method="GET"):
+                g.current_user = {"id": "rep-1", "role": "sales_rep"}
+                response = self._make_response(settings.download_user_reseller_permit.__wrapped__("doctor-1"))
+                self.assertEqual(response.status_code, 200)
+
+            with self.app.test_request_context("/api/settings/users/doctor-1/reseller-permit/approve", method="POST"):
+                g.current_user = {"id": "rep-1", "role": "sales_rep"}
+                response = self._make_response(settings.approve_user_reseller_permit.__wrapped__("doctor-1"))
+                payload = response.get_json()
+                self.assertEqual(payload["user"]["id"], "doctor-1")
+                self.assertEqual(payload["user"]["resellerPermitApprovedByRep"], True)
 
     def test_beta_service_normalization_keeps_supported_keys_only(self):
         from python_backend.services import settings_service

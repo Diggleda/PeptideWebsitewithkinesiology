@@ -491,6 +491,13 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'reseller_permit_approved_by_rep',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN reseller_permit_approved_by_rep TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
       name: 'profile_image_url',
       ddl: `
         ALTER TABLE users

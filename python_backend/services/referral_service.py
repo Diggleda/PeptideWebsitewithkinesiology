@@ -2382,6 +2382,7 @@ def _sync_reseller_permit_to_linked_user(
         "resellerPermitFilePath": reseller_permit_file_path,
         "resellerPermitFileName": reseller_permit_file_name,
         "resellerPermitUploadedAt": reseller_permit_uploaded_at,
+        "resellerPermitApprovedByRep": False,
     }
     if clear:
         if str(current_user.get("taxExemptSource") or "").strip().upper() == "RESELLER_PERMIT":
@@ -2389,13 +2390,12 @@ def _sync_reseller_permit_to_linked_user(
             update_payload["taxExemptSource"] = None
             update_payload["taxExemptReason"] = None
     else:
-        update_payload["isTaxExempt"] = True
-        if current_user.get("isTaxExempt") and current_user.get("taxExemptSource"):
-            update_payload["taxExemptSource"] = current_user.get("taxExemptSource")
-            update_payload["taxExemptReason"] = current_user.get("taxExemptReason")
-        else:
-            update_payload["taxExemptSource"] = "RESELLER_PERMIT"
-            update_payload["taxExemptReason"] = "Reseller permit on file"
+        preserve_manual_tax_exemption = bool(current_user.get("isTaxExempt")) and str(
+            current_user.get("taxExemptSource") or ""
+        ).strip().upper() not in ("", "RESELLER_PERMIT")
+        update_payload["isTaxExempt"] = bool(current_user.get("isTaxExempt")) if preserve_manual_tax_exemption else False
+        update_payload["taxExemptSource"] = current_user.get("taxExemptSource") if preserve_manual_tax_exemption else None
+        update_payload["taxExemptReason"] = current_user.get("taxExemptReason") if preserve_manual_tax_exemption else None
 
     return user_repository.update(update_payload)
 

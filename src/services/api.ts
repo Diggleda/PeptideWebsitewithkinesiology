@@ -1412,6 +1412,7 @@ export type UpdateProfilePayload = {
   resellerPermitFilePath?: string | null;
   resellerPermitFileName?: string | null;
   resellerPermitUploadedAt?: string | null;
+  resellerPermitApprovedByRep?: boolean;
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
@@ -2096,6 +2097,32 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/users?${params.toString()}`, {
       method: 'GET',
     });
+  },
+  getPendingResellerPermitApprovals: async () => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
+    return fetchWithAuth(`${API_BASE_URL}/settings/users/reseller-permits/pending`, {
+      method: 'GET',
+    });
+  },
+  downloadUserResellerPermit: async (userId: string | number) => {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    return fetchWithAuthBlob(
+      `${API_BASE_URL}/settings/users/${encodeURIComponent(String(userId))}/reseller-permit`,
+      { method: 'GET' },
+    );
+  },
+  approveUserResellerPermit: async (userId: string | number) => {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/settings/users/${encodeURIComponent(String(userId))}/reseller-permit/approve`,
+      { method: 'POST', body: '{}' },
+    );
   },
   getSalesRepProfile: async (salesRepId: string | number) => {
     if (!salesRepId) {

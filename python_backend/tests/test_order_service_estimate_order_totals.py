@@ -149,6 +149,22 @@ class EstimateOrderTotalsTests(unittest.TestCase):
         self.assertEqual(result["totals"]["grandTotal"], 50.0)
         self.assertEqual(result["shippingTiming"]["roundedBusinessDays"], 0)
 
+    def test_reseller_permit_tax_exemption_requires_rep_approval(self):
+        service = self.order_service
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "isTaxExempt": False,
+            "resellerPermitApprovedByRep": False,
+        }
+
+        with patch.object(service, "_has_reseller_permit_on_file", return_value=True):
+            self.assertFalse(service._is_tax_exempt_for_checkout(user))
+
+        user["resellerPermitApprovedByRep"] = True
+        with patch.object(service, "_has_reseller_permit_on_file", return_value=True):
+            self.assertTrue(service._is_tax_exempt_for_checkout(user))
+
 
 if __name__ == "__main__":
     unittest.main()

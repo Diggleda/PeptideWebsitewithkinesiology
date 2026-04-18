@@ -301,6 +301,9 @@ const sanitizeUser = (user) => {
     resellerPermitUploadedAt: normalizeOptionalString(
       user.resellerPermitUploadedAt ?? user.reseller_permit_uploaded_at,
     ),
+    resellerPermitApprovedByRep: normalizeBooleanFlag(
+      user.resellerPermitApprovedByRep ?? user.reseller_permit_approved_by_rep,
+    ),
     greaterArea: normalizeOptionalString(user.greaterArea),
     studyFocus: normalizeOptionalString(user.studyFocus),
     bio: normalizeOptionalString(user.bio),
@@ -609,6 +612,7 @@ const register = async ({
     profileOnboarding: false,
     networkPresenceAgreement: true,
     resellerPermitOnboardingPresented: false,
+    resellerPermitApprovedByRep: false,
     greaterArea: null,
     studyFocus: null,
     bio: null,
@@ -868,12 +872,11 @@ const uploadResellerPermit = async (userId, parsed) => {
   const next = {
     ...user,
     resellerPermitOnboardingPresented: true,
-    isTaxExempt: true,
-    taxExemptSource: 'RESELLER_PERMIT',
-    taxExemptReason: 'Reseller permit on file',
+    ...resolveTaxExemptionWithoutResellerPermit(user),
     resellerPermitFilePath: path.posix.join('uploads', 'reseller-permits', storedName),
     resellerPermitFileName: safeOriginal,
     resellerPermitUploadedAt: new Date().toISOString(),
+    resellerPermitApprovedByRep: false,
   };
   const updated = userRepository.update(next) || next;
   await deleteStoredResellerPermitFile(user);
@@ -924,6 +927,7 @@ const deleteResellerPermit = async (userId) => {
     resellerPermitFilePath: null,
     resellerPermitFileName: null,
     resellerPermitUploadedAt: null,
+    resellerPermitApprovedByRep: false,
     resellerPermitOnboardingPresented: true,
   };
   const updated = userRepository.update(next) || next;

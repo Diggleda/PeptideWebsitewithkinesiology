@@ -278,6 +278,7 @@ class AuthServiceTests(unittest.TestCase):
             "resellerPermitFilePath": "uploads/reseller-permits/permit.pdf",
             "resellerPermitFileName": "permit.pdf",
             "resellerPermitUploadedAt": "2026-04-02T12:00:00Z",
+            "resellerPermitApprovedByRep": True,
         }
         saved_payloads = []
 
@@ -298,7 +299,77 @@ class AuthServiceTests(unittest.TestCase):
         self.assertIsNone(saved_payloads[0]["resellerPermitFilePath"])
         self.assertIsNone(saved_payloads[0]["resellerPermitFileName"])
         self.assertIsNone(saved_payloads[0]["resellerPermitUploadedAt"])
+        self.assertEqual(saved_payloads[0]["resellerPermitApprovedByRep"], False)
         self.assertEqual(updated["resellerPermitOnboardingPresented"], True)
+
+    def test_upload_reseller_permit_resets_rep_approval_and_tax_exemption(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "email": "doctor@example.com",
+            "isTaxExempt": True,
+            "taxExemptSource": "RESELLER_PERMIT",
+            "taxExemptReason": "Reseller permit approved by sales rep",
+            "resellerPermitApprovedByRep": True,
+            "resellerPermitFilePath": "uploads/reseller-permits/old-permit.pdf",
+            "resellerPermitFileName": "old-permit.pdf",
+            "resellerPermitUploadedAt": "2026-04-02T12:00:00Z",
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service, "_delete_reseller_permit_file"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value), \
+            patch.object(auth_service.secrets, "token_hex", return_value="deadbeef"), \
+            patch.object(auth_service.time, "time", return_value=1_777_000_000.123), \
+            patch.object(auth_service.Path, "mkdir", return_value=None), \
+            patch.object(auth_service.Path, "write_bytes", return_value=None):
+            updated = auth_service.upload_reseller_permit(
+                "doctor-1",
+                filename="permit.pdf",
+                content=b"permit",
+            )
+
+        self.assertEqual(saved_payloads[0]["isTaxExempt"], False)
+        self.assertIsNone(saved_payloads[0]["taxExemptSource"])
+        self.assertIsNone(saved_payloads[0]["taxExemptReason"])
+        self.assertEqual(saved_payloads[0]["resellerPermitApprovedByRep"], False)
+        self.assertEqual(updated["resellerPermitApprovedByRep"], False)
+
+    def test_approve_reseller_permit_marks_user_tax_exempt(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "email": "doctor@example.com",
+            "isTaxExempt": False,
+            "taxExemptSource": None,
+            "taxExemptReason": None,
+            "resellerPermitFilePath": "uploads/reseller-permits/permit.pdf",
+            "resellerPermitFileName": "permit.pdf",
+            "resellerPermitUploadedAt": "2026-04-02T12:00:00Z",
+            "resellerPermitApprovedByRep": False,
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.approve_reseller_permit("doctor-1")
+
+        self.assertEqual(saved_payloads[0]["isTaxExempt"], True)
+        self.assertEqual(saved_payloads[0]["taxExemptSource"], "RESELLER_PERMIT")
+        self.assertEqual(saved_payloads[0]["taxExemptReason"], "Reseller permit approved by sales rep")
+        self.assertEqual(saved_payloads[0]["resellerPermitApprovedByRep"], True)
+        self.assertEqual(updated["resellerPermitApprovedByRep"], True)
 
     def test_update_profile_persists_network_presence_agreement(self) -> None:
         user = {

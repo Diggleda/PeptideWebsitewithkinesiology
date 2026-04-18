@@ -153,6 +153,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
     resellerPermitFilePath: user.resellerPermitFilePath || null,
     resellerPermitFileName: user.resellerPermitFileName || null,
     resellerPermitUploadedAt: user.resellerPermitUploadedAt || null,
+    resellerPermitApprovedByRep: user.resellerPermitApprovedByRep ? 1 : 0,
     devCommission: user.devCommission ? 1 : 0,
     receiveClientOrderUpdateEmails: user.receiveClientOrderUpdateEmails ? 1 : 0,
     handDelivered: user.handDelivered ? 1 : 0,
@@ -210,6 +211,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           reseller_permit_file_path,
           reseller_permit_file_name,
           reseller_permit_uploaded_at,
+          reseller_permit_approved_by_rep,
           dev_commission,
           receive_client_order_update_emails,
           hand_delivered,
@@ -249,6 +251,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           :resellerPermitFilePath,
           :resellerPermitFileName,
           :resellerPermitUploadedAt,
+          :resellerPermitApprovedByRep,
           :devCommission,
           :receiveClientOrderUpdateEmails,
           :handDelivered,
@@ -288,6 +291,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           reseller_permit_file_path = VALUES(reseller_permit_file_path),
           reseller_permit_file_name = VALUES(reseller_permit_file_name),
           reseller_permit_uploaded_at = VALUES(reseller_permit_uploaded_at),
+          reseller_permit_approved_by_rep = VALUES(reseller_permit_approved_by_rep),
           dev_commission = VALUES(dev_commission),
           receive_client_order_update_emails = VALUES(receive_client_order_update_emails),
           hand_delivered = VALUES(hand_delivered),
@@ -429,6 +433,15 @@ const ensureUserDefaults = (user) => {
   } else {
     normalized.resellerPermitUploadedAt = normalizeOptionalString(normalized.resellerPermitUploadedAt);
   }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'resellerPermitApprovedByRep')) {
+    normalized.resellerPermitApprovedByRep = normalizeBooleanFlag(
+      normalized.reseller_permit_approved_by_rep,
+    );
+  } else {
+    normalized.resellerPermitApprovedByRep = normalizeBooleanFlag(
+      normalized.resellerPermitApprovedByRep,
+    );
+  }
   if (!Array.isArray(normalized.passkeys)) {
     normalized.passkeys = [];
   }
@@ -498,6 +511,8 @@ const ensureUserDefaults = (user) => {
   normalized.network_presence_agreement = normalized.networkPresenceAgreement ? 1 : 0;
   normalized.reseller_permit_onboarding_presented =
     normalized.resellerPermitOnboardingPresented ? 1 : 0;
+  normalized.reseller_permit_approved_by_rep =
+    normalized.resellerPermitApprovedByRep ? 1 : 0;
   normalized.hand_delivered = normalized.handDelivered ? 1 : 0;
   DIRECT_SHIPPING_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {
@@ -524,6 +539,8 @@ const loadUsers = ({ forWrite = false } = {}) => {
     const profileOnboardingChanged = candidate.profileOnboarding !== user.profileOnboarding;
     const resellerPermitOnboardingPresentedChanged =
       candidate.resellerPermitOnboardingPresented !== user.resellerPermitOnboardingPresented;
+    const resellerPermitApprovedByRepChanged =
+      candidate.resellerPermitApprovedByRep !== user.resellerPermitApprovedByRep;
     const greaterAreaChanged = candidate.greaterArea !== user.greaterArea;
     const studyFocusChanged = candidate.studyFocus !== user.studyFocus;
     const bioChanged = candidate.bio !== user.bio;
@@ -537,6 +554,7 @@ const loadUsers = ({ forWrite = false } = {}) => {
       || totalRefsChanged
       || profileOnboardingChanged
       || resellerPermitOnboardingPresentedChanged
+      || resellerPermitApprovedByRepChanged
       || greaterAreaChanged
       || studyFocusChanged
       || bioChanged

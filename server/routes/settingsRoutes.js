@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const { Router } = require('express');
 const { authenticate } = require('../middleware/authenticate');
@@ -96,6 +98,141 @@ const normalizeOptionalBooleanFlag = (value) => {
     }
   }
   return null;
+};
+
+const isResellerPermitApprovedByRep = (user) =>
+  normalizeBooleanFlag(
+    user?.resellerPermitApprovedByRep ?? user?.reseller_permit_approved_by_rep,
+  );
+
+const resolveScopedSalesRepOwnerIds = (user) => {
+  const repRecord = resolveCurrentSalesRepRecord(user);
+  return normalizeOwnershipIds([
+    repRecord?.id,
+    repRecord?.salesRepId,
+    user?.salesRepId,
+    user?.id,
+  ]);
+};
+
+const canAccessDoctorResellerPermit = ({ currentUser, targetUser, requestedSalesRepId = null }) => {
+  if (!currentUser || !targetUser || !isDoctorUser(targetUser)) {
+    return false;
+  }
+  const role = normalizeRole(currentUser?.role);
+  const targetSalesRepId = String(targetUser?.salesRepId || '').trim();
+  if (isAdmin(role)) {
+    if (!requestedSalesRepId) {
+      return true;
+    }
+    return targetSalesRepId.length > 0 && targetSalesRepId === requestedSalesRepId;
+  }
+  const allowedOwnerIds = resolveScopedSalesRepOwnerIds(currentUser);
+  return targetSalesRepId.length > 0 && allowedOwnerIds.includes(targetSalesRepId);
+};
+
+const resolveResellerPermitFileDownload = (user) => {
+  const relativePath = normalizeOptionalText(
+    user?.resellerPermitFilePath ?? user?.reseller_permit_file_path,
+  );
+  if (!relativePath) {
+    return null;
+  }
+  const allowedRoot = path.resolve(env.dataDir, 'uploads', 'reseller-permits');
+  const candidate = path.resolve(env.dataDir, relativePath.replace(/^[/\\\\]+/, ''));
+  if (!(candidate === allowedRoot || candidate.startsWith(`${allowedRoot}${path.sep}`))) {
+    return null;
+  }
+  if (!fs.existsSync(candidate)) {
+    return null;
+  }
+  const ext = path.extname(candidate).toLowerCase();
+  const contentType = (() => {
+    switch (ext) {
+      case '.pdf':
+        return 'application/pdf';
+      case '.png':
+        return 'image/png';
+      case '.jpg':
+      case '.jpeg':
+        return 'image/jpeg';
+      case '.webp':
+        return 'image/webp';
+      case '.gif':
+        return 'image/gif';
+      case '.heic':
+        return 'image/heic';
+      default:
+        return 'application/octet-stream';
+    }
+  })();
+  const safeNameBase = normalizeOptionalText(
+    user?.resellerPermitFileName ?? user?.reseller_permit_file_name,
+  ) || path.basename(candidate);
+  const safeName = path
+    .basename(safeNameBase)
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .slice(0, 160) || 'reseller_permit';
+  return {
+    absolutePath: candidate,
+    contentType,
+    safeName,
+  };
+};
+
+const buildPendingResellerPermitApprovalItems = ({ currentUser, requestedSalesRepId = null }) => {
+  const role = normalizeRole(currentUser?.role);
+  const allowedOwnerIds = isAdmin(role)
+    ? (requestedSalesRepId ? normalizeOwnershipIds([requestedSalesRepId]) : null)
+    : resolveScopedSalesRepOwnerIds(currentUser);
+
+  return userRepository
+    .getAll()
+    .filter((candidate) => {
+      if (!isDoctorUser(candidate)) {
+        return false;
+      }
+      const permitPath = normalizeOptionalText(
+        candidate?.resellerPermitFilePath ?? candidate?.reseller_permit_file_path,
+      );
+      if (!permitPath || isResellerPermitApprovedByRep(candidate)) {
+        return false;
+      }
+      if (!allowedOwnerIds) {
+        return true;
+      }
+      const targetSalesRepId = String(candidate?.salesRepId || '').trim();
+      return targetSalesRepId.length > 0 && allowedOwnerIds.includes(targetSalesRepId);
+    })
+    .map((doctor) => ({
+      userId: String(doctor.id || '').trim(),
+      physicianName: String(doctor?.name || doctor?.email || `Doctor ${doctor?.id || ''}`).trim(),
+      physicianEmail: doctor?.email ? String(doctor.email).trim().toLowerCase() : null,
+      resellerPermitFileName:
+        normalizeOptionalText(
+          doctor?.resellerPermitFileName ?? doctor?.reseller_permit_file_name,
+        ) || null,
+      resellerPermitUploadedAt:
+        normalizeOptionalText(
+          doctor?.resellerPermitUploadedAt ?? doctor?.reseller_permit_uploaded_at,
+        ) || null,
+      resellerPermitApprovedByRep: false,
+      salesRepId: doctor?.salesRepId ? String(doctor.salesRepId).trim() : null,
+    }))
+    .filter((item) => item.userId.length > 0)
+    .sort((a, b) => {
+      const aTime = a.resellerPermitUploadedAt ? Date.parse(a.resellerPermitUploadedAt) : NaN;
+      const bTime = b.resellerPermitUploadedAt ? Date.parse(b.resellerPermitUploadedAt) : NaN;
+      const aValid = Number.isFinite(aTime);
+      const bValid = Number.isFinite(bTime);
+      if (aValid && bValid && aTime !== bTime) {
+        return bTime - aTime;
+      }
+      if (aValid !== bValid) {
+        return aValid ? -1 : 1;
+      }
+      return a.physicianName.localeCompare(b.physicianName);
+    });
 };
 
 const requireAdmin = (req, res, next) => {
@@ -244,6 +381,9 @@ const serializeUserProfile = (user) => {
     resellerPermitFilePath: user.resellerPermitFilePath || user.reseller_permit_file_path || null,
     resellerPermitFileName: user.resellerPermitFileName || user.reseller_permit_file_name || null,
     resellerPermitUploadedAt: user.resellerPermitUploadedAt || user.reseller_permit_uploaded_at || null,
+    resellerPermitApprovedByRep: normalizeBooleanFlag(
+      user?.resellerPermitApprovedByRep ?? user?.reseller_permit_approved_by_rep,
+    ),
     lastSeenAt: user.lastSeenAt || null,
     lastInteractionAt: user.lastInteractionAt || null,
     lastLoginAt: user.lastLoginAt || null,
@@ -743,6 +883,111 @@ router.get('/users', authenticate, requireAdminOrSalesLead, async (req, res) => 
     });
 
   return res.json({ users });
+});
+
+router.get('/users/reseller-permits/pending', authenticate, requireSalesRepOrAdmin, async (req, res) => {
+  const current = req.currentUser || userRepository.findById(req.user?.id);
+  if (!current) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const role = normalizeRole(current?.role);
+  const requestedSalesRepId = isAdmin(role) && typeof req.query?.salesRepId === 'string'
+    ? String(req.query.salesRepId).trim()
+    : null;
+
+  return res.json({
+    items: buildPendingResellerPermitApprovalItems({
+      currentUser: current,
+      requestedSalesRepId,
+    }),
+  });
+});
+
+router.get('/users/:userId/reseller-permit', authenticate, requireSalesRepOrAdmin, async (req, res) => {
+  const current = req.currentUser || userRepository.findById(req.user?.id);
+  const userId = String(req.params?.userId || '').trim();
+  if (!current) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  const targetUser = userRepository.findById(userId);
+  if (!targetUser || !isDoctorUser(targetUser)) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  if (!canAccessDoctorResellerPermit({ currentUser: current, targetUser })) {
+    return res.status(403).json({ error: 'Doctor access required' });
+  }
+
+  const file = resolveResellerPermitFileDownload(targetUser);
+  if (!file) {
+    return res.status(404).json({ error: 'Permit not found' });
+  }
+
+  res.setHeader('Content-Type', file.contentType);
+  res.setHeader('Content-Disposition', `inline; filename="${file.safeName}"`);
+  return res.sendFile(file.absolutePath);
+});
+
+router.post('/users/:userId/reseller-permit/approve', authenticate, requireSalesRepOrAdmin, async (req, res) => {
+  const current = req.currentUser || userRepository.findById(req.user?.id);
+  const userId = String(req.params?.userId || '').trim();
+  if (!current) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  const targetUser = userRepository.findById(userId);
+  if (!targetUser || !isDoctorUser(targetUser)) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  if (!canAccessDoctorResellerPermit({ currentUser: current, targetUser })) {
+    return res.status(403).json({ error: 'Doctor access required' });
+  }
+  const permitPath = normalizeOptionalText(
+    targetUser?.resellerPermitFilePath ?? targetUser?.reseller_permit_file_path,
+  );
+  if (!permitPath) {
+    return res.status(404).json({ error: 'Permit not found' });
+  }
+
+  const currentTaxExemptSource = normalizeOptionalText(
+    targetUser?.taxExemptSource ?? targetUser?.tax_exempt_source,
+  );
+  const currentTaxExemptReason = normalizeOptionalText(
+    targetUser?.taxExemptReason ?? targetUser?.tax_exempt_reason,
+  );
+  const preserveNonPermitTaxState =
+    currentTaxExemptSource && currentTaxExemptSource !== 'RESELLER_PERMIT';
+
+  const updated = userRepository.update({
+    ...targetUser,
+    resellerPermitApprovedByRep: true,
+    isTaxExempt: preserveNonPermitTaxState
+      ? normalizeBooleanFlag(targetUser?.isTaxExempt ?? targetUser?.is_tax_exempt)
+      : true,
+    taxExemptSource: preserveNonPermitTaxState ? currentTaxExemptSource : 'RESELLER_PERMIT',
+    taxExemptReason: preserveNonPermitTaxState
+      ? currentTaxExemptReason
+      : 'Approved reseller permit on file',
+  });
+  if (!updated) {
+    return res.status(500).json({ error: 'Unable to approve reseller permit' });
+  }
+
+  return res.json({
+    ok: true,
+    item: {
+      userId: String(updated.id || '').trim(),
+      physicianName: String(updated?.name || updated?.email || `Doctor ${updated?.id || ''}`).trim(),
+      physicianEmail: updated?.email ? String(updated.email).trim().toLowerCase() : null,
+      resellerPermitApprovedByRep: true,
+    },
+  });
 });
 
 router.patch('/users/:userId', authenticate, requireAdminOrSalesLead, async (req, res) => {

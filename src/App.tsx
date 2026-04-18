@@ -311,6 +311,7 @@ interface User {
   resellerPermitFilePath?: string | null;
   resellerPermitFileName?: string | null;
   resellerPermitUploadedAt?: string | null;
+  resellerPermitApprovedByRep?: boolean;
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
@@ -1016,6 +1017,8 @@ interface AccountOrderSummary {
   reseller_permit_file_name?: string | null;
   resellerPermitUploadedAt?: string | null;
   reseller_permit_uploaded_at?: string | null;
+  resellerPermitApprovedByRep?: boolean | null;
+  reseller_permit_approved_by_rep?: boolean | null;
   hasResellerPermitUploaded?: boolean | null;
   number?: string | null;
   trackingNumber?: string | null;
@@ -1055,6 +1058,15 @@ interface AccountOrderSummary {
   expectedShipmentWindow?: string | null;
   upsTrackingStatus?: string | null;
   upsDeliveredAt?: string | null;
+}
+
+interface PendingResellerPermitApprovalItem {
+  userId: string;
+  physicianName?: string | null;
+  physicianEmail?: string | null;
+  resellerPermitFileName?: string | null;
+  resellerPermitUploadedAt?: string | null;
+  resellerPermitApprovedByRep?: boolean | null;
 }
 
 const humanizeAccountOrderStatus = (status?: string | null): string => {
@@ -10378,6 +10390,18 @@ function MainApp() {
   const adminOnHoldLastFetchAtRef = useRef(0);
   const adminOnHoldInFlightRef = useRef(false);
   const adminOnHoldEndpointUnavailableRef = useRef(false);
+  const [pendingResellerPermitApprovals, setPendingResellerPermitApprovals] = useState<
+    PendingResellerPermitApprovalItem[]
+  >([]);
+  const pendingResellerPermitApprovalsRef = useRef<PendingResellerPermitApprovalItem[]>([]);
+  const [pendingResellerPermitApprovalsLoading, setPendingResellerPermitApprovalsLoading] = useState(false);
+  const [pendingResellerPermitApprovalsRefreshing, setPendingResellerPermitApprovalsRefreshing] = useState(false);
+  const [pendingResellerPermitApprovalsHasSettled, setPendingResellerPermitApprovalsHasSettled] = useState(false);
+  const [pendingResellerPermitApprovalsError, setPendingResellerPermitApprovalsError] = useState<string | null>(null);
+  const pendingResellerPermitApprovalsLastFetchAtRef = useRef(0);
+  const pendingResellerPermitApprovalsInFlightRef = useRef(false);
+  const [pendingResellerPermitApprovalDownloadingIds, setPendingResellerPermitApprovalDownloadingIds] = useState<Set<string>>(new Set());
+  const [pendingResellerPermitApprovalApprovingIds, setPendingResellerPermitApprovalApprovingIds] = useState<Set<string>>(new Set());
   const [salesTrackingLastUpdated, setSalesTrackingLastUpdated] = useState<
     number | null
   >(null);
@@ -10402,6 +10426,7 @@ function MainApp() {
     setSalesTrackingHasSettled(false);
     setSalesOnHoldHasSettled(false);
     setAdminOnHoldHasSettled(false);
+    setPendingResellerPermitApprovalsHasSettled(false);
   }, [user?.id, user?.role]);
   useEffect(() => {
     salesTrackingDoctorsRef.current = salesTrackingDoctors;
@@ -10412,6 +10437,9 @@ function MainApp() {
   useEffect(() => {
     adminOnHoldOrdersRef.current = adminOnHoldOrders;
   }, [adminOnHoldOrders]);
+  useEffect(() => {
+    pendingResellerPermitApprovalsRef.current = pendingResellerPermitApprovals;
+  }, [pendingResellerPermitApprovals]);
   useEffect(() => {
     doctorSummaryRef.current = doctorSummary;
   }, [doctorSummary]);
@@ -11954,6 +11982,12 @@ function MainApp() {
                       : typeof supplementalProfile?.resellerPermitUploadedAt === "string" &&
                           supplementalProfile.resellerPermitUploadedAt.trim().length > 0
                         ? supplementalProfile.resellerPermitUploadedAt
+                        : null,
+                  resellerPermitApprovedByRep:
+                    typeof profile?.resellerPermitApprovedByRep === "boolean"
+                      ? profile.resellerPermitApprovedByRep
+                      : typeof supplementalProfile?.resellerPermitApprovedByRep === "boolean"
+                        ? supplementalProfile.resellerPermitApprovedByRep
                         : null,
                   supplementalProfileLoaded:
                     profile?.supplementalProfileLoaded === true ||
@@ -20609,6 +20643,201 @@ function MainApp() {
 	    [postLoginHold, salesOnHoldOrders.length, user?.role],
 	  );
 
+  const refreshPendingResellerPermitApprovals = useCallback(
+    async (options?: { force?: boolean }) => {
+      const role = user?.role || null;
+      if (!role || (!isRep(role) && !isSalesLead(role) && !isAdmin(role))) {
+        setPendingResellerPermitApprovals([]);
+        setPendingResellerPermitApprovalsError(null);
+        setPendingResellerPermitApprovalsLoading(false);
+        setPendingResellerPermitApprovalsRefreshing(false);
+        setPendingResellerPermitApprovalsHasSettled(false);
+        return;
+      }
+      if (postLoginHold) {
+        return;
+      }
+      if (!hasAuthToken()) {
+        setPendingResellerPermitApprovals([]);
+        setPendingResellerPermitApprovalsError(null);
+        setPendingResellerPermitApprovalsLoading(false);
+        setPendingResellerPermitApprovalsRefreshing(false);
+        setPendingResellerPermitApprovalsHasSettled(false);
+        return;
+      }
+      const now = Date.now();
+      const ttlMs = 25_000;
+      if (!options?.force && now - pendingResellerPermitApprovalsLastFetchAtRef.current < ttlMs) {
+        return;
+      }
+      if (pendingResellerPermitApprovalsInFlightRef.current) {
+        return;
+      }
+      pendingResellerPermitApprovalsInFlightRef.current = true;
+      pendingResellerPermitApprovalsLastFetchAtRef.current = now;
+      const existingItems = pendingResellerPermitApprovalsRef.current;
+      const hasExisting = existingItems.length > 0;
+      setPendingResellerPermitApprovalsLoading(!hasExisting);
+      setPendingResellerPermitApprovalsRefreshing(Boolean(options?.force && hasExisting));
+      setPendingResellerPermitApprovalsError(null);
+      try {
+        const response = await settingsAPI.getPendingResellerPermitApprovals();
+        const rawItems = Array.isArray((response as any)?.items)
+          ? (response as any).items
+          : Array.isArray(response)
+            ? response
+            : [];
+        const normalizedItems = rawItems
+          .map((item: any) => {
+            const userId = String(item?.userId || "").trim();
+            if (!userId) {
+              return null;
+            }
+            return {
+              userId,
+              physicianName:
+                typeof item?.physicianName === "string" && item.physicianName.trim().length > 0
+                  ? item.physicianName.trim()
+                  : typeof item?.physicianEmail === "string" && item.physicianEmail.trim().length > 0
+                    ? item.physicianEmail.trim()
+                    : "Unknown physician",
+              physicianEmail:
+                typeof item?.physicianEmail === "string" && item.physicianEmail.trim().length > 0
+                  ? item.physicianEmail.trim()
+                  : null,
+              resellerPermitFileName:
+                typeof item?.resellerPermitFileName === "string" && item.resellerPermitFileName.trim().length > 0
+                  ? item.resellerPermitFileName.trim()
+                  : null,
+              resellerPermitUploadedAt:
+                typeof item?.resellerPermitUploadedAt === "string" && item.resellerPermitUploadedAt.trim().length > 0
+                  ? item.resellerPermitUploadedAt.trim()
+                  : null,
+              resellerPermitApprovedByRep: Boolean(item?.resellerPermitApprovedByRep),
+            } satisfies PendingResellerPermitApprovalItem;
+          })
+          .filter(Boolean) as PendingResellerPermitApprovalItem[];
+        setPendingResellerPermitApprovals(normalizedItems);
+        setPendingResellerPermitApprovalsError(null);
+      } catch (error: any) {
+        const status = typeof error?.status === "number" ? error.status : null;
+        const code = typeof error?.code === "string" ? error.code : null;
+        const authCode =
+          typeof error?.authCode === "string" ? error.authCode : null;
+        const isAuthFailure =
+          code === "AUTH_REQUIRED" ||
+          status === 401 ||
+          (status === 403 &&
+            typeof authCode === "string" &&
+            authCode.startsWith("TOKEN_"));
+        if (isAuthFailure) {
+          setPendingResellerPermitApprovalsError(null);
+          return;
+        }
+        const message =
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Unable to load pending reseller permit approvals.";
+        setPendingResellerPermitApprovalsError(message);
+        if (!hasExisting) {
+          setPendingResellerPermitApprovals([]);
+        }
+      } finally {
+        setPendingResellerPermitApprovalsLoading(false);
+        setPendingResellerPermitApprovalsRefreshing(false);
+        setPendingResellerPermitApprovalsHasSettled(true);
+        pendingResellerPermitApprovalsInFlightRef.current = false;
+      }
+    },
+    [postLoginHold, user?.role],
+  );
+
+  const handleDownloadPendingResellerPermitApproval = useCallback(
+    async (item: PendingResellerPermitApprovalItem) => {
+      const userId = String(item.userId || "").trim();
+      if (!userId) {
+        return;
+      }
+      setPendingResellerPermitApprovalDownloadingIds((current) => {
+        const next = new Set(current);
+        next.add(userId);
+        return next;
+      });
+      try {
+        const result = await settingsAPI.downloadUserResellerPermit(userId);
+        const fallbackName =
+          sanitizeDownloadFilenamePart(
+            item.resellerPermitFileName,
+            sanitizeDownloadFilenamePart(item.physicianName, "reseller-permit"),
+          ) || "reseller-permit";
+        const extension = (() => {
+          const contentType = String(result.contentType || "").toLowerCase();
+          if (contentType.includes("pdf")) return ".pdf";
+          if (contentType.includes("png")) return ".png";
+          if (contentType.includes("jpeg")) return ".jpg";
+          if (contentType.includes("webp")) return ".webp";
+          if (contentType.includes("gif")) return ".gif";
+          return "";
+        })();
+        const filename =
+          result.filename ||
+          (fallbackName.includes(".") ? fallbackName : `${fallbackName}${extension}`);
+        triggerBrowserDownload(result.blob, filename);
+      } catch (error: any) {
+        console.warn("[ResellerPermit] Failed to download pending permit", error);
+        toast.error(
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Unable to download the reseller permit right now.",
+        );
+      } finally {
+        setPendingResellerPermitApprovalDownloadingIds((current) => {
+          const next = new Set(current);
+          next.delete(userId);
+          return next;
+        });
+      }
+    },
+    [],
+  );
+
+  const handleApprovePendingResellerPermitApproval = useCallback(
+    async (item: PendingResellerPermitApprovalItem) => {
+      const userId = String(item.userId || "").trim();
+      if (!userId) {
+        return;
+      }
+      setPendingResellerPermitApprovalApprovingIds((current) => {
+        const next = new Set(current);
+        next.add(userId);
+        return next;
+      });
+      try {
+        await settingsAPI.approveUserResellerPermit(userId);
+        setPendingResellerPermitApprovals((current) =>
+          current.filter((entry) => String(entry.userId || "").trim() !== userId),
+        );
+        toast.success(
+          `${item.physicianName || item.physicianEmail || "Physician"} reseller permit approved.`,
+        );
+      } catch (error: any) {
+        console.warn("[ResellerPermit] Failed to approve pending permit", error);
+        toast.error(
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Unable to approve the reseller permit right now.",
+        );
+      } finally {
+        setPendingResellerPermitApprovalApprovingIds((current) => {
+          const next = new Set(current);
+          next.delete(userId);
+          return next;
+        });
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (shouldPauseAdminBackgroundSync && userRole && isAdmin(userRole)) {
       return;
@@ -20671,6 +20900,40 @@ function MainApp() {
 	      window.clearInterval(pollHandle);
 	    };
 		  }, [postLoginHold, refreshSalesOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
+
+  useEffect(() => {
+    if (
+      postLoginHold ||
+      !user ||
+      (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
+      (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))
+    ) {
+      return;
+    }
+    void refreshPendingResellerPermitApprovals();
+    const leaderKey = "sales-reseller-permit-approvals-poll";
+    const pollIntervalMs = 25_000;
+    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
+    const pollHandle = window.setInterval(() => {
+      if (!isPageVisible()) {
+        return;
+      }
+      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+        return;
+      }
+      void refreshPendingResellerPermitApprovals();
+    }, pollIntervalMs);
+    return () => {
+      releaseTabLeadership(leaderKey);
+      window.clearInterval(pollHandle);
+    };
+  }, [
+    postLoginHold,
+    refreshPendingResellerPermitApprovals,
+    shouldPauseAdminBackgroundSync,
+    user?.id,
+    user?.role,
+  ]);
 
 	  const scopedSalesTrackingOrders = useMemo(() => {
 	    if (!isAdmin(user?.role)) {
@@ -26919,6 +27182,102 @@ function MainApp() {
 	        </div>
 	      </div>
 	    );
+    const renderPendingResellerPermitApprovalsCard = () => (
+      <div className="sales-rep-leads-card sales-rep-combined-card">
+        <div className="mb-0 flex w-full items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold text-slate-900">To-Do</h3>
+            <p className="text-sm text-slate-600">
+              Review uploaded reseller permits from physicians before sales-tax exemption is allowed.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+            onClick={() => void refreshPendingResellerPermitApprovals({ force: true })}
+            disabled={pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing}
+            aria-busy={pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing}
+            title="Refresh reseller permit approvals"
+          >
+            {pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing
+              ? "Refreshing..."
+              : "Refresh"}
+          </Button>
+        </div>
+        <div
+          className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+          role="region"
+          aria-label="Pending reseller permit approvals"
+        >
+          {!pendingResellerPermitApprovalsHasSettled ||
+          (pendingResellerPermitApprovalsLoading && pendingResellerPermitApprovals.length === 0) ? (
+            <div className="px-4 py-3 text-sm text-slate-500">
+              Loading to-do items…
+            </div>
+          ) : pendingResellerPermitApprovalsError && pendingResellerPermitApprovals.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-slate-500">
+              {pendingResellerPermitApprovalsError}
+            </div>
+          ) : pendingResellerPermitApprovals.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-slate-500">
+              No reseller permit approvals are waiting right now.
+            </div>
+          ) : (
+            <ul className="w-full border-t border-slate-200/70">
+              {pendingResellerPermitApprovals.map((item, index) => {
+                const userId = String(item.userId || "").trim();
+                const physicianLabel =
+                  item.physicianName || item.physicianEmail || "Unknown physician";
+                const isDownloading = pendingResellerPermitApprovalDownloadingIds.has(userId);
+                const isApproving = pendingResellerPermitApprovalApprovingIds.has(userId);
+                const uploadedDateLabel = item.resellerPermitUploadedAt
+                  ? formatDate(item.resellerPermitUploadedAt)
+                  : null;
+                return (
+                  <li
+                    key={userId || `pending-reseller-permit-${index}`}
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-2 last:border-b-0"
+                  >
+                    <div className="min-w-0 flex-1 text-sm text-slate-800">
+                      <span className="font-semibold text-slate-900">
+                        Reseller Permit Verification Needed
+                      </span>
+                      <span>{` - ${physicianLabel}`}</span>
+                      {uploadedDateLabel ? (
+                        <span className="text-slate-500">{` - Uploaded ${uploadedDateLabel}`}</span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="header-home-button squircle-sm bg-white text-slate-900"
+                        onClick={() => void handleDownloadPendingResellerPermitApproval(item)}
+                        disabled={isDownloading || isApproving}
+                      >
+                        {isDownloading ? "Downloading..." : "Download permit"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="header-home-button squircle-sm"
+                        onClick={() => void handleApprovePendingResellerPermitApproval(item)}
+                        disabled={isApproving || isDownloading}
+                      >
+                        {isApproving ? "Approving..." : "Approve"}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
 	    const renderEmailControlsCard = () => (
 	      <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
 	        <div className="border-b border-slate-200/60 pb-3">
@@ -28408,6 +28767,10 @@ function MainApp() {
                   </div>
                 )}
 
+                {isHereNowSectionActive && renderSalesScopedOnHoldOrdersCard()}
+
+                {isHereNowSectionActive && renderPendingResellerPermitApprovalsCard()}
+
                 {shouldShowLiveClientsCard && (
 			            <div
                     className={clsx(
@@ -28815,9 +29178,6 @@ function MainApp() {
             </div>
           )}
 
-		          {isHereNowSectionActive && renderSalesScopedOnHoldOrdersCard()}
-
-
 		          {adminActionState.error && (
 		            <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
 		              {adminActionState.error}
@@ -28827,8 +29187,9 @@ function MainApp() {
 				          {isAdmin(user?.role) &&
                     adminDashboardTab === "here_now" &&
                     (
-                      <div className="admin-tab-panel-enter">
+                      <div className="admin-tab-panel-enter space-y-6">
                         {renderAdminOnHoldOrdersCard()}
+                        {renderPendingResellerPermitApprovalsCard()}
                       </div>
                     )}
 

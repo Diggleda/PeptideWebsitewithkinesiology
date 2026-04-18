@@ -342,6 +342,7 @@ interface HeaderUser {
   resellerPermitFilePath?: string | null;
   resellerPermitFileName?: string | null;
   resellerPermitUploadedAt?: string | null;
+  resellerPermitApprovedByRep?: boolean;
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
@@ -417,6 +418,8 @@ interface AccountOrderSummary {
   reseller_permit_file_name?: string | null;
   resellerPermitUploadedAt?: string | null;
   reseller_permit_uploaded_at?: string | null;
+  resellerPermitApprovedByRep?: boolean | null;
+  reseller_permit_approved_by_rep?: boolean | null;
   hasResellerPermitUploaded?: boolean | null;
   number?: string | null;
   trackingNumber?: string | null;
