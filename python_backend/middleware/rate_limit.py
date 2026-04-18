@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -23,6 +24,7 @@ _DEFAULT_MAX = max(30, min(_DEFAULT_MAX, 5000))
 _EXPENSIVE_MAX = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS_EXPENSIVE", "80").strip() or 80)
 _EXPENSIVE_MAX = max(10, min(_EXPENSIVE_MAX, 1000))
 
+_LOGGER = logging.getLogger(__name__)
 _lock = threading.Lock()
 _hits: Dict[Tuple[str, str], Deque[float]] = {}
 
@@ -82,6 +84,15 @@ def init_rate_limit(app: Flask) -> None:
 
             if len(bucket) >= limit:
                 retry_after = max(1, int(_WINDOW_SECONDS - (now - bucket[0])) if bucket else _WINDOW_SECONDS)
+                _LOGGER.warning(
+                    "App rate limit hit ip=%s method=%s path=%s limit=%s window_s=%s retry_after_s=%s",
+                    ip,
+                    request.method,
+                    request.path,
+                    limit,
+                    _WINDOW_SECONDS,
+                    retry_after,
+                )
                 response = jsonify(
                     {
                         "error": "RATE_LIMITED",
@@ -91,6 +102,7 @@ def init_rate_limit(app: Flask) -> None:
                 )
                 response.status_code = 429
                 response.headers["Retry-After"] = str(retry_after)
+                response.headers["X-PepPro-Rate-Limiter"] = "app"
                 return response
 
             bucket.append(now)

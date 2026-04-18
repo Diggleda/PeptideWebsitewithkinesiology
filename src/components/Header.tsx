@@ -2349,10 +2349,21 @@ export function Header({
     zelleContactDraft,
   ]);
   const accountDetailsRefreshSeqRef = useRef(0);
+  const accountDetailsRefreshKeyRef = useRef<string | null>(null);
+  const onUserUpdatedRef = useRef(onUserUpdated);
   useEffect(() => {
-    if (!welcomeOpen) return;
-    if (accountTab !== 'details') return;
-    if (!user) return;
+    onUserUpdatedRef.current = onUserUpdated;
+  }, [onUserUpdated]);
+  useEffect(() => {
+    if (!welcomeOpen || accountTab !== 'details' || !user) {
+      accountDetailsRefreshKeyRef.current = null;
+      return;
+    }
+    const refreshKey = `${String(user.id || user.email || 'account')}:details`;
+    if (accountDetailsRefreshKeyRef.current === refreshKey) {
+      return;
+    }
+    accountDetailsRefreshKeyRef.current = refreshKey;
     const seq = ++accountDetailsRefreshSeqRef.current;
     (async () => {
       try {
@@ -2360,17 +2371,22 @@ export function Header({
         const fresh = await api.authAPI.getCurrentUser({ background: true });
         if (seq !== accountDetailsRefreshSeqRef.current) return;
         if (!fresh) return;
-        const nextUserState: HeaderUser = {
-          ...(localUser || user || {}),
-          ...(fresh as any),
-        };
-        setLocalUser(nextUserState);
-        onUserUpdated?.(nextUserState);
+        let nextUserState: HeaderUser | null = null;
+        setLocalUser((previous) => {
+          nextUserState = {
+            ...(previous || user || {}),
+            ...(fresh as any),
+          };
+          return nextUserState;
+        });
+        if (nextUserState) {
+          onUserUpdatedRef.current?.(nextUserState);
+        }
       } catch (error) {
         console.warn('[Header] Failed to refresh account details', error);
       }
     })();
-  }, [welcomeOpen, accountTab, user, localUser, onUserUpdated]);
+  }, [welcomeOpen, accountTab, user]);
   useEffect(() => {
     if (!loginOpen || authMode !== 'login') {
       return;
