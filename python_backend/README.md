@@ -82,9 +82,10 @@ Scheduled background jobs:
   `/api/health` reports per-job status under `.backgroundJobs.jobs`, including
   heartbeat age, lifecycle, and the most recent error when a job loop fails and
   is restarted.
-- `/api/health` is protected by HTTP Basic Auth. Set
-  `PEPPRO_HEALTH_BASIC_AUTH_USERNAME` and `PEPPRO_HEALTH_BASIC_AUTH_PASSWORD`
-  in the backend environment before exposing the route publicly.
+- `/api/health` accepts the normal admin bearer session used by the dashboard,
+  and also supports a separate public password gate for direct browser access.
+  Set `PEPPRO_HEALTH_PASSWORD` in the backend environment if you want the open
+  `api.peppro.net/api/health` page to require a standalone password.
 
 Quote PDF renderer settings:
 

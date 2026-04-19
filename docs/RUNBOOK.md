@@ -2,11 +2,10 @@
 
 ## Health checks
 
-- API: `curl -fsS -u "$PEPPRO_HEALTH_BASIC_AUTH_USERNAME:$PEPPRO_HEALTH_BASIC_AUTH_PASSWORD" http://localhost:3001/api/health | jq`
+- API: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://localhost:3001/api/health | jq`
 - Diagnostics: `curl -fsS http://localhost:3001/api/help | jq`
-- Background jobs in `thread` mode: `curl -fsS -u "$PEPPRO_HEALTH_BASIC_AUTH_USERNAME:$PEPPRO_HEALTH_BASIC_AUTH_PASSWORD" http://localhost:3001/api/health | jq '.backgroundJobs'`
-- Configure the health route credentials with
-  `PEPPRO_HEALTH_BASIC_AUTH_USERNAME` and `PEPPRO_HEALTH_BASIC_AUTH_PASSWORD`.
+- Background jobs in `thread` mode: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://localhost:3001/api/health | jq '.backgroundJobs'`
+- Configure the public health-page password with `PEPPRO_HEALTH_PASSWORD`.
 
 Production recommendation:
 

@@ -134,12 +134,8 @@ const AUTH_EVENT_NAME = 'peppro:force-logout';
 const SHADOW_READ_ONLY_CODE = 'SHADOW_READ_ONLY';
 const SHADOW_READ_ONLY_MESSAGE = 'Maintenance mode is read-only';
 const AUTH_CHECK_FAILED_CODE = 'AUTH_CHECK_FAILED';
-const HEALTH_PASSWORD_STORAGE_KEY = 'peppro_health_password_v1';
-const HEALTH_PASSWORD_PROMPT_COOLDOWN_MS = 2_000;
 
 const MULTI_SESSION_EXEMPT_EMAIL = 'test@doctor.com';
-
-let _healthPasswordPromptedAt = 0;
 
 const isMultiSessionExemptEmail = (email?: string | null) =>
   String(email || '')
@@ -542,192 +538,7 @@ const clearAuthToken = () => {
   } catch {
     // ignore
   }
-  try {
-    sessionStorage.removeItem(HEALTH_PASSWORD_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
   clearSessionStartedAt();
-};
-
-const getStoredHealthPassword = () => {
-  try {
-    const value = sessionStorage.getItem(HEALTH_PASSWORD_STORAGE_KEY);
-    return value && value.trim() ? value.trim() : null;
-  } catch {
-    return null;
-  }
-};
-
-const clearStoredHealthPassword = () => {
-  try {
-    sessionStorage.removeItem(HEALTH_PASSWORD_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-};
-
-const persistHealthPassword = (password: string) => {
-  try {
-    sessionStorage.setItem(HEALTH_PASSWORD_STORAGE_KEY, String(password || ''));
-  } catch {
-    // ignore
-  }
-};
-
-const shouldSkipHealthPasswordPrompt = () =>
-  Date.now() - _healthPasswordPromptedAt < HEALTH_PASSWORD_PROMPT_COOLDOWN_MS;
-
-const buildHealthPasswordClientError = (message: string, code: string) => {
-  const error = new Error(message);
-  (error as any).status = 401;
-  (error as any).code = code;
-  return error;
-};
-
-const isHealthPasswordError = (error: any) => {
-  const code = String(error?.authCode || error?.code || '').trim();
-  return (
-    Number(error?.status) === 401
-    || code === AUTH_CHECK_FAILED_CODE
-    || code === 'HEALTH_PASSWORD_REQUIRED'
-    || code === 'HEALTH_PASSWORD_INVALID'
-    || code === 'HEALTH_PASSWORD_NOT_CONFIGURED'
-  );
-};
-
-const promptForHealthPassword = (message?: string): Promise<string | null> => {
-  if (typeof window === 'undefined') {
-    return Promise.resolve(null);
-  }
-  _healthPasswordPromptedAt = Date.now();
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    const card = document.createElement('div');
-    const title = document.createElement('h2');
-    const body = document.createElement('p');
-    const form = document.createElement('form');
-    const label = document.createElement('label');
-    const input = document.createElement('input');
-    const actions = document.createElement('div');
-    const cancelButton = document.createElement('button');
-    const submitButton = document.createElement('button');
-
-    overlay.setAttribute('role', 'presentation');
-    overlay.style.position = 'fixed';
-    overlay.style.inset = '0';
-    overlay.style.zIndex = '99999';
-    overlay.style.display = 'grid';
-    overlay.style.placeItems = 'center';
-    overlay.style.padding = '24px';
-    overlay.style.background = 'rgba(15, 23, 42, 0.45)';
-    overlay.style.backdropFilter = 'blur(6px)';
-
-    card.style.width = 'min(100%, 420px)';
-    card.style.padding = '24px';
-    card.style.borderRadius = '24px';
-    card.style.background = 'rgba(255, 255, 255, 0.98)';
-    card.style.boxShadow = '0 24px 60px -36px rgba(15, 23, 42, 0.45)';
-    card.style.border = '1px solid rgba(148, 163, 184, 0.24)';
-
-    title.textContent = 'Server Health';
-    title.style.margin = '0';
-    title.style.fontSize = '1.5rem';
-    title.style.lineHeight = '1.15';
-    title.style.color = '#0f172a';
-
-    body.textContent = message && message.trim()
-      ? message
-      : 'Enter the server health password to load the backend diagnostics.';
-    body.style.margin = '12px 0 0';
-    body.style.fontSize = '0.95rem';
-    body.style.lineHeight = '1.6';
-    body.style.color = '#475569';
-
-    form.style.marginTop = '18px';
-    form.style.display = 'grid';
-    form.style.gap = '12px';
-
-    label.textContent = 'Password';
-    label.htmlFor = 'health-password-prompt';
-    label.style.fontSize = '0.8rem';
-    label.style.fontWeight = '700';
-    label.style.letterSpacing = '0.08em';
-    label.style.textTransform = 'uppercase';
-    label.style.color = '#475569';
-
-    input.id = 'health-password-prompt';
-    input.type = 'password';
-    input.required = true;
-    input.autocomplete = 'current-password';
-    input.value = getStoredHealthPassword() || '';
-    input.style.width = '100%';
-    input.style.boxSizing = 'border-box';
-    input.style.padding = '0.9rem 1rem';
-    input.style.borderRadius = '14px';
-    input.style.border = '1px solid rgba(148, 163, 184, 0.55)';
-    input.style.font = 'inherit';
-    input.style.color = '#0f172a';
-    input.style.background = 'rgba(248, 250, 252, 0.95)';
-
-    actions.style.display = 'flex';
-    actions.style.justifyContent = 'flex-end';
-    actions.style.gap = '12px';
-
-    cancelButton.type = 'button';
-    cancelButton.textContent = 'Cancel';
-    cancelButton.style.border = '1px solid rgba(148, 163, 184, 0.4)';
-    cancelButton.style.background = '#fff';
-    cancelButton.style.color = '#334155';
-    cancelButton.style.borderRadius = '999px';
-    cancelButton.style.padding = '0.8rem 1rem';
-    cancelButton.style.font = 'inherit';
-    cancelButton.style.fontWeight = '600';
-    cancelButton.style.cursor = 'pointer';
-
-    submitButton.type = 'submit';
-    submitButton.textContent = 'View health';
-    submitButton.style.border = '0';
-    submitButton.style.background = 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)';
-    submitButton.style.color = '#fff';
-    submitButton.style.borderRadius = '999px';
-    submitButton.style.padding = '0.8rem 1rem';
-    submitButton.style.font = 'inherit';
-    submitButton.style.fontWeight = '700';
-    submitButton.style.cursor = 'pointer';
-
-    const cleanup = (value: string | null) => {
-      document.removeEventListener('keydown', onKeyDown);
-      overlay.remove();
-      resolve(value);
-    };
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        cleanup(null);
-      }
-    };
-
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      cleanup(input.value);
-    });
-    cancelButton.addEventListener('click', () => cleanup(null));
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) {
-        cleanup(null);
-      }
-    });
-    document.addEventListener('keydown', onKeyDown);
-
-    actions.append(cancelButton, submitButton);
-    form.append(label, input, actions);
-    card.append(title, body, form);
-    overlay.append(card);
-    document.body.appendChild(overlay);
-    window.setTimeout(() => input.focus(), 0);
-  });
 };
 
 const isShadowReadOnlyPath = (url: string) => {
@@ -3552,80 +3363,15 @@ export const seamlessAPI = {
 
 // Health check
 export const getServerHealth = async (options: { quiet?: boolean } = {}) => {
-  const request = async (password?: string | null) =>
-    fetchWithAuth(`${API_BASE_URL}/health`, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...(password ? { 'X-Health-Password': password } : {}),
-      },
-      cache: 'no-store',
-      skipReachabilityDispatch: options.quiet === true,
-      preserveAuthOnAuthFailure: true,
-    });
-
-  const storedPassword = getStoredHealthPassword();
-  let promptMessage =
-    'Server Health is protected by a separate password.';
-
-  if (storedPassword) {
-    try {
-      return await request(storedPassword);
-    } catch (error: any) {
-      if (!isHealthPasswordError(error)) {
-        throw error;
-      }
-      clearStoredHealthPassword();
-      const authCode = String(error?.authCode || error?.code || '').trim();
-      if (authCode === 'HEALTH_PASSWORD_NOT_CONFIGURED') {
-        throw new Error('Server Health password is not configured on the backend.');
-      }
-      promptMessage =
-        'Saved Server Health password was rejected. Enter the updated password.';
-    }
-  } else {
-    try {
-      return await request(null);
-    } catch (error: any) {
-      if (!isHealthPasswordError(error)) {
-        throw error;
-      }
-      const authCode = String(error?.authCode || error?.code || '').trim();
-      if (authCode === 'HEALTH_PASSWORD_NOT_CONFIGURED') {
-        throw new Error('Server Health password is not configured on the backend.');
-      }
-    }
-  }
-
-  if (typeof window === 'undefined' || shouldSkipHealthPasswordPrompt()) {
-    throw buildHealthPasswordClientError(
-      'Server Health requires a password.',
-      'HEALTH_PASSWORD_REQUIRED',
-    );
-  }
-
-  const prompted = await promptForHealthPassword(promptMessage);
-  if (!prompted) {
-    throw buildHealthPasswordClientError(
-      'Server Health requires a password.',
-      'HEALTH_PASSWORD_REQUIRED',
-    );
-  }
-
-  try {
-    const payload = await request(prompted);
-    persistHealthPassword(prompted);
-    return payload;
-  } catch (error: any) {
-    clearStoredHealthPassword();
-    if (isHealthPasswordError(error)) {
-      throw buildHealthPasswordClientError(
-        'Server Health password was rejected.',
-        'HEALTH_PASSWORD_INVALID',
-      );
-    }
-    throw error;
-  }
+  return fetchWithAuth(`${API_BASE_URL}/health`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+    skipReachabilityDispatch: options.quiet === true,
+    preserveAuthOnAuthFailure: true,
+  });
 };
 
 const pingServerHealth = async (options: { quiet?: boolean } = {}) => {

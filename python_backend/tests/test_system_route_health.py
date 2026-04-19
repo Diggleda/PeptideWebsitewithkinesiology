@@ -6,12 +6,17 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from flask import Flask
+from flask import Flask, g
 
+from python_backend.middleware import auth as auth_middleware
 from python_backend.routes import system
 
 
 class SystemRouteHealthTests(unittest.TestCase):
+    @staticmethod
+    def _bearer_auth_header(token: str = "test-token") -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
+
     def test_parse_gunicorn_args_extracts_recycle_and_thread_settings(self) -> None:
         parsed = system._parse_gunicorn_args(
             "gunicorn python_backend.wsgi:app --workers 2 --threads 8 --timeout 120 "
@@ -120,57 +125,138 @@ class SystemRouteHealthTests(unittest.TestCase):
         self.assertEqual(normalized["presenceSweep"]["reason"], "external_mode")
         self.assertEqual(normalized["patientLinksSweep"]["mode"], "thread")
 
-    def test_health_route_requires_basic_auth(self) -> None:
+    def test_health_route_returns_html_password_form_for_public_browser(self) -> None:
         app = Flask(__name__)
         app.register_blueprint(system.blueprint)
 
         with app.test_client() as client, patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_BASIC_AUTH_USERNAME": "health-user",
-                "PEPPRO_HEALTH_BASIC_AUTH_PASSWORD": "health-pass",
+                "PEPPRO_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
         ):
-            response = client.get("/api/health")
+            response = client.get("/api/health", headers={"Accept": "text/html"})
 
-        self.assertEqual(response.status_code, 401)
-        self.assertIn("Basic realm=", response.headers.get("WWW-Authenticate", ""))
-        self.assertEqual(
-            response.get_json(),
-            {
-                "error": "Server health requires Basic Auth.",
-                "code": "BASIC_AUTH_REQUIRED",
-            },
-        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.content_type)
+        body = response.get_data(as_text=True)
+        self.assertIn("<form", body)
+        self.assertIn("Enter the server health password", body)
 
-    def test_health_route_rejects_non_basic_authorization(self) -> None:
+    def test_health_route_requires_password_for_public_json_requests(self) -> None:
         app = Flask(__name__)
         app.register_blueprint(system.blueprint)
 
         with app.test_client() as client, patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_BASIC_AUTH_USERNAME": "health-user",
-                "PEPPRO_HEALTH_BASIC_AUTH_PASSWORD": "health-pass",
+                "PEPPRO_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
+        ):
+            response = client.get("/api/health", headers={"Accept": "application/json"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.get_json(),
+            {
+                "error": "Server health requires a password.",
+                "code": "HEALTH_PASSWORD_REQUIRED",
+            },
+        )
+
+    def test_health_route_rejects_non_admin_bearer_request(self) -> None:
+        app = Flask(__name__)
+        app.register_blueprint(system.blueprint)
+
+        def fake_authenticate_request(*, allow_media_cookie: bool):
+            self.assertFalse(allow_media_cookie)
+            g.current_user = {"id": "doctor-1", "role": "doctor"}
+            return None
+
+        with app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            side_effect=fake_authenticate_request,
         ):
             response = client.get(
                 "/api/health",
-                headers={"Authorization": "Bearer test-token"},
+                headers={**self._bearer_auth_header(), "Accept": "application/json"},
             )
 
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 403)
         self.assertEqual(
             response.get_json(),
-            {
-                "error": "Server health requires Basic Auth.",
-                "code": "BASIC_AUTH_REQUIRED",
-            },
+            {"error": "Admin access required", "code": "FORBIDDEN"},
         )
 
-    def test_health_route_returns_payload_for_valid_basic_auth(self) -> None:
+    def test_health_route_returns_payload_for_admin_bearer_request(self) -> None:
+        app = Flask(__name__)
+        app.register_blueprint(system.blueprint)
+
+        def fake_authenticate_request(*, allow_media_cookie: bool):
+            self.assertFalse(allow_media_cookie)
+            g.current_user = {"id": "admin-1", "role": "admin"}
+            return None
+
+        with app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            side_effect=fake_authenticate_request,
+        ), patch.object(
+            system,
+            "get_config",
+            return_value=SimpleNamespace(backend_build="test-build", mysql={"enabled": True}),
+        ), patch.object(
+            system,
+            "_server_usage",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_background_job_stats",
+            return_value={"status": "ok", "jobs": {}, "unhealthyJobs": [], "webProcessMode": "thread"},
+        ), patch.object(
+            system,
+            "_read_cgroup_memory",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_process_uptime_seconds",
+            return_value=42.0,
+        ), patch.object(
+            system,
+            "_configured_worker_target",
+            return_value=4,
+        ), patch.object(
+            system,
+            "_detect_worker_count",
+            return_value=4,
+        ), patch.object(
+            system,
+            "_read_proc_cmdline",
+            return_value="gunicorn python_backend.wsgi:app --workers 4 --threads 4 --timeout 120",
+        ), patch.object(
+            system,
+            "_read_process_snapshot",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_read_child_processes",
+            return_value=[],
+        ):
+            response = client.get(
+                "/api/health",
+                headers={**self._bearer_auth_header(), "Accept": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["build"], "test-build")
+        self.assertEqual(payload["mysql"], {"enabled": True})
+
+    def test_health_route_returns_payload_for_valid_password_header(self) -> None:
         app = Flask(__name__)
         app.register_blueprint(system.blueprint)
 
@@ -217,14 +303,16 @@ class SystemRouteHealthTests(unittest.TestCase):
         ), patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_BASIC_AUTH_USERNAME": "health-user",
-                "PEPPRO_HEALTH_BASIC_AUTH_PASSWORD": "health-pass",
+                "PEPPRO_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
         ):
             response = client.get(
                 "/api/health",
-                headers=self._basic_auth_header("health-user", "health-pass"),
+                headers={
+                    "Accept": "application/json",
+                    "X-Health-Password": "health-pass",
+                },
             )
 
         self.assertEqual(response.status_code, 200)
@@ -233,26 +321,25 @@ class SystemRouteHealthTests(unittest.TestCase):
         self.assertEqual(payload["build"], "test-build")
         self.assertEqual(payload["mysql"], {"enabled": True})
 
-    def test_health_route_returns_503_when_basic_auth_not_configured(self) -> None:
+    def test_health_route_returns_503_when_password_not_configured(self) -> None:
         app = Flask(__name__)
         app.register_blueprint(system.blueprint)
 
         with app.test_client() as client, patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_BASIC_AUTH_USERNAME": "",
-                "PEPPRO_HEALTH_BASIC_AUTH_PASSWORD": "",
+                "PEPPRO_HEALTH_PASSWORD": "",
             },
             clear=False,
         ):
-            response = client.get("/api/health")
+            response = client.get("/api/health", headers={"Accept": "application/json"})
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(
             response.get_json(),
             {
-                "error": "Server health Basic Auth is not configured.",
-                "code": "BASIC_AUTH_NOT_CONFIGURED",
+                "error": "Server health password is not configured.",
+                "code": "HEALTH_PASSWORD_NOT_CONFIGURED",
             },
         )
 

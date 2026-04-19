@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import secrets
 
-from flask import Blueprint, Response, current_app, request
+from flask import Blueprint, Response, current_app, g, request
 
 import os
 import platform
@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
+from ..middleware import auth as auth_middleware
 from ..services import get_config
 from ..services import news_service
 from ..integrations import ship_engine, woo_commerce
@@ -872,6 +873,26 @@ def _require_health_password() -> Response | None:
     return None
 
 
+def _authenticate_admin_health_request() -> tuple[bool, Response | None]:
+    header = str(request.headers.get("Authorization") or "").strip()
+    if not header:
+        return False, None
+
+    error = auth_middleware._authenticate_request(allow_media_cookie=False)
+    if error is not None:
+        return False, error
+
+    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
+    if role != "admin":
+        return False, _health_password_json_response(
+            "Admin access required",
+            code="FORBIDDEN",
+            status=403,
+        )
+
+    return True, None
+
+
 @blueprint.get("/ping")
 def ping():
     return handle_action(lambda: {"ok": True, "timestamp": _now()})
@@ -879,9 +900,13 @@ def ping():
 
 @blueprint.route("/health", methods=["GET", "POST"])
 def health():
-    auth_error = _require_health_password()
+    admin_authenticated, auth_error = _authenticate_admin_health_request()
     if auth_error is not None:
         return auth_error
+    if not admin_authenticated:
+        password_error = _require_health_password()
+        if password_error is not None:
+            return password_error
 
     def action():
         try:
