@@ -45,8 +45,26 @@ The service should load `/etc/peppr-api.env` via `EnvironmentFile=`.
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl restart peppr-api.service
+sudo systemctl restart peppr-background-jobs.service
 sudo systemctl status peppr-api.service --no-pager
+journalctl -u peppr-background-jobs.service -n 100 --no-pager
 journalctl -u peppr-api.service -n 100 --no-pager
+```
+
+## Install the API + background worker services
+
+Use the example units in
+[`ops/peppr-api.service.example`](../ops/peppr-api.service.example)
+and
+[`ops/peppr-background-jobs.service.example`](../ops/peppr-background-jobs.service.example),
+then install them on the VPS:
+
+```bash
+sudo cp ops/peppr-api.service.example /etc/systemd/system/peppr-api.service
+sudo cp ops/peppr-background-jobs.service.example /etc/systemd/system/peppr-background-jobs.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now peppr-api.service
+sudo systemctl enable --now peppr-background-jobs.service
 ```
 
 ## Install the catalog snapshot timer
@@ -68,6 +86,11 @@ sudo systemctl list-timers --all | grep peppr-catalog-snapshot
 ## Expected production behavior
 
 - The backend does not auto-load repo `.env` files in production.
+- Gunicorn API workers do not own long-lived background loops when
+  `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external`.
+- The dedicated background-job service restarts automatically if a worker
+  process exits, and individual job loops are restarted in-process if they
+  crash.
 - New PHI-bearing writes use encrypted companion columns.
 - Woo payloads are sanitized and should not include patient names, addresses,
   phone numbers, payment instructions, or hand-delivery addresses.

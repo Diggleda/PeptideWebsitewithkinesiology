@@ -140,6 +140,109 @@ class UsageTrackingRepositoryTests(unittest.TestCase):
             },
         )
 
+    def test_get_event_funnel_filters_counts_by_actor_and_lists_known_actors(self):
+        with patch("python_backend.repositories.usage_tracking_repository._using_mysql", return_value=True), patch(
+            "python_backend.repositories.usage_tracking_repository.mysql_client.fetch_all",
+            side_effect=[
+                [{"COLUMN_NAME": "id"}, {"COLUMN_NAME": "event"}, {"COLUMN_NAME": "details_json"}],
+                [
+                    {
+                        "event": "delegate_link_created",
+                        "payload_value": json.dumps(
+                            {
+                                "count": 3,
+                                "instances": [
+                                    {
+                                        "who": {
+                                            "id": "doctor-1",
+                                            "name": "Dr. Avery",
+                                            "email": "avery@example.com",
+                                            "role": "doctor",
+                                        },
+                                    },
+                                    {
+                                        "who": {
+                                            "id": "doctor-1",
+                                            "name": "Dr. Avery",
+                                            "email": "avery@example.com",
+                                            "role": "doctor",
+                                        },
+                                    },
+                                    {
+                                        "who": {
+                                            "id": "doctor-2",
+                                            "name": "Dr. Blake",
+                                            "email": "blake@example.com",
+                                            "role": "doctor",
+                                        },
+                                    },
+                                ],
+                            }
+                        ),
+                    },
+                    {
+                        "event": "delegate_order_placed",
+                        "payload_value": json.dumps(
+                            {
+                                "count": 2,
+                                "instances": [
+                                    {
+                                        "who": {
+                                            "id": "doctor-1",
+                                            "name": "Dr. Avery",
+                                            "email": "avery@example.com",
+                                            "role": "doctor",
+                                        },
+                                    },
+                                    {
+                                        "who": {
+                                            "id": "doctor-2",
+                                            "name": "Dr. Blake",
+                                            "email": "blake@example.com",
+                                            "role": "doctor",
+                                        },
+                                    },
+                                ],
+                            }
+                        ),
+                    },
+                ],
+            ],
+        ):
+            funnel = usage_tracking_repository.get_event_funnel(
+                ["delegate_link_created", "delegate_order_placed"],
+                actor_key="id:doctor-1",
+            )
+
+        self.assertEqual(
+            funnel["counts"],
+            {
+                "delegate_link_created": 2,
+                "delegate_order_placed": 1,
+            },
+        )
+        self.assertEqual(
+            funnel["actors"],
+            [
+                {
+                    "key": "id:doctor-1",
+                    "userId": "doctor-1",
+                    "name": "Dr. Avery",
+                    "email": "avery@example.com",
+                    "role": "doctor",
+                    "eventCount": 3,
+                },
+                {
+                    "key": "id:doctor-2",
+                    "userId": "doctor-2",
+                    "name": "Dr. Blake",
+                    "email": "blake@example.com",
+                    "role": "doctor",
+                    "eventCount": 2,
+                },
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -104,6 +104,27 @@ class UsageTrackingServiceTests(unittest.TestCase):
         self.assertEqual(details["who"]["name"], "Dylan")
         self.assertEqual(details["tab"], "delegate_links")
 
+    def test_get_event_funnel_passes_actor_key_to_repository(self):
+        service = self.usage_tracking_service
+        expected = {
+            "counts": {"delegate_link_created": 2},
+            "actors": [{"key": "id:doctor-1", "name": "Dr. Avery", "eventCount": 2}],
+        }
+        with patch(
+            "python_backend.repositories.usage_tracking_repository.get_event_funnel",
+            return_value=expected,
+        ) as get_event_funnel:
+            result = service.get_event_funnel(
+                ["delegate_link_created"],
+                actor_key="id:doctor-1",
+            )
+
+        self.assertEqual(result, expected)
+        get_event_funnel.assert_called_once_with(
+            ["delegate_link_created"],
+            actor_key="id:doctor-1",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

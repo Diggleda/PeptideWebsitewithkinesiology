@@ -4,6 +4,13 @@
 
 - API: `curl -fsS http://localhost:3001/api/health | jq`
 - Diagnostics: `curl -fsS http://localhost:3001/api/help | jq`
+- Background jobs in `thread` mode: `curl -fsS http://localhost:3001/api/health | jq '.backgroundJobs'`
+
+Production recommendation:
+
+- Run the API with `systemd` + gunicorn using [`ops/peppr-api.service.example`](../ops/peppr-api.service.example).
+- Run long-lived background jobs in a separate `systemd` service using [`ops/peppr-background-jobs.service.example`](../ops/peppr-background-jobs.service.example).
+- Set `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external` in `/etc/peppr-api.env` so gunicorn workers do not each start their own copy of the job threads.
 
 ## Bandwidth checks
 
@@ -20,11 +27,21 @@
 
 1. Verify the process is running and listening:
    - `lsof -iTCP:3001 -sTCP:LISTEN -nP`
-2. Check recent logs (process manager dependent):
-   - `pm2 logs --lines 200`
+2. Check recent logs:
+   - `journalctl -u peppr-api.service -n 200 --no-pager`
 3. Restart:
-   - `pm2 restart all`
+   - `sudo systemctl restart peppr-api.service`
 4. If requests are failing but the process is healthy, grab the `X-Request-Id` from the failing response and search logs for it.
+
+### Background jobs are stale / not updating
+
+1. Check the dedicated worker service:
+   - `sudo systemctl status peppr-background-jobs.service --no-pager`
+2. Check the dedicated worker logs:
+   - `journalctl -u peppr-background-jobs.service -n 200 --no-pager`
+3. Restart the worker:
+   - `sudo systemctl restart peppr-background-jobs.service`
+4. If you intentionally run jobs in the API process (`PEPPRO_WEB_BACKGROUND_JOBS_MODE=thread`), inspect `.backgroundJobs.unhealthyJobs` and each job’s `health`, `lastError`, `lastHeartbeatAt`, and `lifecycle`.
 
 ### Repeated/duplicate checkouts
 

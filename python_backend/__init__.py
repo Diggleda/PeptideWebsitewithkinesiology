@@ -56,6 +56,8 @@ def _build_app(*, route_set: str) -> "Flask":
 
     configure_services(config)
     init_database(config)
+    # Ensure JSON repositories exist before any bootstrap jobs can touch them.
+    init_storage(config)
     if route_set == "full":
         try:
             sales_prospect_repository.ensure_house_sales_rep_for_contact_forms()
@@ -77,9 +79,6 @@ def _build_app(*, route_set: str) -> "Flask":
     else:
         app.config["WEB_BACKGROUND_JOBS_MODE"] = "external"
         _LOGGER.info("Presence app booting with dedicated long-poll routes only")
-
-    # Ensure JSON storage files exist before serving requests.
-    init_storage(config)
 
     init_request_logging(app)
     init_rate_limit(app)

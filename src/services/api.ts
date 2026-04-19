@@ -2840,13 +2840,20 @@ export const usageTrackingAPI = {
       body: JSON.stringify(payload || {}),
     });
   },
-  getFunnel: async (events: Array<string>) => {
+  getFunnel: async (
+    events: Array<string>,
+    options?: { actorKey?: string | null },
+  ) => {
     const normalizedEvents = (Array.isArray(events) ? events : [])
       .map((value) => String(value || '').trim())
       .filter((value) => value.length > 0);
+    const normalizedActorKey = String(options?.actorKey || '').trim();
     const params = new URLSearchParams();
     if (normalizedEvents.length > 0) {
       params.set('events', normalizedEvents.join(','));
+    }
+    if (normalizedActorKey && normalizedActorKey !== 'all') {
+      params.set('actorKey', normalizedActorKey);
     }
     const query = params.toString();
     const url = query

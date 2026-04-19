@@ -10809,6 +10809,14 @@ function MainApp() {
     delegate_proposal_reviewed: 31,
     delegate_order_placed: 18,
   };
+  type AdminDelegateFunnelActorOption = {
+    key: string;
+    userId?: string | null;
+    name?: string | null;
+    email?: string | null;
+    role?: string | null;
+    eventCount?: number | null;
+  };
   const buildAdminDashboardTabs = (betaServices: PortalBetaServiceKey[]) => {
     const tabs = [
       { id: "here_now" as const, label: "Here and now", Icon: GlobeAmericasIcon },
@@ -14634,6 +14642,8 @@ function MainApp() {
   const [betaServices, setBetaServices] = useState<PortalBetaServiceKey[]>([]);
   const [adminDelegateFunnelLoading, setAdminDelegateFunnelLoading] = useState(false);
   const [adminDelegateFunnelError, setAdminDelegateFunnelError] = useState<string | null>(null);
+  const [adminDelegateFunnelActorFilter, setAdminDelegateFunnelActorFilter] = useState("all");
+  const [adminDelegateFunnelActors, setAdminDelegateFunnelActors] = useState<AdminDelegateFunnelActorOption[]>([]);
   const [adminDelegateFunnelCounts, setAdminDelegateFunnelCounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => [stage.event, 0])),
   );
@@ -14694,6 +14704,29 @@ function MainApp() {
     adminDelegateFunnelFirstCount > 0
       ? Math.round((adminDelegateFunnelFinalCount / adminDelegateFunnelFirstCount) * 100)
       : 0;
+  const adminDelegateFunnelSelectedActor = useMemo(
+    () =>
+      adminDelegateFunnelActors.find((actor) => actor.key === adminDelegateFunnelActorFilter) || null,
+    [adminDelegateFunnelActorFilter, adminDelegateFunnelActors],
+  );
+  const formatAdminDelegateFunnelActorLabel = (actor: AdminDelegateFunnelActorOption) => {
+    const name = String(actor?.name || "").trim();
+    const email = String(actor?.email || "").trim();
+    const userId = String(actor?.userId || "").trim();
+    if (name && email && name.toLowerCase() !== email.toLowerCase()) {
+      return `${name} (${email})`;
+    }
+    if (name) {
+      return name;
+    }
+    if (email) {
+      return email;
+    }
+    if (userId) {
+      return `User ${userId}`;
+    }
+    return actor.key;
+  };
   const adminDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const isAdminDashboardVisible = isAdmin(user?.role);
   const [adminDashboardTabIndicator, setAdminDashboardTabIndicator] = useState<{
@@ -14773,9 +14806,32 @@ function MainApp() {
     setAdminDelegateFunnelError(null);
 
     void usageTrackingAPI
-      .getFunnel(ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => stage.event))
+      .getFunnel(ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => stage.event), {
+        actorKey: adminDelegateFunnelActorFilter,
+      })
       .then((payload: any) => {
         if (cancelled) return;
+        const nextActors = Array.isArray(payload?.actors)
+          ? payload.actors
+              .map((actor: any) => {
+                const key = String(actor?.key || "").trim();
+                if (!key) {
+                  return null;
+                }
+                const rawEventCount = Number(actor?.eventCount);
+                return {
+                  key,
+                  userId: String(actor?.userId || "").trim() || null,
+                  name: String(actor?.name || "").trim() || null,
+                  email: String(actor?.email || "").trim() || null,
+                  role: String(actor?.role || "").trim() || null,
+                  eventCount: Number.isFinite(rawEventCount)
+                    ? Math.max(0, Math.floor(rawEventCount))
+                    : 0,
+                } satisfies AdminDelegateFunnelActorOption;
+              })
+              .filter((actor): actor is AdminDelegateFunnelActorOption => Boolean(actor))
+          : [];
         const responseCounts = Object.fromEntries(
           ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => {
             const rawCount = Number((payload?.counts || {})?.[stage.event]);
@@ -14786,6 +14842,7 @@ function MainApp() {
         const nextCounts = payload?.tracked === false && !hasPositiveCounts
           ? ADMIN_DELEGATE_LINK_FUNNEL_DEMO_COUNTS
           : responseCounts;
+        setAdminDelegateFunnelActors(nextActors);
         setAdminDelegateFunnelCounts(nextCounts);
         if (payload?.tracked === false) {
           setAdminDelegateFunnelError("Showing seeded Node demo data for layout work.");
@@ -14811,7 +14868,17 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, [adminDashboardTab, user?.role]);
+  }, [adminDashboardTab, adminDelegateFunnelActorFilter, user?.role]);
+  useEffect(() => {
+    if (
+      adminDelegateFunnelActorFilter === "all" ||
+      adminDelegateFunnelLoading ||
+      adminDelegateFunnelActors.some((actor) => actor.key === adminDelegateFunnelActorFilter)
+    ) {
+      return;
+    }
+    setAdminDelegateFunnelActorFilter("all");
+  }, [adminDelegateFunnelActorFilter, adminDelegateFunnelActors, adminDelegateFunnelLoading]);
   const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
   const [patientLinksDoctorUserIds, setPatientLinksDoctorUserIds] = useState<string[]>([]);
   const [patientLinksDoctorOptions, setPatientLinksDoctorOptions] = useState<
@@ -15686,10 +15753,47 @@ function MainApp() {
       setSalesDashboardTab("your_sales");
     }
   }, [crmEnabled, salesDashboardTab, user?.role]);
+  type ServerHealthJobPayload = {
+    enabled?: boolean | null;
+    mode?: string | null;
+    running?: boolean | null;
+    lifecycle?: string | null;
+    intervalSeconds?: number | null;
+    heartbeatAgeSeconds?: number | null;
+    staleAfterSeconds?: number | null;
+    supervisorAlive?: boolean | null;
+    launchCount?: number | null;
+    restartCount?: number | null;
+    configured?: boolean | null;
+    mysqlEnabled?: boolean | null;
+    lastHeartbeatAt?: string | null;
+    lastStartedAt?: string | null;
+    lastFinishedAt?: string | null;
+    lastExitReason?: string | null;
+    lastError?:
+      | {
+          type?: string | null;
+          message?: string | null;
+        }
+      | null;
+    lastResult?:
+      | {
+          status?: string | null;
+          reason?: string | null;
+        }
+      | null;
+    health?:
+      | {
+          ok?: boolean | null;
+          reason?: string | null;
+        }
+      | null;
+  };
   type ServerHealthPayload = {
-	    status?: string;
-	    message?: string;
-	    build?: string;
+    status?: string;
+    message?: string;
+    build?: string;
+    routeSet?: string;
     timestamp?: string;
     mysql?: { enabled?: boolean | null } | null;
     queue?: { name?: string | null; length?: number | null } | null;
@@ -15718,6 +15822,63 @@ function MainApp() {
       master?: { pid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null } | null;
       children?: Array<{ pid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null }> | null;
     } | null;
+    backgroundJobs?:
+      | {
+          status?: string | null;
+          mode?: string | null;
+          webProcessMode?: string | null;
+          backgroundRunner?: string | null;
+          catalogSnapshotRunner?: string | null;
+          unhealthyJobs?: string[] | null;
+          jobs?: Record<string, ServerHealthJobPayload> | null;
+        }
+      | null;
+  };
+  const SERVER_HEALTH_JOB_LABELS: Record<string, string> = {
+    productDocumentSync: "Product document sync",
+    shipstationStatusSync: "ShipStation status sync",
+    upsStatusSync: "UPS status sync",
+    presenceSweep: "Presence sweep",
+    patientLinksSweep: "Patient links sweep",
+  };
+  const formatServerHealthDuration = (seconds?: number | null) => {
+    if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+      return null;
+    }
+    if (seconds < 60) {
+      return `${Math.round(seconds)}s`;
+    }
+    const mins = Math.floor(seconds / 60);
+    if (mins < 60) {
+      return `${mins}m`;
+    }
+    const hours = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    if (hours < 24) {
+      return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`;
+    }
+    const days = Math.floor(hours / 24);
+    const remHours = hours % 24;
+    return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+  };
+  const formatServerHealthTimestamp = (value?: string | null) => {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed.toLocaleString();
+  };
+  const formatServerHealthReason = (value?: string | null) => {
+    const text = String(value || "")
+      .trim()
+      .replace(/[_-]+/g, " ");
+    if (!text) {
+      return null;
+    }
+    return text.replace(/\b\w/g, (char) => char.toUpperCase());
   };
   const [serverHealthPayload, setServerHealthPayload] =
     useState<ServerHealthPayload | null>(null);
@@ -27188,7 +27349,7 @@ function MainApp() {
           <div className="min-w-0">
             <h3 className="text-lg font-semibold text-slate-900">To-Do</h3>
             <p className="text-sm text-slate-600">
-              Review uploaded reseller permits from physicians before sales-tax exemption is allowed.
+              Handle outstanding follow-ups and account actions from one place.
             </p>
           </div>
           <Button
@@ -27222,7 +27383,7 @@ function MainApp() {
             </div>
           ) : pendingResellerPermitApprovals.length === 0 ? (
             <div className="px-4 py-3 text-sm text-slate-500">
-              No reseller permit approvals are waiting right now.
+              No tasks to do yet.
             </div>
           ) : (
             <ul className="w-full border-t border-slate-200/70">
@@ -28769,7 +28930,9 @@ function MainApp() {
 
                 {isHereNowSectionActive && renderSalesScopedOnHoldOrdersCard()}
 
-                {isHereNowSectionActive && renderPendingResellerPermitApprovalsCard()}
+                {isHereNowSectionActive &&
+                  pendingResellerPermitApprovals.length > 0 &&
+                  renderPendingResellerPermitApprovalsCard()}
 
                 {shouldShowLiveClientsCard && (
 			            <div
@@ -29189,7 +29352,8 @@ function MainApp() {
                     (
                       <div className="admin-tab-panel-enter space-y-6">
                         {renderAdminOnHoldOrdersCard()}
-                        {renderPendingResellerPermitApprovalsCard()}
+                        {pendingResellerPermitApprovals.length > 0 &&
+                          renderPendingResellerPermitApprovalsCard()}
                       </div>
                     )}
 
@@ -29221,13 +29385,47 @@ function MainApp() {
                         <div className="pt-4 min-h-[3rem]">
                           {serviceKey === "patientLinks" ? (
                             <div className="pt-0">
-                              <div className="sales-rep-chart-header">
+                              <div className="sales-rep-chart-header gap-3">
                                 <div>
                                   <h3>Conversion Funnel</h3>
                                   <p>
                                     Track event volume as users move through the delegate-link flow.
+                                    {adminDelegateFunnelSelectedActor
+                                      ? ` Filtered to ${formatAdminDelegateFunnelActorLabel(adminDelegateFunnelSelectedActor)}.`
+                                      : ""}
                                     {adminDelegateFunnelError ? ` ${adminDelegateFunnelError}` : ""}
                                   </p>
+                                </div>
+                                <div className="flex w-full flex-col gap-1 sm:w-[280px] sm:flex-none">
+                                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                    User
+                                  </span>
+                                  <label className="relative flex min-w-0 items-center text-xs text-slate-600">
+                                    <select
+                                      value={adminDelegateFunnelActorFilter}
+                                      onChange={(e) => setAdminDelegateFunnelActorFilter(e.target.value)}
+                                      disabled={adminDelegateFunnelLoading}
+                                      className="product-card-select squircle-sm h-10 min-w-0 w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                      aria-label="Filter delegate conversion funnel by user"
+                                    >
+                                      <option value="all">All users</option>
+                                      {adminDelegateFunnelActors.map((actor) => (
+                                        <option key={actor.key} value={actor.key}>
+                                          {formatAdminDelegateFunnelActorLabel(actor)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <span className="product-card-select__chevron" aria-hidden="true">
+                                      <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                                        <path
+                                          d="M1 1L5 5L9 1"
+                                          stroke="currentColor"
+                                          strokeWidth="1.5"
+                                          strokeLinecap="round"
+                                        />
+                                      </svg>
+                                    </span>
+                                  </label>
                                 </div>
                               </div>
                               <div className="sales-rep-chart-body">
@@ -29367,7 +29565,7 @@ function MainApp() {
                         Server Health
                       </h4>
                       <p className="text-sm text-slate-600">
-                        Quick usage snapshot (load, memory, disk).
+                        API status, workers, background ownership, and runtime load.
                       </p>
                     </div>
                       <div className="flex-shrink-0">
@@ -29386,13 +29584,22 @@ function MainApp() {
                   </div>
 
                   {serverHealthError && (
-                    <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
-                      {serverHealthError}
+                    <div
+                      className={clsx(
+                        "mt-3 rounded-md border px-4 py-2 text-sm",
+                        serverHealthPayload
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : "border-rose-200 bg-rose-50 text-rose-700",
+                      )}
+                    >
+                      {serverHealthPayload
+                        ? `Showing the last successful snapshot. ${serverHealthError}`
+                        : serverHealthError}
                     </div>
                   )}
 
 	                  <div className="sales-rep-table-wrapper admin-dashboard-list">
-	                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
+	                    <div className="space-y-4">
                       {(() => {
 	                      const usage = serverHealthPayload?.usage || null;
                       const cpu = usage?.cpu || null;
@@ -29401,6 +29608,112 @@ function MainApp() {
                       const cgroupMem = serverHealthPayload?.cgroup?.memory || null;
                       const uptime = serverHealthPayload?.uptime || null;
                       const queue = serverHealthPayload?.queue || null;
+                      const backgroundJobs = serverHealthPayload?.backgroundJobs || null;
+                      const backgroundMode = String(
+                        backgroundJobs?.webProcessMode || "",
+                      )
+                        .trim()
+                        .toLowerCase();
+                      const backgroundJobEntries = Object.entries(
+                        backgroundJobs?.jobs || {},
+                      );
+                      const unhealthyJobs = Array.isArray(backgroundJobs?.unhealthyJobs)
+                        ? backgroundJobs.unhealthyJobs
+                        : [];
+                      const toneClasses = {
+                        healthy: "border-emerald-200 bg-emerald-50 text-emerald-700",
+                        degraded: "border-amber-200 bg-amber-50 text-amber-700",
+                        offline: "border-rose-200 bg-rose-50 text-rose-700",
+                        external: "border-sky-200 bg-sky-50 text-sky-700",
+                        neutral: "border-slate-200 bg-slate-100 text-slate-700",
+                      } as const;
+                      const overallTone =
+                        !serverHealthPayload && serverHealthError
+                          ? "offline"
+                          : serverHealthPayload?.status === "degraded"
+                            ? "degraded"
+                            : serverHealthPayload
+                              ? "healthy"
+                              : "neutral";
+                      const overallStatusLabel =
+                        overallTone === "offline"
+                          ? "Unreachable"
+                          : overallTone === "degraded"
+                            ? "Degraded"
+                            : overallTone === "healthy"
+                              ? "Healthy"
+                              : "Waiting";
+                      const overallStatusNote =
+                        overallTone === "offline"
+                          ? "The admin client could not fetch the health endpoint."
+                          : overallTone === "degraded"
+                            ? serverHealthPayload?.message ||
+                              "The backend responded, but it reported degraded health."
+                            : overallTone === "healthy"
+                              ? serverHealthPayload?.message ||
+                                "The backend responded normally."
+                              : "No health snapshot has been loaded yet.";
+                      const backgroundTone =
+                        backgroundMode === "external"
+                          ? "external"
+                          : backgroundJobs?.status === "degraded"
+                            ? "degraded"
+                            : backgroundJobs
+                              ? "healthy"
+                              : "neutral";
+                      const backgroundStatusLabel =
+                        backgroundMode === "external"
+                          ? "External service"
+                          : backgroundJobs?.status === "degraded"
+                            ? "Attention needed"
+                            : backgroundJobs
+                              ? "In-process healthy"
+                              : "Unavailable";
+                      const backgroundStatusNote =
+                        backgroundMode === "external"
+                          ? "API workers are not running recurring jobs in-process. Monitor the dedicated background worker service separately."
+                          : unhealthyJobs.length > 0
+                            ? `Unhealthy jobs: ${unhealthyJobs
+                                .map(
+                                  (jobKey) =>
+                                    SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey,
+                                )
+                                .join(", ")}`
+                            : backgroundJobs
+                              ? "The API process reports its in-process jobs as healthy."
+                              : "No background-job details were returned by the backend.";
+                      const workerSummaryLabel = (() => {
+                        const workers = serverHealthPayload?.workers;
+                        const detected = workers?.detected;
+                        const configured = workers?.configured;
+                        if (typeof detected === "number" && detected > 0) {
+                          return `${detected} worker${detected === 1 ? "" : "s"}${
+                            configured ? ` / target ${configured}` : ""
+                          }`;
+                        }
+                        if (typeof configured === "number" && configured > 0) {
+                          return `Target ${configured}`;
+                        }
+                        return "Unknown";
+                      })();
+                      const workerSummaryNote = (() => {
+                        const gunicorn = serverHealthPayload?.workers?.gunicorn;
+                        const parts: string[] = [];
+                        if (typeof gunicorn?.workers === "number") {
+                          parts.push(`${gunicorn.workers}w`);
+                        }
+                        if (typeof gunicorn?.threads === "number") {
+                          parts.push(`${gunicorn.threads}t`);
+                        }
+                        if (typeof gunicorn?.timeoutSeconds === "number") {
+                          parts.push(`timeout ${gunicorn.timeoutSeconds}s`);
+                        }
+                        if (parts.length > 0) {
+                          return `Gunicorn ${parts.join(" • ")}`;
+                        }
+                        const routeSet = serverHealthPayload?.routeSet;
+                        return routeSet ? `Route set: ${routeSet}` : "Worker metadata unavailable.";
+                      })();
                       const cpuUsageLabel =
                         typeof cpu?.usagePercent === "number" &&
                         Number.isFinite(cpu.usagePercent)
@@ -29463,16 +29776,11 @@ function MainApp() {
                         return null;
                       })();
                       const uptimeLabel = (() => {
-                        const seconds = uptime?.serviceSeconds;
-                        if (typeof seconds === "number" && Number.isFinite(seconds)) {
-                          const mins = Math.floor(seconds / 60);
-                          if (mins < 60) return `Backend uptime: ${mins}m`;
-                          const hours = Math.floor(mins / 60);
-                          const remMins = mins % 60;
-                          if (hours < 24) return `Backend uptime: ${hours}h ${remMins}m`;
-                          const days = Math.floor(hours / 24);
-                          const remHours = hours % 24;
-                          return `Backend uptime: ${days}d ${remHours}h`;
+                        const label = formatServerHealthDuration(
+                          uptime?.serviceSeconds,
+                        );
+                        if (label) {
+                          return `Backend uptime: ${label}`;
                         }
                         return null;
                       })();
@@ -29521,18 +29829,196 @@ function MainApp() {
                       ].filter(
                         (x): x is string => typeof x === "string" && x.trim().length > 0,
                       );
-                      return pills.map((label) => (
-                        <span
-                          key={label}
-                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
-                        >
-                          {label}
-                        </span>
-		                      ));
+                      const summaryCards = [
+                        {
+                          title: "API status",
+                          tone: overallTone,
+                          value: overallStatusLabel,
+                          note: overallStatusNote,
+                        },
+                        {
+                          title: "Background jobs",
+                          tone: backgroundTone,
+                          value: backgroundStatusLabel,
+                          note: backgroundStatusNote,
+                        },
+                        {
+                          title: "Workers",
+                          tone: "neutral",
+                          value: workerSummaryLabel,
+                          note: workerSummaryNote,
+                        },
+                      ];
+
+                      return (
+                        <>
+                          <div className="grid gap-3 lg:grid-cols-3">
+                            {summaryCards.map((card) => (
+                              <div
+                                key={card.title}
+                                className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                      {card.title}
+                                    </p>
+                                    <p className="mt-2 text-sm text-slate-600">
+                                      {card.note}
+                                    </p>
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className={clsx(
+                                      "border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]",
+                                      toneClasses[card.tone],
+                                    )}
+                                  >
+                                    {card.value}
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {pills.length > 0 && (
+                            <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
+                              {pills.map((label) => (
+                                <span
+                                  key={label}
+                                  className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
+                                >
+                                  {label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {backgroundMode === "external" ? (
+                            <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-800">
+                              This health endpoint confirms the API workers. It does not directly
+                              confirm that the dedicated background worker service is alive.
+                            </div>
+                          ) : backgroundJobEntries.length > 0 ? (
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <h5 className="text-sm font-semibold text-slate-900">
+                                    In-process job checks
+                                  </h5>
+                                  <p className="text-xs text-slate-500">
+                                    Job heartbeats and restart state reported by the backend.
+                                  </p>
+                                </div>
+                                {unhealthyJobs.length > 0 && (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-200 bg-amber-50 text-amber-700"
+                                  >
+                                    {unhealthyJobs.length} issue
+                                    {unhealthyJobs.length === 1 ? "" : "s"}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="grid gap-3 lg:grid-cols-2">
+                                {backgroundJobEntries.map(([jobKey, job]) => {
+                                  const jobTone =
+                                    job.enabled === false
+                                      ? "neutral"
+                                      : job.lifecycle === "external"
+                                        ? "external"
+                                        : job.health?.ok === false
+                                          ? "degraded"
+                                          : "healthy";
+                                  const heartbeatLabel = formatServerHealthDuration(
+                                    job.heartbeatAgeSeconds,
+                                  );
+                                  const intervalLabel = formatServerHealthDuration(
+                                    job.intervalSeconds,
+                                  );
+                                  const issueLabel =
+                                    job.lastError?.message ||
+                                    formatServerHealthReason(job.health?.reason) ||
+                                    formatServerHealthReason(job.lastResult?.reason) ||
+                                    formatServerHealthReason(job.lastExitReason);
+                                  const secondaryBits = [
+                                    job.lifecycle
+                                      ? `Lifecycle: ${
+                                          formatServerHealthReason(job.lifecycle) || job.lifecycle
+                                        }`
+                                      : null,
+                                    heartbeatLabel ? `Heartbeat ${heartbeatLabel} ago` : null,
+                                    intervalLabel ? `Interval ${intervalLabel}` : null,
+                                    typeof job.restartCount === "number" &&
+                                    Number.isFinite(job.restartCount) &&
+                                    job.restartCount > 0
+                                      ? `Restarts ${job.restartCount}`
+                                      : null,
+                                  ].filter(
+                                    (value): value is string =>
+                                      typeof value === "string" && value.trim().length > 0,
+                                  );
+                                  const lastUpdateLabel =
+                                    formatServerHealthTimestamp(job.lastHeartbeatAt) ||
+                                    formatServerHealthTimestamp(job.lastFinishedAt) ||
+                                    formatServerHealthTimestamp(job.lastStartedAt);
+                                  const statusLabel =
+                                    job.enabled === false
+                                      ? "Disabled"
+                                      : job.lifecycle === "external"
+                                        ? "External"
+                                        : job.health?.ok === false
+                                          ? "Degraded"
+                                          : "Healthy";
+
+                                  return (
+                                    <div
+                                      key={jobKey}
+                                      className="rounded-2xl border border-slate-200 bg-white/80 p-4"
+                                    >
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                          <p className="text-sm font-semibold text-slate-900">
+                                            {SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey}
+                                          </p>
+                                          {secondaryBits.length > 0 && (
+                                            <p className="mt-1 text-xs text-slate-500">
+                                              {secondaryBits.join(" • ")}
+                                            </p>
+                                          )}
+                                        </div>
+                                        <Badge
+                                          variant="outline"
+                                          className={clsx(
+                                            "border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]",
+                                            toneClasses[jobTone],
+                                          )}
+                                        >
+                                          {statusLabel}
+                                        </Badge>
+                                      </div>
+                                      {issueLabel && (
+                                        <p className="mt-3 text-sm text-slate-700">
+                                          {issueLabel}
+                                        </p>
+                                      )}
+                                      {lastUpdateLabel && (
+                                        <p className="mt-2 text-[11px] text-slate-500">
+                                          Last update: {lastUpdateLabel}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+                        </>
+                      );
 		                      })()}
-		                    </div>
 		                  </div>
 		                </div>
+                  </div>
                 )}
 
 		              {adminDashboardTab === "maintenance" && (
@@ -38460,9 +38946,9 @@ function MainApp() {
                         phoneRows.push({ value: "", isNew: true });
                       }
                       return (
-                        <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
+                        <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
                           <div className="space-y-0.5">
-                            <div className="pl-4 space-y-0.5">
+                            <div className="min-w-max pl-4 pr-1 space-y-0.5">
                               {emailRows.length > 0 ? emailRows.map((row, index) => (
                                 <InlineEditableValueRow
                                   key={`sales-doctor-email-${index}-${row.isNew ? "new" : row.value || "empty"}`}
@@ -38472,6 +38958,12 @@ function MainApp() {
                                   autoComplete="email"
                                   editable={canEditLeadContactLists}
                                   startEditing={row.isNew}
+                                  rowClassName="min-w-max"
+                                  labelClassName="whitespace-nowrap"
+                                  scrollableDisplay
+                                  contentClassName="w-max min-w-max"
+                                  displayClassName="w-max min-w-max"
+                                  displayValueClassName="whitespace-nowrap"
                                   displayValue={renderSalesDoctorSingleContactValue(
                                     row.value,
                                     "email",
@@ -38539,7 +39031,7 @@ function MainApp() {
                             </div>
                           </div>
                           <div className="border-t border-slate-200/80 pt-2.5 space-y-0.5">
-                            <div className="pl-4 space-y-0.5">
+                            <div className="min-w-max pl-4 pr-1 space-y-0.5">
                               {phoneRows.length > 0 ? phoneRows.map((row, index) => {
                                 const canEditRow =
                                   canEditLeadContactLists ||
@@ -38553,6 +39045,12 @@ function MainApp() {
                                     autoComplete="tel"
                                     editable={canEditRow}
                                     startEditing={row.isNew}
+                                    rowClassName="min-w-max"
+                                    labelClassName="whitespace-nowrap"
+                                    scrollableDisplay
+                                    contentClassName="w-max min-w-max"
+                                    displayClassName="w-max min-w-max"
+                                    displayValueClassName="whitespace-nowrap"
                                     displayValue={renderSalesDoctorSingleContactValue(
                                       row.value,
                                       "phone",
@@ -38678,8 +39176,8 @@ function MainApp() {
                           },
                         ];
 	                    return (
-	                      <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
-	                        <div className="pl-4 space-y-0.5">
+	                      <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
+	                        <div className="min-w-max pl-4 pr-1 space-y-0.5">
                             {addressRows.map(({ key, label, autoComplete }) => (
                               <InlineEditableValueRow
                                 key={`sales-doctor-address-${key}`}
@@ -38687,6 +39185,12 @@ function MainApp() {
                                 value={salesDoctorResolvedAddressFields[key] || ""}
                                 autoComplete={autoComplete}
                                 editable={canEditAddress}
+                                rowClassName="min-w-max"
+                                labelClassName="whitespace-nowrap"
+                                scrollableDisplay
+                                contentClassName="w-max min-w-max"
+                                displayClassName="w-max min-w-max"
+                                displayValueClassName="whitespace-nowrap"
                                 onSave={
                                   canEditAddress
                                     ? async (nextValue) => {
@@ -38706,18 +39210,18 @@ function MainApp() {
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
                     </p>
-                    <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
-                      <div className="min-w-max">
+                    <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
+                      <div className="min-w-max whitespace-nowrap">
                         <span className="font-semibold text-slate-800">Greater Area: </span>
                         <span>{salesDoctorDetail.greaterArea || "Unavailable"}</span>
                       </div>
-                      <div className="min-w-max">
+                      <div className="min-w-max whitespace-nowrap">
                         <span className="font-semibold text-slate-800">Study Focus: </span>
                         <span>{salesDoctorDetail.studyFocus || "Unavailable"}</span>
                       </div>
-                      <div className="space-y-1">
+                      <div className="min-w-max space-y-1">
                         <div className="font-semibold text-slate-800">Bio</div>
-                        <div className="min-w-max overflow-x-auto overflow-y-auto whitespace-pre-line">
+                        <div className="min-w-max overflow-x-auto overflow-y-auto whitespace-pre">
                           {salesDoctorDetail.bio || "Unavailable"}
                         </div>
                       </div>
@@ -40349,7 +40853,12 @@ function InlineEditableValueRow({
   rows = 4,
   alignStart = false,
   displayValue,
+  rowClassName,
+  labelClassName,
   displayClassName,
+  displayValueClassName,
+  contentClassName,
+  scrollableDisplay = false,
   editorClassName,
   onSave,
   onCancel,
@@ -40364,7 +40873,12 @@ function InlineEditableValueRow({
   rows?: number;
   alignStart?: boolean;
   displayValue?: ReactNode;
+  rowClassName?: string;
+  labelClassName?: string;
   displayClassName?: string;
+  displayValueClassName?: string;
+  contentClassName?: string;
+  scrollableDisplay?: boolean;
   editorClassName?: string;
   onSave?: (next: string) => Promise<void> | void;
   onCancel?: () => void;
@@ -40404,17 +40918,137 @@ function InlineEditableValueRow({
     }
   }, [editable, next, onSave, saving]);
 
+  if (scrollableDisplay) {
+    return (
+      <div
+        className={clsx(
+          "editable-row group flex w-max min-w-max gap-3",
+          alignStart ? "items-start" : "items-center",
+          rowClassName,
+        )}
+      >
+        <div
+          className={clsx(
+            "min-w-[7rem] text-sm font-medium text-slate-700",
+            alignStart ? "self-start pt-1" : "self-center",
+            labelClassName,
+          )}
+        >
+          {label}
+        </div>
+        <div
+          className={clsx(
+            "w-max min-w-max",
+            alignStart ? "self-start" : "self-center",
+            contentClassName,
+          )}
+        >
+          {editing ? (
+            multiline ? (
+              <Textarea
+                className={clsx(
+                  "w-full min-h-[160px] squircle-sm border border-slate-200/70 bg-white/96 px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 whitespace-pre-line",
+                  editorClassName,
+                )}
+                value={next}
+                autoComplete={autoComplete}
+                rows={rows}
+                onChange={(event) => setNext(event.currentTarget.value)}
+              />
+            ) : (
+              <input
+                className={clsx(
+                  "min-w-[18rem] h-9 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30",
+                  editorClassName,
+                )}
+                value={next}
+                type={type}
+                autoComplete={autoComplete}
+                onChange={(event) => setNext(event.currentTarget.value)}
+                onKeyDown={async (event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    await saveValue();
+                  }
+                }}
+              />
+            )
+          ) : (
+            <div
+              className={clsx(
+                "w-max min-w-max",
+                displayClassName,
+              )}
+            >
+              <div
+                className={clsx(
+                  "inline-flex min-w-max items-center gap-2 text-sm text-slate-700 whitespace-nowrap",
+                  alignStart ? "items-start" : "items-center",
+                )}
+              >
+                <span
+                  className={clsx(
+                    "min-w-max whitespace-nowrap break-normal",
+                    displayValueClassName,
+                  )}
+                >
+                  {displayValue ?? (value || "—")}
+                </span>
+                {editable && onSave ? (
+                  <button
+                    type="button"
+                    className={clsx("inline-edit-button", editing && "is-active")}
+                    onClick={() => setEditing(true)}
+                    aria-label={`Edit ${label}`}
+                    title={`Edit ${label}`}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )}
+          {editing ? (
+            <div className="mt-2 flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="squircle-sm"
+                disabled={saving}
+                onClick={() => void saveValue()}
+              >
+                {saving ? "Saving…" : "Save"}
+              </Button>
+              <Button
+                variant="ghost"
+                className="squircle-sm"
+                onClick={() => {
+                  setNext(value);
+                  setEditing(false);
+                  onCancel?.();
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={clsx(
         "editable-row group flex gap-3",
         alignStart ? "items-start" : "items-center",
+        rowClassName,
       )}
     >
       <div
         className={clsx(
           "min-w-[7rem] text-sm font-medium text-slate-700",
           alignStart ? "self-start pt-1" : "self-center",
+          labelClassName,
         )}
       >
         {label}
@@ -40423,6 +41057,7 @@ function InlineEditableValueRow({
         className={clsx(
           "flex-1 flex gap-2 flex-wrap",
           alignStart ? "items-start" : "items-center",
+          contentClassName,
         )}
       >
         {editing ? (
@@ -40456,26 +41091,66 @@ function InlineEditableValueRow({
             />
           )
         ) : (
-          <div
-            className={clsx(
-              "text-sm text-slate-700 flex gap-2 min-w-0 flex-wrap",
-              alignStart ? "items-start" : "items-center",
-              displayClassName,
-            )}
-          >
-            <span className="min-w-0 break-all">{displayValue ?? (value || "—")}</span>
-            {editable && onSave ? (
-              <button
-                type="button"
-                className={clsx("inline-edit-button", editing && "is-active")}
-                onClick={() => setEditing(true)}
-                aria-label={`Edit ${label}`}
-                title={`Edit ${label}`}
+          scrollableDisplay ? (
+            <div
+              className={clsx(
+                "min-w-0 overflow-x-auto no-scrollbar",
+                displayClassName,
+              )}
+            >
+              <div
+                className={clsx(
+                  "text-sm text-slate-700 flex min-w-max gap-2",
+                  alignStart ? "items-start" : "items-center",
+                )}
               >
-                <Pencil className="w-3 h-3" />
-              </button>
-            ) : null}
-          </div>
+                <span
+                  className={clsx(
+                    "min-w-max whitespace-nowrap break-normal",
+                    displayValueClassName,
+                  )}
+                >
+                  {displayValue ?? (value || "—")}
+                </span>
+                {editable && onSave ? (
+                  <button
+                    type="button"
+                    className={clsx("inline-edit-button", editing && "is-active")}
+                    onClick={() => setEditing(true)}
+                    aria-label={`Edit ${label}`}
+                    title={`Edit ${label}`}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div
+              className={clsx(
+                "text-sm text-slate-700 flex gap-2 min-w-0 flex-wrap",
+                alignStart ? "items-start" : "items-center",
+                displayClassName,
+              )}
+            >
+              <span
+                className={clsx("min-w-0 break-all", displayValueClassName)}
+              >
+                {displayValue ?? (value || "—")}
+              </span>
+              {editable && onSave ? (
+                <button
+                  type="button"
+                  className={clsx("inline-edit-button", editing && "is-active")}
+                  onClick={() => setEditing(true)}
+                  aria-label={`Edit ${label}`}
+                  title={`Edit ${label}`}
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              ) : null}
+            </div>
+          )
         )}
         {editing ? (
           <div className="flex items-center gap-2">

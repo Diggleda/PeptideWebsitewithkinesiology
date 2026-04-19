@@ -1,12 +1,13 @@
 # PepPro
 
-PepPro is a Vite + React front end paired with an Express backend designed to run on GoDaddy (Node.js hosting) while brokering orders through WooCommerce and ShipEngine.
+PepPro is a Vite + React front end paired with a Python backend in production (`python_backend/`) and a legacy Express backend (`server/`) retained for migration and local compatibility.
 
 ## Project Layout
 
 - `src/`: React client application.
 - `src/content/`: Editable marketing/legal copy. Edit the `.docx` files (names must match: `Care-Compliance.docx`, `Physicians-choice.docx`, `Privacy-policy.docx`, `Shipping-Handling.docx`, `Terms-of-service.docx`) and run `npm run convert-content` (automatically run before `npm run build`/`npm run start`) to regenerate the HTML snippets. The converter uses macOS `textutil` so inline formatting (font sizes, emphasis, etc.) is preserved while fonts inherit from the site theme.
-- `server/`: Modular Express backend prepared for WooCommerce + ShipEngine.
+- `python_backend/`: Flask backend used for the production API/runtime.
+- `server/`: Legacy Express backend kept for migration/dev compatibility.
 - `server-data/`: File-based persistence for users and orders (easy to swap for a database later).
 
 ## Getting Started
@@ -130,15 +131,11 @@ ShipEngine integration prepares shipment payloads when shipping data is availabl
 
 If checkout does not yet collect a shipping address, the integration gracefully skips label creation and reports the reason.
 
-## Deploying on GoDaddy
+## Production Deployment
 
-1. Upload the project files (or deploy via Git).
-2. Set environment variables in the GoDaddy Hosting control panel (use `.env` template).
-3. Install dependencies with `npm install`.
-4. Configure the application start command to `npm run server`.
-5. Use a process manager such as `pm2` (available on GoDaddy’s Node hosting) or GoDaddy's built-in service manager to keep the server running.
+See [`python_backend/README.md`](python_backend/README.md), [`docs/RUNBOOK.md`](docs/RUNBOOK.md), and [`docs/vps-manual-secrets.md`](docs/vps-manual-secrets.md) for the current production path.
 
-The Express backend exposes health and diagnostics endpoints (`/api/health`, `/api/help`) to plug into uptime monitors or GoDaddy’s health checks.
+The live deployment should use the Python backend with `systemd` service units, not the legacy pm2/GoDaddy Node flow.
 
 ## Referral + Order Flow
 

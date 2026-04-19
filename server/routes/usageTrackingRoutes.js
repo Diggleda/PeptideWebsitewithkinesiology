@@ -15,11 +15,12 @@ router.get('/funnel', (req, res) => {
     .split(',')
     .map((value) => String(value || '').trim())
     .filter(Boolean);
+  const actorKey = String(req.query?.actorKey || '').trim() || null;
 
   const counts = Object.fromEntries(
     events.map((event) => [event, demoCountsByEvent[event] ?? 0]),
   );
-  res.json({ events, counts, tracked: false });
+  res.json({ events, counts, actors: [], filteredActorKey: actorKey, tracked: false });
 });
 
 router.post('/', (req, res) => {

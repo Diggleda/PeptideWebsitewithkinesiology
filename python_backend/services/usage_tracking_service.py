@@ -72,3 +72,22 @@ def get_event_counts(events: list[str] | tuple[str, ...] | None) -> Dict[str, in
     except Exception:
         logger.exception("Usage tracking read failed", extra={"events": list(events or [])})
         return {str(event or "").strip(): 0 for event in (events or []) if str(event or "").strip()}
+
+
+def get_event_funnel(
+    events: list[str] | tuple[str, ...] | None,
+    *,
+    actor_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    try:
+        return usage_tracking_repository.get_event_funnel(events, actor_key=actor_key)
+    except Exception:
+        logger.exception(
+            "Usage tracking funnel read failed",
+            extra={"events": list(events or []), "actorKey": actor_key},
+        )
+        normalized_events = [str(event or "").strip() for event in (events or []) if str(event or "").strip()]
+        return {
+            "counts": {event: 0 for event in normalized_events},
+            "actors": [],
+        }

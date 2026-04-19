@@ -34,6 +34,8 @@ Local development flow:
 Production runtime notes:
 
 - The live Python backend runs under `systemd` as `peppr-api.service`.
+- Use a dedicated `peppr-background-jobs.service` for long-lived sync/sweep loops.
+- Set `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external` for gunicorn-backed API workers so only the dedicated worker service owns background loops.
 - Production secrets must be stored manually on the server in
   `/etc/peppr-api.env`, not in repo `.env` files.
 - The runtime env file should be root-managed and non-world-readable:
@@ -66,12 +68,20 @@ Scheduled background jobs:
 - Catalog snapshots no longer require Redis/RQ. Run them from `cron` or a
   `systemd` timer with:
   `python -m python_backend.scripts.sync_catalog_snapshot`
+- Long-lived jobs (presence sweep, patient-link sweep, ShipStation sync, UPS
+  sync, product-document sync) should run in the dedicated
+  `python -m python_backend.background_jobs` service, not inside every web
+  worker.
 - Example unit files live in:
+  [`ops/peppr-api.service.example`](../ops/peppr-api.service.example),
+  [`ops/peppr-background-jobs.service.example`](../ops/peppr-background-jobs.service.example),
   [`ops/peppr-catalog-snapshot.service.example`](../ops/peppr-catalog-snapshot.service.example)
   and
   [`ops/peppr-catalog-snapshot.timer.example`](../ops/peppr-catalog-snapshot.timer.example).
-- The product-document sync already runs on an in-process thread by default, so
-  it does not need a separate queue worker unless you intentionally redesign it.
+- When the web process owns background jobs (`PEPPRO_WEB_BACKGROUND_JOBS_MODE=thread`),
+  `/api/health` reports per-job status under `.backgroundJobs.jobs`, including
+  heartbeat age, lifecycle, and the most recent error when a job loop fails and
+  is restarted.
 
 Quote PDF renderer settings:
 

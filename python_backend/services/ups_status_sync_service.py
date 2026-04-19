@@ -12,9 +12,10 @@ from typing import Any, Dict, List, Optional
 from ..database import mysql_client
 from ..integrations import ups_tracking
 from ..repositories import order_repository
-from . import shipping_notification_service
+from . import background_job_supervisor, shipping_notification_service
 
 logger = logging.getLogger(__name__)
+_JOB_NAME = "upsStatusSync"
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
@@ -510,6 +511,7 @@ def _fetch_orders_for_sync(*, lookback_days: int, max_orders: int) -> List[Dict[
 
 def get_status() -> Dict[str, Any]:
     return {
+        **background_job_supervisor.get_job_status(_JOB_NAME),
         **_STATE,
         "inFlight": _IN_FLIGHT,
         "enabled": _enabled(),
@@ -739,12 +741,37 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
 def _worker() -> None:
     interval = _interval_seconds()
     logger.info("[ups-status-sync] thread started", extra={"intervalSeconds": interval})
+    background_job_supervisor.record_heartbeat(
+        _JOB_NAME,
+        clear_error=True,
+        enabled=_enabled(),
+        mode="thread",
+        intervalSeconds=interval,
+        configured=ups_tracking.is_configured(),
+    )
     time.sleep(5)
     while True:
         try:
-            run_sync_once()
-        except Exception:
+            result = run_sync_once()
+            background_job_supervisor.record_heartbeat(
+                _JOB_NAME,
+                last_result=result,
+                clear_error=True,
+                enabled=_enabled(),
+                mode="thread",
+                intervalSeconds=interval,
+                configured=ups_tracking.is_configured(),
+            )
+        except Exception as exc:
             logger.error("[ups-status-sync] job failed", exc_info=True)
+            background_job_supervisor.record_heartbeat(
+                _JOB_NAME,
+                last_error=exc,
+                enabled=_enabled(),
+                mode="thread",
+                intervalSeconds=interval,
+                configured=ups_tracking.is_configured(),
+            )
         time.sleep(_interval_seconds())
 
 
@@ -771,10 +798,31 @@ def _startup_backfill_worker() -> None:
 
 def start_ups_status_sync(*, force: bool = False) -> None:
     global _THREAD_STARTED, _INITIAL_BACKFILL_STARTED
+    interval = _interval_seconds()
     if not _enabled():
+        background_job_supervisor.set_job_state(
+            _JOB_NAME,
+            enabled=False,
+            mode=_mode(),
+            intervalSeconds=interval,
+            running=False,
+            state="disabled",
+            reason="disabled",
+            configured=ups_tracking.is_configured(),
+        )
         return
     if not force and _mode() != "thread":
         logger.info("[ups-status-sync] thread disabled", extra={"mode": _mode()})
+        background_job_supervisor.set_job_state(
+            _JOB_NAME,
+            enabled=True,
+            mode=_mode(),
+            intervalSeconds=interval,
+            running=False,
+            state="external",
+            reason="external_mode",
+            configured=ups_tracking.is_configured(),
+        )
         return
     with _THREAD_LOCK:
         if _THREAD_STARTED:
@@ -788,5 +836,13 @@ def start_ups_status_sync(*, force: bool = False) -> None:
                 daemon=True,
             )
             startup_thread.start()
-        thread = threading.Thread(target=_worker, name="ups-status-sync", daemon=True)
-        thread.start()
+        background_job_supervisor.start_supervised_job(
+            _JOB_NAME,
+            _worker,
+            thread_name="ups-status-sync",
+            restart_delay_seconds=min(60.0, max(5.0, float(interval) / 2.0)),
+            enabled=True,
+            mode="thread",
+            intervalSeconds=interval,
+            configured=ups_tracking.is_configured(),
+        )

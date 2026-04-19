@@ -14,6 +14,7 @@ blueprint = Blueprint("usage_tracking", __name__, url_prefix="/api/usage-trackin
 @require_auth
 def get_usage_funnel():
     raw_events = request.args.get("events") or ""
+    raw_actor_key = request.args.get("actorKey") or ""
 
     def action():
         events = [
@@ -21,8 +22,14 @@ def get_usage_funnel():
             for value in raw_events.split(",")
             if str(value or "").strip()
         ]
-        counts = usage_tracking_service.get_event_counts(events)
-        return {"events": events, "counts": counts}
+        actor_key = str(raw_actor_key or "").strip() or None
+        funnel = usage_tracking_service.get_event_funnel(events, actor_key=actor_key)
+        return {
+            "events": events,
+            "counts": funnel.get("counts") or {},
+            "actors": funnel.get("actors") or [],
+            "filteredActorKey": actor_key,
+        }
 
     return handle_action(action)
 

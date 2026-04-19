@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -512,10 +513,107 @@ def _process_uptime_seconds(pid: int) -> float | None:
         return None
 
 
+def _parse_iso_utc(value: Any) -> Optional[datetime]:
+    if not value or not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _background_job_stale_after_seconds(job: dict[str, Any]) -> int:
+    interval = job.get("intervalSeconds")
+    try:
+        interval_seconds = int(float(interval))
+    except Exception:
+        interval_seconds = 60
+    return max(45, min((interval_seconds * 3) + 15, 4 * 60 * 60))
+
+
+def _assess_background_jobs_health(jobs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    status = "ok"
+    unhealthy: list[str] = []
+    now = datetime.now(timezone.utc)
+    assessed: dict[str, dict[str, Any]] = {}
+
+    for name, raw_job in jobs.items():
+        job = dict(raw_job or {})
+        enabled = bool(job.get("enabled", True))
+        mode = str(job.get("mode") or "thread").strip().lower() or "thread"
+        running = bool(job.get("running"))
+        supervisor_alive = bool(job.get("supervisorAlive"))
+        stale_after = _background_job_stale_after_seconds(job)
+        pulse_at = _parse_iso_utc(job.get("lastHeartbeatAt")) or _parse_iso_utc(job.get("lastStartedAt"))
+        heartbeat_age = None
+        if pulse_at is not None:
+            heartbeat_age = round(max(0.0, (now - pulse_at).total_seconds()), 2)
+
+        health_ok = True
+        reason = None
+        lifecycle = "running"
+
+        if not enabled:
+            lifecycle = "disabled"
+        elif mode != "thread" and not running:
+            lifecycle = "external"
+        elif not supervisor_alive or not running:
+            health_ok = False
+            reason = "thread_not_running"
+            lifecycle = "restarting" if supervisor_alive else "stopped"
+        elif heartbeat_age is None:
+            health_ok = False
+            reason = "missing_heartbeat"
+        elif heartbeat_age > stale_after:
+            health_ok = False
+            reason = "stale_heartbeat"
+
+        if not health_ok:
+            status = "degraded"
+            unhealthy.append(name)
+
+        job["lifecycle"] = lifecycle
+        job["heartbeatAgeSeconds"] = heartbeat_age
+        job["staleAfterSeconds"] = stale_after
+        job["health"] = {
+            "ok": health_ok,
+            "reason": reason,
+        }
+        assessed[name] = job
+
+    return {
+        "status": status,
+        "unhealthyJobs": unhealthy,
+        "jobs": assessed,
+    }
+
+
 def _background_job_stats() -> dict[str, Any]:
+    from ..services import patient_links_sweep_service
+    from ..services import presence_sweep_service
+    from ..services import product_document_sync_service
+    from ..services import shipstation_status_sync_service
+    from ..services import ups_status_sync_service
+
     web_mode = str(os.environ.get("PEPPRO_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower() or "thread"
+    jobs = {
+        "productDocumentSync": product_document_sync_service.get_status(),
+        "shipstationStatusSync": shipstation_status_sync_service.get_status(),
+        "upsStatusSync": ups_status_sync_service.get_status(),
+        "presenceSweep": presence_sweep_service.get_status(),
+        "patientLinksSweep": patient_links_sweep_service.get_status(),
+    }
+    assessment = _assess_background_jobs_health(jobs)
     return {
         "mode": "scheduled",
+        "status": assessment["status"],
         "webProcessMode": web_mode,
         "backgroundRunner": "python -m python_backend.background_jobs",
         "catalogSnapshotRunner": "python -m python_backend.scripts.sync_catalog_snapshot",
@@ -524,6 +622,8 @@ def _background_job_stats() -> dict[str, Any]:
         "upsStatusSyncMode": str(os.environ.get("UPS_STATUS_SYNC_MODE", "thread")).strip().lower() or "thread",
         "presenceSweepMode": str(os.environ.get("PRESENCE_SWEEP_MODE", "thread")).strip().lower() or "thread",
         "patientLinksSweepMode": str(os.environ.get("PATIENT_LINKS_SWEEP_MODE", "thread")).strip().lower() or "thread",
+        "unhealthyJobs": assessment["unhealthyJobs"],
+        "jobs": assessment["jobs"],
     }
 
 
@@ -553,6 +653,8 @@ def health():
                 "gunicorn": _parse_gunicorn_args(master_cmdline or "") if master_cmdline else None,
             }
             background_jobs = _background_job_stats()
+            if str(background_jobs.get("status") or "").strip().lower() == "degraded":
+                status = "degraded"
         except Exception:
             # Never allow health checks to 500; return a degraded payload instead.
             build = os.environ.get("BACKEND_BUILD", "unknown")

@@ -1,0 +1,19 @@
+[Unit]
+Description=PepPro background jobs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pepproadmin
+WorkingDirectory=/opt/peppr/backend
+EnvironmentFile=/etc/peppr-api.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/peppr/backend/venv/bin/python -m python_backend.background_jobs
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

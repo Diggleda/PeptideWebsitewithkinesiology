@@ -9,12 +9,14 @@ from typing import Any, Dict
 
 from ..database import mysql_client
 from ..repositories import user_repository
+from . import background_job_supervisor
 from . import get_config, presence_service
 
 logger = logging.getLogger(__name__)
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
+_JOB_NAME = "presenceSweep"
 
 
 def _enabled() -> bool:
@@ -164,6 +166,24 @@ def sweep_once() -> Dict[str, Any]:
     return {"ok": True, "updated": updated, "cutoff": cutoff_sql, "pruned": pruned, "backend": "json"}
 
 
+def get_status() -> Dict[str, Any]:
+    using_mysql = False
+    try:
+        using_mysql = bool(get_config().mysql.get("enabled"))
+    except Exception:
+        using_mysql = False
+    return {
+        **background_job_supervisor.get_job_status(_JOB_NAME),
+        "enabled": _enabled(),
+        "mode": _mode(),
+        "intervalSeconds": _interval_seconds(),
+        "onlineThresholdSeconds": _online_threshold_seconds(),
+        "graceSeconds": _grace_seconds(),
+        "mysqlEnabled": using_mysql,
+        "started": _THREAD_STARTED,
+    }
+
+
 def _run_loop() -> None:
     interval_s = _interval_seconds()
     while True:
@@ -171,18 +191,61 @@ def _run_loop() -> None:
             result = sweep_once()
             if result.get("ok") and int(result.get("updated") or 0) > 0:
                 logger.info("Presence sweep marked users offline", extra=result)
-        except Exception:
+            background_job_supervisor.record_heartbeat(
+                _JOB_NAME,
+                last_result=result,
+                clear_error=True,
+                enabled=_enabled(),
+                mode="thread",
+                intervalSeconds=interval_s,
+            )
+        except Exception as exc:
             logger.exception("Presence sweep failed")
+            background_job_supervisor.record_heartbeat(
+                _JOB_NAME,
+                last_error=exc,
+                enabled=_enabled(),
+                mode="thread",
+                intervalSeconds=interval_s,
+            )
         time.sleep(interval_s)
 
 
 def start_presence_sweep(*, force: bool = False) -> None:
-    if not _enabled() or (not force and _mode() != "thread"):
+    interval_s = _interval_seconds()
+    if not _enabled():
+        background_job_supervisor.set_job_state(
+            _JOB_NAME,
+            enabled=False,
+            mode=_mode(),
+            intervalSeconds=interval_s,
+            running=False,
+            state="disabled",
+            reason="disabled",
+        )
+        return
+    if not force and _mode() != "thread":
+        background_job_supervisor.set_job_state(
+            _JOB_NAME,
+            enabled=True,
+            mode=_mode(),
+            intervalSeconds=interval_s,
+            running=False,
+            state="external",
+            reason="external_mode",
+        )
         return
     global _THREAD_STARTED
     with _THREAD_LOCK:
         if _THREAD_STARTED:
             return
-        thread = threading.Thread(target=_run_loop, name="presence-sweep", daemon=True)
-        thread.start()
         _THREAD_STARTED = True
+        background_job_supervisor.start_supervised_job(
+            _JOB_NAME,
+            _run_loop,
+            thread_name="presence-sweep",
+            restart_delay_seconds=min(60.0, max(5.0, float(interval_s) / 2.0)),
+            enabled=True,
+            mode="thread",
+            intervalSeconds=interval_s,
+        )

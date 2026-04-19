@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+from . import background_job_supervisor
 from ..services import get_config
 from ..integrations import woo_commerce
 from ..repositories import product_document_repository
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 _SYNC_THREAD_STARTED = False
 _SYNC_LOCK = threading.Lock()
+_JOB_NAME = "productDocumentSync"
 
 _LAST_RUN_SETTINGS_KEY = "productDocsWooSyncLastRunAt"
 
@@ -210,9 +212,29 @@ def sync_woo_products_to_product_documents() -> Dict[str, Any]:
         _release_lock(lock_name)
 
 
+def get_status() -> Dict[str, Any]:
+    return {
+        **background_job_supervisor.get_job_status(_JOB_NAME),
+        "enabled": _enabled(),
+        "mode": _mode(),
+        "intervalSeconds": _interval_seconds(),
+        "configured": woo_commerce.is_configured(),
+        "mysqlEnabled": bool(get_config().mysql.get("enabled")),
+        "started": _SYNC_THREAD_STARTED,
+    }
+
+
 def _worker() -> None:
     interval = _interval_seconds()
     logger.info("[product-docs] sync thread started", extra={"intervalSeconds": interval})
+    background_job_supervisor.record_heartbeat(
+        _JOB_NAME,
+        clear_error=True,
+        enabled=_enabled(),
+        mode="thread",
+        intervalSeconds=interval,
+        configured=woo_commerce.is_configured(),
+    )
     # Give the app a moment to finish starting.
     time.sleep(5)
     while True:
@@ -223,14 +245,54 @@ def _worker() -> None:
             else:
                 # keep logs low-noise; only debug skips
                 logger.debug("[product-docs] sync skipped", extra=result)
+            background_job_supervisor.record_heartbeat(
+                _JOB_NAME,
+                last_result=result,
+                clear_error=True,
+                enabled=_enabled(),
+                mode="thread",
+                intervalSeconds=interval,
+                configured=woo_commerce.is_configured(),
+            )
         except Exception:
             logger.exception("[product-docs] sync failed")
+            background_job_supervisor.record_heartbeat(
+                _JOB_NAME,
+                last_error="sync_failed",
+                enabled=_enabled(),
+                mode="thread",
+                intervalSeconds=interval,
+                configured=woo_commerce.is_configured(),
+            )
         time.sleep(interval)
 
 
 def start_product_document_sync(*, force: bool = False) -> None:
+    interval = _interval_seconds()
+    if not _enabled():
+        background_job_supervisor.set_job_state(
+            _JOB_NAME,
+            enabled=False,
+            mode=_mode(),
+            intervalSeconds=interval,
+            running=False,
+            state="disabled",
+            reason="disabled",
+            configured=woo_commerce.is_configured(),
+        )
+        return
     if not force and _mode() != "thread":
         logger.info("[product-docs] sync thread disabled", extra={"mode": _mode()})
+        background_job_supervisor.set_job_state(
+            _JOB_NAME,
+            enabled=True,
+            mode=_mode(),
+            intervalSeconds=interval,
+            running=False,
+            state="external",
+            reason="external_mode",
+            configured=woo_commerce.is_configured(),
+        )
         return
     global _SYNC_THREAD_STARTED
     if _SYNC_THREAD_STARTED:
@@ -239,5 +301,13 @@ def start_product_document_sync(*, force: bool = False) -> None:
         if _SYNC_THREAD_STARTED:
             return
         _SYNC_THREAD_STARTED = True
-        thread = threading.Thread(target=_worker, name="peppro-product-doc-sync", daemon=True)
-        thread.start()
+        background_job_supervisor.start_supervised_job(
+            _JOB_NAME,
+            _worker,
+            thread_name="peppro-product-doc-sync",
+            restart_delay_seconds=min(60.0, max(5.0, float(interval) / 2.0)),
+            enabled=True,
+            mode="thread",
+            intervalSeconds=interval,
+            configured=woo_commerce.is_configured(),
+        )

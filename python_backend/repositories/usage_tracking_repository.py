@@ -104,6 +104,81 @@ def _payload_count(payload: Dict[str, Any]) -> int:
     return 1 if payload else 0
 
 
+def _payload_instances(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
+    instances = payload.get("instances")
+    if isinstance(instances, list):
+        return [dict(item) for item in instances if isinstance(item, dict)]
+    return [dict(payload)] if payload else []
+
+
+def _normalize_actor_key(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _instance_actor_key(instance: Dict[str, Any]) -> Optional[str]:
+    who = instance.get("who")
+    if not isinstance(who, dict):
+        return None
+    actor_id = str(who.get("id") or "").strip()
+    if actor_id:
+        return f"id:{actor_id}"
+    email = str(who.get("email") or "").strip().lower()
+    if email:
+        return f"email:{email}"
+    return None
+
+
+def _instance_actor_summary(instance: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    who = instance.get("who")
+    if not isinstance(who, dict):
+        return None
+    key = _instance_actor_key(instance)
+    if not key:
+        return None
+    user_id = str(who.get("id") or "").strip() or None
+    name = str(who.get("name") or "").strip() or None
+    email = str(who.get("email") or "").strip() or None
+    role = str(who.get("role") or "").strip() or None
+    return {
+        "key": key,
+        "userId": user_id,
+        "name": name,
+        "email": email,
+        "role": role,
+        "eventCount": 1,
+    }
+
+
+def _merge_actor_summary(current: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "key": current.get("key") or incoming.get("key"),
+        "userId": current.get("userId") or incoming.get("userId"),
+        "name": current.get("name") or incoming.get("name"),
+        "email": current.get("email") or incoming.get("email"),
+        "role": current.get("role") or incoming.get("role"),
+        "eventCount": int(current.get("eventCount") or 0) + int(incoming.get("eventCount") or 0),
+    }
+
+
+def _fetch_event_payload_rows(normalized_events: list[str], *, payload_column: str) -> list[Dict[str, Any]]:
+    params: Dict[str, Any] = {}
+    placeholders: list[str] = []
+    for index, event in enumerate(normalized_events):
+        key = f"event_{index}"
+        params[key] = event
+        placeholders.append(f"%({key})s")
+
+    return mysql_client.fetch_all(
+        f"""
+        SELECT event, `{payload_column}` AS payload_value
+        FROM usage_tracking
+        WHERE event IN ({", ".join(placeholders)})
+        """,
+        params,
+    )
+
+
 def insert_event(event: str, details: Dict[str, Any], *, strict: bool = False) -> bool:
     if not _using_mysql():
         if strict:
@@ -189,12 +264,16 @@ def insert_event(event: str, details: Dict[str, Any], *, strict: bool = False) -
         return False
 
 
-def get_event_counts(events: list[str] | tuple[str, ...] | None) -> Dict[str, int]:
+def get_event_funnel(
+    events: list[str] | tuple[str, ...] | None,
+    *,
+    actor_key: Optional[str] = None,
+) -> Dict[str, Any]:
     normalized_events = _normalize_event_names(events)
     if not normalized_events:
-        return {}
+        return {"counts": {}, "actors": []}
     if not _using_mysql():
-        return {event: 0 for event in normalized_events}
+        return {"counts": {event: 0 for event in normalized_events}, "actors": []}
 
     columns = _usage_tracking_columns()
     payload_column = _payload_column(columns)
@@ -203,28 +282,51 @@ def get_event_counts(events: list[str] | tuple[str, ...] | None) -> Dict[str, in
             "usage_tracking table is missing the required columns for analytics. Detected columns: %s",
             sorted(columns) if columns else [],
         )
-        return {event: 0 for event in normalized_events}
+        return {"counts": {event: 0 for event in normalized_events}, "actors": []}
 
-    params: Dict[str, Any] = {}
-    placeholders: list[str] = []
-    for index, event in enumerate(normalized_events):
-        key = f"event_{index}"
-        params[key] = event
-        placeholders.append(f"%({key})s")
-
-    rows = mysql_client.fetch_all(
-        f"""
-        SELECT event, `{payload_column}` AS payload_value
-        FROM usage_tracking
-        WHERE event IN ({", ".join(placeholders)})
-        """,
-        params,
-    )
+    rows = _fetch_event_payload_rows(normalized_events, payload_column=payload_column)
 
     counts = {event: 0 for event in normalized_events}
+    actor_summaries: Dict[str, Dict[str, Any]] = {}
+    normalized_actor_key = _normalize_actor_key(actor_key)
     for row in rows or []:
         event_name = str((row or {}).get("event") or "").strip()
         if not event_name or event_name not in counts:
             continue
-        counts[event_name] = _payload_count(_parse_payload((row or {}).get("payload_value")))
-    return counts
+        payload = _parse_payload((row or {}).get("payload_value"))
+        instances = _payload_instances(payload)
+        if normalized_actor_key:
+            counts[event_name] = sum(
+                1
+                for instance in instances
+                if _instance_actor_key(instance) == normalized_actor_key
+            )
+        else:
+            counts[event_name] = _payload_count(payload)
+
+        for instance in instances:
+            summary = _instance_actor_summary(instance)
+            if not summary:
+                continue
+            key = str(summary.get("key") or "").strip()
+            if not key:
+                continue
+            actor_summaries[key] = _merge_actor_summary(actor_summaries.get(key) or {}, summary)
+
+    actors = sorted(
+        actor_summaries.values(),
+        key=lambda item: (
+            str(item.get("name") or item.get("email") or item.get("userId") or "").lower(),
+            str(item.get("key") or "").lower(),
+        ),
+    )
+    return {"counts": counts, "actors": actors}
+
+
+def get_event_counts(
+    events: list[str] | tuple[str, ...] | None,
+    *,
+    actor_key: Optional[str] = None,
+) -> Dict[str, int]:
+    funnel = get_event_funnel(events, actor_key=actor_key)
+    return dict(funnel.get("counts") or {})
