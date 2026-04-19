@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import secrets
+
 from flask import Blueprint, Response, current_app, request
 
 import os
@@ -19,6 +23,11 @@ from ..integrations import ship_engine, woo_commerce
 from ..utils.http import handle_action, utc_now_iso as _now
 
 blueprint = Blueprint("system", __name__, url_prefix="/api")
+
+
+_HEALTH_BASIC_AUTH_USERNAME_ENV = "PEPPRO_HEALTH_BASIC_AUTH_USERNAME"
+_HEALTH_BASIC_AUTH_PASSWORD_ENV = "PEPPRO_HEALTH_BASIC_AUTH_PASSWORD"
+_HEALTH_BASIC_AUTH_REALM_ENV = "PEPPRO_HEALTH_BASIC_AUTH_REALM"
 
 
 def _read_linux_meminfo() -> dict | None:
@@ -538,6 +547,30 @@ def _background_job_stale_after_seconds(job: dict[str, Any]) -> int:
     return max(45, min((interval_seconds * 3) + 15, 4 * 60 * 60))
 
 
+def _normalize_background_job_modes_for_health(
+    jobs: dict[str, dict[str, Any]],
+    *,
+    web_mode: str,
+) -> dict[str, dict[str, Any]]:
+    normalized_web_mode = str(web_mode or "").strip().lower()
+    if normalized_web_mode != "external":
+        return {name: dict(raw_job or {}) for name, raw_job in (jobs or {}).items()}
+
+    normalized: dict[str, dict[str, Any]] = {}
+    for name, raw_job in (jobs or {}).items():
+        job = dict(raw_job or {})
+        enabled = bool(job.get("enabled", True))
+        job_mode = str(job.get("mode") or "thread").strip().lower() or "thread"
+        if enabled and job_mode == "thread":
+            job["mode"] = "external"
+            if not bool(job.get("running")):
+                job["state"] = "external"
+                if not job.get("reason"):
+                    job["reason"] = "external_mode"
+        normalized[name] = job
+    return normalized
+
+
 def _assess_background_jobs_health(jobs: dict[str, dict[str, Any]]) -> dict[str, Any]:
     status = "ok"
     unhealthy: list[str] = []
@@ -610,6 +643,7 @@ def _background_job_stats() -> dict[str, Any]:
         "presenceSweep": presence_sweep_service.get_status(),
         "patientLinksSweep": patient_links_sweep_service.get_status(),
     }
+    jobs = _normalize_background_job_modes_for_health(jobs, web_mode=web_mode)
     assessment = _assess_background_jobs_health(jobs)
     return {
         "mode": "scheduled",
@@ -627,8 +661,89 @@ def _background_job_stats() -> dict[str, Any]:
     }
 
 
+def _health_basic_auth_credentials() -> tuple[str, str] | None:
+    username = str(os.environ.get(_HEALTH_BASIC_AUTH_USERNAME_ENV) or "").strip()
+    password = str(os.environ.get(_HEALTH_BASIC_AUTH_PASSWORD_ENV) or "")
+    if not username or not password:
+        return None
+    return username, password
+
+
+def _health_basic_auth_realm() -> str:
+    return str(os.environ.get(_HEALTH_BASIC_AUTH_REALM_ENV) or "").strip() or "PepPro Server Health"
+
+
+def _health_basic_auth_response(message: str, *, code: str, status: int = 401) -> Response:
+    response = current_app.response_class(
+        response=current_app.json.dumps({"error": message, "code": code}),
+        status=status,
+        mimetype="application/json",
+    )
+    if status == 401:
+        response.headers["WWW-Authenticate"] = (
+            f'Basic realm="{_health_basic_auth_realm()}", charset="UTF-8"'
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _require_health_basic_auth() -> Response | None:
+    credentials = _health_basic_auth_credentials()
+    if credentials is None:
+        return _health_basic_auth_response(
+            "Server health Basic Auth is not configured.",
+            code="BASIC_AUTH_NOT_CONFIGURED",
+            status=503,
+        )
+
+    header = str(request.headers.get("Authorization") or "").strip()
+    if not header:
+        return _health_basic_auth_response(
+            "Server health requires Basic Auth.",
+            code="BASIC_AUTH_REQUIRED",
+        )
+
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "basic" or not token.strip():
+        return _health_basic_auth_response(
+            "Server health requires Basic Auth.",
+            code="BASIC_AUTH_REQUIRED",
+        )
+
+    try:
+        decoded = base64.b64decode(token.strip(), validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return _health_basic_auth_response(
+            "Server health credentials were rejected.",
+            code="BASIC_AUTH_INVALID",
+        )
+
+    username, separator, password = decoded.partition(":")
+    expected_username, expected_password = credentials
+    if (
+        separator != ":"
+        or not secrets.compare_digest(username, expected_username)
+        or not secrets.compare_digest(password, expected_password)
+    ):
+        return _health_basic_auth_response(
+            "Server health credentials were rejected.",
+            code="BASIC_AUTH_INVALID",
+        )
+
+    return None
+
+
+@blueprint.get("/ping")
+def ping():
+    return handle_action(lambda: {"ok": True, "timestamp": _now()})
+
+
 @blueprint.get("/health")
 def health():
+    auth_error = _require_health_basic_auth()
+    if auth_error is not None:
+        return auth_error
+
     def action():
         try:
             config = get_config()

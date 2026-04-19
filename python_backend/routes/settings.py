@@ -814,6 +814,7 @@ def _get_delegate_links_doctors() -> list[dict]:
                 or f"Doctor {user_id}",
                 "email": str(user.get("email") or "").strip().lower() or None,
                 "delegateLinksEnabled": bool(user.get("delegateLinksEnabled")),
+                "delegateOptIn": _normalize_bool(user.get("delegateOptIn", user.get("delegate_opt_in"))),
             }
         )
     doctors.sort(key=lambda row: (str(row.get("name") or "").lower(), str(row.get("email") or "")))

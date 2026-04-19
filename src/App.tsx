@@ -10793,13 +10793,21 @@ function MainApp() {
     physicianMap: "Physician Network Map",
     testPaymentsOverride: "Test Payments Override",
   };
-  const ADMIN_DELEGATE_LINK_FUNNEL_STAGES = [
+  const ADMIN_DELEGATE_LINK_BASELINE_STAGES = [
+    { event: "delegate_link_beta_enabled_users", label: "Beta Enabled", shortLabel: "Enabled" },
+    { event: "delegate_link_opted_in_users", label: "Opted In", shortLabel: "Opt-In" },
+  ] as const;
+  const ADMIN_DELEGATE_LINK_TRACKED_STAGES = [
     { event: "delegate_link_tab_clicked", label: "Tab Clicked", shortLabel: "Tab" },
     { event: "delegate_link_text_field_entry", label: "Text Field Entry", shortLabel: "Field" },
     { event: "delegate_link_created", label: "Link Created", shortLabel: "Created" },
     { event: "delegate_proposal_review_clicked", label: "Review Clicked", shortLabel: "Review" },
     { event: "delegate_proposal_reviewed", label: "Proposal Reviewed", shortLabel: "Done" },
     { event: "delegate_order_placed", label: "Delegate Order Placed", shortLabel: "Order" },
+  ] as const;
+  const ADMIN_DELEGATE_LINK_FUNNEL_STAGES = [
+    ...ADMIN_DELEGATE_LINK_BASELINE_STAGES,
+    ...ADMIN_DELEGATE_LINK_TRACKED_STAGES,
   ] as const;
   const ADMIN_DELEGATE_LINK_FUNNEL_DEMO_COUNTS: Record<string, number> = {
     delegate_link_tab_clicked: 148,
@@ -10816,6 +10824,12 @@ function MainApp() {
     email?: string | null;
     role?: string | null;
     eventCount?: number | null;
+  };
+  type PatientLinksDoctorOption = {
+    userId: string;
+    name: string;
+    email?: string | null;
+    delegateOptIn?: boolean | null;
   };
   const buildAdminDashboardTabs = (betaServices: PortalBetaServiceKey[]) => {
     const tabs = [
@@ -14645,8 +14659,14 @@ function MainApp() {
   const [adminDelegateFunnelActorFilter, setAdminDelegateFunnelActorFilter] = useState("all");
   const [adminDelegateFunnelActors, setAdminDelegateFunnelActors] = useState<AdminDelegateFunnelActorOption[]>([]);
   const [adminDelegateFunnelCounts, setAdminDelegateFunnelCounts] = useState<Record<string, number>>(() =>
-    Object.fromEntries(ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => [stage.event, 0])),
+    Object.fromEntries(ADMIN_DELEGATE_LINK_TRACKED_STAGES.map((stage) => [stage.event, 0])),
   );
+  const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
+  const [patientLinksDoctorUserIds, setPatientLinksDoctorUserIds] = useState<string[]>([]);
+  const [patientLinksDoctorOptions, setPatientLinksDoctorOptions] = useState<
+    PatientLinksDoctorOption[]
+  >([]);
+  const [patientLinksDoctorsOpen, setPatientLinksDoctorsOpen] = useState(false);
   const activePortalBetaServices = useMemo(
     () =>
       PORTAL_BETA_SERVICE_KEYS.filter((serviceKey) => betaServices.includes(serviceKey)),
@@ -14673,37 +14693,6 @@ function MainApp() {
     () => availableAdminDashboardTabs.map((tab) => tab.id).join("|"),
     [availableAdminDashboardTabs],
   );
-  const adminDelegateFunnelChartData = useMemo(
-    () =>
-      ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage, index, allStages) => {
-        const count = Math.max(0, Math.floor(Number(adminDelegateFunnelCounts[stage.event]) || 0));
-        const firstStageEvent = allStages[0]?.event;
-        const previousStageEvent = index > 0 ? allStages[index - 1]?.event : null;
-        const firstCount = Math.max(
-          0,
-          Math.floor(Number(firstStageEvent ? adminDelegateFunnelCounts[firstStageEvent] : count) || 0),
-        );
-        const previousCount = Math.max(
-          0,
-          Math.floor(Number(previousStageEvent ? adminDelegateFunnelCounts[previousStageEvent] : count) || 0),
-        );
-        return {
-          ...stage,
-          chartLabel: stage.label.replace("Delegate ", ""),
-          count,
-          shareOfStart: firstCount > 0 ? Math.round((count / firstCount) * 100) : 0,
-          shareOfPrevious: previousCount > 0 ? Math.round((count / previousCount) * 100) : 0,
-        };
-      }),
-    [adminDelegateFunnelCounts],
-  );
-  const adminDelegateFunnelFirstCount = adminDelegateFunnelChartData[0]?.count ?? 0;
-  const adminDelegateFunnelFinalCount =
-    adminDelegateFunnelChartData[adminDelegateFunnelChartData.length - 1]?.count ?? 0;
-  const adminDelegateFunnelOverallConversion =
-    adminDelegateFunnelFirstCount > 0
-      ? Math.round((adminDelegateFunnelFinalCount / adminDelegateFunnelFirstCount) * 100)
-      : 0;
   const adminDelegateFunnelSelectedActor = useMemo(
     () =>
       adminDelegateFunnelActors.find((actor) => actor.key === adminDelegateFunnelActorFilter) || null,
@@ -14727,6 +14716,92 @@ function MainApp() {
     }
     return actor.key;
   };
+  const adminDelegateFunnelBaselineCounts = useMemo(() => {
+    const enabledDoctorIds = new Set(
+      patientLinksDoctorUserIds
+        .map((value) => String(value || "").trim())
+        .filter((value) => value.length > 0),
+    );
+    if (adminDelegateFunnelActorFilter === "all") {
+      return {
+        enabled: enabledDoctorIds.size,
+        optedIn: patientLinksDoctorOptions.filter(
+          (doctor) =>
+            enabledDoctorIds.has(doctor.userId) && doctor.delegateOptIn === true,
+        ).length,
+      };
+    }
+
+    const selectedUserId = String(adminDelegateFunnelSelectedActor?.userId || "").trim();
+    const selectedEmail = String(adminDelegateFunnelSelectedActor?.email || "")
+      .trim()
+      .toLowerCase();
+    const matchedDoctors = patientLinksDoctorOptions.filter((doctor) => {
+      const doctorEmail = String(doctor.email || "").trim().toLowerCase();
+      return (
+        (selectedUserId && doctor.userId === selectedUserId) ||
+        (selectedEmail && doctorEmail === selectedEmail)
+      );
+    });
+    if (matchedDoctors.length > 0) {
+      return {
+        enabled: matchedDoctors.filter((doctor) => enabledDoctorIds.has(doctor.userId)).length,
+        optedIn: matchedDoctors.filter(
+          (doctor) =>
+            enabledDoctorIds.has(doctor.userId) && doctor.delegateOptIn === true,
+        ).length,
+      };
+    }
+    return {
+      enabled: selectedUserId && enabledDoctorIds.has(selectedUserId) ? 1 : 0,
+      optedIn: 0,
+    };
+  }, [
+    adminDelegateFunnelActorFilter,
+    adminDelegateFunnelSelectedActor,
+    patientLinksDoctorOptions,
+    patientLinksDoctorUserIds,
+  ]);
+  const adminDelegateFunnelDisplayCounts = useMemo(
+    () => ({
+      ...adminDelegateFunnelCounts,
+      delegate_link_beta_enabled_users: adminDelegateFunnelBaselineCounts.enabled,
+      delegate_link_opted_in_users: adminDelegateFunnelBaselineCounts.optedIn,
+    }),
+    [adminDelegateFunnelBaselineCounts, adminDelegateFunnelCounts],
+  );
+  const adminDelegateFunnelChartData = useMemo(
+    () =>
+      ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage, index, allStages) => {
+        const count = Math.max(0, Math.floor(Number(adminDelegateFunnelDisplayCounts[stage.event]) || 0));
+        const firstStageEvent = allStages[0]?.event;
+        const previousStageEvent = index > 0 ? allStages[index - 1]?.event : null;
+        const firstCount = Math.max(
+          0,
+          Math.floor(Number(firstStageEvent ? adminDelegateFunnelDisplayCounts[firstStageEvent] : count) || 0),
+        );
+        const previousCount = Math.max(
+          0,
+          Math.floor(Number(previousStageEvent ? adminDelegateFunnelDisplayCounts[previousStageEvent] : count) || 0),
+        );
+        return {
+          ...stage,
+          chartLabel: stage.label.replace("Delegate ", ""),
+          count,
+          shareOfStart: firstCount > 0 ? Math.round((count / firstCount) * 100) : 0,
+          shareOfPrevious: previousCount > 0 ? Math.round((count / previousCount) * 100) : 0,
+        };
+      }),
+    [adminDelegateFunnelDisplayCounts],
+  );
+  const adminDelegateFunnelEnabledCount = adminDelegateFunnelBaselineCounts.enabled;
+  const adminDelegateFunnelOptedInCount = adminDelegateFunnelBaselineCounts.optedIn;
+  const adminDelegateFunnelFinalCount =
+    adminDelegateFunnelChartData[adminDelegateFunnelChartData.length - 1]?.count ?? 0;
+  const adminDelegateFunnelOverallConversion =
+    adminDelegateFunnelEnabledCount > 0
+      ? Math.round((adminDelegateFunnelFinalCount / adminDelegateFunnelEnabledCount) * 100)
+      : 0;
   const adminDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const isAdminDashboardVisible = isAdmin(user?.role);
   const [adminDashboardTabIndicator, setAdminDashboardTabIndicator] = useState<{
@@ -14799,14 +14874,14 @@ function MainApp() {
 
     let cancelled = false;
     const zeroCounts = Object.fromEntries(
-      ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => [stage.event, 0]),
+      ADMIN_DELEGATE_LINK_TRACKED_STAGES.map((stage) => [stage.event, 0]),
     );
 
     setAdminDelegateFunnelLoading(true);
     setAdminDelegateFunnelError(null);
 
     void usageTrackingAPI
-      .getFunnel(ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => stage.event), {
+      .getFunnel(ADMIN_DELEGATE_LINK_TRACKED_STAGES.map((stage) => stage.event), {
         actorKey: adminDelegateFunnelActorFilter,
       })
       .then((payload: any) => {
@@ -14833,7 +14908,7 @@ function MainApp() {
               .filter((actor): actor is AdminDelegateFunnelActorOption => Boolean(actor))
           : [];
         const responseCounts = Object.fromEntries(
-          ADMIN_DELEGATE_LINK_FUNNEL_STAGES.map((stage) => {
+          ADMIN_DELEGATE_LINK_TRACKED_STAGES.map((stage) => {
             const rawCount = Number((payload?.counts || {})?.[stage.event]);
             return [stage.event, Number.isFinite(rawCount) ? Math.max(0, Math.floor(rawCount)) : 0];
           }),
@@ -14879,12 +14954,6 @@ function MainApp() {
     }
     setAdminDelegateFunnelActorFilter("all");
   }, [adminDelegateFunnelActorFilter, adminDelegateFunnelActors, adminDelegateFunnelLoading]);
-  const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
-  const [patientLinksDoctorUserIds, setPatientLinksDoctorUserIds] = useState<string[]>([]);
-  const [patientLinksDoctorOptions, setPatientLinksDoctorOptions] = useState<
-    Array<{ userId: string; name: string; email?: string | null }>
-  >([]);
-  const [patientLinksDoctorsOpen, setPatientLinksDoctorsOpen] = useState(false);
   function applyPatientLinksStatus(info: any) {
     if (!info || typeof info.patientLinksEnabled !== "boolean") {
       return;
@@ -15629,8 +15698,12 @@ function MainApp() {
                 typeof entry?.email === "string" && entry.email.trim().length > 0
                   ? entry.email.trim()
                   : null,
+              delegateOptIn:
+                typeof entry?.delegateOptIn === "boolean"
+                  ? entry.delegateOptIn
+                  : null,
             }))
-            .filter((entry: { userId: string; name: string; email?: string | null }) => entry.userId.length > 0),
+            .filter((entry: PatientLinksDoctorOption) => entry.userId.length > 0),
         );
       } catch (error) {
         if (cancelled) return;
@@ -15870,6 +15943,40 @@ function MainApp() {
       return null;
     }
     return parsed.toLocaleString();
+  };
+  const formatServerHealthTime = (value?: string | null) => {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+  const formatServerHealthNumber = (
+    value?: number | null,
+    maximumFractionDigits = 2,
+  ) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return null;
+    }
+    const hasFraction = Math.abs(value % 1) > 0.0001;
+    return value.toLocaleString(undefined, {
+      maximumFractionDigits,
+      minimumFractionDigits: hasFraction ? Math.min(2, maximumFractionDigits) : 0,
+    });
+  };
+  const formatServerHealthPercentValue = (
+    value?: number | null,
+    maximumFractionDigits = 2,
+  ) => {
+    const formatted = formatServerHealthNumber(value, maximumFractionDigits);
+    return formatted ? `${formatted}%` : null;
   };
   const formatServerHealthReason = (value?: string | null) => {
     const text = String(value || "")
@@ -29389,7 +29496,7 @@ function MainApp() {
                                 <div>
                                   <h3>Conversion Funnel</h3>
                                   <p>
-                                    Track event volume as users move through the delegate-link flow.
+                                    Compare the enabled cohort, opt-ins, and then delegate-link activity through the flow.
                                     {adminDelegateFunnelSelectedActor
                                       ? ` Filtered to ${formatAdminDelegateFunnelActorLabel(adminDelegateFunnelSelectedActor)}.`
                                       : ""}
@@ -29489,8 +29596,8 @@ function MainApp() {
                                       content={(props: any) => (
                                         <PipelineTooltip
                                           {...props}
-                                          countLabelSingular="event"
-                                          countLabelPlural="events"
+                                          countLabelSingular="count"
+                                          countLabelPlural="counts"
                                           getSummaryRows={(entry) => [
                                             {
                                               label: "Vs. first step",
@@ -29545,9 +29652,10 @@ function MainApp() {
                                 </ResponsiveContainer>
                               </div>
                               <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                                <span>Starts: {adminDelegateFunnelFirstCount.toLocaleString()}</span>
+                                <span>Enabled: {adminDelegateFunnelEnabledCount.toLocaleString()}</span>
+                                <span>Opted in: {adminDelegateFunnelOptedInCount.toLocaleString()}</span>
                                 <span>Orders: {adminDelegateFunnelFinalCount.toLocaleString()}</span>
-                                <span>Conversion: {adminDelegateFunnelOverallConversion}%</span>
+                                <span>Order rate: {adminDelegateFunnelOverallConversion}%</span>
                               </div>
                             </div>
                           ) : null}
@@ -29558,356 +29666,622 @@ function MainApp() {
                 )}
 
                 {adminDashboardTab === "maintenance" && (
-                <div className="mb-6 squircle-xl border border-slate-200/70 bg-white/70 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-lg font-semibold text-slate-900">
-                        Server Health
-                      </h4>
-                      <p className="text-sm text-slate-600">
-                        API status, workers, background ownership, and runtime load.
-                      </p>
-                    </div>
-                      <div className="flex-shrink-0">
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        size="sm"
-	                        onClick={() => void fetchServerHealth({ force: true })}
-	                        disabled={serverHealthLoading}
-	                        className="header-home-button squircle-sm bg-white text-slate-900"
-	                        title="Refresh server health"
-	                      >
-	                        {serverHealthLoading ? "Refreshing…" : "Refresh"}
-	                      </Button>
-                    </div>
-                  </div>
-
-                  {serverHealthError && (
-                    <div
-                      className={clsx(
-                        "mt-3 rounded-md border px-4 py-2 text-sm",
-                        serverHealthPayload
-                          ? "border-amber-200 bg-amber-50 text-amber-700"
-                          : "border-rose-200 bg-rose-50 text-rose-700",
-                      )}
-                    >
-                      {serverHealthPayload
-                        ? `Showing the last successful snapshot. ${serverHealthError}`
-                        : serverHealthError}
-                    </div>
-                  )}
-
-	                  <div className="sales-rep-table-wrapper admin-dashboard-list">
-	                    <div className="space-y-4">
-                      {(() => {
-	                      const usage = serverHealthPayload?.usage || null;
-                      const cpu = usage?.cpu || null;
-                      const mem = usage?.memory || null;
-                      const disk = usage?.disk || null;
-                      const cgroupMem = serverHealthPayload?.cgroup?.memory || null;
-                      const uptime = serverHealthPayload?.uptime || null;
-                      const queue = serverHealthPayload?.queue || null;
-                      const backgroundJobs = serverHealthPayload?.backgroundJobs || null;
-                      const backgroundMode = String(
-                        backgroundJobs?.webProcessMode || "",
-                      )
-                        .trim()
-                        .toLowerCase();
-                      const backgroundJobEntries = Object.entries(
-                        backgroundJobs?.jobs || {},
-                      );
-                      const unhealthyJobs = Array.isArray(backgroundJobs?.unhealthyJobs)
-                        ? backgroundJobs.unhealthyJobs
-                        : [];
-                      const toneClasses = {
-                        healthy: "border-emerald-200 bg-emerald-50 text-emerald-700",
-                        degraded: "border-amber-200 bg-amber-50 text-amber-700",
-                        offline: "border-rose-200 bg-rose-50 text-rose-700",
-                        external: "border-sky-200 bg-sky-50 text-sky-700",
-                        neutral: "border-slate-200 bg-slate-100 text-slate-700",
-                      } as const;
-                      const overallTone =
-                        !serverHealthPayload && serverHealthError
-                          ? "offline"
-                          : serverHealthPayload?.status === "degraded"
-                            ? "degraded"
-                            : serverHealthPayload
-                              ? "healthy"
-                              : "neutral";
-                      const overallStatusLabel =
-                        overallTone === "offline"
-                          ? "Unreachable"
-                          : overallTone === "degraded"
-                            ? "Degraded"
-                            : overallTone === "healthy"
-                              ? "Healthy"
-                              : "Waiting";
-                      const overallStatusNote =
-                        overallTone === "offline"
-                          ? "The admin client could not fetch the health endpoint."
-                          : overallTone === "degraded"
-                            ? serverHealthPayload?.message ||
-                              "The backend responded, but it reported degraded health."
-                            : overallTone === "healthy"
-                              ? serverHealthPayload?.message ||
-                                "The backend responded normally."
-                              : "No health snapshot has been loaded yet.";
-                      const backgroundTone =
-                        backgroundMode === "external"
-                          ? "external"
-                          : backgroundJobs?.status === "degraded"
-                            ? "degraded"
-                            : backgroundJobs
-                              ? "healthy"
-                              : "neutral";
-                      const backgroundStatusLabel =
-                        backgroundMode === "external"
-                          ? "External service"
-                          : backgroundJobs?.status === "degraded"
-                            ? "Attention needed"
-                            : backgroundJobs
-                              ? "In-process healthy"
-                              : "Unavailable";
-                      const backgroundStatusNote =
-                        backgroundMode === "external"
-                          ? "API workers are not running recurring jobs in-process. Monitor the dedicated background worker service separately."
-                          : unhealthyJobs.length > 0
-                            ? `Unhealthy jobs: ${unhealthyJobs
-                                .map(
-                                  (jobKey) =>
-                                    SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey,
-                                )
-                                .join(", ")}`
-                            : backgroundJobs
-                              ? "The API process reports its in-process jobs as healthy."
-                              : "No background-job details were returned by the backend.";
-                      const workerSummaryLabel = (() => {
-                        const workers = serverHealthPayload?.workers;
-                        const detected = workers?.detected;
-                        const configured = workers?.configured;
-                        if (typeof detected === "number" && detected > 0) {
-                          return `${detected} worker${detected === 1 ? "" : "s"}${
-                            configured ? ` / target ${configured}` : ""
-                          }`;
-                        }
-                        if (typeof configured === "number" && configured > 0) {
-                          return `Target ${configured}`;
-                        }
-                        return "Unknown";
-                      })();
-                      const workerSummaryNote = (() => {
-                        const gunicorn = serverHealthPayload?.workers?.gunicorn;
-                        const parts: string[] = [];
-                        if (typeof gunicorn?.workers === "number") {
-                          parts.push(`${gunicorn.workers}w`);
-                        }
-                        if (typeof gunicorn?.threads === "number") {
-                          parts.push(`${gunicorn.threads}t`);
-                        }
-                        if (typeof gunicorn?.timeoutSeconds === "number") {
-                          parts.push(`timeout ${gunicorn.timeoutSeconds}s`);
-                        }
-                        if (parts.length > 0) {
-                          return `Gunicorn ${parts.join(" • ")}`;
-                        }
-                        const routeSet = serverHealthPayload?.routeSet;
-                        return routeSet ? `Route set: ${routeSet}` : "Worker metadata unavailable.";
-                      })();
-                      const cpuUsageLabel =
-                        typeof cpu?.usagePercent === "number" &&
-                        Number.isFinite(cpu.usagePercent)
-                          ? `CPU usage: ${cpu.usagePercent}%`
-                          : null;
-                      const cpuLoadLabel =
-                        cpu?.loadPercent !== null && cpu?.loadPercent !== undefined
-                          ? `CPU load: ${cpu.loadPercent}%`
-                          : cpu?.loadAvg
-                            ? `Load avg: ${cpu.loadAvg["1m"] ?? "—"}`
-                            : "CPU load: —";
-                      const memLabel =
-                        mem?.usedPercent !== null && mem?.usedPercent !== undefined
-                          ? `Memory: ${mem.usedPercent}%`
-                          : typeof mem?.availableMb === "number" && typeof mem?.totalMb === "number"
-                            ? `Memory: ${(100 - (mem.availableMb / mem.totalMb) * 100).toFixed(0)}%`
-                          : "Memory: —";
-                      const diskLabel =
-                        disk?.usedPercent !== null && disk?.usedPercent !== undefined
-                          ? `Disk: ${disk.usedPercent}%`
-                          : "Disk: —";
-                      const cgroupLabel = (() => {
-                        if (
-                          typeof cgroupMem?.usedPercent === "number" &&
-                          Number.isFinite(cgroupMem.usedPercent)
-                        ) {
-                          return `CGroup mem: ${cgroupMem.usedPercent}%`;
-                        }
-                        if (
-                          typeof cgroupMem?.usageMb === "number" &&
-                          Number.isFinite(cgroupMem.usageMb) &&
-                          typeof cgroupMem?.limitMb === "number" &&
-                          Number.isFinite(cgroupMem.limitMb) &&
-                          cgroupMem.limitMb > 0
-                        ) {
-                          return `CGroup mem: ${cgroupMem.usageMb.toFixed(0)}/${cgroupMem.limitMb.toFixed(0)} MB`;
-                        }
-                        return null;
-                      })();
-                      const rssLabel = (() => {
-                        const rss =
-                          usage?.process?.maxRssMb ?? usage?.process?.rssMb ?? null;
-                        if (typeof rss === "number" && Number.isFinite(rss)) {
-                          return `App RSS: ${rss.toFixed(0)} MB`;
-                        }
-                        return "App RSS: —";
-                      })();
-                      const mysqlLabel = (() => {
-                        const enabled = serverHealthPayload?.mysql?.enabled;
-                        if (typeof enabled === "boolean") {
-                          return enabled ? "MySQL: enabled" : "MySQL: disabled";
-                        }
-                        return null;
-                      })();
-                      const queueLabel = (() => {
-                        const length = queue?.length;
-                        if (typeof length === "number" && Number.isFinite(length)) {
-                          return `Queue: ${length}`;
-                        }
-                        return null;
-                      })();
-                      const uptimeLabel = (() => {
-                        const label = formatServerHealthDuration(
-                          uptime?.serviceSeconds,
-                        );
-                        if (label) {
-                          return `Backend uptime: ${label}`;
-                        }
-                        return null;
-                      })();
-                      const buildLabel = serverHealthPayload?.build
-                        ? `Build: ${serverHealthPayload.build}`
+                <div
+                  className="mb-6 overflow-hidden rounded-[32px] border border-slate-200/80 p-4 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.45)]"
+                  style={{
+                    background:
+                      "radial-gradient(circle at top left, rgba(95,179,249,0.11), transparent 28%), radial-gradient(circle at bottom right, rgba(190,242,100,0.10), transparent 26%), rgba(255,255,255,0.88)",
+                  }}
+                >
+                  {(() => {
+                    const usage = serverHealthPayload?.usage || null;
+                    const cpu = usage?.cpu || null;
+                    const mem = usage?.memory || null;
+                    const disk = usage?.disk || null;
+                    const cgroupMem = serverHealthPayload?.cgroup?.memory || null;
+                    const uptime = serverHealthPayload?.uptime || null;
+                    const queue = serverHealthPayload?.queue || null;
+                    const backgroundJobs = serverHealthPayload?.backgroundJobs || null;
+                    const backgroundMode = String(
+                      backgroundJobs?.webProcessMode || "",
+                    )
+                      .trim()
+                      .toLowerCase();
+                    const backgroundJobEntries = Object.entries(
+                      backgroundJobs?.jobs || {},
+                    );
+                    const unhealthyJobs = Array.isArray(backgroundJobs?.unhealthyJobs)
+                      ? backgroundJobs.unhealthyJobs
+                      : [];
+                    const unhealthyJobLabels = unhealthyJobs.map(
+                      (jobKey) => SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey,
+                    );
+                    const toneClasses = {
+                      healthy: "border-emerald-200 bg-emerald-50 text-emerald-700",
+                      degraded: "border-amber-200 bg-amber-50 text-amber-700",
+                      offline: "border-rose-200 bg-rose-50 text-rose-700",
+                      external: "border-sky-200 bg-sky-50 text-sky-700",
+                      neutral: "border-slate-200 bg-slate-100 text-slate-700",
+                    } as const;
+                    const toneSurfaceClasses = {
+                      healthy: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/55",
+                      degraded: "border-amber-200/80 bg-gradient-to-br from-amber-50/90 via-white to-amber-50/55",
+                      offline: "border-rose-200/80 bg-gradient-to-br from-rose-50/90 via-white to-rose-50/55",
+                      external: "border-sky-200/80 bg-gradient-to-br from-sky-50/90 via-white to-sky-50/55",
+                      neutral: "border-slate-200/80 bg-gradient-to-br from-slate-50/95 via-white to-slate-50/65",
+                    } as const;
+                    const toneIconClasses = {
+                      healthy: "border-emerald-200/80 bg-emerald-100 text-emerald-700",
+                      degraded: "border-amber-200/80 bg-amber-100 text-amber-700",
+                      offline: "border-rose-200/80 bg-rose-100 text-rose-700",
+                      external: "border-sky-200/80 bg-sky-100 text-sky-700",
+                      neutral: "border-slate-200/80 bg-slate-100 text-slate-600",
+                    } as const;
+                    const toneIcons = {
+                      healthy: CheckCircle2,
+                      degraded: AlertTriangle,
+                      offline: XCircle,
+                      external: RefreshCw,
+                      neutral: Clock,
+                    } as const;
+                    const overallTone =
+                      !serverHealthPayload && serverHealthError
+                        ? "offline"
+                        : serverHealthPayload?.status === "degraded"
+                          ? "degraded"
+                          : serverHealthPayload
+                            ? "healthy"
+                            : "neutral";
+                    const overallStatusLabel =
+                      overallTone === "offline"
+                        ? "Unreachable"
+                        : overallTone === "degraded"
+                          ? "Degraded"
+                          : overallTone === "healthy"
+                            ? "Healthy"
+                            : "Waiting";
+                    const rawHealthMessage = String(
+                      serverHealthPayload?.message || "",
+                    ).trim();
+                    const snapshotTimeLabel = formatServerHealthTime(
+                      serverHealthPayload?.timestamp,
+                    );
+                    const snapshotFullLabel = formatServerHealthTimestamp(
+                      serverHealthPayload?.timestamp,
+                    );
+                    const overallStatusNote =
+                      overallTone === "offline"
+                        ? "The dashboard could not reach the backend health endpoint."
+                        : overallTone === "degraded"
+                          ? "The backend responded, but at least one health check needs attention."
+                          : overallTone === "healthy"
+                            ? "The backend responded and the API workers are reachable."
+                            : "Waiting for the first health snapshot from the backend.";
+                    const overallStatusDetail = rawHealthMessage
+                      ? `Backend message: ${rawHealthMessage}`
+                      : snapshotFullLabel
+                        ? `Last updated: ${snapshotFullLabel}`
                         : null;
-                      const tsLabel = serverHealthPayload?.timestamp
-                        ? `Updated: ${new Date(serverHealthPayload.timestamp).toLocaleTimeString()}`
+                    const backgroundTone =
+                      backgroundMode === "external"
+                        ? "external"
+                        : backgroundJobs?.status === "degraded"
+                          ? "degraded"
+                          : backgroundJobs
+                            ? "healthy"
+                            : "neutral";
+                    const backgroundStatusLabel =
+                      backgroundMode === "external"
+                        ? "Dedicated service"
+                        : backgroundJobs?.status === "degraded"
+                          ? "Needs attention"
+                          : backgroundJobs
+                            ? "In API workers"
+                            : "Unavailable";
+                    const backgroundStatusNote =
+                      backgroundMode === "external"
+                        ? "Recurring jobs are owned by a separate worker service, not by the API workers."
+                        : unhealthyJobLabels.length > 0
+                          ? `${unhealthyJobLabels.length} recurring job check${unhealthyJobLabels.length === 1 ? "" : "s"} need attention.`
+                          : backgroundJobs
+                            ? "Recurring jobs are being supervised inside the API process."
+                            : "The backend did not return recurring-job details.";
+                    const backgroundStatusDetail =
+                      backgroundMode === "external"
+                        ? "This panel confirms API reachability only. Verify the dedicated background worker service separately."
+                        : unhealthyJobLabels.length > 0
+                          ? `Affected jobs: ${unhealthyJobLabels.join(", ")}`
+                          : backgroundJobs?.mode
+                            ? `Reported mode: ${formatServerHealthReason(backgroundJobs.mode) || backgroundJobs.mode}`
+                            : null;
+                    const gunicorn = serverHealthPayload?.workers?.gunicorn;
+                    const workerSummaryLabel = (() => {
+                      const workers = serverHealthPayload?.workers;
+                      const detected = workers?.detected;
+                      const configured = workers?.configured;
+                      if (typeof detected === "number" && detected > 0) {
+                        return configured
+                          ? `${detected} live / ${configured} target`
+                          : `${detected} live`;
+                      }
+                      if (
+                        typeof gunicorn?.workers === "number" ||
+                        typeof gunicorn?.threads === "number"
+                      ) {
+                        return "Configured";
+                      }
+                      if (typeof configured === "number" && configured > 0) {
+                        return `Target ${configured}`;
+                      }
+                      return "Unknown";
+                    })();
+                    const workerSummaryNote = (() => {
+                      const parts: string[] = [];
+                      if (typeof gunicorn?.workers === "number") {
+                        parts.push(`${gunicorn.workers} workers`);
+                      }
+                      if (typeof gunicorn?.threads === "number") {
+                        parts.push(`${gunicorn.threads} threads`);
+                      }
+                      if (typeof gunicorn?.timeoutSeconds === "number") {
+                        parts.push(`${gunicorn.timeoutSeconds}s timeout`);
+                      }
+                      if (parts.length > 0) {
+                        return `Gunicorn ${parts.join(" • ")}.`;
+                      }
+                      const routeSet = serverHealthPayload?.routeSet;
+                      return routeSet
+                        ? `Route set: ${routeSet}.`
+                        : "No worker metadata was returned by the backend.";
+                    })();
+                    const workerSummaryDetail = (() => {
+                      const workers = serverHealthPayload?.workers;
+                      const details: string[] = [];
+                      if (typeof workers?.pid === "number") {
+                        details.push(`PID ${workers.pid}`);
+                      }
+                      if (typeof workers?.ppid === "number") {
+                        details.push(`Parent ${workers.ppid}`);
+                      }
+                      return details.length > 0 ? details.join(" • ") : null;
+                    })();
+                    const statusBadgeTone = serverHealthLoading
+                      ? "neutral"
+                      : overallTone;
+                    const StatusBadgeIcon = serverHealthLoading
+                      ? RefreshCw
+                      : toneIcons[statusBadgeTone];
+                    const statusBadgeLabel = serverHealthLoading
+                      ? "Refreshing live snapshot"
+                      : snapshotTimeLabel
+                        ? `Snapshot updated ${snapshotTimeLabel}`
+                        : "Waiting for first snapshot";
+                    const cpuUsageValue =
+                      formatServerHealthPercentValue(cpu?.usagePercent) || "—";
+                    const cpuUsageHint =
+                      typeof cpu?.count === "number" && Number.isFinite(cpu.count)
+                        ? `${cpu.count} CPU core${cpu.count === 1 ? "" : "s"} reported`
+                        : "Current process usage";
+                    const cpuLoadValue =
+                      formatServerHealthPercentValue(cpu?.loadPercent) ||
+                      formatServerHealthNumber(cpu?.loadAvg?.["1m"]) ||
+                      "—";
+                    const cpuLoadHint =
+                      cpu?.loadPercent !== null && cpu?.loadPercent !== undefined
+                        ? "Normalized host load"
+                        : cpu?.loadAvg
+                          ? "1 minute load average"
+                          : "Load data unavailable";
+                    const memoryValue =
+                      formatServerHealthPercentValue(mem?.usedPercent) ||
+                      (typeof mem?.availableMb === "number" &&
+                      typeof mem?.totalMb === "number"
+                        ? formatServerHealthPercentValue(
+                            100 - (mem.availableMb / mem.totalMb) * 100,
+                            0,
+                          ) || "—"
+                        : "—");
+                    const memoryHint = (() => {
+                      if (
+                        typeof mem?.availableMb === "number" &&
+                        typeof mem?.totalMb === "number"
+                      ) {
+                        return `${formatServerHealthNumber(mem.availableMb, 0) || "—"} MB free of ${formatServerHealthNumber(mem.totalMb, 0) || "—"} MB`;
+                      }
+                      if (
+                        typeof cgroupMem?.usedPercent === "number" &&
+                        Number.isFinite(cgroupMem.usedPercent)
+                      ) {
+                        return `Container memory ${formatServerHealthPercentValue(cgroupMem.usedPercent) || "—"}`;
+                      }
+                      return "Memory data unavailable";
+                    })();
+                    const diskValue =
+                      formatServerHealthPercentValue(disk?.usedPercent) || "—";
+                    const diskHint =
+                      typeof disk?.freeGb === "number" && typeof disk?.totalGb === "number"
+                        ? `${formatServerHealthNumber(disk.freeGb, 1) || "—"} GB free of ${formatServerHealthNumber(disk.totalGb, 1) || "—"} GB`
+                        : "Disk usage unavailable";
+                    const rssRaw =
+                      usage?.process?.maxRssMb ?? usage?.process?.rssMb ?? null;
+                    const rssValue =
+                      typeof rssRaw === "number" && Number.isFinite(rssRaw)
+                        ? `${formatServerHealthNumber(rssRaw, 0) || "—"} MB`
+                        : "—";
+                    const rssHint = (() => {
+                      if (
+                        typeof cgroupMem?.usageMb === "number" &&
+                        Number.isFinite(cgroupMem.usageMb) &&
+                        typeof cgroupMem?.limitMb === "number" &&
+                        Number.isFinite(cgroupMem.limitMb) &&
+                        cgroupMem.limitMb > 0
+                      ) {
+                        return `Container ${formatServerHealthNumber(cgroupMem.usageMb, 0) || "—"} / ${formatServerHealthNumber(cgroupMem.limitMb, 0) || "—"} MB`;
+                      }
+                      return "Resident memory used by the API process";
+                    })();
+                    const gunicornValue = (() => {
+                      const parts: string[] = [];
+                      if (typeof gunicorn?.workers === "number") {
+                        parts.push(`${gunicorn.workers}w`);
+                      }
+                      if (typeof gunicorn?.threads === "number") {
+                        parts.push(`${gunicorn.threads}t`);
+                      }
+                      return parts.length > 0 ? parts.join(" / ") : "—";
+                    })();
+                    const gunicornHint =
+                      typeof gunicorn?.timeoutSeconds === "number"
+                        ? `Timeout ${gunicorn.timeoutSeconds}s`
+                        : serverHealthPayload?.routeSet
+                          ? `Route set ${serverHealthPayload.routeSet}`
+                          : "Gunicorn metadata unavailable";
+                    const mysqlEnabled = serverHealthPayload?.mysql?.enabled;
+                    const mysqlValue =
+                      typeof mysqlEnabled === "boolean"
+                        ? mysqlEnabled
+                          ? "Enabled"
+                          : "Disabled"
+                        : "—";
+                    const mysqlHint =
+                      typeof queue?.length === "number" && Number.isFinite(queue.length)
+                        ? `Queue length ${queue.length}`
+                        : "Primary database connection";
+                    const queueMetric =
+                      typeof queue?.length === "number" && Number.isFinite(queue.length)
+                        ? {
+                            label: "Queue",
+                            value: formatServerHealthNumber(queue.length, 0) || "0",
+                            hint: queue?.name
+                              ? `${queue.name} backlog`
+                              : "Reported queue length",
+                          }
                         : null;
-                      const workerLabel = (() => {
-                        const workers = serverHealthPayload?.workers;
-                        const detected = workers?.detected;
-                        const configured = workers?.configured;
-                        if (typeof detected === "number" && detected > 0) {
-                          return `Backend workers: ${detected}${configured ? ` (target ${configured})` : ""}`;
-                        }
-                        if (typeof configured === "number" && configured > 0) {
-                          return `Backend workers: target ${configured}`;
-                        }
-                        return null;
-                      })();
-                      const gunicornLabel = (() => {
-                        const gunicorn = serverHealthPayload?.workers?.gunicorn;
-                        if (!gunicorn) return null;
-                        const parts: string[] = [];
-                        if (typeof gunicorn.workers === "number") parts.push(`${gunicorn.workers}w`);
-                        if (typeof gunicorn.threads === "number") parts.push(`${gunicorn.threads}t`);
-                        if (typeof gunicorn.timeoutSeconds === "number") parts.push(`timeout ${gunicorn.timeoutSeconds}s`);
-                        return parts.length ? `Gunicorn: ${parts.join(" ")}` : null;
-                      })();
+                    const uptimeValue =
+                      formatServerHealthDuration(uptime?.serviceSeconds) || "—";
+                    const uptimeHint =
+                      typeof uptime?.workerSeconds === "number" &&
+                      Number.isFinite(uptime.workerSeconds)
+                        ? `Worker lifetime ${formatServerHealthDuration(uptime.workerSeconds) || "—"}`
+                        : "API service lifetime";
+                    const buildValue = serverHealthPayload?.build || "—";
+                    const buildHint = serverHealthPayload?.routeSet
+                      ? `Route set ${serverHealthPayload.routeSet}`
+                      : "Deployed backend build";
+                    const updatedValue = snapshotTimeLabel || "—";
+                    const updatedHint =
+                      snapshotFullLabel || "Waiting for a valid timestamp";
+                    const resourceMetrics = [
+                      {
+                        label: "CPU usage",
+                        value: cpuUsageValue,
+                        hint: cpuUsageHint,
+                      },
+                      {
+                        label: "CPU load",
+                        value: cpuLoadValue,
+                        hint: cpuLoadHint,
+                      },
+                      {
+                        label: "Memory",
+                        value: memoryValue,
+                        hint: memoryHint,
+                      },
+                      {
+                        label: "Disk",
+                        value: diskValue,
+                        hint: diskHint,
+                      },
+                      {
+                        label: "App RSS",
+                        value: rssValue,
+                        hint: rssHint,
+                      },
+                    ];
+                    const runtimeMetrics = [
+                      {
+                        label: "Gunicorn",
+                        value: gunicornValue,
+                        hint: gunicornHint,
+                      },
+                      {
+                        label: "MySQL",
+                        value: mysqlValue,
+                        hint: mysqlHint,
+                      },
+                      queueMetric,
+                      {
+                        label: "Uptime",
+                        value: uptimeValue,
+                        hint: uptimeHint,
+                      },
+                      {
+                        label: "Build",
+                        value: buildValue,
+                        hint: buildHint,
+                      },
+                      {
+                        label: "Updated",
+                        value: updatedValue,
+                        hint: updatedHint,
+                      },
+                    ].filter(
+                      (
+                        metric,
+                      ): metric is { label: string; value: string; hint: string } =>
+                        Boolean(metric),
+                    );
+                    const summaryCards: Array<{
+                      title: string;
+                      tone: keyof typeof toneClasses;
+                      value: string;
+                      note: string;
+                      detail?: string | null;
+                    }> = [
+                      {
+                        title: "API reachability",
+                        tone: overallTone,
+                        value: overallStatusLabel,
+                        note: overallStatusNote,
+                        detail: overallStatusDetail,
+                      },
+                      {
+                        title: "Recurring jobs",
+                        tone: backgroundTone,
+                        value: backgroundStatusLabel,
+                        note: backgroundStatusNote,
+                        detail: backgroundStatusDetail,
+                      },
+                      {
+                        title: "Worker layout",
+                        tone: "neutral",
+                        value: workerSummaryLabel,
+                        note: workerSummaryNote,
+                        detail: workerSummaryDetail,
+                      },
+                    ];
 
-                      const pills = [
-                        cpuUsageLabel,
-                        cpuLoadLabel,
-                        memLabel,
-                        diskLabel,
-                        cgroupLabel,
-                        rssLabel,
-                        workerLabel,
-                        gunicornLabel,
-                        queueLabel,
-                        mysqlLabel,
-                        uptimeLabel,
-                        buildLabel,
-                        tsLabel,
-                      ].filter(
-                        (x): x is string => typeof x === "string" && x.trim().length > 0,
-                      );
-                      const summaryCards = [
-                        {
-                          title: "API status",
-                          tone: overallTone,
-                          value: overallStatusLabel,
-                          note: overallStatusNote,
-                        },
-                        {
-                          title: "Background jobs",
-                          tone: backgroundTone,
-                          value: backgroundStatusLabel,
-                          note: backgroundStatusNote,
-                        },
-                        {
-                          title: "Workers",
-                          tone: "neutral",
-                          value: workerSummaryLabel,
-                          note: workerSummaryNote,
-                        },
-                      ];
+                    return (
+                      <>
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <span
+                              className={clsx(
+                                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm",
+                                toneClasses[statusBadgeTone],
+                              )}
+                            >
+                              <StatusBadgeIcon
+                                className={clsx(
+                                  "h-3.5 w-3.5",
+                                  serverHealthLoading && "animate-spin",
+                                )}
+                              />
+                              <span>{statusBadgeLabel}</span>
+                            </span>
+                            <h4 className="mt-3 text-[2rem] font-semibold leading-tight text-slate-950">
+                              Server Health
+                            </h4>
+                            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                              Live snapshot of API reachability, worker layout,
+                              recurring job ownership, and resource pressure.
+                            </p>
+                          </div>
+                          <div className="flex-shrink-0">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void fetchServerHealth({ force: true })}
+                              disabled={serverHealthLoading}
+                              className="header-home-button squircle-sm bg-white/90 text-slate-900 shadow-sm hover:bg-white"
+                              title="Refresh server health"
+                            >
+                              <RefreshCw
+                                className={clsx(
+                                  "mr-2 h-4 w-4",
+                                  serverHealthLoading && "animate-spin",
+                                )}
+                              />
+                              {serverHealthLoading ? "Refreshing…" : "Refresh"}
+                            </Button>
+                          </div>
+                        </div>
 
-                      return (
-                        <>
-                          <div className="grid gap-3 lg:grid-cols-3">
-                            {summaryCards.map((card) => (
-                              <div
-                                key={card.title}
-                                className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                      {card.title}
-                                    </p>
-                                    <p className="mt-2 text-sm text-slate-600">
-                                      {card.note}
-                                    </p>
-                                  </div>
-                                  <Badge
-                                    variant="outline"
-                                    className={clsx(
-                                      "border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]",
-                                      toneClasses[card.tone],
-                                    )}
-                                  >
-                                    {card.value}
-                                  </Badge>
-                                </div>
+                        {serverHealthError && (
+                          <div
+                            className={clsx(
+                              "mt-4 rounded-[24px] border px-4 py-3",
+                              serverHealthPayload
+                                ? "border-amber-200 bg-amber-50/90 text-amber-800"
+                                : "border-rose-200 bg-rose-50/90 text-rose-800",
+                            )}
+                          >
+                            <div className="flex items-start gap-3">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div>
+                                <p className="text-sm font-semibold">
+                                  {serverHealthPayload
+                                    ? "Live refresh failed"
+                                    : "Server health is currently unavailable"}
+                                </p>
+                                <p className="mt-1 text-sm leading-6">
+                                  {serverHealthPayload
+                                    ? `Showing the last successful snapshot while the connection recovers. ${serverHealthError}`
+                                    : serverHealthError}
+                                </p>
                               </div>
-                            ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-5 space-y-4">
+                          <div className="grid gap-4 xl:grid-cols-3">
+                            {summaryCards.map((card) => {
+                              const Icon = toneIcons[card.tone];
+                              return (
+                                <div
+                                  key={card.title}
+                                  className={clsx(
+                                    "rounded-[28px] border p-5 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]",
+                                    toneSurfaceClasses[card.tone],
+                                  )}
+                                >
+                                  <div className="flex items-start gap-4">
+                                    <span
+                                      className={clsx(
+                                        "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border",
+                                        toneIconClasses[card.tone],
+                                      )}
+                                    >
+                                      <Icon className="h-5 w-5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                        {card.title}
+                                      </p>
+                                      <p className="mt-3 text-xl font-semibold text-slate-950">
+                                        {card.value}
+                                      </p>
+                                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                                        {card.note}
+                                      </p>
+                                      {card.detail && (
+                                        <p className="mt-2 text-xs leading-5 text-slate-500">
+                                          {card.detail}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
 
-                          {pills.length > 0 && (
-                            <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
-                              {pills.map((label) => (
-                                <span
-                                  key={label}
-                                  className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
-                                >
-                                  {label}
+                          <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <h5 className="text-sm font-semibold text-slate-900">
+                                  Resource pressure
+                                </h5>
+                                <p className="text-xs text-slate-500">
+                                  Latest host and process metrics reported by the backend.
+                                </p>
+                              </div>
+                              {snapshotFullLabel && (
+                                <span className="text-xs font-medium text-slate-500">
+                                  As of {snapshotFullLabel}
                                 </span>
+                              )}
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                              {resourceMetrics.map((metric) => (
+                                <div
+                                  key={metric.label}
+                                  className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3"
+                                >
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                    {metric.label}
+                                  </p>
+                                  <p
+                                    className={clsx(
+                                      "mt-2 text-xl font-semibold",
+                                      metric.value === "—"
+                                        ? "text-slate-400"
+                                        : "text-slate-950",
+                                    )}
+                                  >
+                                    {metric.value}
+                                  </p>
+                                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                                    {metric.hint}
+                                  </p>
+                                </div>
                               ))}
                             </div>
-                          )}
+                          </div>
+
+                          <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]">
+                            <div>
+                              <h5 className="text-sm font-semibold text-slate-900">
+                                Runtime details
+                              </h5>
+                              <p className="text-xs text-slate-500">
+                                Worker configuration, dependencies, and deployment metadata.
+                              </p>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                              {runtimeMetrics.map((metric) => (
+                                <div
+                                  key={metric.label}
+                                  className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3"
+                                >
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                    {metric.label}
+                                  </p>
+                                  <p
+                                    className={clsx(
+                                      "mt-2 text-xl font-semibold",
+                                      metric.value === "—"
+                                        ? "text-slate-400"
+                                        : "text-slate-950",
+                                    )}
+                                  >
+                                    {metric.value}
+                                  </p>
+                                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                                    {metric.hint}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
 
                           {backgroundMode === "external" ? (
-                            <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-800">
-                              This health endpoint confirms the API workers. It does not directly
-                              confirm that the dedicated background worker service is alive.
+                            <div className="rounded-[28px] border border-sky-200/80 bg-sky-50/90 px-4 py-4 text-sky-900 shadow-[0_18px_40px_-36px_rgba(14,116,144,0.35)]">
+                              <div className="flex items-start gap-3">
+                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
+                                <div>
+                                  <p className="text-sm font-semibold">
+                                    Monitoring boundary
+                                  </p>
+                                  <p className="mt-1 text-sm leading-6 text-sky-800">
+                                    This snapshot confirms that the API workers are reachable. It
+                                    does not prove that the dedicated background worker service is
+                                    alive, so that service should be monitored independently.
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           ) : backgroundJobEntries.length > 0 ? (
-                            <div className="space-y-3">
+                            <div className="space-y-3 rounded-[28px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                   <h5 className="text-sm font-semibold text-slate-900">
                                     In-process job checks
                                   </h5>
                                   <p className="text-xs text-slate-500">
-                                    Job heartbeats and restart state reported by the backend.
+                                    Heartbeats, lifecycle state, and restart signals reported by the backend.
                                   </p>
                                 </div>
                                 {unhealthyJobs.length > 0 && (
@@ -29943,12 +30317,17 @@ function MainApp() {
                                     formatServerHealthReason(job.lastExitReason);
                                   const secondaryBits = [
                                     job.lifecycle
-                                      ? `Lifecycle: ${
-                                          formatServerHealthReason(job.lifecycle) || job.lifecycle
-                                        }`
+                                      ? `Lifecycle ${formatServerHealthReason(job.lifecycle) || job.lifecycle}`
                                       : null,
-                                    heartbeatLabel ? `Heartbeat ${heartbeatLabel} ago` : null,
+                                    heartbeatLabel
+                                      ? `Heartbeat ${heartbeatLabel} ago`
+                                      : null,
                                     intervalLabel ? `Interval ${intervalLabel}` : null,
+                                    typeof job.launchCount === "number" &&
+                                    Number.isFinite(job.launchCount) &&
+                                    job.launchCount > 0
+                                      ? `Launches ${job.launchCount}`
+                                      : null,
                                     typeof job.restartCount === "number" &&
                                     Number.isFinite(job.restartCount) &&
                                     job.restartCount > 0
@@ -29974,18 +30353,13 @@ function MainApp() {
                                   return (
                                     <div
                                       key={jobKey}
-                                      className="rounded-2xl border border-slate-200 bg-white/80 p-4"
+                                      className="rounded-[26px] border border-slate-200/80 bg-white/85 p-4 shadow-[0_14px_32px_-30px_rgba(15,23,42,0.45)]"
                                     >
                                       <div className="flex items-start justify-between gap-3">
                                         <div>
                                           <p className="text-sm font-semibold text-slate-900">
                                             {SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey}
                                           </p>
-                                          {secondaryBits.length > 0 && (
-                                            <p className="mt-1 text-xs text-slate-500">
-                                              {secondaryBits.join(" • ")}
-                                            </p>
-                                          )}
                                         </div>
                                         <Badge
                                           variant="outline"
@@ -29997,13 +30371,32 @@ function MainApp() {
                                           {statusLabel}
                                         </Badge>
                                       </div>
+                                      {secondaryBits.length > 0 && (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          {secondaryBits.map((bit) => (
+                                            <span
+                                              key={bit}
+                                              className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                                            >
+                                              {bit}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
                                       {issueLabel && (
-                                        <p className="mt-3 text-sm text-slate-700">
+                                        <div
+                                          className={clsx(
+                                            "mt-3 rounded-2xl border px-3 py-2 text-sm leading-6",
+                                            jobTone === "degraded"
+                                              ? "border-amber-200 bg-amber-50/80 text-amber-800"
+                                              : "border-slate-200 bg-slate-50/90 text-slate-700",
+                                          )}
+                                        >
                                           {issueLabel}
-                                        </p>
+                                        </div>
                                       )}
                                       {lastUpdateLabel && (
-                                        <p className="mt-2 text-[11px] text-slate-500">
+                                        <p className="mt-3 text-[11px] text-slate-500">
                                           Last update: {lastUpdateLabel}
                                         </p>
                                       )}
@@ -30013,12 +30406,11 @@ function MainApp() {
                               </div>
                             </div>
                           ) : null}
-                        </>
-                      );
-		                      })()}
-		                  </div>
-		                </div>
-                  </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
                 )}
 
 		              {adminDashboardTab === "maintenance" && (

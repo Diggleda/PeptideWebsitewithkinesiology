@@ -134,8 +134,13 @@ const AUTH_EVENT_NAME = 'peppro:force-logout';
 const SHADOW_READ_ONLY_CODE = 'SHADOW_READ_ONLY';
 const SHADOW_READ_ONLY_MESSAGE = 'Maintenance mode is read-only';
 const AUTH_CHECK_FAILED_CODE = 'AUTH_CHECK_FAILED';
+const HEALTH_BASIC_AUTH_STORAGE_KEY = 'peppro_health_basic_auth_v1';
+const HEALTH_BASIC_AUTH_USERNAME_KEY = 'peppro_health_basic_auth_user_v1';
+const HEALTH_BASIC_AUTH_PROMPT_COOLDOWN_MS = 2_000;
 
 const MULTI_SESSION_EXEMPT_EMAIL = 'test@doctor.com';
+
+let _healthBasicAuthPromptedAt = 0;
 
 const isMultiSessionExemptEmail = (email?: string | null) =>
   String(email || '')
@@ -538,7 +543,126 @@ const clearAuthToken = () => {
   } catch {
     // ignore
   }
+  try {
+    sessionStorage.removeItem(HEALTH_BASIC_AUTH_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  try {
+    sessionStorage.removeItem(HEALTH_BASIC_AUTH_USERNAME_KEY);
+  } catch {
+    // ignore
+  }
   clearSessionStartedAt();
+};
+
+const getHealthBasicAuthHeader = () => {
+  try {
+    const value = sessionStorage.getItem(HEALTH_BASIC_AUTH_STORAGE_KEY);
+    return value && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+const getHealthBasicAuthUsername = () => {
+  try {
+    const value = sessionStorage.getItem(HEALTH_BASIC_AUTH_USERNAME_KEY);
+    return value && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+const clearHealthBasicAuth = () => {
+  try {
+    sessionStorage.removeItem(HEALTH_BASIC_AUTH_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  try {
+    sessionStorage.removeItem(HEALTH_BASIC_AUTH_USERNAME_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+const encodeBase64Utf8 = (value: string) => {
+  const normalized = String(value ?? '');
+  try {
+    const bytes = new TextEncoder().encode(normalized);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+    return btoa(binary);
+  } catch {
+    return btoa(normalized);
+  }
+};
+
+const buildHealthBasicAuthHeader = (username: string, password: string) =>
+  `Basic ${encodeBase64Utf8(`${String(username ?? '')}:${String(password ?? '')}`)}`;
+
+const persistHealthBasicAuth = (username: string, authHeader: string) => {
+  try {
+    sessionStorage.setItem(HEALTH_BASIC_AUTH_STORAGE_KEY, String(authHeader || '').trim());
+  } catch {
+    // ignore
+  }
+  try {
+    sessionStorage.setItem(HEALTH_BASIC_AUTH_USERNAME_KEY, String(username || '').trim());
+  } catch {
+    // ignore
+  }
+};
+
+const shouldSkipHealthBasicAuthPrompt = () =>
+  Date.now() - _healthBasicAuthPromptedAt < HEALTH_BASIC_AUTH_PROMPT_COOLDOWN_MS;
+
+const buildHealthBasicAuthClientError = (message: string, code: string) => {
+  const error = new Error(message);
+  (error as any).status = 401;
+  (error as any).code = code;
+  return error;
+};
+
+const isHealthBasicAuthError = (error: any) => {
+  const code = String(error?.authCode || error?.code || '').trim();
+  return (
+    Number(error?.status) === 401
+    || code === AUTH_CHECK_FAILED_CODE
+    || code === 'BASIC_AUTH_REQUIRED'
+    || code === 'BASIC_AUTH_INVALID'
+    || code === 'BASIC_AUTH_NOT_CONFIGURED'
+  );
+};
+
+const promptForHealthBasicAuth = (message?: string) => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  _healthBasicAuthPromptedAt = Date.now();
+  const usernamePrompt = message && message.trim().length > 0
+    ? `${message}\n\nServer Health username:`
+    : 'Server Health username:';
+  const username = window.prompt(usernamePrompt, getHealthBasicAuthUsername() || '');
+  if (username == null) {
+    return null;
+  }
+  const normalizedUsername = username.trim();
+  if (!normalizedUsername) {
+    return null;
+  }
+  const password = window.prompt(`Server Health password for ${normalizedUsername}:`);
+  if (password == null) {
+    return null;
+  }
+  return {
+    username: normalizedUsername,
+    header: buildHealthBasicAuthHeader(normalizedUsername, password),
+  };
 };
 
 const isShadowReadOnlyPath = (url: string) => {
@@ -835,7 +959,7 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
     ...((requestOptions.headers as any) || {}),
   };
 
-  if (token) {
+  if (token && headers['Authorization'] == null) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
@@ -1100,7 +1224,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     throwShadowReadOnly();
   }
 
-  if (token) {
+  if (token && headers['Authorization'] == null) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
@@ -3363,7 +3487,84 @@ export const seamlessAPI = {
 
 // Health check
 export const getServerHealth = async (options: { quiet?: boolean } = {}) => {
-  return fetchWithAuth(`${API_BASE_URL}/health`, {
+  const request = async (authorizationHeader?: string | null) =>
+    fetchWithAuth(`${API_BASE_URL}/health`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...(authorizationHeader ? { Authorization: authorizationHeader } : {}),
+      },
+      cache: 'no-store',
+      skipReachabilityDispatch: options.quiet === true,
+      preserveAuthOnAuthFailure: true,
+    });
+
+  const storedHeader = getHealthBasicAuthHeader();
+  let promptMessage =
+    'Server Health is protected by a separate username and password.';
+
+  if (storedHeader) {
+    try {
+      return await request(storedHeader);
+    } catch (error: any) {
+      if (!isHealthBasicAuthError(error)) {
+        throw error;
+      }
+      clearHealthBasicAuth();
+      const authCode = String(error?.authCode || error?.code || '').trim();
+      if (authCode === 'BASIC_AUTH_NOT_CONFIGURED') {
+        throw new Error('Server Health Basic Auth is not configured on the backend.');
+      }
+      promptMessage =
+        'Saved Server Health credentials were rejected. Enter the updated username and password.';
+    }
+  } else {
+    try {
+      return await request(null);
+    } catch (error: any) {
+      if (!isHealthBasicAuthError(error)) {
+        throw error;
+      }
+      const authCode = String(error?.authCode || error?.code || '').trim();
+      if (authCode === 'BASIC_AUTH_NOT_CONFIGURED') {
+        throw new Error('Server Health Basic Auth is not configured on the backend.');
+      }
+    }
+  }
+
+  if (typeof window === 'undefined' || shouldSkipHealthBasicAuthPrompt()) {
+    throw buildHealthBasicAuthClientError(
+      'Server Health requires Basic Auth credentials.',
+      'HEALTH_BASIC_AUTH_REQUIRED',
+    );
+  }
+
+  const prompted = promptForHealthBasicAuth(promptMessage);
+  if (!prompted) {
+    throw buildHealthBasicAuthClientError(
+      'Server Health requires Basic Auth credentials.',
+      'HEALTH_BASIC_AUTH_REQUIRED',
+    );
+  }
+
+  try {
+    const payload = await request(prompted.header);
+    persistHealthBasicAuth(prompted.username, prompted.header);
+    return payload;
+  } catch (error: any) {
+    clearHealthBasicAuth();
+    if (isHealthBasicAuthError(error)) {
+      throw buildHealthBasicAuthClientError(
+        'Server Health username or password was rejected.',
+        'HEALTH_BASIC_AUTH_INVALID',
+      );
+    }
+    throw error;
+  }
+};
+
+const pingServerHealth = async (options: { quiet?: boolean } = {}) => {
+  return fetchWithAuth(`${API_BASE_URL}/ping`, {
     method: 'GET',
     headers: {
       Accept: 'application/json',
@@ -3390,7 +3591,7 @@ export const checkServerHealth = async (options: { force?: boolean; quiet?: bool
 
   _healthCheckInFlight = (async () => {
     try {
-      await getServerHealth({ quiet: options.quiet !== false });
+      await pingServerHealth({ quiet: options.quiet !== false });
       _healthCheckLastAt = Date.now();
       _healthCheckLastOk = true;
       return true;
