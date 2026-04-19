@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -13,11 +12,6 @@ from python_backend.routes import system
 
 
 class SystemRouteHealthTests(unittest.TestCase):
-    @staticmethod
-    def _basic_auth_header(username: str, password: str) -> dict[str, str]:
-        token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
-        return {"Authorization": f"Basic {token}"}
-
     def test_parse_gunicorn_args_extracts_recycle_and_thread_settings(self) -> None:
         parsed = system._parse_gunicorn_args(
             "gunicorn python_backend.wsgi:app --workers 2 --threads 8 --timeout 120 "

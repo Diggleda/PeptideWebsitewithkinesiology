@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import base64
-import binascii
+import html
 import secrets
 
 from flask import Blueprint, Response, current_app, request
@@ -25,9 +24,8 @@ from ..utils.http import handle_action, utc_now_iso as _now
 blueprint = Blueprint("system", __name__, url_prefix="/api")
 
 
-_HEALTH_BASIC_AUTH_USERNAME_ENV = "PEPPRO_HEALTH_BASIC_AUTH_USERNAME"
-_HEALTH_BASIC_AUTH_PASSWORD_ENV = "PEPPRO_HEALTH_BASIC_AUTH_PASSWORD"
-_HEALTH_BASIC_AUTH_REALM_ENV = "PEPPRO_HEALTH_BASIC_AUTH_REALM"
+_HEALTH_PASSWORD_ENV = "PEPPRO_HEALTH_PASSWORD"
+_HEALTH_PASSWORD_HEADER = "X-Health-Password"
 
 
 def _read_linux_meminfo() -> dict | None:
@@ -661,73 +659,214 @@ def _background_job_stats() -> dict[str, Any]:
     }
 
 
-def _health_basic_auth_credentials() -> tuple[str, str] | None:
-    username = str(os.environ.get(_HEALTH_BASIC_AUTH_USERNAME_ENV) or "").strip()
-    password = str(os.environ.get(_HEALTH_BASIC_AUTH_PASSWORD_ENV) or "")
-    if not username or not password:
-        return None
-    return username, password
+def _health_password_value() -> str | None:
+    password = str(os.environ.get(_HEALTH_PASSWORD_ENV) or "")
+    return password if password else None
 
 
-def _health_basic_auth_realm() -> str:
-    return str(os.environ.get(_HEALTH_BASIC_AUTH_REALM_ENV) or "").strip() or "PepPro Server Health"
+def _health_password_form_response(
+    *,
+    error: str | None = None,
+    status: int = 200,
+    configured: bool = True,
+) -> Response:
+    escaped_error = html.escape(str(error or "").strip())
+    form_html = (
+        """
+        <form method="post" autocomplete="off">
+          <label for="health-password">Password</label>
+          <input id="health-password" name="password" type="password" required autofocus />
+          <button type="submit">View health</button>
+        </form>
+        """
+        if configured
+        else """
+        <p class="note">Set <code>PEPPRO_HEALTH_PASSWORD</code> in the backend environment to enable this page.</p>
+        """
+    )
+    error_html = (
+        f'<p class="error" role="alert">{escaped_error}</p>'
+        if escaped_error
+        else ""
+    )
+    response = current_app.response_class(
+        response=f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PepPro Server Health</title>
+    <style>
+      :root {{
+        color-scheme: light;
+        font-family: "Inter", "Segoe UI", sans-serif;
+      }}
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(95, 179, 249, 0.22), transparent 38%),
+          linear-gradient(180deg, #f7fafc 0%, #e2e8f0 100%);
+        color: #0f172a;
+      }}
+      .card {{
+        width: min(100%, 420px);
+        margin: 24px;
+        padding: 28px;
+        border-radius: 24px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 24px 60px -36px rgba(15, 23, 42, 0.4);
+      }}
+      h1 {{
+        margin: 0;
+        font-size: 1.75rem;
+        line-height: 1.1;
+      }}
+      p {{
+        margin: 12px 0 0;
+        line-height: 1.6;
+        color: #475569;
+      }}
+      form {{
+        margin-top: 18px;
+        display: grid;
+        gap: 12px;
+      }}
+      label {{
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #475569;
+      }}
+      input {{
+        appearance: none;
+        border: 1px solid rgba(148, 163, 184, 0.55);
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        font: inherit;
+        color: #0f172a;
+        background: rgba(248, 250, 252, 0.95);
+      }}
+      input:focus {{
+        outline: 2px solid rgba(95, 179, 249, 0.3);
+        outline-offset: 1px;
+        border-color: #5fb3f9;
+      }}
+      button {{
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        padding: 0.9rem 1rem;
+        font: inherit;
+        font-weight: 700;
+        color: white;
+        background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+        cursor: pointer;
+      }}
+      .error {{
+        padding: 0.85rem 1rem;
+        border-radius: 14px;
+        background: #fff1f2;
+        border: 1px solid #fecdd3;
+        color: #be123c;
+      }}
+      .note code {{
+        font-family: "SFMono-Regular", "SFMono-Regular", ui-monospace, monospace;
+      }}
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Server Health</h1>
+      <p>Enter the server health password to view the live backend diagnostics.</p>
+      {error_html}
+      {form_html}
+    </main>
+  </body>
+</html>
+""",
+        status=status,
+        mimetype="text/html",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
-def _health_basic_auth_response(message: str, *, code: str, status: int = 401) -> Response:
+def _health_password_json_response(message: str, *, code: str, status: int = 401) -> Response:
     response = current_app.response_class(
         response=current_app.json.dumps({"error": message, "code": code}),
         status=status,
         mimetype="application/json",
     )
-    if status == 401:
-        response.headers["WWW-Authenticate"] = (
-            f'Basic realm="{_health_basic_auth_realm()}", charset="UTF-8"'
-        )
     response.headers["Cache-Control"] = "no-store"
     return response
 
 
-def _require_health_basic_auth() -> Response | None:
-    credentials = _health_basic_auth_credentials()
-    if credentials is None:
-        return _health_basic_auth_response(
-            "Server health Basic Auth is not configured.",
-            code="BASIC_AUTH_NOT_CONFIGURED",
+def _request_prefers_html() -> bool:
+    best = request.accept_mimetypes.best_match(["text/html", "application/json"])
+    if best != "text/html":
+        return False
+    return request.accept_mimetypes["text/html"] >= request.accept_mimetypes["application/json"]
+
+
+def _health_password_error_response(message: str, *, code: str, status: int = 401) -> Response:
+    if _request_prefers_html():
+        return _health_password_form_response(
+            error=message,
+            status=status,
+            configured=_health_password_value() is not None,
+        )
+    return _health_password_json_response(message, code=code, status=status)
+
+
+def _read_health_password_candidate() -> str | None:
+    header_password = request.headers.get(_HEALTH_PASSWORD_HEADER)
+    if isinstance(header_password, str) and header_password:
+        return header_password
+    if request.method == "POST":
+        if request.is_json:
+            payload = request.get_json(silent=True) or {}
+            candidate = payload.get("password")
+        else:
+            candidate = request.form.get("password")
+        if candidate is None:
+            return None
+        return str(candidate)
+    return None
+
+
+def _require_health_password() -> Response | None:
+    expected_password = _health_password_value()
+    if expected_password is None:
+        if _request_prefers_html():
+            return _health_password_form_response(
+                error="Server health password is not configured.",
+                status=503,
+                configured=False,
+            )
+        return _health_password_json_response(
+            "Server health password is not configured.",
+            code="HEALTH_PASSWORD_NOT_CONFIGURED",
             status=503,
         )
 
-    header = str(request.headers.get("Authorization") or "").strip()
-    if not header:
-        return _health_basic_auth_response(
-            "Server health requires Basic Auth.",
-            code="BASIC_AUTH_REQUIRED",
+    candidate = _read_health_password_candidate()
+    if candidate is None or candidate == "":
+        if _request_prefers_html():
+            return _health_password_form_response()
+        return _health_password_json_response(
+            "Server health requires a password.",
+            code="HEALTH_PASSWORD_REQUIRED",
         )
 
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "basic" or not token.strip():
-        return _health_basic_auth_response(
-            "Server health requires Basic Auth.",
-            code="BASIC_AUTH_REQUIRED",
-        )
-
-    try:
-        decoded = base64.b64decode(token.strip(), validate=True).decode("utf-8")
-    except (ValueError, UnicodeDecodeError, binascii.Error):
-        return _health_basic_auth_response(
-            "Server health credentials were rejected.",
-            code="BASIC_AUTH_INVALID",
-        )
-
-    username, separator, password = decoded.partition(":")
-    expected_username, expected_password = credentials
-    if (
-        separator != ":"
-        or not secrets.compare_digest(username, expected_username)
-        or not secrets.compare_digest(password, expected_password)
-    ):
-        return _health_basic_auth_response(
-            "Server health credentials were rejected.",
-            code="BASIC_AUTH_INVALID",
+    if not secrets.compare_digest(candidate, expected_password):
+        return _health_password_error_response(
+            "Server health password was rejected.",
+            code="HEALTH_PASSWORD_INVALID",
         )
 
     return None
@@ -738,9 +877,9 @@ def ping():
     return handle_action(lambda: {"ok": True, "timestamp": _now()})
 
 
-@blueprint.get("/health")
+@blueprint.route("/health", methods=["GET", "POST"])
 def health():
-    auth_error = _require_health_basic_auth()
+    auth_error = _require_health_password()
     if auth_error is not None:
         return auth_error
 
