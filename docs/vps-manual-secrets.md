@@ -44,12 +44,14 @@ The service should load `/etc/peppr-api.env` via `EnvironmentFile=`.
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl restart peppr-api.service
+sudo systemctl reload peppr-api.service
 sudo systemctl restart peppr-background-jobs.service
 sudo systemctl status peppr-api.service --no-pager
 journalctl -u peppr-background-jobs.service -n 100 --no-pager
 journalctl -u peppr-api.service -n 100 --no-pager
 ```
+
+Use `sudo systemctl restart peppr-api.service` only when the API process is unhealthy or does not support reload yet. Normal deploys should prefer reload to avoid a full stop/start outage window.
 
 ## Install the API + background worker services
 

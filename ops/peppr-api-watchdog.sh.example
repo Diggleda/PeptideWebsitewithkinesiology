@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE="${SERVICE:-peppr-api.service}"
+URL="${URL:-http://127.0.0.1:8000/api/ping}"
+
+STATE_DIR="${STATE_DIR:-/var/tmp/peppr-api-watchdog}"
+LOCK_FILE="${STATE_DIR}/lock"
+FAIL_FILE="${STATE_DIR}/fail_count"
+LAST_RESTART_FILE="${STATE_DIR}/last_restart"
+
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-20}"
+FAIL_THRESHOLD="${FAIL_THRESHOLD:-5}"
+COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-1800}"
+
+mkdir -p "$STATE_DIR"
+
+# Prevent overlapping runs.
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  exit 0
+fi
+
+now_epoch() { date +%s; }
+
+get_fail_count() {
+  [[ -f "$FAIL_FILE" ]] && cat "$FAIL_FILE" 2>/dev/null || echo 0
+}
+
+set_fail_count() {
+  printf '%s\n' "$1" >"$FAIL_FILE"
+}
+
+last_restart_epoch() {
+  [[ -f "$LAST_RESTART_FILE" ]] && cat "$LAST_RESTART_FILE" 2>/dev/null || echo 0
+}
+
+set_last_restart_epoch() {
+  printf '%s\n' "$1" >"$LAST_RESTART_FILE"
+}
+
+# Do not interfere while systemd is already moving the service.
+svc_substate="$(systemctl show "$SERVICE" -p SubState --value 2>/dev/null || true)"
+case "$svc_substate" in
+  start-pre|start|start-post|auto-restart|stop|stop-sigterm|stop-sigkill|final-sigterm|final-sigkill)
+    exit 0
+    ;;
+esac
+
+if curl -fsS --connect-timeout 2 --max-time "$TIMEOUT_SECONDS" "$URL" >/dev/null; then
+  previous_fails="$(get_fail_count)"
+  if (( previous_fails > 0 )); then
+    logger -t peppr-api-watchdog "health recovered after ${previous_fails} consecutive failures"
+  fi
+  set_fail_count 0
+  exit 0
+fi
+
+fails="$(get_fail_count)"
+fails=$((fails + 1))
+set_fail_count "$fails"
+logger -t peppr-api-watchdog "health check failed count=$fails threshold=$FAIL_THRESHOLD timeout=${TIMEOUT_SECONDS}s url=$URL"
+
+if (( fails < FAIL_THRESHOLD )); then
+  exit 0
+fi
+
+last="$(last_restart_epoch)"
+now="$(now_epoch)"
+if (( now - last < COOLDOWN_SECONDS )); then
+  remaining=$((COOLDOWN_SECONDS - (now - last)))
+  logger -t peppr-api-watchdog "restart suppressed by cooldown remaining=${remaining}s"
+  exit 0
+fi
+
+set_last_restart_epoch "$now"
+set_fail_count 0
+logger -t peppr-api-watchdog "restarting $SERVICE after $fails consecutive failures"
+systemctl restart "$SERVICE"

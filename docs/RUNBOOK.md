@@ -18,6 +18,11 @@ Production recommendation:
 - Run the API with `systemd` + gunicorn using [`ops/peppr-api.service.example`](../ops/peppr-api.service.example).
 - Run long-lived background jobs in a separate `systemd` service using [`ops/peppr-background-jobs.service.example`](../ops/peppr-background-jobs.service.example).
 - Set `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external` in `/etc/peppr-api.env` so gunicorn workers do not each start their own copy of the job threads.
+- If you enable an API watchdog, use the hardened examples in
+  [`ops/peppr-api-watchdog.sh.example`](../ops/peppr-api-watchdog.sh.example),
+  [`ops/peppr-api-watchdog.service.example`](../ops/peppr-api-watchdog.service.example),
+  and [`ops/peppr-api-watchdog.timer.example`](../ops/peppr-api-watchdog.timer.example).
+- Keep the watchdog on a cheap local liveness endpoint such as `/api/ping`, not `/api/health`, and require several consecutive failures before restart.
 
 ## Bandwidth checks
 
@@ -36,9 +41,15 @@ Production recommendation:
    - `lsof -iTCP:3001 -sTCP:LISTEN -nP`
 2. Check recent logs:
    - `journalctl -u peppr-api.service -n 200 --no-pager`
-3. Restart:
+3. If the process is healthy and you are deploying code or env changes, prefer a graceful reload:
+   - `sudo systemctl reload peppr-api.service`
+4. Use a full restart only when the process is wedged or reload is unavailable:
    - `sudo systemctl restart peppr-api.service`
-4. If requests are failing but the process is healthy, grab the `X-Request-Id` from the failing response and search logs for it.
+5. If requests are failing but the process is healthy, grab the `X-Request-Id` from the failing response and search logs for it.
+6. If the API is being restarted unexpectedly, inspect any watchdog/timer unit before restarting again:
+   - `sudo systemctl list-timers --all | egrep -i 'peppr|api|watchdog'`
+   - `sudo systemctl cat peppr-api-watchdog.service`
+   - `sudo journalctl -u peppr-api-watchdog.service -n 200 --no-pager`
 
 ### Background jobs are stale / not updating
 

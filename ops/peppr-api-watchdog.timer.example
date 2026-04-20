@@ -1,0 +1,11 @@
+[Unit]
+Description=PepPro API watchdog timer
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=1m
+Persistent=true
+Unit=peppr-api-watchdog.service
+
+[Install]
+WantedBy=timers.target

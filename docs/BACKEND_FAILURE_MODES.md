@@ -45,6 +45,25 @@ Residual risk:
 
 - If the whole host is unhealthy, `systemd` cannot help.
 
+### External watchdog restart loop
+
+Behavior:
+
+- A separate timer/service can send a clean `SIGTERM` to `peppr-api.service` after a failed health probe.
+- This looks like an orderly stop/start in journald, not an OOM kill or Python crash.
+- An aggressive probe such as a 5 second `curl` timeout can turn a transient slow response into a full API restart window.
+
+Operational response:
+
+- inspect `systemctl list-timers --all` for any API watchdog/timer unit
+- inspect the watchdog script before restarting the API again
+- prefer longer probe timeouts and several consecutive failures before any restart action
+- prefer a graceful `systemctl reload peppr-api.service` for healthy deploys; reserve `restart` for genuinely wedged processes
+
+Residual risk:
+
+- a badly tuned watchdog can create more downtime than the underlying slow request
+
 ### Background thread crash
 
 Behavior:

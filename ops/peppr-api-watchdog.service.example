@@ -1,0 +1,8 @@
+[Unit]
+Description=PepPro API watchdog (consecutive failures)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/peppr-api-watchdog.sh

@@ -39,7 +39,15 @@ import {
   DialogTitle,
 } from "./components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { DocumentCurrencyDollarIcon } from "@heroicons/react/24/outline";
+import {
+  BeakerIcon,
+  DocumentCurrencyDollarIcon,
+  EllipsisVerticalIcon,
+  LockOpenIcon,
+  ScaleIcon,
+  ShieldCheckIcon,
+  SwatchIcon,
+} from "@heroicons/react/24/outline";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { TimestampedNotesField } from "./components/TimestampedNotesField";
@@ -41131,144 +41139,173 @@ function MainApp() {
                 </span>
               </DialogClose>
             </div>
-            <div className="no-scrollbar mt-2 flex-1 min-h-0 space-y-4 overflow-y-auto text-left text-sm leading-relaxed text-slate-700">
-              <section className="manufacturing-standards-card squircle-lg space-y-2">
-                <h3 className="text-base font-semibold text-slate-900">
-                  Clinical Research-Grade Manufacturing
+            <div className="no-scrollbar mt-2 flex-1 min-h-0 space-y-4 overflow-y-auto px-2 py-2 text-left text-sm leading-relaxed text-slate-700">
+              <section
+                className="manufacturing-standards-card squircle-lg space-y-2"
+                style={{
+                  backgroundImage: `url(${withStaticAssetStamp("/leafTexture2.jpg")})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                  backgroundRepeat: "no-repeat",
+                  backgroundClip: "padding-box",
+                }}
+              >
+                <h3
+                  className="flex items-center gap-2 text-base font-semibold"
+                  style={{ color: "#ffffff" }}
+                >
+                  <BeakerIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                  <span>Clinical Research-Grade Manufacturing</span>
                 </h3>
-                <p>
+                <p className="font-semibold" style={{ color: "#ffffff" }}>
                   PepPro partners exclusively with FDA-registered and NSF-certified
                   manufacturing facilities to ensure clinical research-grade quality and
                   consistency. All peptide formulations are produced in GMP-compliant
                   facilities.
                 </p>
               </section>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
+                  <h3 className="flex items-center gap-2 text-base font-semibold">
+                    <EllipsisVerticalIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <span>Vertically Integrated Production</span>
+                  </h3>
+                  <p>
+                    Our formulations are manufactured in collaboration with a vertically
+                    integrated peptide innovator that controls every stage from synthesis to
+                    final packaging. This ensures:
+                  </p>
+                  <ul className="space-y-1">
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Complete chain-of-custody traceability</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Batch-specific Certificates of Analysis (COAs) for purity (&gt;= 99%) and sterility</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>HPLC and endotoxin testing</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Rapid scale-up and consistent results across all delivery formats (injectable, nasal spray)</span>
+                    </li>
+                  </ul>
+                </section>
+                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
+                  <h3 className="flex items-center gap-2 text-base font-semibold">
+                    <LockOpenIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <span>Proprietary Delivery Technology</span>
+                  </h3>
+                  <p>
+                    PepPro utilizes the {" "}
+                    <img
+                      src={withStaticAssetStamp("/protixa.png")}
+                      alt="Protixa"
+                      style={{
+                        display: "inline-block",
+                        height: "0.95em",
+                        width: "auto",
+                        verticalAlign: "-0.20em",
+                      }}
+                    />{" "}
+                    ION System&trade;, an advanced ionic liquid delivery platform designed for
+                    needle-free peptide administration. This
+                    proprietary system enhances bioavailability through five mechanisms:
+                  </p>
+                  <ol className="space-y-1">
+                    <li className="flex gap-2 leading-snug">
+                      <span className="font-semibold text-slate-900">1.</span>
+                      <span>Lipid layer modulation for superior absorption</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="font-semibold text-slate-900">2.</span>
+                      <span>Dual polarity solubilization (no emulsifiers needed)</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="font-semibold text-slate-900">3.</span>
+                      <span>Keratin modulation for transient micro-pathways</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="font-semibold text-slate-900">4.</span>
+                      <span>Optimized molecule partitioning for deeper tissue delivery</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="font-semibold text-slate-900">5.</span>
+                      <span>Cation exchange improving permeability</span>
+                    </li>
+                  </ol>
+                </section>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
+                  <h3 className="flex items-center gap-2 text-base font-semibold">
+                    <ShieldCheckIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <span>Batch Testing &amp; COA Transparency</span>
+                  </h3>
+                  <p>
+                    Each PepPro peptide is backed by a Certificate of Analysis as well as
+                    third party testing to verify:
+                  </p>
+                  <ul className="space-y-1">
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Purity (&gt;= 99%)</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Sterility &amp; absence of microorganisms</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Endotoxin level &lt; 0.5 EU/mL</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Verified dosage and stability testing</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Quantitative testing</span>
+                    </li>
+                  </ul>
+                </section>
+                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
+                  <h3 className="flex items-center gap-2 text-base font-semibold">
+                    <ScaleIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <span>Quality Control &amp; Compliance</span>
+                  </h3>
+                  <ul className="space-y-1">
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Good Manufacturing Practice (cGMP) and ISO-aligned quality management systems</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Lot tracking and retention samples for every batch</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Stability testing for all formulations (-20 C cold chain storage)</span>
+                    </li>
+                    <li className="flex gap-2 leading-snug">
+                      <span className="mt-1 text-slate-900">•</span>
+                      <span>Third-party verification of all finished materials</span>
+                    </li>
+                  </ul>
+                </section>
+              </div>
               <section className="manufacturing-standards-card squircle-lg space-y-2">
-                <h3 className="text-base font-semibold text-slate-900">
-                  Vertically Integrated Production
-                </h3>
-                <p>
-                  Our formulations are manufactured in collaboration with a vertically
-                  integrated peptide innovator that controls every stage from synthesis to
-                  final packaging. This ensures:
-                </p>
-                <ul className="space-y-1">
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Complete chain-of-custody traceability</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Batch-specific Certificates of Analysis (COAs) for purity (&gt;= 99%) and sterility</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>HPLC and endotoxin testing</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Rapid scale-up and consistent results across all delivery formats (injectable, nasal spray)</span>
-                  </li>
-                </ul>
-              </section>
-              <section className="manufacturing-standards-card squircle-lg space-y-2">
-                <h3 className="text-base font-semibold text-slate-900">
-                  Proprietary Delivery Technology
-                </h3>
-                <p>
-                  PepPro utilizes Protixa ION System, an advanced ionic liquid delivery
-                  platform designed for needle-free peptide administration.
-                </p>
-                <p>
-                  This proprietary system enhances bioavailability through five mechanisms:
-                </p>
-                <ol className="space-y-1">
-                  <li className="flex gap-2 leading-snug">
-                    <span className="font-semibold text-slate-900">1.</span>
-                    <span>Lipid layer modulation for superior absorption</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="font-semibold text-slate-900">2.</span>
-                    <span>Dual polarity solubilization (no emulsifiers needed)</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="font-semibold text-slate-900">3.</span>
-                    <span>Keratin modulation for transient micro-pathways</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="font-semibold text-slate-900">4.</span>
-                    <span>Optimized molecule partitioning for deeper tissue delivery</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="font-semibold text-slate-900">5.</span>
-                    <span>Cation exchange improving permeability</span>
-                  </li>
-                </ol>
-              </section>
-              <section className="manufacturing-standards-card squircle-lg space-y-2">
-                <h3 className="text-base font-semibold text-slate-900">
-                  Batch Testing &amp; COA Transparency
-                </h3>
-                <p>
-                  Each PepPro peptide is backed by a Certificate of Analysis as well as
-                  third party testing to verify:
-                </p>
-                <ul className="space-y-1">
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Purity (&gt;= 99%)</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Sterility &amp; absence of microorganisms</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Endotoxin level &lt; 0.5 EU/mL</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Verified dosage and stability testing</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Quantitative testing</span>
-                  </li>
-                </ul>
-              </section>
-              <section className="manufacturing-standards-card squircle-lg space-y-2">
-                <h3 className="text-base font-semibold text-slate-900">
-                  Quality Control &amp; Compliance
-                </h3>
-                <ul className="space-y-1">
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Good Manufacturing Practice (cGMP) and ISO-aligned quality management systems</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Lot tracking and retention samples for every batch</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Stability testing for all formulations (-20 C cold chain storage)</span>
-                  </li>
-                  <li className="flex gap-2 leading-snug">
-                    <span className="mt-1 text-slate-900">•</span>
-                    <span>Third-party verification of all finished materials</span>
-                  </li>
-                </ul>
-              </section>
-              <section className="manufacturing-standards-card squircle-lg space-y-2">
-                <h3 className="text-base font-semibold text-slate-900">
-                  Formulation Expertise
+                <h3 className="flex items-center gap-2 text-base font-semibold">
+                  <SwatchIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                  <span>Formulation Expertise</span>
                 </h3>
                 <p>
                   Every formula is designed by a cross-disciplinary team of experts in
-                  pharmaceutical R&amp;D, biochemistry, and regulatory compliance.
-                </p>
-                <p>
-                  From clinical research-grade peptides to white-label consumer products,
+                  pharmaceutical R&amp;D, biochemistry, and regulatory compliance. From
+                  clinical research-grade peptides to white-label consumer products,
                   PepPro bridges science and accessibility with full transparency and
                   safety.
                 </p>

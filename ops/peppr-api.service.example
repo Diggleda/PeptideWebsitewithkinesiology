@@ -10,6 +10,7 @@ WorkingDirectory=/opt/peppr/backend
 EnvironmentFile=/etc/peppr-api.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/peppr/backend/venv/bin/gunicorn python_backend.wsgi:app --bind 0.0.0.0:3001 --workers 2 --threads 8 --timeout 120 --graceful-timeout 30 --keep-alive 5 --worker-class gthread
+ExecReload=/bin/kill -s HUP $MAINPID
 Restart=always
 RestartSec=5
 KillSignal=SIGTERM
