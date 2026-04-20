@@ -1,5 +1,11 @@
 # PepPro Runbook
 
+## Incident tracking
+
+- Track live work in [`TASKS.md`](../TASKS.md).
+- For any production issue, create or update a `P0` task there before branching into debugging threads.
+- Keep each incident item tied to exact commands, logs, and exit criteria so work survives restarts and context switches.
+
 ## Health checks
 
 - API: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://localhost:3001/api/health | jq`

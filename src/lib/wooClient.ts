@@ -236,6 +236,6 @@ export const listProductVariations = <T = unknown>(productId: number, opts: Quer
   WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : catalogGet<T>(`products/${productId}/variations`, { ...opts });
 
 export const getProduct = <T = unknown>(productId: number | string, opts: QueryParams = {}) =>
-  WOO_DISABLED ? (Promise.resolve(null) as unknown as Promise<T>) : wooGet<T>(`products/${productId}`, { ...opts });
+  WOO_DISABLED ? (Promise.resolve(null) as unknown as Promise<T>) : catalogGet<T>(`products/${productId}`, { ...opts });
 
 export type { QueryParams };

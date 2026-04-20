@@ -541,6 +541,28 @@ def get_catalog_categories() -> List[Dict[str, Any]]:
     return []
 
 
+def get_catalog_product(product_id: int) -> Dict[str, Any]:
+    if not bool(get_config().mysql.get("enabled")):
+        err = RuntimeError("MySQL is not enabled")
+        setattr(err, "status", 503)
+        raise err
+    pid = int(product_id)
+    row = mysql_client.fetch_one(
+        """
+        SELECT data
+        FROM product_documents
+        WHERE woo_product_id = %(woo_product_id)s AND kind = %(kind)s
+        """,
+        {"woo_product_id": pid, "kind": KIND_CATALOG_PRODUCT_FULL},
+    )
+    parsed = _decode_snapshot_json((row or {}).get("data") if isinstance(row, dict) else None)
+    if isinstance(parsed, dict):
+        return parsed
+    err = RuntimeError("NOT_FOUND")
+    setattr(err, "status", 404)
+    raise err
+
+
 def _get_snapshot_product_variations(product_id: int) -> List[Dict[str, Any]]:
     if not bool(get_config().mysql.get("enabled")):
         return []

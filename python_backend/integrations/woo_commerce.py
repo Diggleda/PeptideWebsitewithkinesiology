@@ -361,18 +361,24 @@ def _timeout_seconds_for_endpoint(endpoint: str) -> float:
     causing the whole API (including /api/health and auth) to appear down.
     """
     endpoint = (endpoint or "").lstrip("/")
+    if re.match(r"^products/[^/]+$", endpoint):
+        return float(os.environ.get("WOO_PRODUCT_DETAIL_TIMEOUT_SECONDS", "6").strip() or 6)
     # Variations can be heavy; prefer failing fast and serving cached/stale data.
     if re.match(r"^products/[^/]+/variations", endpoint):
-        return float(os.environ.get("WOO_VARIATIONS_TIMEOUT_SECONDS", "8").strip() or 8)
+        return float(os.environ.get("WOO_VARIATIONS_TIMEOUT_SECONDS", "6").strip() or 6)
     if endpoint.startswith("products"):
-        return float(os.environ.get("WOO_PRODUCTS_TIMEOUT_SECONDS", "10").strip() or 10)
+        return float(os.environ.get("WOO_PRODUCTS_TIMEOUT_SECONDS", "8").strip() or 8)
     return float(os.environ.get("WOO_DEFAULT_TIMEOUT_SECONDS", "12").strip() or 12)
 
 
 def _max_attempts_for_endpoint(endpoint: str) -> int:
     endpoint = (endpoint or "").lstrip("/")
+    if re.match(r"^products/[^/]+$", endpoint):
+        return max(1, min(int(os.environ.get("WOO_PRODUCT_DETAIL_MAX_ATTEMPTS", "1").strip() or 1), 3))
     if re.match(r"^products/[^/]+/variations", endpoint):
-        return max(1, min(int(os.environ.get("WOO_VARIATIONS_MAX_ATTEMPTS", "2").strip() or 2), 4))
+        return max(1, min(int(os.environ.get("WOO_VARIATIONS_MAX_ATTEMPTS", "1").strip() or 1), 3))
+    if endpoint.startswith("products"):
+        return max(1, min(int(os.environ.get("WOO_PRODUCTS_MAX_ATTEMPTS", "2").strip() or 2), 4))
     return _WOO_HTTP_MAX_ATTEMPTS
 
 
@@ -575,6 +581,7 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
     cooldown_seconds = 0
 
     if force_fresh:
+        event: threading.Event | None = None
         with _catalog_cache_lock:
             cooldown_seconds = _proxy_cooldown_seconds(cache_key, now_ms)
             cached = _catalog_cache.get(cache_key)
@@ -582,10 +589,25 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
                 if cooldown_seconds <= 0:
                     _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
                 return cached.get("data"), {"cache": "FORCE_STALE", "ttlSeconds": ttl_seconds, "noStore": True}
+            inflight = _inflight.get(cache_key)
+            if inflight:
+                event = inflight.get("event")
             if cooldown_seconds > 0:
                 err = IntegrationError("WooCommerce temporarily unavailable, please retry shortly")
                 setattr(err, "status", 503)
                 raise err
+
+        if event is not None and cooldown_seconds <= 0:
+            event.wait(timeout=_WOO_PROXY_INFLIGHT_WAIT_SECONDS)
+            with _catalog_cache_lock:
+                cached = _catalog_cache.get(cache_key)
+                if cached and cached.get("data") is not None:
+                    return cached.get("data"), {"cache": "FORCE_INFLIGHT", "ttlSeconds": ttl_seconds, "noStore": True}
+                inflight = _inflight.get(cache_key)
+                if inflight and inflight.get("error") is not None:
+                    raise inflight.get("error")
+                if inflight and inflight.get("data") is not None:
+                    return inflight.get("data"), {"cache": "FORCE_INFLIGHT", "ttlSeconds": ttl_seconds, "noStore": True}
 
         disk_cached = _read_disk_cache(cache_key)
         if allow_stale and disk_cached and isinstance(disk_cached, dict) and "data" in disk_cached:
@@ -597,15 +619,58 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
             _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
             return data, {"cache": "FORCE_DISK_STALE", "ttlSeconds": ttl_seconds, "noStore": True}
 
-        data = _fetch_catalog_http(endpoint, params, acquire_timeout=2)
-        _clear_proxy_failure(cache_key)
-        now_ms = _now_ms()
-        expires_at = now_ms + ttl_seconds * 1000
         with _catalog_cache_lock:
-            _set_in_memory_cache(cache_key, data, expires_at)
-            _inflight.pop(cache_key, None)
-        _write_disk_cache(cache_key, {"data": data, "fetchedAt": now_ms, "expiresAt": expires_at})
-        return data, {"cache": "FORCE_MISS", "ttlSeconds": ttl_seconds, "noStore": True}
+            inflight = _inflight.get(cache_key)
+            if inflight:
+                event = inflight["event"]
+                is_leader = False
+            else:
+                event = threading.Event()
+                _inflight[cache_key] = {"event": event, "data": None, "error": None, "leader": True}
+                is_leader = True
+
+        if is_leader:
+            try:
+                data = _fetch_catalog_http(endpoint, params, acquire_timeout=1)
+                _clear_proxy_failure(cache_key)
+                now_ms = _now_ms()
+                expires_at = now_ms + ttl_seconds * 1000
+                with _catalog_cache_lock:
+                    _set_in_memory_cache(cache_key, data, expires_at)
+                    inflight = _inflight.get(cache_key)
+                    if inflight:
+                        inflight["data"] = data
+                        inflight["error"] = None
+                        inflight["event"].set()
+                        _inflight.pop(cache_key, None)
+                _write_disk_cache(cache_key, {"data": data, "fetchedAt": now_ms, "expiresAt": expires_at})
+                return data, {"cache": "FORCE_MISS", "ttlSeconds": ttl_seconds, "noStore": True}
+            except Exception as exc:
+                status = getattr(exc, "status", None)
+                if _should_trip_proxy_breaker(status):
+                    _record_proxy_failure(cache_key, status=status)
+                with _catalog_cache_lock:
+                    inflight = _inflight.get(cache_key)
+                    if inflight:
+                        inflight["error"] = exc
+                        inflight["event"].set()
+                        _inflight.pop(cache_key, None)
+                raise
+
+        event.wait(timeout=_WOO_PROXY_INFLIGHT_WAIT_SECONDS)
+        with _catalog_cache_lock:
+            cached = _catalog_cache.get(cache_key)
+            if cached and cached.get("data") is not None:
+                return cached.get("data"), {"cache": "FORCE_INFLIGHT", "ttlSeconds": ttl_seconds, "noStore": True}
+            inflight = _inflight.get(cache_key)
+            if inflight and inflight.get("error") is not None:
+                raise inflight.get("error")
+            if inflight and inflight.get("data") is not None:
+                return inflight.get("data"), {"cache": "FORCE_INFLIGHT", "ttlSeconds": ttl_seconds, "noStore": True}
+
+        err = IntegrationError("WooCommerce temporarily unavailable, please retry shortly")
+        setattr(err, "status", 503)
+        raise err
 
     with _catalog_cache_lock:
         cooldown_seconds = _proxy_cooldown_seconds(cache_key, now_ms)

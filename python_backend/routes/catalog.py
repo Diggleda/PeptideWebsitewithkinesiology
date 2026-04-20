@@ -4,6 +4,7 @@ from flask import Blueprint, request
 
 from ..services.catalog_snapshot_service import (
     get_catalog_categories,
+    get_catalog_product,
     get_catalog_product_variations,
     get_catalog_products,
 )
@@ -19,6 +20,14 @@ def list_catalog_products():
         page = request.args.get("page", "1")
         per_page = request.args.get("per_page", request.args.get("perPage", "100"))
         return get_catalog_products(page=int(page), per_page=int(per_page))
+
+    return handle_action(action)
+
+
+@blueprint.get("/products/<int:product_id>")
+def get_catalog_product_detail(product_id: int):
+    def action():
+        return get_catalog_product(product_id)
 
     return handle_action(action)
 

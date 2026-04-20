@@ -17147,6 +17147,20 @@ function MainApp() {
       );
     };
 
+    const isPresenceAccessDeniedError = (error: any) => {
+      const status = typeof error?.status === "number" ? error.status : null;
+      const code = typeof error?.code === "string" ? error.code.trim().toUpperCase() : null;
+      const message = String(error?.message || "").trim().toLowerCase();
+      if (status !== 403 || isAuthFailureError(error)) {
+        return false;
+      }
+      return (
+        code === "FORBIDDEN" ||
+        message.includes("admin access required") ||
+        message.includes("sales rep access required")
+      );
+    };
+
     const getPresenceErrorMessage = (error: any, fallback: string) => {
       if (isPresenceFetchError(error)) {
         return "Live presence is temporarily unavailable. Retrying in the background.";
@@ -17225,6 +17239,13 @@ function MainApp() {
 	      } catch (error: any) {
 	        if (cancelled) return;
             if (isAuthFailureError(error)) {
+              return;
+            }
+            if (isPresenceAccessDeniedError(error)) {
+              liveClientsLongPollDisabledRef.current = true;
+              setLiveClients([]);
+              setLiveClientsUsingCachedSnapshot(false);
+              setLiveClientsError(null);
               return;
             }
             const hasPresenceSnapshot =
@@ -17323,6 +17344,13 @@ function MainApp() {
                 if (isAuthFailureError(error)) {
                   break;
                 }
+                if (isPresenceAccessDeniedError(error)) {
+                  liveClientsLongPollDisabledRef.current = true;
+                  setLiveClients([]);
+                  setLiveClientsUsingCachedSnapshot(false);
+                  setLiveClientsError(null);
+                  return;
+                }
 	          if (typeof error?.status === "number" && error.status === 404) {
 	            liveClientsLongPollDisabledRef.current = true;
 	            startIntervalFallback();
@@ -17415,6 +17443,13 @@ function MainApp() {
           if (isAuthFailureError(error)) {
             return;
           }
+          if (isPresenceAccessDeniedError(error)) {
+            adminLiveUsersLongPollDisabledRef.current = true;
+            setAdminLiveUsers([]);
+            setAdminLiveUsersUsingCachedSnapshot(false);
+            setAdminLiveUsersError(null);
+            return;
+          }
           const hasPresenceSnapshot =
             adminLiveUsersRef.current.length > 0 ||
             Boolean(cachedSnapshot && cachedSnapshot.items.length > 0);
@@ -17487,6 +17522,13 @@ function MainApp() {
 		          if (cancelled) break;
               if (isAuthFailureError(error)) {
                 break;
+              }
+              if (isPresenceAccessDeniedError(error)) {
+                adminLiveUsersLongPollDisabledRef.current = true;
+                setAdminLiveUsers([]);
+                setAdminLiveUsersUsingCachedSnapshot(false);
+                setAdminLiveUsersError(null);
+                return;
               }
 	          if (typeof error?.status === "number" && error.status === 404) {
 	            adminLiveUsersLongPollDisabledRef.current = true;

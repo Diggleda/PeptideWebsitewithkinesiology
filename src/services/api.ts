@@ -2904,7 +2904,7 @@ export const wooAPI = {
     if (!productId) {
       throw new Error('productId is required');
     }
-    return fetchWithAuth(`${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}`, {
+    return fetchWithAuth(`${API_BASE_URL}/catalog/products/${encodeURIComponent(String(productId))}`, {
       method: 'GET',
       cache: 'force-cache',
       headers: {
