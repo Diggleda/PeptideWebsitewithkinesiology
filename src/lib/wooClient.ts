@@ -16,6 +16,34 @@ const WOO_REQUEST_TIMEOUT_MS = (() => {
   return 30000;
 })();
 
+function getWindowOrigin() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return 'http://localhost';
+}
+
+const getPreferredSameOriginApiBase = () => {
+  if (!API_BASE_URL) {
+    return '';
+  }
+  try {
+    const currentOrigin = getWindowOrigin();
+    const currentUrl = new URL(currentOrigin);
+    const targetUrl = new URL(API_BASE_URL, currentOrigin);
+    const currentHost = currentUrl.hostname.toLowerCase();
+    const targetHost = targetUrl.hostname.toLowerCase();
+    const isPepProPrimaryHost = currentHost === 'peppro.net' || currentHost === 'www.peppro.net';
+    const isPepProApiHost = targetHost === 'api.peppro.net';
+    if (isPepProPrimaryHost && isPepProApiHost && targetUrl.pathname.toLowerCase().startsWith('/api')) {
+      return `${currentUrl.origin}${targetUrl.pathname}`.replace(/\/+$/, '');
+    }
+  } catch {
+    // Fall back to the configured API base.
+  }
+  return API_BASE_URL.replace(/\/+$/, '');
+};
+
 const resolveProxyBase = () => {
   const configuredProxy = ((import.meta.env.VITE_WOO_PROXY_URL as string | undefined) || '').trim();
   if (configuredProxy) {
@@ -23,8 +51,7 @@ const resolveProxyBase = () => {
   }
 
   if (API_BASE_URL) {
-    const normalizedApiBase = API_BASE_URL.replace(/\/+$/, '');
-    return `${normalizedApiBase}/woo`;
+    return `${getPreferredSameOriginApiBase()}/woo`;
   }
 
   return DEFAULT_PHP_PROXY;
@@ -38,19 +65,12 @@ const resolveCatalogBase = () => {
   if (!API_BASE_URL) {
     return '';
   }
-  return `${API_BASE_URL.replace(/\/+$/, '')}/catalog`;
+  return `${getPreferredSameOriginApiBase()}/catalog`;
 };
 
 const CATALOG_BASE = resolveCatalogBase();
 export const CATALOG_SNAPSHOT_ACTIVE =
   Boolean(CATALOG_BASE) && !CATALOG_SNAPSHOT_DISABLED;
-
-const getWindowOrigin = () => {
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin;
-  }
-  return 'http://localhost';
-};
 
 const isAbsoluteUrl = (value: string) => /^https?:\/\//i.test(value);
 

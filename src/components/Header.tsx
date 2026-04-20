@@ -1906,6 +1906,37 @@ export function Header({
       return 'fair';
     };
 
+    const measureFrontendPing = (url: string, signal: AbortSignal): Promise<void> =>
+      new Promise((resolve, reject) => {
+        const img = new Image();
+        let settled = false;
+
+        const cleanup = () => {
+          img.onload = null;
+          img.onerror = null;
+          signal.removeEventListener('abort', onAbort);
+        };
+
+        const finish = (callback: () => void) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          callback();
+        };
+
+        const onAbort = () => finish(() => reject(new DOMException('Aborted', 'AbortError')));
+
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+
+        signal.addEventListener('abort', onAbort);
+        img.onload = () => finish(resolve);
+        img.onerror = () => finish(() => reject(new TypeError('Frontend ping failed')));
+        img.src = url;
+      });
+
 	    const measureHealthPing = async (): Promise<NetworkQuality | null> => {
 	      if (typeof navigator === 'undefined') return null;
 	      if (navigator.onLine === false) return 'offline';
@@ -1920,16 +1951,9 @@ export function Header({
       const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        // Frontend-only ping: hit the static index.html instead of `/api/*` so the
-        // indicator does not depend on the backend being online.
-        const resp = await fetch(`/index.html?ping=1&t=${Date.now()}`, {
-          method: 'GET',
-          cache: 'no-store',
-          signal: controller.signal,
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        // Ensure the request actually transfers data (not just headers).
-	        await resp.text();
+        // Use a static image probe so the indicator stays frontend-only without
+        // generating `connect-src` CSP report-only noise in the console.
+        await measureFrontendPing(`/favicon.ico?ping=1&t=${Date.now()}`, controller.signal);
 	        const elapsed = performance.now() - startedAt;
 	        if (!mounted || requestId !== pingRequestId) return null;
 
@@ -1940,10 +1964,6 @@ export function Header({
 	          latencyMs: Math.round(elapsed),
           measuredAt: Date.now(),
         }));
-
-        if (!resp.ok) {
-          return elapsed > 1400 ? 'poor' : 'fair';
-        }
 
 	        if (elapsed > 2200) return 'poor';
 	        if (elapsed > 900) return 'fair';
