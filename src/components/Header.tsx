@@ -1953,7 +1953,7 @@ export function Header({
       try {
         // Use a static image probe so the indicator stays frontend-only without
         // generating `connect-src` CSP report-only noise in the console.
-        await measureFrontendPing(`/favicon.ico?ping=1&t=${Date.now()}`, controller.signal);
+        await measureFrontendPing(`/favicon-32x32.png?ping=1&t=${Date.now()}`, controller.signal);
 	        const elapsed = performance.now() - startedAt;
 	        if (!mounted || requestId !== pingRequestId) return null;
 

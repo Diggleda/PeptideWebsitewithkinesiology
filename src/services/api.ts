@@ -816,10 +816,6 @@ const buildSameOriginApiFallbackUrl = (url: string) => {
   }
 };
 
-const preferSameOriginApiUrl = (url: string) => {
-  return buildSameOriginApiFallbackUrl(url) || url;
-};
-
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}) => {
   const rewrittenUrl = rewriteBlockedAdminPaths(url);
@@ -855,7 +851,7 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
       throw buildBackgroundCooldownError();
     }
 
-    let requestUrl = preferSameOriginApiUrl(rewrittenUrl);
+    let requestUrl = rewrittenUrl;
 
     if (method === 'GET' && !(requestOptions.cache && requestOptions.cache !== 'default')) {
       const normalized = requestUrl.toLowerCase();
@@ -1093,7 +1089,7 @@ const buildServiceUnavailableError = (message: string) => {
 };
 
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
-  let requestUrl = preferSameOriginApiUrl(rewriteBlockedAdminPaths(url));
+  let requestUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
   const sessionIdAtRequestStart = getSessionId();
   const headers: HeadersInit = {
@@ -1253,7 +1249,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
 };
 
 const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?: boolean } = {}) => {
-  let requestUrl = preferSameOriginApiUrl(rewriteBlockedAdminPaths(url));
+  let requestUrl = rewriteBlockedAdminPaths(url);
   const token = options.skipAuth ? null : getAuthToken();
   const sessionIdAtRequestStart = options.skipAuth ? null : getSessionId();
   const headers: HeadersInit = {
@@ -3460,10 +3456,9 @@ export const newsAPI = {
       };
     }
     const ts = Date.now();
-    const requestUrl = preferSameOriginApiUrl(`${API_BASE_URL}/news/peptides?_ts=${ts}`);
     let response: Response;
     try {
-      response = await fetch(requestUrl, {
+      response = await fetch(`${API_BASE_URL}/news/peptides?_ts=${ts}`, {
         headers: {
           Accept: 'application/json',
         },
@@ -3505,7 +3500,7 @@ export const newsAPI = {
 
 export const quotesAPI = {
   getQuoteOfTheDay: async () => {
-    const response = await fetch(preferSameOriginApiUrl(`${API_BASE_URL}/quotes/daily`), {
+    const response = await fetch(`${API_BASE_URL}/quotes/daily`, {
       headers: {
         Accept: 'application/json',
       },
@@ -3525,7 +3520,7 @@ export const quotesAPI = {
 
 export const forumAPI = {
   listPeptideForum: async () => {
-    const response = await fetch(preferSameOriginApiUrl(`${API_BASE_URL}/forum/the-peptide-forum?_ts=${Date.now()}`), {
+    const response = await fetch(`${API_BASE_URL}/forum/the-peptide-forum?_ts=${Date.now()}`, {
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });
