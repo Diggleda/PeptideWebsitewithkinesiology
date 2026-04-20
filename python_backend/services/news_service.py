@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 import requests
 
 from . import get_config
-from ..utils import http_client
+from ..utils import http_client, refresh_lease
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -47,7 +47,6 @@ class NewsItem:
 
 def fetch_peptide_news(limit: int = 8) -> List[NewsItem]:
     """Fetch peptide related headlines from Nature and return cleaned entries."""
-    stale_items: List[NewsItem] = []
     now = time.time()
 
     with _CACHE_LOCK:
@@ -58,32 +57,39 @@ def fetch_peptide_news(limit: int = 8) -> List[NewsItem]:
             return _limit_items(cached_items, limit)
 
         stale_items = list(cached_items)
-        if stale_items:
-            _schedule_refresh_locked()
-            return _limit_items(stale_items, limit)
-
-    refreshed_items = _refresh_cache_once()
-    if refreshed_items:
-        return _limit_items(refreshed_items, limit)
-    return _limit_items(stale_items, limit)
+        _schedule_refresh_locked()
+        return _limit_items(stale_items, limit)
 
 
 def _schedule_refresh_locked() -> None:
     global _INFLIGHT_EVENT
     if _INFLIGHT_EVENT is not None:
         return
+    lease_path = _refresh_lease_path()
+    lease_token: str | None = None
+    if lease_path is not None:
+        lease_token = refresh_lease.acquire_lease(
+            lease_path,
+            lease_seconds=_refresh_lease_seconds(),
+        )
+        if lease_token is None:
+            return
     event = threading.Event()
     _INFLIGHT_EVENT = event
     thread = threading.Thread(
         target=_refresh_cache_worker,
-        args=(event,),
+        args=(event, lease_path, lease_token),
         name="peptide-news-refresh",
         daemon=True,
     )
     thread.start()
 
 
-def _refresh_cache_worker(event: threading.Event) -> None:
+def _refresh_cache_worker(
+    event: threading.Event,
+    lease_path: Path | None,
+    lease_token: str | None,
+) -> None:
     try:
         _refresh_cache_once()
     finally:
@@ -91,6 +97,8 @@ def _refresh_cache_worker(event: threading.Event) -> None:
             global _INFLIGHT_EVENT
             if _INFLIGHT_EVENT is event:
                 _INFLIGHT_EVENT = None
+        if lease_path is not None:
+            refresh_lease.release_lease(lease_path, lease_token)
         event.set()
 
 
@@ -143,6 +151,15 @@ def _cache_max_stale_seconds() -> float:
     return max(60.0, min(value, 24 * 3600.0))
 
 
+def _refresh_lease_seconds() -> float:
+    raw = str(os.environ.get("PEPTIDE_NEWS_REFRESH_LEASE_SECONDS") or "120").strip()
+    try:
+        value = float(raw)
+    except Exception:
+        value = 120.0
+    return max(15.0, min(value, 900.0))
+
+
 def _cache_file_path() -> Optional[Path]:
     try:
         config = get_config()
@@ -150,6 +167,13 @@ def _cache_file_path() -> Optional[Path]:
         return None
     data_dir = Path(str(getattr(config, "data_dir", "server-data")))
     return data_dir / "cache" / "peptide-news.json"
+
+
+def _refresh_lease_path() -> Optional[Path]:
+    cache_path = _cache_file_path()
+    if cache_path is None:
+        return None
+    return cache_path.with_name("peptide-news.refresh.lock")
 
 
 def _load_persisted_cache_locked() -> None:

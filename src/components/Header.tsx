@@ -1906,83 +1906,31 @@ export function Header({
       return 'fair';
     };
 
-    const measureFrontendPing = (url: string, signal: AbortSignal): Promise<void> =>
-      new Promise((resolve, reject) => {
-        const img = new Image();
-        let settled = false;
-
-        const cleanup = () => {
-          img.onload = null;
-          img.onerror = null;
-          signal.removeEventListener('abort', onAbort);
-        };
-
-        const finish = (callback: () => void) => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          callback();
-        };
-
-        const onAbort = () => finish(() => reject(new DOMException('Aborted', 'AbortError')));
-
-        if (signal.aborted) {
-          onAbort();
-          return;
-        }
-
-        signal.addEventListener('abort', onAbort);
-        img.onload = () => finish(resolve);
-        img.onerror = () => finish(() => reject(new TypeError('Frontend ping failed')));
-        img.src = url;
-      });
-
 	    const measureHealthPing = async (): Promise<NetworkQuality | null> => {
 	      if (typeof navigator === 'undefined') return null;
 	      if (navigator.onLine === false) return 'offline';
 
 	      const requestId = (pingRequestId += 1);
-	      const startedAt = performance.now();
-	      const timeoutMs = 1800;
-
-	      if (pingAbort) pingAbort.abort();
-	      const controller = new AbortController();
-	      pingAbort = controller;
-      const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
-
-      try {
-        // Use a static image probe so the indicator stays frontend-only without
-        // generating `connect-src` CSP report-only noise in the console.
-        await measureFrontendPing(`/favicon-32x32.png?ping=1&t=${Date.now()}`, controller.signal);
-	        const elapsed = performance.now() - startedAt;
-	        if (!mounted || requestId !== pingRequestId) return null;
-
-	        markReachable();
-	        lastLatencyMsRef.current = Math.round(elapsed);
+	      const conn =
+	        (navigator as any).connection ||
+	        (navigator as any).mozConnection ||
+	        (navigator as any).webkitConnection;
+	      const latencyMs = typeof conn?.rtt === 'number' && Number.isFinite(conn.rtt) && conn.rtt > 0
+	        ? Math.round(conn.rtt)
+	        : null;
+	      if (!mounted || requestId !== pingRequestId) return null;
+	      if (latencyMs != null) {
+	        lastLatencyMsRef.current = latencyMs;
 	        setNetworkSpeedSummary((prev) => ({
 	          ...prev,
-	          latencyMs: Math.round(elapsed),
-          measuredAt: Date.now(),
-        }));
-
-	        if (elapsed > 2200) return 'poor';
-	        if (elapsed > 900) return 'fair';
-	        return 'good';
-	      } catch (error: any) {
-	        if (!mounted || requestId !== pingRequestId) return null;
-	        if (error?.name === 'AbortError') {
-	          consecutiveTimeoutRef.current += 1;
-	          return shouldTimeoutsCountAsOffline() ? 'offline' : 'poor';
-	        }
-	        if (error instanceof TypeError) {
-	          if (isLikelyOfflineError(error)) return 'offline';
-	          consecutiveUnreachableRef.current += 1;
-	          if (consecutiveUnreachableRef.current >= 2) return 'offline';
-	        }
-	        return isLikelyOfflineError(error) ? 'offline' : 'poor';
-	      } finally {
-	        window.clearTimeout(timeoutHandle);
+	          latencyMs,
+            measuredAt: Date.now(),
+          }));
 	      }
+	      if (navigator.onLine !== false) {
+	        markReachable();
+	      }
+	      return deriveFromConnection();
 	    };
 
 	    const measureThroughput = async (): Promise<{

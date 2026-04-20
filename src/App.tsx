@@ -23324,7 +23324,7 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, [shouldReduceMaintenanceBackgroundFetches, user]);
+  }, [shouldReduceMaintenanceBackgroundFetches, user?.id]);
 
   // Prepare welcome animation only on fresh sign-in
   useEffect(() => {
@@ -23377,7 +23377,7 @@ function MainApp() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [shouldReduceMaintenanceBackgroundFetches, user]);
+  }, [shouldReduceMaintenanceBackgroundFetches, user?.id]);
 
   useEffect(() => {
     if (
@@ -23397,7 +23397,7 @@ function MainApp() {
     shouldReduceMaintenanceBackgroundFetches,
     showQuote,
     showWelcome,
-    user,
+    user?.id,
   ]);
 
   useEffect(() => {

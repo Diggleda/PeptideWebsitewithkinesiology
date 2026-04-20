@@ -76,6 +76,9 @@ class QuotesServiceTests(unittest.TestCase):
                 quotes_service,
                 "_fetch_quotes",
                 side_effect=AssertionError("quote feed should not be fetched when feed cache exists"),
+            ), patch.object(
+                quotes_service,
+                "_schedule_feed_refresh",
             ):
                 result = quotes_service.get_daily_quote()
 
@@ -135,6 +138,27 @@ class QuotesServiceTests(unittest.TestCase):
         )
         self.assertEqual(stored["text"], "Database quote")
         self.assertEqual(stored["author"], "PepPro")
+
+    def test_get_daily_quote_returns_fallback_and_schedules_refresh_when_no_cache_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            config = SimpleNamespace(data_dir=data_dir, quotes={}, integrations={})
+
+            with patch.object(quotes_service, "get_config", return_value=config), patch.object(
+                quotes_service,
+                "_schedule_feed_refresh",
+            ) as schedule_refresh:
+                result = quotes_service.get_daily_quote()
+
+        self.assertEqual(
+            result,
+            {
+                "text": "Excellence is an attitude.",
+                "author": "PepPro",
+                "stale": True,
+            },
+        )
+        schedule_refresh.assert_called_once()
 
 
 if __name__ == "__main__":

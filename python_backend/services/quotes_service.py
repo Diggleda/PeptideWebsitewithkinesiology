@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -11,7 +12,7 @@ from typing import Dict, List, Optional
 import requests
 
 from . import get_config
-from ..utils import http_client
+from ..utils import http_client, refresh_lease
 
 try:
     from ..database import mysql_client
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 _CACHE_FILE = "daily-quote.json"
 _FEED_CACHE_FILE = "quotes-feed.json"
+_REFRESH_LOCK = threading.Lock()
+_FEED_REFRESH_EVENT: threading.Event | None = None
 
 
 class QuoteServiceError(RuntimeError):
@@ -42,6 +45,10 @@ def _cache_path() -> Path:
 def _feed_cache_path() -> Path:
     config = get_config()
     return config.data_dir / _FEED_CACHE_FILE
+
+
+def _feed_refresh_lease_path() -> Path:
+    return _feed_cache_path().with_name("quotes-feed.refresh.lock")
 
 
 def _normalize_quote(raw: Dict) -> Optional[Dict]:
@@ -189,6 +196,15 @@ def _feed_cache_max_age_seconds() -> int:
     return max(300, min(seconds, 7 * 86400))
 
 
+def _feed_refresh_lease_seconds() -> float:
+    raw = str(os.environ.get("QUOTES_FEED_REFRESH_LEASE_SECONDS", "120")).strip()
+    try:
+        seconds = float(raw)
+    except Exception:
+        seconds = 120.0
+    return max(15.0, min(seconds, 900.0))
+
+
 def _cached_quotes(*, allow_stale: bool) -> Optional[List[Dict]]:
     entry = _load_feed_cache()
     if not isinstance(entry, dict):
@@ -213,6 +229,43 @@ def _fetch_and_store_quotes() -> List[Dict]:
     return quotes
 
 
+def _schedule_feed_refresh() -> None:
+    global _FEED_REFRESH_EVENT
+    with _REFRESH_LOCK:
+        if _FEED_REFRESH_EVENT is not None:
+            return
+        lease_path = _feed_refresh_lease_path()
+        lease_token = refresh_lease.acquire_lease(
+            lease_path,
+            lease_seconds=_feed_refresh_lease_seconds(),
+        )
+        if lease_token is None:
+            return
+        event = threading.Event()
+        _FEED_REFRESH_EVENT = event
+        thread = threading.Thread(
+            target=_refresh_feed_worker,
+            args=(event, lease_path, lease_token),
+            name="quotes-feed-refresh",
+            daemon=True,
+        )
+        thread.start()
+
+
+def _refresh_feed_worker(event: threading.Event, lease_path: Path, lease_token: str) -> None:
+    try:
+        _fetch_and_store_quotes()
+    except Exception:
+        logger.warning("Failed to refresh quotes feed cache", exc_info=True)
+    finally:
+        global _FEED_REFRESH_EVENT
+        with _REFRESH_LOCK:
+            if _FEED_REFRESH_EVENT is event:
+                _FEED_REFRESH_EVENT = None
+        refresh_lease.release_lease(lease_path, lease_token)
+        event.set()
+
+
 def _pick_quote(quotes: List[Dict], avoid_id: Optional[str]) -> Dict:
     candidates = [quote for quote in quotes if quote.get("id") != avoid_id] or quotes
     return random.choice(candidates)
@@ -231,11 +284,19 @@ def get_daily_quote() -> Dict:
             }
 
     quotes = _cached_quotes(allow_stale=True)
-    try:
-        if not quotes:
-            quotes = _fetch_and_store_quotes()
-    except Exception:
-        # When the quote feed is down, serve last known cached quote if available.
+    fresh_quotes = _cached_quotes(allow_stale=False)
+    if not quotes:
+        try:
+            mysql_quotes = _fetch_quotes_from_mysql()
+        except Exception:
+            mysql_quotes = None
+        if mysql_quotes:
+            quotes = mysql_quotes
+            fresh_quotes = mysql_quotes
+            _store_feed_cache(mysql_quotes)
+    if fresh_quotes is None:
+        _schedule_feed_refresh()
+    if not quotes:
         if isinstance(cache, dict):
             cached_text = cache.get("text")
             if isinstance(cached_text, str) and cached_text.strip():
@@ -244,7 +305,6 @@ def get_daily_quote() -> Dict:
                     "author": cache.get("author"),
                     "stale": True,
                 }
-        # Final fallback that never fails the UI.
         return {"text": "Excellence is an attitude.", "author": "PepPro", "stale": True}
 
     yesterday_id = cache.get("id") if cache and cache.get("date") != today else None
@@ -267,14 +327,18 @@ def list_quotes() -> Dict:
         return {"quotes": fresh_cache, "cached": True}
 
     try:
-        quotes = _fetch_and_store_quotes()
-        return {"quotes": quotes}
+        mysql_quotes = _fetch_quotes_from_mysql()
     except Exception:
-        stale_cache = _cached_quotes(allow_stale=True)
-        if stale_cache:
-            return {"quotes": stale_cache, "stale": True}
-        # Avoid hard failure when the feed is down.
-        return {"quotes": [], "stale": True}
+        mysql_quotes = None
+    if mysql_quotes:
+        _store_feed_cache(mysql_quotes)
+        return {"quotes": mysql_quotes, "cached": True}
+
+    _schedule_feed_refresh()
+    stale_cache = _cached_quotes(allow_stale=True)
+    if stale_cache:
+        return {"quotes": stale_cache, "stale": True}
+    return {"quotes": [], "stale": True}
 
 
 def prime_daily_quote_cache() -> Dict:
