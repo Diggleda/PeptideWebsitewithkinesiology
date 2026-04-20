@@ -326,6 +326,13 @@ const sanitizeUser = (user) => {
   };
 };
 
+const hasRequiredDoctorProfileFields = (user) => [
+  user?.name,
+  user?.email,
+  user?.greaterArea ?? user?.greater_area,
+  user?.studyFocus ?? user?.study_focus,
+].every((field) => typeof field === 'string' && field.trim().length > 0);
+
 const sanitizeUserForAuthResponse = (user) => {
   const sanitized = sanitizeUser(user);
   return {
@@ -819,6 +826,9 @@ const updateProfile = async (userId, data) => {
       next[field] = normalizeDoctorProfileTextField(field, data[field]);
     }
   });
+  if (normalizeRole(next.role) === 'doctor' || normalizeRole(next.role) === 'test_doctor') {
+    next.profileOnboarding = hasRequiredDoctorProfileFields(next);
+  }
   const updated = userRepository.update(next, { syncToSql: false }) || next;
   await userRepository.syncDirectShippingToSql(updated, { throwOnError: true });
   logger.debug(

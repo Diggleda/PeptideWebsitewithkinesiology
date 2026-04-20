@@ -761,11 +761,14 @@ const hasRequiredDoctorProfileFields = (value: unknown): boolean => {
     email?: unknown;
     greaterArea?: unknown;
     greater_area?: unknown;
+    studyFocus?: unknown;
+    study_focus?: unknown;
   };
   return [
     record.name,
     record.email,
     record.greaterArea ?? record.greater_area,
+    record.studyFocus ?? record.study_focus,
   ].every((field) => typeof field === "string" && field.trim().length > 0);
 };
 
@@ -7224,14 +7227,10 @@ function MainApp() {
         toast.error("Maintenance mode is read-only.");
         return;
       }
-      const updated = (await authAPI.updateMe({
-        ...payload,
-        profileOnboarding: true,
-      })) as User;
+      const updated = (await authAPI.updateMe(payload)) as User;
       setUser((previous) => ({
         ...(previous || {}),
         ...updated,
-        profileOnboarding: true,
       }));
       setDoctorProfileBuilderDismissed(false);
       setDoctorResellerPermitFile(null);
@@ -27506,9 +27505,9 @@ function MainApp() {
                 return (
                   <li
                     key={userId || `pending-reseller-permit-${index}`}
-                    className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-2 last:border-b-0"
+                    className="flex flex-col items-start gap-3 border-b border-slate-200/70 px-4 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <div className="min-w-0 flex-1 text-sm text-slate-800">
+                    <div className="min-w-0 w-full flex-1 text-sm text-slate-800">
                       <span className="font-semibold text-slate-900">
                         Reseller Permit Verification Needed
                       </span>
@@ -27517,12 +27516,12 @@ function MainApp() {
                         <span className="text-slate-500">{` - Uploaded ${uploadedDateLabel}`}</span>
                       ) : null}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="header-home-button squircle-sm bg-white text-slate-900"
+                        className="header-home-button squircle-sm w-full bg-white text-slate-900 sm:w-auto"
                         onClick={() => void handleDownloadPendingResellerPermitApproval(item)}
                         disabled={isDownloading || isApproving}
                       >
@@ -27531,7 +27530,7 @@ function MainApp() {
                       <Button
                         type="button"
                         size="sm"
-                        className="header-home-button squircle-sm"
+                        className="header-home-button squircle-sm w-full sm:w-auto"
                         onClick={() => void handleApprovePendingResellerPermitApproval(item)}
                         disabled={isApproving || isDownloading}
                       >
@@ -29503,10 +29502,7 @@ function MainApp() {
                                     {adminDelegateFunnelError ? ` ${adminDelegateFunnelError}` : ""}
                                   </p>
                                 </div>
-                                <div className="flex w-full flex-col gap-1 sm:w-[280px] sm:flex-none">
-                                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                                    User
-                                  </span>
+                                <div className="flex w-full sm:w-[280px] sm:flex-none">
                                   <label className="relative flex min-w-0 items-center text-xs text-slate-600">
                                     <select
                                       value={adminDelegateFunnelActorFilter}
@@ -29667,11 +29663,7 @@ function MainApp() {
 
                 {adminDashboardTab === "maintenance" && (
                 <div
-                  className="mb-6 overflow-hidden rounded-[32px] border border-slate-200/80 p-4 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.45)]"
-                  style={{
-                    background:
-                      "radial-gradient(circle at top left, rgba(95,179,249,0.11), transparent 28%), radial-gradient(circle at bottom right, rgba(190,242,100,0.10), transparent 26%), rgba(255,255,255,0.88)",
-                  }}
+                  className="mb-6 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200/70 bg-white/70 p-4"
                 >
                   {(() => {
                     const usage = serverHealthPayload?.usage || null;
@@ -29702,27 +29694,6 @@ function MainApp() {
                       offline: "border-rose-200 bg-rose-50 text-rose-700",
                       external: "border-sky-200 bg-sky-50 text-sky-700",
                       neutral: "border-slate-200 bg-slate-100 text-slate-700",
-                    } as const;
-                    const toneSurfaceClasses = {
-                      healthy: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/55",
-                      degraded: "border-amber-200/80 bg-gradient-to-br from-amber-50/90 via-white to-amber-50/55",
-                      offline: "border-rose-200/80 bg-gradient-to-br from-rose-50/90 via-white to-rose-50/55",
-                      external: "border-sky-200/80 bg-gradient-to-br from-sky-50/90 via-white to-sky-50/55",
-                      neutral: "border-slate-200/80 bg-gradient-to-br from-slate-50/95 via-white to-slate-50/65",
-                    } as const;
-                    const toneIconClasses = {
-                      healthy: "border-emerald-200/80 bg-emerald-100 text-emerald-700",
-                      degraded: "border-amber-200/80 bg-amber-100 text-amber-700",
-                      offline: "border-rose-200/80 bg-rose-100 text-rose-700",
-                      external: "border-sky-200/80 bg-sky-100 text-sky-700",
-                      neutral: "border-slate-200/80 bg-slate-100 text-slate-600",
-                    } as const;
-                    const toneIcons = {
-                      healthy: CheckCircle2,
-                      degraded: AlertTriangle,
-                      offline: XCircle,
-                      external: RefreshCw,
-                      neutral: Clock,
                     } as const;
                     const overallTone =
                       !serverHealthPayload && serverHealthError
@@ -29845,17 +29816,6 @@ function MainApp() {
                       }
                       return details.length > 0 ? details.join(" • ") : null;
                     })();
-                    const statusBadgeTone = serverHealthLoading
-                      ? "neutral"
-                      : overallTone;
-                    const StatusBadgeIcon = serverHealthLoading
-                      ? RefreshCw
-                      : toneIcons[statusBadgeTone];
-                    const statusBadgeLabel = serverHealthLoading
-                      ? "Refreshing live snapshot"
-                      : snapshotTimeLabel
-                        ? `Snapshot updated ${snapshotTimeLabel}`
-                        : "Waiting for first snapshot";
                     const cpuUsageValue =
                       formatServerHealthPercentValue(cpu?.usagePercent) || "—";
                     const cpuUsageHint =
@@ -29971,120 +29931,376 @@ function MainApp() {
                     const updatedValue = snapshotTimeLabel || "—";
                     const updatedHint =
                       snapshotFullLabel || "Waiting for a valid timestamp";
-                    const resourceMetrics = [
-                      {
-                        label: "CPU usage",
-                        value: cpuUsageValue,
-                        hint: cpuUsageHint,
-                      },
-                      {
-                        label: "CPU load",
-                        value: cpuLoadValue,
-                        hint: cpuLoadHint,
-                      },
-                      {
-                        label: "Memory",
-                        value: memoryValue,
-                        hint: memoryHint,
-                      },
-                      {
-                        label: "Disk",
-                        value: diskValue,
-                        hint: diskHint,
-                      },
-                      {
-                        label: "App RSS",
-                        value: rssValue,
-                        hint: rssHint,
-                      },
-                    ];
-                    const runtimeMetrics = [
-                      {
-                        label: "Gunicorn",
-                        value: gunicornValue,
-                        hint: gunicornHint,
-                      },
-                      {
-                        label: "MySQL",
-                        value: mysqlValue,
-                        hint: mysqlHint,
-                      },
-                      queueMetric,
-                      {
-                        label: "Uptime",
-                        value: uptimeValue,
-                        hint: uptimeHint,
-                      },
-                      {
-                        label: "Build",
-                        value: buildValue,
-                        hint: buildHint,
-                      },
-                      {
-                        label: "Updated",
-                        value: updatedValue,
-                        hint: updatedHint,
-                      },
-                    ].filter(
-                      (
-                        metric,
-                      ): metric is { label: string; value: string; hint: string } =>
-                        Boolean(metric),
-                    );
-                    const summaryCards: Array<{
-                      title: string;
-                      tone: keyof typeof toneClasses;
+                    const metricTone = (
+                      value?: number | null,
+                      warnAt: number = 75,
+                      criticalAt: number = 90,
+                    ): keyof typeof toneClasses => {
+                      if (typeof value !== "number" || !Number.isFinite(value)) {
+                        return "neutral";
+                      }
+                      if (value >= criticalAt) {
+                        return "offline";
+                      }
+                      if (value >= warnAt) {
+                        return "degraded";
+                      }
+                      return "healthy";
+                    };
+                    const compactHealthItems: Array<{
+                      key: string;
+                      label: string;
                       value: string;
-                      note: string;
-                      detail?: string | null;
+                      tone: keyof typeof toneClasses;
+                      caption: string;
+                      hoverTitle: string;
+                      hoverLines: string[];
                     }> = [
                       {
-                        title: "API reachability",
-                        tone: overallTone,
+                        key: "api",
+                        label: "API",
                         value: overallStatusLabel,
-                        note: overallStatusNote,
-                        detail: overallStatusDetail,
+                        tone: overallTone,
+                        caption: snapshotTimeLabel
+                          ? `Updated ${snapshotTimeLabel}`
+                          : "Live reachability",
+                        hoverTitle: "API reachability",
+                        hoverLines: [
+                          overallStatusNote,
+                          overallStatusDetail,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
                       },
                       {
-                        title: "Recurring jobs",
-                        tone: backgroundTone,
+                        key: "jobs",
+                        label: "Jobs",
                         value: backgroundStatusLabel,
-                        note: backgroundStatusNote,
-                        detail: backgroundStatusDetail,
+                        tone: backgroundTone,
+                        caption:
+                          backgroundMode === "external"
+                            ? "Dedicated worker"
+                            : unhealthyJobLabels.length > 0
+                              ? `${unhealthyJobLabels.length} alert${unhealthyJobLabels.length === 1 ? "" : "s"}`
+                              : "Supervised",
+                        hoverTitle: "Recurring jobs",
+                        hoverLines: [
+                          backgroundStatusNote,
+                          backgroundStatusDetail,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
                       },
                       {
-                        title: "Worker layout",
-                        tone: "neutral",
+                        key: "workers",
+                        label: "Workers",
                         value: workerSummaryLabel,
-                        note: workerSummaryNote,
-                        detail: workerSummaryDetail,
+                        tone: "neutral",
+                        caption: gunicornValue !== "—" ? gunicornValue : "Runtime layout",
+                        hoverTitle: "Worker layout",
+                        hoverLines: [
+                          workerSummaryNote,
+                          workerSummaryDetail,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "cpu",
+                        label: "CPU",
+                        value: cpuUsageValue,
+                        tone: metricTone(cpu?.usagePercent, 70, 85),
+                        caption:
+                          cpuLoadValue !== "—" ? `Load ${cpuLoadValue}` : cpuUsageHint,
+                        hoverTitle: "CPU usage",
+                        hoverLines: [
+                          cpuUsageValue !== "—" ? `Usage ${cpuUsageValue}` : null,
+                          cpuUsageHint,
+                          cpuLoadValue !== "—"
+                            ? `Load ${cpuLoadValue} • ${cpuLoadHint}`
+                            : cpuLoadHint,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "memory",
+                        label: "Memory",
+                        value: memoryValue,
+                        tone: metricTone(mem?.usedPercent, 75, 90),
+                        caption:
+                          typeof mem?.availableMb === "number"
+                            ? `${formatServerHealthNumber(mem.availableMb, 0) || "—"} MB free`
+                            : "Host memory",
+                        hoverTitle: "Memory",
+                        hoverLines: [
+                          memoryValue !== "—" ? `Used ${memoryValue}` : null,
+                          memoryHint,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "disk",
+                        label: "Disk",
+                        value: diskValue,
+                        tone: metricTone(disk?.usedPercent, 80, 92),
+                        caption:
+                          typeof disk?.freeGb === "number"
+                            ? `${formatServerHealthNumber(disk.freeGb, 1) || "—"} GB free`
+                            : "Filesystem usage",
+                        hoverTitle: "Disk",
+                        hoverLines: [
+                          diskValue !== "—" ? `Used ${diskValue}` : null,
+                          diskHint,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "rss",
+                        label: "App RSS",
+                        value: rssValue,
+                        tone: "neutral",
+                        caption: "Process memory",
+                        hoverTitle: "App RSS",
+                        hoverLines: [
+                          rssValue !== "—" ? `Resident set ${rssValue}` : null,
+                          rssHint,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "gunicorn",
+                        label: "Gunicorn",
+                        value: gunicornValue,
+                        tone: "neutral",
+                        caption:
+                          typeof gunicorn?.timeoutSeconds === "number"
+                            ? `${gunicorn.timeoutSeconds}s timeout`
+                            : "Worker runtime",
+                        hoverTitle: "Gunicorn",
+                        hoverLines: [
+                          gunicornValue !== "—" ? `Layout ${gunicornValue}` : null,
+                          gunicornHint,
+                          workerSummaryDetail,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "mysql",
+                        label: "MySQL",
+                        value: mysqlValue,
+                        tone:
+                          typeof mysqlEnabled === "boolean"
+                            ? mysqlEnabled
+                              ? "healthy"
+                              : "degraded"
+                            : "neutral",
+                        caption:
+                          queueMetric?.value && queueMetric.value !== "0"
+                            ? `Queue ${queueMetric.value}`
+                            : "Primary database",
+                        hoverTitle: "MySQL",
+                        hoverLines: [
+                          mysqlValue !== "—" ? `Status ${mysqlValue}` : null,
+                          mysqlHint,
+                          queueMetric
+                            ? `${queueMetric.label} ${queueMetric.value} • ${queueMetric.hint}`
+                            : null,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "uptime",
+                        label: "Uptime",
+                        value: uptimeValue,
+                        tone: "neutral",
+                        caption: "Service lifetime",
+                        hoverTitle: "Uptime",
+                        hoverLines: [
+                          uptimeValue !== "—" ? `Service ${uptimeValue}` : null,
+                          uptimeHint,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "build",
+                        label: "Build",
+                        value: buildValue,
+                        tone: "neutral",
+                        caption: updatedValue !== "—" ? `Updated ${updatedValue}` : "Deployment metadata",
+                        hoverTitle: "Build",
+                        hoverLines: [
+                          buildHint,
+                          updatedHint,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "updated",
+                        label: "Updated",
+                        value: updatedValue,
+                        tone: "neutral",
+                        caption: snapshotFullLabel || "Latest snapshot",
+                        hoverTitle: "Updated",
+                        hoverLines: [
+                          updatedHint,
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
                       },
                     ];
+                    const compactJobItems: Array<{
+                      key: string;
+                      label: string;
+                      value: string;
+                      tone: keyof typeof toneClasses;
+                      caption: string;
+                      hoverTitle: string;
+                      hoverLines: string[];
+                    }> =
+                      backgroundMode === "external"
+                        ? [
+                            {
+                              key: "monitoring-boundary",
+                              label: "Background worker",
+                              value: "External",
+                              tone: "external",
+                              caption: "API-only signal",
+                              hoverTitle: "Monitoring boundary",
+                              hoverLines: [
+                                backgroundStatusNote,
+                                backgroundStatusDetail,
+                              ].filter(
+                                (value): value is string =>
+                                  typeof value === "string" &&
+                                  value.trim().length > 0,
+                              ),
+                            },
+                          ]
+                        : backgroundJobEntries.map(([jobKey, job]) => {
+                            const jobTone =
+                              job.enabled === false
+                                ? "neutral"
+                                : job.lifecycle === "external"
+                                  ? "external"
+                                  : job.health?.ok === false
+                                    ? "degraded"
+                                    : "healthy";
+                            const heartbeatLabel = formatServerHealthDuration(
+                              job.heartbeatAgeSeconds,
+                            );
+                            const intervalLabel = formatServerHealthDuration(
+                              job.intervalSeconds,
+                            );
+                            const issueLabel =
+                              job.lastError?.message ||
+                              formatServerHealthReason(job.health?.reason) ||
+                              formatServerHealthReason(job.lastResult?.reason) ||
+                              formatServerHealthReason(job.lastExitReason);
+                            const secondaryBits = [
+                              job.lifecycle
+                                ? `Lifecycle ${formatServerHealthReason(job.lifecycle) || job.lifecycle}`
+                                : null,
+                              heartbeatLabel
+                                ? `Heartbeat ${heartbeatLabel} ago`
+                                : null,
+                              intervalLabel ? `Interval ${intervalLabel}` : null,
+                              typeof job.launchCount === "number" &&
+                              Number.isFinite(job.launchCount) &&
+                              job.launchCount > 0
+                                ? `Launches ${job.launchCount}`
+                                : null,
+                              typeof job.restartCount === "number" &&
+                              Number.isFinite(job.restartCount) &&
+                              job.restartCount > 0
+                                ? `Restarts ${job.restartCount}`
+                                : null,
+                            ].filter(
+                              (value): value is string =>
+                                typeof value === "string" &&
+                                value.trim().length > 0,
+                            );
+                            const lastUpdateLabel =
+                              formatServerHealthTimestamp(job.lastHeartbeatAt) ||
+                              formatServerHealthTimestamp(job.lastFinishedAt) ||
+                              formatServerHealthTimestamp(job.lastStartedAt);
+                            const statusLabel =
+                              job.enabled === false
+                                ? "Disabled"
+                                : job.lifecycle === "external"
+                                  ? "External"
+                                  : job.health?.ok === false
+                                    ? "Degraded"
+                                    : "Healthy";
+
+                            return {
+                              key: jobKey,
+                              label: SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey,
+                              value: statusLabel,
+                              tone: jobTone,
+                              caption:
+                                issueLabel ||
+                                (heartbeatLabel
+                                  ? `${heartbeatLabel} old`
+                                  : intervalLabel
+                                    ? `${intervalLabel} cadence`
+                                    : "Monitoring"),
+                              hoverTitle:
+                                SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey,
+                              hoverLines: [
+                                ...secondaryBits,
+                                issueLabel ? `Issue ${issueLabel}` : null,
+                                lastUpdateLabel
+                                  ? `Last update ${lastUpdateLabel}`
+                                  : null,
+                              ].filter(
+                                (value): value is string =>
+                                  typeof value === "string" &&
+                                  value.trim().length > 0,
+                              ),
+                            };
+                          });
+                    const recurringJobTooltipLines = compactJobItems.flatMap((item) => {
+                      const detailBits = [item.caption, ...item.hoverLines].filter(
+                        (value): value is string =>
+                          typeof value === "string" && value.trim().length > 0,
+                      );
+                      if (detailBits.length === 0) {
+                        return [`${item.label}: ${item.value}`];
+                      }
+                      return [`${item.label}: ${item.value} • ${detailBits.join(" • ")}`];
+                    });
+                    const pillClass =
+                      "inline-flex min-w-[128px] shrink-0 cursor-help flex-col items-start justify-center rounded-[28px] bg-slate-100 px-4 py-2 text-slate-700";
 
                     return (
                       <>
-                        <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="min-w-0 flex-1">
-                            <span
-                              className={clsx(
-                                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm",
-                                toneClasses[statusBadgeTone],
-                              )}
-                            >
-                              <StatusBadgeIcon
-                                className={clsx(
-                                  "h-3.5 w-3.5",
-                                  serverHealthLoading && "animate-spin",
-                                )}
-                              />
-                              <span>{statusBadgeLabel}</span>
-                            </span>
-                            <h4 className="mt-3 text-[2rem] font-semibold leading-tight text-slate-950">
+                            <h4 className="text-base font-semibold text-slate-900">
                               Server Health
                             </h4>
-                            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                              Live snapshot of API reachability, worker layout,
-                              recurring job ownership, and resource pressure.
+                            <p className="text-sm text-slate-600">
+                              API status, workers, recurring jobs, and runtime load.
                             </p>
                           </div>
                           <div className="flex-shrink-0">
@@ -30092,17 +30308,12 @@ function MainApp() {
                               type="button"
                               variant="outline"
                               size="sm"
+                              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
                               onClick={() => void fetchServerHealth({ force: true })}
                               disabled={serverHealthLoading}
-                              className="header-home-button squircle-sm bg-white/90 text-slate-900 shadow-sm hover:bg-white"
-                              title="Refresh server health"
+                              aria-busy={serverHealthLoading}
+                              title="Refresh"
                             >
-                              <RefreshCw
-                                className={clsx(
-                                  "mr-2 h-4 w-4",
-                                  serverHealthLoading && "animate-spin",
-                                )}
-                              />
                               {serverHealthLoading ? "Refreshing…" : "Refresh"}
                             </Button>
                           </div>
@@ -30135,278 +30346,41 @@ function MainApp() {
                           </div>
                         )}
 
-                        <div className="mt-5 space-y-4">
-                          <div className="grid gap-4 xl:grid-cols-3">
-                            {summaryCards.map((card) => {
-                              const Icon = toneIcons[card.tone];
-                              return (
-                                <div
-                                  key={card.title}
-                                  className={clsx(
-                                    "rounded-[28px] border p-5 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]",
-                                    toneSurfaceClasses[card.tone],
-                                  )}
-                                >
-                                  <div className="flex items-start gap-4">
-                                    <span
-                                      className={clsx(
-                                        "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border",
-                                        toneIconClasses[card.tone],
-                                      )}
-                                    >
-                                      <Icon className="h-5 w-5" />
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                        {card.title}
-                                      </p>
-                                      <p className="mt-3 text-xl font-semibold text-slate-950">
-                                        {card.value}
-                                      </p>
-                                      <p className="mt-2 text-sm leading-6 text-slate-700">
-                                        {card.note}
-                                      </p>
-                                      {card.detail && (
-                                        <p className="mt-2 text-xs leading-5 text-slate-500">
-                                          {card.detail}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div>
-                                <h5 className="text-sm font-semibold text-slate-900">
-                                  Resource pressure
-                                </h5>
-                                <p className="text-xs text-slate-500">
-                                  Latest host and process metrics reported by the backend.
-                                </p>
-                              </div>
-                              {snapshotFullLabel && (
-                                <span className="text-xs font-medium text-slate-500">
-                                  As of {snapshotFullLabel}
+                        <div
+                          className="sales-rep-table-wrapper admin-dashboard-list mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden p-0 no-scrollbar [scrollbar-width:thin] [touch-action:pan-x] overscroll-x-contain"
+                          role="region"
+                          aria-label="Server health snapshot"
+                          tabIndex={0}
+                        >
+                          <div className="flex w-max min-w-max flex-nowrap gap-2 pr-2">
+                            {compactHealthItems.map((item) => (
+                              <span
+                                key={item.key}
+                                title={[
+                                  item.hoverTitle,
+                                  item.caption,
+                                  ...item.hoverLines,
+                                  ...(item.key === "jobs" ? recurringJobTooltipLines : []),
+                                ].join("\n")}
+                                className={pillClass}
+                              >
+                                <span className="text-[11px] font-medium leading-none text-slate-500">
+                                  {item.label}
                                 </span>
-                              )}
-                            </div>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                              {resourceMetrics.map((metric) => (
-                                <div
-                                  key={metric.label}
-                                  className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3"
-                                >
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                    {metric.label}
-                                  </p>
-                                  <p
-                                    className={clsx(
-                                      "mt-2 text-xl font-semibold",
-                                      metric.value === "—"
-                                        ? "text-slate-400"
-                                        : "text-slate-950",
-                                    )}
-                                  >
-                                    {metric.value}
-                                  </p>
-                                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                                    {metric.hint}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
+                                <span className="mt-1 text-[0.95rem] font-semibold leading-tight text-slate-900">
+                                  {item.value}
+                                </span>
+                              </span>
+                            ))}
                           </div>
-
-                          <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]">
-                            <div>
-                              <h5 className="text-sm font-semibold text-slate-900">
-                                Runtime details
-                              </h5>
-                              <p className="text-xs text-slate-500">
-                                Worker configuration, dependencies, and deployment metadata.
-                              </p>
-                            </div>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                              {runtimeMetrics.map((metric) => (
-                                <div
-                                  key={metric.label}
-                                  className="rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3"
-                                >
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                    {metric.label}
-                                  </p>
-                                  <p
-                                    className={clsx(
-                                      "mt-2 text-xl font-semibold",
-                                      metric.value === "—"
-                                        ? "text-slate-400"
-                                        : "text-slate-950",
-                                    )}
-                                  >
-                                    {metric.value}
-                                  </p>
-                                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                                    {metric.hint}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {backgroundMode === "external" ? (
-                            <div className="rounded-[28px] border border-sky-200/80 bg-sky-50/90 px-4 py-4 text-sky-900 shadow-[0_18px_40px_-36px_rgba(14,116,144,0.35)]">
-                              <div className="flex items-start gap-3">
-                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
-                                <div>
-                                  <p className="text-sm font-semibold">
-                                    Monitoring boundary
-                                  </p>
-                                  <p className="mt-1 text-sm leading-6 text-sky-800">
-                                    This snapshot confirms that the API workers are reachable. It
-                                    does not prove that the dedicated background worker service is
-                                    alive, so that service should be monitored independently.
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          ) : backgroundJobEntries.length > 0 ? (
-                            <div className="space-y-3 rounded-[28px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_40px_-36px_rgba(15,23,42,0.45)]">
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                  <h5 className="text-sm font-semibold text-slate-900">
-                                    In-process job checks
-                                  </h5>
-                                  <p className="text-xs text-slate-500">
-                                    Heartbeats, lifecycle state, and restart signals reported by the backend.
-                                  </p>
-                                </div>
-                                {unhealthyJobs.length > 0 && (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-amber-200 bg-amber-50 text-amber-700"
-                                  >
-                                    {unhealthyJobs.length} issue
-                                    {unhealthyJobs.length === 1 ? "" : "s"}
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="grid gap-3 lg:grid-cols-2">
-                                {backgroundJobEntries.map(([jobKey, job]) => {
-                                  const jobTone =
-                                    job.enabled === false
-                                      ? "neutral"
-                                      : job.lifecycle === "external"
-                                        ? "external"
-                                        : job.health?.ok === false
-                                          ? "degraded"
-                                          : "healthy";
-                                  const heartbeatLabel = formatServerHealthDuration(
-                                    job.heartbeatAgeSeconds,
-                                  );
-                                  const intervalLabel = formatServerHealthDuration(
-                                    job.intervalSeconds,
-                                  );
-                                  const issueLabel =
-                                    job.lastError?.message ||
-                                    formatServerHealthReason(job.health?.reason) ||
-                                    formatServerHealthReason(job.lastResult?.reason) ||
-                                    formatServerHealthReason(job.lastExitReason);
-                                  const secondaryBits = [
-                                    job.lifecycle
-                                      ? `Lifecycle ${formatServerHealthReason(job.lifecycle) || job.lifecycle}`
-                                      : null,
-                                    heartbeatLabel
-                                      ? `Heartbeat ${heartbeatLabel} ago`
-                                      : null,
-                                    intervalLabel ? `Interval ${intervalLabel}` : null,
-                                    typeof job.launchCount === "number" &&
-                                    Number.isFinite(job.launchCount) &&
-                                    job.launchCount > 0
-                                      ? `Launches ${job.launchCount}`
-                                      : null,
-                                    typeof job.restartCount === "number" &&
-                                    Number.isFinite(job.restartCount) &&
-                                    job.restartCount > 0
-                                      ? `Restarts ${job.restartCount}`
-                                      : null,
-                                  ].filter(
-                                    (value): value is string =>
-                                      typeof value === "string" && value.trim().length > 0,
-                                  );
-                                  const lastUpdateLabel =
-                                    formatServerHealthTimestamp(job.lastHeartbeatAt) ||
-                                    formatServerHealthTimestamp(job.lastFinishedAt) ||
-                                    formatServerHealthTimestamp(job.lastStartedAt);
-                                  const statusLabel =
-                                    job.enabled === false
-                                      ? "Disabled"
-                                      : job.lifecycle === "external"
-                                        ? "External"
-                                        : job.health?.ok === false
-                                          ? "Degraded"
-                                          : "Healthy";
-
-                                  return (
-                                    <div
-                                      key={jobKey}
-                                      className="rounded-[26px] border border-slate-200/80 bg-white/85 p-4 shadow-[0_14px_32px_-30px_rgba(15,23,42,0.45)]"
-                                    >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                          <p className="text-sm font-semibold text-slate-900">
-                                            {SERVER_HEALTH_JOB_LABELS[jobKey] || jobKey}
-                                          </p>
-                                        </div>
-                                        <Badge
-                                          variant="outline"
-                                          className={clsx(
-                                            "border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]",
-                                            toneClasses[jobTone],
-                                          )}
-                                        >
-                                          {statusLabel}
-                                        </Badge>
-                                      </div>
-                                      {secondaryBits.length > 0 && (
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                          {secondaryBits.map((bit) => (
-                                            <span
-                                              key={bit}
-                                              className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600"
-                                            >
-                                              {bit}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {issueLabel && (
-                                        <div
-                                          className={clsx(
-                                            "mt-3 rounded-2xl border px-3 py-2 text-sm leading-6",
-                                            jobTone === "degraded"
-                                              ? "border-amber-200 bg-amber-50/80 text-amber-800"
-                                              : "border-slate-200 bg-slate-50/90 text-slate-700",
-                                          )}
-                                        >
-                                          {issueLabel}
-                                        </div>
-                                      )}
-                                      {lastUpdateLabel && (
-                                        <p className="mt-3 text-[11px] text-slate-500">
-                                          Last update: {lastUpdateLabel}
-                                        </p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ) : null}
                         </div>
+
+                        {unhealthyJobLabels.length > 0 && backgroundMode !== "external" && (
+                          <p className="mt-3 text-xs text-slate-500">
+                            Jobs needing attention: {unhealthyJobLabels.join(", ")}. Hover the
+                            Jobs pill for detail.
+                          </p>
+                        )}
                       </>
                     );
                   })()}
@@ -35960,6 +35934,7 @@ function MainApp() {
             user={user}
             avatarStyle="compact-circle"
             requireGreaterArea
+            allowIncompleteSubmit
             preActionsNote={'Use the network toggle above to control whether your profile will appear in the PepPro physician network. These details can be updated anytime in your account settings.'}
             submitLabel="Save and Continue"
             submittingLabel="Saving profile…"

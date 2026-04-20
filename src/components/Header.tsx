@@ -5209,14 +5209,10 @@ export function Header({
             onNetworkPresenceAgreementChange={async (networkPresenceAgreement) => {
               await saveProfileField('Physician network visibility', {
                 networkPresenceAgreement,
-                profileOnboarding: true,
               });
             }}
             onSubmit={async (payload) => {
-              await saveProfileField('Physician profile', {
-                ...payload,
-                profileOnboarding: true,
-              });
+              await saveProfileField('Physician profile', payload);
             }}
           />
         </div>

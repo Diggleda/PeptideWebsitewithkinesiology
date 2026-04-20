@@ -34,6 +34,7 @@ interface DoctorProfileFormProps {
   preActionsNote?: ReactNode;
   avatarStyle?: 'default' | 'compact-circle';
   requireGreaterArea?: boolean;
+  allowIncompleteSubmit?: boolean;
   submitLabel?: string;
   submittingLabel?: string;
   skipLabel?: string;
@@ -117,6 +118,7 @@ export function DoctorProfileForm({
   preActionsNote,
   avatarStyle = 'default',
   requireGreaterArea = false,
+  allowIncompleteSubmit = false,
   submitLabel = 'Save profile',
   submittingLabel = 'Saving…',
   skipLabel = 'Skip for now',
@@ -238,13 +240,17 @@ export function DoctorProfileForm({
     const trimmedFocus = studyFocus.trim();
     const trimmedBio = bio.trim();
 
-    if (!trimmedName) {
+    if (!allowIncompleteSubmit && !trimmedName) {
       return 'Name is required.';
     }
-    if (!trimmedEmail || !EMAIL_PATTERN.test(trimmedEmail)) {
+    if (!trimmedEmail) {
+      if (!allowIncompleteSubmit) {
+        return 'Enter a valid email address.';
+      }
+    } else if (!EMAIL_PATTERN.test(trimmedEmail)) {
       return 'Enter a valid email address.';
     }
-    if (requireGreaterArea && !trimmedArea) {
+    if (!allowIncompleteSubmit && requireGreaterArea && !trimmedArea) {
       return 'Greater area is required.';
     }
     if (trimmedArea.length > 190) {

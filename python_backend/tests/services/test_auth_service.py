@@ -430,6 +430,55 @@ class AuthServiceTests(unittest.TestCase):
         self.assertEqual(saved_payloads[0]["greaterArea"], "New Orleans, LA")
         self.assertEqual(updated["greaterArea"], "New Orleans, LA")
 
+    def test_update_profile_marks_doctor_onboarding_complete_only_when_required_fields_exist(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "greaterArea": "Midwest",
+            "studyFocus": None,
+            "profileOnboarding": False,
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            incomplete = auth_service.update_profile(
+                "doctor-1",
+                {"profileOnboarding": True},
+            )
+
+        self.assertEqual(len(saved_payloads), 1)
+        self.assertFalse(saved_payloads[0]["profileOnboarding"])
+        self.assertFalse(incomplete["profileOnboarding"])
+
+        saved_payloads.clear()
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            complete = auth_service.update_profile(
+                "doctor-1",
+                {"studyFocus": "Recovery research"},
+            )
+
+        self.assertEqual(len(saved_payloads), 1)
+        self.assertTrue(saved_payloads[0]["profileOnboarding"])
+        self.assertTrue(complete["profileOnboarding"])
+        self.assertEqual(saved_payloads[0]["studyFocus"], "Recovery research")
+
     def test_update_profile_accepts_snake_case_network_presence_agreement(self) -> None:
         user = {
             "id": "doctor-1",

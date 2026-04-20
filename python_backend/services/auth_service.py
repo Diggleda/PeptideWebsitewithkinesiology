@@ -53,6 +53,18 @@ def _normalize_bool(value: Any) -> bool:
     return text in ("1", "true", "yes", "y", "on")
 
 
+def _has_required_doctor_profile_fields(record: Dict[str, Any]) -> bool:
+    return all(
+        isinstance(field, str) and field.strip()
+        for field in (
+            record.get("name"),
+            record.get("email"),
+            record.get("greaterArea"),
+            record.get("studyFocus"),
+        )
+    )
+
+
 _DOCTOR_PROFILE_FIELD_LIMITS = {
     "greaterArea": 190,
     "studyFocus": 190,
@@ -1090,6 +1102,8 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "bio": bio,
         **shipping_fields,
     }
+    if _normalize_role(updated.get("role")) in ("doctor", "test_doctor"):
+        updated["profileOnboarding"] = _has_required_doctor_profile_fields(updated)
 
     logger.info(
         "Profile update requested (includes profile image) %s",
