@@ -2474,6 +2474,12 @@ export const ordersAPI = {
         expectedShipmentWindow: expectedShipmentWindow ?? null,
         physicianCertification: options?.physicianCertification === true,
         handDelivery: options?.handDelivery === true,
+        ...(options?.handDelivery === true
+          ? {
+              facility_pickup: true,
+              fascility_pickup: true,
+            }
+          : {}),
         delegateProposalToken: options?.delegateProposalToken ?? null,
         taxTotal: typeof taxTotal === 'number' ? taxTotal : null,
       }),
@@ -2499,7 +2505,15 @@ export const ordersAPI = {
   ) => {
     return fetchWithAuth(`${API_BASE_URL}/orders/estimate`, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        ...(payload?.handDelivery === true
+          ? {
+              facility_pickup: true,
+              fascility_pickup: true,
+            }
+          : {}),
+      }),
       signal: options?.signal,
     });
   },

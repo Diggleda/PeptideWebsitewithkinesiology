@@ -115,6 +115,17 @@ type ShippingAddress = {
   country?: string | null;
 };
 
+const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup';
+const FACILITY_PICKUP_ADDRESS: ShippingAddress = {
+  name: 'PepPro Facility Pickup',
+  addressLine1: '640 S Grand Ave',
+  addressLine2: 'Unit #107',
+  city: 'Santa Ana',
+  state: 'CA',
+  postalCode: '92705',
+  country: 'US',
+};
+
 type ShippingRate = {
   carrierId: string | null;
   serviceCode: string | null;
@@ -167,6 +178,18 @@ const normalizeAddressField = (value?: string | null) => {
   }
   return String(value).trim();
 };
+
+const buildAddressSignature = (address: ShippingAddress) =>
+  [
+    address.addressLine1,
+    address.addressLine2,
+    address.city,
+    address.state,
+    address.postalCode,
+    address.country,
+  ]
+    .map((value) => normalizeAddressField(value).toUpperCase())
+    .join('|');
 
 const isAddressComplete = (address: ShippingAddress) =>
   Boolean(
@@ -289,6 +312,7 @@ interface CheckoutModalProps {
   salesRepName?: string | null;
   handDelivered?: boolean;
   allowManualHandDelivery?: boolean;
+  allowFacilityPickup?: boolean;
   defaultShippingAddress?: ShippingAddress | null;
   defaultShippingRate?: ShippingRate | null;
   availableCredits?: number;
@@ -364,6 +388,7 @@ export function CheckoutModal({
   salesRepName,
   handDelivered = false,
   allowManualHandDelivery = false,
+  allowFacilityPickup = false,
   onClearCart,
   onPaymentSuccess,
   defaultShippingAddress,
@@ -401,6 +426,7 @@ export function CheckoutModal({
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('zelle');
   const [manualHandDelivery, setManualHandDelivery] = useState(false);
+  const [facilityPickup, setFacilityPickup] = useState(false);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
@@ -585,11 +611,15 @@ export function CheckoutModal({
   const shippingCost = selectedShippingRate?.rate
     ? Number(selectedShippingRate.rate) || 0
     : 0;
+  const isFacilityPickupEnabled =
+    !isDelegateCheckoutFlow && allowFacilityPickup && facilityPickup === true;
   const isDoctorHandDeliveryEnabled = !isDelegateCheckoutFlow && handDelivered === true;
   const isManualHandDeliveryEnabled =
     !isDelegateCheckoutFlow && allowManualHandDelivery && manualHandDelivery === true;
   const isHandDeliveryEnabled = isDoctorHandDeliveryEnabled || isManualHandDeliveryEnabled;
-  const effectiveShippingCost = isHandDeliveryEnabled ? 0 : shippingCost;
+  const bypassShippingRateSelection = isHandDeliveryEnabled || isFacilityPickupEnabled;
+  const effectiveCheckoutAddress = isFacilityPickupEnabled ? FACILITY_PICKUP_ADDRESS : shippingAddress;
+  const effectiveShippingCost = bypassShippingRateSelection ? 0 : shippingCost;
   const localSalesRepDisplayName = String(salesRepName || '').trim() || 'Your sales rep';
   const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
@@ -605,22 +635,13 @@ export function CheckoutModal({
   const displayTaxAmount = testOverrideApplied ? 0 : taxAmount;
   const displayTotal = testOverrideApplied ? 0.01 : total;
   const isDelegateFlow = isDelegateCheckoutFlow;
-  const shippingAddressSignature = [
-    shippingAddress.addressLine1,
-    shippingAddress.addressLine2,
-    shippingAddress.city,
-    shippingAddress.state,
-    shippingAddress.postalCode,
-    shippingAddress.country,
-  ]
-    .map((value) => normalizeAddressField(value).toUpperCase())
-    .join('|');
+  const shippingAddressSignature = buildAddressSignature(effectiveCheckoutAddress);
   const delegateShippingHandledByPhysician = isDelegateFlow;
-  const shippingAddressComplete = delegateShippingHandledByPhysician ? true : isAddressComplete(shippingAddress);
-  const taxAddressReady = delegateShippingHandledByPhysician ? false : isTaxAddressReady(shippingAddress);
+  const shippingAddressComplete = delegateShippingHandledByPhysician ? true : isAddressComplete(effectiveCheckoutAddress);
+  const taxAddressReady = delegateShippingHandledByPhysician ? false : isTaxAddressReady(effectiveCheckoutAddress);
   const isPaymentValid = true;
   const hasSelectedShippingRate = delegateShippingHandledByPhysician
-    || isHandDeliveryEnabled
+    || bypassShippingRateSelection
     || Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
@@ -636,12 +657,17 @@ export function CheckoutModal({
     && shippingAddressComplete
     && hasSelectedShippingRate
     && taxReady;
+  const showCheckoutOptionsCard = showRetailPricingToggle || allowFacilityPickup;
   const taxQuoteKey = useMemo(() => {
     if (!shouldFetchTax) {
       return null;
     }
-    const rateFingerprint = selectedShippingRate?.addressFingerprint
-      || `${selectedShippingRate?.carrierId || 'carrier'}:${selectedShippingRate?.serviceCode || selectedShippingRate?.serviceType || 'service'}`;
+    const rateFingerprint = isFacilityPickupEnabled
+      ? FACILITY_PICKUP_SERVICE_CODE
+      : isHandDeliveryEnabled
+        ? 'hand_delivery'
+        : selectedShippingRate?.addressFingerprint
+          || `${selectedShippingRate?.carrierId || 'carrier'}:${selectedShippingRate?.serviceCode || selectedShippingRate?.serviceType || 'service'}`;
     return [
       cartLineItemSignature || 'items',
       shippingAddressSignature || 'address',
@@ -655,6 +681,8 @@ export function CheckoutModal({
     shouldFetchTax,
     cartLineItemSignature,
     shippingAddressSignature,
+    isFacilityPickupEnabled,
+    isHandDeliveryEnabled,
     selectedShippingRate,
     effectiveShippingCost,
     paymentMethod,
@@ -1053,23 +1081,23 @@ export function CheckoutModal({
     });
 	    setIsProcessing(true);
     try {
-      const handDeliveryRate: ShippingRate | null = isHandDeliveryEnabled
+      const noShippingRate: ShippingRate | null = bypassShippingRateSelection
         ? {
-            carrierId: 'hand_delivery',
-            serviceCode: 'hand_delivery',
-              serviceType: 'Hand delivered',
-              estimatedDeliveryDays: null,
-              deliveryDateGuaranteed: null,
-              rate: 0,
-              currency: 'USD',
+            carrierId: isFacilityPickupEnabled ? FACILITY_PICKUP_SERVICE_CODE : 'hand_delivery',
+            serviceCode: isFacilityPickupEnabled ? FACILITY_PICKUP_SERVICE_CODE : 'hand_delivery',
+            serviceType: isFacilityPickupEnabled ? 'Facility pickup' : 'Hand delivered',
+            estimatedDeliveryDays: null,
+            deliveryDateGuaranteed: null,
+            rate: 0,
+            currency: 'USD',
             addressFingerprint: shippingAddressSignature || null,
           }
         : null;
-      const checkoutShippingAddress = delegateShippingHandledByPhysician ? null : shippingAddress;
+      const checkoutShippingAddress = delegateShippingHandledByPhysician ? null : effectiveCheckoutAddress;
       const checkoutShippingRate = delegateShippingHandledByPhysician
         ? null
-        : isHandDeliveryEnabled
-          ? handDeliveryRate
+        : bypassShippingRateSelection
+          ? noShippingRate
           : selectedShippingRate;
       const checkoutShippingTotal = delegateShippingHandledByPhysician ? 0 : effectiveShippingCost;
 	      const result = await onCheckout({
@@ -1078,7 +1106,7 @@ export function CheckoutModal({
 	        shippingTotal: checkoutShippingTotal,
           delegateAmountDue,
           delegateAmountDueCurrency: delegateAmountDue != null ? 'USD' : null,
-          handDelivery: isHandDeliveryEnabled,
+          handDelivery: bypassShippingRateSelection,
 	        expectedShipmentWindow: delegateShippingHandledByPhysician ? null : (deliveryEstimate?.deliveryWindowLabel ?? null),
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
@@ -1282,6 +1310,7 @@ export function CheckoutModal({
       setTermsAccepted(false);
       setPaymentMethod('zelle');
       setManualHandDelivery(false);
+      setFacilityPickup(false);
       setPlacedOrderNumber(null);
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
@@ -1407,7 +1436,7 @@ export function CheckoutModal({
     if (!shouldFetchTax || !taxQuoteKey) {
       return;
     }
-    if (!isHandDeliveryEnabled && !selectedShippingRate) {
+    if (!bypassShippingRateSelection && !selectedShippingRate) {
       return;
     }
     if (!options?.force && lastTaxQuoteRef.current?.key === taxQuoteKey) {
@@ -1425,11 +1454,11 @@ export function CheckoutModal({
     setTaxEstimateError(null);
     try {
       const estimate = estimateTotals ?? ordersAPI.estimateTotals;
-      const handDeliveryRate: ShippingRate | null = isHandDeliveryEnabled
+      const noShippingRate: ShippingRate | null = bypassShippingRateSelection
         ? {
-            carrierId: 'hand_delivery',
-            serviceCode: 'hand_delivery',
-            serviceType: 'Hand delivered',
+            carrierId: isFacilityPickupEnabled ? FACILITY_PICKUP_SERVICE_CODE : 'hand_delivery',
+            serviceCode: isFacilityPickupEnabled ? FACILITY_PICKUP_SERVICE_CODE : 'hand_delivery',
+            serviceType: isFacilityPickupEnabled ? 'Facility pickup' : 'Hand delivered',
             estimatedDeliveryDays: null,
             deliveryDateGuaranteed: null,
             rate: 0,
@@ -1445,10 +1474,10 @@ export function CheckoutModal({
             price: item.price,
             quantity: item.quantity,
           })),
-          shippingAddress,
-          shippingEstimate: isHandDeliveryEnabled ? handDeliveryRate : selectedShippingRate,
+          shippingAddress: effectiveCheckoutAddress,
+          shippingEstimate: bypassShippingRateSelection ? noShippingRate : selectedShippingRate,
           shippingTotal: effectiveShippingCost,
-          handDelivery: isHandDeliveryEnabled,
+          handDelivery: bypassShippingRateSelection,
           paymentMethod,
           discountCode: discountCodeApplied?.code ?? null,
         },
@@ -1518,9 +1547,10 @@ export function CheckoutModal({
     estimateTotals,
     paymentMethod,
     selectedShippingRate,
-    isHandDeliveryEnabled,
+    bypassShippingRateSelection,
+    isFacilityPickupEnabled,
     shippingAddressSignature,
-    shippingAddress,
+    effectiveCheckoutAddress,
     effectiveShippingCost,
     shouldFetchTax,
     taxQuoteKey,
@@ -1646,37 +1676,75 @@ export function CheckoutModal({
               {/* Cart Items */}
               <div className="space-y-4">
                 <h3>Order Summary</h3>
-                {showRetailPricingToggle && (
+                {showCheckoutOptionsCard && (
                   <div
                     className={`glass-card squircle-lg flex flex-wrap items-center justify-between gap-4 border px-6 py-4 transition-colors ${
-                      retailPricingEnabled
+                      retailPricingEnabled || isFacilityPickupEnabled
                         ? 'border-[rgba(34,197,94,0.38)] shadow-[0_20px_48px_-38px_rgba(34,197,94,0.35)]'
                         : 'border-[rgba(95,179,249,0.28)] shadow-[0_20px_48px_-40px_rgba(95,179,249,0.22)] hover:border-[rgba(95,179,249,0.42)]'
                     }`}
                   >
-                    <div className="flex items-center gap-4">
-                      <input
-                        id="retail-pricing-toggle"
-                        type="checkbox"
-                        className="brand-checkbox"
-                        checked={retailPricingEnabled}
-                        onChange={(event) => {
-                          const next: PricingMode = event.target.checked ? 'retail' : 'wholesale';
-                          onPricingModeChange?.(next);
-                        }}
-                      />
-                      <div className="flex flex-col">
-                        <label htmlFor="retail-pricing-toggle" className="text-base font-semibold text-slate-900">
-                          Retail pricing
-                        </label>
-                        <span className="text-xs text-slate-600">For Sales Reps only</span>
-                      </div>
+                    <div className="flex w-full flex-col gap-4">
+                      {showRetailPricingToggle && (
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex items-center gap-4">
+                            <input
+                              id="retail-pricing-toggle"
+                              type="checkbox"
+                              className="brand-checkbox"
+                              checked={retailPricingEnabled}
+                              onChange={(event) => {
+                                const next: PricingMode = event.target.checked ? 'retail' : 'wholesale';
+                                onPricingModeChange?.(next);
+                              }}
+                            />
+                            <div className="flex flex-col">
+                              <label htmlFor="retail-pricing-toggle" className="text-base font-semibold text-slate-900">
+                                Retail pricing
+                              </label>
+                              <span className="text-xs text-slate-600">For Sales Reps only</span>
+                            </div>
+                          </div>
+                          {retailPricingEnabled && (
+                            <span className="inline-flex items-center rounded-full border border-green-200/80 bg-green-50/70 px-3 py-1 text-xs font-semibold text-green-800">
+                              Enabled
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {allowFacilityPickup && !isDelegateFlow && (
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex items-center gap-4">
+                            <input
+                              id="facility-pickup-toggle"
+                              type="checkbox"
+                              className="brand-checkbox"
+                              checked={isFacilityPickupEnabled}
+                              onChange={(event) => {
+                                const nextChecked = event.target.checked;
+                                setFacilityPickup(nextChecked);
+                                if (nextChecked) {
+                                  setManualHandDelivery(false);
+                                }
+                              }}
+                            />
+                            <div className="flex flex-col">
+                              <label htmlFor="facility-pickup-toggle" className="text-base font-semibold text-slate-900">
+                                Facility Pickup
+                              </label>
+                              <span className="text-xs text-slate-600">
+                                Use PepPro&apos;s facility address and skip shipping rates
+                              </span>
+                            </div>
+                          </div>
+                          {isFacilityPickupEnabled && (
+                            <span className="inline-flex items-center rounded-full border border-green-200/80 bg-green-50/70 px-3 py-1 text-xs font-semibold text-green-800">
+                              Enabled
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {retailPricingEnabled && (
-                      <span className="inline-flex items-center rounded-full border border-green-200/80 bg-green-50/70 px-3 py-1 text-xs font-semibold text-green-800">
-                        Enabled
-                      </span>
-                    )}
                   </div>
                 )}
                 <div className="flex w-full max-w-full flex-col gap-4 pb-2 lg:grid lg:grid-cols-2 auto-rows-fr">
@@ -2001,8 +2069,8 @@ export function CheckoutModal({
 
               {/* Shipping */}
               <div className="space-y-4">
-                <h3>Shipping Address</h3>
-                {allowManualHandDelivery && !isDelegateFlow && (
+                <h3>{isFacilityPickupEnabled ? 'Pickup Location' : 'Shipping Address'}</h3>
+                {allowManualHandDelivery && !isDelegateFlow && !isFacilityPickupEnabled && (
                   <div
                     className={`glass-card squircle-lg flex flex-wrap items-center justify-between gap-4 border px-6 py-4 transition-colors ${
                       manualHandDelivery
@@ -2016,7 +2084,13 @@ export function CheckoutModal({
                         type="checkbox"
                         className="brand-checkbox"
                         checked={manualHandDelivery}
-                        onChange={(event) => setManualHandDelivery(event.target.checked)}
+                        onChange={(event) => {
+                          const nextChecked = event.target.checked;
+                          setManualHandDelivery(nextChecked);
+                          if (nextChecked) {
+                            setFacilityPickup(false);
+                          }
+                        }}
                         disabled={isDoctorHandDeliveryEnabled}
                       />
                       <div className="flex flex-col">
@@ -2060,7 +2134,19 @@ export function CheckoutModal({
                     </p>
                   </div>
                 )}
-                {isDelegateFlow ? (
+                {isFacilityPickupEnabled ? (
+                  <div className="glass-card squircle-md border border-[rgba(34,197,94,0.3)] bg-[rgba(34,197,94,0.08)] px-5 py-4">
+                    <p className="text-sm font-semibold text-slate-900">Facility pickup selected.</p>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-700">
+                      Taxes are calculated using PepPro&apos;s facility address. Shipping-rate selection is not required for this order.
+                    </p>
+                    <div className="mt-3 space-y-1 text-sm text-slate-800">
+                      <p>640 S Grand Ave</p>
+                      <p>Unit #107</p>
+                      <p>Santa Ana, CA 92705</p>
+                    </div>
+                  </div>
+                ) : isDelegateFlow ? (
                   <div className="glass-card squircle-md border border-[rgba(95,179,249,0.28)] bg-[rgba(95,179,249,0.08)] px-5 py-4">
                     <p className="text-sm font-semibold text-slate-900">Shipping is coordinated by your physician.</p>
                     <p className="mt-1 text-sm leading-relaxed text-slate-700">
@@ -2464,7 +2550,9 @@ export function CheckoutModal({
 	                  <span>
                       {isDelegateFlow
                         ? 'Coordinated with physician'
-                        : isHandDeliveryEnabled
+                        : isFacilityPickupEnabled
+                          ? 'Facility pickup ($0.00)'
+                          : isHandDeliveryEnabled
                           ? 'FREE ($0.00)'
                           : `$${displayShippingCost.toFixed(2)}`}
                     </span>

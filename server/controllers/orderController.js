@@ -638,6 +638,10 @@ const createOrder = async (req, res, next) => {
     const idempotencyKey = typeof req.get === 'function'
       ? (req.get('idempotency-key') || '').trim()
       : '';
+    const noShippingRequested = req.body.handDelivery === true
+      || req.body.facilityPickup === true
+      || req.body.facility_pickup === true
+      || req.body.fascility_pickup === true;
     const result = await orderService.createOrder({
       userId: req.user.id,
       idempotencyKey: idempotencyKey || null,
@@ -653,7 +657,7 @@ const createOrder = async (req, res, next) => {
       taxTotal: req.body.taxTotal,
       paymentMethod: req.body.paymentMethod,
       pricingMode: req.body.pricingMode,
-      handDelivery: req.body.handDelivery === true,
+      handDelivery: noShippingRequested,
       delegateProposalToken:
         req.body.delegateProposalToken
         || req.body.delegate_proposal_token
@@ -845,13 +849,17 @@ const getShipStationStatusSyncInfo = async (req, res, next) => {
 
 const estimateOrderTotals = async (req, res, next) => {
   try {
+    const noShippingRequested = req.body.handDelivery === true
+      || req.body.facilityPickup === true
+      || req.body.facility_pickup === true
+      || req.body.fascility_pickup === true;
     const result = await orderService.estimateOrderTotals({
       userId: req.user.id,
       items: req.body.items,
       shippingAddress: req.body.shippingAddress,
       shippingEstimate: req.body.shippingEstimate,
       shippingTotal: req.body.shippingTotal,
-      handDelivery: req.body.handDelivery === true,
+      handDelivery: noShippingRequested,
     });
     res.json(result);
   } catch (error) {

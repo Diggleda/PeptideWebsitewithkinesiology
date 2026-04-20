@@ -38171,6 +38171,11 @@ function MainApp() {
               && (isRep(user.role) || isAdmin(user.role))
               && isUserHandDeliveryEnabled(user as any),
           )}
+          allowFacilityPickup={Boolean(
+            !isDelegateMode
+              && user?.role
+              && (isRep(user.role) || isAdmin(user.role)),
+          )}
 	        defaultShippingAddress={
 	          isDelegateMode ? null : (proposalShippingAddress ?? checkoutDefaultShippingAddress)
 	        }
