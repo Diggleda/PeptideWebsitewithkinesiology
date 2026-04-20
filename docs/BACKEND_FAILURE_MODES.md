@@ -11,13 +11,19 @@ This analysis treats the Python backend as the authoritative production path.
 
 ## Runtime model
 
-Production should be split into three units:
+Production should be split into four units:
 
 1. `peppr-api.service`
    - gunicorn serving `python_backend.wsgi:app`
-2. `peppr-background-jobs.service`
+2. `peppr-presence.service`
+   - gunicorn serving `python_backend.presence_wsgi:app`
+   - should own `/api/settings/presence`, `/api/settings/live-clients`,
+     `/api/settings/live-clients/longpoll`, `/api/settings/live-users`,
+     `/api/settings/live-users/longpoll`, `/api/settings/user-activity`,
+     and `/api/settings/user-activity/longpoll`
+3. `peppr-background-jobs.service`
    - `python -m python_backend.background_jobs`
-3. `peppr-catalog-snapshot.timer`
+4. `peppr-catalog-snapshot.timer`
    - periodic catalog snapshot sync
 
 Recommended env:

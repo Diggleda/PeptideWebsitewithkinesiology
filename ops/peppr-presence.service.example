@@ -1,0 +1,20 @@
+[Unit]
+Description=PepPro Presence API (gunicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pepproadmin
+WorkingDirectory=/opt/peppr/backend
+EnvironmentFile=/etc/peppr-api.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PEPPRO_WEB_BACKGROUND_JOBS_MODE=external
+ExecStart=/opt/peppr/backend/venv/bin/gunicorn python_backend.presence_wsgi:app --bind 0.0.0.0:8001 --workers 2 --threads 16 --timeout 120 --graceful-timeout 30 --keep-alive 5 --worker-class gthread
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

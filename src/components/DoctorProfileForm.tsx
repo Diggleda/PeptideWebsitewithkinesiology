@@ -34,9 +34,11 @@ interface DoctorProfileFormProps {
   preActionsNote?: ReactNode;
   avatarStyle?: 'default' | 'compact-circle';
   requireGreaterArea?: boolean;
+  requireStudyFocus?: boolean;
   allowIncompleteSubmit?: boolean;
   submitLabel?: string;
   submittingLabel?: string;
+  incompleteSubmitLabel?: string;
   skipLabel?: string;
   bioSectionClassName?: string;
   onSubmit: (payload: DoctorProfilePayload) => Promise<void>;
@@ -118,9 +120,11 @@ export function DoctorProfileForm({
   preActionsNote,
   avatarStyle = 'default',
   requireGreaterArea = false,
+  requireStudyFocus = false,
   allowIncompleteSubmit = false,
   submitLabel = 'Save profile',
   submittingLabel = 'Saving…',
+  incompleteSubmitLabel = 'Save Progress',
   skipLabel = 'Skip for now',
   bioSectionClassName,
   onSubmit,
@@ -211,6 +215,23 @@ export function DoctorProfileForm({
     isCompactCircleAvatar ? 'space-y-2 pt-4' : 'space-y-2 pt-2',
     bioSectionClassName,
   ].filter(Boolean).join(' ');
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim();
+  const trimmedArea = greaterArea.trim();
+  const trimmedFocus = studyFocus.trim();
+  const hasValidCompletionEmail =
+    trimmedEmail.length > 0 && EMAIL_PATTERN.test(trimmedEmail);
+  const completionReady = !allowIncompleteSubmit || (
+    trimmedName.length > 0
+    && hasValidCompletionEmail
+    && (!requireGreaterArea || trimmedArea.length > 0)
+    && (!requireStudyFocus || trimmedFocus.length > 0)
+  );
+  const primaryActionLabel = saving
+    ? submittingLabel
+    : allowIncompleteSubmit && !completionReady
+      ? incompleteSubmitLabel
+      : submitLabel;
 
   useEffect(() => {
     setName(user?.name || '');
@@ -234,10 +255,6 @@ export function DoctorProfileForm({
   }, [user?.networkPresenceAgreement]);
 
   const validate = () => {
-    const trimmedName = name.trim();
-    const trimmedEmail = email.trim();
-    const trimmedArea = greaterArea.trim();
-    const trimmedFocus = studyFocus.trim();
     const trimmedBio = bio.trim();
 
     if (!allowIncompleteSubmit && !trimmedName) {
@@ -252,6 +269,9 @@ export function DoctorProfileForm({
     }
     if (!allowIncompleteSubmit && requireGreaterArea && !trimmedArea) {
       return 'Greater area is required.';
+    }
+    if (!allowIncompleteSubmit && requireStudyFocus && !trimmedFocus) {
+      return 'Study focus is required.';
     }
     if (trimmedArea.length > 190) {
       return 'Greater area must be 190 characters or fewer.';
@@ -408,6 +428,25 @@ export function DoctorProfileForm({
     }
   };
 
+  const renderFieldLabel = (
+    htmlFor: string,
+    text: string,
+    required?: boolean,
+  ) => (
+    <Label htmlFor={htmlFor}>
+      {text}
+      {required ? (
+        <span
+          className="ml-1 font-semibold text-red-600 !text-red-600"
+          style={{ color: 'rgb(220 38 38)' }}
+          aria-hidden="true"
+        >
+          *
+        </span>
+      ) : null}
+    </Label>
+  );
+
   return (
     <div className="space-y-5">
       {(title || description) && (
@@ -511,7 +550,7 @@ export function DoctorProfileForm({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="physician-profile-name">Name</Label>
+              {renderFieldLabel('physician-profile-name', 'Name', allowIncompleteSubmit)}
               <Input
                 id="physician-profile-name"
                 value={name}
@@ -523,7 +562,7 @@ export function DoctorProfileForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="physician-profile-email">Email</Label>
+              {renderFieldLabel('physician-profile-email', 'Email', allowIncompleteSubmit)}
               <Input
                 id="physician-profile-email"
                 type="email"
@@ -538,7 +577,7 @@ export function DoctorProfileForm({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="physician-profile-area">Greater Area</Label>
+              {renderFieldLabel('physician-profile-area', 'Greater Area', requireGreaterArea)}
               <Input
                 id="physician-profile-area"
                 value={greaterArea}
@@ -551,7 +590,7 @@ export function DoctorProfileForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="physician-profile-focus">Study Focus</Label>
+              {renderFieldLabel('physician-profile-focus', 'Study Focus', requireStudyFocus)}
               <Input
                 id="physician-profile-focus"
                 value={studyFocus}
@@ -613,7 +652,7 @@ export function DoctorProfileForm({
           disabled={saving || avatarUploading}
           onClick={() => void handleSubmit()}
         >
-          {saving ? submittingLabel : submitLabel}
+          {primaryActionLabel}
         </Button>
       </div>
     </div>

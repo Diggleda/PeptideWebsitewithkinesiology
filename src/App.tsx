@@ -5080,6 +5080,78 @@ function MainApp() {
     animation: "none",
   };
 
+  const initializeAuthenticatedSessionUi = useCallback(
+    (
+      nextUser: User | null,
+      options?: {
+        showPostLoginHold?: boolean;
+        resetLandingAuthUi?: boolean;
+        resetPasskeyAutoRegister?: boolean;
+      },
+    ) => {
+      forcedLogoutAtRef.current = 0;
+      forcedLogoutReasonRef.current = null;
+
+      if (!nextUser) {
+        setDoctorProfileGateReady(true);
+        setDoctorProfileGateArmed(false);
+        setDoctorProfileBuilderDismissed(false);
+        setUser(null);
+        setPostLoginHold(false);
+        setShouldAnimateInfoFocus(false);
+        setInfoFocusActive(false);
+        setIsReturningUser(false);
+        return;
+      }
+
+      const gateRefreshSeq = ++doctorProfileGateRefreshSeqRef.current;
+      const shouldHoldDoctorProfileGate = isDoctorRole(nextUser.role);
+      const showPostLoginHold = Boolean(options?.showPostLoginHold);
+
+      setDoctorProfileGateReady(!shouldHoldDoctorProfileGate);
+      setDoctorProfileGateArmed(shouldHoldDoctorProfileGate);
+      setDoctorProfileBuilderDismissed(false);
+      setUser(nextUser);
+      setPostLoginHold(showPostLoginHold);
+      setShouldAnimateInfoFocus(showPostLoginHold);
+      setInfoFocusActive(showPostLoginHold);
+      setIsReturningUser((nextUser.visits ?? 1) > 1);
+
+      if (options?.resetLandingAuthUi) {
+        setLoginContext(null);
+        setShowLandingLoginPassword(false);
+        setShowLandingSignupPassword(false);
+        setShowLandingSignupConfirm(false);
+      }
+
+      if (options?.resetPasskeyAutoRegister) {
+        // Allow auto-registration attempt after each successful login.
+        passkeyAutoRegisterAttemptedRef.current = false;
+      }
+
+      // Hydrate the full profile in the background so auth flows do not wait on
+      // large media fields like avatar/logo data URLs.
+      void authAPI
+        .getCurrentUser({ background: true })
+        .then((current) => {
+          if (!current || doctorProfileGateRefreshSeqRef.current !== gateRefreshSeq) {
+            return;
+          }
+          setUser((previous) => ({
+            ...(previous || {}),
+            ...(current as User),
+          }));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (doctorProfileGateRefreshSeqRef.current === gateRefreshSeq) {
+            setDoctorProfileGateReady(true);
+          }
+        });
+    },
+    [],
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") {
       setSessionBootstrapPending(false);
@@ -5103,8 +5175,7 @@ function MainApp() {
           const exchanged = (await authAPI.exchangeShadowSession(launchToken)) as any;
           if (cancelled) return;
           stripLocationQueryParam("shadow");
-          setUser((exchanged?.user || null) as User | null);
-          setPostLoginHold(false);
+          initializeAuthenticatedSessionUi((exchanged?.user || null) as User | null);
         } else {
           const current = (await authAPI.getCurrentUser()) as User | null;
           if (cancelled) return;
@@ -5151,7 +5222,7 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initializeAuthenticatedSessionUi]);
 
   useEffect(() => {
     if (!isMaintenanceMode) {
@@ -7131,46 +7202,12 @@ function MainApp() {
   }, [postLoginHold, user?.id, shouldAnimateInfoFocus]);
 
   const applyLoginSuccessState = useCallback((nextUser: User) => {
-    const gateRefreshSeq = ++doctorProfileGateRefreshSeqRef.current;
-    const shouldHoldDoctorProfileGate = isDoctorRole(nextUser.role);
-    forcedLogoutAtRef.current = 0;
-    forcedLogoutReasonRef.current = null;
-    setDoctorProfileGateReady(!shouldHoldDoctorProfileGate);
-    setDoctorProfileGateArmed(shouldHoldDoctorProfileGate);
-    setDoctorProfileBuilderDismissed(false);
-    setUser(nextUser);
-    setPostLoginHold(true);
-    setShouldAnimateInfoFocus(true);
-    setInfoFocusActive(true);
-    const isReturning = (nextUser.visits ?? 1) > 1;
-    setIsReturningUser(isReturning);
-    setLoginContext(null);
-    setShowLandingLoginPassword(false);
-    setShowLandingSignupPassword(false);
-    setShowLandingSignupConfirm(false);
-    // Allow auto-registration attempt after each successful login
-    passkeyAutoRegisterAttemptedRef.current = false;
-
-    // Hydrate the full profile in the background so login does not wait on
-    // large media fields like avatar/logo data URLs.
-    void authAPI
-      .getCurrentUser({ background: true })
-      .then((current) => {
-        if (!current || doctorProfileGateRefreshSeqRef.current !== gateRefreshSeq) {
-          return;
-        }
-        setUser((previous) => ({
-          ...(previous || {}),
-          ...(current as User),
-        }));
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (doctorProfileGateRefreshSeqRef.current === gateRefreshSeq) {
-          setDoctorProfileGateReady(true);
-        }
-      });
-  }, []);
+    initializeAuthenticatedSessionUi(nextUser, {
+      showPostLoginHold: true,
+      resetLandingAuthUi: true,
+      resetPasskeyAutoRegister: true,
+    });
+  }, [initializeAuthenticatedSessionUi]);
 
   const openResearchTermsLegalDocument = useCallback(
     (key: "terms" | "shipping" | "privacy") => {
@@ -35934,6 +35971,7 @@ function MainApp() {
             user={user}
             avatarStyle="compact-circle"
             requireGreaterArea
+            requireStudyFocus
             allowIncompleteSubmit
             preActionsNote={'Use the network toggle above to control whether your profile will appear in the PepPro physician network. These details can be updated anytime in your account settings.'}
             submitLabel="Save and Continue"
