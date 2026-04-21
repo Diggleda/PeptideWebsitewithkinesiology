@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 
 from ..middleware import auth as auth_middleware
+from ..middleware import request_logging as request_logging_middleware
 from ..services import get_config
 from ..services import news_service
 from ..integrations import ship_engine, woo_commerce
@@ -660,6 +661,22 @@ def _background_job_stats() -> dict[str, Any]:
     }
 
 
+def _active_request_warn_seconds() -> float:
+    raw = str(os.environ.get("PEPPRO_HEALTH_ACTIVE_REQUEST_WARN_SECONDS") or "20").strip()
+    try:
+        value = float(raw)
+    except Exception:
+        value = 20.0
+    return max(1.0, min(value, 300.0))
+
+
+def _active_request_stats() -> dict[str, Any]:
+    return request_logging_middleware.get_request_runtime_snapshot(
+        slow_after_seconds=_active_request_warn_seconds(),
+        max_items=12,
+    )
+
+
 def _health_password_value() -> str | None:
     password = str(os.environ.get(_HEALTH_PASSWORD_ENV) or "")
     return password if password else None
@@ -925,14 +942,36 @@ def health():
                 "workerSeconds": _process_uptime_seconds(pid) if pid else None,
             }
             workers = {
-                "configured": _configured_worker_target(),
-                "detected": _detect_worker_count(),
                 "pid": pid,
                 "ppid": ppid,
-                "gunicorn": _parse_gunicorn_args(master_cmdline or "") if master_cmdline else None,
             }
+            gunicorn = _parse_gunicorn_args(master_cmdline or "") if master_cmdline else None
+            configured_workers = _configured_worker_target()
+            if configured_workers is None and isinstance(gunicorn, dict):
+                parsed_workers = gunicorn.get("workers")
+                if isinstance(parsed_workers, int) and parsed_workers > 0:
+                    configured_workers = parsed_workers
+            detected_workers = _detect_worker_count()
+            if detected_workers is None and isinstance(children, list):
+                detected_workers = len(children)
+            workers.update(
+                {
+                    "configured": configured_workers,
+                    "detected": detected_workers,
+                    "gunicorn": gunicorn,
+                }
+            )
+            if (
+                isinstance(configured_workers, int)
+                and isinstance(detected_workers, int)
+                and detected_workers < configured_workers
+            ):
+                status = "degraded"
             background_jobs = _background_job_stats()
             if str(background_jobs.get("status") or "").strip().lower() == "degraded":
+                status = "degraded"
+            request_stats = _active_request_stats()
+            if int(request_stats.get("slowCount") or 0) > 0:
                 status = "degraded"
         except Exception:
             # Never allow health checks to 500; return a degraded payload instead.
@@ -942,6 +981,7 @@ def health():
             mysql_enabled = None
             workers = None
             background_jobs = None
+            request_stats = None
             master = None
             children = None
             uptime = None
@@ -957,6 +997,7 @@ def health():
             "processes": {"master": master, "children": children},
             "uptime": uptime,
             "backgroundJobs": background_jobs,
+            "requests": request_stats,
             "timestamp": _now(),
         }
 

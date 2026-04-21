@@ -11,6 +11,7 @@
 - API: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://localhost:3001/api/health | jq`
 - Diagnostics: `curl -fsS http://localhost:3001/api/help | jq`
 - Background jobs in `thread` mode: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://localhost:3001/api/health | jq '.backgroundJobs'`
+- In-flight request pressure: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://127.0.0.1:8000/api/health | jq '.requests'`
 - Configure the public health-page password with `PEPPRO_HEALTH_PASSWORD`.
 
 Production recommendation:
@@ -37,8 +38,14 @@ Production recommendation:
 
 ### API is down / returning 5xx
 
+Fast capture:
+
+- From `/opt/peppr/backend`, run:
+  - `PEPPRO_HEALTH_PASSWORD="$PEPPRO_HEALTH_PASSWORD" SINCE="30 minutes ago" ops/peppr-main-api-triage.sh.example`
+- Save the output with the incident task in [`TASKS.md`](../TASKS.md).
+
 1. Verify the process is running and listening:
-   - `lsof -iTCP:3001 -sTCP:LISTEN -nP`
+   - `lsof -iTCP:8000 -sTCP:LISTEN -nP`
 2. Check recent logs:
    - `journalctl -u peppr-api.service -n 200 --no-pager`
 3. If the process is healthy and you are deploying code or env changes, prefer a graceful reload:

@@ -27,6 +27,13 @@ Use this as the single source of truth for active work.
   - login, quotes, news, cart, orders, and profile images all load without restart
 - Notes:
   - presence traffic is already split to `peppr-presence.service`
+  - April 21, 2026 browser evidence shows proxy-level failures without Flask CORS headers:
+    - `502` on `https://api.peppro.net/api/referrals/dashboard?...`
+    - `504` on `/api/auth/me/profile-image`
+    - `504` on `/api/news/peptides?...`
+  - April 21, 2026 health output was `status=ok`, but only proved one worker could answer health; it did not include in-flight stuck requests yet.
+  - local code now adds `requests.activeCount`, `requests.slowCount`, and active route details to `/api/health`.
+  - local code now falls back to parsed gunicorn `--workers` and live child process count when `workers.configured` / `workers.detected` would otherwise be `null`.
   - fresh failures on April 20, 2026 around `18:32-18:48 UTC` hit main API routes including:
     - `/api/woo/products/1512?force=true`
     - `/api/news/peptides`
@@ -69,11 +76,13 @@ Use this as the single source of truth for active work.
 
 ### P1. Add a main-API triage snapshot command
 
-- Status: `todo`
+- Status: `verify`
 - Owner: `Codex`
 - Why: each incident needs the same 5 to 8 commands and we keep retyping them.
 - Exit:
   - one documented command or script captures service status, recent journald errors, and nginx upstream timeouts
+- Notes:
+  - added `ops/peppr-main-api-triage.sh.example`
 
 ### P1. Review gunicorn sizing against actual host limits
 

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import itertools
 import logging
+import threading
 import time
+from typing import Any
 
 from flask import Flask, g, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
+
+_ACTIVE_LOCK = threading.Lock()
+_ACTIVE_REQUESTS: dict[str, dict[str, Any]] = {}
+_ACTIVE_SEQUENCE = itertools.count(1)
 
 
 def _should_track(path: str) -> bool:
@@ -61,6 +68,77 @@ def _response_type(response) -> str:
     return str(value).strip().replace(" ", "_") or "unknown"
 
 
+def _active_request_key() -> str:
+    return f"{time.time_ns()}-{next(_ACTIVE_SEQUENCE)}"
+
+
+def _remove_active_request() -> None:
+    key = getattr(g, "_request_logging_active_key", None)
+    if not key:
+        return
+    with _ACTIVE_LOCK:
+        _ACTIVE_REQUESTS.pop(str(key), None)
+    g._request_logging_active_key = None
+
+
+def get_request_runtime_snapshot(
+    *,
+    slow_after_seconds: float = 20.0,
+    max_items: int = 12,
+) -> dict[str, Any]:
+    """
+    Return a lightweight view of API requests currently executing in this process.
+
+    This is intentionally per-process. In gunicorn, `/api/health` reports the worker
+    that handled the health request, while process snapshots still show the sibling
+    worker PIDs. If a worker is wedged, sending SIGUSR1 to that worker remains the
+    authoritative stack-dump tool.
+    """
+    try:
+        slow_after = float(slow_after_seconds)
+    except Exception:
+        slow_after = 20.0
+    slow_after = max(1.0, min(slow_after, 300.0))
+    max_items = max(0, min(int(max_items or 0), 50))
+    now = time.perf_counter()
+
+    with _ACTIVE_LOCK:
+        records = list(_ACTIVE_REQUESTS.values())
+
+    active: list[dict[str, Any]] = []
+    slow_count = 0
+    longest_age = 0.0
+    for record in records:
+        started = record.get("startedMonotonic")
+        if not isinstance(started, (int, float)):
+            continue
+        age = max(0.0, now - float(started))
+        longest_age = max(longest_age, age)
+        is_longpoll = bool(record.get("longPoll"))
+        if age >= slow_after and not is_longpoll:
+            slow_count += 1
+        active.append(
+            {
+                "ageSeconds": round(age, 3),
+                "method": record.get("method"),
+                "path": record.get("path"),
+                "route": record.get("route"),
+                "clientIp": record.get("clientIp"),
+                "longPoll": is_longpoll,
+                "startedAtEpoch": record.get("startedAtEpoch"),
+            }
+        )
+
+    active.sort(key=lambda item: float(item.get("ageSeconds") or 0), reverse=True)
+    return {
+        "activeCount": len(active),
+        "slowCount": slow_count,
+        "slowAfterSeconds": slow_after,
+        "longestActiveSeconds": round(longest_age, 3) if active else None,
+        "active": active[:max_items],
+    }
+
+
 def init_request_logging(app: Flask) -> None:
     """
     Attach basic request/response logging for API routes.
@@ -70,7 +148,20 @@ def init_request_logging(app: Flask) -> None:
     @app.before_request
     def _log_start() -> None:  # type: ignore[return-value]
         if _should_track(request.path):
-            g._request_logging_started_at = time.perf_counter()
+            started = time.perf_counter()
+            g._request_logging_started_at = started
+            key = _active_request_key()
+            g._request_logging_active_key = key
+            with _ACTIVE_LOCK:
+                _ACTIVE_REQUESTS[key] = {
+                    "startedMonotonic": started,
+                    "startedAtEpoch": round(time.time(), 3),
+                    "method": request.method,
+                    "path": request.path,
+                    "route": _route_label(),
+                    "clientIp": _best_client_ip(),
+                    "longPoll": "/longpoll" in request.path.lower(),
+                }
 
     @app.after_request
     def _log_response(response):  # type: ignore[return-value]
@@ -93,7 +184,13 @@ def init_request_logging(app: Flask) -> None:
                 _best_client_ip(),
                 _response_type(response),
             )
+            _remove_active_request()
         return response
+
+    @app.teardown_request
+    def _cleanup_active_request(error=None) -> None:  # type: ignore[return-value]
+        if _should_track(request.path):
+            _remove_active_request()
 
     @app.errorhandler(404)
     def _not_found(error):  # type: ignore[return-value]

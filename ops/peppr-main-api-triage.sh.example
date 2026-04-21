@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SINCE="${SINCE:-30 minutes ago}"
+SLOW_MS="${SLOW_MS:-1000}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
+API_SERVICE="${API_SERVICE:-peppr-api.service}"
+PRESENCE_SERVICE="${PRESENCE_SERVICE:-peppr-presence.service}"
+BACKGROUND_SERVICE="${BACKGROUND_SERVICE:-peppr-background-jobs.service}"
+
+if command -v sudo >/dev/null 2>&1; then
+  SUDO="${SUDO:-sudo -n}"
+else
+  SUDO="${SUDO:-}"
+fi
+
+tmp_body="$(mktemp -t peppr-triage-body.XXXXXX)"
+trap 'rm -f "$tmp_body"' EXIT
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+run() {
+  printf '+ %s\n' "$*"
+  "$@" || true
+}
+
+run_shell() {
+  printf '+ %s\n' "$*"
+  bash -lc "$*" || true
+}
+
+curl_timing() {
+  local path="$1"
+  local extra_header=()
+  if [[ "$path" == "/api/health" && -n "${PEPPRO_HEALTH_PASSWORD:-}" ]]; then
+    extra_header=(-H "X-Health-Password: ${PEPPRO_HEALTH_PASSWORD}")
+  elif [[ "$path" == "/api/health" ]]; then
+    printf 'skip %s: set PEPPRO_HEALTH_PASSWORD to include authenticated health output\n' "$path"
+    return 0
+  fi
+
+  curl -o "$tmp_body" -sS \
+    --connect-timeout 2 \
+    --max-time 25 \
+    -H 'Accept: application/json' \
+    "${extra_header[@]}" \
+    -w "${path} status=%{http_code} connect=%{time_connect}s ttfb=%{time_starttransfer}s total=%{time_total}s bytes=%{size_download}\n" \
+    "${BASE_URL}${path}" || true
+}
+
+section "Host"
+run date -Is
+run hostname
+run uptime
+run free -m
+run df -h /
+
+section "Service Config"
+run systemctl show "$API_SERVICE" --no-pager -p ActiveState -p SubState -p MainPID -p ExecStart -p WorkingDirectory -p EnvironmentFiles
+run systemctl show "$PRESENCE_SERVICE" --no-pager -p ActiveState -p SubState -p MainPID -p ExecStart -p WorkingDirectory -p EnvironmentFiles
+run systemctl show "$BACKGROUND_SERVICE" --no-pager -p ActiveState -p SubState -p MainPID -p ExecStart -p WorkingDirectory -p EnvironmentFiles
+
+section "Configured Env Keys"
+if [[ -r /etc/peppr-api.env || -n "$SUDO" ]]; then
+  $SUDO awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ {print $1"=<set>"}' /etc/peppr-api.env || true
+fi
+
+section "Processes"
+run_shell "ps -o pid,ppid,stat,pcpu,pmem,nlwp,rss,vsz,etime,command -p \$(systemctl show '$API_SERVICE' -p MainPID --value) --forest"
+run_shell "pgrep -P \$(systemctl show '$API_SERVICE' -p MainPID --value) | xargs -r ps -o pid,ppid,stat,pcpu,pmem,nlwp,rss,vsz,etime,command -p"
+run_shell "ss -ltnp | egrep ':(8000|8001|3001)\\b' || true"
+
+section "Local Timing Probes"
+curl_timing "/api/ping"
+curl_timing "/api/help"
+curl_timing "/api/news/peptides"
+curl_timing "/api/health"
+
+section "Recent API Errors"
+run_shell "journalctl -u '$API_SERVICE' --since '$SINCE' --no-pager | egrep -i 'WORKER TIMEOUT|CRITICAL|ERROR|Traceback|timeout|timed out|502|504|referrals/dashboard|news/peptides|profile-image|woo/products|catalog/products' | tail -n 260"
+
+section "Slow Flask Requests"
+run_shell "journalctl -u '$API_SERVICE' --since '$SINCE' --no-pager | awk -v slow='$SLOW_MS' '/peppro.http/ && /duration_ms=/ { duration=\$0; sub(/^.*duration_ms=/, \"\", duration); sub(/ .*/, \"\", duration); if ((duration + 0) >= slow) print }' | tail -n 160"
+
+section "Nginx/System Proxy Errors"
+run_shell "journalctl -u nginx --since '$SINCE' --no-pager | egrep -i 'upstream|timed out|502|504|connect\\(\\)|referrals/dashboard|news/peptides|profile-image' | tail -n 220"
+run_shell "$SUDO sh -c \"test -r /var/log/nginx/error.log && egrep -i 'upstream|timed out|502|504|connect\\(\\)|referrals/dashboard|news/peptides|profile-image' /var/log/nginx/error.log | tail -n 220\""
+
+section "Watchdog"
+run systemctl list-timers --all
+run systemctl status peppr-api-watchdog.timer --no-pager
+run systemctl status peppr-api-watchdog.service --no-pager
+run journalctl -u peppr-api-watchdog.service --since "$SINCE" --no-pager
+
+section "Done"
+printf 'Captured at %s with SINCE=%s SLOW_MS=%s BASE_URL=%s\n' "$(date -Is)" "$SINCE" "$SLOW_MS" "$BASE_URL"

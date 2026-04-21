@@ -321,6 +321,154 @@ class SystemRouteHealthTests(unittest.TestCase):
         self.assertEqual(payload["build"], "test-build")
         self.assertEqual(payload["mysql"], {"enabled": True})
 
+    def test_health_route_marks_degraded_when_requests_are_slow(self) -> None:
+        app = Flask(__name__)
+        app.register_blueprint(system.blueprint)
+
+        with app.test_client() as client, patch.object(
+            system,
+            "get_config",
+            return_value=SimpleNamespace(backend_build="test-build", mysql={"enabled": True}),
+        ), patch.object(
+            system,
+            "_server_usage",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_background_job_stats",
+            return_value={"status": "ok", "jobs": {}, "unhealthyJobs": [], "webProcessMode": "external"},
+        ), patch.object(
+            system,
+            "_active_request_stats",
+            return_value={
+                "activeCount": 2,
+                "slowCount": 1,
+                "slowAfterSeconds": 20.0,
+                "longestActiveSeconds": 31.2,
+                "active": [{"method": "GET", "path": "/api/referrals/dashboard", "ageSeconds": 31.2}],
+            },
+        ), patch.object(
+            system,
+            "_read_cgroup_memory",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_process_uptime_seconds",
+            return_value=42.0,
+        ), patch.object(
+            system,
+            "_configured_worker_target",
+            return_value=4,
+        ), patch.object(
+            system,
+            "_detect_worker_count",
+            return_value=4,
+        ), patch.object(
+            system,
+            "_read_proc_cmdline",
+            return_value="gunicorn python_backend.wsgi:app --workers 4 --threads 4 --timeout 120",
+        ), patch.object(
+            system,
+            "_read_process_snapshot",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_read_child_processes",
+            return_value=[],
+        ), patch.dict(
+            os.environ,
+            {
+                "PEPPRO_HEALTH_PASSWORD": "health-pass",
+            },
+            clear=False,
+        ):
+            response = client.get(
+                "/api/health",
+                headers={
+                    "Accept": "application/json",
+                    "X-Health-Password": "health-pass",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["requests"]["slowCount"], 1)
+        self.assertEqual(payload["requests"]["active"][0]["path"], "/api/referrals/dashboard")
+
+    def test_health_route_falls_back_to_gunicorn_and_child_worker_counts(self) -> None:
+        app = Flask(__name__)
+        app.register_blueprint(system.blueprint)
+
+        with app.test_client() as client, patch.object(
+            system,
+            "get_config",
+            return_value=SimpleNamespace(backend_build="test-build", mysql={"enabled": True}),
+        ), patch.object(
+            system,
+            "_server_usage",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_background_job_stats",
+            return_value={"status": "ok", "jobs": {}, "unhealthyJobs": [], "webProcessMode": "external"},
+        ), patch.object(
+            system,
+            "_active_request_stats",
+            return_value={"activeCount": 0, "slowCount": 0, "slowAfterSeconds": 20.0, "active": []},
+        ), patch.object(
+            system,
+            "_read_cgroup_memory",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_process_uptime_seconds",
+            return_value=42.0,
+        ), patch.object(
+            system,
+            "_configured_worker_target",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_detect_worker_count",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_read_proc_cmdline",
+            return_value="gunicorn python_backend.wsgi:app --workers 4 --threads 4 --timeout 120",
+        ), patch.object(
+            system,
+            "_read_process_snapshot",
+            return_value=None,
+        ), patch.object(
+            system,
+            "_read_child_processes",
+            return_value=[
+                {"pid": 1, "name": "python"},
+                {"pid": 2, "name": "python"},
+                {"pid": 3, "name": "python"},
+            ],
+        ), patch.dict(
+            os.environ,
+            {
+                "PEPPRO_HEALTH_PASSWORD": "health-pass",
+            },
+            clear=False,
+        ):
+            response = client.get(
+                "/api/health",
+                headers={
+                    "Accept": "application/json",
+                    "X-Health-Password": "health-pass",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["workers"]["configured"], 4)
+        self.assertEqual(payload["workers"]["detected"], 3)
+
     def test_health_route_returns_503_when_password_not_configured(self) -> None:
         app = Flask(__name__)
         app.register_blueprint(system.blueprint)
