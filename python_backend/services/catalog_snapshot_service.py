@@ -551,9 +551,20 @@ def get_catalog_product(product_id: int) -> Dict[str, Any]:
         """
         SELECT data
         FROM product_documents
-        WHERE woo_product_id = %(woo_product_id)s AND kind = %(kind)s
+        WHERE woo_product_id = %(woo_product_id)s
+          AND kind IN (%(kind_full)s, %(kind_light)s)
+        ORDER BY CASE
+            WHEN kind = %(kind_full)s THEN 0
+            WHEN kind = %(kind_light)s THEN 1
+            ELSE 2
+        END
+        LIMIT 1
         """,
-        {"woo_product_id": pid, "kind": KIND_CATALOG_PRODUCT_FULL},
+        {
+            "woo_product_id": pid,
+            "kind_full": KIND_CATALOG_PRODUCT_FULL,
+            "kind_light": KIND_CATALOG_PRODUCT_LIGHT,
+        },
     )
     parsed = _decode_snapshot_json((row or {}).get("data") if isinstance(row, dict) else None)
     if isinstance(parsed, dict):

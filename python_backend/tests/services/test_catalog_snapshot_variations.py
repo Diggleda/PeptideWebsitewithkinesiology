@@ -60,10 +60,6 @@ class TestCatalogSnapshotVariations(unittest.TestCase):
             self.skipTest(f"python deps not installed: {exc}")
 
         snapshot = {"variations": [{"id": 101, "price": "99.00"}]}
-        live = [
-            {"id": 101, "price": "109.00"},
-            {"id": 102, "price": "159.00"},
-        ]
 
         with patch.object(svc, "get_config", return_value=SimpleNamespace(mysql={"enabled": True})), patch.object(
             svc, "mysql_client"
@@ -74,7 +70,7 @@ class TestCatalogSnapshotVariations(unittest.TestCase):
 
             result = svc.get_catalog_product_variations(55)
 
-        self.assertEqual(result, live)
+        self.assertEqual(result, snapshot["variations"])
         mock_fresh.assert_not_called()
         mock_proxy.assert_not_called()
 
