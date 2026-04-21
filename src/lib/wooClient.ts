@@ -13,7 +13,7 @@ const WOO_REQUEST_TIMEOUT_MS = (() => {
   if (Number.isFinite(parsed) && parsed > 0) {
     return parsed;
   }
-  return 30000;
+  return 90000;
 })();
 
 function getWindowOrigin() {
@@ -191,7 +191,7 @@ async function catalogGet<T = unknown>(endpoint: string, params: QueryParams = {
   const startedAt = Date.now();
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeoutId = controller
-    ? globalThis.setTimeout(() => controller.abort(), Math.min(WOO_REQUEST_TIMEOUT_MS, 25000))
+    ? globalThis.setTimeout(() => controller.abort(), WOO_REQUEST_TIMEOUT_MS)
     : null;
   try {
     if (WOO_DEBUG) {

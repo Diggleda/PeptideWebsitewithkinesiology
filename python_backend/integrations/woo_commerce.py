@@ -66,18 +66,18 @@ _WOO_PROXY_FAILURE_MAX_COOLDOWN_SECONDS = int(os.environ.get("WOO_PROXY_FAILURE_
 _WOO_PROXY_FAILURE_MAX_COOLDOWN_SECONDS = max(10, min(_WOO_PROXY_FAILURE_MAX_COOLDOWN_SECONDS, 3600))
 _WOO_PROXY_FAILURE_RESET_AFTER_SECONDS = int(os.environ.get("WOO_PROXY_FAILURE_RESET_AFTER_SECONDS", "600").strip() or 600)
 _WOO_PROXY_FAILURE_RESET_AFTER_SECONDS = max(30, min(_WOO_PROXY_FAILURE_RESET_AFTER_SECONDS, 24 * 60 * 60))
-_BACKGROUND_REFRESH_CONCURRENCY = int(os.environ.get("WOO_PROXY_BACKGROUND_REFRESH_CONCURRENCY", "4").strip() or 4)
+_BACKGROUND_REFRESH_CONCURRENCY = int(os.environ.get("WOO_PROXY_BACKGROUND_REFRESH_CONCURRENCY", "2").strip() or 2)
 _BACKGROUND_REFRESH_CONCURRENCY = max(1, min(_BACKGROUND_REFRESH_CONCURRENCY, 16))
 _background_refresh_semaphore = threading.BoundedSemaphore(_BACKGROUND_REFRESH_CONCURRENCY)
 _WOO_HTTP_CONCURRENCY = int(os.environ.get("WOO_HTTP_CONCURRENCY", "4").strip() or 4)
 _WOO_HTTP_CONCURRENCY = max(1, min(_WOO_HTTP_CONCURRENCY, 16))
 _woo_http_semaphore = threading.BoundedSemaphore(_WOO_HTTP_CONCURRENCY)
-_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS = float(os.environ.get("WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS", "6").strip() or 6)
-_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS = max(0.5, min(_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS, 25.0))
+_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS = float(os.environ.get("WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS", "20").strip() or 20)
+_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS = max(1.0, min(_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS, 55.0))
 _WOO_HTTP_MAX_ATTEMPTS = int(os.environ.get("WOO_HTTP_MAX_ATTEMPTS", "3").strip() or 3)
 _WOO_HTTP_MAX_ATTEMPTS = max(1, min(_WOO_HTTP_MAX_ATTEMPTS, 6))
-_WOO_PROXY_INFLIGHT_WAIT_SECONDS = float(os.environ.get("WOO_PROXY_INFLIGHT_WAIT_SECONDS", "6").strip() or 6)
-_WOO_PROXY_INFLIGHT_WAIT_SECONDS = max(1.0, min(_WOO_PROXY_INFLIGHT_WAIT_SECONDS, 35.0))
+_WOO_PROXY_INFLIGHT_WAIT_SECONDS = float(os.environ.get("WOO_PROXY_INFLIGHT_WAIT_SECONDS", "20").strip() or 20)
+_WOO_PROXY_INFLIGHT_WAIT_SECONDS = max(2.0, min(_WOO_PROXY_INFLIGHT_WAIT_SECONDS, 55.0))
 _orders_by_email_cache: Dict[str, Dict[str, Any]] = {}
 _orders_by_email_cache_lock = threading.Lock()
 _orders_by_email_cached_warning_at_ms: Dict[str, int] = {}
@@ -378,13 +378,13 @@ def _timeout_seconds_for_endpoint(endpoint: str) -> float:
     """
     endpoint = (endpoint or "").lstrip("/")
     if re.match(r"^products/[^/]+$", endpoint):
-        return float(os.environ.get("WOO_PRODUCT_DETAIL_TIMEOUT_SECONDS", "6").strip() or 6)
+        return float(os.environ.get("WOO_PRODUCT_DETAIL_TIMEOUT_SECONDS", "20").strip() or 20)
     # Variations can be heavy; prefer failing fast and serving cached/stale data.
     if re.match(r"^products/[^/]+/variations", endpoint):
-        return float(os.environ.get("WOO_VARIATIONS_TIMEOUT_SECONDS", "6").strip() or 6)
+        return float(os.environ.get("WOO_VARIATIONS_TIMEOUT_SECONDS", "20").strip() or 20)
     if endpoint.startswith("products"):
-        return float(os.environ.get("WOO_PRODUCTS_TIMEOUT_SECONDS", "8").strip() or 8)
-    return float(os.environ.get("WOO_DEFAULT_TIMEOUT_SECONDS", "12").strip() or 12)
+        return float(os.environ.get("WOO_PRODUCTS_TIMEOUT_SECONDS", "30").strip() or 30)
+    return float(os.environ.get("WOO_DEFAULT_TIMEOUT_SECONDS", "20").strip() or 20)
 
 
 def _max_attempts_for_endpoint(endpoint: str) -> int:
@@ -491,6 +491,25 @@ def _fetch_catalog_http(
                 return response.json()
             except ValueError:
                 return response.text
+        except requests.Timeout as exc:
+            if attempt < max_attempts - 1:
+                delay = min(3.0, 0.6 * (2**attempt)) + (0.05 * attempt)
+                time.sleep(delay)
+                continue
+            if suppress_log:
+                logger.warning(
+                    "WooCommerce catalog fetch timed out",
+                    extra={"endpoint": endpoint, "status": 504},
+                )
+            else:
+                logger.error(
+                    "WooCommerce catalog fetch timed out",
+                    exc_info=True,
+                    extra={"endpoint": endpoint, "status": 504},
+                )
+            err = IntegrationError("WooCommerce catalog request timed out")
+            setattr(err, "status", 504)
+            raise err
         except requests.RequestException as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
             retryable = attempt < max_attempts - 1 and _should_retry_status(status)
@@ -842,21 +861,17 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
         if inflight and inflight.get("data") is not None:
             return inflight.get("data"), {"cache": "INFLIGHT", "ttlSeconds": ttl_seconds}
 
-    # If leader timed out or cleared, fall back to direct fetch.
+    # The leader is still loading or produced no usable result. Do not start a
+    # second live Woo request here; that turns a slow upstream call into a stampede.
     now_ms = _now_ms()
     cooldown_seconds = _proxy_cooldown_seconds(cache_key, now_ms)
     if cooldown_seconds > 0:
         err = IntegrationError("WooCommerce temporarily unavailable, please retry shortly")
         setattr(err, "status", 503)
         raise err
-    data = _fetch_catalog_http(endpoint, params)
-    _clear_proxy_failure(cache_key)
-    now_ms = _now_ms()
-    expires_at = now_ms + ttl_seconds * 1000
-    with _catalog_cache_lock:
-        _set_in_memory_cache(cache_key, data, expires_at)
-    _write_disk_cache(cache_key, {"data": data, "fetchedAt": now_ms, "expiresAt": expires_at})
-    return data, {"cache": "MISS", "ttlSeconds": ttl_seconds}
+    err = IntegrationError("WooCommerce request is still loading, please retry shortly")
+    setattr(err, "status", 503)
+    raise err
 
 
 def _set_in_memory_cache(cache_key: str, data: Any, expires_at_ms: int) -> None:

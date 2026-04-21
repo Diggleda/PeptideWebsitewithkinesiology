@@ -661,18 +661,20 @@ const buildBackgroundCooldownError = () => {
   return error;
 };
 
-const _PEPPRO_DEFAULT_TIMEOUT_MS = 15000;
-const _PEPPRO_AUTH_TIMEOUT_MS = 12000;
+const _PEPPRO_DEFAULT_TIMEOUT_MS = 45000;
+const _PEPPRO_AUTH_TIMEOUT_MS = 20000;
 const _PEPPRO_HEALTH_TIMEOUT_MS = 5000;
 const _PEPPRO_HEALTH_SUCCESS_TTL_MS = 15000;
 const _PEPPRO_HEALTH_FAILURE_COOLDOWN_MS = 45000;
 const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
-const _PEPPRO_CHECKOUT_TIMEOUT_MS = 45000;
-const _PEPPRO_SALES_TRACKING_TIMEOUT_MS = 45000;
+const _PEPPRO_CATALOG_TIMEOUT_MS = 90000;
+const _PEPPRO_WOO_TIMEOUT_MS = 90000;
+const _PEPPRO_CHECKOUT_TIMEOUT_MS = 90000;
+const _PEPPRO_SALES_TRACKING_TIMEOUT_MS = 90000;
 const _PEPPRO_SALES_SUMMARY_TIMEOUT_MS = 90000;
-const _PEPPRO_MODAL_TIMEOUT_MS = 30000;
-const _PEPPRO_REFERRAL_TIMEOUT_MS = 30000;
-const _PEPPRO_MAINTENANCE_TIMEOUT_MS = 30000;
+const _PEPPRO_MODAL_TIMEOUT_MS = 60000;
+const _PEPPRO_REFERRAL_TIMEOUT_MS = 90000;
+const _PEPPRO_MAINTENANCE_TIMEOUT_MS = 60000;
 const _PEPPRO_QUOTE_EXPORT_TIMEOUT_MS = 90000;
 
 const _timeoutMsForRequest = (url: string, method: string) => {
@@ -681,6 +683,8 @@ const _timeoutMsForRequest = (url: string, method: string) => {
   if (normalized.includes('/api/auth/shadow-sessions')) return _PEPPRO_MAINTENANCE_TIMEOUT_MS;
   if (normalized.includes('/api/auth/')) return _PEPPRO_AUTH_TIMEOUT_MS;
   if (normalized.includes('/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
+  if (normalized.includes('/api/catalog/')) return _PEPPRO_CATALOG_TIMEOUT_MS;
+  if (normalized.includes('/api/woo/')) return _PEPPRO_WOO_TIMEOUT_MS;
   if (normalized.includes('/api/settings/users')) return _PEPPRO_MODAL_TIMEOUT_MS;
   if (normalized.includes('/api/orders/sales-rep/users/') && normalized.includes('/modal-detail')) {
     return _PEPPRO_MODAL_TIMEOUT_MS;
