@@ -744,7 +744,6 @@ const buildOrderPayload = async ({ order, customer }) => {
   const payload = {
     status: 'pending',
     created_via: 'peppro_app',
-    customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
     set_paid: false,
     total: finalTotal.toFixed(2),
     total_tax: manualTaxRateId ? taxTotal.toFixed(2) : '0.00',

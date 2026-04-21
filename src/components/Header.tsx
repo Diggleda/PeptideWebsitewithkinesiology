@@ -764,6 +764,149 @@ const resolveTrackingNumber = (order: any): string | null => {
   return null;
 };
 
+const normalizeOrderAddressComparisonPart = (value?: string | null) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed
+    .toLowerCase()
+    .replace(/[.,]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const isFacilityPickupRecipientPlaceholder = (value?: string | null) =>
+  normalizeOrderAddressComparisonPart(value) === 'peppro facility pickup';
+
+const isFacilityPickupAddress = (address?: AccountOrderAddress | null) => {
+  if (!address) return false;
+
+  const name = normalizeOrderAddressComparisonPart(address.name);
+  const line1 = normalizeOrderAddressComparisonPart(address.addressLine1);
+  const line2 = normalizeOrderAddressComparisonPart(address.addressLine2);
+  const combinedLine = [line1, line2].filter(Boolean).join(' ');
+  const city = normalizeOrderAddressComparisonPart(address.city);
+  const state = normalizeOrderAddressComparisonPart(address.state);
+  const postalCode = normalizeOrderAddressComparisonPart(address.postalCode);
+
+  const matchesName = name === 'peppro facility pickup';
+  const matchesStreet =
+    line1 === '640 s grand ave' || combinedLine.includes('640 s grand ave');
+  const matchesUnit =
+    line2 === 'unit #107' ||
+    line2 === 'unit 107' ||
+    combinedLine.includes('unit #107') ||
+    combinedLine.includes('unit 107');
+  const matchesLocation =
+    city === 'santa ana' && state === 'ca' && postalCode === '92705';
+
+  return (matchesStreet && matchesUnit && matchesLocation) || (matchesName && matchesLocation);
+};
+
+const getSalesOrderFulfillmentTokens = (
+  order?: AccountOrderSummary | null,
+): string[] => {
+  if (!order) return [];
+  return [
+    (order as any)?.handDelivery === true ? 'hand_delivery' : '',
+    (order as any)?.facilityPickup === true ? 'facility_pickup' : '',
+    (order as any)?.facility_pickup === true ? 'facility_pickup' : '',
+    (order as any)?.fascility_pickup === true ? 'fascility_pickup' : '',
+    (order as any)?.fulfillmentMethod,
+    (order as any)?.fulfillment_method,
+    (order as any)?.shippingService,
+    (order as any)?.shipping_service,
+    (order as any)?.shippingEstimate?.serviceType,
+    (order as any)?.shippingEstimate?.serviceCode,
+    (order as any)?.shippingEstimate?.carrierId,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const isSalesOrderFacilityPickup = (
+  order?: AccountOrderSummary | null,
+): boolean => {
+  if (!order) return false;
+  if (resolveTrackingNumber(order)) return false;
+  const shippingAddress =
+    (order as any)?.shippingAddress ||
+    (order as any)?.shipping ||
+    (order as any)?.shipping_address ||
+    null;
+  const billingAddress =
+    (order as any)?.billingAddress ||
+    (order as any)?.billing ||
+    (order as any)?.billing_address ||
+    null;
+  const candidates = getSalesOrderFulfillmentTokens(order);
+  return candidates.some((value) =>
+    value === 'facility pickup' ||
+    value === 'fascility_pickup' ||
+    value === 'facility_pickup',
+  ) || isFacilityPickupAddress(shippingAddress)
+    || isFacilityPickupAddress(billingAddress);
+};
+
+const isSalesOrderHandDelivered = (
+  order?: AccountOrderSummary | null,
+): boolean => {
+  if (!order) return false;
+  if (resolveTrackingNumber(order)) return false;
+  if (isSalesOrderFacilityPickup(order)) return false;
+  const candidates = getSalesOrderFulfillmentTokens(order);
+  return candidates.some((value) =>
+    value === 'hand delivery' ||
+    value === 'hand delivered' ||
+    value === 'hand_delivery' ||
+    value === 'hand_delivered' ||
+    value === 'local hand delivery' ||
+    value === 'local_hand_delivery' ||
+    value === 'local_delivery' ||
+    value === 'hand-delivery' ||
+    value === 'hand-delivered',
+  );
+};
+
+const resolveFacilityPickupRecipientName = (
+  ...candidates: Array<string | null | undefined>
+): string | null => {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (!trimmed || isFacilityPickupRecipientPlaceholder(trimmed)) {
+      continue;
+    }
+    return trimmed;
+  }
+  return null;
+};
+
+const withFacilityPickupRecipientName = (
+  address?: AccountOrderAddress | null,
+  options?: {
+    billingAddress?: AccountOrderAddress | null;
+    fallbackName?: string | null;
+  },
+): AccountOrderAddress | null => {
+  if (!address || !isFacilityPickupAddress(address)) {
+    return address ?? null;
+  }
+  const recipientName = resolveFacilityPickupRecipientName(
+    address.name,
+    options?.billingAddress?.name,
+    options?.fallbackName,
+  );
+  if (!recipientName) {
+    return address;
+  }
+  return { ...address, name: recipientName };
+};
+
 const SHIPPED_STATUS_KEYWORDS = [
   'processing',
   'completed',
@@ -6464,9 +6607,23 @@ export function Header({
     const shippingRecipientName = typeof shippingAddress?.name === 'string'
       ? shippingAddress.name.trim()
       : '';
+    const shippingAddressForDisplay = isFacilityPickupOrder
+      ? withFacilityPickupRecipientName(shippingAddress, {
+          billingAddress: billingAddressBase,
+          fallbackName:
+            (typeof (selectedOrder as any)?.doctorName === 'string' && (selectedOrder as any).doctorName.trim())
+              ? String((selectedOrder as any).doctorName).trim()
+              : (typeof user?.name === 'string' && user.name.trim())
+                ? user.name.trim()
+                : null,
+        })
+      : shippingAddress;
+    const shippingRecipientDisplayName = typeof shippingAddressForDisplay?.name === 'string'
+      ? shippingAddressForDisplay.name.trim()
+      : shippingRecipientName;
     const billingAddress =
-      billingAddressBase && shippingRecipientName
-        ? { ...billingAddressBase, name: shippingRecipientName }
+      billingAddressBase && shippingRecipientDisplayName
+        ? { ...billingAddressBase, name: shippingRecipientDisplayName }
         : billingAddressBase;
     const shippingMethodLabel = isFacilityPickupOrder ? 'Facility Pickup' : shippingMethod;
     const lineItems = selectedOrder.lineItems || [];
@@ -6733,7 +6890,7 @@ export function Header({
 	            <div className="grid gap-4 md:grid-cols-2">
 	              <div className="space-y-3">
 	                <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
-	                {renderAddressLinesForOrderDetail(shippingAddress)}
+	                {renderAddressLinesForOrderDetail(shippingAddressForDisplay)}
 	                <div className="text-sm text-slate-700 space-y-1">
 	                  {shippedAtLabel && (
 	                    <p>

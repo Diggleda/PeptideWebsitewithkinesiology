@@ -326,6 +326,7 @@ class CreateOrderTests(unittest.TestCase):
         self.assertTrue(inserted_orders[0]["facility_pickup"])
         self.assertTrue(inserted_orders[0]["fascility_pickup"])
         self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "facility_pickup")
+        self.assertEqual(inserted_orders[0]["shippingAddress"]["name"], "Admin Pepper")
         self.assertEqual(inserted_orders[0]["shippingEstimate"]["serviceCode"], "facility_pickup")
         self.assertEqual(inserted_orders[0]["shippingTotal"], 0.0)
 

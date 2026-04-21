@@ -154,7 +154,7 @@ class WooPayloadSanitizationTests(unittest.TestCase):
         self.assertEqual(payload["line_items"][0]["meta_data"], [])
         self.assertNotIn("peppro_hand_delivery_address", meta_keys)
         self.assertNotIn("peppro_payment_method", meta_keys)
-        self.assertEqual(payload["customer_note"], "PepPro Order order-1")
+        self.assertNotIn("customer_note", payload)
 
 
 if __name__ == "__main__":

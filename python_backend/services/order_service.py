@@ -1816,6 +1816,21 @@ def _normalize_address_field(value: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
+def _build_facility_pickup_shipping_address(
+    user: Optional[Dict],
+    shipping_address: Optional[Dict],
+) -> Dict[str, Optional[str]]:
+    resolved_name = (
+        _normalize_address_field((user or {}).get("name") if isinstance(user, dict) else None)
+        or _normalize_address_field((shipping_address or {}).get("name") if isinstance(shipping_address, dict) else None)
+        or FACILITY_PICKUP_LOCATION.get("name")
+    )
+    return {
+        **FACILITY_PICKUP_LOCATION,
+        "name": resolved_name,
+    }
+
+
 def _extract_user_address_fields(shipping_address: Optional[Dict]) -> Dict[str, Optional[str]]:
     if not isinstance(shipping_address, dict):
         return {}
@@ -1893,7 +1908,7 @@ def estimate_order_totals(
     is_hand_delivery = bool(facility_pickup) and not facility_pickup_requested and _can_user_use_hand_delivery_for_checkout(user)
     bypass_shipping = is_facility_pickup or is_hand_delivery
     if is_facility_pickup:
-        shipping_address = dict(FACILITY_PICKUP_LOCATION)
+        shipping_address = _build_facility_pickup_shipping_address(user, shipping_address)
     try:
         shipping_total_value = float(shipping_total or 0)
     except Exception:
@@ -2143,7 +2158,7 @@ def create_order(
     is_hand_delivery = bool(facility_pickup) and not facility_pickup_requested and _can_user_use_hand_delivery_for_checkout(user)
     bypass_shipping = is_facility_pickup or is_hand_delivery
     if is_facility_pickup:
-        shipping_address = dict(FACILITY_PICKUP_LOCATION)
+        shipping_address = _build_facility_pickup_shipping_address(user, shipping_address)
         existing_rate = shipping_rate if isinstance(shipping_rate, dict) else {}
         shipping_rate = {
             **existing_rate,

@@ -1324,7 +1324,6 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
 
     payload = {
         "status": status,
-        "customer_note": f"PepPro Order {order.get('id')}",
         "set_paid": False,
         "line_items": build_line_items(line_items_source, tax_total=(0.0 if test_override else tax_total), tax_rate_id=tax_rate_id),
         "fee_lines": fee_lines,

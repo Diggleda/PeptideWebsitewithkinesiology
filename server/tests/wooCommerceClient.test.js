@@ -51,7 +51,7 @@ test('buildOrderPayload preserves customer address data while keeping extra meta
   assert.equal(payload.shipping.address_1, '123 Main St');
   assert.equal(payload.shipping.phone, '555-123-4567');
   assert.deepEqual(payload.line_items[0].meta_data, []);
-  assert.equal(payload.customer_note, 'PepPro Order order-1');
+  assert.equal('customer_note' in payload, false);
   assert.equal(metaKeys.has('peppro_hand_delivery_address'), false);
   assert.equal(metaKeys.has('peppro_payment_method'), false);
 });

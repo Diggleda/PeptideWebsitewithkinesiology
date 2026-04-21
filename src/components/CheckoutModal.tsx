@@ -618,7 +618,17 @@ export function CheckoutModal({
     !isDelegateCheckoutFlow && allowManualHandDelivery && manualHandDelivery === true;
   const isHandDeliveryEnabled = isDoctorHandDeliveryEnabled || isManualHandDeliveryEnabled;
   const bypassShippingRateSelection = isHandDeliveryEnabled || isFacilityPickupEnabled;
-  const effectiveCheckoutAddress = isFacilityPickupEnabled ? FACILITY_PICKUP_ADDRESS : shippingAddress;
+  const facilityPickupRecipientName =
+    normalizeAddressField(shippingAddress.name)
+    || normalizeAddressField(physicianName)
+    || normalizeAddressField(customerName)
+    || normalizeAddressField(FACILITY_PICKUP_ADDRESS.name);
+  const effectiveCheckoutAddress = isFacilityPickupEnabled
+    ? {
+        ...FACILITY_PICKUP_ADDRESS,
+        name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+      }
+    : shippingAddress;
   const effectiveShippingCost = bypassShippingRateSelection ? 0 : shippingCost;
   const localSalesRepDisplayName = String(salesRepName || '').trim() || 'Your sales rep';
   const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);

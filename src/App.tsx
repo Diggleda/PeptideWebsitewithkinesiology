@@ -1653,6 +1653,44 @@ const isFacilityPickupAddress = (address?: AccountOrderAddress | null) => {
   return (matchesStreet && matchesUnit && matchesLocation) || (matchesName && matchesLocation);
 };
 
+const isFacilityPickupRecipientPlaceholder = (value?: string | null) =>
+  normalizeAddressComparisonPart(value) === "peppro facility pickup";
+
+const resolveFacilityPickupRecipientName = (
+  ...candidates: Array<string | null | undefined>
+): string | null => {
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (!trimmed || isFacilityPickupRecipientPlaceholder(trimmed)) {
+      continue;
+    }
+    return trimmed;
+  }
+  return null;
+};
+
+const withFacilityPickupRecipientName = (
+  address?: AccountOrderAddress | null,
+  options?: {
+    billingAddress?: AccountOrderAddress | null;
+    fallbackName?: string | null;
+  },
+): AccountOrderAddress | null => {
+  if (!address || !isFacilityPickupAddress(address)) {
+    return address ?? null;
+  }
+  const recipientName = resolveFacilityPickupRecipientName(
+    address.name,
+    options?.billingAddress?.name,
+    options?.fallbackName,
+  );
+  if (!recipientName) {
+    return address;
+  }
+  return { ...address, name: recipientName };
+};
+
 const getInitials = (name?: string | null) => {
   if (!name) return "PP";
   const honorifics = new Set([
@@ -40534,9 +40572,21 @@ function MainApp() {
                   (salesOrderDetail as any).billing ||
                   (salesOrderDetail as any).billing_address ||
                   null;
+                const isFacilityPickupOrder = isSalesOrderFacilityPickup(
+                  salesOrderDetail as any,
+                );
+                const shippingAddressForDisplay = isFacilityPickupOrder
+                  ? withFacilityPickupRecipientName(shippingAddress, {
+                      billingAddress,
+                      fallbackName:
+                        typeof salesOrderDetail.doctorName === "string" && salesOrderDetail.doctorName.trim().length > 0
+                          ? salesOrderDetail.doctorName.trim()
+                          : null,
+                    })
+                  : shippingAddress;
                 const shippingRecipientName =
-                  typeof (shippingAddress as any)?.name === "string"
-                    ? String((shippingAddress as any).name).trim()
+                  typeof (shippingAddressForDisplay as any)?.name === "string"
+                    ? String((shippingAddressForDisplay as any).name).trim()
                     : "";
                 const billingAddressForDisplay =
                   billingAddress && shippingRecipientName
@@ -40727,9 +40777,6 @@ function MainApp() {
                   salesOrderDetail as any,
                 );
                 const trackingLabel = resolveTrackingNumber(salesOrderDetail);
-                const isFacilityPickupOrder = isSalesOrderFacilityPickup(
-                  salesOrderDetail as any,
-                );
                 const estimateRangeLabel =
                   normalizeEstimateDisplayLabel(expectedShipmentWindow) ||
                   normalizeEstimateDisplayLabel(expectedDelivery) ||
@@ -40837,7 +40884,7 @@ function MainApp() {
                         <h4 className="text-base font-semibold text-slate-900">
                           Shipping Information
                         </h4>
-	                        {renderAddressLines(shippingAddress)}
+	                        {renderAddressLines(shippingAddressForDisplay)}
 	                        <div className="text-sm text-slate-700 space-y-1">
                           {shippedDate && (
                             <p>
