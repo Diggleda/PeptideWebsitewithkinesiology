@@ -482,6 +482,32 @@ def _read_linux_uptime_seconds() -> float | None:
         return None
 
 
+def _parse_proc_starttime_seconds(raw: str, *, clock_ticks_per_second: int) -> float | None:
+    """
+    Parse process start time in seconds since boot from /proc/<pid>/stat content.
+    """
+    try:
+        text = str(raw or "").strip()
+        if not text:
+            return None
+        # /proc/<pid>/stat has the comm in parentheses which may contain spaces.
+        rparen = text.rfind(")")
+        if rparen == -1:
+            return None
+        rest = text[rparen + 1 :].strip().split()
+        # starttime is field 22 overall => index 19 in `rest` because fields 1-2
+        # (pid and comm) were removed and `rest[0]` is field 3 (state).
+        if len(rest) <= 19:
+            return None
+        ticks = int(rest[19])
+        hz = int(clock_ticks_per_second or 0)
+        if hz <= 0:
+            hz = 100
+        return float(ticks) / float(hz)
+    except Exception:
+        return None
+
+
 def _read_proc_starttime_seconds(pid: int) -> float | None:
     """
     Return process start time in seconds since boot using /proc/<pid>/stat.
@@ -492,21 +518,11 @@ def _read_proc_starttime_seconds(pid: int) -> float | None:
         stat_path = Path(f"/proc/{pid}/stat")
         if not stat_path.exists():
             return None
-        # /proc/<pid>/stat has the comm in parentheses which may contain spaces.
-        raw = stat_path.read_text(encoding="utf-8", errors="ignore").strip()
-        rparen = raw.rfind(")")
-        if rparen == -1:
-            return None
-        rest = raw[rparen + 1 :].strip().split()
-        # starttime is field 22 overall => field index 20 in "rest" (since fields 1-2 removed).
-        if len(rest) <= 20:
-            return None
-        ticks = int(rest[20])
         hz = os.sysconf(os.sysconf_names.get("SC_CLK_TCK", "SC_CLK_TCK"))  # type: ignore[arg-type]
-        hz = int(hz) if hz else 100
-        if hz <= 0:
-            hz = 100
-        return float(ticks) / float(hz)
+        return _parse_proc_starttime_seconds(
+            stat_path.read_text(encoding="utf-8", errors="ignore"),
+            clock_ticks_per_second=int(hz) if hz else 100,
+        )
     except Exception:
         return None
 

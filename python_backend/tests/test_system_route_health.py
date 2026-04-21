@@ -43,6 +43,15 @@ class SystemRouteHealthTests(unittest.TestCase):
 
         self.assertEqual(parsed, {"threads": 8, "workerClass": "gthread"})
 
+    def test_parse_proc_starttime_uses_field_22(self) -> None:
+        # fields 1-2: pid + comm; fields 3-21 are placeholders; field 22 is starttime.
+        stat = "123 (python worker) " + " ".join(["S"] + ["0"] * 18 + ["12345"] + ["999999999"])
+
+        self.assertEqual(
+            system._parse_proc_starttime_seconds(stat, clock_ticks_per_second=100),
+            123.45,
+        )
+
     def test_assess_background_jobs_health_ignores_external_and_disabled_jobs(self) -> None:
         assessed = system._assess_background_jobs_health(
             {
