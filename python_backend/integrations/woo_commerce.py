@@ -120,6 +120,22 @@ def _is_hand_delivery_shipping_estimate(estimate: object) -> bool:
     )
 
 
+def _is_facility_pickup_shipping_estimate(estimate: object) -> bool:
+    if not isinstance(estimate, dict):
+        return False
+    candidates = [
+        estimate.get("serviceType"),
+        estimate.get("serviceCode"),
+        estimate.get("carrierId"),
+    ]
+    normalized = {
+        str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        for value in candidates
+        if str(value or "").strip()
+    }
+    return bool({"facility_pickup", "fascility_pickup"} & normalized)
+
+
 def _format_shipping_address_line(address: object) -> str:
     if not isinstance(address, dict):
         return ""
@@ -1220,6 +1236,16 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     shipping_lines = []
     shipping_estimate = order.get("shippingEstimate") or {}
     is_hand_delivery = _is_hand_delivery_shipping_estimate(shipping_estimate)
+    raw_fulfillment_method = str(order.get("fulfillmentMethod") or order.get("fulfillment_method") or "").strip().lower()
+    is_facility_pickup = (
+        not is_hand_delivery
+        and (
+            bool(order.get("facilityPickup"))
+            or bool(order.get("facility_pickup"))
+            or raw_fulfillment_method in {"facility_pickup", "fascility_pickup"}
+            or _is_facility_pickup_shipping_estimate(shipping_estimate)
+        )
+    )
     sales_rep_id = (
         order.get("doctorSalesRepId")
         or order.get("salesRepId")
@@ -1259,7 +1285,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         {"key": "peppro_shipping_total", "value": shipping_total},
         {"key": "peppro_shipping_service", "value": method_title},
         {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId") or method_code},
-        {"key": "peppro_fulfillment_method", "value": "hand_delivery" if is_hand_delivery else "shipping"},
+        {
+            "key": "peppro_fulfillment_method",
+            "value": "facility_pickup" if is_facility_pickup else ("hand_delivery" if is_hand_delivery else "shipping"),
+        },
         {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
     ]
     if order.get("discountCode"):
@@ -2219,10 +2248,12 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
             return fallback
 
     meta_data = order.get("meta_data") or []
-    fulfillment_method = _meta_value(meta_data, "peppro_fulfillment_method") or "shipping"
+    shipping_estimate = _map_shipping_estimate(order, meta_data)
+    fulfillment_method = _meta_value(meta_data, "peppro_fulfillment_method") or (
+        "facility_pickup" if _is_facility_pickup_shipping_estimate(shipping_estimate) else "shipping"
+    )
     peppro_order_id_raw = _meta_value(meta_data, "peppro_order_id")
     peppro_order_id = str(peppro_order_id_raw).strip() if peppro_order_id_raw is not None else None
-    shipping_estimate = _map_shipping_estimate(order, meta_data)
     shipping_total = _num(order.get("shipping_total"), _num(_meta_value(meta_data, "peppro_shipping_total"), 0.0))
     invoice_url = _build_invoice_url(order.get("id"), order.get("order_key"))
     first_shipping_line = (order.get("shipping_lines") or [None])[0] or {}
@@ -2268,6 +2299,10 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
             if "tax" in name:
                 tax_total = _num((fee or {}).get("total"), 0.0)
                 break
+    is_facility_pickup = str(fulfillment_method or "").strip().lower().replace("-", "_").replace(" ", "_") in {
+        "facility_pickup",
+        "fascility_pickup",
+    }
 
     mapped = {
         "id": identifier,
@@ -2283,6 +2318,9 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "paymentDetails": payment_label,
         "shippingTotal": shipping_total,
         "handDelivery": False,
+        "facilityPickup": is_facility_pickup,
+        "facility_pickup": is_facility_pickup,
+        "fascility_pickup": is_facility_pickup,
         "fulfillmentMethod": fulfillment_method,
         "pickupLocation": None,
         "pickupReadyNotice": None,

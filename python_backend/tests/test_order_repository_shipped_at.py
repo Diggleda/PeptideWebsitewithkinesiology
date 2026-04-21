@@ -148,7 +148,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
 
         self.assertEqual(params["facility_pickup"], 1)
 
-    def test_to_db_params_keeps_facility_pickup_orders_as_shipping_fulfillment(self):
+    def test_to_db_params_keeps_facility_pickup_orders_as_facility_pickup_fulfillment(self):
         params = order_repository._to_db_params(
             {
                 "id": "order-pickup-2",
@@ -156,7 +156,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
                 "facilityPickup": True,
                 "facility_pickup": True,
                 "handDelivery": False,
-                "fulfillmentMethod": "shipping",
+                "fulfillmentMethod": "facility_pickup",
                 "shippingEstimate": {
                     "carrierId": "facility_pickup",
                     "serviceCode": "facility_pickup",
@@ -167,8 +167,35 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         )
 
         self.assertEqual(params["facility_pickup"], 1)
-        self.assertEqual(params["fulfillment_method"], "shipping")
+        self.assertEqual(params["fulfillment_method"], "facility_pickup")
         self.assertEqual(params["shipping_service"], "Facility pickup")
+
+    @patch("python_backend.repositories.order_repository.decrypt_json", return_value=None)
+    def test_row_to_order_preserves_facility_pickup_without_marking_hand_delivery(self, _decrypt_json):
+        order = order_repository._row_to_order(
+            {
+                "id": "order-pickup-3",
+                "user_id": "user-pickup-3",
+                "items": "[]",
+                "total": 50.0,
+                "items_subtotal": 50.0,
+                "shipping_total": 0.0,
+                "shipping_rate": '{"carrierId":"facility_pickup","serviceCode":"facility_pickup","serviceType":"Facility pickup"}',
+                "shipping_address": '{"name":"PepPro Facility Pickup","addressLine1":"640 S Grand Ave","addressLine2":"Unit #107","city":"Santa Ana","state":"CA","postalCode":"92705","country":"US"}',
+                "facility_pickup": 1,
+                "fulfillment_method": "facility_pickup",
+                "shipping_service": "Facility pickup",
+                "status": "pending",
+                "payload": "{}",
+                "created_at": datetime(2026, 4, 20, 0, 0, 0),
+                "updated_at": datetime(2026, 4, 20, 0, 0, 0),
+            }
+        )
+
+        self.assertFalse(order["handDelivery"])
+        self.assertTrue(order["facilityPickup"])
+        self.assertTrue(order["facility_pickup"])
+        self.assertEqual(order["fulfillmentMethod"], "facility_pickup")
 
     @patch("python_backend.repositories.order_repository.decrypt_json", return_value=None)
     @patch("python_backend.repositories.order_repository.mysql_client.fetch_all")

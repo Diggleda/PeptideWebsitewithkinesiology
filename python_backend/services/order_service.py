@@ -2233,7 +2233,7 @@ def create_order(
         "facilityPickup": is_facility_pickup,
         "facility_pickup": is_facility_pickup,
         "fascility_pickup": is_facility_pickup,
-        "fulfillmentMethod": "hand_delivered" if is_hand_delivery else "shipping",
+        "fulfillmentMethod": "facility_pickup" if is_facility_pickup else ("hand_delivered" if is_hand_delivery else "shipping"),
         "pickupLocation": FACILITY_PICKUP_LOCATION if is_facility_pickup else None,
         "pickupReadyNotice": FACILITY_PICKUP_NOTICE if is_facility_pickup else None,
         "referralCode": normalized_referral,

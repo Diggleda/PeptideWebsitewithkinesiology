@@ -80,7 +80,7 @@ def _normalize_fulfillment_method(value: object, fallback: object = None) -> Opt
         return None
     key = text.lower().replace("-", "_").replace(" ", "_")
     if key in {"facility_pickup", "fascility_pickup"}:
-        return "shipping"
+        return "facility_pickup"
     if key in {"hand_delivery", "hand_delivered", "local_hand_delivery", "local_delivery"}:
         return "hand_delivered"
     return text
@@ -498,6 +498,36 @@ def _is_hand_delivery_order(order: Dict) -> bool:
     )
 
 
+def _is_facility_pickup_order(order: Dict) -> bool:
+    if not isinstance(order, dict):
+        return False
+
+    if _coerce_optional_bool(order.get("facilityPickup")) is True:
+        return True
+    if _coerce_optional_bool(order.get("facility_pickup")) is True:
+        return True
+    if _coerce_optional_bool(order.get("fascility_pickup")) is True:
+        return True
+
+    candidates = [
+        order.get("shippingService"),
+        order.get("fulfillmentMethod"),
+        order.get("fulfillment_method"),
+    ]
+    shipping_estimate = order.get("shippingEstimate")
+    if isinstance(shipping_estimate, dict):
+        candidates.extend(
+            [
+                shipping_estimate.get("serviceType"),
+                shipping_estimate.get("serviceCode"),
+                shipping_estimate.get("carrierId"),
+            ]
+        )
+
+    normalized = {str(value or "").strip().lower().replace("-", "_").replace(" ", "_") for value in candidates if str(value or "").strip()}
+    return bool({"facility_pickup", "fascility_pickup"} & normalized)
+
+
 def _get_store():
     store = storage.order_store
     if store is None:
@@ -853,6 +883,9 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             "shippingTotal": float(row.get("shipping_total") or 0),
             "shippingEstimate": shipping_estimate,
             "handDelivery": bool(payload.get("handDelivery")),
+            "facilityPickup": bool(row.get("facility_pickup")),
+            "facility_pickup": bool(row.get("facility_pickup")),
+            "fascility_pickup": bool(row.get("facility_pickup")),
             "fulfillmentMethod": _normalize_fulfillment_method(
                 row.get("fulfillment_method"),
                 payload.get("fulfillmentMethod"),
@@ -899,6 +932,18 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             "createdAt": fmt_datetime(row.get("created_at")),
             "updatedAt": fmt_datetime(row.get("updated_at")),
         }
+        if not entry.get("handDelivery"):
+            entry["handDelivery"] = _is_hand_delivery_order(entry)
+        if not entry.get("facilityPickup"):
+            entry["facilityPickup"] = _is_facility_pickup_order(entry)
+        entry["facility_pickup"] = bool(entry.get("facility_pickup") or entry.get("facilityPickup"))
+        entry["fascility_pickup"] = bool(entry.get("fascility_pickup") or entry.get("facilityPickup"))
+        if entry.get("handDelivery"):
+            entry["fulfillmentMethod"] = "hand_delivered"
+        elif entry.get("facilityPickup"):
+            entry["fulfillmentMethod"] = "facility_pickup"
+        elif not entry.get("fulfillmentMethod"):
+            entry["fulfillmentMethod"] = "shipping"
         entry["upsTrackingStatus"] = _resolve_persisted_ups_tracking_status(entry)
         if not entry.get("upsDeliveredAt") and entry.get("upsTrackingStatus") == "delivered":
             entry["upsDeliveredAt"] = _normalize_timestamp_like_string(entry.get("deliveryDate"))
@@ -2029,11 +2074,15 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingTotal": float(row.get("shipping_total") or 0),
         "shippingEstimate": shipping_estimate,
         "shippingAddress": _read_order_json_field(row, "shipping_address", None),
-        "handDelivery": (bool(payload.get("handDelivery")) if isinstance(payload, dict) else False) or bool(row.get("facility_pickup")),
+        "handDelivery": bool(payload.get("handDelivery")) if isinstance(payload, dict) else False,
         "facilityPickup": bool(row.get("facility_pickup")),
         "facility_pickup": bool(row.get("facility_pickup")),
         "fascility_pickup": bool(row.get("facility_pickup")),
-        "fulfillmentMethod": row.get("fulfillment_method"),
+        "fulfillmentMethod": _normalize_fulfillment_method(
+            row.get("fulfillment_method"),
+            (payload_order.get("fulfillmentMethod") if isinstance(payload_order, dict) else None)
+            or (payload.get("fulfillmentMethod") if isinstance(payload, dict) else None),
+        ),
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
@@ -2133,8 +2182,10 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         for key, value in payload.items():
             if key not in order:
                 order[key] = value
-    if not order.get("fulfillmentMethod"):
-        order["fulfillmentMethod"] = "hand_delivered" if bool(order.get("handDelivery")) else "shipping"
+    if not order.get("handDelivery"):
+        order["handDelivery"] = _is_hand_delivery_order(order)
+    if not order.get("facilityPickup"):
+        order["facilityPickup"] = _is_facility_pickup_order(order)
     order["facilityPickup"] = bool(
         order.get("facilityPickup") or order.get("facility_pickup") or order.get("fascility_pickup") or row.get("facility_pickup")
     )
@@ -2144,6 +2195,12 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
     order["fascility_pickup"] = bool(
         order.get("fascility_pickup") or order.get("facilityPickup") or order.get("facility_pickup") or row.get("facility_pickup")
     )
+    if bool(order.get("handDelivery")):
+        order["fulfillmentMethod"] = "hand_delivered"
+    elif bool(order.get("facilityPickup")):
+        order["fulfillmentMethod"] = "facility_pickup"
+    elif not order.get("fulfillmentMethod"):
+        order["fulfillmentMethod"] = "shipping"
     return _apply_ups_status_to_order(order, order.get("upsTrackingStatus"))
 
 
@@ -2279,13 +2336,16 @@ def _to_db_params(order: Dict) -> Dict:
     tracking_number = _resolve_tracking_number(order)
     ups_tracking_status = _resolve_persisted_ups_tracking_status(order)
     hand_delivery = bool(order.get("handDelivery") is True)
+    facility_pickup_order = _is_facility_pickup_order(order)
     fulfillment_method = _normalize_fulfillment_method(
         order.get("fulfillmentMethod"),
         order.get("fulfillment_method"),
     )
     if hand_delivery:
         fulfillment_method = "hand_delivered"
-    elif fulfillment_method not in ("shipping", "hand_delivered"):
+    elif facility_pickup_order:
+        fulfillment_method = "facility_pickup"
+    elif fulfillment_method not in ("shipping", "hand_delivered", "facility_pickup"):
         fulfillment_method = "shipping"
     facility_pickup = int(
         bool(
@@ -2293,7 +2353,7 @@ def _to_db_params(order: Dict) -> Dict:
             or _coerce_optional_bool(order.get("facilityPickup")) is True
             or _coerce_optional_bool(order.get("facility_pickup")) is True
             or _coerce_optional_bool(order.get("fascility_pickup")) is True
-            or fulfillment_method == "hand_delivered"
+            or fulfillment_method in {"hand_delivered", "facility_pickup"}
         )
     )
 

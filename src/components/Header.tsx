@@ -2844,7 +2844,7 @@ export function Header({
           expectedShipmentWindow: nextExpectedShipmentWindow,
         });
       }
-      const nextExpectedShipmentWindow =
+      const mergedExpectedShipmentWindow =
         resolveExpectedShipmentWindow(match) ||
         resolveExpectedShipmentWindow(selectedOrder) ||
         getRememberedSelectedOrderEstimateWindow(match) ||
@@ -2853,7 +2853,7 @@ export function Header({
       setSelectedOrder({
         ...selectedOrder,
         ...match,
-        expectedShipmentWindow: nextExpectedShipmentWindow,
+        expectedShipmentWindow: mergedExpectedShipmentWindow,
         shippingEstimate: match.shippingEstimate ?? selectedOrder.shippingEstimate ?? null,
         shippingAddress: match.shippingAddress ?? selectedOrder.shippingAddress ?? null,
         billingAddress: match.billingAddress ?? selectedOrder.billingAddress ?? null,
@@ -6420,11 +6420,31 @@ export function Header({
     const shippedAtLabel = formatOrderShippedAtForLocalDisplay(selectedOrder);
     const deliveredAtLabel = formatDeliveryDateLabel(resolveOrderDeliveredAt(selectedOrder));
     const trackingStatusLine = buildTrackingStatusLine(selectedOrder);
+    const isFacilityPickupOrder = isSalesOrderFacilityPickup(selectedOrder);
+    const isHandDeliveredOrder = isSalesOrderHandDelivered(selectedOrder);
     const estimateRangeLabel =
       normalizeEstimateDisplayLabel(expectedShipmentWindow) ||
       normalizeEstimateDisplayLabel(expectedDelivery) ||
       '';
-    const showEstimateDetails = Boolean(estimateRangeLabel && !trackingNumber && !deliveredAtLabel);
+    const deliverySummaryLabel =
+      isFacilityPickupOrder
+        ? 'Facility Pickup'
+        : isHandDeliveredOrder
+          ? 'Hand delivery'
+          : deliveredAtLabel
+            ? `Delivered on ${deliveredAtLabel}`
+            : estimateRangeLabel
+              ? estimateRangeLabel
+              : shippedAtLabel
+                ? `Shipped ${shippedAtLabel}`
+                : null;
+    const showEstimateDetails = Boolean(
+      estimateRangeLabel &&
+      !trackingNumber &&
+      !deliveredAtLabel &&
+      !isFacilityPickupOrder &&
+      !isHandDeliveredOrder,
+    );
     const wooService = wooShippingLine?.method_title || wooShippingLine?.method_id || '';
     const carrierCode =
       selectedOrder.shippingEstimate?.carrierId ||
@@ -6448,6 +6468,7 @@ export function Header({
       billingAddressBase && shippingRecipientName
         ? { ...billingAddressBase, name: shippingRecipientName }
         : billingAddressBase;
+    const shippingMethodLabel = isFacilityPickupOrder ? 'Facility Pickup' : shippingMethod;
     const lineItems = selectedOrder.lineItems || [];
     const summedLineItems = lineItems.reduce((sum, line) => {
       const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
@@ -6679,11 +6700,16 @@ export function Header({
                   {renderOrderTextOrShimmer(formatOrderDate(resolveOrderPlacedAt(selectedOrder)), 'w-28')}
                 </div>
               </div>
-              {deliveredAtLabel ? (
+              {isFacilityPickupOrder || isHandDeliveredOrder || deliveredAtLabel ? (
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Delivery</p>
                   <div className="text-sm font-semibold text-slate-900">
-                    {renderOrderTextOrShimmer(deliveredAtLabel, 'w-32')}
+                    {renderOrderTextOrShimmer(
+                      isFacilityPickupOrder || isHandDeliveredOrder
+                        ? deliverySummaryLabel
+                        : deliveredAtLabel,
+                      'w-32',
+                    )}
                   </div>
                 </div>
               ) : showEstimateDetails && (
@@ -6715,31 +6741,33 @@ export function Header({
 	                      {shippedAtLabel}
 	                    </p>
 	                  )}
-	                  {shippingMethod && (
+	                  {shippingMethodLabel && (
 	                    <p>
-	                      <span className="font-semibold">Service:</span> {shippingMethod}
+	                      <span className="font-semibold">Service:</span> {shippingMethodLabel}
 	                    </p>
 	                  )}
-	                  <p>
-	                    <span className="font-semibold">Tracking:</span>{' '}
-	                    {trackingNumber ? (
-	                      trackingHref ? (
-	                        <a
-	                          href={trackingHref}
-	                          target="_blank"
-	                          rel="noreferrer"
-	                          className="text-[rgb(26,85,173)] hover:underline"
-	                        >
-	                          {trackingNumber}
-	                        </a>
+	                  {!isFacilityPickupOrder && (
+	                    <p>
+	                      <span className="font-semibold">Tracking:</span>{' '}
+	                      {trackingNumber ? (
+	                        trackingHref ? (
+	                          <a
+	                            href={trackingHref}
+	                            target="_blank"
+	                            rel="noreferrer"
+	                            className="text-[rgb(26,85,173)] hover:underline"
+	                          >
+	                            {trackingNumber}
+	                          </a>
+	                        ) : (
+	                          trackingNumber
+	                        )
 	                      ) : (
-	                        trackingNumber
-	                      )
-	                    ) : (
-	                      'Provided when shipped'
-	                    )}
-	                  </p>
-	                  {trackingStatusLine && (
+	                        'Provided when shipped'
+	                      )}
+	                    </p>
+	                  )}
+	                  {!isFacilityPickupOrder && trackingStatusLine && (
 	                    <p>
 	                      <span className="font-semibold">Tracking Status:</span>{' '}
 	                      {trackingStatusLine}
@@ -6750,7 +6778,7 @@ export function Header({
 
 	              <div className="space-y-3">
 	                <h4 className="text-base font-semibold text-slate-900">Billing Information</h4>
-	                {renderAddressLinesForOrderDetail(billingAddress)}
+	                {!isFacilityPickupOrder && renderAddressLinesForOrderDetail(billingAddress)}
 	                <div className="text-sm text-slate-700 space-y-1">
 	                  <p>
 	                    <span className="font-semibold">Payment:</span>{' '}
