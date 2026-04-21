@@ -2136,14 +2136,13 @@ export function CheckoutModal({
                 )}
                 {isFacilityPickupEnabled ? (
                   <div className="glass-card squircle-md border border-[rgba(34,197,94,0.3)] bg-[rgba(34,197,94,0.08)] px-5 py-4">
-                    <p className="text-sm font-semibold text-slate-900">Facility pickup selected.</p>
-                    <p className="mt-1 text-sm leading-relaxed text-slate-700">
-                      Taxes are calculated using PepPro&apos;s facility address. Shipping-rate selection is not required for this order.
-                    </p>
-                    <div className="mt-3 space-y-1 text-sm text-slate-800">
+                    <div className="space-y-3 rounded-xl bg-white/60 px-4 py-3">
+                      <p className="text-sm font-semibold text-slate-900">Facility pickup selected.</p>
+                      <div className="space-y-1 text-sm text-slate-800">
                       <p>640 S Grand Ave</p>
                       <p>Unit #107</p>
                       <p>Santa Ana, CA 92705</p>
+                      </div>
                     </div>
                   </div>
                 ) : isDelegateFlow ? (

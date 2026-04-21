@@ -1398,14 +1398,15 @@ const resolveSalesOrderShippingStatus = (
   return value ? String(value).trim() || null : null;
 };
 
-const isSalesOrderHandDelivered = (
+const getSalesOrderFulfillmentTokens = (
   order?: AccountOrderSummary | null,
-): boolean => {
-  if (!order) return false;
-  if (resolveTrackingNumber(order)) return false;
-  const candidates = [
+): string[] => {
+  if (!order) return [];
+  return [
     (order as any)?.handDelivery === true ? "hand_delivery" : "",
+    (order as any)?.facilityPickup === true ? "facility_pickup" : "",
     (order as any)?.facility_pickup === true ? "facility_pickup" : "",
+    (order as any)?.fascility_pickup === true ? "fascility_pickup" : "",
     (order as any)?.fulfillmentMethod,
     (order as any)?.fulfillment_method,
     (order as any)?.shippingService,
@@ -1416,6 +1417,39 @@ const isSalesOrderHandDelivered = (
   ]
     .map((value) => String(value || "").trim().toLowerCase())
     .filter(Boolean);
+};
+
+const isSalesOrderFacilityPickup = (
+  order?: AccountOrderSummary | null,
+): boolean => {
+  if (!order) return false;
+  if (resolveTrackingNumber(order)) return false;
+  const shippingAddress =
+    (order as any)?.shippingAddress ||
+    (order as any)?.shipping ||
+    (order as any)?.shipping_address ||
+    null;
+  const billingAddress =
+    (order as any)?.billingAddress ||
+    (order as any)?.billing ||
+    (order as any)?.billing_address ||
+    null;
+  const candidates = getSalesOrderFulfillmentTokens(order);
+  return candidates.some((value) =>
+    value === "facility pickup" ||
+    value === "fascility_pickup" ||
+    value === "facility_pickup",
+  ) || isFacilityPickupAddress(shippingAddress)
+    || isFacilityPickupAddress(billingAddress);
+};
+
+const isSalesOrderHandDelivered = (
+  order?: AccountOrderSummary | null,
+): boolean => {
+  if (!order) return false;
+  if (resolveTrackingNumber(order)) return false;
+  if (isSalesOrderFacilityPickup(order)) return false;
+  const candidates = getSalesOrderFulfillmentTokens(order);
   return candidates.some((value) =>
     value === "hand delivery" ||
     value === "hand delivered" ||
@@ -1425,9 +1459,7 @@ const isSalesOrderHandDelivered = (
     value === "local_hand_delivery" ||
     value === "local_delivery" ||
     value === "hand-delivery" ||
-    value === "hand-delivered" ||
-    value === "fascility_pickup" ||
-    value === "facility_pickup",
+    value === "hand-delivered",
   );
 };
 
@@ -1587,6 +1619,38 @@ const sanitizeAccountAddress = (
     phone: normalizeAddressPart(address?.phone),
     email: normalizeAddressPart(address?.email),
   };
+};
+
+const normalizeAddressComparisonPart = (value?: string | null) =>
+  normalizeAddressPart(value)
+    ?.toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\s+/g, " ")
+    .trim() || null;
+
+const isFacilityPickupAddress = (address?: AccountOrderAddress | null) => {
+  if (!address) return false;
+
+  const name = normalizeAddressComparisonPart(address.name);
+  const line1 = normalizeAddressComparisonPart(address.addressLine1);
+  const line2 = normalizeAddressComparisonPart(address.addressLine2);
+  const combinedLine = [line1, line2].filter(Boolean).join(" ");
+  const city = normalizeAddressComparisonPart(address.city);
+  const state = normalizeAddressComparisonPart(address.state);
+  const postalCode = normalizeAddressComparisonPart(address.postalCode);
+
+  const matchesName = name === "peppro facility pickup";
+  const matchesStreet =
+    line1 === "640 s grand ave" || combinedLine.includes("640 s grand ave");
+  const matchesUnit =
+    line2 === "unit #107" ||
+    line2 === "unit 107" ||
+    combinedLine.includes("unit #107") ||
+    combinedLine.includes("unit 107");
+  const matchesLocation =
+    city === "santa ana" && state === "ca" && postalCode === "92705";
+
+  return (matchesStreet && matchesUnit && matchesLocation) || (matchesName && matchesLocation);
 };
 
 const getInitials = (name?: string | null) => {
@@ -27592,9 +27656,9 @@ function MainApp() {
                 return (
                   <li
                     key={userId || `pending-reseller-permit-${index}`}
-                    className="flex flex-col items-start gap-3 border-b border-slate-200/70 px-4 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                    className="admin-todo-list__item border-b border-slate-200/70 px-4 py-4 last:border-b-0"
                   >
-                    <div className="min-w-0 w-full flex-1 text-sm text-slate-800">
+                    <div className="admin-todo-list__details min-w-0 text-sm text-slate-800">
                       <span className="font-semibold text-slate-900">
                         Reseller Permit Verification Needed
                       </span>
@@ -27603,12 +27667,12 @@ function MainApp() {
                         <span className="text-slate-500">{` - Uploaded ${uploadedDateLabel}`}</span>
                       ) : null}
                     </div>
-                    <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                    <div className="admin-todo-list__actions">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="header-home-button squircle-sm w-full bg-white text-slate-900 sm:w-auto"
+                        className="admin-todo-list__button header-home-button squircle-sm bg-white text-slate-900"
                         onClick={() => void handleDownloadPendingResellerPermitApproval(item)}
                         disabled={isDownloading || isApproving}
                       >
@@ -27617,7 +27681,7 @@ function MainApp() {
                       <Button
                         type="button"
                         size="sm"
-                        className="header-home-button squircle-sm w-full sm:w-auto"
+                        className="admin-todo-list__button header-home-button squircle-sm"
                         onClick={() => void handleApprovePendingResellerPermitApproval(item)}
                         disabled={isApproving || isDownloading}
                       >
@@ -33996,7 +34060,9 @@ function MainApp() {
                             const primaryDateLabel = dateSummary.value
                               ? `${dateSummary.label} ${dateSummary.value}`
                               : `${dateSummary.label} Unknown date`;
-                            const arrivalLabel = isSalesOrderHandDelivered(order as any)
+                            const arrivalLabel = isSalesOrderFacilityPickup(order as any)
+                              ? "Facility Pickup"
+                              : isSalesOrderHandDelivered(order as any)
                               ? "Hand delivery"
 	                              : isShipped && shippedDate
 	                                ? `Shipped ${shippedDate}`
@@ -40661,11 +40727,16 @@ function MainApp() {
                   salesOrderDetail as any,
                 );
                 const trackingLabel = resolveTrackingNumber(salesOrderDetail);
+                const isFacilityPickupOrder = isSalesOrderFacilityPickup(
+                  salesOrderDetail as any,
+                );
                 const estimateRangeLabel =
                   normalizeEstimateDisplayLabel(expectedShipmentWindow) ||
                   normalizeEstimateDisplayLabel(expectedDelivery) ||
                   "";
-                const deliverySummaryLabel = isSalesOrderHandDelivered(salesOrderDetail as any)
+                const deliverySummaryLabel = isFacilityPickupOrder
+                  ? "Facility Pickup"
+                  : isSalesOrderHandDelivered(salesOrderDetail as any)
                   ? "Hand delivery"
                   : deliveredAtLabel
                     ? `Delivered on ${deliveredAtLabel}`
@@ -40684,7 +40755,9 @@ function MainApp() {
                     .replace(/\s+/g, " ")
                     .replace(/\b(\w)/g, (m) => m.toUpperCase());
                 };
-                const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
+                const shippingServiceLabel = isFacilityPickupOrder
+                  ? "Facility Pickup"
+                  : formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
                 const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
                 const integrationsParsed = parseMaybeJson(
                   (salesOrderDetail as any).integrationDetails ||
@@ -40761,9 +40834,9 @@ function MainApp() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 	                      <div className="space-y-2">
-	                        <h4 className="text-base font-semibold text-slate-900">
-	                          Shipping Information
-	                        </h4>
+                        <h4 className="text-base font-semibold text-slate-900">
+                          Shipping Information
+                        </h4>
 	                        {renderAddressLines(shippingAddress)}
 	                        <div className="text-sm text-slate-700 space-y-1">
                           {shippedDate && (
@@ -40778,22 +40851,24 @@ function MainApp() {
                               {shippingServiceLabel}
                             </p>
                           )}
-                          <p>
-                            <span className="font-semibold">Tracking:</span>{" "}
-                            {trackingHref ? (
-                              <a
-                                href={trackingHref}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[rgb(26,85,173)] hover:underline"
-                              >
-                                {trackingLabel}
-                              </a>
-                            ) : (
-                              trackingLabel || "Provided when shipped"
-                            )}
-                          </p>
-                          {trackingStatusLine && (
+                          {!isFacilityPickupOrder && (
+                            <p>
+                              <span className="font-semibold">Tracking:</span>{" "}
+                              {trackingHref ? (
+                                <a
+                                  href={trackingHref}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[rgb(26,85,173)] hover:underline"
+                                >
+                                  {trackingLabel}
+                                </a>
+                              ) : (
+                                trackingLabel || "Provided when shipped"
+                              )}
+                            </p>
+                          )}
+                          {!isFacilityPickupOrder && trackingStatusLine && (
                             <p>
                               <span className="font-semibold">Tracking Status:</span>{" "}
                               {trackingStatusLine}
@@ -40954,7 +41029,7 @@ function MainApp() {
                         <h4 className="text-base font-semibold text-slate-900">
                           Billing Information
                         </h4>
-                        {renderAddressLines(billingAddressForDisplay)}
+                        {!isFacilityPickupOrder && renderAddressLines(billingAddressForDisplay)}
                         <div className="text-sm text-slate-700 space-y-1">
                           <p>
                             <span className="font-semibold">Payment:</span>{" "}

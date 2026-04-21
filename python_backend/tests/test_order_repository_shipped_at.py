@@ -136,6 +136,18 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
 
         self.assertEqual(params["delivery_date"], "2026-04-02T10:15:00")
 
+    def test_to_db_params_sets_facility_pickup_for_hand_delivery_orders(self):
+        params = order_repository._to_db_params(
+            {
+                "id": "order-pickup-1",
+                "userId": "user-pickup-1",
+                "handDelivery": True,
+                "fulfillmentMethod": "hand_delivered",
+            }
+        )
+
+        self.assertEqual(params["facility_pickup"], 1)
+
     @patch("python_backend.repositories.order_repository.decrypt_json", return_value=None)
     @patch("python_backend.repositories.order_repository.mysql_client.fetch_all")
     @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)

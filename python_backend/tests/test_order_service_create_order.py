@@ -16,6 +16,7 @@ def _install_test_stubs() -> None:
         flask.request = types.SimpleNamespace(method="POST", path="/api/orders/")
         flask.g = types.SimpleNamespace(current_user=None)
         flask.jsonify = lambda payload=None, *args, **kwargs: payload
+        flask.has_request_context = lambda: False
         sys.modules["flask"] = flask
 
     if "werkzeug" not in sys.modules:
@@ -237,6 +238,81 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(inserted_orders[0]["status"], "processing")
         self.assertEqual(result["order"]["wooOrderId"], 9001)
         self.assertEqual(result["order"]["integrations"]["wooCommerce"], "success")
+
+    def test_create_order_sets_facility_pickup_flags_when_enabled(self):
+        service = self.order_service
+        inserted_orders = []
+
+        def succeed(order, _user):
+            return {
+                "status": "success",
+                "response": {
+                    "id": 9003,
+                    "number": "1493",
+                    "status": "processing",
+                    "orderKey": "wc_order_key_789",
+                },
+            }
+
+        def capture_insert(order):
+            inserted_orders.append(dict(order))
+            return dict(order)
+
+        with patch.object(service.order_repository, "insert", side_effect=capture_insert), patch.object(
+            service.order_repository, "update", side_effect=lambda order: dict(order)
+        ), patch.object(
+            service.order_repository, "update_woo_fields"
+        ), patch.object(
+            service.sales_prospect_repository, "mark_doctor_as_nurturing_if_purchased"
+        ), patch.object(
+            service.user_repository, "find_by_id",
+            return_value={
+                "id": "doctor-1",
+                "name": "Dr. Pepper",
+                "email": "doctor@example.com",
+                "role": "doctor",
+                "referralCredits": 0,
+            },
+        ), patch.object(service.settings_service, "get_settings", return_value={}), patch.object(
+            service.referral_service, "handle_order_referral_effects", return_value={}
+        ), patch.object(
+            service.discount_code_repository, "reserve_use_once"
+        ), patch.object(
+            service.woo_commerce, "forward_order", side_effect=succeed
+        ), patch.object(
+            service, "_is_tax_exempt_for_checkout", return_value=False
+        ), patch.object(
+            service, "_resolve_order_exemption_snapshot", return_value={}
+        ), patch.object(
+            service, "_resolve_sales_rep_context", return_value={}
+        ), patch.object(
+            service, "_calculate_checkout_tax", return_value=(0.0, "none", None)
+        ), patch.object(
+            service, "_can_user_use_hand_delivery_for_checkout", return_value=True
+        ):
+            service.create_order(
+                user_id="doctor-1",
+                items=[{"productId": 101, "name": "Test Product", "price": 25.0, "quantity": 2}],
+                total=50.0,
+                referral_code=None,
+                discount_code=None,
+                payment_method="bacs",
+                pricing_mode="wholesale",
+                tax_total=0.0,
+                shipping_total=0.0,
+                shipping_address={},
+                facility_pickup=True,
+                shipping_rate=None,
+                expected_shipment_window=None,
+                physician_certified=True,
+                as_delegate_label=None,
+            )
+
+        self.assertEqual(len(inserted_orders), 1)
+        self.assertTrue(inserted_orders[0]["handDelivery"])
+        self.assertTrue(inserted_orders[0]["facilityPickup"])
+        self.assertTrue(inserted_orders[0]["facility_pickup"])
+        self.assertTrue(inserted_orders[0]["fascility_pickup"])
 
     def test_create_order_forwards_add_on_items_like_regular_products(self):
         service = self.order_service

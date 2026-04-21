@@ -2031,7 +2031,10 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingTotal": float(row.get("shipping_total") or 0),
         "shippingEstimate": shipping_estimate,
         "shippingAddress": _read_order_json_field(row, "shipping_address", None),
-        "handDelivery": bool(payload.get("handDelivery")) if isinstance(payload, dict) else False,
+        "handDelivery": (bool(payload.get("handDelivery")) if isinstance(payload, dict) else False) or bool(row.get("facility_pickup")),
+        "facilityPickup": bool(row.get("facility_pickup")),
+        "facility_pickup": bool(row.get("facility_pickup")),
+        "fascility_pickup": bool(row.get("facility_pickup")),
         "fulfillmentMethod": row.get("fulfillment_method"),
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
@@ -2087,6 +2090,12 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
     if isinstance(payload, dict) and payload:
         if payload.get("handDelivery") is not None:
             order["handDelivery"] = bool(payload.get("handDelivery"))
+        if payload.get("facilityPickup") is not None:
+            order["facilityPickup"] = bool(payload.get("facilityPickup"))
+        if payload.get("facility_pickup") is not None:
+            order["facility_pickup"] = bool(payload.get("facility_pickup"))
+        if payload.get("fascility_pickup") is not None:
+            order["fascility_pickup"] = bool(payload.get("fascility_pickup"))
         if not order.get("fulfillmentMethod") and payload.get("fulfillmentMethod"):
             order["fulfillmentMethod"] = _normalize_fulfillment_method(payload.get("fulfillmentMethod"))
         payload_items = None
@@ -2128,6 +2137,15 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
                 order[key] = value
     if not order.get("fulfillmentMethod"):
         order["fulfillmentMethod"] = "hand_delivered" if bool(order.get("handDelivery")) else "shipping"
+    order["facilityPickup"] = bool(
+        order.get("facilityPickup") or order.get("facility_pickup") or order.get("fascility_pickup") or row.get("facility_pickup")
+    )
+    order["facility_pickup"] = bool(
+        order.get("facility_pickup") or order.get("facilityPickup") or order.get("fascility_pickup") or row.get("facility_pickup")
+    )
+    order["fascility_pickup"] = bool(
+        order.get("fascility_pickup") or order.get("facilityPickup") or order.get("facility_pickup") or row.get("facility_pickup")
+    )
     return _apply_ups_status_to_order(order, order.get("upsTrackingStatus"))
 
 
@@ -2271,6 +2289,15 @@ def _to_db_params(order: Dict) -> Dict:
         fulfillment_method = "hand_delivered"
     elif fulfillment_method not in ("shipping", "hand_delivered"):
         fulfillment_method = "shipping"
+    facility_pickup = int(
+        bool(
+            hand_delivery
+            or _coerce_optional_bool(order.get("facilityPickup")) is True
+            or _coerce_optional_bool(order.get("facility_pickup")) is True
+            or _coerce_optional_bool(order.get("fascility_pickup")) is True
+            or fulfillment_method == "hand_delivered"
+        )
+    )
 
     return {
         "id": order.get("id"),
@@ -2312,6 +2339,7 @@ def _to_db_params(order: Dict) -> Dict:
         # `orders.total` should reflect the full amount paid (subtotal - discounts + shipping + tax).
         "total": float(grand_total),
         "shipping_total": 0.0 if hand_delivery else float(order.get("shippingTotal") or 0),
+        "facility_pickup": facility_pickup,
         "fulfillment_method": fulfillment_method,
         "shipping_carrier": order.get("shippingCarrier")
         or order.get("shippingEstimate", {}).get("carrierId")

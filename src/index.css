@@ -4489,6 +4489,62 @@ html {
   box-sizing: border-box;
 }
 
+.admin-todo-list__item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.admin-todo-list__details {
+  width: 100%;
+}
+
+.admin-todo-list__actions {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.admin-todo-list__button {
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .admin-todo-list__item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .admin-todo-list__details {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .admin-todo-list__actions {
+    width: auto;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+
+  .admin-todo-list__button {
+    width: auto;
+    flex: 0 0 auto;
+  }
+}
+
 .admin-revenue-outlook-row {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
