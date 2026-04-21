@@ -186,6 +186,7 @@ async function catalogGet<T = unknown>(endpoint: string, params: QueryParams = {
     return wooGet<T>(endpoint, params);
   }
   const sanitized = endpoint.replace(/^\/+/, '');
+  const isSnapshotProductResource = /^products\/[^/]+(?:\/variations)?$/i.test(sanitized);
   const url = toAbsoluteUrl(`${CATALOG_BASE.replace(/\/+$/, '')}/${sanitized}`);
   Object.entries(stringifyParams(params)).forEach(([key, value]) => url.searchParams.set(key, value));
   const startedAt = Date.now();
@@ -207,6 +208,15 @@ async function catalogGet<T = unknown>(endpoint: string, params: QueryParams = {
     }
     if (!res.ok) {
       if (res.status === 404) {
+        const payload = (await res
+          .clone()
+          .json()
+          .catch(() => null)) as any;
+        const message = String(payload?.message || payload?.error || '').toLowerCase();
+        const endpointMissing = message.includes('endpoint does not exist');
+        if (isSnapshotProductResource && !endpointMissing) {
+          throw new Error(`Catalog snapshot resource not found (${res.status})`);
+        }
         if (WOO_DEBUG) {
           console.warn('[Catalog] Snapshot endpoint missing, falling back to Woo proxy', {
             endpoint,

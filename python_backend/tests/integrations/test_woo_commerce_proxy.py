@@ -1,4 +1,5 @@
 import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -59,6 +60,45 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
                 woo_commerce._fetch_catalog_http("products/1512", {"status": "publish"}, suppress_log=True)
 
         self.assertEqual(getattr(ctx.exception, "status", None), 504)
+
+    def test_catalog_http_wall_timeout_reports_504_without_waiting_for_socket(self):
+        started = threading.Event()
+        released = threading.Event()
+        original_release = woo_commerce._release_woo_http_permit
+
+        def slow_get(*args, **kwargs):
+            started.set()
+            time.sleep(0.2)
+            response = requests.Response()
+            response.status_code = 200
+            response._content = b"{}"
+            return response
+
+        def release_permit():
+            original_release()
+            released.set()
+
+        with (
+            patch.object(
+                woo_commerce,
+                "_client_config",
+                return_value=("https://shop.example.test", "wc/v3", None, 0.05),
+            ),
+            patch.object(woo_commerce, "_timeout_seconds_for_endpoint", return_value=0.05),
+            patch.object(woo_commerce, "_release_woo_http_permit", side_effect=release_permit),
+            patch.object(woo_commerce.logger, "warning"),
+            patch.object(woo_commerce.requests, "get", side_effect=slow_get),
+        ):
+            started_at = time.perf_counter()
+            with self.assertRaises(woo_commerce.IntegrationError) as ctx:
+                woo_commerce._fetch_catalog_http("products/1512", {"status": "publish"}, suppress_log=True)
+            elapsed = time.perf_counter() - started_at
+            released_before_context_exit = released.wait(timeout=1.0)
+
+        self.assertTrue(started.is_set())
+        self.assertLess(elapsed, 0.18)
+        self.assertEqual(getattr(ctx.exception, "status", None), 504)
+        self.assertTrue(released_before_context_exit)
 
     def test_catalog_http_busy_reports_503(self):
         acquired_permits = []

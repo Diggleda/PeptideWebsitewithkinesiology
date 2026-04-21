@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import queue
 import re
 import threading
 import time
@@ -476,13 +477,12 @@ def _fetch_catalog_http(
                 err = IntegrationError("WooCommerce is busy, please retry")
                 setattr(err, "status", 503)
                 raise err
-            try:
-                response = requests.get(url, params=cleaned, auth=auth, timeout=request_timeout)
-            finally:
-                try:
-                    _woo_http_semaphore.release()
-                except ValueError:
-                    pass
+            response = _catalog_get_with_wall_timeout(
+                url,
+                params=cleaned,
+                auth=auth,
+                request_timeout=request_timeout,
+            )
             if response.status_code >= 400:
                 if attempt < max_attempts - 1 and _should_retry_status(response.status_code):
                     raise requests.HTTPError(response=response)
@@ -492,7 +492,7 @@ def _fetch_catalog_http(
             except ValueError:
                 return response.text
         except requests.Timeout as exc:
-            if attempt < max_attempts - 1:
+            if attempt < max_attempts - 1 and not isinstance(exc, _CatalogWallTimeout):
                 delay = min(3.0, 0.6 * (2**attempt)) + (0.05 * attempt)
                 time.sleep(delay)
                 continue
@@ -538,6 +538,71 @@ def _fetch_catalog_http(
             err = IntegrationError("WooCommerce catalog request failed", response=data)
             setattr(err, "status", status if status is not None else 502)
             raise err
+
+
+class _CatalogWallTimeout(requests.Timeout):
+    pass
+
+
+def _release_woo_http_permit() -> None:
+    try:
+        _woo_http_semaphore.release()
+    except ValueError:
+        pass
+
+
+def _catalog_request_wall_timeout_seconds(request_timeout: float) -> float:
+    try:
+        base = float(request_timeout)
+    except Exception:
+        base = 20.0
+    base = max(0.1, base)
+    # `requests` timeouts are socket inactivity limits, not strict request deadlines.
+    # Add a small cushion so normal socket timeout exceptions win, while still bounding
+    # pathological upstream connections that keep a worker thread alive indefinitely.
+    return base + min(1.0, max(0.05, base * 0.1))
+
+
+def _catalog_get_with_wall_timeout(
+    url: str,
+    *,
+    params: Mapping[str, Any],
+    auth: Any,
+    request_timeout: float,
+) -> requests.Response:
+    result_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue(maxsize=1)
+
+    def run_request() -> None:
+        try:
+            response = requests.get(url, params=params, auth=auth, timeout=request_timeout)
+            result = ("response", response)
+        except BaseException as exc:  # pragma: no cover - exercised through caller behavior
+            result = ("error", exc)
+        finally:
+            _release_woo_http_permit()
+        try:
+            result_queue.put_nowait(result)
+        except queue.Full:
+            pass
+
+    thread = threading.Thread(target=run_request, name="woo-catalog-http", daemon=True)
+    try:
+        thread.start()
+    except Exception:
+        _release_woo_http_permit()
+        raise
+
+    wall_timeout = _catalog_request_wall_timeout_seconds(request_timeout)
+    try:
+        kind, payload = result_queue.get(timeout=wall_timeout)
+    except queue.Empty as exc:
+        raise _CatalogWallTimeout(
+            f"WooCommerce catalog request exceeded {wall_timeout:.2f}s wall timeout"
+        ) from exc
+
+    if kind == "error":
+        raise payload
+    return payload
 
 
 def fetch_catalog_fresh(
