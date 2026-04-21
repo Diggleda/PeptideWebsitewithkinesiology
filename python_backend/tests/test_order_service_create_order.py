@@ -267,11 +267,102 @@ class CreateOrderTests(unittest.TestCase):
         ), patch.object(
             service.user_repository, "find_by_id",
             return_value={
+                "id": "admin-1",
+                "name": "Admin Pepper",
+                "email": "admin@example.com",
+                "role": "admin",
+                "referralCredits": 0,
+            },
+        ), patch.object(service.settings_service, "get_settings", return_value={}), patch.object(
+            service.referral_service, "handle_order_referral_effects", return_value={}
+        ), patch.object(
+            service.discount_code_repository, "reserve_use_once"
+        ), patch.object(
+            service.woo_commerce, "forward_order", side_effect=succeed
+        ), patch.object(
+            service, "_is_tax_exempt_for_checkout", return_value=False
+        ), patch.object(
+            service, "_resolve_order_exemption_snapshot", return_value={}
+        ), patch.object(
+            service, "_resolve_sales_rep_context", return_value={}
+        ), patch.object(
+            service, "_calculate_checkout_tax", return_value=(0.0, "none", None)
+        ), patch.object(
+            service, "_can_user_use_hand_delivery_for_checkout", return_value=False
+        ):
+            service.create_order(
+                user_id="admin-1",
+                items=[{"productId": 101, "name": "Test Product", "price": 25.0, "quantity": 2}],
+                total=50.0,
+                referral_code=None,
+                discount_code=None,
+                payment_method="bacs",
+                pricing_mode="wholesale",
+                tax_total=0.0,
+                shipping_total=7.5,
+                shipping_address={
+                    "name": "PepPro Facility Pickup",
+                    "addressLine1": "640 S Grand Ave",
+                    "addressLine2": "Unit #107",
+                    "city": "Santa Ana",
+                    "state": "CA",
+                    "postalCode": "92705",
+                    "country": "US",
+                },
+                facility_pickup=True,
+                shipping_rate={
+                    "carrierId": "facility_pickup",
+                    "serviceCode": "facility_pickup",
+                    "serviceType": "Facility pickup",
+                },
+                expected_shipment_window=None,
+                physician_certified=True,
+                as_delegate_label=None,
+            )
+
+        self.assertEqual(len(inserted_orders), 1)
+        self.assertFalse(inserted_orders[0]["handDelivery"])
+        self.assertTrue(inserted_orders[0]["facilityPickup"])
+        self.assertTrue(inserted_orders[0]["facility_pickup"])
+        self.assertTrue(inserted_orders[0]["fascility_pickup"])
+        self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "shipping")
+        self.assertEqual(inserted_orders[0]["shippingEstimate"]["serviceCode"], "facility_pickup")
+        self.assertEqual(inserted_orders[0]["shippingTotal"], 0.0)
+
+    def test_create_order_keeps_manual_hand_delivery_distinct_from_facility_pickup(self):
+        service = self.order_service
+        inserted_orders = []
+
+        def succeed(order, _user):
+            return {
+                "status": "success",
+                "response": {
+                    "id": 9004,
+                    "number": "1494",
+                    "status": "processing",
+                    "orderKey": "wc_order_key_790",
+                },
+            }
+
+        def capture_insert(order):
+            inserted_orders.append(dict(order))
+            return dict(order)
+
+        with patch.object(service.order_repository, "insert", side_effect=capture_insert), patch.object(
+            service.order_repository, "update", side_effect=lambda order: dict(order)
+        ), patch.object(
+            service.order_repository, "update_woo_fields"
+        ), patch.object(
+            service.sales_prospect_repository, "mark_doctor_as_nurturing_if_purchased"
+        ), patch.object(
+            service.user_repository, "find_by_id",
+            return_value={
                 "id": "doctor-1",
                 "name": "Dr. Pepper",
                 "email": "doctor@example.com",
                 "role": "doctor",
                 "referralCredits": 0,
+                "handDelivered": True,
             },
         ), patch.object(service.settings_service, "get_settings", return_value={}), patch.object(
             service.referral_service, "handle_order_referral_effects", return_value={}
@@ -300,9 +391,13 @@ class CreateOrderTests(unittest.TestCase):
                 pricing_mode="wholesale",
                 tax_total=0.0,
                 shipping_total=0.0,
-                shipping_address={},
+                shipping_address={"addressLine1": "123 Doctor Way", "city": "Dallas", "state": "TX", "postalCode": "75201", "country": "US"},
                 facility_pickup=True,
-                shipping_rate=None,
+                shipping_rate={
+                    "carrierId": "hand_delivery",
+                    "serviceCode": "hand_delivery",
+                    "serviceType": "Hand delivered",
+                },
                 expected_shipment_window=None,
                 physician_certified=True,
                 as_delegate_label=None,
@@ -310,9 +405,10 @@ class CreateOrderTests(unittest.TestCase):
 
         self.assertEqual(len(inserted_orders), 1)
         self.assertTrue(inserted_orders[0]["handDelivery"])
-        self.assertTrue(inserted_orders[0]["facilityPickup"])
-        self.assertTrue(inserted_orders[0]["facility_pickup"])
-        self.assertTrue(inserted_orders[0]["fascility_pickup"])
+        self.assertFalse(inserted_orders[0]["facilityPickup"])
+        self.assertFalse(inserted_orders[0]["facility_pickup"])
+        self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "hand_delivered")
+        self.assertEqual(inserted_orders[0]["shippingEstimate"]["serviceCode"], "hand_delivery")
 
     def test_create_order_forwards_add_on_items_like_regular_products(self):
         service = self.order_service

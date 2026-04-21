@@ -149,6 +149,47 @@ class EstimateOrderTotalsTests(unittest.TestCase):
         self.assertEqual(result["totals"]["grandTotal"], 50.0)
         self.assertEqual(result["shippingTiming"]["roundedBusinessDays"], 0)
 
+    def test_admin_facility_pickup_estimate_zeroes_shipping_without_hand_delivery_permission(self):
+        service = self.order_service
+        user = {
+            "id": "admin-1",
+            "role": "admin",
+            "handDelivered": False,
+        }
+
+        with patch.object(service.user_repository, "find_by_id", return_value=user), patch.object(
+            service.settings_service, "get_settings", return_value={}
+        ), patch.object(service, "_is_tax_exempt_for_checkout", return_value=False), patch.object(
+            service, "_calculate_checkout_tax", return_value=(0.0, "none", None)
+        ):
+            result = service.estimate_order_totals(
+                user_id="admin-1",
+                items=[{"productId": 101, "price": 25.0, "quantity": 2}],
+                shipping_address={
+                    "name": "PepPro Facility Pickup",
+                    "addressLine1": "640 S Grand Ave",
+                    "addressLine2": "Unit #107",
+                    "city": "Santa Ana",
+                    "state": "CA",
+                    "postalCode": "92705",
+                    "country": "US",
+                },
+                shipping_estimate={
+                    "carrierId": "facility_pickup",
+                    "serviceCode": "facility_pickup",
+                    "serviceType": "Facility pickup",
+                },
+                shipping_total=9.99,
+                facility_pickup=True,
+                payment_method="bacs",
+                discount_code=None,
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["totals"]["shippingTotal"], 0.0)
+        self.assertEqual(result["totals"]["grandTotal"], 50.0)
+        self.assertEqual(result["shippingTiming"]["roundedBusinessDays"], 0)
+
     def test_reseller_permit_tax_exemption_requires_rep_approval(self):
         service = self.order_service
         user = {

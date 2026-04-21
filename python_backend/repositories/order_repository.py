@@ -80,7 +80,7 @@ def _normalize_fulfillment_method(value: object, fallback: object = None) -> Opt
         return None
     key = text.lower().replace("-", "_").replace(" ", "_")
     if key in {"facility_pickup", "fascility_pickup"}:
-        return "hand_delivered"
+        return "shipping"
     if key in {"hand_delivery", "hand_delivered", "local_hand_delivery", "local_delivery"}:
         return "hand_delivered"
     return text
@@ -493,8 +493,6 @@ def _is_hand_delivery_order(order: Dict) -> bool:
             "local hand delivery",
             "local_hand_delivery",
             "local_delivery",
-            "facility_pickup",
-            "fascility_pickup",
         }
         & normalized
     )

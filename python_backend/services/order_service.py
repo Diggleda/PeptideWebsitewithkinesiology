@@ -32,10 +32,20 @@ from . import user_media_service
 logger = logging.getLogger(__name__)
 
 _PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
-FACILITY_PICKUP_LOCATION = None
-FACILITY_PICKUP_LABEL = "Hand Delivered"
+FACILITY_PICKUP_LOCATION = {
+    "name": "PepPro Facility Pickup",
+    "addressLine1": "640 S Grand Ave",
+    "addressLine2": "Unit #107",
+    "city": "Santa Ana",
+    "state": "CA",
+    "postalCode": "92705",
+    "country": "US",
+}
+FACILITY_PICKUP_LABEL = "Facility pickup"
 FACILITY_PICKUP_NOTICE = None
-FACILITY_PICKUP_SERVICE_CODE = "hand_delivery"
+FACILITY_PICKUP_SERVICE_CODE = "facility_pickup"
+HAND_DELIVERY_LABEL = "Hand Delivered"
+HAND_DELIVERY_SERVICE_CODE = "hand_delivery"
 _CA_FIXED_TAX_RATE = 0.0875
 
 
@@ -685,6 +695,60 @@ def _can_user_use_hand_delivery_for_checkout(user: Optional[Dict]) -> bool:
         if "handDelivered" in user
         else user.get("hand_delivered")
     )
+
+
+def _can_user_use_facility_pickup_for_checkout(user: Optional[Dict]) -> bool:
+    if not isinstance(user, dict):
+        return False
+    return _normalize_role(user.get("role")) in ("admin", "sales_rep", "sales_partner", "rep")
+
+
+def _normalize_fulfillment_selector(value: object) -> str:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _is_facility_pickup_shipping_estimate(estimate: object) -> bool:
+    if not isinstance(estimate, dict):
+        return False
+    normalized = {
+        _normalize_fulfillment_selector(estimate.get("serviceType")),
+        _normalize_fulfillment_selector(estimate.get("serviceCode")),
+        _normalize_fulfillment_selector(estimate.get("carrierId")),
+    }
+    return bool({"facility_pickup", "fascility_pickup"} & normalized)
+
+
+def _normalize_facility_address_part(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = re.sub(r"[.,#]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _is_facility_pickup_address(address: object) -> bool:
+    if not isinstance(address, dict):
+        return False
+
+    name = _normalize_facility_address_part(address.get("name"))
+    line1 = _normalize_facility_address_part(address.get("addressLine1"))
+    line2 = _normalize_facility_address_part(address.get("addressLine2"))
+    combined = " ".join(part for part in (line1, line2) if part).strip()
+    city = _normalize_facility_address_part(address.get("city"))
+    state = _normalize_facility_address_part(address.get("state"))
+    postal_code = _normalize_facility_address_part(
+        address.get("postalCode") if address.get("postalCode") is not None else address.get("postcode")
+    )
+
+    matches_name = name == "peppro facility pickup"
+    matches_street = line1 == "640 s grand ave" or "640 s grand ave" in combined
+    matches_unit = line2 == "unit 107" or "unit 107" in combined
+    matches_location = city == "santa ana" and state == "ca" and postal_code == "92705"
+    return (matches_street and matches_unit and matches_location) or (matches_name and matches_location)
+
+
+def _is_facility_pickup_request(*, shipping_estimate: object, shipping_address: object) -> bool:
+    return _is_facility_pickup_shipping_estimate(shipping_estimate) or _is_facility_pickup_address(shipping_address)
 
 
 def _normalize_optional_text(value: object) -> Optional[str]:
@@ -1819,20 +1883,29 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
+    shipping_address = shipping_address or {}
     user = user_repository.find_by_id(user_id) if user_id else None
-    is_facility_pickup = bool(facility_pickup) and _can_user_use_hand_delivery_for_checkout(user)
+    facility_pickup_requested = bool(facility_pickup) and _is_facility_pickup_request(
+        shipping_estimate=shipping_estimate,
+        shipping_address=shipping_address,
+    )
+    is_facility_pickup = facility_pickup_requested and _can_user_use_facility_pickup_for_checkout(user)
+    is_hand_delivery = bool(facility_pickup) and not facility_pickup_requested and _can_user_use_hand_delivery_for_checkout(user)
+    bypass_shipping = is_facility_pickup or is_hand_delivery
+    if is_facility_pickup:
+        shipping_address = dict(FACILITY_PICKUP_LOCATION)
     try:
         shipping_total_value = float(shipping_total or 0)
     except Exception:
         shipping_total_value = 0.0
-    shipping_total_value = 0.0 if is_facility_pickup else max(0.0, shipping_total_value)
+    shipping_total_value = 0.0 if bypass_shipping else max(0.0, shipping_total_value)
     shipping_timing = {
         "averageBusinessDays": None,
-        "roundedBusinessDays": 0 if is_facility_pickup else 1,
+        "roundedBusinessDays": 0 if bypass_shipping else 1,
         "sampleSize": 0,
         "usedHistoricalAverage": False,
     }
-    if not is_facility_pickup:
+    if not bypass_shipping:
         try:
             shipping_timing = _get_historical_ship_time_average()
         except Exception:
@@ -1940,7 +2013,7 @@ def estimate_order_totals(
     country = str(address.get("country") or "US").strip().upper()
     state = _normalize_address_field(address.get("state")) or ""
     postal = _normalize_address_field(address.get("postalCode") or address.get("postcode") or address.get("zip")) or ""
-    if not is_facility_pickup and country == "US" and (not state or not postal):
+    if not bypass_shipping and country == "US" and (not state or not postal):
         err = ValueError("Shipping address must include state and postal code")
         setattr(err, "status", 400)
         raise err
@@ -2060,9 +2133,17 @@ def create_order(
         normalized_payment_method = "stripe"
 
     now = _now_order_iso()
-    is_facility_pickup = bool(facility_pickup) and _can_user_use_hand_delivery_for_checkout(user)
     shipping_address = shipping_address or {}
+    shipping_rate = shipping_rate if isinstance(shipping_rate, dict) else {}
+    facility_pickup_requested = bool(facility_pickup) and _is_facility_pickup_request(
+        shipping_estimate=shipping_rate,
+        shipping_address=shipping_address,
+    )
+    is_facility_pickup = facility_pickup_requested and _can_user_use_facility_pickup_for_checkout(user)
+    is_hand_delivery = bool(facility_pickup) and not facility_pickup_requested and _can_user_use_hand_delivery_for_checkout(user)
+    bypass_shipping = is_facility_pickup or is_hand_delivery
     if is_facility_pickup:
+        shipping_address = dict(FACILITY_PICKUP_LOCATION)
         existing_rate = shipping_rate if isinstance(shipping_rate, dict) else {}
         shipping_rate = {
             **existing_rate,
@@ -2072,11 +2153,21 @@ def create_order(
             "rate": 0,
         }
         expected_shipment_window = None
+    elif is_hand_delivery:
+        existing_rate = shipping_rate if isinstance(shipping_rate, dict) else {}
+        shipping_rate = {
+            **existing_rate,
+            "carrierId": HAND_DELIVERY_SERVICE_CODE,
+            "serviceType": HAND_DELIVERY_LABEL,
+            "serviceCode": HAND_DELIVERY_SERVICE_CODE,
+            "rate": 0,
+        }
+        expected_shipment_window = None
     try:
         shipping_total_value = float(shipping_total or 0)
     except Exception:
         shipping_total_value = 0.0
-    shipping_total_value = 0.0 if is_facility_pickup else max(0.0, shipping_total_value)
+    shipping_total_value = 0.0 if bypass_shipping else max(0.0, shipping_total_value)
     if tax_exempt:
         tax_total_value = 0.0
     else:
@@ -2113,7 +2204,7 @@ def create_order(
     test_override_payment = normalized_payment_method == "bacs"
     test_override = bool(test_override_enabled and test_override_allowed and test_override_payment)
 
-    if not is_facility_pickup:
+    if not bypass_shipping:
         address_updates = _extract_user_address_fields(shipping_address)
         if any(address_updates.values()):
             updated_user = user_repository.update({**user, **address_updates})
@@ -2138,11 +2229,11 @@ def create_order(
         "taxTotal": float(tax_total_value),
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
-        "handDelivery": is_facility_pickup,
+        "handDelivery": is_hand_delivery,
         "facilityPickup": is_facility_pickup,
         "facility_pickup": is_facility_pickup,
         "fascility_pickup": is_facility_pickup,
-        "fulfillmentMethod": "hand_delivered" if is_facility_pickup else "shipping",
+        "fulfillmentMethod": "hand_delivered" if is_hand_delivery else "shipping",
         "pickupLocation": FACILITY_PICKUP_LOCATION if is_facility_pickup else None,
         "pickupReadyNotice": FACILITY_PICKUP_NOTICE if is_facility_pickup else None,
         "referralCode": normalized_referral,
