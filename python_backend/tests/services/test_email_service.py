@@ -22,7 +22,7 @@ if "requests" not in sys.modules:
 
 
 class EmailServiceTests(unittest.TestCase):
-    def test_shipping_status_email_ccs_petergibbons(self):
+    def test_shipping_status_email_bccs_petergibbons(self):
         from python_backend.services import email_service
 
         with patch.object(
@@ -41,9 +41,22 @@ class EmailServiceTests(unittest.TestCase):
 
         dispatch_email.assert_called_once()
         self.assertEqual(dispatch_email.call_args.args[0], "holly@example.com")
-        self.assertEqual(dispatch_email.call_args.kwargs["cc"], ("petergibbons7@icloud.com",))
+        html = dispatch_email.call_args.args[2]
+        self.assertIn("/PepPro_fulllogo.png", html)
+        self.assertIn("/leafTexture.jpg", html)
+        self.assertIn("background=\"https://peppro.net/leafTexture.jpg\"", html)
+        self.assertIn("background:rgba(255,255,255,0.78)", html)
+        self.assertIn("backdrop-filter:blur(34px) saturate(1.9)", html)
+        self.assertIn("background-color:rgba(255,255,255,0.95)", html)
+        self.assertIn("color:rgb(95,179,249)", html)
+        self.assertIn("border:2px solid rgb(95,179,249)", html)
+        self.assertIn("border-radius:12px", html)
+        self.assertNotIn("border-radius:999px", html)
+        self.assertNotIn("background-color:#5FB3F9", html)
+        self.assertNotIn("/Peppro_fulllogo.png", html)
+        self.assertEqual(dispatch_email.call_args.kwargs["bcc"], ("petergibbons7@icloud.com",))
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
-        self.assertNotIn("bcc", dispatch_email.call_args.kwargs)
+        self.assertNotIn("cc", dispatch_email.call_args.kwargs)
 
     def test_sendgrid_payload_includes_cc_recipients(self):
         from python_backend.services import email_service
@@ -70,6 +83,32 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(personalization["to"], [{"email": "holly@example.com"}])
         self.assertEqual(personalization["cc"], [{"email": "petergibbons7@icloud.com"}])
         self.assertNotIn("bcc", personalization)
+
+    def test_sendgrid_payload_includes_bcc_recipients(self):
+        from python_backend.services import email_service
+
+        response = SimpleNamespace(status_code=202, text="", raise_for_status=lambda: None)
+
+        with patch.object(email_service.http_client, "post", return_value=response) as post:
+            email_service._send_via_sendgrid(
+                "holly@example.com",
+                "PepPro order 1505 has shipped",
+                "<p>Shipped</p>",
+                {
+                    "sendgrid_api_key": "sendgrid-key",
+                    "sendgrid_endpoint": "https://sendgrid.example.test/send",
+                    "from": "PepPro <support@peppro.net>",
+                    "timeout": 15,
+                },
+                plain_text="Shipped",
+                bcc=("petergibbons7@icloud.com",),
+            )
+
+        payload = post.call_args.kwargs["json"]
+        personalization = payload["personalizations"][0]
+        self.assertEqual(personalization["to"], [{"email": "holly@example.com"}])
+        self.assertEqual(personalization["bcc"], [{"email": "petergibbons7@icloud.com"}])
+        self.assertNotIn("cc", personalization)
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
