@@ -71,6 +71,58 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(personalization["cc"], [{"email": "petergibbons7@icloud.com"}])
         self.assertNotIn("bcc", personalization)
 
+    def test_smtp_relay_can_skip_login_when_auth_disabled(self):
+        from python_backend.services import email_service
+
+        events = []
+
+        class FakeSMTP:
+            def __init__(self, host, port, timeout):
+                events.append(("connect", host, port, timeout))
+
+            def ehlo(self):
+                events.append(("ehlo",))
+
+            def starttls(self):
+                events.append(("starttls",))
+
+            def login(self, user, password):
+                events.append(("login", user, password))
+
+            def send_message(self, msg, to_addrs=None):
+                events.append(("send_message", msg["To"], msg["Cc"], tuple(to_addrs or ())))
+
+            def quit(self):
+                events.append(("quit",))
+
+        with patch.object(email_service.smtplib, "SMTP", FakeSMTP):
+            email_service._send_via_smtp(
+                "holly@example.com",
+                "PepPro order 1505 has shipped",
+                "<p>Shipped</p>",
+                {
+                    "from": "PepPro <support@peppro.net>",
+                    "timeout": 15,
+                    "smtp": {
+                        "host": "smtp-relay.gmail.com",
+                        "port": 587,
+                        "ssl": False,
+                        "starttls": True,
+                        "auth": False,
+                    },
+                },
+                plain_text="Shipped",
+                cc=("petergibbons7@icloud.com",),
+            )
+
+        self.assertIn(("connect", "smtp-relay.gmail.com", 587, 15), events)
+        self.assertIn(("starttls",), events)
+        self.assertNotIn(("login", "support@peppro.net", ""), events)
+        self.assertIn(
+            ("send_message", "holly@example.com", "petergibbons7@icloud.com", ("holly@example.com", "petergibbons7@icloud.com")),
+            events,
+        )
+
     def test_shipping_status_email_raises_when_production_dispatch_has_no_provider(self):
         from python_backend.services import email_service
 

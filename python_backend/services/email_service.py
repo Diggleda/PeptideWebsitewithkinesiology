@@ -43,14 +43,24 @@ def _email_settings() -> Dict[str, Any]:
         except (TypeError, ValueError):
             return fallback
 
+    def _to_bool(value: Optional[str], fallback: bool) -> bool:
+        if value is None:
+            return fallback
+        normalized = str(value).strip().lower()
+        if normalized in ("0", "false", "no", "off"):
+            return False
+        if normalized in ("1", "true", "yes", "on"):
+            return True
+        return fallback
+
     sendgrid_key = os.environ.get("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_TOKEN")
     smtp_host = os.environ.get("SMTP_HOST") or os.environ.get("EMAIL_HOST")
     smtp_user = os.environ.get("SMTP_USER") or os.environ.get("EMAIL_USER")
     smtp_pass = os.environ.get("SMTP_PASS") or os.environ.get("EMAIL_PASS")
     smtp_port = _to_int(os.environ.get("SMTP_PORT") or os.environ.get("EMAIL_PORT"), 587)
-    smtp_ssl = str(os.environ.get("SMTP_SSL") or "").strip().lower() in ("1", "true", "yes", "on")
-    smtp_starttls = str(os.environ.get("SMTP_STARTTLS") or "").strip().lower()
-    smtp_starttls_enabled = smtp_starttls not in ("0", "false", "no", "off")
+    smtp_ssl = _to_bool(os.environ.get("SMTP_SSL") or os.environ.get("EMAIL_SSL"), False)
+    smtp_starttls_enabled = _to_bool(os.environ.get("SMTP_STARTTLS") or os.environ.get("EMAIL_STARTTLS"), True)
+    smtp_auth_enabled = _to_bool(os.environ.get("SMTP_AUTH") or os.environ.get("EMAIL_AUTH"), True)
 
     settings = {
         "from": os.environ.get("MAIL_FROM") or "PepPro <support@peppro.net>",
@@ -64,6 +74,7 @@ def _email_settings() -> Dict[str, Any]:
             "port": smtp_port,
             "ssl": smtp_ssl,
             "starttls": smtp_starttls_enabled,
+            "auth": smtp_auth_enabled,
         },
     }
     logger.info(
@@ -78,6 +89,7 @@ def _email_settings() -> Dict[str, Any]:
             "smtpPort": smtp_port,
             "smtpSsl": smtp_ssl,
             "smtpStarttls": smtp_starttls_enabled,
+            "smtpAuth": smtp_auth_enabled,
         },
     )
     return settings
@@ -177,11 +189,12 @@ def _send_via_smtp(
     port = int(smtp.get("port") or 587)
     use_ssl = bool(smtp.get("ssl"))
     use_starttls = bool(smtp.get("starttls"))
+    use_auth = bool(smtp.get("auth", True))
     timeout = int(settings.get("timeout") or 15)
 
     if not host:
         raise RuntimeError("SMTP host is not configured")
-    if not password:
+    if use_auth and not password:
         raise RuntimeError("SMTP password is not configured")
 
     from_addr = _format_from_address(settings["from"])
@@ -212,11 +225,11 @@ def _send_via_smtp(
         if not use_ssl and use_starttls:
             server.starttls()
             server.ehlo()
-        if user:
-            server.login(user, password)
-        else:
-            # Some relays authenticate only by IP; still require password to avoid accidental open relay config.
-            server.login(from_addr.get("email") or "", password)
+        if use_auth:
+            if user:
+                server.login(user, password)
+            else:
+                server.login(from_addr.get("email") or "", password)
         server.send_message(msg, to_addrs=[recipient, *cc_recipients, *bcc_recipients])
     finally:
         try:
@@ -330,7 +343,8 @@ def _dispatch_email(
                 failures.append(f"SendGrid: {exc}")
                 logger.error("Failed to send email via SendGrid", exc_info=True)
         smtp_cfg = (settings.get("smtp") or {}) if isinstance(settings.get("smtp"), dict) else {}
-        if smtp_cfg.get("host") and (smtp_cfg.get("pass") or ""):
+        smtp_auth_enabled = bool(smtp_cfg.get("auth", True))
+        if smtp_cfg.get("host") and ((smtp_cfg.get("pass") or "") or not smtp_auth_enabled):
             try:
                 _send_via_smtp(
                     recipient,
@@ -346,7 +360,7 @@ def _dispatch_email(
                 failures.append(f"SMTP: {exc}")
                 logger.error("Failed to send email via SMTP", exc_info=True)
 
-        message = "No email provider succeeded; set SENDGRID_API_KEY or SMTP_HOST/SMTP_PASS"
+        message = "No email provider succeeded; set SENDGRID_API_KEY, SMTP_HOST/SMTP_PASS, or SMTP_AUTH=false for an IP-authorized relay"
         logger.error(message, extra={"recipient": recipient, "subject": subject, "failures": failures})
         if raise_on_failure:
             detail = f" ({'; '.join(failures)})" if failures else ""

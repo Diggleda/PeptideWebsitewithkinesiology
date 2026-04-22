@@ -54,16 +54,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default="ups",
         help="Carrier code used for the tracking link.",
     )
+    parser.add_argument(
+        "--smtp-only",
+        action="store_true",
+        help="Ignore SENDGRID_API_KEY/SENDGRID_API_TOKEN for this test and force the SMTP path.",
+    )
     return parser
 
 
-def _configure(env_file: str) -> None:
+def _configure(env_file: str, *, smtp_only: bool = False) -> None:
     if env_file:
         candidate = Path(env_file).expanduser()
         os.environ["DOTENV_CONFIG_PATH"] = str(candidate)
         if not candidate.exists():
             raise FileNotFoundError(f"Env file does not exist: {candidate}")
     config = load_config()
+    if smtp_only:
+        os.environ.pop("SENDGRID_API_KEY", None)
+        os.environ.pop("SENDGRID_API_TOKEN", None)
     configure_services(config)
 
 
@@ -73,6 +81,7 @@ def _provider_summary() -> dict[str, object]:
         "port": os.environ.get("SMTP_PORT") or os.environ.get("EMAIL_PORT") or None,
         "ssl": os.environ.get("SMTP_SSL") or os.environ.get("EMAIL_SSL") or None,
         "starttls": os.environ.get("SMTP_STARTTLS") or os.environ.get("EMAIL_STARTTLS") or None,
+        "auth": os.environ.get("SMTP_AUTH") or os.environ.get("EMAIL_AUTH") or None,
         "hasUser": bool(os.environ.get("SMTP_USER") or os.environ.get("EMAIL_USER")),
         "hasPass": bool(os.environ.get("SMTP_PASS") or os.environ.get("EMAIL_PASS")),
     }
@@ -90,7 +99,7 @@ def _statuses(args: argparse.Namespace) -> Iterable[str]:
 
 def main() -> int:
     args = _build_parser().parse_args()
-    _configure(args.env_file)
+    _configure(args.env_file, smtp_only=args.smtp_only)
 
     sent: list[str] = []
     for status in _statuses(args):
