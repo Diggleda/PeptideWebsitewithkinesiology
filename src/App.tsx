@@ -26103,10 +26103,49 @@ function MainApp() {
       heightIn?: number | null;
     }>;
   }) => {
+    const normalizePickupRecipientName = (...candidates: unknown[]) => {
+      for (const candidate of candidates) {
+        if (typeof candidate !== "string") continue;
+        const trimmed = candidate.trim();
+        if (!trimmed || normalizeAddressComparisonPart(trimmed) === "peppro facility pickup") {
+          continue;
+        }
+        return trimmed;
+      }
+      return null;
+    };
+    const submittedPickupRecipientName =
+      options?.facilityPickup === true
+        ? normalizePickupRecipientName(
+            options?.facilityPickupRecipientName,
+            options?.shippingAddress?.recipientName,
+            options?.shippingAddress?.recipient_name,
+            options?.shippingAddress?.pickupRecipientName,
+            options?.shippingAddress?.pickup_recipient_name,
+            options?.shippingAddress?.fullName,
+            options?.shippingAddress?.name,
+          )
+        : null;
+    const checkoutShippingAddress =
+      options?.facilityPickup === true && submittedPickupRecipientName
+        ? {
+            ...(options?.shippingAddress || {}),
+            name: submittedPickupRecipientName,
+            fullName: submittedPickupRecipientName,
+            recipientName: submittedPickupRecipientName,
+            recipient_name: submittedPickupRecipientName,
+            pickupRecipientName: submittedPickupRecipientName,
+            pickup_recipient_name: submittedPickupRecipientName,
+          }
+        : options?.shippingAddress ?? null;
     console.debug("[Checkout] Attempt", {
       cartItems: cartItems.length,
       checkoutItems: Array.isArray(options?.items) ? options.items.length : 0,
-      shipping: options,
+      shipping: {
+        ...options,
+        shippingAddress: checkoutShippingAddress,
+        facilityPickupRecipientName: submittedPickupRecipientName ?? options?.facilityPickupRecipientName ?? null,
+      },
     });
     if (cartItems.length === 0) {
       // toast.error('Your cart is empty');
@@ -26229,14 +26268,14 @@ function MainApp() {
 	          }
 	          return shared;
 	        }
-		      const response = await ordersAPI.create(
+	      const response = await ordersAPI.create(
 	        items,
 	        total,
 	        undefined,
 	        options?.discountCode ?? undefined,
 	        options?.discountCodeAmount ?? null,
 	        {
-	          address: options?.shippingAddress ?? null,
+	          address: checkoutShippingAddress,
 	          estimate: options?.shippingRate ?? null,
 	          shippingTotal: options?.shippingTotal ?? null,
 	        },
@@ -26246,7 +26285,7 @@ function MainApp() {
 	            options?.physicianCertificationAccepted === true,
             handDelivery: options?.handDelivery === true,
             facilityPickup: options?.facilityPickup === true,
-            facilityPickupRecipientName: options?.facilityPickupRecipientName ?? null,
+            facilityPickupRecipientName: submittedPickupRecipientName ?? options?.facilityPickupRecipientName ?? null,
             delegateProposalToken: delegationProposalReview?.token ?? null,
 	        },
 	        taxTotal,

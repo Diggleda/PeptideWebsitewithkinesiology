@@ -2303,6 +2303,18 @@ def create_order(
         normalized_referral = None
     referral_effects: Dict = {}
     normalized_discount_code = (discount_code or "").strip().upper() or None
+    order_pickup_recipient_name = (
+        _normalize_address_field(
+            shipping_address.get("recipientName")
+            or shipping_address.get("recipient_name")
+            or shipping_address.get("pickupRecipientName")
+            or shipping_address.get("pickup_recipient_name")
+            or shipping_address.get("fullName")
+            or shipping_address.get("name")
+        )
+        if is_facility_pickup and isinstance(shipping_address, dict)
+        else None
+    )
     order = {
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
         "userId": user_id,
@@ -2317,12 +2329,10 @@ def create_order(
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
         "billingAddress": billing_address,
-        "facilityPickupRecipientName": (
-            shipping_address.get("name") if is_facility_pickup and isinstance(shipping_address, dict) else None
-        ),
-        "facility_pickup_recipient_name": (
-            shipping_address.get("name") if is_facility_pickup and isinstance(shipping_address, dict) else None
-        ),
+        "facilityPickupRecipientName": order_pickup_recipient_name,
+        "facility_pickup_recipient_name": order_pickup_recipient_name,
+        "pickupRecipientName": order_pickup_recipient_name,
+        "pickup_recipient_name": order_pickup_recipient_name,
         "handDelivery": is_hand_delivery,
         "facilityPickup": is_facility_pickup,
         "facility_pickup": is_facility_pickup,

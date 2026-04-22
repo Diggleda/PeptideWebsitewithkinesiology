@@ -475,6 +475,9 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(inserted_orders[0]["billingAddress"]["firstName"], "Recipient")
         self.assertEqual(inserted_orders[0]["billingAddress"]["lastName"], "Patient")
         self.assertEqual(inserted_orders[0]["facilityPickupRecipientName"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["facility_pickup_recipient_name"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["pickupRecipientName"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["pickup_recipient_name"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "facility_pickup")
         self.assertTrue(inserted_orders[0]["facilityPickup"])
 

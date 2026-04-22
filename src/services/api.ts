@@ -2436,6 +2436,18 @@ const getOrCreateCheckoutIdempotencyKey = (fingerprint: string) => {
   return key;
 };
 
+const normalizeFacilityPickupRecipientForOrder = (...candidates: unknown[]) => {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    const comparable = trimmed.toLowerCase().replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
+    if (trimmed && comparable !== 'peppro facility pickup') {
+      return trimmed;
+    }
+  }
+  return null;
+};
+
 // Orders API
 export const ordersAPI = {
   create: async (
@@ -2461,11 +2473,17 @@ export const ordersAPI = {
     paymentMethod?: string | null,
     pricingMode?: 'wholesale' | 'retail' | string | null,
   ) => {
-    const normalizedFacilityPickupRecipientName =
-      typeof options?.facilityPickupRecipientName === 'string' &&
-      options.facilityPickupRecipientName.trim()
-        ? options.facilityPickupRecipientName.trim()
-        : null;
+    const normalizedFacilityPickupRecipientName = options?.facilityPickup === true
+      ? normalizeFacilityPickupRecipientForOrder(
+          options?.facilityPickupRecipientName,
+          shipping?.address?.recipientName,
+          shipping?.address?.recipient_name,
+          shipping?.address?.pickupRecipientName,
+          shipping?.address?.pickup_recipient_name,
+          shipping?.address?.fullName,
+          shipping?.address?.name,
+        )
+      : null;
     const shippingForRequest =
       options?.facilityPickup === true && normalizedFacilityPickupRecipientName
         ? {
@@ -2514,6 +2532,12 @@ export const ordersAPI = {
         pricingMode: pricingMode ?? null,
         paymentMethod: paymentMethod ?? null,
         shippingAddress: shippingForRequest?.address,
+        ...(options?.facilityPickup === true
+          ? {
+              billingAddress: shippingForRequest?.address,
+              billing_address: shippingForRequest?.address,
+            }
+          : {}),
         shippingEstimate: shippingForRequest?.estimate,
         shippingTotal: shippingForRequest?.shippingTotal ?? null,
         expectedShipmentWindow: expectedShipmentWindow ?? null,
