@@ -109,6 +109,9 @@ def _install_test_stubs() -> None:
         requests.put = _blocked
         requests.patch = _blocked
         requests.delete = _blocked
+        requests.Timeout = TimeoutError
+        requests.RequestException = Exception
+        requests.HTTPError = Exception
         requests_auth.HTTPBasicAuth = HTTPBasicAuth
         sys.modules["requests"] = requests
         sys.modules["requests.auth"] = requests_auth

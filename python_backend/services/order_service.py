@@ -700,7 +700,7 @@ def _can_user_use_hand_delivery_for_checkout(user: Optional[Dict]) -> bool:
 def _can_user_use_facility_pickup_for_checkout(user: Optional[Dict]) -> bool:
     if not isinstance(user, dict):
         return False
-    return _normalize_role(user.get("role")) in ("admin", "sales_rep", "sales_partner", "rep")
+    return _is_sales_access_role(user.get("role"))
 
 
 def _normalize_fulfillment_selector(value: object) -> str:
@@ -745,6 +745,12 @@ def _is_facility_pickup_address(address: object) -> bool:
     matches_unit = line2 == "unit 107" or "unit 107" in combined
     matches_location = city == "santa ana" and state == "ca" and postal_code == "92705"
     return (matches_street and matches_unit and matches_location) or (matches_name and matches_location)
+
+
+def _is_facility_pickup_recipient_placeholder(value: object) -> bool:
+    return _normalize_facility_address_part(value) == _normalize_facility_address_part(
+        FACILITY_PICKUP_LOCATION.get("name")
+    )
 
 
 def _is_facility_pickup_request(*, shipping_estimate: object, shipping_address: object) -> bool:
@@ -1820,9 +1826,14 @@ def _build_facility_pickup_shipping_address(
     user: Optional[Dict],
     shipping_address: Optional[Dict],
 ) -> Dict[str, Optional[str]]:
+    submitted_name = _normalize_address_field(
+        (shipping_address or {}).get("name") if isinstance(shipping_address, dict) else None
+    )
+    if submitted_name and _is_facility_pickup_recipient_placeholder(submitted_name):
+        submitted_name = None
     resolved_name = (
-        _normalize_address_field((user or {}).get("name") if isinstance(user, dict) else None)
-        or _normalize_address_field((shipping_address or {}).get("name") if isinstance(shipping_address, dict) else None)
+        submitted_name
+        or _normalize_address_field((user or {}).get("name") if isinstance(user, dict) else None)
         or FACILITY_PICKUP_LOCATION.get("name")
     )
     return {

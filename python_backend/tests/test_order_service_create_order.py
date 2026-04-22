@@ -111,6 +111,9 @@ def _install_test_stubs() -> None:
         requests.put = _blocked
         requests.patch = _blocked
         requests.delete = _blocked
+        requests.Timeout = TimeoutError
+        requests.RequestException = Exception
+        requests.HTTPError = Exception
         requests_auth.HTTPBasicAuth = HTTPBasicAuth
         sys.modules["requests"] = requests
         sys.modules["requests.auth"] = requests_auth
@@ -329,6 +332,23 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(inserted_orders[0]["shippingAddress"]["name"], "Admin Pepper")
         self.assertEqual(inserted_orders[0]["shippingEstimate"]["serviceCode"], "facility_pickup")
         self.assertEqual(inserted_orders[0]["shippingTotal"], 0.0)
+
+    def test_facility_pickup_shipping_address_preserves_submitted_recipient_name(self):
+        service = self.order_service
+
+        address = service._build_facility_pickup_shipping_address(
+            {"name": "Admin Pepper", "role": "admin"},
+            {"name": "Recipient Patient"},
+        )
+
+        self.assertEqual(address["name"], "Recipient Patient")
+        self.assertEqual(address["addressLine1"], "640 S Grand Ave")
+        self.assertEqual(address["postalCode"], "92705")
+
+    def test_sales_lead_can_use_facility_pickup(self):
+        service = self.order_service
+
+        self.assertTrue(service._can_user_use_facility_pickup_for_checkout({"role": "sales_lead"}))
 
     def test_create_order_keeps_manual_hand_delivery_distinct_from_facility_pickup(self):
         service = self.order_service
