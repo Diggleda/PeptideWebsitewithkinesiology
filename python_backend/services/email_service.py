@@ -25,6 +25,16 @@ _EMAIL_LOGO_CID = "peppro-logo"
 _EMAIL_LEAF_CID = "peppro-leaf"
 _EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
 _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
+_EMAIL_LOGO_WIDTH = 360
+_EMAIL_LOGO_IMAGE_STYLE = (
+    f"width:{_EMAIL_LOGO_WIDTH}px;"
+    "max-width:70%;"
+    "height:auto;"
+    "display:block;"
+    "border:0;"
+    "outline:none;"
+    "text-decoration:none;"
+)
 _EMAIL_GLASS_CONTAINER_STYLE = (
     "background-color:#ffffff;"
     "background:rgba(255,255,255,0.78);"
@@ -60,6 +70,19 @@ _EMAIL_ADMIN_REFRESH_BUTTON_STYLE = (
     "font-weight:600;"
     "line-height:1;"
     "text-decoration:none;"
+)
+_EMAIL_TRACK_BUTTON_HOVER_CSS = (
+    "<style>"
+    ".peppro-track-button:hover,"
+    ".peppro-track-button:focus{"
+    "background-color:rgb(95,179,249) !important;"
+    "color:#ffffff !important;"
+    "border-color:rgb(95,179,249) !important;"
+    "text-decoration:none !important;"
+    "box-shadow:none !important;"
+    "filter:none !important;"
+    "}"
+    "</style>"
 )
 _EMAIL_INLINE_IMAGE_SPECS = (
     {
@@ -435,7 +458,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" alt="PepPro" style="max-width:180px;width:100%;height:auto;display:block;" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="PepPro" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -585,7 +608,7 @@ def _build_delegate_proposal_ready_email(
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" alt="PepPro" style="max-width:180px;width:100%;height:auto;display:block;" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="PepPro" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -665,6 +688,7 @@ def _build_shipping_status_email(
     body_style = _email_body_style(leaf_url)
     outer_table_style = _email_outer_table_style(leaf_url)
     container_style = _email_container_style(560)
+    account_url = safe_base_url or "https://peppro.net"
     name_label = str(customer_name or "").strip() or "PepPro Customer"
     order_label = str(order_number or "").strip() or "your order"
     tracking_label = str(tracking_number or "").strip() or None
@@ -696,9 +720,14 @@ def _build_shipping_status_email(
     )
     cta_block = (
         f'<p style="margin:0 0 32px;text-align:center;">'
-        f'<a href="{tracking_url}" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
+        f'<a href="{tracking_url}" class="peppro-track-button" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
         f"</p>"
     ) if tracking_url else ""
+    account_link_html = (
+        f'<p style="margin:0 0 24px;text-align:center;font-size:14px;line-height:1.5;color:#6b7280;">'
+        f'Sign in to your account at <a href="{account_url}" style="color:#5FB3F9;text-decoration:none;font-weight:700;">peppro.net</a>.'
+        f"</p>"
+    )
     tracking_html = (
         f'<p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#0f172a;"><strong>{tracking_line}</strong></p>'
         if tracking_line
@@ -717,6 +746,7 @@ def _build_shipping_status_email(
     <title>{heading}</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
+    {_EMAIL_TRACK_BUTTON_HOVER_CSS}
   </head>
   <body style="{body_style}">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="{leaf_url}" style="{outer_table_style}">
@@ -725,7 +755,7 @@ def _build_shipping_status_email(
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" alt="PepPro" style="max-width:180px;width:100%;height:auto;display:block;" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="PepPro" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -743,6 +773,7 @@ def _build_shipping_status_email(
                   </tr>
                 </table>
                 {cta_block}
+                {account_link_html}
               </td>
             </tr>
             <tr>
@@ -768,6 +799,7 @@ def _build_shipping_status_email(
         plain_parts.append(extra_line)
     if tracking_url:
         plain_parts.append(f"Track package: {tracking_url}")
+    plain_parts.append(f"Sign in to your account: {account_url}")
     plain_parts.append("Need help? Contact support@peppro.net.")
     plain = "\n".join(part for part in plain_parts if part)
     return subject, html, plain
