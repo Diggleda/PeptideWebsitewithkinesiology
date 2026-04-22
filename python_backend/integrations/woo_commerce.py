@@ -183,9 +183,12 @@ def _build_woo_address(
     fallback_dict = fallback_address if isinstance(fallback_address, dict) else {}
     customer_dict = customer if isinstance(customer, Mapping) else {}
 
-    full_name = _first_non_empty_text(
+    source_full_name = _first_non_empty_text(
         address_dict.get("name"),
         address_dict.get("fullName"),
+    )
+    full_name = _first_non_empty_text(
+        source_full_name,
         fallback_dict.get("name"),
         fallback_dict.get("fullName"),
         customer_dict.get("name"),
@@ -193,15 +196,28 @@ def _build_woo_address(
     first_name = _first_non_empty_text(
         address_dict.get("firstName"),
         address_dict.get("first_name"),
-        fallback_dict.get("firstName"),
-        fallback_dict.get("first_name"),
     )
     last_name = _first_non_empty_text(
         address_dict.get("lastName"),
         address_dict.get("last_name"),
-        fallback_dict.get("lastName"),
-        fallback_dict.get("last_name"),
     )
+    if source_full_name and (not first_name or not last_name):
+        split_first, split_last = _split_person_name(source_full_name)
+        if not first_name:
+            first_name = split_first
+        if not last_name:
+            last_name = split_last
+    if not source_full_name:
+        first_name = _first_non_empty_text(
+            first_name,
+            fallback_dict.get("firstName"),
+            fallback_dict.get("first_name"),
+        )
+        last_name = _first_non_empty_text(
+            last_name,
+            fallback_dict.get("lastName"),
+            fallback_dict.get("last_name"),
+        )
     if full_name and (not first_name or not last_name):
         split_first, split_last = _split_person_name(full_name)
         if not first_name:
@@ -1379,6 +1395,20 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         meta_data.append({"key": "peppro_sales_rep_id", "value": sales_rep_id})
     if sales_rep_code:
         meta_data.append({"key": "peppro_sales_rep_code", "value": sales_rep_code})
+    if is_facility_pickup:
+        pickup_recipient_name = _first_non_empty_text(
+            shipping_address.get("name") if isinstance(shipping_address, dict) else None,
+            shipping_address.get("fullName") if isinstance(shipping_address, dict) else None,
+            billing_address.get("name") if isinstance(billing_address, dict) else None,
+            billing_address.get("fullName") if isinstance(billing_address, dict) else None,
+        )
+        if pickup_recipient_name:
+            meta_data.append(
+                {
+                    "key": "peppro_facility_pickup_recipient_name",
+                    "value": pickup_recipient_name,
+                }
+            )
     if is_hand_delivery:
         meta_data.append({"key": "peppro_delivery_method", "value": HAND_DELIVERY_CODE})
 
@@ -2382,6 +2412,16 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "facility_pickup",
         "fascility_pickup",
     }
+    shipping_address = _map_address(order.get("shipping"))
+    billing_address = _map_address(order.get("billing"))
+    facility_pickup_recipient_name = _first_non_empty_text(
+        _meta_value(meta_data, "peppro_facility_pickup_recipient_name")
+    )
+    if is_facility_pickup and facility_pickup_recipient_name:
+        if shipping_address:
+            shipping_address = {**shipping_address, "name": facility_pickup_recipient_name}
+        if billing_address:
+            billing_address = {**billing_address, "name": facility_pickup_recipient_name}
 
     mapped = {
         "id": identifier,
@@ -2406,8 +2446,8 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "createdAt": order.get("date_created") or order.get("date_created_gmt"),
         "updatedAt": order.get("date_modified") or order.get("date_modified_gmt"),
         "billingEmail": (order.get("billing") or {}).get("email"),
-        "shippingAddress": _map_address(order.get("shipping")),
-        "billingAddress": _map_address(order.get("billing")),
+        "shippingAddress": shipping_address,
+        "billingAddress": billing_address,
         "shippingEstimate": shipping_estimate,
         "source": "woocommerce",
         "lineItems": [

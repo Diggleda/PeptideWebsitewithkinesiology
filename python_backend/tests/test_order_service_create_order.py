@@ -356,6 +356,7 @@ class CreateOrderTests(unittest.TestCase):
 
         def succeed(order, _user):
             self.assertEqual(order["shippingAddress"]["name"], "Recipient Patient")
+            self.assertEqual(order["billingAddress"]["name"], "Recipient Patient")
             return {
                 "status": "success",
                 "response": {
@@ -434,8 +435,114 @@ class CreateOrderTests(unittest.TestCase):
 
         self.assertEqual(len(inserted_orders), 1)
         self.assertEqual(inserted_orders[0]["shippingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["billingAddress"]["name"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "facility_pickup")
         self.assertTrue(inserted_orders[0]["facilityPickup"])
+
+    def test_woo_payload_preserves_facility_pickup_name_over_fallback_names(self):
+        service = self.order_service
+
+        payload = service.woo_commerce.build_order_payload(
+            {
+                "id": "order-1",
+                "items": [
+                    {
+                        "productId": 101,
+                        "name": "Test Product",
+                        "price": 25.0,
+                        "quantity": 1,
+                    }
+                ],
+                "total": 25.0,
+                "grandTotal": 25.0,
+                "shippingTotal": 0.0,
+                "taxTotal": 0.0,
+                "shippingEstimate": {
+                    "carrierId": "facility_pickup",
+                    "serviceCode": "facility_pickup",
+                    "serviceType": "Facility pickup",
+                },
+                "shippingAddress": {
+                    "name": "Recipient Patient",
+                    "addressLine1": "640 S Grand Ave",
+                    "addressLine2": "Unit #107",
+                    "city": "Santa Ana",
+                    "state": "CA",
+                    "postalCode": "92705",
+                    "country": "US",
+                },
+                "billingAddress": {
+                    "firstName": "Sales",
+                    "lastName": "Lead",
+                    "addressLine1": "640 S Grand Ave",
+                    "addressLine2": "Unit #107",
+                    "city": "Santa Ana",
+                    "state": "CA",
+                    "postalCode": "92705",
+                    "country": "US",
+                },
+                "facilityPickup": True,
+                "facility_pickup": True,
+                "fulfillmentMethod": "facility_pickup",
+                "createdAt": "2026-04-22T00:00:00Z",
+            },
+            {
+                "name": "Sales Lead User",
+                "email": "lead@example.com",
+                "role": "sales_lead",
+            },
+        )
+
+        self.assertEqual(payload["shipping"]["first_name"], "Recipient")
+        self.assertEqual(payload["shipping"]["last_name"], "Patient")
+        meta = {entry["key"]: entry.get("value") for entry in payload["meta_data"]}
+        self.assertEqual(meta["peppro_facility_pickup_recipient_name"], "Recipient Patient")
+
+    def test_woo_summary_restores_facility_pickup_name_from_metadata(self):
+        service = self.order_service
+
+        mapped = service.woo_commerce._map_woo_order_summary(
+            {
+                "id": 9005,
+                "number": "1495",
+                "status": "pending",
+                "currency": "USD",
+                "total": "50.00",
+                "shipping_total": "0.00",
+                "date_created": "2026-04-22T00:00:00",
+                "meta_data": [
+                    {"key": "peppro_fulfillment_method", "value": "facility_pickup"},
+                    {
+                        "key": "peppro_facility_pickup_recipient_name",
+                        "value": "Recipient Patient",
+                    },
+                ],
+                "shipping": {
+                    "first_name": "Sales",
+                    "last_name": "Lead",
+                    "address_1": "640 S Grand Ave",
+                    "address_2": "Unit #107",
+                    "city": "Santa Ana",
+                    "state": "CA",
+                    "postcode": "92705",
+                    "country": "US",
+                },
+                "billing": {
+                    "first_name": "Sales",
+                    "last_name": "Lead",
+                    "address_1": "640 S Grand Ave",
+                    "address_2": "Unit #107",
+                    "city": "Santa Ana",
+                    "state": "CA",
+                    "postcode": "92705",
+                    "country": "US",
+                },
+                "line_items": [],
+            }
+        )
+
+        self.assertEqual(mapped["shippingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(mapped["billingAddress"]["name"], "Recipient Patient")
 
     def test_create_order_keeps_manual_hand_delivery_distinct_from_facility_pickup(self):
         service = self.order_service

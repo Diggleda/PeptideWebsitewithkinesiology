@@ -2168,8 +2168,10 @@ def create_order(
     is_facility_pickup = facility_pickup_requested and _can_user_use_facility_pickup_for_checkout(user)
     is_hand_delivery = bool(facility_pickup) and not facility_pickup_requested and _can_user_use_hand_delivery_for_checkout(user)
     bypass_shipping = is_facility_pickup or is_hand_delivery
+    billing_address = None
     if is_facility_pickup:
         shipping_address = _build_facility_pickup_shipping_address(user, shipping_address)
+        billing_address = dict(shipping_address)
         existing_rate = shipping_rate if isinstance(shipping_rate, dict) else {}
         shipping_rate = {
             **existing_rate,
@@ -2255,6 +2257,7 @@ def create_order(
         "taxTotal": float(tax_total_value),
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
+        "billingAddress": billing_address,
         "handDelivery": is_hand_delivery,
         "facilityPickup": is_facility_pickup,
         "facility_pickup": is_facility_pickup,

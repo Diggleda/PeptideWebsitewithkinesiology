@@ -436,5 +436,6 @@ test('createOrder preserves facility pickup recipient name for sales actors', as
 
   assert.equal(insertedOrders.length, 1);
   assert.equal(insertedOrders[0].shippingAddress.name, 'Recipient Patient');
+  assert.equal(insertedOrders[0].billingAddress.name, 'Recipient Patient');
   assert.equal(insertedOrders[0].facilityPickup, true);
 });

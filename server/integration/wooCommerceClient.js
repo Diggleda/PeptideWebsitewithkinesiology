@@ -625,15 +625,27 @@ const buildWooAddress = ({ address, customer, fallbackAddress }) => {
   const fallback = fallbackAddress && typeof fallbackAddress === 'object' ? fallbackAddress : {};
   const customerRecord = customer && typeof customer === 'object' ? customer : {};
 
-  const fullName = firstNonEmptyText(
+  const sourceFullName = firstNonEmptyText(
     source.name,
     source.fullName,
+  );
+  const fullName = firstNonEmptyText(
+    sourceFullName,
     fallback.name,
     fallback.fullName,
     customerRecord.name,
   );
-  let firstName = firstNonEmptyText(source.firstName, source.first_name, fallback.firstName, fallback.first_name);
-  let lastName = firstNonEmptyText(source.lastName, source.last_name, fallback.lastName, fallback.last_name);
+  let firstName = firstNonEmptyText(source.firstName, source.first_name);
+  let lastName = firstNonEmptyText(source.lastName, source.last_name);
+  if (sourceFullName && (!firstName || !lastName)) {
+    const [splitFirst, splitLast] = splitPersonName(sourceFullName);
+    if (!firstName) firstName = splitFirst;
+    if (!lastName) lastName = splitLast;
+  }
+  if (!sourceFullName) {
+    firstName = firstNonEmptyText(firstName, fallback.firstName, fallback.first_name);
+    lastName = firstNonEmptyText(lastName, fallback.lastName, fallback.last_name);
+  }
   if (fullName && (!firstName || !lastName)) {
     const [splitFirst, splitLast] = splitPersonName(fullName);
     if (!firstName) firstName = splitFirst;
@@ -749,6 +761,17 @@ const buildOrderPayload = async ({ order, customer }) => {
   }
   if (Number.isFinite(Number(order.shippingEstimate?.weightOz))) {
     metaData.push({ key: 'peppro_package_weight_oz', value: Number(order.shippingEstimate.weightOz) });
+  }
+  if (fulfillmentMethod === 'facility_pickup') {
+    const pickupRecipientName = firstNonEmptyText(
+      shippingAddress?.name,
+      shippingAddress?.fullName,
+      billingAddress?.name,
+      billingAddress?.fullName,
+    );
+    if (pickupRecipientName) {
+      metaData.push({ key: 'peppro_facility_pickup_recipient_name', value: pickupRecipientName });
+    }
   }
 
   if (taxTotal > 0) {
@@ -1118,10 +1141,20 @@ const normalizeWooDateString = (value, { assumeUtc = false } = {}) => {
 
 const mapWooOrderSummary = (order) => {
   const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
+  const metaValue = (key) => metaData.find((entry) => entry?.key === key)?.value ?? null;
   const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
   const pepproOrderId = pepproMeta?.value ? String(pepproMeta.value) : null;
   const wooNumber = typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null);
   const shippingEstimate = parseShippingEstimateMeta(metaData, order);
+  const fulfillmentMethod = String(metaValue('peppro_fulfillment_method') || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const isFacilityPickup = fulfillmentMethod === 'facility_pickup' || fulfillmentMethod === 'fascility_pickup';
+  const facilityPickupRecipientName = firstNonEmptyText(metaValue('peppro_facility_pickup_recipient_name'));
+  const shippingAddress = mapWooAddress(order?.shipping);
+  const billingAddress = mapWooAddress(order?.billing);
+  if (isFacilityPickup && facilityPickupRecipientName) {
+    if (shippingAddress) shippingAddress.name = facilityPickupRecipientName;
+    if (billingAddress) billingAddress.name = facilityPickupRecipientName;
+  }
   const asDelegateLabel =
     (typeof order?.as_delegate === 'string' && order.as_delegate.trim())
       ? order.as_delegate.trim()
@@ -1152,8 +1185,8 @@ const mapWooOrderSummary = (order) => {
     billingEmail: order?.billing?.email || null,
     source: 'woocommerce',
     lineItems: sanitizeWooLineItems(order?.line_items),
-    shippingAddress: mapWooAddress(order?.shipping),
-    billingAddress: mapWooAddress(order?.billing),
+    shippingAddress,
+    billingAddress,
     shippingEstimate,
     shippingTotal: normalizeNumber(order?.shipping_total),
     integrationDetails: {

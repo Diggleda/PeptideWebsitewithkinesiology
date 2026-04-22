@@ -10598,21 +10598,140 @@ function MainApp() {
       settingsAPI,
     ],
   );
+  const mergeSalesOrderDetails = useCallback(
+    (
+      details: AccountOrderSummary[],
+      options?: { syncSalesTrackingOrders?: boolean },
+    ) => {
+      const incomingDetails = Array.isArray(details)
+        ? details.filter((detail) => detail && typeof detail === "object")
+        : [];
+      if (incomingDetails.length === 0) return;
+
+      const collectOrderIdentityTokens = (order: any) => {
+        const tokens = new Set<string>();
+        const addRaw = (value: unknown) => {
+          if (value === null || value === undefined) return;
+          const raw = String(value).replace(/^#/, "").trim().toLowerCase();
+          if (raw) tokens.add(`raw:${raw}`);
+        };
+        const addWooId = (value: unknown) => {
+          const normalized = normalizeWooOrderId(value);
+          if (normalized) tokens.add(`woo:${normalized}`);
+        };
+        const addWooNumber = (value: unknown) => {
+          const normalized = normalizeWooOrderNumberKey(
+            value === null || value === undefined ? null : String(value),
+          );
+          if (normalized) tokens.add(`num:${normalized}`);
+        };
+
+        addRaw(order?.id);
+        addRaw(order?.number);
+        addRaw(order?.wooOrderId);
+        addRaw(order?.woo_order_id);
+        addRaw(order?.wooOrderNumber);
+        addRaw(order?.woo_order_number);
+        addRaw(order?.cancellationId);
+        addRaw(order?.cancellation_id);
+
+        addWooId(order?.id);
+        addWooId(order?.wooOrderId);
+        addWooId(order?.woo_order_id);
+        addWooId(resolveWooOrderIdFromIntegrations(order));
+
+        addWooNumber(order?.number);
+        addWooNumber(order?.wooOrderNumber);
+        addWooNumber(order?.woo_order_number);
+
+        return tokens;
+      };
+
+      const detailTokens = incomingDetails.map((detail) => ({
+        detail,
+        tokens: collectOrderIdentityTokens(detail),
+      }));
+
+      const findMatchingDetail = (order: AccountOrderSummary) => {
+        const orderTokens = collectOrderIdentityTokens(order);
+        if (orderTokens.size === 0) return null;
+        return (
+          detailTokens.find(({ tokens }) => {
+            for (const token of orderTokens) {
+              if (tokens.has(token)) return true;
+            }
+            return false;
+          })?.detail || null
+        );
+      };
+
+      const mergeOrderList = (
+        orders?: AccountOrderSummary[] | null,
+      ): AccountOrderSummary[] | undefined | null => {
+        if (!Array.isArray(orders) || orders.length === 0) {
+          return orders;
+        }
+        let changed = false;
+        const merged = orders.map((order) => {
+          const matchingDetail = findMatchingDetail(order);
+          if (!matchingDetail) return order;
+          changed = true;
+          return mergeAccountOrderSummaryPreservingSeed(order, matchingDetail);
+        });
+        return changed ? merged : orders;
+      };
+
+      const mergeDoctorOrderCollections = (current: any) => {
+        if (!current || typeof current !== "object") return current;
+        const mergedOrders = mergeOrderList(current.orders);
+        const mergedPersonalOrders = mergeOrderList(current.personalOrders);
+        const mergedSalesOrders = mergeOrderList(current.salesOrders);
+        const patch: Record<string, AccountOrderSummary[] | null | undefined> = {};
+        if (mergedOrders !== current.orders) patch.orders = mergedOrders;
+        if (mergedPersonalOrders !== current.personalOrders) {
+          patch.personalOrders = mergedPersonalOrders;
+        }
+        if (mergedSalesOrders !== current.salesOrders) patch.salesOrders = mergedSalesOrders;
+        return Object.keys(patch).length > 0 ? { ...current, ...patch } : current;
+      };
+
+      if (options?.syncSalesTrackingOrders !== false) {
+        setSalesTrackingOrders((prev) => {
+          const merged = mergeOrderList(prev);
+          return Array.isArray(merged) ? merged : prev;
+        });
+      }
+
+      setSalesDoctorDetail((current) => mergeDoctorOrderCollections(current));
+      setSalesDoctorDetailStack((current) => {
+        let changed = false;
+        const next = current.map((detail) => {
+          const merged = mergeDoctorOrderCollections(detail);
+          if (merged !== detail) changed = true;
+          return merged;
+        });
+        return changed ? next : current;
+      });
+
+      salesDoctorRepFeedCacheRef.current.forEach((cached, key) => {
+        const mergedOrders = mergeOrderList(cached.orders);
+        if (mergedOrders !== cached.orders && Array.isArray(mergedOrders)) {
+          salesDoctorRepFeedCacheRef.current.set(key, {
+            ...cached,
+            orders: mergedOrders,
+          });
+        }
+      });
+    },
+    [],
+  );
+
   const mergeSalesOrderDetail = useCallback(
     (detail: AccountOrderSummary | null) => {
       if (!detail) return;
-      setSalesTrackingOrders((prev) =>
-        prev.map((order) => {
-          const match =
-            String(order.id || "") === String(detail.id || detail.number || "") ||
-            (order.wooOrderId && detail.wooOrderId && String(order.wooOrderId) === String(detail.wooOrderId)) ||
-            (order.number && detail.number && String(order.number) === String(detail.number));
-          if (!match) return order;
-          return mergeAccountOrderSummaryPreservingSeed(order, detail);
-        }),
-      );
+      mergeSalesOrderDetails([detail]);
     },
-    [],
+    [mergeSalesOrderDetails],
   );
   const toggleSalesDoctorCollapse = useCallback((doctorId: string) => {
     setCollapsedSalesDoctorIds((prev) => {
@@ -20962,6 +21081,9 @@ function MainApp() {
       }
       if (shouldUpdateOrders) {
         setSalesTrackingOrders(normalizedOrders);
+        mergeSalesOrderDetails(normalizedOrders, {
+          syncSalesTrackingOrders: false,
+        });
       }
 
       if (!shouldShowInitialLoading && changedIds.size > 0) {
@@ -21060,6 +21182,7 @@ function MainApp() {
 	    resolveOrderDoctorIdForBucket,
         resolveTrackingNumber,
 	    enrichMissingOrderDetails,
+        mergeSalesOrderDetails,
 	    refreshSalesBySalesRepSummary,
 	  ]);
 
