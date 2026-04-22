@@ -25846,6 +25846,7 @@ function MainApp() {
     delegateAmountDue?: number | null;
     delegateAmountDueCurrency?: string | null;
     handDelivery?: boolean;
+    facilityPickup?: boolean;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted?: boolean;
     taxTotal?: number | null;
@@ -26010,6 +26011,7 @@ function MainApp() {
 	          physicianCertification:
 	            options?.physicianCertificationAccepted === true,
             handDelivery: options?.handDelivery === true,
+            facilityPickup: options?.facilityPickup === true,
             delegateProposalToken: delegationProposalReview?.token ?? null,
 	        },
 	        taxTotal,

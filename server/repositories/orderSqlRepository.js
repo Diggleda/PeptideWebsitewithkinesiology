@@ -46,7 +46,7 @@ const normalizeFulfillmentMethod = (value, fallback = null) => {
   }
   const key = normalized.trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (key === 'facility_pickup' || key === 'fascility_pickup') {
-    return 'hand_delivered';
+    return 'facility_pickup';
   }
   if (
     key === 'hand_delivery'
@@ -196,8 +196,30 @@ const applyUpsTrackingStatusToOrder = (order, status) => {
   return order;
 };
 
-const isHandDeliveryOrder = (order) => {
+const isFacilityPickupOrder = (order) => {
   if (!order || typeof order !== 'object') {
+    return false;
+  }
+  const estimate = order.shippingEstimate;
+  const estimateCandidates = estimate && typeof estimate === 'object'
+    ? [estimate.serviceType, estimate.serviceCode, estimate.carrierId]
+    : [];
+  const orderCandidates = [
+    order.shippingService,
+    order.fulfillmentMethod,
+    order.fulfillment_method,
+    order.facilityPickup === true ? 'facility_pickup' : '',
+    order.facility_pickup === true ? 'facility_pickup' : '',
+  ];
+  const normalized = estimateCandidates
+    .concat(orderCandidates)
+    .map((value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_'))
+    .filter(Boolean);
+  return normalized.some((value) => value === 'facility_pickup' || value === 'fascility_pickup');
+};
+
+const isHandDeliveryOrder = (order) => {
+  if (!order || typeof order !== 'object' || isFacilityPickupOrder(order)) {
     return false;
   }
   const estimate = order.shippingEstimate;
@@ -223,9 +245,7 @@ const isHandDeliveryOrder = (order) => {
     || value === 'local_hand_delivery'
     || value === 'local_delivery'
     || value === 'hand-delivery'
-    || value === 'hand-delivered'
-    || value === 'facility_pickup'
-    || value === 'fascility_pickup');
+    || value === 'hand-delivered');
 };
 
 const computeItemsSubtotal = (order) => {
@@ -533,10 +553,12 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     shippingService: isHandDeliveryOrder(order)
       ? HAND_DELIVERY_SERVICE_LABEL
       : (order.shippingEstimate?.serviceType || order.shippingEstimate?.serviceCode || order.shippingService || null),
-    handDelivery: order.handDelivery === true ? 1 : 0,
-    fulfillmentMethod: isHandDeliveryOrder(order)
-      ? 'hand_delivered'
-      : normalizeFulfillmentMethod(order.fulfillmentMethod),
+    handDelivery: isFacilityPickupOrder(order) ? 1 : 0,
+    fulfillmentMethod: isFacilityPickupOrder(order)
+      ? 'facility_pickup'
+      : (isHandDeliveryOrder(order)
+        ? 'hand_delivered'
+        : normalizeFulfillmentMethod(order.fulfillmentMethod)),
     physicianCertified: order.physicianCertificationAccepted === true ? 1 : 0,
     status: order.status || 'pending',
     orderPlacedAt,

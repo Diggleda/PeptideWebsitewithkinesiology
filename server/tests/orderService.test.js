@@ -358,3 +358,83 @@ test('createOrder persists locally only after WooCommerce succeeds', async () =>
   assert.ok(sequence.indexOf('referral') > sequence.indexOf('woo'));
   assert.ok(sequence.indexOf('insert') > sequence.indexOf('referral'));
 });
+
+test('createOrder preserves facility pickup recipient name for sales actors', async () => {
+  const insertedOrders = [];
+
+  const orderRepository = {
+    findById: () => null,
+    findByUserIdAndIdempotencyKey: () => null,
+    findByUserId: () => [],
+    getAll: () => [],
+    insert: (order) => {
+      insertedOrders.push({ ...order });
+      return order;
+    },
+    update: (order) => order,
+  };
+
+  const userRepository = {
+    findById: () => ({
+      id: 'rep-1',
+      role: 'sales_lead',
+      name: 'Sales Lead User',
+      email: 'lead@example.com',
+      isTaxExempt: false,
+    }),
+  };
+
+  await withFreshService(
+    {
+      orderRepository,
+      userRepository,
+      wooCommerceClient: {
+        forwardOrder: async ({ order }) => {
+          assert.equal(order.shippingAddress.name, 'Recipient Patient');
+          assert.equal(order.billingAddress.name, 'Recipient Patient');
+          assert.equal(order.facilityPickup, true);
+          assert.equal(order.handDelivery, false);
+          assert.equal(order.fulfillmentMethod, 'facility_pickup');
+          return {
+            status: 'success',
+            response: {
+              id: 9876,
+              number: '9876',
+              status: 'pending',
+            },
+          };
+        },
+      },
+    },
+    async (service) => {
+      const result = await service.createOrder({
+        ...buildCheckoutPayload(),
+        total: 100,
+        shippingAddress: {
+          name: 'Recipient Patient',
+          addressLine1: '640 S Grand Ave',
+          addressLine2: 'Unit #107',
+          city: 'Santa Ana',
+          state: 'CA',
+          postalCode: '92705',
+          country: 'US',
+        },
+        shippingEstimate: {
+          carrierId: 'facility_pickup',
+          serviceCode: 'facility_pickup',
+          serviceType: 'Facility pickup',
+          rate: 0,
+          currency: 'USD',
+        },
+        shippingTotal: 0,
+        handDelivery: false,
+        facilityPickup: true,
+      });
+      assert.equal(result.success, true);
+    },
+  );
+
+  assert.equal(insertedOrders.length, 1);
+  assert.equal(insertedOrders[0].shippingAddress.name, 'Recipient Patient');
+  assert.equal(insertedOrders[0].facilityPickup, true);
+});

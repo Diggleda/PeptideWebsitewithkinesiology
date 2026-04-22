@@ -350,6 +350,93 @@ class CreateOrderTests(unittest.TestCase):
 
         self.assertTrue(service._can_user_use_facility_pickup_for_checkout({"role": "sales_lead"}))
 
+    def test_create_order_preserves_facility_pickup_recipient_name(self):
+        service = self.order_service
+        inserted_orders = []
+
+        def succeed(order, _user):
+            self.assertEqual(order["shippingAddress"]["name"], "Recipient Patient")
+            return {
+                "status": "success",
+                "response": {
+                    "id": 9005,
+                    "number": "1495",
+                    "status": "processing",
+                    "orderKey": "wc_order_key_791",
+                },
+            }
+
+        def capture_insert(order):
+            inserted_orders.append(dict(order))
+            return dict(order)
+
+        with patch.object(service.order_repository, "insert", side_effect=capture_insert), patch.object(
+            service.order_repository, "update", side_effect=lambda order: dict(order)
+        ), patch.object(
+            service.order_repository, "update_woo_fields"
+        ), patch.object(
+            service.sales_prospect_repository, "mark_doctor_as_nurturing_if_purchased"
+        ), patch.object(
+            service.user_repository, "find_by_id",
+            return_value={
+                "id": "lead-1",
+                "name": "Sales Lead User",
+                "email": "lead@example.com",
+                "role": "sales_lead",
+                "referralCredits": 0,
+            },
+        ), patch.object(service.settings_service, "get_settings", return_value={}), patch.object(
+            service.referral_service, "handle_order_referral_effects", return_value={}
+        ), patch.object(
+            service.discount_code_repository, "reserve_use_once"
+        ), patch.object(
+            service.woo_commerce, "forward_order", side_effect=succeed
+        ), patch.object(
+            service, "_is_tax_exempt_for_checkout", return_value=False
+        ), patch.object(
+            service, "_resolve_order_exemption_snapshot", return_value={}
+        ), patch.object(
+            service, "_resolve_sales_rep_context", return_value={}
+        ), patch.object(
+            service, "_resolve_sales_rep_record_for_user", return_value={}
+        ), patch.object(
+            service, "_calculate_checkout_tax", return_value=(0.0, "none", None)
+        ):
+            service.create_order(
+                user_id="lead-1",
+                items=[{"productId": 101, "name": "Test Product", "price": 25.0, "quantity": 2}],
+                total=50.0,
+                referral_code=None,
+                discount_code=None,
+                payment_method="bacs",
+                pricing_mode="wholesale",
+                tax_total=0.0,
+                shipping_total=0.0,
+                shipping_address={
+                    "name": "Recipient Patient",
+                    "addressLine1": "640 S Grand Ave",
+                    "addressLine2": "Unit #107",
+                    "city": "Santa Ana",
+                    "state": "CA",
+                    "postalCode": "92705",
+                    "country": "US",
+                },
+                facility_pickup=True,
+                shipping_rate={
+                    "carrierId": "facility_pickup",
+                    "serviceCode": "facility_pickup",
+                    "serviceType": "Facility pickup",
+                },
+                expected_shipment_window=None,
+                physician_certified=True,
+                as_delegate_label=None,
+            )
+
+        self.assertEqual(len(inserted_orders), 1)
+        self.assertEqual(inserted_orders[0]["shippingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "facility_pickup")
+        self.assertTrue(inserted_orders[0]["facilityPickup"])
+
     def test_create_order_keeps_manual_hand_delivery_distinct_from_facility_pickup(self):
         service = self.order_service
         inserted_orders = []

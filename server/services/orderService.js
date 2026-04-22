@@ -1687,6 +1687,17 @@ const normalizeTaxAmount = (value) => {
 const normalizeStateCode = (value) => String(value || '').trim().toLowerCase();
 const HAND_DELIVERY_LABEL = 'Hand Delivered';
 const HAND_DELIVERY_SERVICE_CODE = 'hand_delivery';
+const FACILITY_PICKUP_LABEL = 'Facility pickup';
+const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup';
+const FACILITY_PICKUP_LOCATION = {
+  name: 'PepPro Facility Pickup',
+  addressLine1: '640 S Grand Ave',
+  addressLine2: 'Unit #107',
+  city: 'Santa Ana',
+  state: 'CA',
+  postalCode: '92705',
+  country: 'US',
+};
 
 const normalizeBooleanish = (value) => {
   if (value === true || value === false) return value;
@@ -1711,6 +1722,13 @@ const canUserUseHandDeliveryForCheckout = (user) => {
   return normalizeBooleanish(user.handDelivered ?? user.hand_delivered);
 };
 
+const canUserUseFacilityPickupForCheckout = (user) => {
+  if (!user || typeof user !== 'object') {
+    return false;
+  }
+  return isSalesAccessRole(user.role);
+};
+
 const isHandDeliverySelection = (shippingEstimate) => {
   if (!shippingEstimate || typeof shippingEstimate !== 'object') return false;
   const candidates = [
@@ -1732,12 +1750,59 @@ const isHandDeliverySelection = (shippingEstimate) => {
     || value === 'hand-delivered');
 };
 
+const isFacilityPickupSelection = (shippingEstimate) => {
+  if (!shippingEstimate || typeof shippingEstimate !== 'object') return false;
+  const candidates = [
+    shippingEstimate.serviceType,
+    shippingEstimate.serviceCode,
+    shippingEstimate.carrierId,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_'))
+    .filter(Boolean);
+  return candidates.some((value) => value === 'facility_pickup' || value === 'fascility_pickup');
+};
+
 const resolveCheckoutShippingData = ({
+  facilityPickup,
   handDelivery,
   shippingAddress,
   shippingEstimate,
   shippingTotal,
 }) => {
+  const facilityPickupRequested = normalizeBooleanish(facilityPickup) || isFacilityPickupSelection(shippingEstimate);
+  if (facilityPickupRequested) {
+    const normalizedAddress = ensureShippingAddress({
+      ...FACILITY_PICKUP_LOCATION,
+      ...(shippingAddress && typeof shippingAddress === 'object' ? shippingAddress : {}),
+    });
+    const normalizedEstimate = (shippingEstimate && typeof shippingEstimate === 'object')
+      ? shippingEstimate
+      : {};
+    return {
+      handDelivery: false,
+      facilityPickup: true,
+      shippingAddress: normalizedAddress,
+      shippingEstimate: {
+        ...normalizedEstimate,
+        carrierId: FACILITY_PICKUP_SERVICE_CODE,
+        serviceCode: FACILITY_PICKUP_SERVICE_CODE,
+        serviceType: FACILITY_PICKUP_LABEL,
+        estimatedDeliveryDays: null,
+        deliveryDateGuaranteed: null,
+        estimatedArrivalDate: null,
+        rate: 0,
+        currency: 'USD',
+        addressFingerprint: normalizedEstimate.addressFingerprint || createAddressFingerprint(normalizedAddress),
+        meta: {
+          ...(normalizedEstimate.meta && typeof normalizedEstimate.meta === 'object'
+            ? normalizedEstimate.meta
+            : {}),
+          deliveryMethod: FACILITY_PICKUP_SERVICE_CODE,
+        },
+      },
+      shippingTotal: 0,
+    };
+  }
   const handDeliveryRequested = normalizeBooleanish(handDelivery);
   if (handDeliveryRequested || isHandDeliverySelection(shippingEstimate)) {
     const normalizedAddress = ensureShippingAddress(shippingAddress);
@@ -1746,6 +1811,7 @@ const resolveCheckoutShippingData = ({
       : {};
     return {
       handDelivery: true,
+      facilityPickup: false,
       shippingAddress: normalizedAddress,
       shippingEstimate: {
         carrierId: HAND_DELIVERY_SERVICE_CODE,
@@ -1770,6 +1836,7 @@ const resolveCheckoutShippingData = ({
 
   return {
     handDelivery: false,
+    facilityPickup: false,
     ...ensureShippingData({
       shippingAddress,
       shippingEstimate,
@@ -1888,6 +1955,7 @@ const createOrderInternal = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
+  facilityPickup,
   handDelivery,
   physicianCertification,
   taxTotal,
@@ -1922,12 +1990,14 @@ const createOrderInternal = async ({
   const checkoutProfileUser = taxExempt ? (userRepository.findById(userId) || user) : user;
   const orderExemptionSnapshot = resolveOrderExemptionSnapshot(checkoutProfileUser, taxExempt);
   const shippingData = resolveCheckoutShippingData({
+    facilityPickup,
     handDelivery,
     shippingAddress,
     shippingEstimate,
     shippingTotal,
   });
-  const handDeliverySelected = canUserUseHandDeliveryForCheckout(user) && (
+  const facilityPickupSelected = canUserUseFacilityPickupForCheckout(user) && shippingData.facilityPickup === true;
+  const handDeliverySelected = !facilityPickupSelected && canUserUseHandDeliveryForCheckout(user) && (
     normalizeBooleanish(handDelivery)
     || shippingData.handDelivery === true
     || isHandDeliverySelection(shippingData.shippingEstimate)
@@ -1995,11 +2065,14 @@ const createOrderInternal = async ({
     shippingEstimate: shippingData.shippingEstimate,
     shippingAddress: shippingData.shippingAddress,
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress, {
-      preferFallbackAddress: handDeliverySelected,
+      preferFallbackAddress: handDeliverySelected || facilityPickupSelected,
     }),
     handDelivery: handDeliverySelected,
-    fulfillmentMethod: handDeliverySelected ? 'hand_delivered' : 'shipping',
-    pickupLocation: null,
+    facilityPickup: facilityPickupSelected,
+    facility_pickup: facilityPickupSelected,
+    fascility_pickup: facilityPickupSelected,
+    fulfillmentMethod: facilityPickupSelected ? 'facility_pickup' : (handDeliverySelected ? 'hand_delivered' : 'shipping'),
+    pickupLocation: facilityPickupSelected ? FACILITY_PICKUP_LOCATION : null,
     pickupReadyNotice: null,
     referralCode: referralCode || null,
     discountCode: normalizedDiscountCode,
@@ -2188,6 +2261,7 @@ const createOrder = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
+  facilityPickup,
   handDelivery,
   physicianCertification,
   taxTotal,
@@ -2217,6 +2291,7 @@ const createOrder = async ({
       shippingAddress,
       shippingEstimate,
       shippingTotal,
+      facilityPickup,
       handDelivery,
       physicianCertification,
       taxTotal,
@@ -2257,6 +2332,7 @@ const createOrder = async ({
     shippingAddress,
     shippingEstimate,
     shippingTotal,
+    facilityPickup,
     handDelivery,
     physicianCertification,
     taxTotal,
@@ -2282,6 +2358,7 @@ const estimateOrderTotals = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
+  facilityPickup,
   handDelivery,
 }) => {
   if (!validateItems(items)) {
@@ -2297,12 +2374,14 @@ const estimateOrderTotals = async ({
   }
 
   const shippingData = resolveCheckoutShippingData({
+    facilityPickup,
     handDelivery,
     shippingAddress,
     shippingEstimate,
     shippingTotal,
   });
-  const handDeliverySelected = canUserUseHandDeliveryForCheckout(user) && (
+  const facilityPickupSelected = canUserUseFacilityPickupForCheckout(user) && shippingData.facilityPickup === true;
+  const handDeliverySelected = !facilityPickupSelected && canUserUseHandDeliveryForCheckout(user) && (
     normalizeBooleanish(handDelivery)
     || shippingData.handDelivery === true
     || isHandDeliverySelection(shippingData.shippingEstimate)
@@ -2334,10 +2413,13 @@ const estimateOrderTotals = async ({
     shippingEstimate: shippingData.shippingEstimate,
     shippingAddress: shippingData.shippingAddress,
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress, {
-      preferFallbackAddress: handDeliverySelected,
+      preferFallbackAddress: handDeliverySelected || facilityPickupSelected,
     }),
     handDelivery: handDeliverySelected,
-    fulfillmentMethod: handDeliverySelected ? 'hand_delivered' : 'shipping',
+    facilityPickup: facilityPickupSelected,
+    facility_pickup: facilityPickupSelected,
+    fascility_pickup: facilityPickupSelected,
+    fulfillmentMethod: facilityPickupSelected ? 'facility_pickup' : (handDeliverySelected ? 'hand_delivered' : 'shipping'),
     status: 'pending',
     createdAt: new Date().toISOString(),
     physicianCertificationAccepted: false,

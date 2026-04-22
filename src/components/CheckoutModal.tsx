@@ -299,6 +299,7 @@ interface CheckoutModalProps {
     delegateAmountDue?: number | null;
     delegateAmountDueCurrency?: string | null;
     handDelivery?: boolean;
+    facilityPickup?: boolean;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted: boolean;
     taxTotal?: number | null;
@@ -1132,7 +1133,8 @@ export function CheckoutModal({
 	        shippingTotal: checkoutShippingTotal,
           delegateAmountDue,
           delegateAmountDueCurrency: delegateAmountDue != null ? 'USD' : null,
-          handDelivery: bypassShippingRateSelection,
+          handDelivery: isHandDeliveryEnabled,
+          facilityPickup: isFacilityPickupEnabled,
 	        expectedShipmentWindow: delegateShippingHandledByPhysician ? null : (deliveryEstimate?.deliveryWindowLabel ?? null),
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
@@ -1504,7 +1506,8 @@ export function CheckoutModal({
           shippingAddress: effectiveCheckoutAddress,
           shippingEstimate: bypassShippingRateSelection ? noShippingRate : selectedShippingRate,
           shippingTotal: effectiveShippingCost,
-          handDelivery: bypassShippingRateSelection,
+          handDelivery: isHandDeliveryEnabled,
+          facilityPickup: isFacilityPickupEnabled,
           paymentMethod,
           discountCode: discountCodeApplied?.code ?? null,
         },
@@ -1576,6 +1579,7 @@ export function CheckoutModal({
     selectedShippingRate,
     bypassShippingRateSelection,
     isFacilityPickupEnabled,
+    isHandDeliveryEnabled,
     shippingAddressSignature,
     effectiveCheckoutAddress,
     effectiveShippingCost,

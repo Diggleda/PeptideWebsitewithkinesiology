@@ -536,21 +536,38 @@ const isHandDeliveryEstimate = (shippingEstimate) => {
     || value === 'hand-delivered');
 };
 
+const isFacilityPickupEstimate = (shippingEstimate) => {
+  if (!shippingEstimate || typeof shippingEstimate !== 'object') return false;
+  const candidates = [
+    shippingEstimate.serviceType,
+    shippingEstimate.serviceCode,
+    shippingEstimate.carrierId,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_'))
+    .filter(Boolean);
+  return candidates.some((value) => value === 'facility_pickup' || value === 'fascility_pickup');
+};
+
 const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }) => {
   if (shippingEstimate) {
     const total = Number.isFinite(shippingTotal) ? Number(shippingTotal) : 0;
     const handDelivery = isHandDeliveryEstimate(shippingEstimate);
+    const facilityPickup = !handDelivery && isFacilityPickupEstimate(shippingEstimate);
     const rawMethodId = shippingEstimate.serviceCode
       || shippingEstimate.serviceType
       || shippingEstimate.carrierId
       || null;
     const normalizedMethodId = handDelivery
       ? 'peppro_hand_delivery'
+      : facilityPickup
+        ? 'peppro_facility_pickup'
       : (rawMethodId
         ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
         : 'peppro_shipstation');
     const methodTitle = handDelivery
       ? 'Hand Delivered'
+      : facilityPickup
+        ? 'Facility Pickup'
       : (shippingEstimate.serviceType
         || shippingEstimate.serviceCode
         || shippingEstimate.carrierId
@@ -561,6 +578,7 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
       shippingEstimate.serviceCode ? { key: 'peppro_service_code', value: shippingEstimate.serviceCode } : null,
       shippingEstimate.serviceType ? { key: 'peppro_service_type', value: shippingEstimate.serviceType } : null,
       handDelivery ? { key: 'peppro_delivery_method', value: 'hand_delivery' } : null,
+      facilityPickup ? { key: 'peppro_delivery_method', value: 'facility_pickup' } : null,
       Number.isFinite(shippingEstimate.estimatedDeliveryDays)
         ? { key: 'peppro_estimated_delivery_days', value: shippingEstimate.estimatedDeliveryDays }
         : null,
@@ -693,6 +711,7 @@ const buildOrderPayload = async ({ order, customer }) => {
   const finalTotal = useProvidedTotal ? providedTotal : computedTotal;
   const manualTaxRateId = taxTotal > 0 ? await ensurePepProManualTaxRateId() : null;
   const feeLines = [];
+  const fulfillmentMethod = String(order.fulfillmentMethod || order.fulfillment_method || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
   const metaData = [
     { key: 'peppro_order_id', value: order.id },
@@ -704,6 +723,9 @@ const buildOrderPayload = async ({ order, customer }) => {
     ...(taxTotal > 0 ? [{ key: 'peppro_tax_total', value: taxTotal }] : []),
     { key: 'peppro_created_at', value: order.createdAt },
     { key: 'peppro_origin', value: 'PepPro Web Checkout' },
+    ...(fulfillmentMethod
+      ? [{ key: 'peppro_fulfillment_method', value: fulfillmentMethod }]
+      : []),
     { key: '_order_number', value: order.id },
     { key: '_order_number_formatted', value: order.id },
     { key: 'peppro_display_order_id', value: order.id },

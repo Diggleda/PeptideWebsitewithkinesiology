@@ -2344,6 +2344,7 @@ const buildOrderFingerprint = (payload: {
   discountCodeAmount?: number | null;
   paymentMethod?: string | null;
   handDelivery?: boolean;
+  facilityPickup?: boolean;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
   taxTotal?: number | null;
   delegateProposalToken?: string | null;
@@ -2363,6 +2364,7 @@ const buildOrderFingerprint = (payload: {
   const shippingPostalCode = shippingAddress?.postalCode || shippingAddress?.postcode || null;
   const shippingCountry = shippingAddress?.country || null;
   const shippingState = shippingAddress?.state || null;
+  const shippingName = shippingAddress?.name || shippingAddress?.fullName || null;
 
   return JSON.stringify({
     items: normalizedItems,
@@ -2375,6 +2377,7 @@ const buildOrderFingerprint = (payload: {
         : null,
     paymentMethod: payload.paymentMethod || null,
     handDelivery: payload.handDelivery === true,
+    facilityPickup: payload.facilityPickup === true,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
     delegateProposalToken:
       typeof payload.delegateProposalToken === 'string' && payload.delegateProposalToken.trim()
@@ -2384,6 +2387,7 @@ const buildOrderFingerprint = (payload: {
       postalCode: shippingPostalCode,
       country: shippingCountry,
       state: shippingState,
+      name: shippingName,
       shippingTotal: payload.shipping?.shippingTotal ?? null,
     },
   });
@@ -2436,6 +2440,7 @@ export const ordersAPI = {
     options?: {
       physicianCertification?: boolean;
       handDelivery?: boolean;
+      facilityPickup?: boolean;
       delegateProposalToken?: string | null;
     },
     taxTotal?: number | null,
@@ -2451,6 +2456,7 @@ export const ordersAPI = {
       shipping,
       paymentMethod,
       handDelivery: options?.handDelivery === true,
+      facilityPickup: options?.facilityPickup === true,
       taxTotal,
       delegateProposalToken: options?.delegateProposalToken ?? null,
     });
@@ -2478,8 +2484,10 @@ export const ordersAPI = {
         expectedShipmentWindow: expectedShipmentWindow ?? null,
         physicianCertification: options?.physicianCertification === true,
         handDelivery: options?.handDelivery === true,
-        ...(options?.handDelivery === true
+        facilityPickup: options?.facilityPickup === true,
+        ...(options?.facilityPickup === true
           ? {
+              facilityPickup: true,
               facility_pickup: true,
               fascility_pickup: true,
             }
@@ -2502,6 +2510,7 @@ export const ordersAPI = {
       shippingEstimate: any;
       shippingTotal: number;
       handDelivery?: boolean;
+      facilityPickup?: boolean;
       paymentMethod?: string | null;
       discountCode?: string | null;
     },
@@ -2511,8 +2520,9 @@ export const ordersAPI = {
       method: 'POST',
       body: JSON.stringify({
         ...payload,
-        ...(payload?.handDelivery === true
+        ...(payload?.facilityPickup === true
           ? {
+              facilityPickup: true,
               facility_pickup: true,
               fascility_pickup: true,
             }
