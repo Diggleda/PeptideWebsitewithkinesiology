@@ -137,6 +137,7 @@ def create_order():
             shipping_address.get("recipientName")
             or shipping_address.get("recipient_name")
             or shipping_address.get("fullName")
+            or shipping_address.get("name")
             or None
         )
     facility_pickup = bool(

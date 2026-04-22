@@ -1822,6 +1822,38 @@ def _normalize_address_field(value: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
+def _split_person_name(value: object) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if not text:
+        return "", ""
+    parts = [part for part in re.split(r"\s+", text) if part]
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def _apply_facility_pickup_recipient_name(address: object, recipient_name: object) -> object:
+    if not isinstance(address, dict):
+        return address
+    normalized_name = _normalize_address_field(recipient_name)
+    if not normalized_name or _is_facility_pickup_recipient_placeholder(normalized_name):
+        return address
+    first_name, last_name = _split_person_name(normalized_name)
+    return {
+        **address,
+        "name": normalized_name,
+        "fullName": normalized_name,
+        "recipientName": normalized_name,
+        "recipient_name": normalized_name,
+        "firstName": first_name,
+        "lastName": last_name,
+        "first_name": first_name,
+        "last_name": last_name,
+    }
+
+
 def _build_facility_pickup_shipping_address(
     user: Optional[Dict],
     shipping_address: Optional[Dict],
@@ -1845,10 +1877,10 @@ def _build_facility_pickup_shipping_address(
         or _normalize_address_field((user or {}).get("name") if isinstance(user, dict) else None)
         or FACILITY_PICKUP_LOCATION.get("name")
     )
-    return {
+    return _apply_facility_pickup_recipient_name({
         **FACILITY_PICKUP_LOCATION,
         "name": resolved_name,
-    }
+    }, resolved_name)
 
 
 def _extract_user_address_fields(shipping_address: Optional[Dict]) -> Dict[str, Optional[str]]:
@@ -4509,9 +4541,9 @@ def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
     )
     if facility_pickup_recipient_name:
         if shipping_address:
-            shipping_address = {**shipping_address, "name": facility_pickup_recipient_name}
+            shipping_address = _apply_facility_pickup_recipient_name(shipping_address, facility_pickup_recipient_name)
         if billing_address:
-            billing_address = {**billing_address, "name": facility_pickup_recipient_name}
+            billing_address = _apply_facility_pickup_recipient_name(billing_address, facility_pickup_recipient_name)
     integrations = _ensure_dict(local_order.get("integrationDetails") or local_order.get("integrations"))
     shipstation = _ensure_dict(integrations.get("shipStation") or integrations.get("shipstation"))
 
@@ -4846,21 +4878,27 @@ def get_sales_rep_order_detail(
             )
             if local_facility_pickup_recipient_name:
                 if local_shipping:
-                    local_shipping = {**local_shipping, "name": local_facility_pickup_recipient_name}
+                    local_shipping = _apply_facility_pickup_recipient_name(
+                        local_shipping,
+                        local_facility_pickup_recipient_name,
+                    )
                 if local_billing:
-                    local_billing = {**local_billing, "name": local_facility_pickup_recipient_name}
+                    local_billing = _apply_facility_pickup_recipient_name(
+                        local_billing,
+                        local_facility_pickup_recipient_name,
+                    )
                 mapped["facilityPickupRecipientName"] = local_facility_pickup_recipient_name
                 mapped["facility_pickup_recipient_name"] = local_facility_pickup_recipient_name
                 if _has_populated_address(mapped.get("shippingAddress")):
-                    mapped["shippingAddress"] = {
-                        **_ensure_dict(mapped.get("shippingAddress")),
-                        "name": local_facility_pickup_recipient_name,
-                    }
+                    mapped["shippingAddress"] = _apply_facility_pickup_recipient_name(
+                        _ensure_dict(mapped.get("shippingAddress")),
+                        local_facility_pickup_recipient_name,
+                    )
                 if _has_populated_address(mapped.get("billingAddress")):
-                    mapped["billingAddress"] = {
-                        **_ensure_dict(mapped.get("billingAddress")),
-                        "name": local_facility_pickup_recipient_name,
-                    }
+                    mapped["billingAddress"] = _apply_facility_pickup_recipient_name(
+                        _ensure_dict(mapped.get("billingAddress")),
+                        local_facility_pickup_recipient_name,
+                    )
             local_payment = (
                 local_order.get("paymentDetails")
                 or local_order.get("paymentMethod")

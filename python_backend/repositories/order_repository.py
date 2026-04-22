@@ -22,6 +22,50 @@ def _normalize_optional_string(value: object) -> Optional[str]:
     return text or None
 
 
+def _is_facility_pickup_recipient_placeholder(value: object) -> bool:
+    text = str(value or "").strip().lower().replace(".", "").replace(",", "")
+    text = " ".join(text.split())
+    return text == "peppro facility pickup"
+
+
+def _normalize_facility_pickup_recipient_name(*values: object) -> Optional[str]:
+    for value in values:
+        text = _normalize_optional_string(value)
+        if text and not _is_facility_pickup_recipient_placeholder(text):
+            return text
+    return None
+
+
+def _split_person_name(value: object) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if not text:
+        return "", ""
+    parts = text.split()
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def _apply_facility_pickup_recipient_name(address: object, recipient_name: object) -> object:
+    if not isinstance(address, dict):
+        return address
+    normalized_name = _normalize_facility_pickup_recipient_name(recipient_name)
+    if not normalized_name:
+        return address
+    first_name, last_name = _split_person_name(normalized_name)
+    return {
+        **address,
+        "name": normalized_name,
+        "fullName": normalized_name,
+        "recipientName": normalized_name,
+        "recipient_name": normalized_name,
+        "firstName": first_name,
+        "lastName": last_name,
+        "first_name": first_name,
+        "last_name": last_name,
+    }
+
+
 def _normalize_optional_string_max(value: object, max_len: int) -> Optional[str]:
     text = _normalize_optional_string(value)
     if text is None:
@@ -958,6 +1002,29 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             entry["fulfillmentMethod"] = "facility_pickup"
         elif not entry.get("fulfillmentMethod"):
             entry["fulfillmentMethod"] = "shipping"
+        facility_pickup_recipient_name = _normalize_facility_pickup_recipient_name(
+            entry.get("facilityPickupRecipientName"),
+            entry.get("facility_pickup_recipient_name"),
+            entry.get("shippingAddress", {}).get("recipientName") if isinstance(entry.get("shippingAddress"), dict) else None,
+            entry.get("shippingAddress", {}).get("recipient_name") if isinstance(entry.get("shippingAddress"), dict) else None,
+            entry.get("shippingAddress", {}).get("fullName") if isinstance(entry.get("shippingAddress"), dict) else None,
+            entry.get("billingAddress", {}).get("recipientName") if isinstance(entry.get("billingAddress"), dict) else None,
+            entry.get("billingAddress", {}).get("recipient_name") if isinstance(entry.get("billingAddress"), dict) else None,
+            entry.get("billingAddress", {}).get("fullName") if isinstance(entry.get("billingAddress"), dict) else None,
+        )
+        if entry.get("facilityPickup") and facility_pickup_recipient_name:
+            entry["facilityPickupRecipientName"] = facility_pickup_recipient_name
+            entry["facility_pickup_recipient_name"] = facility_pickup_recipient_name
+            if isinstance(entry.get("shippingAddress"), dict):
+                entry["shippingAddress"] = _apply_facility_pickup_recipient_name(
+                    entry.get("shippingAddress"),
+                    facility_pickup_recipient_name,
+                )
+            if isinstance(entry.get("billingAddress"), dict):
+                entry["billingAddress"] = _apply_facility_pickup_recipient_name(
+                    entry.get("billingAddress"),
+                    facility_pickup_recipient_name,
+                )
         entry["upsTrackingStatus"] = _resolve_persisted_ups_tracking_status(entry)
         if not entry.get("upsDeliveredAt") and entry.get("upsTrackingStatus") == "delivered":
             entry["upsDeliveredAt"] = _normalize_timestamp_like_string(entry.get("deliveryDate"))
@@ -2225,6 +2292,29 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         order["fulfillmentMethod"] = "facility_pickup"
     elif not order.get("fulfillmentMethod"):
         order["fulfillmentMethod"] = "shipping"
+    facility_pickup_recipient_name = _normalize_facility_pickup_recipient_name(
+        order.get("facilityPickupRecipientName"),
+        order.get("facility_pickup_recipient_name"),
+        order.get("shippingAddress", {}).get("recipientName") if isinstance(order.get("shippingAddress"), dict) else None,
+        order.get("shippingAddress", {}).get("recipient_name") if isinstance(order.get("shippingAddress"), dict) else None,
+        order.get("shippingAddress", {}).get("fullName") if isinstance(order.get("shippingAddress"), dict) else None,
+        order.get("billingAddress", {}).get("recipientName") if isinstance(order.get("billingAddress"), dict) else None,
+        order.get("billingAddress", {}).get("recipient_name") if isinstance(order.get("billingAddress"), dict) else None,
+        order.get("billingAddress", {}).get("fullName") if isinstance(order.get("billingAddress"), dict) else None,
+    )
+    if bool(order.get("facilityPickup")) and facility_pickup_recipient_name:
+        order["facilityPickupRecipientName"] = facility_pickup_recipient_name
+        order["facility_pickup_recipient_name"] = facility_pickup_recipient_name
+        if isinstance(order.get("shippingAddress"), dict):
+            order["shippingAddress"] = _apply_facility_pickup_recipient_name(
+                order.get("shippingAddress"),
+                facility_pickup_recipient_name,
+            )
+        if isinstance(order.get("billingAddress"), dict):
+            order["billingAddress"] = _apply_facility_pickup_recipient_name(
+                order.get("billingAddress"),
+                facility_pickup_recipient_name,
+            )
     return _apply_ups_status_to_order(order, order.get("upsTrackingStatus"))
 
 

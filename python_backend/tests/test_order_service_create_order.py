@@ -342,6 +342,10 @@ class CreateOrderTests(unittest.TestCase):
         )
 
         self.assertEqual(address["name"], "Recipient Patient")
+        self.assertEqual(address["recipientName"], "Recipient Patient")
+        self.assertEqual(address["recipient_name"], "Recipient Patient")
+        self.assertEqual(address["firstName"], "Recipient")
+        self.assertEqual(address["lastName"], "Patient")
         self.assertEqual(address["addressLine1"], "640 S Grand Ave")
         self.assertEqual(address["postalCode"], "92705")
 
@@ -436,7 +440,13 @@ class CreateOrderTests(unittest.TestCase):
 
         self.assertEqual(len(inserted_orders), 1)
         self.assertEqual(inserted_orders[0]["shippingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["shippingAddress"]["recipientName"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["shippingAddress"]["firstName"], "Recipient")
+        self.assertEqual(inserted_orders[0]["shippingAddress"]["lastName"], "Patient")
         self.assertEqual(inserted_orders[0]["billingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["billingAddress"]["recipientName"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["billingAddress"]["firstName"], "Recipient")
+        self.assertEqual(inserted_orders[0]["billingAddress"]["lastName"], "Patient")
         self.assertEqual(inserted_orders[0]["facilityPickupRecipientName"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "facility_pickup")
         self.assertTrue(inserted_orders[0]["facilityPickup"])

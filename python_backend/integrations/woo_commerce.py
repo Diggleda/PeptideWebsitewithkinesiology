@@ -2448,9 +2448,9 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     )
     if is_facility_pickup and facility_pickup_recipient_name:
         if shipping_address:
-            shipping_address = {**shipping_address, "name": facility_pickup_recipient_name}
+            shipping_address = _apply_facility_pickup_recipient_name(shipping_address, facility_pickup_recipient_name)
         if billing_address:
-            billing_address = {**billing_address, "name": facility_pickup_recipient_name}
+            billing_address = _apply_facility_pickup_recipient_name(billing_address, facility_pickup_recipient_name)
 
     mapped = {
         "id": identifier,

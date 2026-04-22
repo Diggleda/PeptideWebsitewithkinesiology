@@ -198,6 +198,40 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
         self.assertEqual(order["fulfillmentMethod"], "facility_pickup")
 
     @patch("python_backend.repositories.order_repository.decrypt_json", return_value=None)
+    def test_row_to_order_restores_facility_pickup_recipient_name(self, _decrypt_json):
+        order = order_repository._row_to_order(
+            {
+                "id": "order-pickup-4",
+                "user_id": "user-pickup-4",
+                "items": "[]",
+                "total": 50.0,
+                "items_subtotal": 50.0,
+                "shipping_total": 0.0,
+                "shipping_rate": '{"carrierId":"facility_pickup","serviceCode":"facility_pickup","serviceType":"Facility pickup"}',
+                "shipping_address": '{"name":"Sales Lead User","addressLine1":"640 S Grand Ave","addressLine2":"Unit #107","city":"Santa Ana","state":"CA","postalCode":"92705","country":"US"}',
+                "facility_pickup": 1,
+                "fulfillment_method": "facility_pickup",
+                "shipping_service": "Facility pickup",
+                "status": "pending",
+                "payload": (
+                    '{"facilityPickupRecipientName":"Recipient Patient",'
+                    '"billingAddress":{"name":"Sales Lead User","addressLine1":"640 S Grand Ave",'
+                    '"addressLine2":"Unit #107","city":"Santa Ana","state":"CA","postalCode":"92705","country":"US"}}'
+                ),
+                "created_at": datetime(2026, 4, 20, 0, 0, 0),
+                "updated_at": datetime(2026, 4, 20, 0, 0, 0),
+            }
+        )
+
+        self.assertEqual(order["facilityPickupRecipientName"], "Recipient Patient")
+        self.assertEqual(order["shippingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(order["shippingAddress"]["recipientName"], "Recipient Patient")
+        self.assertEqual(order["shippingAddress"]["firstName"], "Recipient")
+        self.assertEqual(order["shippingAddress"]["lastName"], "Patient")
+        self.assertEqual(order["billingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(order["billingAddress"]["recipientName"], "Recipient Patient")
+
+    @patch("python_backend.repositories.order_repository.decrypt_json", return_value=None)
     @patch("python_backend.repositories.order_repository.mysql_client.fetch_all")
     @patch("python_backend.repositories.order_repository._using_mysql", return_value=True)
     def test_list_user_overlay_fields_exposes_payment_tracking_and_billing_from_payload(
