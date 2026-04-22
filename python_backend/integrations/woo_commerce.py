@@ -289,6 +289,23 @@ def _build_woo_address(
     }
 
 
+def _apply_facility_pickup_recipient_name(address: object, recipient_name: str) -> object:
+    if not isinstance(address, dict):
+        return address
+    first_name, last_name = _split_person_name(recipient_name)
+    return {
+        **address,
+        "name": recipient_name,
+        "fullName": recipient_name,
+        "recipientName": recipient_name,
+        "recipient_name": recipient_name,
+        "firstName": first_name,
+        "lastName": last_name,
+        "first_name": first_name,
+        "last_name": last_name,
+    }
+
+
 def _summarize_woo_payload(payload: object) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return {"type": type(payload).__name__}
@@ -1358,9 +1375,9 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         )
         if pickup_recipient_name:
             if isinstance(shipping_address, dict):
-                shipping_address = {**shipping_address, "name": pickup_recipient_name}
+                shipping_address = _apply_facility_pickup_recipient_name(shipping_address, pickup_recipient_name)
             if isinstance(billing_address, dict):
-                billing_address = {**billing_address, "name": pickup_recipient_name}
+                billing_address = _apply_facility_pickup_recipient_name(billing_address, pickup_recipient_name)
     sales_rep_id = (
         order.get("doctorSalesRepId")
         or order.get("salesRepId")

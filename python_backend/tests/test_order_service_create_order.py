@@ -467,6 +467,8 @@ class CreateOrderTests(unittest.TestCase):
                 },
                 "shippingAddress": {
                     "name": "Sales Lead User",
+                    "firstName": "Sales",
+                    "lastName": "Lead",
                     "addressLine1": "640 S Grand Ave",
                     "addressLine2": "Unit #107",
                     "city": "Santa Ana",
@@ -498,6 +500,8 @@ class CreateOrderTests(unittest.TestCase):
 
         self.assertEqual(payload["shipping"]["first_name"], "Recipient")
         self.assertEqual(payload["shipping"]["last_name"], "Patient")
+        self.assertEqual(payload["billing"]["first_name"], "Recipient")
+        self.assertEqual(payload["billing"]["last_name"], "Patient")
         meta = {entry["key"]: entry.get("value") for entry in payload["meta_data"]}
         self.assertEqual(meta["peppro_facility_pickup_recipient_name"], "Recipient Patient")
 
