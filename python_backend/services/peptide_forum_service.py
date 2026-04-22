@@ -32,6 +32,25 @@ def _norm_text(value: Any) -> str:
     return _to_str(value).strip()
 
 
+def _normalize_duration_minutes(item: Any) -> Optional[int]:
+    if not isinstance(item, dict):
+        return None
+    raw = (
+        item.get("durationMinutes")
+        or item.get("duration_minutes")
+        or item.get("duration")
+        or item.get("lengthMinutes")
+        or item.get("length_minutes")
+    )
+    try:
+        value = float(_norm_text(raw))
+    except Exception:
+        return None
+    if value <= 0:
+        return None
+    return int(round(value))
+
+
 def _parse_time_parts(raw: str) -> Optional[Tuple[int, int, int]]:
     raw = (raw or "").strip()
     if not raw:
@@ -124,6 +143,24 @@ def _try_parse_datetime(date_value: Any, time_value: Any = None) -> Tuple[Option
         return None, date_raw, (time_raw or None)
 
 
+def _is_calendar_date_only(value: str) -> bool:
+    import re
+
+    raw = (value or "").strip()
+    return bool(
+        re.match(r"^\d{4}-\d{1,2}-\d{1,2}$", raw)
+        or re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", raw)
+    )
+
+
+def _try_parse_end_datetime(date_value: Any, time_value: Any = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    date_raw = _norm_text(date_value)
+    time_raw = _norm_text(time_value)
+    if date_raw and not time_raw and _is_calendar_date_only(date_raw):
+        return _try_parse_datetime(date_raw, "23:59:59")
+    return _try_parse_datetime(date_value, time_value)
+
+
 def list_items() -> Dict[str, Any]:
     config = get_config()
     if bool(config.mysql.get("enabled")):
@@ -147,6 +184,26 @@ def _normalize_item(item: Any, index: int) -> Tuple[Optional[Dict[str, Any]], Op
         (item or {}).get("date") if isinstance(item, dict) else None,
         (item or {}).get("time") if isinstance(item, dict) else None,
     )
+    end_date_input = None
+    end_time_input = None
+    if isinstance(item, dict):
+        end_date_input = (
+            item.get("endDate")
+            or item.get("end_date")
+            or item.get("endsAt")
+            or item.get("ends_at")
+            or item.get("endAt")
+            or item.get("end_at")
+            or item.get("end")
+        )
+        end_time_input = (
+            item.get("endTime")
+            or item.get("end_time")
+            or item.get("endTimeRaw")
+            or item.get("end_time_raw")
+        )
+    end_date_iso, end_date_raw, end_time_raw = _try_parse_end_datetime(end_date_input, end_time_input)
+    duration_minutes = _normalize_duration_minutes(item)
 
     if not title and not link and not recording:
         return None, f"Row {index}: missing title/link/recording"
@@ -163,6 +220,10 @@ def _normalize_item(item: Any, index: int) -> Tuple[Optional[Dict[str, Any]], Op
             "description": description or None,
             "link": link or None,
             "recording": recording or None,
+            "endDate": end_date_iso or end_date_raw or None,
+            "endDateRaw": end_date_raw or None,
+            "endTime": end_time_raw or None,
+            "durationMinutes": duration_minutes,
         },
         None,
     )
@@ -200,6 +261,23 @@ def replace_from_webhook(items: List[Dict[str, Any]]) -> Dict[str, Any]:
                 except Exception:
                     date_at = None
 
+            end_date_value = post.get("endDate")
+            end_time_value = post.get("endTime")
+            end_date_iso, end_date_raw, end_time_raw = _try_parse_end_datetime(
+                end_date_value,
+                end_time_value,
+            )
+            end_at = None
+            if end_date_iso:
+                try:
+                    end_at = (
+                        datetime.fromisoformat(end_date_iso.replace("Z", "+00:00"))
+                        .astimezone(timezone.utc)
+                        .replace(tzinfo=None)
+                    )
+                except Exception:
+                    end_at = None
+
             peptide_forum_repository.upsert_post(
                 {
                     "id": post.get("id"),
@@ -207,6 +285,10 @@ def replace_from_webhook(items: List[Dict[str, Any]]) -> Dict[str, Any]:
                     "date_at": date_at,
                     "date_raw": date_raw,
                     "time_raw": time_raw,
+                    "end_at": end_at,
+                    "end_date_raw": post.get("endDateRaw") or end_date_raw,
+                    "end_time_raw": end_time_raw,
+                    "duration_minutes": post.get("durationMinutes"),
                     "description": post.get("description"),
                     "link": post.get("link"),
                     "recording_link": post.get("recording"),

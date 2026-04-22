@@ -13,7 +13,9 @@ function onOpen() {
     .addToUi();
 }
 
-// Column A = Title, Column B = Date, Column C = Time (PST), Column D = Description, Column E = Link, Column F = Recording (Link), Column G = Sync Status
+// Column A = Title, Column B = Date, Column C = Time (PST), Column D = Description, Column E = Link,
+// Column F = Recording (Link), Column G = Sync Status. Optional columns can be added after that:
+// H = End Date, I = End Time (PST), J = Duration Minutes.
 function syncPeptideForum() {
   const sheet = SpreadsheetApp.getActiveSheet();
   // Use display values so "Time" stays exactly what the Sheet shows (prevents timezone shifts
@@ -32,6 +34,15 @@ function syncPeptideForum() {
   const norm = (s) => toStr(s).trim();
   const formatSheetDate = (v) => (v instanceof Date ? Utilities.formatDate(v, TIMEZONE, 'yyyy-MM-dd') : norm(v));
   const formatSheetTime = (v) => (v instanceof Date ? Utilities.formatDate(v, TIMEZONE, 'h:mm a') : norm(v));
+  const headerRow = display[0] || [];
+  const findColumn = (labels, fallbackIndex) => {
+    const normalizedLabels = labels.map(label => String(label).trim().toLowerCase());
+    const index = headerRow.findIndex(header => normalizedLabels.includes(String(header || '').trim().toLowerCase()));
+    return index >= 0 ? index : fallbackIndex;
+  };
+  const endDateCol = findColumn(['End Date', 'End date', 'Ends At', 'End'], 7);
+  const endTimeCol = findColumn(['End Time', 'End time'], 8);
+  const durationCol = findColumn(['Duration Minutes', 'Duration', 'Length Minutes'], 9);
 
   const items = [];
   const hasAnyData = displayRows.map(r => r.some(c => c && String(c).trim() !== ''));
@@ -43,10 +54,17 @@ function syncPeptideForum() {
     const description = norm(displayRows[i]?.[3] ?? rows[i][3]); // Col D
     const link = norm(displayRows[i]?.[4] ?? rows[i][4]); // Col E
     const recording = norm(displayRows[i]?.[5] ?? rows[i][5]); // Col F
+    const endDate = norm(displayRows[i]?.[endDateCol] ?? formatSheetDate(rows[i][endDateCol]));
+    const endTime = norm(displayRows[i]?.[endTimeCol] ?? formatSheetTime(rows[i][endTimeCol]));
+    const durationMinutes = norm(displayRows[i]?.[durationCol] ?? rows[i][durationCol]);
 
     // consider a row "non-empty" only if it has title or link content
     if (title === '' && link === '' && recording === '') continue;
-    items.push({ title, date, time, description, link, recording });
+    const item = { title, date, time, description, link, recording };
+    if (endDate) item.endDate = endDate;
+    if (endTime) item.endTime = endTime;
+    if (durationMinutes) item.durationMinutes = durationMinutes;
+    items.push(item);
   }
 
   // Prepare a status column buffer (Column G) sized to all data rows

@@ -12,6 +12,18 @@ const normalizeOptionalText = (value) => {
   return text ? text : null;
 };
 
+const normalizeDurationMinutes = (item) => {
+  const raw =
+    item?.durationMinutes ??
+    item?.duration_minutes ??
+    item?.duration ??
+    item?.lengthMinutes ??
+    item?.length_minutes ??
+    null;
+  const value = typeof raw === 'number' ? raw : Number(normalizeText(raw));
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+};
+
 const tryParseDateTime = (dateValue, timeValue) => {
   const rawDate = normalizeText(dateValue);
   const rawTime = normalizeText(timeValue);
@@ -35,6 +47,19 @@ const tryParseDateTime = (dateValue, timeValue) => {
   return { iso: null, rawDate, rawTime: rawTime || null };
 };
 
+const isCalendarDateOnly = (value) =>
+  /^\d{4}-\d{1,2}-\d{1,2}$/.test(String(value || '').trim()) ||
+  /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(String(value || '').trim());
+
+const tryParseEndDateTime = (dateValue, timeValue) => {
+  const rawDate = normalizeText(dateValue);
+  const rawTime = normalizeText(timeValue);
+  if (rawDate && !rawTime && isCalendarDateOnly(rawDate)) {
+    return tryParseDateTime(rawDate, '23:59:59');
+  }
+  return tryParseDateTime(dateValue, timeValue);
+};
+
 const isLikelyUrl = (value) => /^https?:\/\//i.test(String(value || '').trim());
 
 const normalizeItem = (item, index) => {
@@ -43,6 +68,14 @@ const normalizeItem = (item, index) => {
   const link = normalizeText(item?.link);
   const recording = normalizeOptionalText(item?.recording);
   const { iso: dateIso, rawDate, rawTime } = tryParseDateTime(item?.date, item?.time);
+  const endDateInput =
+    item?.endDate ?? item?.end_date ?? item?.endsAt ?? item?.ends_at ?? item?.endAt ?? item?.end_at ?? item?.end;
+  const endTimeInput = item?.endTime ?? item?.end_time ?? item?.endTimeRaw ?? item?.end_time_raw;
+  const { iso: endDateIso, rawDate: endRawDate, rawTime: endRawTime } = tryParseEndDateTime(
+    endDateInput,
+    endTimeInput,
+  );
+  const durationMinutes = normalizeDurationMinutes(item);
 
   if (!title && !link) {
     return { ok: false, error: `Row ${index}: missing title and link` };
@@ -67,6 +100,10 @@ const normalizeItem = (item, index) => {
       description,
       link: link || null,
       recording,
+      endDate: endDateIso || endRawDate || null,
+      endDateRaw: endRawDate || null,
+      endTime: endRawTime || null,
+      durationMinutes,
     },
   };
 };
@@ -105,6 +142,10 @@ const persistToMysql = async (items) => {
           event_date,
           event_date_raw,
           event_time_raw,
+          event_end_date,
+          event_end_date_raw,
+          event_end_time_raw,
+          duration_minutes,
           description,
           link,
           recording,
@@ -115,6 +156,10 @@ const persistToMysql = async (items) => {
           :eventDate,
           :eventDateRaw,
           :eventTimeRaw,
+          :eventEndDate,
+          :eventEndDateRaw,
+          :eventEndTimeRaw,
+          :durationMinutes,
           :description,
           :link,
           :recording,
@@ -125,6 +170,10 @@ const persistToMysql = async (items) => {
           event_date = VALUES(event_date),
           event_date_raw = VALUES(event_date_raw),
           event_time_raw = VALUES(event_time_raw),
+          event_end_date = VALUES(event_end_date),
+          event_end_date_raw = VALUES(event_end_date_raw),
+          event_end_time_raw = VALUES(event_end_time_raw),
+          duration_minutes = VALUES(duration_minutes),
           description = VALUES(description),
           link = VALUES(link),
           recording = VALUES(recording),
@@ -136,6 +185,13 @@ const persistToMysql = async (items) => {
         eventDate: toSqlDateTime(item.date),
         eventDateRaw: item.date ? String(item.date) : null,
         eventTimeRaw: item.time ? String(item.time) : null,
+        eventEndDate: toSqlDateTime(item.endDate),
+        eventEndDateRaw: item.endDateRaw ? String(item.endDateRaw) : null,
+        eventEndTimeRaw: item.endTime ? String(item.endTime) : null,
+        durationMinutes:
+          typeof item.durationMinutes === 'number' && Number.isFinite(item.durationMinutes)
+            ? Math.round(item.durationMinutes)
+            : null,
         description: item.description || null,
         link: item.link || null,
         recording: item.recording || null,

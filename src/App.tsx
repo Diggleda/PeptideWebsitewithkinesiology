@@ -959,6 +959,21 @@ interface PeptideNewsItem {
   date?: string;
 }
 
+interface PeptideForumItem {
+  id: string;
+  title: string;
+  date?: string | null;
+  time?: string | null;
+  description?: string | null;
+  link?: string | null;
+  recording?: string | null;
+  endDate?: string | null;
+  endDateRaw?: string | null;
+  endTime?: string | null;
+  durationMinutes?: number | string | null;
+  [key: string]: unknown;
+}
+
 interface AccountOrderLineItem {
   id?: string | null;
   name?: string | null;
@@ -3478,6 +3493,144 @@ const namesRoughlyMatch = (a: string, b: string) => {
 
 const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23B7D8F9'/%3E%3Cstop offset='100%25' stop-color='%2395C5F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='16' fill='url(%23grad)'/%3E%3Cpath d='M35 80l15-18 12 14 11-12 12 16' stroke='%23ffffff' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='44' cy='43' r='9' fill='none' stroke='%23ffffff' stroke-width='5'/%3E%3C/svg%3E";
+
+const PEPTIDE_FORUM_FIXED_PST_OFFSET_MS = -8 * 60 * 60 * 1000;
+const PEPTIDE_FORUM_JOIN_WINDOW_MS = 10 * 60 * 1000;
+
+const getPeptideForumString = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const parsePeptideForumTimestamp = (value: unknown): number => {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) ? time : Number.NaN;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : Number.NaN;
+  }
+  const text = getPeptideForumString(value);
+  if (!text) {
+    return Number.NaN;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const parsePeptideForumDurationMinutes = (item: PeptideForumItem): number | null => {
+  const raw =
+    item.durationMinutes ??
+    item.duration_minutes ??
+    item.duration ??
+    item.lengthMinutes ??
+    item.length_minutes ??
+    null;
+  const value =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string" && raw.trim().length > 0
+        ? Number(raw.trim())
+        : Number.NaN;
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const getPeptideForumEndDateValue = (item: PeptideForumItem): unknown =>
+  item.endDate ??
+  item.end_date ??
+  item.endsAt ??
+  item.ends_at ??
+  item.endAt ??
+  item.end_at ??
+  item.end ??
+  null;
+
+const getPeptideForumEndTimeValue = (item: PeptideForumItem): unknown =>
+  item.endTime ??
+  item.end_time ??
+  item.endTimeRaw ??
+  item.end_time_raw ??
+  null;
+
+const getPeptideForumEndOfFixedPstDayMs = (startMs: number): number => {
+  if (!Number.isFinite(startMs)) {
+    return Number.NaN;
+  }
+  const fixedPstDate = new Date(startMs + PEPTIDE_FORUM_FIXED_PST_OFFSET_MS);
+  return (
+    Date.UTC(
+      fixedPstDate.getUTCFullYear(),
+      fixedPstDate.getUTCMonth(),
+      fixedPstDate.getUTCDate() + 1,
+    ) -
+    PEPTIDE_FORUM_FIXED_PST_OFFSET_MS -
+    1
+  );
+};
+
+const getPeptideForumTiming = (item: PeptideForumItem, nowMs = Date.now()) => {
+  const startMs = parsePeptideForumTimestamp(item.date ?? null);
+  const explicitEndValue = getPeptideForumEndDateValue(item);
+  let explicitEndMs = parsePeptideForumTimestamp(explicitEndValue);
+  const rawEndDate = getPeptideForumString(item.endDateRaw ?? item.end_date_raw ?? null);
+  const rawEndTime = getPeptideForumString(getPeptideForumEndTimeValue(item));
+  if (
+    Number.isFinite(explicitEndMs) &&
+    !rawEndTime &&
+    rawEndDate &&
+    !/[T ]\d{1,2}:\d{2}/.test(rawEndDate)
+  ) {
+    explicitEndMs = getPeptideForumEndOfFixedPstDayMs(explicitEndMs);
+  }
+  const durationMinutes = parsePeptideForumDurationMinutes(item);
+  const endMs = Number.isFinite(explicitEndMs)
+    ? explicitEndMs
+    : Number.isFinite(startMs) && durationMinutes
+      ? startMs + durationMinutes * 60_000
+      : getPeptideForumEndOfFixedPstDayMs(startMs);
+  const joinWindowStartMs = Number.isFinite(startMs)
+    ? startMs - PEPTIDE_FORUM_JOIN_WINDOW_MS
+    : Number.NaN;
+
+  return {
+    startMs,
+    endMs,
+    isPast: Number.isFinite(endMs) ? nowMs > endMs : false,
+    isOngoing:
+      Number.isFinite(startMs) &&
+      Number.isFinite(endMs) &&
+      nowMs >= startMs &&
+      nowMs <= endMs,
+    isJoinWindow:
+      Number.isFinite(joinWindowStartMs) &&
+      Number.isFinite(endMs) &&
+      nowMs >= joinWindowStartMs &&
+      nowMs <= endMs,
+  };
+};
+
+const hasPeptideForumLink = (item: PeptideForumItem) =>
+  Boolean(item?.link && String(item.link).trim());
+
+const hasPeptideForumRecording = (item: PeptideForumItem) =>
+  Boolean(item?.recording && String(item.recording).trim());
+
+const shouldShowPeptideForumItem = (item: PeptideForumItem, nowMs = Date.now()) => {
+  const hasRecording = hasPeptideForumRecording(item);
+  const hasWebinarLink = hasPeptideForumLink(item);
+  const timing = getPeptideForumTiming(item, nowMs);
+
+  if (!Number.isFinite(timing.startMs)) {
+    return hasWebinarLink || hasRecording;
+  }
+  if (timing.isPast) {
+    return hasRecording;
+  }
+  return hasWebinarLink || hasRecording;
+};
 
 const MIN_NEWS_LOADING_MS = 600;
 const LOGIN_KEEPALIVE_INTERVAL_MS = 60000;
@@ -6145,16 +6298,7 @@ function MainApp() {
 	  const [peptideForumUpdatedAt, setPeptideForumUpdatedAt] = useState<string | null>(null);
 	  const peptideForumInFlightRef = useRef(false);
 	  const peptideForumLastFetchedAtRef = useRef(0);
-	  const [peptideForumItems, setPeptideForumItems] = useState<
-	    Array<{
-	      id: string;
-	      title: string;
-      date?: string | null;
-      description?: string | null;
-      link?: string | null;
-      recording?: string | null;
-	    }>
-	  >([]);
+	  const [peptideForumItems, setPeptideForumItems] = useState<PeptideForumItem[]>([]);
 	  const [peptideForumExpanded, setPeptideForumExpanded] = useState(false);
 	  const [expandedPeptideForumDescriptions, setExpandedPeptideForumDescriptions] = useState<Record<string, boolean>>({});
   const [referralPollingSuppressed, setReferralPollingSuppressed] =
@@ -16038,9 +16182,27 @@ function MainApp() {
       gunicorn?: { workers?: number | null; threads?: number | null; timeoutSeconds?: number | null } | null;
     } | null;
     processes?: {
-      master?: { pid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null } | null;
-      children?: Array<{ pid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null }> | null;
+      master?: { name?: string | null; pid?: number | null; ppid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null } | null;
+      children?: Array<{ name?: string | null; pid?: number | null; ppid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null }> | null;
     } | null;
+    requests?:
+      | {
+          activeCount?: number | null;
+          slowCount?: number | null;
+          slowAfterSeconds?: number | null;
+          longestActiveSeconds?: number | null;
+          active?:
+            | Array<{
+                ageSeconds?: number | null;
+                method?: string | null;
+                path?: string | null;
+                route?: string | null;
+                clientIp?: string | null;
+                longPoll?: boolean | null;
+              }>
+            | null;
+        }
+      | null;
     backgroundJobs?:
       | {
           status?: string | null;
@@ -16177,6 +16339,42 @@ function MainApp() {
     }
     void fetchServerHealth({ force: true });
   }, [fetchServerHealth, postLoginHold, user?.id, user?.role]);
+  const apiHealthNetworkQuality = useMemo<"poor" | "offline" | null>(() => {
+    if (!user || !isAdmin(user.role)) {
+      return null;
+    }
+    if (!serverHealthPayload && serverHealthError) {
+      return "offline";
+    }
+    return String(serverHealthPayload?.status || "").trim().toLowerCase() === "degraded"
+      ? "poor"
+      : null;
+  }, [serverHealthPayload?.status, serverHealthError, user?.id, user?.role]);
+  const apiHealthNetworkReason = useMemo(() => {
+    if (!apiHealthNetworkQuality) {
+      return null;
+    }
+    const requestStats = serverHealthPayload?.requests;
+    const slowCount =
+      typeof requestStats?.slowCount === "number" && Number.isFinite(requestStats.slowCount)
+        ? requestStats.slowCount
+        : 0;
+    const longest = formatServerHealthDuration(requestStats?.longestActiveSeconds);
+    if (slowCount > 0) {
+      return `${slowCount} slow request${slowCount === 1 ? "" : "s"}${longest ? `, longest ${longest}` : ""}`;
+    }
+    if (serverHealthError && !serverHealthPayload) {
+      return serverHealthError;
+    }
+    return serverHealthPayload?.status === "degraded"
+      ? "backend health reported degraded"
+      : null;
+  }, [
+    apiHealthNetworkQuality,
+    serverHealthPayload?.requests,
+    serverHealthPayload?.status,
+    serverHealthError,
+  ]);
 	  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
 		  const [isIdle, setIsIdle] = useState(false);
 		  const isIdleRef = useRef(false);
@@ -29862,6 +30060,7 @@ function MainApp() {
                     const cgroupMem = serverHealthPayload?.cgroup?.memory || null;
                     const uptime = serverHealthPayload?.uptime || null;
                     const queue = serverHealthPayload?.queue || null;
+                    const requestStats = serverHealthPayload?.requests || null;
                     const backgroundJobs = serverHealthPayload?.backgroundJobs || null;
                     const backgroundMode = String(
                       backgroundJobs?.webProcessMode || "",
@@ -30005,6 +30204,122 @@ function MainApp() {
                       }
                       return details.length > 0 ? details.join(" • ") : null;
                     })();
+                    const activeRequestCount =
+                      typeof requestStats?.activeCount === "number" &&
+                      Number.isFinite(requestStats.activeCount)
+                        ? requestStats.activeCount
+                        : 0;
+                    const slowRequestCount =
+                      typeof requestStats?.slowCount === "number" &&
+                      Number.isFinite(requestStats.slowCount)
+                        ? requestStats.slowCount
+                        : 0;
+                    const slowAfterLabel =
+                      formatServerHealthDuration(requestStats?.slowAfterSeconds) || "20s";
+                    const longestActiveLabel = formatServerHealthDuration(
+                      requestStats?.longestActiveSeconds,
+                    );
+                    const requestPressureValue =
+                      slowRequestCount > 0
+                        ? `${slowRequestCount} slow`
+                        : activeRequestCount > 0
+                          ? `${activeRequestCount} active`
+                          : "Clear";
+                    const requestPressureTone: keyof typeof toneClasses =
+                      slowRequestCount > 0
+                        ? "degraded"
+                        : overallTone === "offline"
+                          ? "offline"
+                          : "healthy";
+                    const activeRequestLines = Array.isArray(requestStats?.active)
+                      ? requestStats.active
+                          .slice(0, 4)
+                          .map((entry) => {
+                            const age = formatServerHealthDuration(entry?.ageSeconds);
+                            const method = String(entry?.method || "").trim();
+                            const path = String(entry?.path || entry?.route || "").trim();
+                            return [age ? `${age} old` : null, method, path]
+                              .filter(Boolean)
+                              .join(" • ");
+                          })
+                          .filter((line) => line.trim().length > 0)
+                      : [];
+                    const activeSlowRequestLines = Array.isArray(requestStats?.active)
+                      ? requestStats.active
+                          .filter((entry) => {
+                            const age =
+                              typeof entry?.ageSeconds === "number" &&
+                              Number.isFinite(entry.ageSeconds)
+                                ? entry.ageSeconds
+                                : 0;
+                            const threshold =
+                              typeof requestStats?.slowAfterSeconds === "number" &&
+                              Number.isFinite(requestStats.slowAfterSeconds)
+                                ? requestStats.slowAfterSeconds
+                                : 20;
+                            return age >= threshold && !entry?.longPoll;
+                          })
+                          .slice(0, 6)
+                          .map((entry) => {
+                            const age = formatServerHealthDuration(entry?.ageSeconds) || "unknown age";
+                            const method = String(entry?.method || "").trim() || "REQUEST";
+                            const path = String(entry?.path || entry?.route || "").trim() || "unknown path";
+                            const ip = String(entry?.clientIp || "").trim();
+                            return `${method} ${path} active for ${age}${ip ? ` from ${ip}` : ""}`;
+                          })
+                      : [];
+                    const workerPoolLines = (() => {
+                      const lines: string[] = [];
+                      const workers = serverHealthPayload?.workers;
+                      if (
+                        typeof workers?.detected === "number" ||
+                        typeof workers?.configured === "number"
+                      ) {
+                        lines.push(
+                          `Worker pool: ${typeof workers?.detected === "number" ? workers.detected : "unknown"} detected / ${typeof workers?.configured === "number" ? workers.configured : "unknown"} configured`,
+                        );
+                      }
+                      if (
+                        typeof gunicorn?.workers === "number" ||
+                        typeof gunicorn?.threads === "number"
+                      ) {
+                        lines.push(
+                          `Gunicorn capacity: ${typeof gunicorn?.workers === "number" ? gunicorn.workers : "?"} workers x ${typeof gunicorn?.threads === "number" ? gunicorn.threads : "?"} threads${typeof gunicorn?.timeoutSeconds === "number" ? `, ${gunicorn.timeoutSeconds}s timeout` : ""}`,
+                        );
+                      }
+                      if (typeof workers?.pid === "number") {
+                        lines.push(`Health response came from worker PID ${workers.pid}`);
+                      }
+                      if (typeof workers?.ppid === "number") {
+                        lines.push(`Gunicorn master PID ${workers.ppid}`);
+                      }
+                      return lines;
+                    })();
+                    const workerProcessLines = Array.isArray(
+                      serverHealthPayload?.processes?.children,
+                    )
+                      ? serverHealthPayload.processes.children
+                          .slice(0, 8)
+                          .map((child) => {
+                            const bits = [
+                              typeof child?.pid === "number"
+                                ? `PID ${child.pid}`
+                                : "Worker PID unknown",
+                              child?.state ? `state ${child.state}` : null,
+                              typeof child?.threads === "number"
+                                ? `${child.threads} threads`
+                                : null,
+                              typeof child?.vmRssMb === "number"
+                                ? `${formatServerHealthNumber(child.vmRssMb, 1) || child.vmRssMb} MB RSS`
+                                : null,
+                            ].filter(
+                              (value): value is string =>
+                                typeof value === "string" && value.trim().length > 0,
+                            );
+                            return bits.join(" • ");
+                          })
+                          .filter((line) => line.trim().length > 0)
+                      : [];
                     const cpuUsageValue =
                       formatServerHealthPercentValue(cpu?.usagePercent) || "—";
                     const cpuUsageHint =
@@ -30136,6 +30451,106 @@ function MainApp() {
                       }
                       return "healthy";
                     };
+                    const healthAlertTone =
+                      overallTone === "offline"
+                        ? "offline"
+                        : overallTone === "degraded"
+                          ? "degraded"
+                          : null;
+                    const healthAlertReasons = (() => {
+                      const reasons: string[] = [];
+                      if (serverHealthError && !serverHealthPayload) {
+                        reasons.push(serverHealthError);
+                      }
+                      if (slowRequestCount > 0) {
+                        reasons.push(
+                          `${slowRequestCount} API request${slowRequestCount === 1 ? "" : "s"} over ${slowAfterLabel}${longestActiveLabel ? `; longest ${longestActiveLabel}` : ""}`,
+                        );
+                      }
+                      const workers = serverHealthPayload?.workers;
+                      if (
+                        typeof workers?.configured === "number" &&
+                        typeof workers?.detected === "number" &&
+                        workers.detected < workers.configured
+                      ) {
+                        reasons.push(`${workers.detected} of ${workers.configured} workers detected`);
+                      }
+                      if (unhealthyJobLabels.length > 0) {
+                        reasons.push(`Jobs: ${unhealthyJobLabels.join(", ")}`);
+                      }
+                      if (
+                        typeof cpu?.usagePercent === "number" &&
+                        Number.isFinite(cpu.usagePercent) &&
+                        cpu.usagePercent >= 85
+                      ) {
+                        reasons.push(`CPU ${formatServerHealthPercentValue(cpu.usagePercent) || "high"}`);
+                      }
+                      if (
+                        typeof mem?.usedPercent === "number" &&
+                        Number.isFinite(mem.usedPercent) &&
+                        mem.usedPercent >= 90
+                      ) {
+                        reasons.push(`Memory ${formatServerHealthPercentValue(mem.usedPercent) || "high"}`);
+                      }
+                      if (
+                        typeof disk?.usedPercent === "number" &&
+                        Number.isFinite(disk.usedPercent) &&
+                        disk.usedPercent >= 92
+                      ) {
+                        reasons.push(`Disk ${formatServerHealthPercentValue(disk.usedPercent) || "high"}`);
+                      }
+                      if (reasons.length === 0 && overallTone === "degraded") {
+                        reasons.push("Backend health reported degraded");
+                      }
+                      return reasons;
+                    })();
+                    const healthDiagnosticLines = [
+                      `PepPro API health: ${overallStatusLabel}`,
+                      snapshotFullLabel ? `Snapshot: ${snapshotFullLabel}` : null,
+                      ...healthAlertReasons.map((reason) => `Issue: ${reason}`),
+                      ...workerPoolLines,
+                      slowRequestCount > 0
+                        ? `Slow request threshold: ${slowAfterLabel}; slow requests: ${slowRequestCount}; active requests: ${activeRequestCount}`
+                        : `Active requests: ${activeRequestCount}; slow requests: ${slowRequestCount}`,
+                      longestActiveLabel ? `Longest active request: ${longestActiveLabel}` : null,
+                      ...activeSlowRequestLines.map((line) => `Slow request: ${line}`),
+                      activeSlowRequestLines.length === 0 && activeRequestLines.length > 0
+                        ? `Active request sample: ${activeRequestLines.join(" | ")}`
+                        : null,
+                      ...workerProcessLines.map((line) => `Worker process: ${line}`),
+                    ].filter(
+                      (value): value is string =>
+                        typeof value === "string" && value.trim().length > 0,
+                    );
+                    const healthDiagnosticText = healthDiagnosticLines.join("\n");
+                    const copyHealthDiagnosticDetails = async () => {
+                      try {
+                        if (!navigator?.clipboard?.writeText) {
+                          throw new Error("Clipboard unavailable");
+                        }
+                        await navigator.clipboard.writeText(healthDiagnosticText);
+                        toast.success("API health details copied.");
+                      } catch {
+                        toast.error("Unable to copy API health details.");
+                      }
+                    };
+                    const copyServerHealthPayload = async () => {
+                      try {
+                        if (!navigator?.clipboard?.writeText) {
+                          throw new Error("Clipboard unavailable");
+                        }
+                        if (!serverHealthPayload) {
+                          toast.error("No /api/health snapshot is available to copy.");
+                          return;
+                        }
+                        await navigator.clipboard.writeText(
+                          JSON.stringify(serverHealthPayload, null, 2),
+                        );
+                        toast.success("/api/health copied.");
+                      } catch {
+                        toast.error("Unable to copy /api/health.");
+                      }
+                    };
                     const compactHealthItems: Array<{
                       key: string;
                       label: string;
@@ -30157,6 +30572,28 @@ function MainApp() {
                         hoverLines: [
                           overallStatusNote,
                           overallStatusDetail,
+                          ...(healthAlertTone ? healthDiagnosticLines : []),
+                        ].filter(
+                          (value): value is string =>
+                            typeof value === "string" && value.trim().length > 0,
+                        ),
+                      },
+                      {
+                        key: "api-pressure",
+                        label: "API Pressure",
+                        value: requestPressureValue,
+                        tone: requestPressureTone,
+                        caption:
+                          longestActiveLabel && activeRequestCount > 0
+                            ? `Longest ${longestActiveLabel}`
+                            : `${slowAfterLabel} slow threshold`,
+                        hoverTitle: "API request pressure",
+                        hoverLines: [
+                          `${activeRequestCount} active request${activeRequestCount === 1 ? "" : "s"}`,
+                          `${slowRequestCount} request${slowRequestCount === 1 ? "" : "s"} over ${slowAfterLabel}`,
+                          longestActiveLabel ? `Longest active ${longestActiveLabel}` : null,
+                          ...workerPoolLines,
+                          ...activeRequestLines,
                         ].filter(
                           (value): value is string =>
                             typeof value === "string" && value.trim().length > 0,
@@ -30186,7 +30623,12 @@ function MainApp() {
                         key: "workers",
                         label: "Workers",
                         value: workerSummaryLabel,
-                        tone: "neutral",
+                        tone:
+                          typeof serverHealthPayload?.workers?.configured === "number" &&
+                          typeof serverHealthPayload?.workers?.detected === "number" &&
+                          serverHealthPayload.workers.detected < serverHealthPayload.workers.configured
+                            ? "degraded"
+                            : "neutral",
                         caption: gunicornValue !== "—" ? gunicornValue : "Runtime layout",
                         hoverTitle: "Worker layout",
                         hoverLines: [
@@ -30479,7 +30921,7 @@ function MainApp() {
                       return [`${item.label}: ${item.value} • ${detailBits.join(" • ")}`];
                     });
                     const pillClass =
-                      "inline-flex min-w-[128px] shrink-0 cursor-help flex-col items-start justify-center rounded-[28px] bg-slate-100 px-4 py-2 text-slate-700";
+                      "inline-flex min-w-[128px] shrink-0 cursor-help flex-col items-start justify-center rounded-[28px] border px-4 py-2 shadow-sm";
 
                     return (
                       <>
@@ -30508,7 +30950,7 @@ function MainApp() {
                           </div>
                         </div>
 
-                        {serverHealthError && (
+                        {serverHealthError && overallTone !== "offline" && (
                           <div
                             className={clsx(
                               "mt-4 rounded-[24px] border px-4 py-3",
@@ -30535,6 +30977,44 @@ function MainApp() {
                           </div>
                         )}
 
+                        {healthAlertTone && (
+                          <div
+                            title={healthDiagnosticText}
+                            className={clsx(
+                              "mt-4 rounded-[24px] border px-4 py-3",
+                              healthAlertTone === "offline"
+                                ? "border-rose-200 bg-rose-50/95 text-rose-800"
+                                : "border-amber-200 bg-amber-50/95 text-amber-800",
+                            )}
+                          >
+                            <div className="flex items-start gap-3">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div className="min-w-0">
+                                <button
+                                  type="button"
+                                  className="cursor-copy text-left text-sm font-semibold underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                                  onClick={() => void copyServerHealthPayload()}
+                                  title="Copy /api/health response"
+                                >
+                                  {healthAlertTone === "offline"
+                                    ? "API unreachable"
+                                    : "API degraded"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="mt-1 block text-left text-sm leading-6 underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                                  onClick={() => void copyHealthDiagnosticDetails()}
+                                  title={healthDiagnosticText}
+                                >
+                                  {healthAlertReasons.length > 0
+                                    ? healthAlertReasons.slice(0, 3).join(" • ")
+                                    : overallStatusNote}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         <div
                           className="sales-rep-table-wrapper admin-dashboard-list mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden p-0 no-scrollbar [scrollbar-width:thin] [touch-action:pan-x] overscroll-x-contain"
                           role="region"
@@ -30551,14 +31031,25 @@ function MainApp() {
                                   ...item.hoverLines,
                                   ...(item.key === "jobs" ? recurringJobTooltipLines : []),
                                 ].join("\n")}
-                                className={pillClass}
+                                className={clsx(pillClass, toneClasses[item.tone])}
                               >
-                                <span className="text-[11px] font-medium leading-none text-slate-500">
+                                <span className="text-[11px] font-medium leading-none opacity-75">
                                   {item.label}
                                 </span>
-                                <span className="mt-1 text-[0.95rem] font-semibold leading-tight text-slate-900">
-                                  {item.value}
-                                </span>
+                                {item.key === "api" ? (
+                                  <button
+                                    type="button"
+                                    className="mt-1 cursor-copy text-left text-[0.95rem] font-semibold leading-tight underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                                    onClick={() => void copyServerHealthPayload()}
+                                    title="Copy /api/health response"
+                                  >
+                                    {item.value}
+                                  </button>
+                                ) : (
+                                  <span className="mt-1 text-[0.95rem] font-semibold leading-tight">
+                                    {item.value}
+                                  </span>
+                                )}
                               </span>
                             ))}
                           </div>
@@ -36266,6 +36757,8 @@ function MainApp() {
 				              onCancelOrder={handleCancelOrder}
 				              referralCodes={referralCodesForHeader}
 				              catalogLoading={catalogLoading}
+                      apiHealthNetworkQuality={apiHealthNetworkQuality}
+                      apiHealthNetworkReason={apiHealthNetworkReason}
 				              onLoadDelegateProposal={handleLoadDelegateProposalIntoCart}
                       patientLinksRefreshToken={patientLinksRefreshToken}
                       onAccountIndicatorTotalChange={setAccountIndicatorTotal}
@@ -36796,9 +37289,21 @@ function MainApp() {
                             </p>
                           )}
 	                          {!peptideForumLoading && !peptideForumError && (() => {
+                              const nowMs = Date.now();
 	                            const visibleItems = (peptideForumItems || [])
 	                              .slice()
                               .sort((a, b) => {
+                                const getPriority = (item: PeptideForumItem) => {
+                                  const timing = getPeptideForumTiming(item, nowMs);
+                                  if (timing.isOngoing || timing.isJoinWindow) {
+                                    return 0;
+                                  }
+                                  return timing.isPast ? 2 : 1;
+                                };
+                                const priorityDelta = getPriority(a) - getPriority(b);
+                                if (priorityDelta !== 0) {
+                                  return priorityDelta;
+                                }
                                 const toTime = (value?: string | null) => {
                                   if (!value) return Number.NEGATIVE_INFINITY;
                                   const parsed = Date.parse(value);
@@ -36810,61 +37315,7 @@ function MainApp() {
                                 const bTime = toTime(b?.date ?? null);
                                 return bTime - aTime;
                               })
-                              .filter((item) => {
-                                const dateValue = item?.date ?? null;
-                                const dateMs = dateValue ? Date.parse(dateValue) : Number.NaN;
-                                if (!Number.isFinite(dateMs)) {
-                                  return Boolean(
-                                    (item?.link && String(item.link).trim())
-                                    || (item?.recording && String(item.recording).trim()),
-                                  );
-                                }
-                                const hasRecording = Boolean(
-                                  item?.recording && String(item.recording).trim(),
-                                );
-                                const hasWebinarLink = Boolean(
-                                  item?.link && String(item.link).trim(),
-                                );
-                                const rawItem = item as any;
-                                const durationMinutesCandidate =
-                                  typeof rawItem?.durationMinutes === "number"
-                                    ? rawItem.durationMinutes
-                                    : typeof rawItem?.duration_minutes === "number"
-                                      ? rawItem.duration_minutes
-                                      : typeof rawItem?.duration === "number"
-                                        ? rawItem.duration
-                                        : typeof rawItem?.lengthMinutes === "number"
-                                          ? rawItem.lengthMinutes
-                                          : typeof rawItem?.length_minutes === "number"
-                                            ? rawItem.length_minutes
-                                            : null;
-                                const durationMs =
-                                  typeof durationMinutesCandidate === "number" &&
-                                  Number.isFinite(durationMinutesCandidate) &&
-                                  durationMinutesCandidate > 0
-                                    ? durationMinutesCandidate * 60_000
-                                    : 60 * 60_000; // default: 60 minutes
-                                const endDateValue =
-                                  rawItem?.endDate ??
-                                  rawItem?.end_date ??
-                                  rawItem?.endsAt ??
-                                  rawItem?.ends_at ??
-                                  rawItem?.end ??
-                                  null;
-                                const endMsCandidate =
-                                  typeof endDateValue === "string" && endDateValue.trim().length > 0
-                                    ? Date.parse(endDateValue)
-                                    : Number.NaN;
-                                const endMs =
-                                  Number.isFinite(endMsCandidate)
-                                    ? endMsCandidate
-                                    : dateMs + durationMs;
-                                const nowMs = Date.now();
-                                const isPast = nowMs > endMs;
-                                if (isPast) return hasRecording;
-	                                // Show upcoming and in-progress lectures if there is any link/recording.
-	                                return hasWebinarLink || hasRecording;
-	                              });
+                              .filter((item) => shouldShowPeptideForumItem(item, nowMs));
 	                            const forumDisplayLimit = 5;
 	                            const hasOverflowForumItems = visibleItems.length > forumDisplayLimit;
 	                            const forumItemsToRender = peptideForumExpanded
@@ -36909,70 +37360,16 @@ function MainApp() {
                                           </p>
                                         )}
                                         {(() => {
-                                          const dateValue = item?.date ?? null;
-                                          const dateMs = dateValue ? Date.parse(dateValue) : Number.NaN;
                                           const recording = item?.recording && String(item.recording).trim() ? String(item.recording).trim() : null;
                                           const webinarLink = item?.link && String(item.link).trim() ? String(item.link).trim() : null;
-
-                                          const nowMs = Date.now();
-                                          const rawItem = item as any;
-                                          const durationMinutesCandidate =
-                                            typeof rawItem?.durationMinutes === "number"
-                                              ? rawItem.durationMinutes
-                                              : typeof rawItem?.duration_minutes === "number"
-                                                ? rawItem.duration_minutes
-                                                : typeof rawItem?.duration === "number"
-                                                  ? rawItem.duration
-                                                  : typeof rawItem?.lengthMinutes === "number"
-                                                    ? rawItem.lengthMinutes
-                                                    : typeof rawItem?.length_minutes === "number"
-                                                      ? rawItem.length_minutes
-                                                      : null;
-                                          const durationMs =
-                                            typeof durationMinutesCandidate === "number" &&
-                                            Number.isFinite(durationMinutesCandidate) &&
-                                            durationMinutesCandidate > 0
-                                              ? durationMinutesCandidate * 60_000
-                                              : 60 * 60_000; // default: 60 minutes
-                                          const endDateValue =
-                                            rawItem?.endDate ??
-                                            rawItem?.end_date ??
-                                            rawItem?.endsAt ??
-                                            rawItem?.ends_at ??
-                                            rawItem?.end ??
-                                            null;
-                                          const endMsCandidate =
-                                            typeof endDateValue === "string" && endDateValue.trim().length > 0
-                                              ? Date.parse(endDateValue)
-                                              : Number.NaN;
-                                          const endMs =
-                                            Number.isFinite(endMsCandidate)
-                                              ? endMsCandidate
-                                              : Number.isFinite(dateMs)
-                                                ? dateMs + durationMs
-                                                : Number.NaN;
-                                          const joinWindowStartMs = Number.isFinite(dateMs)
-                                            ? dateMs - 10 * 60_000
-                                            : Number.NaN;
-                                          const isDuringClass =
-                                            Number.isFinite(dateMs) &&
-                                            Number.isFinite(endMs) &&
-                                            nowMs >= dateMs &&
-                                            nowMs <= endMs;
-                                          const isJoinWindow =
-                                            Number.isFinite(joinWindowStartMs) &&
-                                            Number.isFinite(endMs) &&
-                                            nowMs >= joinWindowStartMs &&
-                                            nowMs <= endMs;
-                                          const isPast = Number.isFinite(endMs) ? nowMs > endMs : false;
-
-                                          const href = isPast && recording ? recording : webinarLink;
+                                          const timing = getPeptideForumTiming(item, nowMs);
+                                          const href = timing.isPast && recording ? recording : webinarLink;
                                           if (!href) return null;
 
 	                                          const label =
-	                                            isPast && recording
+	                                            timing.isPast && recording
 	                                              ? "Recording Available"
-	                                              : isJoinWindow || isDuringClass
+	                                              : timing.isJoinWindow || timing.isOngoing
 	                                                ? "Join the Forum"
 	                                                : "Forum Link";
 	

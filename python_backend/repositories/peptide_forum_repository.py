@@ -98,13 +98,27 @@ def _derive_pst_iso(date_raw: Optional[str], time_raw: Optional[str]) -> Optiona
         return None
 
 
+def _derive_pst_end_iso(date_raw: Optional[str], time_raw: Optional[str]) -> Optional[str]:
+    date_parts = _parse_date_raw(date_raw)
+    if not date_parts:
+        return None
+    time_parts = _parse_time_raw(time_raw) or (23, 59, 59)
+    year, month, day = date_parts
+    hour, minute, second = time_parts
+    try:
+        return datetime(year, month, day, hour, minute, second, tzinfo=PST).isoformat()
+    except Exception:
+        return None
+
+
 def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
     if not _mysql_enabled():
         return []
     limit = max(1, min(int(limit or 250), 1000))
     rows = mysql_client.fetch_all(
         """
-        SELECT id, title, date_at, date_raw, time_raw, description, link, recording_link, created_at, updated_at
+        SELECT id, title, date_at, date_raw, time_raw, end_at, end_date_raw, end_time_raw,
+               duration_minutes, description, link, recording_link, created_at, updated_at
         FROM peptide_forum_posts
         ORDER BY
           (CASE WHEN date_at IS NULL THEN 1 ELSE 0 END),
@@ -123,6 +137,12 @@ def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
             str(date_raw) if date_raw else None,
             str(time_raw) if time_raw else None,
         )
+        end_date_raw = row.get("end_date_raw")
+        end_time_raw = row.get("end_time_raw")
+        derived_end_iso = _derive_pst_end_iso(
+            str(end_date_raw) if end_date_raw else None,
+            str(end_time_raw) if end_time_raw else None,
+        )
         date_fallback = derived_iso or (f"{date_raw} {time_raw}".strip() if date_raw and time_raw else None)
         result.append(
             {
@@ -134,6 +154,10 @@ def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
                 "date": derived_iso or _to_iso(date_at, tz=PST) or (date_fallback or (str(date_raw) if date_raw else None)),
                 "dateRaw": str(date_raw) if date_raw else None,
                 "timeRaw": str(time_raw) if time_raw else None,
+                "endDate": derived_end_iso or _to_iso(row.get("end_at"), tz=PST),
+                "endDateRaw": str(end_date_raw) if end_date_raw else None,
+                "endTime": str(end_time_raw) if end_time_raw else None,
+                "durationMinutes": row.get("duration_minutes"),
                 "description": row.get("description"),
                 "link": row.get("link"),
                 "recording": row.get("recording_link"),
@@ -150,14 +174,21 @@ def upsert_post(post: Dict[str, Any]) -> None:
     mysql_client.execute(
         """
         INSERT INTO peptide_forum_posts
-          (id, title, date_at, date_raw, time_raw, description, link, recording_link, created_at, updated_at)
+          (id, title, date_at, date_raw, time_raw, end_at, end_date_raw, end_time_raw,
+           duration_minutes, description, link, recording_link, created_at, updated_at)
         VALUES
-          (%(id)s, %(title)s, %(date_at)s, %(date_raw)s, %(time_raw)s, %(description)s, %(link)s, %(recording_link)s, NOW(), NOW())
+          (%(id)s, %(title)s, %(date_at)s, %(date_raw)s, %(time_raw)s, %(end_at)s,
+           %(end_date_raw)s, %(end_time_raw)s, %(duration_minutes)s, %(description)s,
+           %(link)s, %(recording_link)s, NOW(), NOW())
         ON DUPLICATE KEY UPDATE
           title = VALUES(title),
           date_at = VALUES(date_at),
           date_raw = VALUES(date_raw),
           time_raw = VALUES(time_raw),
+          end_at = VALUES(end_at),
+          end_date_raw = VALUES(end_date_raw),
+          end_time_raw = VALUES(end_time_raw),
+          duration_minutes = VALUES(duration_minutes),
           description = VALUES(description),
           link = VALUES(link),
           recording_link = VALUES(recording_link),
@@ -169,6 +200,10 @@ def upsert_post(post: Dict[str, Any]) -> None:
             "date_at": post.get("date_at"),
             "date_raw": post.get("date_raw"),
             "time_raw": post.get("time_raw"),
+            "end_at": post.get("end_at"),
+            "end_date_raw": post.get("end_date_raw"),
+            "end_time_raw": post.get("end_time_raw"),
+            "duration_minutes": post.get("duration_minutes"),
             "description": post.get("description"),
             "link": post.get("link"),
             "recording_link": post.get("recording_link"),

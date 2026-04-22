@@ -512,6 +512,8 @@ interface HeaderProps {
   onCancelOrder?: (orderId: string) => Promise<unknown>;
   referralCodes?: string[] | null;
   catalogLoading?: boolean;
+  apiHealthNetworkQuality?: 'poor' | 'offline' | null;
+  apiHealthNetworkReason?: string | null;
   onLoadDelegateProposal?: (payload: {
     token: string;
     items: any[];
@@ -1616,10 +1618,12 @@ export function Header({
   suppressAccountHomeButton = false,
   showCanceledOrders = false,
   onToggleShowCanceled,
-	  onBuyOrderAgain,
-	  onCancelOrder,
-	  referralCodes = [],
-	  catalogLoading = false,
+  onBuyOrderAgain,
+  onCancelOrder,
+  referralCodes = [],
+  catalogLoading = false,
+  apiHealthNetworkQuality = null,
+  apiHealthNetworkReason = null,
   onLoadDelegateProposal,
   patientLinksRefreshToken = 0,
   onAccountIndicatorTotalChange,
@@ -1723,6 +1727,14 @@ export function Header({
     latencyMs: number | null;
     measuredAt: number | null;
   }>({ downloadMbps: null, uploadMbps: null, latencyMs: null, measuredAt: null });
+  const displayedNetworkQuality: NetworkQuality =
+    networkQuality === 'offline' || apiHealthNetworkQuality === 'offline'
+      ? 'offline'
+      : networkQuality === 'poor' || apiHealthNetworkQuality === 'poor'
+        ? 'poor'
+        : networkQuality;
+  const networkIndicatorUsesApiHealth =
+    Boolean(apiHealthNetworkQuality) && displayedNetworkQuality === apiHealthNetworkQuality;
   const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
   const lastZelleContactRef = useRef<string | null>(null);
   const [zelleContactDraft, setZelleContactDraft] = useState('');
@@ -9182,13 +9194,25 @@ export function Header({
 
 	            {/* User Actions */}
 	            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end min-w-0 max-w-full">
-		              {(networkQuality === 'offline' || networkQuality === 'poor') && (
+		              {(displayedNetworkQuality === 'offline' || displayedNetworkQuality === 'poor') && (
 		                <div
-		                  className="flex items-center justify-center squircle-sm bg-white/70 px-2 py-1"
+		                  className={clsx(
+                        "flex items-center justify-center squircle-sm border px-2 py-1",
+                        displayedNetworkQuality === 'offline'
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : networkIndicatorUsesApiHealth
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-slate-200 bg-white/70 text-slate-800",
+                      )}
 			                  title={
-			                    networkQuality === 'offline'
-	                          ? 'Offline'
+			                    displayedNetworkQuality === 'offline'
+	                          ? networkIndicatorUsesApiHealth && apiHealthNetworkReason
+                              ? `API unreachable: ${apiHealthNetworkReason}`
+                              : 'Offline'
                           : (() => {
+                              if (networkIndicatorUsesApiHealth && apiHealthNetworkReason) {
+                                return `API degraded: ${apiHealthNetworkReason}`;
+                              }
                               const parts: string[] = [];
                               if (typeof networkSpeedSummary.downloadMbps === 'number') {
                                 parts.push(`Down ${networkSpeedSummary.downloadMbps} Mbps`);
@@ -9200,11 +9224,17 @@ export function Header({
                             })()
 			                  }
 		                  aria-label={
-		                    networkQuality === 'offline' ? 'Offline' : 'Poor internet connection'
+		                    displayedNetworkQuality === 'offline'
+                          ? networkIndicatorUsesApiHealth
+                            ? 'API unreachable'
+                            : 'Offline'
+                          : networkIndicatorUsesApiHealth
+                            ? 'API degraded'
+                            : 'Poor internet connection'
 		                  }
 		                >
-		                  {networkQuality === 'offline' ? (
-                        <WifiOff className="h-4 w-4 text-slate-800" aria-hidden="true" />
+		                  {displayedNetworkQuality === 'offline' ? (
+                        <WifiOff className="h-4 w-4" aria-hidden="true" />
                       ) : (
                         <NetworkBarsIcon activeBars={1} />
                       )}

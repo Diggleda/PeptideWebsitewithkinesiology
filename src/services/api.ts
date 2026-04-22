@@ -3553,8 +3553,14 @@ export const forumAPI = {
         id: string;
         title: string;
         date?: string | null;
+        time?: string | null;
         description?: string | null;
         link?: string | null;
+        recording?: string | null;
+        endDate?: string | null;
+        endDateRaw?: string | null;
+        endTime?: string | null;
+        durationMinutes?: number | string | null;
       }>;
     }>;
   },

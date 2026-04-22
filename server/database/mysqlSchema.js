@@ -226,6 +226,10 @@ const STATEMENTS = [
       event_date DATETIME NULL,
       event_date_raw VARCHAR(96) NULL,
       event_time_raw VARCHAR(48) NULL,
+      event_end_date DATETIME NULL,
+      event_end_date_raw VARCHAR(96) NULL,
+      event_end_time_raw VARCHAR(48) NULL,
+      duration_minutes INT NULL,
       description LONGTEXT NULL,
       link LONGTEXT NULL,
       recording LONGTEXT NULL,
@@ -1278,6 +1282,55 @@ const ensureContactFormIndexes = async () => {
   );
 };
 
+const ensurePeptideForumColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const columns = [
+    {
+      name: 'event_end_date',
+      ddl: 'ALTER TABLE peptide_forum_items ADD COLUMN event_end_date DATETIME NULL',
+    },
+    {
+      name: 'event_end_date_raw',
+      ddl: 'ALTER TABLE peptide_forum_items ADD COLUMN event_end_date_raw VARCHAR(96) NULL',
+    },
+    {
+      name: 'event_end_time_raw',
+      ddl: 'ALTER TABLE peptide_forum_items ADD COLUMN event_end_time_raw VARCHAR(48) NULL',
+    },
+    {
+      name: 'duration_minutes',
+      ddl: 'ALTER TABLE peptide_forum_items ADD COLUMN duration_minutes INT NULL',
+    },
+  ];
+
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'peptide_forum_items'
+            AND COLUMN_NAME = :columnName
+          LIMIT 1
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL peptide_forum_items column added');
+      }
+    } catch (error) {
+      logger.error(
+        { err: error, column: column.name },
+        'Failed to ensure MySQL peptide_forum_items column',
+      );
+    }
+  }
+};
+
 const ensureSchema = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -1292,6 +1345,7 @@ const ensureSchema = async () => {
   await ensureBugReportColumns();
   await ensureTaxTrackingColumns();
   await ensureContactFormIndexes();
+  await ensurePeptideForumColumns();
   logger.info('MySQL schema ensured');
 };
 
