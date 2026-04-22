@@ -42,9 +42,9 @@ class EmailServiceTests(unittest.TestCase):
         dispatch_email.assert_called_once()
         self.assertEqual(dispatch_email.call_args.args[0], "holly@example.com")
         html = dispatch_email.call_args.args[2]
-        self.assertIn("/PepPro_fulllogo.png", html)
-        self.assertIn("/leafTexture.jpg", html)
-        self.assertIn("background=\"https://peppro.net/leafTexture.jpg\"", html)
+        self.assertIn('src="cid:peppro-logo"', html)
+        self.assertIn('background="cid:peppro-leaf"', html)
+        self.assertIn("url('cid:peppro-leaf')", html)
         self.assertIn("background:rgba(255,255,255,0.78)", html)
         self.assertIn("backdrop-filter:blur(34px) saturate(1.9)", html)
         self.assertIn("background-color:rgba(255,255,255,0.95)", html)
@@ -53,6 +53,8 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("border-radius:12px", html)
         self.assertNotIn("border-radius:999px", html)
         self.assertNotIn("background-color:#5FB3F9", html)
+        self.assertNotIn("https://peppro.net/PepPro_fulllogo.png", html)
+        self.assertNotIn("https://peppro.net/leafTexture.jpg", html)
         self.assertNotIn("/Peppro_fulllogo.png", html)
         self.assertEqual(dispatch_email.call_args.kwargs["bcc"], ("petergibbons7@icloud.com",))
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
@@ -110,10 +112,57 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(personalization["bcc"], [{"email": "petergibbons7@icloud.com"}])
         self.assertNotIn("cc", personalization)
 
+    def test_sendgrid_payload_includes_inline_images_when_referenced(self):
+        from python_backend.services import email_service
+
+        response = SimpleNamespace(status_code=202, text="", raise_for_status=lambda: None)
+        inline_images = (
+            {
+                "content_id": "peppro-logo",
+                "filename": "PepPro_fulllogo.png",
+                "mime_type": "image/png",
+                "maintype": "image",
+                "subtype": "png",
+                "data": b"logo",
+            },
+            {
+                "content_id": "peppro-leaf",
+                "filename": "leafTexture-email.jpg",
+                "mime_type": "image/jpeg",
+                "maintype": "image",
+                "subtype": "jpeg",
+                "data": b"leaf",
+            },
+        )
+
+        with patch.object(email_service, "_load_inline_email_images", return_value=inline_images), patch.object(
+            email_service.http_client,
+            "post",
+            return_value=response,
+        ) as post:
+            email_service._send_via_sendgrid(
+                "holly@example.com",
+                "PepPro order 1505 has shipped",
+                '<img src="cid:peppro-logo" /><table background="cid:peppro-leaf"></table>',
+                {
+                    "sendgrid_api_key": "sendgrid-key",
+                    "sendgrid_endpoint": "https://sendgrid.example.test/send",
+                    "from": "PepPro <support@peppro.net>",
+                    "timeout": 15,
+                },
+                plain_text="Shipped",
+            )
+
+        attachments = post.call_args.kwargs["json"]["attachments"]
+        self.assertEqual([attachment["content_id"] for attachment in attachments], ["peppro-logo", "peppro-leaf"])
+        self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
+        self.assertEqual([attachment["filename"] for attachment in attachments], ["PepPro_fulllogo.png", "leafTexture-email.jpg"])
+
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
 
         events = []
+        messages = []
 
         class FakeSMTP:
             def __init__(self, host, port, timeout):
@@ -129,16 +178,40 @@ class EmailServiceTests(unittest.TestCase):
                 events.append(("login", user, password))
 
             def send_message(self, msg, to_addrs=None):
+                messages.append(msg)
                 events.append(("send_message", msg["To"], msg["Cc"], tuple(to_addrs or ())))
 
             def quit(self):
                 events.append(("quit",))
 
-        with patch.object(email_service.smtplib, "SMTP", FakeSMTP):
+        inline_images = (
+            {
+                "content_id": "peppro-logo",
+                "filename": "PepPro_fulllogo.png",
+                "mime_type": "image/png",
+                "maintype": "image",
+                "subtype": "png",
+                "data": b"logo",
+            },
+            {
+                "content_id": "peppro-leaf",
+                "filename": "leafTexture-email.jpg",
+                "mime_type": "image/jpeg",
+                "maintype": "image",
+                "subtype": "jpeg",
+                "data": b"leaf",
+            },
+        )
+
+        with patch.object(email_service, "_load_inline_email_images", return_value=inline_images), patch.object(
+            email_service.smtplib,
+            "SMTP",
+            FakeSMTP,
+        ):
             email_service._send_via_smtp(
                 "holly@example.com",
                 "PepPro order 1505 has shipped",
-                "<p>Shipped</p>",
+                '<img src="cid:peppro-logo" /><table background="cid:peppro-leaf"></table>',
                 {
                     "from": "PepPro <support@peppro.net>",
                     "timeout": 15,
@@ -161,6 +234,8 @@ class EmailServiceTests(unittest.TestCase):
             ("send_message", "holly@example.com", "petergibbons7@icloud.com", ("holly@example.com", "petergibbons7@icloud.com")),
             events,
         )
+        content_ids = [part["Content-ID"] for part in messages[0].walk() if part["Content-ID"]]
+        self.assertEqual(content_ids, ["<peppro-logo>", "<peppro-leaf>"])
 
     def test_shipping_status_email_raises_when_production_dispatch_has_no_provider(self):
         from python_backend.services import email_service

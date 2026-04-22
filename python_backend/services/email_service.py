@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import smtplib
+import base64
 from datetime import datetime
 from email.message import EmailMessage
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 import logging
@@ -19,6 +21,10 @@ logger = logging.getLogger(__name__)
 SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
 # Visibility requirement for shipping lifecycle emails only.
 _SHIPPING_STATUS_BCC = ("petergibbons7@icloud.com",)
+_EMAIL_LOGO_CID = "peppro-logo"
+_EMAIL_LEAF_CID = "peppro-leaf"
+_EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
+_EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_GLASS_CONTAINER_STYLE = (
     "background-color:#ffffff;"
     "background:rgba(255,255,255,0.78);"
@@ -54,6 +60,31 @@ _EMAIL_ADMIN_REFRESH_BUTTON_STYLE = (
     "font-weight:600;"
     "line-height:1;"
     "text-decoration:none;"
+)
+_EMAIL_INLINE_IMAGE_SPECS = (
+    {
+        "content_id": _EMAIL_LOGO_CID,
+        "filename": "PepPro_fulllogo.png",
+        "mime_type": "image/png",
+        "maintype": "image",
+        "subtype": "png",
+        "paths": (
+            "public/PepPro_fulllogo.png",
+            "src/generated/runtime-assets/PepPro_fulllogo.png",
+        ),
+    },
+    {
+        "content_id": _EMAIL_LEAF_CID,
+        "filename": "leafTexture-email.jpg",
+        "mime_type": "image/jpeg",
+        "maintype": "image",
+        "subtype": "jpeg",
+        "paths": (
+            "public/leafTexture-email.jpg",
+            "public/leafTexture.jpg",
+            "src/generated/runtime-assets/leafTexture.jpg",
+        ),
+    },
 )
 PEPPRO_LOGO_DATA_URI = (
     "data:image/png;base64,"
@@ -143,10 +174,77 @@ def _format_from_address(raw: str) -> Dict[str, str]:
     return {"email": raw.strip()}
 
 
-def _email_asset_url(base_url: str, path: str) -> str:
-    safe_base_url = base_url.rstrip("/") or "https://peppro.net"
-    safe_path = path if path.startswith("/") else f"/{path}"
-    return f"{safe_base_url}{safe_path}"
+@lru_cache(maxsize=1)
+def _load_inline_email_images() -> Tuple[Dict[str, Any], ...]:
+    repo_root = Path(__file__).resolve().parents[2]
+    images: list[Dict[str, Any]] = []
+    for spec in _EMAIL_INLINE_IMAGE_SPECS:
+        selected_path = None
+        for relative_path in spec["paths"]:
+            candidate = repo_root / str(relative_path)
+            if candidate.is_file():
+                selected_path = candidate
+                break
+        if selected_path is None:
+            logger.warning(
+                "Email inline image asset missing",
+                extra={"contentId": spec["content_id"], "paths": ",".join(spec["paths"])},
+            )
+            continue
+        try:
+            images.append(
+                {
+                    "content_id": spec["content_id"],
+                    "filename": spec["filename"],
+                    "mime_type": spec["mime_type"],
+                    "maintype": spec["maintype"],
+                    "subtype": spec["subtype"],
+                    "data": selected_path.read_bytes(),
+                }
+            )
+        except Exception:
+            logger.warning("Unable to load email inline image asset", extra={"path": str(selected_path)}, exc_info=True)
+    return tuple(images)
+
+
+def _inline_images_for_html(html: str) -> Tuple[Dict[str, Any], ...]:
+    html_value = str(html or "")
+    return tuple(
+        image
+        for image in _load_inline_email_images()
+        if f"cid:{image['content_id']}" in html_value
+    )
+
+
+def _attach_inline_images_to_message(msg: EmailMessage, html: str) -> None:
+    payload = msg.get_payload()
+    if not isinstance(payload, list) or not payload:
+        return
+    html_part = payload[-1]
+    for image in _inline_images_for_html(html):
+        html_part.add_related(
+            image["data"],
+            maintype=image["maintype"],
+            subtype=image["subtype"],
+            cid=f"<{image['content_id']}>",
+            filename=image["filename"],
+            disposition="inline",
+        )
+
+
+def _sendgrid_inline_attachments(html: str) -> list[Dict[str, str]]:
+    attachments: list[Dict[str, str]] = []
+    for image in _inline_images_for_html(html):
+        attachments.append(
+            {
+                "content": base64.b64encode(image["data"]).decode("ascii"),
+                "type": image["mime_type"],
+                "filename": image["filename"],
+                "disposition": "inline",
+                "content_id": image["content_id"],
+            }
+        )
+    return attachments
 
 
 def _email_background_style(leaf_url: str) -> str:
@@ -229,6 +327,9 @@ def _send_via_sendgrid(
         "from": _format_from_address(settings["from"]),
         "content": content_blocks,
     }
+    inline_attachments = _sendgrid_inline_attachments(html)
+    if inline_attachments:
+        payload["attachments"] = inline_attachments
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -283,6 +384,7 @@ def _send_via_smtp(
 
     msg.set_content(plain_text or html.replace("<p>", "").replace("</p>", "\n"))
     msg.add_alternative(html, subtype="html")
+    _attach_inline_images_to_message(msg, html)
 
     bcc_recipients = _normalize_extra_recipients(bcc)
 
@@ -313,8 +415,8 @@ def _send_via_smtp(
 
 def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://peppro.net"
-    logo_url = _email_asset_url(safe_base_url, "/PepPro_fulllogo.png")
-    leaf_url = _email_asset_url(safe_base_url, "/leafTexture.jpg")
+    logo_url = _EMAIL_LOGO_SRC
+    leaf_url = _EMAIL_LEAF_SRC
     body_style = _email_body_style(leaf_url)
     outer_table_style = _email_outer_table_style(leaf_url)
     container_style = _email_container_style(520)
@@ -460,8 +562,8 @@ def _build_delegate_proposal_ready_email(
     base_url: str,
 ) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://peppro.net"
-    logo_url = _email_asset_url(safe_base_url, "/PepPro_fulllogo.png")
-    leaf_url = _email_asset_url(safe_base_url, "/leafTexture.jpg")
+    logo_url = _EMAIL_LOGO_SRC
+    leaf_url = _EMAIL_LEAF_SRC
     body_style = _email_body_style(leaf_url)
     outer_table_style = _email_outer_table_style(leaf_url)
     container_style = _email_container_style(560)
@@ -558,8 +660,8 @@ def _build_shipping_status_email(
     base_url: str,
 ) -> Tuple[str, str, str]:
     safe_base_url = base_url.rstrip("/") or "https://peppro.net"
-    logo_url = _email_asset_url(safe_base_url, "/PepPro_fulllogo.png")
-    leaf_url = _email_asset_url(safe_base_url, "/leafTexture.jpg")
+    logo_url = _EMAIL_LOGO_SRC
+    leaf_url = _EMAIL_LEAF_SRC
     body_style = _email_body_style(leaf_url)
     outer_table_style = _email_outer_table_style(leaf_url)
     container_style = _email_container_style(560)
