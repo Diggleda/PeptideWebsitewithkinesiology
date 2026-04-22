@@ -885,6 +885,13 @@ type PersistedCartItem = PersistedCartItemPayload;
 
 type CheckoutShippingAddress = {
   name?: string | null;
+  fullName?: string | null;
+  recipientName?: string | null;
+  recipient_name?: string | null;
+  orderRecipientName?: string | null;
+  order_recipient_name?: string | null;
+  pickupRecipientName?: string | null;
+  pickup_recipient_name?: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -991,6 +998,8 @@ interface AccountOrderAddress {
   fullName?: string | null;
   recipientName?: string | null;
   recipient_name?: string | null;
+  orderRecipientName?: string | null;
+  order_recipient_name?: string | null;
   pickupRecipientName?: string | null;
   pickup_recipient_name?: string | null;
   company?: string | null;
@@ -1742,10 +1751,14 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     (order as any).order_recipient_name,
     shippingAddress?.recipientName,
     shippingAddress?.recipient_name,
+    shippingAddress?.orderRecipientName,
+    shippingAddress?.order_recipient_name,
     shippingAddress?.pickupRecipientName,
     shippingAddress?.pickup_recipient_name,
     billingAddress?.recipientName,
     billingAddress?.recipient_name,
+    billingAddress?.orderRecipientName,
+    billingAddress?.order_recipient_name,
     billingAddress?.pickupRecipientName,
     billingAddress?.pickup_recipient_name,
     readMetaValue(integrations, "peppro_facility_pickup_recipient_name"),
@@ -1769,6 +1782,8 @@ const withFacilityPickupRecipientName = (
   const addressName = resolveFacilityPickupRecipientName(
     address.recipientName,
     address.recipient_name,
+    address.orderRecipientName,
+    address.order_recipient_name,
     address.pickupRecipientName,
     address.pickup_recipient_name,
     address.fullName,
@@ -1777,6 +1792,8 @@ const withFacilityPickupRecipientName = (
   const billingName = resolveFacilityPickupRecipientName(
     options?.billingAddress?.recipientName,
     options?.billingAddress?.recipient_name,
+    options?.billingAddress?.orderRecipientName,
+    options?.billingAddress?.order_recipient_name,
     options?.billingAddress?.pickupRecipientName,
     options?.billingAddress?.pickup_recipient_name,
     options?.billingAddress?.fullName,
@@ -1809,6 +1826,8 @@ const withFacilityPickupRecipientName = (
     fullName: recipientName,
     recipientName,
     recipient_name: recipientName,
+    orderRecipientName: recipientName,
+    order_recipient_name: recipientName,
     pickupRecipientName: recipientName,
     pickup_recipient_name: recipientName,
   };
@@ -3301,10 +3320,16 @@ const normalizeAccountOrdersResponse = (
           paymentDetails,
           integrationDetails: order?.integrationDetails || null,
           facilityPickupRecipientName:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(
               order?.facilityPickupRecipientName ?? order?.facility_pickup_recipient_name,
             ) || null,
           facility_pickup_recipient_name:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(
               order?.facility_pickup_recipient_name ?? order?.facilityPickupRecipientName,
             ) || null,
@@ -3405,10 +3430,16 @@ const normalizeAccountOrdersResponse = (
           paymentDetails,
           integrationDetails: order?.integrationDetails || null,
           facilityPickupRecipientName:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(
               order?.facilityPickupRecipientName ?? order?.facility_pickup_recipient_name,
             ) || null,
           facility_pickup_recipient_name:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(
               order?.facility_pickup_recipient_name ?? order?.facilityPickupRecipientName,
             ) || null,
@@ -3516,10 +3547,16 @@ const normalizeAccountOrdersResponse = (
           paymentDetails,
           integrationDetails: order?.integrationDetails || null,
           facilityPickupRecipientName:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(
               order?.facilityPickupRecipientName ?? order?.facility_pickup_recipient_name,
             ) || null,
           facility_pickup_recipient_name:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(
               order?.facility_pickup_recipient_name ?? order?.facilityPickupRecipientName,
             ) || null,
@@ -9727,6 +9764,19 @@ function MainApp() {
     tables: DatabaseVisualizerTableSummary[];
     selectedTable: DatabaseVisualizerSelectedTable | null;
   };
+  const DATABASE_VISUALIZER_PAGE_SIZE_OPTIONS = [20, 50, 100, 250, 500] as const;
+  const DEFAULT_DATABASE_VISUALIZER_PAGE_SIZE = DATABASE_VISUALIZER_PAGE_SIZE_OPTIONS[0];
+  const normalizeDatabaseVisualizerPageSize = (value: unknown) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= DEFAULT_DATABASE_VISUALIZER_PAGE_SIZE) {
+      return DEFAULT_DATABASE_VISUALIZER_PAGE_SIZE;
+    }
+    const rounded = Math.floor(parsed);
+    return (
+      DATABASE_VISUALIZER_PAGE_SIZE_OPTIONS.find((option) => rounded <= option) ||
+      DATABASE_VISUALIZER_PAGE_SIZE_OPTIONS[DATABASE_VISUALIZER_PAGE_SIZE_OPTIONS.length - 1]
+    );
+  };
 	    const getClearedSalesDoctorCommissionWindow = () => {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -12948,7 +12998,11 @@ function MainApp() {
         null;
       const normalizedDoctorEmail =
         typeof doctorEmail === "string" ? doctorEmail.trim().toLowerCase() : "";
+      const facilityPickupRecipientName = isSalesOrderFacilityPickup(orderAny)
+        ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
+        : null;
       const doctorName =
+        facilityPickupRecipientName ||
         (typeof fallbackLabel === "string" && fallbackLabel.trim() ? fallbackLabel.trim() : "") ||
         (typeof order?.doctorName === "string" && order.doctorName.trim() ? order.doctorName.trim() : "") ||
         (typeof orderAny?.doctor_name === "string" && orderAny.doctor_name.trim()
@@ -15582,7 +15636,9 @@ function MainApp() {
   const [databaseVisualizerSearchInput, setDatabaseVisualizerSearchInput] = useState("");
   const [databaseVisualizerSearchTerm, setDatabaseVisualizerSearchTerm] = useState<string | null>(null);
   const [databaseVisualizerPage, setDatabaseVisualizerPage] = useState(1);
-  const [databaseVisualizerPageSize, setDatabaseVisualizerPageSize] = useState(25);
+  const [databaseVisualizerPageSize, setDatabaseVisualizerPageSize] = useState(
+    DEFAULT_DATABASE_VISUALIZER_PAGE_SIZE,
+  );
   const [databaseVisualizerSortColumn, setDatabaseVisualizerSortColumn] = useState<string | null>(null);
   const [databaseVisualizerSortDirection, setDatabaseVisualizerSortDirection] = useState<"asc" | "desc">("asc");
   const [databaseVisualizerExpandedCells, setDatabaseVisualizerExpandedCells] = useState<Record<string, boolean>>({});
@@ -15807,8 +15863,8 @@ function MainApp() {
                   ? Math.max(1, Number(selectedRaw.preview.page))
                   : 1,
                 pageSize: Number.isFinite(Number(selectedRaw.preview?.pageSize))
-                  ? Math.max(1, Number(selectedRaw.preview.pageSize))
-                  : 25,
+                  ? normalizeDatabaseVisualizerPageSize(selectedRaw.preview.pageSize)
+                  : DEFAULT_DATABASE_VISUALIZER_PAGE_SIZE,
                 totalRowCount: Number.isFinite(Number(selectedRaw.preview?.totalRowCount))
                   ? Math.max(0, Number(selectedRaw.preview.totalRowCount))
                   : 0,
@@ -15914,7 +15970,7 @@ function MainApp() {
         setDatabaseVisualizerSearchInput("");
         setDatabaseVisualizerSearchTerm(null);
         setDatabaseVisualizerPage(1);
-        setDatabaseVisualizerPageSize(25);
+        setDatabaseVisualizerPageSize(DEFAULT_DATABASE_VISUALIZER_PAGE_SIZE);
         setDatabaseVisualizerSortColumn(null);
         setDatabaseVisualizerSortDirection("asc");
         setDatabaseVisualizerExpandedCells({});
@@ -15939,8 +15995,8 @@ function MainApp() {
           typeof options?.pageSize === "number" &&
           Number.isFinite(options.pageSize) &&
           options.pageSize > 0
-            ? Math.floor(options.pageSize)
-            : databaseVisualizerPageSize;
+            ? normalizeDatabaseVisualizerPageSize(options.pageSize)
+            : normalizeDatabaseVisualizerPageSize(databaseVisualizerPageSize);
         const requestedSortColumn =
           typeof options?.sortColumn === "string" ? options.sortColumn.trim() : databaseVisualizerSortColumn;
         const requestedSortDirection =
@@ -16050,7 +16106,7 @@ function MainApp() {
   );
   const handleDatabaseVisualizerPageSizeChange = useCallback(
     (pageSize: number) => {
-      const nextPageSize = pageSize <= 25 ? 25 : pageSize <= 50 ? 50 : 100;
+      const nextPageSize = normalizeDatabaseVisualizerPageSize(pageSize);
       setDatabaseVisualizerPage(1);
       setDatabaseVisualizerPageSize(nextPageSize);
       void fetchDatabaseVisualizer({
@@ -21058,8 +21114,25 @@ function MainApp() {
                 }
               : order;
 
+          const mergedFacilityPickupRecipientName = isSalesOrderFacilityPickup(merged as any)
+            ? resolveFacilityPickupRecipientNameFromOrder(merged as any)
+            : null;
           return {
             ...merged,
+            ...(mergedFacilityPickupRecipientName
+              ? {
+                  facilityPickupRecipientName: mergedFacilityPickupRecipientName,
+                  facility_pickup_recipient_name: mergedFacilityPickupRecipientName,
+                  pickupRecipientName: mergedFacilityPickupRecipientName,
+                  pickup_recipient_name: mergedFacilityPickupRecipientName,
+                  recipientName: mergedFacilityPickupRecipientName,
+                  recipient_name: mergedFacilityPickupRecipientName,
+                  orderRecipientName: mergedFacilityPickupRecipientName,
+                  order_recipient_name: mergedFacilityPickupRecipientName,
+                  customerName: mergedFacilityPickupRecipientName,
+                  customer_name: mergedFacilityPickupRecipientName,
+                }
+              : {}),
             createdAt: merged.createdAt || createdAt,
             updatedAt: merged.updatedAt || updatedAt,
             shippingEstimate:
@@ -21077,6 +21150,7 @@ function MainApp() {
               (order as any)?.billing_email ||
               null,
             doctorName:
+              mergedFacilityPickupRecipientName ||
               doctorInfo?.name ||
               (original as any)?.doctorName ||
               (original as any)?.billing_name ||
@@ -22120,10 +22194,14 @@ function MainApp() {
     >();
 	    for (const order of scopedSalesTrackingOrders) {
       const orderAny = order as any;
+      const facilityPickupRecipientNameForOrder = isSalesOrderFacilityPickup(orderAny)
+        ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
+        : null;
       const doctorId =
         resolveOrderDoctorIdForBucket(order) || order.userId || `anon:${order.id}`;
       const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
       const doctorName =
+        facilityPickupRecipientNameForOrder ||
         doctorInfo?.name ||
         salesRepDoctorsById.get(doctorId) ||
         order.doctorName ||
@@ -26152,6 +26230,8 @@ function MainApp() {
             options?.facilityPickupRecipientName,
             options?.shippingAddress?.recipientName,
             options?.shippingAddress?.recipient_name,
+            options?.shippingAddress?.orderRecipientName,
+            options?.shippingAddress?.order_recipient_name,
             options?.shippingAddress?.pickupRecipientName,
             options?.shippingAddress?.pickup_recipient_name,
             options?.shippingAddress?.fullName,
@@ -26166,6 +26246,8 @@ function MainApp() {
             fullName: submittedPickupRecipientName,
             recipientName: submittedPickupRecipientName,
             recipient_name: submittedPickupRecipientName,
+            orderRecipientName: submittedPickupRecipientName,
+            order_recipient_name: submittedPickupRecipientName,
             pickupRecipientName: submittedPickupRecipientName,
             pickup_recipient_name: submittedPickupRecipientName,
           }
@@ -27894,9 +27976,12 @@ function MainApp() {
 	                    const billingName = `${String(billingAddress?.firstName ?? billingAddress?.first_name ?? "").trim()} ${String(billingAddress?.lastName ?? billingAddress?.last_name ?? "").trim()}`.trim();
 	                    const rawDoctorName = String(order.doctorName ?? "").trim();
 	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
-	                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
-	                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
-	                    const doctorNameFromApi =
+                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
+                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
+                    const facilityPickupRecipientName = isSalesOrderFacilityPickup(orderAny)
+                      ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
+                      : null;
+                    const doctorNameFromApi =
 	                      (rawDoctorName &&
 	                      normalizedDoctorName !== "unknown doctor" &&
 	                      normalizedDoctorName !== "unknown"
@@ -27907,8 +27992,9 @@ function MainApp() {
 	                      normalizedDoctorNameSnake !== "unknown"
 	                        ? rawDoctorNameSnake
 	                        : "");
-	                    const doctorLabel =
-	                      doctorNameFromApi ||
+                    const doctorLabel =
+                      facilityPickupRecipientName ||
+                      doctorNameFromApi ||
 	                      shippingName ||
 	                      billingName ||
 	                      shippingAddress?.name ||
@@ -28054,9 +28140,12 @@ function MainApp() {
 	                    const billingName = `${String(billingAddress?.firstName ?? billingAddress?.first_name ?? "").trim()} ${String(billingAddress?.lastName ?? billingAddress?.last_name ?? "").trim()}`.trim();
 	                    const rawDoctorName = String(order.doctorName ?? "").trim();
 	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
-	                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
-	                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
-	                    const doctorNameFromApi =
+                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
+                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
+                    const facilityPickupRecipientName = isSalesOrderFacilityPickup(orderAny)
+                      ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
+                      : null;
+                    const doctorNameFromApi =
 	                      (rawDoctorName &&
 	                      normalizedDoctorName !== "unknown doctor" &&
 	                      normalizedDoctorName !== "unknown"
@@ -28067,8 +28156,9 @@ function MainApp() {
 	                      normalizedDoctorNameSnake !== "unknown"
 	                        ? rawDoctorNameSnake
 	                        : "");
-	                    const doctorLabel =
-	                      doctorNameFromApi ||
+                    const doctorLabel =
+                      facilityPickupRecipientName ||
+                      doctorNameFromApi ||
 	                      shippingName ||
 	                      billingName ||
 	                      shippingAddress?.name ||
@@ -28588,11 +28678,13 @@ function MainApp() {
                               <select
                                 value={databaseVisualizerPageSize}
                                 onChange={(event) =>
-                                  handleDatabaseVisualizerPageSizeChange(Number(event.target.value) || 25)
+                                  handleDatabaseVisualizerPageSizeChange(
+                                    Number(event.target.value) || DEFAULT_DATABASE_VISUALIZER_PAGE_SIZE,
+                                  )
                                 }
                                 className="database-visualizer-select-field h-9 border border-[#b7b7b7] bg-white px-3 text-sm text-slate-900"
                               >
-                                {[25, 50, 100].map((size) => (
+                                {DATABASE_VISUALIZER_PAGE_SIZE_OPTIONS.map((size) => (
                                   <option key={size} value={size}>
                                     {size}
                                   </option>

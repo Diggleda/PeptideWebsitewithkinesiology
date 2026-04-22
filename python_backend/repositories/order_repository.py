@@ -59,6 +59,8 @@ def _apply_facility_pickup_recipient_name(address: object, recipient_name: objec
         "fullName": normalized_name,
         "recipientName": normalized_name,
         "recipient_name": normalized_name,
+        "orderRecipientName": normalized_name,
+        "order_recipient_name": normalized_name,
         "pickupRecipientName": normalized_name,
         "pickup_recipient_name": normalized_name,
         "firstName": first_name,
@@ -1015,22 +1017,44 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         facility_pickup_recipient_name = _normalize_facility_pickup_recipient_name(
             entry.get("shippingAddress", {}).get("recipientName") if isinstance(entry.get("shippingAddress"), dict) else None,
             entry.get("shippingAddress", {}).get("recipient_name") if isinstance(entry.get("shippingAddress"), dict) else None,
+            entry.get("shippingAddress", {}).get("orderRecipientName") if isinstance(entry.get("shippingAddress"), dict) else None,
+            entry.get("shippingAddress", {}).get("order_recipient_name") if isinstance(entry.get("shippingAddress"), dict) else None,
             entry.get("shippingAddress", {}).get("pickupRecipientName") if isinstance(entry.get("shippingAddress"), dict) else None,
             entry.get("shippingAddress", {}).get("pickup_recipient_name") if isinstance(entry.get("shippingAddress"), dict) else None,
             entry.get("billingAddress", {}).get("recipientName") if isinstance(entry.get("billingAddress"), dict) else None,
             entry.get("billingAddress", {}).get("recipient_name") if isinstance(entry.get("billingAddress"), dict) else None,
+            entry.get("billingAddress", {}).get("orderRecipientName") if isinstance(entry.get("billingAddress"), dict) else None,
+            entry.get("billingAddress", {}).get("order_recipient_name") if isinstance(entry.get("billingAddress"), dict) else None,
             entry.get("billingAddress", {}).get("pickupRecipientName") if isinstance(entry.get("billingAddress"), dict) else None,
             entry.get("billingAddress", {}).get("pickup_recipient_name") if isinstance(entry.get("billingAddress"), dict) else None,
             entry.get("facilityPickupRecipientName"),
             entry.get("facility_pickup_recipient_name"),
             entry.get("pickupRecipientName"),
             entry.get("pickup_recipient_name"),
+            entry.get("recipientName"),
+            entry.get("recipient_name"),
+            entry.get("orderRecipientName"),
+            entry.get("order_recipient_name"),
+            entry.get("customerName"),
+            entry.get("customer_name"),
+            entry.get("doctorName"),
+            entry.get("doctor_name"),
             entry.get("shippingAddress", {}).get("fullName") if isinstance(entry.get("shippingAddress"), dict) else None,
             entry.get("billingAddress", {}).get("fullName") if isinstance(entry.get("billingAddress"), dict) else None,
         )
         if entry.get("facilityPickup") and facility_pickup_recipient_name:
             entry["facilityPickupRecipientName"] = facility_pickup_recipient_name
             entry["facility_pickup_recipient_name"] = facility_pickup_recipient_name
+            entry["pickupRecipientName"] = facility_pickup_recipient_name
+            entry["pickup_recipient_name"] = facility_pickup_recipient_name
+            entry["recipientName"] = facility_pickup_recipient_name
+            entry["recipient_name"] = facility_pickup_recipient_name
+            entry["orderRecipientName"] = facility_pickup_recipient_name
+            entry["order_recipient_name"] = facility_pickup_recipient_name
+            entry["customerName"] = facility_pickup_recipient_name
+            entry["customer_name"] = facility_pickup_recipient_name
+            entry["doctorName"] = facility_pickup_recipient_name
+            entry["doctor_name"] = facility_pickup_recipient_name
             if isinstance(entry.get("shippingAddress"), dict):
                 entry["shippingAddress"] = _apply_facility_pickup_recipient_name(
                     entry.get("shippingAddress"),
@@ -1401,6 +1425,45 @@ def list_for_tax_reporting(start_utc: datetime, end_utc: datetime) -> List[Dict]
             or order_payload.get("grandTotal")
             or order_payload.get("total")
         )
+        is_facility_pickup = bool(
+            order_payload.get("facilityPickup")
+            or order_payload.get("facility_pickup")
+            or order_payload.get("fascility_pickup")
+            or str(order_payload.get("fulfillmentMethod") or order_payload.get("fulfillment_method") or "").strip().lower()
+            in ("facility_pickup", "fascility_pickup")
+        )
+        facility_pickup_recipient_name = (
+            _normalize_facility_pickup_recipient_name(
+                shipping_address.get("recipientName") if isinstance(shipping_address, dict) else None,
+                shipping_address.get("recipient_name") if isinstance(shipping_address, dict) else None,
+                shipping_address.get("orderRecipientName") if isinstance(shipping_address, dict) else None,
+                shipping_address.get("order_recipient_name") if isinstance(shipping_address, dict) else None,
+                shipping_address.get("pickupRecipientName") if isinstance(shipping_address, dict) else None,
+                shipping_address.get("pickup_recipient_name") if isinstance(shipping_address, dict) else None,
+                billing_address.get("recipientName") if isinstance(billing_address, dict) else None,
+                billing_address.get("recipient_name") if isinstance(billing_address, dict) else None,
+                billing_address.get("orderRecipientName") if isinstance(billing_address, dict) else None,
+                billing_address.get("order_recipient_name") if isinstance(billing_address, dict) else None,
+                billing_address.get("pickupRecipientName") if isinstance(billing_address, dict) else None,
+                billing_address.get("pickup_recipient_name") if isinstance(billing_address, dict) else None,
+                order_payload.get("facilityPickupRecipientName"),
+                order_payload.get("facility_pickup_recipient_name"),
+                order_payload.get("pickupRecipientName"),
+                order_payload.get("pickup_recipient_name"),
+                order_payload.get("recipientName"),
+                order_payload.get("recipient_name"),
+                order_payload.get("orderRecipientName"),
+                order_payload.get("order_recipient_name"),
+                order_payload.get("customerName"),
+                order_payload.get("customer_name"),
+                order_payload.get("doctorName"),
+                order_payload.get("doctor_name"),
+                shipping_address.get("fullName") if isinstance(shipping_address, dict) else None,
+                billing_address.get("fullName") if isinstance(billing_address, dict) else None,
+            )
+            if is_facility_pickup
+            else None
+        )
         return {
             "id": row.get("id"),
             "status": row.get("status"),
@@ -1409,20 +1472,18 @@ def list_for_tax_reporting(start_utc: datetime, end_utc: datetime) -> List[Dict]
             "taxTotal": tax_total,
             "shippingAddress": shipping_address,
             "billingAddress": billing_address,
-            "facilityPickupRecipientName": (
-                order_payload.get("facilityPickupRecipientName")
-                or order_payload.get("facility_pickup_recipient_name")
-                or order_payload.get("pickupRecipientName")
-                or order_payload.get("pickup_recipient_name")
-                or None
-            ),
-            "facility_pickup_recipient_name": (
-                order_payload.get("facility_pickup_recipient_name")
-                or order_payload.get("facilityPickupRecipientName")
-                or order_payload.get("pickup_recipient_name")
-                or order_payload.get("pickupRecipientName")
-                or None
-            ),
+            "facilityPickupRecipientName": facility_pickup_recipient_name,
+            "facility_pickup_recipient_name": facility_pickup_recipient_name,
+            "pickupRecipientName": facility_pickup_recipient_name,
+            "pickup_recipient_name": facility_pickup_recipient_name,
+            "recipientName": facility_pickup_recipient_name,
+            "recipient_name": facility_pickup_recipient_name,
+            "orderRecipientName": facility_pickup_recipient_name,
+            "order_recipient_name": facility_pickup_recipient_name,
+            "customerName": facility_pickup_recipient_name,
+            "customer_name": facility_pickup_recipient_name,
+            "doctorName": facility_pickup_recipient_name,
+            "doctor_name": facility_pickup_recipient_name,
             "wooOrderId": row.get("woo_order_id") or None,
             "wooOrderNumber": row.get("woo_order_number") or None,
             "createdAt": _fmt_datetime(row.get("created_at")),
@@ -2315,22 +2376,44 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
     facility_pickup_recipient_name = _normalize_facility_pickup_recipient_name(
         order.get("shippingAddress", {}).get("recipientName") if isinstance(order.get("shippingAddress"), dict) else None,
         order.get("shippingAddress", {}).get("recipient_name") if isinstance(order.get("shippingAddress"), dict) else None,
+        order.get("shippingAddress", {}).get("orderRecipientName") if isinstance(order.get("shippingAddress"), dict) else None,
+        order.get("shippingAddress", {}).get("order_recipient_name") if isinstance(order.get("shippingAddress"), dict) else None,
         order.get("shippingAddress", {}).get("pickupRecipientName") if isinstance(order.get("shippingAddress"), dict) else None,
         order.get("shippingAddress", {}).get("pickup_recipient_name") if isinstance(order.get("shippingAddress"), dict) else None,
         order.get("billingAddress", {}).get("recipientName") if isinstance(order.get("billingAddress"), dict) else None,
         order.get("billingAddress", {}).get("recipient_name") if isinstance(order.get("billingAddress"), dict) else None,
+        order.get("billingAddress", {}).get("orderRecipientName") if isinstance(order.get("billingAddress"), dict) else None,
+        order.get("billingAddress", {}).get("order_recipient_name") if isinstance(order.get("billingAddress"), dict) else None,
         order.get("billingAddress", {}).get("pickupRecipientName") if isinstance(order.get("billingAddress"), dict) else None,
         order.get("billingAddress", {}).get("pickup_recipient_name") if isinstance(order.get("billingAddress"), dict) else None,
         order.get("facilityPickupRecipientName"),
         order.get("facility_pickup_recipient_name"),
         order.get("pickupRecipientName"),
         order.get("pickup_recipient_name"),
+        order.get("recipientName"),
+        order.get("recipient_name"),
+        order.get("orderRecipientName"),
+        order.get("order_recipient_name"),
+        order.get("customerName"),
+        order.get("customer_name"),
+        order.get("doctorName"),
+        order.get("doctor_name"),
         order.get("shippingAddress", {}).get("fullName") if isinstance(order.get("shippingAddress"), dict) else None,
         order.get("billingAddress", {}).get("fullName") if isinstance(order.get("billingAddress"), dict) else None,
     )
     if bool(order.get("facilityPickup")) and facility_pickup_recipient_name:
         order["facilityPickupRecipientName"] = facility_pickup_recipient_name
         order["facility_pickup_recipient_name"] = facility_pickup_recipient_name
+        order["pickupRecipientName"] = facility_pickup_recipient_name
+        order["pickup_recipient_name"] = facility_pickup_recipient_name
+        order["recipientName"] = facility_pickup_recipient_name
+        order["recipient_name"] = facility_pickup_recipient_name
+        order["orderRecipientName"] = facility_pickup_recipient_name
+        order["order_recipient_name"] = facility_pickup_recipient_name
+        order["customerName"] = facility_pickup_recipient_name
+        order["customer_name"] = facility_pickup_recipient_name
+        order["doctorName"] = facility_pickup_recipient_name
+        order["doctor_name"] = facility_pickup_recipient_name
         if isinstance(order.get("shippingAddress"), dict):
             order["shippingAddress"] = _apply_facility_pickup_recipient_name(
                 order.get("shippingAddress"),

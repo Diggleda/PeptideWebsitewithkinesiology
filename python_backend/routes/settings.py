@@ -161,14 +161,18 @@ def _database_visualizer_page(raw: object) -> int:
 
 def _database_visualizer_page_size(raw: object) -> int:
     try:
-        parsed = int(str(raw or "").strip() or "25")
+        parsed = int(str(raw or "").strip() or "20")
     except (TypeError, ValueError):
-        parsed = 25
-    if parsed <= 25:
-        return 25
+        parsed = 20
+    if parsed <= 20:
+        return 20
     if parsed <= 50:
         return 50
-    return 100
+    if parsed <= 100:
+        return 100
+    if parsed <= 250:
+        return 250
+    return 500
 
 
 def _database_visualizer_sort_direction(raw: object) -> str:

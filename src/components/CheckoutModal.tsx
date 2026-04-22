@@ -110,6 +110,8 @@ type ShippingAddress = {
   fullName?: string | null;
   recipientName?: string | null;
   recipient_name?: string | null;
+  orderRecipientName?: string | null;
+  order_recipient_name?: string | null;
   pickupRecipientName?: string | null;
   pickup_recipient_name?: string | null;
   addressLine1?: string | null;
@@ -681,6 +683,8 @@ export function CheckoutModal({
         fullName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
         recipientName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
         recipient_name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+        orderRecipientName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+        order_recipient_name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
         pickupRecipientName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
         pickup_recipient_name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
       }
@@ -1197,6 +1201,8 @@ export function CheckoutModal({
               fullName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
               recipientName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
               recipient_name: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+              orderRecipientName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+              order_recipient_name: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
               pickupRecipientName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
               pickup_recipient_name: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
             }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action, require_admin as _require_admin_user
 
 blueprint = Blueprint("orders", __name__, url_prefix="/api/orders")
+logger = logging.getLogger(__name__)
 
 def _round_money(value) -> float:
     try:
@@ -126,8 +128,8 @@ def create_order():
     pricing_mode = payload.get("pricingMode") or payload.get("pricing_mode") or None
     tax_total = payload.get("taxTotal")
     shipping_total = payload.get("shippingTotal")
-    shipping_address = payload.get("shippingAddress")
-    billing_address = payload.get("billingAddress")
+    shipping_address = payload.get("shippingAddress") or payload.get("shipping_address")
+    billing_address = payload.get("billingAddress") or payload.get("billing_address")
 
     def _first_pickup_recipient_name(*values):
         for value in values:
@@ -144,8 +146,14 @@ def create_order():
         return _first_pickup_recipient_name(
             address.get("recipientName"),
             address.get("recipient_name"),
+            address.get("orderRecipientName"),
+            address.get("order_recipient_name"),
             address.get("pickupRecipientName"),
             address.get("pickup_recipient_name"),
+            address.get("customerName"),
+            address.get("customer_name"),
+            address.get("doctorName"),
+            address.get("doctor_name"),
             address.get("fullName"),
             address.get("name"),
         )
@@ -160,6 +168,14 @@ def create_order():
         payload.get("facility_pickup_recipient_name"),
         payload.get("pickupRecipientName"),
         payload.get("pickup_recipient_name"),
+        payload.get("recipientName"),
+        payload.get("recipient_name"),
+        payload.get("orderRecipientName"),
+        payload.get("order_recipient_name"),
+        payload.get("customerName"),
+        payload.get("customer_name"),
+        payload.get("doctorName"),
+        payload.get("doctor_name"),
     )
     shipping_pickup_recipient_name = _address_pickup_recipient_name(shipping_address)
     billing_pickup_recipient_name = _address_pickup_recipient_name(billing_address)
@@ -182,6 +198,20 @@ def create_order():
         or payload.get("facility_pickup") is True
         or payload.get("fascility_pickup") is True
     )
+    if facility_pickup:
+        logger.info(
+            "[checkout] facility pickup route recipient submitted=%r shipping=%r billing=%r actor=%r resolved=%r "
+            "payload_recipient=%r payload_order_recipient=%r shipping_name=%r shipping_recipient=%r",
+            submitted_pickup_recipient_name,
+            shipping_pickup_recipient_name,
+            billing_pickup_recipient_name,
+            actor_name,
+            facility_pickup_recipient_name,
+            payload.get("recipientName") or payload.get("recipient_name"),
+            payload.get("orderRecipientName") or payload.get("order_recipient_name"),
+            shipping_address.get("name") if isinstance(shipping_address, dict) else None,
+            shipping_address.get("recipientName") if isinstance(shipping_address, dict) else None,
+        )
     # Support both keys from frontend/backends
     shipping_rate = payload.get("shippingRate") or payload.get("shippingEstimate")
     delegate_proposal_token = (
@@ -477,10 +507,14 @@ def admin_on_hold_orders():
                 local.get("order_recipient_name"),
                 shipping.get("recipientName"),
                 shipping.get("recipient_name"),
+                shipping.get("orderRecipientName"),
+                shipping.get("order_recipient_name"),
                 shipping.get("pickupRecipientName"),
                 shipping.get("pickup_recipient_name"),
                 billing.get("recipientName"),
                 billing.get("recipient_name"),
+                billing.get("orderRecipientName"),
+                billing.get("order_recipient_name"),
                 billing.get("pickupRecipientName"),
                 billing.get("pickup_recipient_name"),
                 shipping_name,
@@ -520,6 +554,16 @@ def admin_on_hold_orders():
                 "updatedAt": local.get("updatedAt") or None,
                 "doctorId": doctor.get("id") or local_user_id or None,
                 "doctorName": doctor_name,
+                "facilityPickupRecipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "facility_pickup_recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "pickupRecipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "pickup_recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "recipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "orderRecipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "order_recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "customerName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "customer_name": facility_pickup_recipient_name if is_facility_pickup else None,
                 "doctorEmail": doctor_email,
                 "userId": doctor.get("id") or local_user_id or None,
                 "lineItems": local.get("items") or [],

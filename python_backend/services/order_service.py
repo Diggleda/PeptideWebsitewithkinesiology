@@ -1847,6 +1847,8 @@ def _apply_facility_pickup_recipient_name(address: object, recipient_name: objec
         "fullName": normalized_name,
         "recipientName": normalized_name,
         "recipient_name": normalized_name,
+        "orderRecipientName": normalized_name,
+        "order_recipient_name": normalized_name,
         "pickupRecipientName": normalized_name,
         "pickup_recipient_name": normalized_name,
         "firstName": first_name,
@@ -1865,8 +1867,14 @@ def _build_facility_pickup_shipping_address(
     address_name = _normalize_address_field(
         shipping_address.get("recipientName")
         or shipping_address.get("recipient_name")
+        or shipping_address.get("orderRecipientName")
+        or shipping_address.get("order_recipient_name")
         or shipping_address.get("pickupRecipientName")
         or shipping_address.get("pickup_recipient_name")
+        or shipping_address.get("customerName")
+        or shipping_address.get("customer_name")
+        or shipping_address.get("doctorName")
+        or shipping_address.get("doctor_name")
         or shipping_address.get("fullName")
         or shipping_address.get("name")
     )
@@ -2228,8 +2236,14 @@ def create_order(
         address_pickup_recipient_name = _normalize_address_field(
             shipping_address.get("recipientName")
             or shipping_address.get("recipient_name")
+            or shipping_address.get("orderRecipientName")
+            or shipping_address.get("order_recipient_name")
             or shipping_address.get("pickupRecipientName")
             or shipping_address.get("pickup_recipient_name")
+            or shipping_address.get("customerName")
+            or shipping_address.get("customer_name")
+            or shipping_address.get("doctorName")
+            or shipping_address.get("doctor_name")
             or shipping_address.get("fullName")
             or shipping_address.get("name")
         )
@@ -2249,6 +2263,14 @@ def create_order(
             or _is_facility_pickup_recipient_placeholder(resolved_pickup_recipient_name)
         ):
             raise _service_error("Facility pickup recipient name is required", 400)
+        logger.info(
+            "[checkout] facility pickup service recipient submitted=%r address=%r actor=%r resolved=%r shipping_name=%r",
+            submitted_pickup_recipient_name,
+            address_pickup_recipient_name,
+            actor_name,
+            resolved_pickup_recipient_name,
+            shipping_address.get("name") if isinstance(shipping_address, dict) else None,
+        )
         shipping_address = _build_facility_pickup_shipping_address(
             user,
             shipping_address,
@@ -2331,8 +2353,14 @@ def create_order(
         _normalize_address_field(
             shipping_address.get("recipientName")
             or shipping_address.get("recipient_name")
+            or shipping_address.get("orderRecipientName")
+            or shipping_address.get("order_recipient_name")
             or shipping_address.get("pickupRecipientName")
             or shipping_address.get("pickup_recipient_name")
+            or shipping_address.get("customerName")
+            or shipping_address.get("customer_name")
+            or shipping_address.get("doctorName")
+            or shipping_address.get("doctor_name")
             or shipping_address.get("fullName")
             or shipping_address.get("name")
         )
@@ -3930,10 +3958,14 @@ def get_on_hold_orders_for_sales_rep(
             local.get("order_recipient_name"),
             shipping.get("recipientName"),
             shipping.get("recipient_name"),
+            shipping.get("orderRecipientName"),
+            shipping.get("order_recipient_name"),
             shipping.get("pickupRecipientName"),
             shipping.get("pickup_recipient_name"),
             billing.get("recipientName"),
             billing.get("recipient_name"),
+            billing.get("orderRecipientName"),
+            billing.get("order_recipient_name"),
             billing.get("pickupRecipientName"),
             billing.get("pickup_recipient_name"),
             shipping_name,
@@ -3976,6 +4008,16 @@ def get_on_hold_orders_for_sales_rep(
                 "updatedAt": local.get("updatedAt") or None,
                 "doctorId": doctor.get("id") or local_user_id or None,
                 "doctorName": doctor_name,
+                "facilityPickupRecipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "facility_pickup_recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "pickupRecipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "pickup_recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "recipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "orderRecipientName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "order_recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "customerName": facility_pickup_recipient_name if is_facility_pickup else None,
+                "customer_name": facility_pickup_recipient_name if is_facility_pickup else None,
                 "doctorEmail": doctor_email,
                 "doctorSalesRepId": rep_id,
                 "doctorSalesRepName": rep_record.get("name") if isinstance(rep_record, dict) else None,
@@ -4630,16 +4672,28 @@ def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
         facility_pickup_recipient_name = _normalize_optional_text(
             shipping_address.get("recipientName")
             or shipping_address.get("recipient_name")
+            or shipping_address.get("orderRecipientName")
+            or shipping_address.get("order_recipient_name")
             or shipping_address.get("pickupRecipientName")
             or shipping_address.get("pickup_recipient_name")
             or billing_address.get("recipientName")
             or billing_address.get("recipient_name")
+            or billing_address.get("orderRecipientName")
+            or billing_address.get("order_recipient_name")
             or billing_address.get("pickupRecipientName")
             or billing_address.get("pickup_recipient_name")
             or local_order.get("facilityPickupRecipientName")
             or local_order.get("facility_pickup_recipient_name")
             or local_order.get("pickupRecipientName")
             or local_order.get("pickup_recipient_name")
+            or local_order.get("recipientName")
+            or local_order.get("recipient_name")
+            or local_order.get("orderRecipientName")
+            or local_order.get("order_recipient_name")
+            or local_order.get("customerName")
+            or local_order.get("customer_name")
+            or local_order.get("doctorName")
+            or local_order.get("doctor_name")
             or shipping_address.get("fullName")
             or billing_address.get("fullName")
         )
@@ -4698,6 +4752,14 @@ def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
         "billingAddress": billing_address or (shipping_address or None),
         "facilityPickupRecipientName": facility_pickup_recipient_name,
         "facility_pickup_recipient_name": facility_pickup_recipient_name,
+        "pickupRecipientName": facility_pickup_recipient_name,
+        "pickup_recipient_name": facility_pickup_recipient_name,
+        "recipientName": facility_pickup_recipient_name,
+        "recipient_name": facility_pickup_recipient_name,
+        "orderRecipientName": facility_pickup_recipient_name,
+        "order_recipient_name": facility_pickup_recipient_name,
+        "customerName": facility_pickup_recipient_name,
+        "customer_name": facility_pickup_recipient_name,
         "billingEmail": billing_email,
         "shippingEstimate": local_order.get("shippingEstimate") or None,
         "trackingNumber": _normalize_optional_text(
@@ -4991,16 +5053,28 @@ def get_sales_rep_order_detail(
                 local_facility_pickup_recipient_name = _normalize_optional_text(
                     local_shipping.get("recipientName")
                     or local_shipping.get("recipient_name")
+                    or local_shipping.get("orderRecipientName")
+                    or local_shipping.get("order_recipient_name")
                     or local_shipping.get("pickupRecipientName")
                     or local_shipping.get("pickup_recipient_name")
                     or local_billing.get("recipientName")
                     or local_billing.get("recipient_name")
+                    or local_billing.get("orderRecipientName")
+                    or local_billing.get("order_recipient_name")
                     or local_billing.get("pickupRecipientName")
                     or local_billing.get("pickup_recipient_name")
                     or local_order.get("facilityPickupRecipientName")
                     or local_order.get("facility_pickup_recipient_name")
                     or local_order.get("pickupRecipientName")
                     or local_order.get("pickup_recipient_name")
+                    or local_order.get("recipientName")
+                    or local_order.get("recipient_name")
+                    or local_order.get("orderRecipientName")
+                    or local_order.get("order_recipient_name")
+                    or local_order.get("customerName")
+                    or local_order.get("customer_name")
+                    or local_order.get("doctorName")
+                    or local_order.get("doctor_name")
                     or local_shipping.get("fullName")
                     or local_billing.get("fullName")
                 )
@@ -5017,6 +5091,14 @@ def get_sales_rep_order_detail(
                     )
                 mapped["facilityPickupRecipientName"] = local_facility_pickup_recipient_name
                 mapped["facility_pickup_recipient_name"] = local_facility_pickup_recipient_name
+                mapped["pickupRecipientName"] = local_facility_pickup_recipient_name
+                mapped["pickup_recipient_name"] = local_facility_pickup_recipient_name
+                mapped["recipientName"] = local_facility_pickup_recipient_name
+                mapped["recipient_name"] = local_facility_pickup_recipient_name
+                mapped["orderRecipientName"] = local_facility_pickup_recipient_name
+                mapped["order_recipient_name"] = local_facility_pickup_recipient_name
+                mapped["customerName"] = local_facility_pickup_recipient_name
+                mapped["customer_name"] = local_facility_pickup_recipient_name
                 if _has_populated_address(mapped.get("shippingAddress")):
                     mapped["shippingAddress"] = _apply_facility_pickup_recipient_name(
                         _ensure_dict(mapped.get("shippingAddress")),
@@ -5101,9 +5183,61 @@ def get_sales_rep_order_detail(
 
     local_order = _refresh_authoritative_ups_status_for_order_view(mapped, local_order=local_order)
 
+    mapped_is_facility_pickup = bool(
+        mapped.get("facilityPickup")
+        or mapped.get("facility_pickup")
+        or mapped.get("fascility_pickup")
+        or str(mapped.get("fulfillmentMethod") or mapped.get("fulfillment_method") or "").strip().lower()
+        in ("facility_pickup", "fascility_pickup")
+    )
+    mapped_shipping = _ensure_dict(mapped.get("shippingAddress") or mapped.get("shipping_address"))
+    mapped_billing = _ensure_dict(mapped.get("billingAddress") or mapped.get("billing_address"))
+    mapped_facility_pickup_recipient_name = None
+    if mapped_is_facility_pickup:
+        mapped_facility_pickup_recipient_name = _normalize_optional_text(
+            mapped_shipping.get("recipientName")
+            or mapped_shipping.get("recipient_name")
+            or mapped_shipping.get("orderRecipientName")
+            or mapped_shipping.get("order_recipient_name")
+            or mapped_shipping.get("pickupRecipientName")
+            or mapped_shipping.get("pickup_recipient_name")
+            or mapped_billing.get("recipientName")
+            or mapped_billing.get("recipient_name")
+            or mapped_billing.get("orderRecipientName")
+            or mapped_billing.get("order_recipient_name")
+            or mapped_billing.get("pickupRecipientName")
+            or mapped_billing.get("pickup_recipient_name")
+            or mapped.get("facilityPickupRecipientName")
+            or mapped.get("facility_pickup_recipient_name")
+            or mapped.get("pickupRecipientName")
+            or mapped.get("pickup_recipient_name")
+            or mapped.get("recipientName")
+            or mapped.get("recipient_name")
+            or mapped.get("orderRecipientName")
+            or mapped.get("order_recipient_name")
+            or mapped.get("customerName")
+            or mapped.get("customer_name")
+        )
+    if mapped_facility_pickup_recipient_name:
+        mapped["facilityPickupRecipientName"] = mapped_facility_pickup_recipient_name
+        mapped["facility_pickup_recipient_name"] = mapped_facility_pickup_recipient_name
+        mapped["pickupRecipientName"] = mapped_facility_pickup_recipient_name
+        mapped["pickup_recipient_name"] = mapped_facility_pickup_recipient_name
+        mapped["recipientName"] = mapped_facility_pickup_recipient_name
+        mapped["recipient_name"] = mapped_facility_pickup_recipient_name
+        mapped["orderRecipientName"] = mapped_facility_pickup_recipient_name
+        mapped["order_recipient_name"] = mapped_facility_pickup_recipient_name
+        mapped["customerName"] = mapped_facility_pickup_recipient_name
+        mapped["customer_name"] = mapped_facility_pickup_recipient_name
+        mapped["doctorName"] = mapped_facility_pickup_recipient_name
+
     if resolved_doctor:
         mapped["doctorId"] = resolved_doctor.get("id")
-        mapped["doctorName"] = resolved_doctor.get("name") or mapped.get("billingEmail")
+        mapped["doctorName"] = (
+            mapped_facility_pickup_recipient_name
+            if mapped_is_facility_pickup and mapped_facility_pickup_recipient_name
+            else resolved_doctor.get("name") or mapped.get("billingEmail")
+        )
         mapped["doctorEmail"] = resolved_doctor.get("email")
         mapped["doctorSalesRepId"] = resolved_doctor.get("salesRepId")
     elif local_order:
@@ -5116,7 +5250,11 @@ def get_sales_rep_order_detail(
             or None
         )
         mapped["doctorId"] = local_order.get("userId") or local_order.get("user_id") or None
-        mapped["doctorName"] = fallback_name
+        mapped["doctorName"] = (
+            mapped_facility_pickup_recipient_name
+            if mapped_is_facility_pickup and mapped_facility_pickup_recipient_name
+            else fallback_name
+        )
         mapped["doctorEmail"] = (
             fallback_billing.get("email")
             or fallback_shipping.get("email")

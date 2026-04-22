@@ -2368,6 +2368,8 @@ const buildOrderFingerprint = (payload: {
   const shippingName =
     shippingAddress?.recipientName ||
     shippingAddress?.recipient_name ||
+    shippingAddress?.orderRecipientName ||
+    shippingAddress?.order_recipient_name ||
     shippingAddress?.pickupRecipientName ||
     shippingAddress?.pickup_recipient_name ||
     shippingAddress?.name ||
@@ -2476,8 +2478,18 @@ export const ordersAPI = {
     const normalizedFacilityPickupRecipientName = options?.facilityPickup === true
       ? normalizeFacilityPickupRecipientForOrder(
           options?.facilityPickupRecipientName,
+          (options as any)?.recipientName,
+          (options as any)?.recipient_name,
+          (options as any)?.orderRecipientName,
+          (options as any)?.order_recipient_name,
+          (options as any)?.customerName,
+          (options as any)?.customer_name,
+          (options as any)?.doctorName,
+          (options as any)?.doctor_name,
           shipping?.address?.recipientName,
           shipping?.address?.recipient_name,
+          shipping?.address?.orderRecipientName,
+          shipping?.address?.order_recipient_name,
           shipping?.address?.pickupRecipientName,
           shipping?.address?.pickup_recipient_name,
           shipping?.address?.fullName,
@@ -2494,11 +2506,35 @@ export const ordersAPI = {
               fullName: normalizedFacilityPickupRecipientName,
               recipientName: normalizedFacilityPickupRecipientName,
               recipient_name: normalizedFacilityPickupRecipientName,
+              orderRecipientName: normalizedFacilityPickupRecipientName,
+              order_recipient_name: normalizedFacilityPickupRecipientName,
               pickupRecipientName: normalizedFacilityPickupRecipientName,
               pickup_recipient_name: normalizedFacilityPickupRecipientName,
             },
           }
         : shipping;
+    const facilityPickupRecipientPayload =
+      options?.facilityPickup === true
+        ? {
+            facilityPickupRecipientName: normalizedFacilityPickupRecipientName,
+            facility_pickup_recipient_name: normalizedFacilityPickupRecipientName,
+            pickupRecipientName: normalizedFacilityPickupRecipientName,
+            pickup_recipient_name: normalizedFacilityPickupRecipientName,
+            recipientName: normalizedFacilityPickupRecipientName,
+            recipient_name: normalizedFacilityPickupRecipientName,
+            orderRecipientName: normalizedFacilityPickupRecipientName,
+            order_recipient_name: normalizedFacilityPickupRecipientName,
+            customerName: normalizedFacilityPickupRecipientName,
+            customer_name: normalizedFacilityPickupRecipientName,
+            doctorName: normalizedFacilityPickupRecipientName,
+            doctor_name: normalizedFacilityPickupRecipientName,
+          }
+        : {
+            facilityPickupRecipientName: null,
+            facility_pickup_recipient_name: null,
+            pickupRecipientName: null,
+            pickup_recipient_name: null,
+          };
     const fingerprint = buildOrderFingerprint({
       items,
       total,
@@ -2544,10 +2580,7 @@ export const ordersAPI = {
         physicianCertification: options?.physicianCertification === true,
         handDelivery: options?.handDelivery === true,
         facilityPickup: options?.facilityPickup === true,
-        facilityPickupRecipientName: normalizedFacilityPickupRecipientName,
-        facility_pickup_recipient_name: normalizedFacilityPickupRecipientName,
-        pickupRecipientName: normalizedFacilityPickupRecipientName,
-        pickup_recipient_name: normalizedFacilityPickupRecipientName,
+        ...facilityPickupRecipientPayload,
         ...(options?.facilityPickup === true
           ? {
               facilityPickup: true,
