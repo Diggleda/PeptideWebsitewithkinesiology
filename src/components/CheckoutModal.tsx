@@ -442,16 +442,35 @@ export function CheckoutModal({
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('zelle');
   const [manualHandDelivery, setManualHandDelivery] = useState(false);
   const [facilityPickup, setFacilityPickup] = useState(false);
+  const defaultFacilityPickupRecipientName =
+    normalizeAddressField(customerName) || normalizeAddressField(physicianName) || '';
   const [facilityPickupRecipientNameDraft, setFacilityPickupRecipientNameDraft] = useState(
-    normalizeAddressField(customerName) || normalizeAddressField(physicianName) || '',
+    defaultFacilityPickupRecipientName,
+  );
+  const [facilityPickupRecipientNameSaved, setFacilityPickupRecipientNameSaved] = useState(
+    defaultFacilityPickupRecipientName,
   );
   const facilityPickupRecipientNameDraftRef = useRef(facilityPickupRecipientNameDraft);
+  const facilityPickupRecipientNameSavedRef = useRef(facilityPickupRecipientNameSaved);
   const setFacilityPickupRecipientNameValue = useCallback((value: string | ((prev: string) => string)) => {
     const current = facilityPickupRecipientNameDraftRef.current;
     const next = typeof value === 'function' ? value(current) : value;
     facilityPickupRecipientNameDraftRef.current = next;
     setFacilityPickupRecipientNameDraft(next);
   }, []);
+  const saveFacilityPickupRecipientName = useCallback((silent = false) => {
+    const next =
+      normalizeFacilityPickupRecipientName(facilityPickupRecipientNameDraftRef.current)
+      || defaultFacilityPickupRecipientName;
+    facilityPickupRecipientNameDraftRef.current = next;
+    facilityPickupRecipientNameSavedRef.current = next;
+    setFacilityPickupRecipientNameDraft(next);
+    setFacilityPickupRecipientNameSaved(next);
+    if (!silent) {
+      toast.success('Recipient name saved');
+    }
+    return next;
+  }, [defaultFacilityPickupRecipientName]);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
@@ -643,19 +662,18 @@ export function CheckoutModal({
     !isDelegateCheckoutFlow && allowManualHandDelivery && manualHandDelivery === true;
   const isHandDeliveryEnabled = isDoctorHandDeliveryEnabled || isManualHandDeliveryEnabled;
   const bypassShippingRateSelection = isHandDeliveryEnabled || isFacilityPickupEnabled;
-  const defaultFacilityPickupRecipientName =
-    normalizeAddressField(customerName) || normalizeAddressField(physicianName);
   const facilityPickupRecipientName =
     normalizeFacilityPickupRecipientName(facilityPickupRecipientNameDraft)
     || defaultFacilityPickupRecipientName
-    || normalizeFacilityPickupRecipientName(shippingAddress.name)
     || normalizeAddressField(FACILITY_PICKUP_ADDRESS.name);
-  const resolveSubmittedFacilityPickupRecipientName = useCallback(() => (
-    normalizeFacilityPickupRecipientName(facilityPickupRecipientNameDraftRef.current)
-    || defaultFacilityPickupRecipientName
-    || normalizeFacilityPickupRecipientName(shippingAddress.name)
-    || normalizeAddressField(FACILITY_PICKUP_ADDRESS.name)
-  ), [defaultFacilityPickupRecipientName, shippingAddress.name]);
+  const resolveSubmittedFacilityPickupRecipientName = useCallback(
+    () => (
+      normalizeFacilityPickupRecipientName(facilityPickupRecipientNameDraftRef.current)
+      || normalizeFacilityPickupRecipientName(facilityPickupRecipientNameSavedRef.current)
+      || defaultFacilityPickupRecipientName
+    ),
+    [defaultFacilityPickupRecipientName],
+  );
   const effectiveCheckoutAddress = isFacilityPickupEnabled
     ? {
         ...FACILITY_PICKUP_ADDRESS,
@@ -750,8 +768,12 @@ export function CheckoutModal({
   useEffect(() => {
     if (!isOpen) return;
     setFacilityPickupRecipientNameValue((prev) =>
-      normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName || '',
+      normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName,
     );
+    if (!normalizeFacilityPickupRecipientName(facilityPickupRecipientNameSavedRef.current)) {
+      facilityPickupRecipientNameSavedRef.current = defaultFacilityPickupRecipientName;
+      setFacilityPickupRecipientNameSaved(defaultFacilityPickupRecipientName);
+    }
     if (isDelegateFlow) {
       const normalized = normalizeCheckoutPaymentMethod(delegatePaymentMethod) ?? 'none';
       setPaymentMethod(normalized);
@@ -1154,6 +1176,18 @@ export function CheckoutModal({
       const submittedFacilityPickupRecipientName = isFacilityPickupEnabled
         ? resolveSubmittedFacilityPickupRecipientName()
         : null;
+      if (isFacilityPickupEnabled && !submittedFacilityPickupRecipientName) {
+        const message = 'Enter the facility pickup recipient name before placing the order.';
+        setCheckoutStatus('error');
+        setCheckoutStatusMessage(message);
+        toast.error(message);
+        return;
+      }
+      if (isFacilityPickupEnabled && submittedFacilityPickupRecipientName) {
+        facilityPickupRecipientNameSavedRef.current = submittedFacilityPickupRecipientName;
+        setFacilityPickupRecipientNameSaved(submittedFacilityPickupRecipientName);
+        setFacilityPickupRecipientNameValue(submittedFacilityPickupRecipientName);
+      }
       const checkoutShippingAddress = delegateShippingHandledByPhysician
         ? null
         : isFacilityPickupEnabled
@@ -1395,7 +1429,9 @@ export function CheckoutModal({
       setPaymentMethod('zelle');
       setManualHandDelivery(false);
       setFacilityPickup(false);
-      setFacilityPickupRecipientNameValue(defaultFacilityPickupRecipientName || '');
+      setFacilityPickupRecipientNameValue(defaultFacilityPickupRecipientName);
+      facilityPickupRecipientNameSavedRef.current = defaultFacilityPickupRecipientName;
+      setFacilityPickupRecipientNameSaved(defaultFacilityPickupRecipientName);
       setPlacedOrderNumber(null);
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
@@ -1820,8 +1856,12 @@ export function CheckoutModal({
                                 if (nextChecked) {
                                   setManualHandDelivery(false);
                                   setFacilityPickupRecipientNameValue((prev) =>
-                                    normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName || '',
+                                    normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName,
                                   );
+                                  facilityPickupRecipientNameSavedRef.current =
+                                    normalizeFacilityPickupRecipientName(facilityPickupRecipientNameSavedRef.current)
+                                    || defaultFacilityPickupRecipientName;
+                                  setFacilityPickupRecipientNameSaved(facilityPickupRecipientNameSavedRef.current);
                                 }
                               }}
                             />
@@ -2237,18 +2277,34 @@ export function CheckoutModal({
                       <p className="text-sm font-semibold text-slate-900">Facility pickup selected.</p>
                       <div className="flex flex-col gap-2">
                         <Label htmlFor="facility-pickup-recipient-name">Recipient Name</Label>
-                        <Input
-                          id="facility-pickup-recipient-name"
-                          placeholder="Full name"
-                          value={facilityPickupRecipientNameDraft}
-                          onChange={(e) => setFacilityPickupRecipientNameValue(e.target.value)}
-                          onBlur={() =>
-                            setFacilityPickupRecipientNameValue((prev) =>
-                              normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName || '',
-                            )
-                          }
-                          className="squircle-sm bg-slate-50 border-2"
-                        />
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Input
+                            id="facility-pickup-recipient-name"
+                            placeholder="Full name"
+                            value={facilityPickupRecipientNameDraft}
+                            onChange={(e) => setFacilityPickupRecipientNameValue(e.target.value)}
+                            onBlur={() =>
+                              setFacilityPickupRecipientNameValue((prev) =>
+                                normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName,
+                              )
+                            }
+                            className="squircle-sm bg-slate-50 border-2"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-10 shrink-0 border-green-300 bg-white/80 text-green-900 hover:bg-green-50"
+                            onClick={() => saveFacilityPickupRecipientName(false)}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                        {facilityPickupRecipientNameSaved ? (
+                          <p className="text-xs font-medium text-green-800">
+                            Saved recipient: {facilityPickupRecipientNameSaved}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="space-y-1 text-sm text-slate-800">
                       <p>640 S Grand Ave</p>

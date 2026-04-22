@@ -1721,11 +1721,33 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     return null;
   };
   const integrations = parseMaybeJson(order.integrationDetails || order.integrations) || {};
+  const shippingAddress =
+    (order as any).shippingAddress ||
+    (order as any).shipping_address ||
+    (order as any).shipping ||
+    null;
+  const billingAddress =
+    (order as any).billingAddress ||
+    (order as any).billing_address ||
+    (order as any).billing ||
+    null;
   return resolveFacilityPickupRecipientName(
     (order as any).facilityPickupRecipientName,
     (order as any).facility_pickup_recipient_name,
     (order as any).pickupRecipientName,
     (order as any).pickup_recipient_name,
+    (order as any).recipientName,
+    (order as any).recipient_name,
+    (order as any).orderRecipientName,
+    (order as any).order_recipient_name,
+    shippingAddress?.recipientName,
+    shippingAddress?.recipient_name,
+    shippingAddress?.pickupRecipientName,
+    shippingAddress?.pickup_recipient_name,
+    billingAddress?.recipientName,
+    billingAddress?.recipient_name,
+    billingAddress?.pickupRecipientName,
+    billingAddress?.pickup_recipient_name,
     readMetaValue(integrations, "peppro_facility_pickup_recipient_name"),
     readMetaValue((integrations as any)?.wooCommerce, "peppro_facility_pickup_recipient_name"),
     readMetaValue((integrations as any)?.woocommerce, "peppro_facility_pickup_recipient_name"),
@@ -3260,6 +3282,9 @@ const normalizeAccountOrdersResponse = (
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
           doctorName:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
             null,
           doctorEmail:
@@ -3361,6 +3386,9 @@ const normalizeAccountOrdersResponse = (
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
           doctorName:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
             null,
           doctorEmail:
@@ -3469,6 +3497,9 @@ const normalizeAccountOrdersResponse = (
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
           doctorName:
+            (isSalesOrderFacilityPickup(order as any)
+              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
+              : null) ||
             normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
             null,
           doctorEmail:
@@ -26107,7 +26138,8 @@ function MainApp() {
       for (const candidate of candidates) {
         if (typeof candidate !== "string") continue;
         const trimmed = candidate.trim();
-        if (!trimmed || normalizeAddressComparisonPart(trimmed) === "peppro facility pickup") {
+        const comparable = normalizeAddressComparisonPart(trimmed);
+        if (!trimmed || comparable === "peppro facility pickup") {
           continue;
         }
         return trimmed;

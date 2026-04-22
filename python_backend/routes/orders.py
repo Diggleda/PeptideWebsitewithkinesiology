@@ -459,6 +459,33 @@ def admin_on_hold_orders():
                 billing.get("firstName") or billing.get("first_name"),
                 billing.get("lastName") or billing.get("last_name"),
             ) or _first_text(billing.get("name"), billing.get("company"))
+            is_facility_pickup = bool(
+                local.get("facilityPickup")
+                or local.get("facility_pickup")
+                or local.get("fascility_pickup")
+                or str(local.get("fulfillmentMethod") or local.get("fulfillment_method") or "").strip().lower()
+                in ("facility_pickup", "fascility_pickup")
+            )
+            facility_pickup_recipient_name = _first_text(
+                local.get("facilityPickupRecipientName"),
+                local.get("facility_pickup_recipient_name"),
+                local.get("pickupRecipientName"),
+                local.get("pickup_recipient_name"),
+                local.get("recipientName"),
+                local.get("recipient_name"),
+                local.get("orderRecipientName"),
+                local.get("order_recipient_name"),
+                shipping.get("recipientName"),
+                shipping.get("recipient_name"),
+                shipping.get("pickupRecipientName"),
+                shipping.get("pickup_recipient_name"),
+                billing.get("recipientName"),
+                billing.get("recipient_name"),
+                billing.get("pickupRecipientName"),
+                billing.get("pickup_recipient_name"),
+                shipping_name,
+                billing_name,
+            )
             doctor_email = _first_text(
                 doctor.get("email"),
                 local.get("doctorEmail"),
@@ -469,6 +496,7 @@ def admin_on_hold_orders():
                 shipping.get("email"),
             )
             doctor_name = _first_text(
+                facility_pickup_recipient_name if is_facility_pickup else None,
                 doctor.get("name"),
                 local.get("doctorName"),
                 local.get("doctor_name"),
