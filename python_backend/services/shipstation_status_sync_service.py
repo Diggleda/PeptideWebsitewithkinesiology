@@ -277,11 +277,6 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
         return
 
     merged = dict(local_order)
-    previous_shipping_status = _normalize_shipstation_status(
-        merged.get("upsTrackingStatus")
-        or _coerce_object(merged.get("shippingEstimate")).get("status")
-        or _coerce_object(_coerce_object(merged.get("integrationDetails") or merged.get("integrations")).get("shipStation")).get("status")
-    )
     estimate = dict(merged.get("shippingEstimate") or {})
     status = shipstation_info.get("status")
     ship_date = shipstation_info.get("shipDate")
@@ -321,7 +316,6 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
         if (
             persisted_order_id
             and normalized_status in {"shipped", "out_for_delivery", "delivered"}
-            and normalized_status != previous_shipping_status
         ):
             try:
                 shipping_notification_service.notify_customer_order_shipping_status(
@@ -381,26 +375,28 @@ def _fetch_orders_for_sync(*, lookback_days: int, max_orders: int) -> List[Dict[
         if len(data) < per_page or len(collected) >= max_orders:
             break
 
-    # Then include recent processing orders (for shipped → completed updates).
-    for page in range(1, max_pages + 1):
-        if len(collected) >= max_orders:
-            break
-        data, _meta = woo_commerce.fetch_catalog_proxy(
-            "orders",
-            {
-                "per_page": per_page,
-                "page": page,
-                "orderby": "date",
-                "order": "desc",
-                "status": "processing",
-                "after": after_str,
-            },
-        )
-        if not isinstance(data, list) or len(data) == 0:
-            break
-        add_batch(data)
-        if len(data) < per_page:
-            break
+    # Then include recent processing orders (for shipped → completed updates)
+    # and recent completed orders (to backfill any missing shipped notifications).
+    for status in ("processing", "completed"):
+        for page in range(1, max_pages + 1):
+            if len(collected) >= max_orders:
+                break
+            data, _meta = woo_commerce.fetch_catalog_proxy(
+                "orders",
+                {
+                    "per_page": per_page,
+                    "page": page,
+                    "orderby": "date",
+                    "order": "desc",
+                    "status": status,
+                    "after": after_str,
+                },
+            )
+            if not isinstance(data, list) or len(data) == 0:
+                break
+            add_batch(data)
+            if len(data) < per_page:
+                break
 
     return collected
 

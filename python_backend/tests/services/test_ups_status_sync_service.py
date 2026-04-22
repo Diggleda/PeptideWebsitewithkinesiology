@@ -13,6 +13,7 @@ if "requests" not in sys.modules:
 
     requests.RequestException = Exception
     requests.HTTPError = Exception
+    requests.Timeout = TimeoutError
     requests.auth = requests_auth
     requests_auth.HTTPBasicAuth = HTTPBasicAuth
     sys.modules["requests"] = requests
@@ -64,7 +65,7 @@ if "cryptography" not in sys.modules:
 
 
 class TestUpsStatusSyncService(unittest.TestCase):
-    def test_fetch_orders_for_sync_filters_non_ups_terminal_and_only_skips_delivered_with_persisted_date(self):
+    def test_fetch_orders_for_sync_keeps_delivered_orders_when_email_is_missing(self):
         from python_backend.services import ups_status_sync_service as svc
 
         orders = [
@@ -82,6 +83,13 @@ class TestUpsStatusSyncService(unittest.TestCase):
                 "upsTrackingStatus": "delivered",
                 "delivery_date": "2026-04-02T10:15:00",
                 "deliveryDate": "2026-04-02T10:15:00",
+                "integrations": {
+                    "pepProNotifications": {
+                        "shippingStatusEmails": {
+                            "delivered": {"sentAt": "2026-04-02T10:20:00Z"}
+                        }
+                    }
+                },
                 "status": "processing",
                 "createdAt": "2026-04-01T12:00:00Z",
             },
@@ -91,6 +99,15 @@ class TestUpsStatusSyncService(unittest.TestCase):
                 "shippingCarrier": "ups",
                 "upsTrackingStatus": "delivered",
                 "shippingEstimate": {"status": "delivered", "deliveredAt": "2026-04-03T10:15:00"},
+                "status": "processing",
+                "createdAt": "2026-04-01T12:00:00Z",
+            },
+            {
+                "id": "ups-4",
+                "trackingNumber": "1ZTEST004",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "delivered",
+                "delivery_date": "2026-04-04T10:15:00",
                 "status": "processing",
                 "createdAt": "2026-04-01T12:00:00Z",
             },
@@ -121,7 +138,7 @@ class TestUpsStatusSyncService(unittest.TestCase):
         with patch.object(svc.order_repository, "list_recent", return_value=orders):
             selected = svc._fetch_orders_for_sync(lookback_days=60, max_orders=10)
 
-        self.assertEqual([order["id"] for order in selected], ["ups-1", "ups-3"])
+        self.assertEqual([order["id"] for order in selected], ["ups-1", "ups-3", "ups-4"])
 
     def test_run_sync_once_updates_persisted_ups_tracking_status(self):
         from python_backend.services import ups_status_sync_service as svc
@@ -232,7 +249,8 @@ class TestUpsStatusSyncService(unittest.TestCase):
             patch.object(svc, "_max_runtime_seconds", return_value=45), \
             patch.object(svc, "_throttle_ms", return_value=0), \
             patch.object(svc.ups_tracking, "fetch_tracking_status") as fetch_tracking_status, \
-            patch.object(svc.order_repository, "update_ups_tracking_status") as update_status:
+            patch.object(svc.order_repository, "update_ups_tracking_status", return_value={"id": "ups-1"}) as update_status, \
+            patch.object(svc.shipping_notification_service, "notify_customer_order_shipping_status") as notify_status:
             result = svc.run_sync_once(ignore_cooldown=True)
 
         self.assertEqual(result["status"], "success")
@@ -247,6 +265,7 @@ class TestUpsStatusSyncService(unittest.TestCase):
             delivery_date_guaranteed=None,
             expected_shipment_window=None,
         )
+        notify_status.assert_called_once_with("ups-1", "delivered")
 
     def test_run_sync_once_does_not_persist_unknown_ups_status(self):
         from python_backend.services import ups_status_sync_service as svc
@@ -279,6 +298,41 @@ class TestUpsStatusSyncService(unittest.TestCase):
         self.assertEqual(result["updated"], 0)
         self.assertEqual(result["missing"], 1)
         update_status.assert_not_called()
+
+    def test_run_sync_once_notifies_when_status_is_unchanged_but_email_missing(self):
+        from python_backend.services import ups_status_sync_service as svc
+
+        candidate_orders = [
+            {
+                "id": "ups-2",
+                "trackingNumber": "1ZTEST002",
+                "shippingCarrier": "ups",
+                "status": "processing",
+                "upsTrackingStatus": "out_for_delivery",
+                "shippingEstimate": {"status": "out_for_delivery", "carrierId": "ups"},
+                "createdAt": "2026-04-01T12:00:00Z",
+            }
+        ]
+
+        with patch.object(svc, "_enabled", return_value=True), \
+            patch.object(svc.ups_tracking, "is_configured", return_value=True), \
+            patch.object(svc, "_try_acquire_lease", return_value="lease-1"), \
+            patch.object(svc, "_release_lease"), \
+            patch.object(svc, "_get_last_run_at", return_value=None), \
+            patch.object(svc, "_set_last_run_at"), \
+            patch.object(svc, "_fetch_orders_for_sync", return_value=candidate_orders), \
+            patch.object(svc, "_max_runtime_seconds", return_value=45), \
+            patch.object(svc, "_throttle_ms", return_value=0), \
+            patch.object(svc.ups_tracking, "fetch_tracking_status", return_value={"trackingStatus": "Out for Delivery"}), \
+            patch.object(svc.order_repository, "update_ups_tracking_status") as update_status, \
+            patch.object(svc.shipping_notification_service, "notify_customer_order_shipping_status") as notify_status:
+            result = svc.run_sync_once(ignore_cooldown=True)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["updated"], 0)
+        update_status.assert_not_called()
+        notify_status.assert_called_once_with("ups-2", "out_for_delivery")
 
     def test_run_sync_once_persists_estimate_when_status_is_unchanged(self):
         from python_backend.services import ups_status_sync_service as svc

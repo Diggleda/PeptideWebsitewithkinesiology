@@ -138,6 +138,48 @@ def _parse_settings_json_value(raw: Any) -> Any:
     return raw
 
 
+def _coerce_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _shipping_status_email_sent(order: Dict[str, Any], status: str) -> bool:
+    normalized_status = str(status or "").strip()
+    if not normalized_status:
+        return False
+    integrations = _coerce_object(order.get("integrationDetails") or order.get("integrations"))
+    pep_pro = _coerce_object(
+        integrations.get("pepProNotifications")
+        or integrations.get("pepproNotifications")
+        or integrations.get("pep_pro_notifications")
+    )
+    shipping_state = _coerce_object(
+        pep_pro.get("shippingStatusEmails")
+        or pep_pro.get("shipping_status_emails")
+    )
+    return bool(shipping_state.get(normalized_status))
+
+
+def _notify_shipping_status(order_id: str, status: str, *, tracking_number: Optional[str] = None) -> None:
+    if status not in {"out_for_delivery", "delivered"}:
+        return
+    try:
+        shipping_notification_service.notify_customer_order_shipping_status(order_id, status)
+    except Exception:
+        logger.warning(
+            "[ups-status-sync] failed to send shipping status email",
+            exc_info=True,
+            extra={"orderId": order_id, "trackingNumber": tracking_number, "status": status},
+        )
+
+
 def _parse_iso_utc(value: Any) -> Optional[datetime]:
     if not value or not isinstance(value, str):
         return None
@@ -498,6 +540,7 @@ def _fetch_orders_for_sync(*, lookback_days: int, max_orders: int) -> List[Dict[
         if (
             _normalize_ups_status(order.get("upsTrackingStatus") or order.get("ups_tracking_status")) == "delivered"
             and _extract_persisted_delivery_date(order)
+            and _shipping_status_email_sent(order, "delivered")
         ):
             continue
         tracking_number = order.get("trackingNumber") or order.get("tracking_number")
@@ -621,13 +664,18 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                 current_persisted_delivery_date = _extract_persisted_delivery_date(order)
                 current_known_delivery_date = _extract_known_delivery_date(order)
                 if current_status == "delivered" and current_known_delivery_date and current_persisted_delivery_date != current_known_delivery_date:
-                    order_repository.update_ups_tracking_status(
+                    persisted = order_repository.update_ups_tracking_status(
                         order_id,
                         ups_tracking_status="delivered",
                         delivered_at=_extract_known_delivered_at(order),
                         estimated_arrival_date=None,
                         delivery_date_guaranteed=None,
                         expected_shipment_window=None,
+                    )
+                    _notify_shipping_status(
+                        str((persisted or {}).get("id") or order_id),
+                        "delivered",
+                        tracking_number=tracking_number,
                     )
                     updated += 1
                     continue
@@ -675,6 +723,7 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                         and (not expected_shipment_window or current_expected_shipment_window == expected_shipment_window)
                     )
                 ):
+                    _notify_shipping_status(order_id, next_status, tracking_number=tracking_number)
                     continue
                 persisted = order_repository.update_ups_tracking_status(
                     order_id,
@@ -684,18 +733,11 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     delivery_date_guaranteed=delivery_date_guaranteed,
                     expected_shipment_window=expected_shipment_window,
                 )
-                if current_status != next_status and next_status in {"out_for_delivery", "delivered"}:
-                    try:
-                        shipping_notification_service.notify_customer_order_shipping_status(
-                            str((persisted or {}).get("id") or order_id),
-                            next_status,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "[ups-status-sync] failed to send shipping status email",
-                            exc_info=True,
-                            extra={"orderId": order_id, "trackingNumber": tracking_number, "status": next_status},
-                        )
+                _notify_shipping_status(
+                    str((persisted or {}).get("id") or order_id),
+                    next_status,
+                    tracking_number=tracking_number,
+                )
                 updated += 1
             except Exception as exc:
                 failed += 1

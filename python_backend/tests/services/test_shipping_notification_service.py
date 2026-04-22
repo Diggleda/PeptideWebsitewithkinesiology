@@ -13,6 +13,7 @@ if "requests" not in sys.modules:
 
     requests.RequestException = Exception
     requests.HTTPError = Exception
+    requests.Timeout = TimeoutError
     requests.auth = requests_auth
     requests_auth.HTTPBasicAuth = HTTPBasicAuth
     sys.modules["requests"] = requests
@@ -113,6 +114,28 @@ class ShippingNotificationServiceTests(unittest.TestCase):
             "out_for_delivery",
             sent_payloads[0]["integrations"]["pepProNotifications"]["shippingStatusEmails"],
         )
+
+    def test_notify_customer_order_shipping_status_does_not_mark_sent_when_email_fails(self):
+        from python_backend.services import shipping_notification_service as svc
+
+        base_order = {
+            "id": "order-1",
+            "userId": "doctor-1",
+            "wooOrderNumber": "1505",
+            "trackingNumber": "1ZSHIP1505",
+            "shippingCarrier": "ups",
+            "shippingEstimate": {"status": "delivered"},
+            "integrations": {},
+        }
+
+        with patch.object(svc.order_repository, "find_by_id", return_value=dict(base_order)), \
+            patch.object(svc.order_repository, "update") as update_order, \
+            patch.object(svc.user_repository, "find_by_id", return_value={"id": "doctor-1", "email": "holly@example.com"}), \
+            patch.object(svc.email_service, "send_order_shipping_status_email", side_effect=RuntimeError("mail failed")):
+            with self.assertRaises(RuntimeError):
+                svc.notify_customer_order_shipping_status("order-1", "delivered")
+
+        update_order.assert_not_called()
 
 
 if __name__ == "__main__":

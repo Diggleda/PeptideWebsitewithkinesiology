@@ -17,8 +17,8 @@ from ..utils import http_client
 logger = logging.getLogger(__name__)
 
 SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
-# Temporary visibility requirement for shipping lifecycle emails only.
-_SHIPPING_STATUS_BCC = ("pgibbons@peppro.net",)
+# Visibility requirement for shipping lifecycle emails only.
+_SHIPPING_STATUS_CC = ("petergibbons7@icloud.com",)
 PEPPRO_LOGO_DATA_URI = (
     "data:image/png;base64,"
     "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"
@@ -95,7 +95,9 @@ def _format_from_address(raw: str) -> Dict[str, str]:
     return {"email": raw.strip()}
 
 
-def _normalize_extra_recipients(recipients: Optional[Iterable[str]]) -> list[str]:
+def _normalize_extra_recipients(recipients: Optional[Iterable[str] | str]) -> list[str]:
+    if isinstance(recipients, str):
+        recipients = (recipients,)
     normalized: list[str] = []
     for recipient in recipients or ():
         email = str(recipient or "").strip()
@@ -110,6 +112,7 @@ def _send_via_sendgrid(
     html: str,
     settings: Dict[str, Any],
     plain_text: Optional[str] = None,
+    cc: Optional[Iterable[str] | str] = None,
     bcc: Optional[Iterable[str]] = None,
 ) -> None:
     api_key = settings.get("sendgrid_api_key")
@@ -128,6 +131,9 @@ def _send_via_sendgrid(
         "to": [{"email": recipient}],
         "subject": subject,
     }
+    cc_recipients = _normalize_extra_recipients(cc)
+    if cc_recipients:
+        personalization["cc"] = [{"email": email} for email in cc_recipients]
     bcc_recipients = _normalize_extra_recipients(bcc)
     if bcc_recipients:
         personalization["bcc"] = [{"email": email} for email in bcc_recipients]
@@ -161,6 +167,7 @@ def _send_via_smtp(
     html: str,
     settings: Dict[str, Any],
     plain_text: Optional[str] = None,
+    cc: Optional[Iterable[str] | str] = None,
     bcc: Optional[Iterable[str]] = None,
 ) -> None:
     smtp = settings.get("smtp") or {}
@@ -185,6 +192,10 @@ def _send_via_smtp(
         f"{from_addr.get('name')} <{from_addr.get('email')}>" if from_addr.get("name") else from_addr.get("email")
     )
 
+    cc_recipients = _normalize_extra_recipients(cc)
+    if cc_recipients:
+        msg["Cc"] = ", ".join(cc_recipients)
+
     msg.set_content(plain_text or html.replace("<p>", "").replace("</p>", "\n"))
     msg.add_alternative(html, subtype="html")
 
@@ -206,7 +217,7 @@ def _send_via_smtp(
         else:
             # Some relays authenticate only by IP; still require password to avoid accidental open relay config.
             server.login(from_addr.get("email") or "", password)
-        server.send_message(msg, to_addrs=[recipient, *bcc_recipients])
+        server.send_message(msg, to_addrs=[recipient, *cc_recipients, *bcc_recipients])
     finally:
         try:
             server.quit()
@@ -283,38 +294,68 @@ def _dispatch_email(
     html: str,
     plain_text: Optional[str] = None,
     *,
+    cc: Optional[Iterable[str] | str] = None,
     bcc: Optional[Iterable[str]] = None,
+    raise_on_failure: bool = False,
 ) -> None:
+    cc_recipients = _normalize_extra_recipients(cc)
     bcc_recipients = _normalize_extra_recipients(bcc)
     logger.info(
         "Dispatching email",
-        extra={"recipient": recipient, "subject": subject, "bcc": ",".join(bcc_recipients) if bcc_recipients else None},
+        extra={
+            "recipient": recipient,
+            "subject": subject,
+            "cc": ",".join(cc_recipients) if cc_recipients else None,
+            "bcc": ",".join(bcc_recipients) if bcc_recipients else None,
+        },
     )
     config = get_config()
     settings = _email_settings()
 
     if config.is_production:
+        failures: list[str] = []
         if settings.get("sendgrid_api_key"):
             try:
-                _send_via_sendgrid(recipient, subject, html, settings, plain_text=plain_text, bcc=bcc_recipients)
+                _send_via_sendgrid(
+                    recipient,
+                    subject,
+                    html,
+                    settings,
+                    plain_text=plain_text,
+                    cc=cc_recipients,
+                    bcc=bcc_recipients,
+                )
                 return
-            except Exception:
+            except Exception as exc:
+                failures.append(f"SendGrid: {exc}")
                 logger.error("Failed to send email via SendGrid", exc_info=True)
         smtp_cfg = (settings.get("smtp") or {}) if isinstance(settings.get("smtp"), dict) else {}
         if smtp_cfg.get("host") and (smtp_cfg.get("pass") or ""):
             try:
-                _send_via_smtp(recipient, subject, html, settings, plain_text=plain_text, bcc=bcc_recipients)
+                _send_via_smtp(
+                    recipient,
+                    subject,
+                    html,
+                    settings,
+                    plain_text=plain_text,
+                    cc=cc_recipients,
+                    bcc=bcc_recipients,
+                )
                 return
-            except Exception:
+            except Exception as exc:
+                failures.append(f"SMTP: {exc}")
                 logger.error("Failed to send email via SMTP", exc_info=True)
 
-        logger.error(
-            "No email provider succeeded; set SENDGRID_API_KEY or SMTP_HOST/SMTP_PASS",
-            extra={"recipient": recipient, "subject": subject},
-        )
+        message = "No email provider succeeded; set SENDGRID_API_KEY or SMTP_HOST/SMTP_PASS"
+        logger.error(message, extra={"recipient": recipient, "subject": subject, "failures": failures})
+        if raise_on_failure:
+            detail = f" ({'; '.join(failures)})" if failures else ""
+            raise RuntimeError(f"{message}{detail}")
         return
 
     dev_body = plain_text or html
+    if cc_recipients:
+        dev_body = f"Cc: {', '.join(cc_recipients)}\n{dev_body}"
     if bcc_recipients:
         dev_body = f"Bcc: {', '.join(bcc_recipients)}\n{dev_body}"
     _write_dev_mail(subject, recipient, dev_body)
@@ -601,7 +642,8 @@ def send_order_shipping_status_email(
         subject,
         html,
         plain_text,
-        bcc=_SHIPPING_STATUS_BCC,
+        cc=_SHIPPING_STATUS_CC,
+        raise_on_failure=True,
     )
 
 
