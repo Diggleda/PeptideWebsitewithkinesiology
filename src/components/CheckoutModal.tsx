@@ -110,6 +110,8 @@ type ShippingAddress = {
   fullName?: string | null;
   recipientName?: string | null;
   recipient_name?: string | null;
+  pickupRecipientName?: string | null;
+  pickup_recipient_name?: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -445,12 +447,10 @@ export function CheckoutModal({
   );
   const facilityPickupRecipientNameDraftRef = useRef(facilityPickupRecipientNameDraft);
   const setFacilityPickupRecipientNameValue = useCallback((value: string | ((prev: string) => string)) => {
-    setFacilityPickupRecipientNameDraft((prev) => {
-      const current = facilityPickupRecipientNameDraftRef.current || prev;
-      const next = typeof value === 'function' ? value(current) : value;
-      facilityPickupRecipientNameDraftRef.current = next;
-      return next;
-    });
+    const current = facilityPickupRecipientNameDraftRef.current;
+    const next = typeof value === 'function' ? value(current) : value;
+    facilityPickupRecipientNameDraftRef.current = next;
+    setFacilityPickupRecipientNameDraft(next);
   }, []);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -663,6 +663,8 @@ export function CheckoutModal({
         fullName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
         recipientName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
         recipient_name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+        pickupRecipientName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+        pickup_recipient_name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
       }
     : shippingAddress;
   const effectiveShippingCost = bypassShippingRateSelection ? 0 : shippingCost;
@@ -1161,6 +1163,8 @@ export function CheckoutModal({
               fullName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
               recipientName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
               recipient_name: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+              pickupRecipientName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+              pickup_recipient_name: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
             }
           : effectiveCheckoutAddress;
       const checkoutShippingRate = delegateShippingHandledByPhysician

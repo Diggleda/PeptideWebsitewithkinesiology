@@ -988,6 +988,11 @@ interface AccountOrderLineItem {
 
 interface AccountOrderAddress {
   name?: string | null;
+  fullName?: string | null;
+  recipientName?: string | null;
+  recipient_name?: string | null;
+  pickupRecipientName?: string | null;
+  pickup_recipient_name?: string | null;
   company?: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
@@ -1739,8 +1744,22 @@ const withFacilityPickupRecipientName = (
     return address ?? null;
   }
   const preferredName = resolveFacilityPickupRecipientName(options?.preferredName);
-  const addressName = resolveFacilityPickupRecipientName(address.name);
-  const billingName = resolveFacilityPickupRecipientName(options?.billingAddress?.name);
+  const addressName = resolveFacilityPickupRecipientName(
+    address.recipientName,
+    address.recipient_name,
+    address.pickupRecipientName,
+    address.pickup_recipient_name,
+    address.fullName,
+    address.name,
+  );
+  const billingName = resolveFacilityPickupRecipientName(
+    options?.billingAddress?.recipientName,
+    options?.billingAddress?.recipient_name,
+    options?.billingAddress?.pickupRecipientName,
+    options?.billingAddress?.pickup_recipient_name,
+    options?.billingAddress?.fullName,
+    options?.billingAddress?.name,
+  );
   const fallbackName = resolveFacilityPickupRecipientName(options?.fallbackName);
   const namesMatch = (left?: string | null, right?: string | null) =>
     Boolean(
@@ -1762,7 +1781,15 @@ const withFacilityPickupRecipientName = (
   if (!recipientName) {
     return address;
   }
-  return { ...address, name: recipientName };
+  return {
+    ...address,
+    name: recipientName,
+    fullName: recipientName,
+    recipientName,
+    recipient_name: recipientName,
+    pickupRecipientName: recipientName,
+    pickup_recipient_name: recipientName,
+  };
 };
 
 const getInitials = (name?: string | null) => {

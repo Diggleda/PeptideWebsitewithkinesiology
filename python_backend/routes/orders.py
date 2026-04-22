@@ -127,18 +127,54 @@ def create_order():
     tax_total = payload.get("taxTotal")
     shipping_total = payload.get("shippingTotal")
     shipping_address = payload.get("shippingAddress")
+    billing_address = payload.get("billingAddress")
+
+    def _first_pickup_recipient_name(*values):
+        for value in values:
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text and " ".join(text.lower().replace(".", "").replace(",", "").split()) != "peppro facility pickup":
+                return text
+        return None
+
+    def _address_pickup_recipient_name(address):
+        if not isinstance(address, dict):
+            return None
+        return _first_pickup_recipient_name(
+            address.get("recipientName"),
+            address.get("recipient_name"),
+            address.get("pickupRecipientName"),
+            address.get("pickup_recipient_name"),
+            address.get("fullName"),
+            address.get("name"),
+        )
+
+    def _same_name(left, right):
+        left_text = str(left or "").strip().lower()
+        right_text = str(right or "").strip().lower()
+        return bool(left_text and right_text and left_text == right_text)
+
+    submitted_pickup_recipient_name = _first_pickup_recipient_name(
+        payload.get("facilityPickupRecipientName"),
+        payload.get("facility_pickup_recipient_name"),
+        payload.get("pickupRecipientName"),
+        payload.get("pickup_recipient_name"),
+    )
+    shipping_pickup_recipient_name = _address_pickup_recipient_name(shipping_address)
+    billing_pickup_recipient_name = _address_pickup_recipient_name(billing_address)
+    actor_name = _first_pickup_recipient_name((getattr(g, "current_user", {}) or {}).get("name"))
     facility_pickup_recipient_name = (
-        payload.get("facilityPickupRecipientName")
-        or payload.get("facility_pickup_recipient_name")
+        submitted_pickup_recipient_name
+        or shipping_pickup_recipient_name
+        or billing_pickup_recipient_name
         or None
     )
-    if not facility_pickup_recipient_name and isinstance(shipping_address, dict):
+    if submitted_pickup_recipient_name and _same_name(submitted_pickup_recipient_name, actor_name):
         facility_pickup_recipient_name = (
-            shipping_address.get("recipientName")
-            or shipping_address.get("recipient_name")
-            or shipping_address.get("fullName")
-            or shipping_address.get("name")
-            or None
+            shipping_pickup_recipient_name
+            or billing_pickup_recipient_name
+            or submitted_pickup_recipient_name
         )
     facility_pickup = bool(
         payload.get("handDelivery") is True

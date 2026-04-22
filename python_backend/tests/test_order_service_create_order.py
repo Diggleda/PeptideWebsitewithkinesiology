@@ -349,6 +349,30 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(address["addressLine1"], "640 S Grand Ave")
         self.assertEqual(address["postalCode"], "92705")
 
+    def test_facility_pickup_shipping_address_prefers_custom_recipient_over_actor_fallback(self):
+        service = self.order_service
+
+        address = service._build_facility_pickup_shipping_address(
+            {"name": "Sales Lead User", "role": "sales_lead"},
+            {
+                "name": "Sales Lead User",
+                "recipientName": "Recipient Patient",
+                "addressLine1": "640 S Grand Ave",
+                "addressLine2": "Unit #107",
+                "city": "Santa Ana",
+                "state": "CA",
+                "postalCode": "92705",
+                "country": "US",
+            },
+            recipient_name="Sales Lead User",
+        )
+
+        self.assertEqual(address["name"], "Recipient Patient")
+        self.assertEqual(address["recipientName"], "Recipient Patient")
+        self.assertEqual(address["pickupRecipientName"], "Recipient Patient")
+        self.assertEqual(address["firstName"], "Recipient")
+        self.assertEqual(address["lastName"], "Patient")
+
     def test_sales_lead_can_use_facility_pickup(self):
         service = self.order_service
 
@@ -428,6 +452,7 @@ class CreateOrderTests(unittest.TestCase):
                     "country": "US",
                 },
                 facility_pickup=True,
+                facility_pickup_recipient_name="Sales Lead User",
                 shipping_rate={
                     "carrierId": "facility_pickup",
                     "serviceCode": "facility_pickup",
@@ -441,10 +466,12 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(len(inserted_orders), 1)
         self.assertEqual(inserted_orders[0]["shippingAddress"]["name"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["shippingAddress"]["recipientName"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["shippingAddress"]["pickupRecipientName"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["shippingAddress"]["firstName"], "Recipient")
         self.assertEqual(inserted_orders[0]["shippingAddress"]["lastName"], "Patient")
         self.assertEqual(inserted_orders[0]["billingAddress"]["name"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["billingAddress"]["recipientName"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["billingAddress"]["pickupRecipientName"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["billingAddress"]["firstName"], "Recipient")
         self.assertEqual(inserted_orders[0]["billingAddress"]["lastName"], "Patient")
         self.assertEqual(inserted_orders[0]["facilityPickupRecipientName"], "Recipient Patient")
@@ -469,7 +496,7 @@ class CreateOrderTests(unittest.TestCase):
                 "grandTotal": 25.0,
                 "shippingTotal": 0.0,
                 "taxTotal": 0.0,
-                "facilityPickupRecipientName": "Recipient Patient",
+                "facilityPickupRecipientName": "Sales Lead User",
                 "shippingEstimate": {
                     "carrierId": "facility_pickup",
                     "serviceCode": "facility_pickup",
@@ -477,6 +504,7 @@ class CreateOrderTests(unittest.TestCase):
                 },
                 "shippingAddress": {
                     "name": "Sales Lead User",
+                    "recipientName": "Recipient Patient",
                     "firstName": "Sales",
                     "lastName": "Lead",
                     "addressLine1": "640 S Grand Ave",

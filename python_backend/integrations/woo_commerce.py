@@ -299,6 +299,8 @@ def _apply_facility_pickup_recipient_name(address: object, recipient_name: str) 
         "fullName": recipient_name,
         "recipientName": recipient_name,
         "recipient_name": recipient_name,
+        "pickupRecipientName": recipient_name,
+        "pickup_recipient_name": recipient_name,
         "firstName": first_name,
         "lastName": last_name,
         "first_name": first_name,
@@ -1361,18 +1363,43 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     )
     pickup_recipient_name = None
     if is_facility_pickup:
-        pickup_recipient_name = _first_non_empty_text(
+        order_pickup_recipient_name = _first_non_empty_text(
             order.get("facilityPickupRecipientName"),
             order.get("facility_pickup_recipient_name"),
+            order.get("pickupRecipientName"),
+            order.get("pickup_recipient_name"),
+        )
+        shipping_pickup_recipient_name = _first_non_empty_text(
             shipping_address.get("recipientName") if isinstance(shipping_address, dict) else None,
             shipping_address.get("recipient_name") if isinstance(shipping_address, dict) else None,
-            shipping_address.get("name") if isinstance(shipping_address, dict) else None,
+            shipping_address.get("pickupRecipientName") if isinstance(shipping_address, dict) else None,
+            shipping_address.get("pickup_recipient_name") if isinstance(shipping_address, dict) else None,
             shipping_address.get("fullName") if isinstance(shipping_address, dict) else None,
+            shipping_address.get("name") if isinstance(shipping_address, dict) else None,
+        )
+        billing_pickup_recipient_name = _first_non_empty_text(
             billing_address.get("recipientName") if isinstance(billing_address, dict) else None,
             billing_address.get("recipient_name") if isinstance(billing_address, dict) else None,
-            billing_address.get("name") if isinstance(billing_address, dict) else None,
+            billing_address.get("pickupRecipientName") if isinstance(billing_address, dict) else None,
+            billing_address.get("pickup_recipient_name") if isinstance(billing_address, dict) else None,
             billing_address.get("fullName") if isinstance(billing_address, dict) else None,
+            billing_address.get("name") if isinstance(billing_address, dict) else None,
         )
+        customer_name = _first_non_empty_text(customer.get("name") if isinstance(customer, dict) else None)
+        if (
+            order_pickup_recipient_name
+            and shipping_pickup_recipient_name
+            and customer_name
+            and order_pickup_recipient_name.lower() == customer_name.lower()
+            and shipping_pickup_recipient_name.lower() != order_pickup_recipient_name.lower()
+        ):
+            pickup_recipient_name = shipping_pickup_recipient_name
+        else:
+            pickup_recipient_name = _first_non_empty_text(
+                order_pickup_recipient_name,
+                shipping_pickup_recipient_name,
+                billing_pickup_recipient_name,
+            )
         if pickup_recipient_name:
             if isinstance(shipping_address, dict):
                 shipping_address = _apply_facility_pickup_recipient_name(shipping_address, pickup_recipient_name)

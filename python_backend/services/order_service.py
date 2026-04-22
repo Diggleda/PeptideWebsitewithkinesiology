@@ -1847,6 +1847,8 @@ def _apply_facility_pickup_recipient_name(address: object, recipient_name: objec
         "fullName": normalized_name,
         "recipientName": normalized_name,
         "recipient_name": normalized_name,
+        "pickupRecipientName": normalized_name,
+        "pickup_recipient_name": normalized_name,
         "firstName": first_name,
         "lastName": last_name,
         "first_name": first_name,
@@ -1860,21 +1862,32 @@ def _build_facility_pickup_shipping_address(
     recipient_name: object = None,
 ) -> Dict[str, Optional[str]]:
     shipping_address = shipping_address if isinstance(shipping_address, dict) else {}
-    submitted_name = _normalize_address_field(
-        recipient_name
-        if recipient_name is not None
-        else (
-            shipping_address.get("recipientName")
-            or shipping_address.get("recipient_name")
-            or shipping_address.get("fullName")
-            or shipping_address.get("name")
-        )
+    address_name = _normalize_address_field(
+        shipping_address.get("recipientName")
+        or shipping_address.get("recipient_name")
+        or shipping_address.get("pickupRecipientName")
+        or shipping_address.get("pickup_recipient_name")
+        or shipping_address.get("fullName")
+        or shipping_address.get("name")
     )
+    submitted_name = _normalize_address_field(recipient_name)
     if submitted_name and _is_facility_pickup_recipient_placeholder(submitted_name):
         submitted_name = None
+    if address_name and _is_facility_pickup_recipient_placeholder(address_name):
+        address_name = None
+    actor_name = _normalize_address_field((user or {}).get("name") if isinstance(user, dict) else None)
+    if (
+        submitted_name
+        and address_name
+        and actor_name
+        and submitted_name.lower() == actor_name.lower()
+        and address_name.lower() != submitted_name.lower()
+    ):
+        submitted_name = address_name
     resolved_name = (
         submitted_name
-        or _normalize_address_field((user or {}).get("name") if isinstance(user, dict) else None)
+        or address_name
+        or actor_name
         or FACILITY_PICKUP_LOCATION.get("name")
     )
     return _apply_facility_pickup_recipient_name({
@@ -4535,10 +4548,31 @@ def _normalize_shipstation_delivery_status(shipstation_info: Dict) -> Optional[s
 def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
     shipping_address = _ensure_dict(local_order.get("shippingAddress") or local_order.get("shipping_address"))
     billing_address = _ensure_dict(local_order.get("billingAddress") or local_order.get("billing_address"))
-    facility_pickup_recipient_name = _normalize_optional_text(
-        local_order.get("facilityPickupRecipientName")
-        or local_order.get("facility_pickup_recipient_name")
+    is_facility_pickup = bool(
+        local_order.get("facilityPickup")
+        or local_order.get("facility_pickup")
+        or local_order.get("fascility_pickup")
+        or str(local_order.get("fulfillmentMethod") or local_order.get("fulfillment_method") or "").strip().lower()
+        in ("facility_pickup", "fascility_pickup")
     )
+    facility_pickup_recipient_name = None
+    if is_facility_pickup:
+        facility_pickup_recipient_name = _normalize_optional_text(
+            shipping_address.get("recipientName")
+            or shipping_address.get("recipient_name")
+            or shipping_address.get("pickupRecipientName")
+            or shipping_address.get("pickup_recipient_name")
+            or billing_address.get("recipientName")
+            or billing_address.get("recipient_name")
+            or billing_address.get("pickupRecipientName")
+            or billing_address.get("pickup_recipient_name")
+            or local_order.get("facilityPickupRecipientName")
+            or local_order.get("facility_pickup_recipient_name")
+            or local_order.get("pickupRecipientName")
+            or local_order.get("pickup_recipient_name")
+            or shipping_address.get("fullName")
+            or billing_address.get("fullName")
+        )
     if facility_pickup_recipient_name:
         if shipping_address:
             shipping_address = _apply_facility_pickup_recipient_name(shipping_address, facility_pickup_recipient_name)
@@ -4872,10 +4906,31 @@ def get_sales_rep_order_detail(
         if local_order:
             local_shipping = _ensure_dict(local_order.get("shippingAddress") or local_order.get("shipping_address"))
             local_billing = _ensure_dict(local_order.get("billingAddress") or local_order.get("billing_address"))
-            local_facility_pickup_recipient_name = _normalize_optional_text(
-                local_order.get("facilityPickupRecipientName")
-                or local_order.get("facility_pickup_recipient_name")
+            local_is_facility_pickup = bool(
+                local_order.get("facilityPickup")
+                or local_order.get("facility_pickup")
+                or local_order.get("fascility_pickup")
+                or str(local_order.get("fulfillmentMethod") or local_order.get("fulfillment_method") or "").strip().lower()
+                in ("facility_pickup", "fascility_pickup")
             )
+            local_facility_pickup_recipient_name = None
+            if local_is_facility_pickup:
+                local_facility_pickup_recipient_name = _normalize_optional_text(
+                    local_shipping.get("recipientName")
+                    or local_shipping.get("recipient_name")
+                    or local_shipping.get("pickupRecipientName")
+                    or local_shipping.get("pickup_recipient_name")
+                    or local_billing.get("recipientName")
+                    or local_billing.get("recipient_name")
+                    or local_billing.get("pickupRecipientName")
+                    or local_billing.get("pickup_recipient_name")
+                    or local_order.get("facilityPickupRecipientName")
+                    or local_order.get("facility_pickup_recipient_name")
+                    or local_order.get("pickupRecipientName")
+                    or local_order.get("pickup_recipient_name")
+                    or local_shipping.get("fullName")
+                    or local_billing.get("fullName")
+                )
             if local_facility_pickup_recipient_name:
                 if local_shipping:
                     local_shipping = _apply_facility_pickup_recipient_name(

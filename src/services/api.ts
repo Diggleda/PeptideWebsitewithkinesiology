@@ -2365,7 +2365,14 @@ const buildOrderFingerprint = (payload: {
   const shippingPostalCode = shippingAddress?.postalCode || shippingAddress?.postcode || null;
   const shippingCountry = shippingAddress?.country || null;
   const shippingState = shippingAddress?.state || null;
-  const shippingName = shippingAddress?.name || shippingAddress?.fullName || null;
+  const shippingName =
+    shippingAddress?.recipientName ||
+    shippingAddress?.recipient_name ||
+    shippingAddress?.pickupRecipientName ||
+    shippingAddress?.pickup_recipient_name ||
+    shippingAddress?.name ||
+    shippingAddress?.fullName ||
+    null;
 
   return JSON.stringify({
     items: normalizedItems,
@@ -2469,6 +2476,8 @@ export const ordersAPI = {
               fullName: normalizedFacilityPickupRecipientName,
               recipientName: normalizedFacilityPickupRecipientName,
               recipient_name: normalizedFacilityPickupRecipientName,
+              pickupRecipientName: normalizedFacilityPickupRecipientName,
+              pickup_recipient_name: normalizedFacilityPickupRecipientName,
             },
           }
         : shipping;
@@ -2513,6 +2522,8 @@ export const ordersAPI = {
         facilityPickup: options?.facilityPickup === true,
         facilityPickupRecipientName: normalizedFacilityPickupRecipientName,
         facility_pickup_recipient_name: normalizedFacilityPickupRecipientName,
+        pickupRecipientName: normalizedFacilityPickupRecipientName,
+        pickup_recipient_name: normalizedFacilityPickupRecipientName,
         ...(options?.facilityPickup === true
           ? {
               facilityPickup: true,
