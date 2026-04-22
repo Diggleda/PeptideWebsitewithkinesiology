@@ -107,6 +107,9 @@ type CheckoutPayloadItem = {
 
 type ShippingAddress = {
   name?: string | null;
+  fullName?: string | null;
+  recipientName?: string | null;
+  recipient_name?: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -440,6 +443,15 @@ export function CheckoutModal({
   const [facilityPickupRecipientNameDraft, setFacilityPickupRecipientNameDraft] = useState(
     normalizeAddressField(customerName) || normalizeAddressField(physicianName) || '',
   );
+  const facilityPickupRecipientNameDraftRef = useRef(facilityPickupRecipientNameDraft);
+  const setFacilityPickupRecipientNameValue = useCallback((value: string | ((prev: string) => string)) => {
+    setFacilityPickupRecipientNameDraft((prev) => {
+      const current = facilityPickupRecipientNameDraftRef.current || prev;
+      const next = typeof value === 'function' ? value(current) : value;
+      facilityPickupRecipientNameDraftRef.current = next;
+      return next;
+    });
+  }, []);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
@@ -638,10 +650,19 @@ export function CheckoutModal({
     || defaultFacilityPickupRecipientName
     || normalizeFacilityPickupRecipientName(shippingAddress.name)
     || normalizeAddressField(FACILITY_PICKUP_ADDRESS.name);
+  const resolveSubmittedFacilityPickupRecipientName = useCallback(() => (
+    normalizeFacilityPickupRecipientName(facilityPickupRecipientNameDraftRef.current)
+    || defaultFacilityPickupRecipientName
+    || normalizeFacilityPickupRecipientName(shippingAddress.name)
+    || normalizeAddressField(FACILITY_PICKUP_ADDRESS.name)
+  ), [defaultFacilityPickupRecipientName, shippingAddress.name]);
   const effectiveCheckoutAddress = isFacilityPickupEnabled
     ? {
         ...FACILITY_PICKUP_ADDRESS,
         name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+        fullName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+        recipientName: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+        recipient_name: facilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
       }
     : shippingAddress;
   const effectiveShippingCost = bypassShippingRateSelection ? 0 : shippingCost;
@@ -726,7 +747,7 @@ export function CheckoutModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setFacilityPickupRecipientNameDraft((prev) =>
+    setFacilityPickupRecipientNameValue((prev) =>
       normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName || '',
     );
     if (isDelegateFlow) {
@@ -737,7 +758,14 @@ export function CheckoutModal({
     if (paymentMethod === 'none') {
       setPaymentMethod('zelle');
     }
-  }, [defaultFacilityPickupRecipientName, delegatePaymentMethod, isDelegateFlow, isOpen, paymentMethod]);
+  }, [
+    defaultFacilityPickupRecipientName,
+    delegatePaymentMethod,
+    isDelegateFlow,
+    isOpen,
+    paymentMethod,
+    setFacilityPickupRecipientNameValue,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1121,13 +1149,33 @@ export function CheckoutModal({
             addressFingerprint: shippingAddressSignature || null,
           }
         : null;
-      const checkoutShippingAddress = delegateShippingHandledByPhysician ? null : effectiveCheckoutAddress;
+      const submittedFacilityPickupRecipientName = isFacilityPickupEnabled
+        ? resolveSubmittedFacilityPickupRecipientName()
+        : null;
+      const checkoutShippingAddress = delegateShippingHandledByPhysician
+        ? null
+        : isFacilityPickupEnabled
+          ? {
+              ...FACILITY_PICKUP_ADDRESS,
+              name: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+              fullName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+              recipientName: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+              recipient_name: submittedFacilityPickupRecipientName || FACILITY_PICKUP_ADDRESS.name,
+            }
+          : effectiveCheckoutAddress;
       const checkoutShippingRate = delegateShippingHandledByPhysician
         ? null
         : bypassShippingRateSelection
           ? noShippingRate
           : selectedShippingRate;
       const checkoutShippingTotal = delegateShippingHandledByPhysician ? 0 : effectiveShippingCost;
+      if (isFacilityPickupEnabled) {
+        console.info('[CheckoutModal] Facility pickup recipient submit', {
+          recipientName: submittedFacilityPickupRecipientName,
+          shippingName: checkoutShippingAddress?.name ?? null,
+          facilityPickup: true,
+        });
+      }
 	      const result = await onCheckout({
 	        shippingAddress: checkoutShippingAddress,
 	        shippingRate: checkoutShippingRate,
@@ -1137,7 +1185,7 @@ export function CheckoutModal({
           handDelivery: isHandDeliveryEnabled,
           facilityPickup: isFacilityPickupEnabled,
           facilityPickupRecipientName: isFacilityPickupEnabled
-            ? facilityPickupRecipientName
+            ? submittedFacilityPickupRecipientName
             : null,
 	        expectedShipmentWindow: delegateShippingHandledByPhysician ? null : (deliveryEstimate?.deliveryWindowLabel ?? null),
 	        physicianCertificationAccepted: termsAccepted,
@@ -1343,7 +1391,7 @@ export function CheckoutModal({
       setPaymentMethod('zelle');
       setManualHandDelivery(false);
       setFacilityPickup(false);
-      setFacilityPickupRecipientNameDraft(defaultFacilityPickupRecipientName || '');
+      setFacilityPickupRecipientNameValue(defaultFacilityPickupRecipientName || '');
       setPlacedOrderNumber(null);
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
@@ -1374,7 +1422,14 @@ export function CheckoutModal({
         checkoutStatusTimer.current = null;
       }
     }
-  }, [defaultFacilityPickupRecipientName, defaultShippingAddress, customerName, isOpen, physicianName]);
+  }, [
+    defaultFacilityPickupRecipientName,
+    defaultShippingAddress,
+    customerName,
+    isOpen,
+    physicianName,
+    setFacilityPickupRecipientNameValue,
+  ]);
 
   useEffect(() => {
     if (!isOpen || initialDefaultRateAppliedRef.current) {
@@ -1760,7 +1815,7 @@ export function CheckoutModal({
                                 setFacilityPickup(nextChecked);
                                 if (nextChecked) {
                                   setManualHandDelivery(false);
-                                  setFacilityPickupRecipientNameDraft((prev) =>
+                                  setFacilityPickupRecipientNameValue((prev) =>
                                     normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName || '',
                                   );
                                 }
@@ -2182,9 +2237,9 @@ export function CheckoutModal({
                           id="facility-pickup-recipient-name"
                           placeholder="Full name"
                           value={facilityPickupRecipientNameDraft}
-                          onChange={(e) => setFacilityPickupRecipientNameDraft(e.target.value)}
+                          onChange={(e) => setFacilityPickupRecipientNameValue(e.target.value)}
                           onBlur={() =>
-                            setFacilityPickupRecipientNameDraft((prev) =>
+                            setFacilityPickupRecipientNameValue((prev) =>
                               normalizeFacilityPickupRecipientName(prev) || defaultFacilityPickupRecipientName || '',
                             )
                           }

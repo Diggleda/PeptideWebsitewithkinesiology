@@ -1347,8 +1347,12 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         pickup_recipient_name = _first_non_empty_text(
             order.get("facilityPickupRecipientName"),
             order.get("facility_pickup_recipient_name"),
+            shipping_address.get("recipientName") if isinstance(shipping_address, dict) else None,
+            shipping_address.get("recipient_name") if isinstance(shipping_address, dict) else None,
             shipping_address.get("name") if isinstance(shipping_address, dict) else None,
             shipping_address.get("fullName") if isinstance(shipping_address, dict) else None,
+            billing_address.get("recipientName") if isinstance(billing_address, dict) else None,
+            billing_address.get("recipient_name") if isinstance(billing_address, dict) else None,
             billing_address.get("name") if isinstance(billing_address, dict) else None,
             billing_address.get("fullName") if isinstance(billing_address, dict) else None,
         )

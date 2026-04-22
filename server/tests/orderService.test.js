@@ -412,6 +412,7 @@ test('createOrder preserves facility pickup recipient name for sales actors', as
         total: 100,
         shippingAddress: {
           name: 'Sales Lead User',
+          recipientName: 'Recipient Patient',
           addressLine1: '640 S Grand Ave',
           addressLine2: 'Unit #107',
           city: 'Santa Ana',
@@ -429,7 +430,6 @@ test('createOrder preserves facility pickup recipient name for sales actors', as
         shippingTotal: 0,
         handDelivery: false,
         facilityPickup: true,
-        facilityPickupRecipientName: 'Recipient Patient',
       });
       assert.equal(result.success, true);
     },

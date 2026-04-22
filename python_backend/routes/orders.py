@@ -132,6 +132,13 @@ def create_order():
         or payload.get("facility_pickup_recipient_name")
         or None
     )
+    if not facility_pickup_recipient_name and isinstance(shipping_address, dict):
+        facility_pickup_recipient_name = (
+            shipping_address.get("recipientName")
+            or shipping_address.get("recipient_name")
+            or shipping_address.get("fullName")
+            or None
+        )
     facility_pickup = bool(
         payload.get("handDelivery") is True
         or payload.get("facilityPickup") is True

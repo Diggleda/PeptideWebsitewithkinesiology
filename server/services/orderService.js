@@ -1990,10 +1990,14 @@ const createOrderInternal = async ({
   const taxExempt = await isUserTaxExemptForCheckout(user);
   const checkoutProfileUser = taxExempt ? (userRepository.findById(userId) || user) : user;
   const orderExemptionSnapshot = resolveOrderExemptionSnapshot(checkoutProfileUser, taxExempt);
+  const normalizeFacilityPickupRecipientCandidate = (value) => (
+    typeof value === 'string' && value.trim() ? value.trim() : null
+  );
   const normalizedFacilityPickupRecipientName =
-    typeof facilityPickupRecipientName === 'string' && facilityPickupRecipientName.trim()
-      ? facilityPickupRecipientName.trim()
-      : null;
+    normalizeFacilityPickupRecipientCandidate(facilityPickupRecipientName)
+    || normalizeFacilityPickupRecipientCandidate(shippingAddress?.recipientName)
+    || normalizeFacilityPickupRecipientCandidate(shippingAddress?.recipient_name)
+    || normalizeFacilityPickupRecipientCandidate(shippingAddress?.fullName);
   const checkoutShippingAddress =
     normalizedFacilityPickupRecipientName && shippingAddress && typeof shippingAddress === 'object'
       ? { ...shippingAddress, name: normalizedFacilityPickupRecipientName }

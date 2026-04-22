@@ -2454,17 +2454,35 @@ export const ordersAPI = {
     paymentMethod?: string | null,
     pricingMode?: 'wholesale' | 'retail' | string | null,
   ) => {
+    const normalizedFacilityPickupRecipientName =
+      typeof options?.facilityPickupRecipientName === 'string' &&
+      options.facilityPickupRecipientName.trim()
+        ? options.facilityPickupRecipientName.trim()
+        : null;
+    const shippingForRequest =
+      options?.facilityPickup === true && normalizedFacilityPickupRecipientName
+        ? {
+            ...(shipping || {}),
+            address: {
+              ...(shipping?.address || {}),
+              name: normalizedFacilityPickupRecipientName,
+              fullName: normalizedFacilityPickupRecipientName,
+              recipientName: normalizedFacilityPickupRecipientName,
+              recipient_name: normalizedFacilityPickupRecipientName,
+            },
+          }
+        : shipping;
     const fingerprint = buildOrderFingerprint({
       items,
       total,
       referralCode,
       discountCode,
       discountCodeAmount: typeof discountCodeAmount === 'number' ? discountCodeAmount : null,
-      shipping,
+      shipping: shippingForRequest,
       paymentMethod,
       handDelivery: options?.handDelivery === true,
       facilityPickup: options?.facilityPickup === true,
-      facilityPickupRecipientName: options?.facilityPickupRecipientName ?? null,
+      facilityPickupRecipientName: normalizedFacilityPickupRecipientName,
       taxTotal,
       delegateProposalToken: options?.delegateProposalToken ?? null,
     });
@@ -2486,15 +2504,15 @@ export const ordersAPI = {
             : null,
         pricingMode: pricingMode ?? null,
         paymentMethod: paymentMethod ?? null,
-        shippingAddress: shipping?.address,
-        shippingEstimate: shipping?.estimate,
-        shippingTotal: shipping?.shippingTotal ?? null,
+        shippingAddress: shippingForRequest?.address,
+        shippingEstimate: shippingForRequest?.estimate,
+        shippingTotal: shippingForRequest?.shippingTotal ?? null,
         expectedShipmentWindow: expectedShipmentWindow ?? null,
         physicianCertification: options?.physicianCertification === true,
         handDelivery: options?.handDelivery === true,
         facilityPickup: options?.facilityPickup === true,
-        facilityPickupRecipientName: options?.facilityPickupRecipientName ?? null,
-        facility_pickup_recipient_name: options?.facilityPickupRecipientName ?? null,
+        facilityPickupRecipientName: normalizedFacilityPickupRecipientName,
+        facility_pickup_recipient_name: normalizedFacilityPickupRecipientName,
         ...(options?.facilityPickup === true
           ? {
               facilityPickup: true,

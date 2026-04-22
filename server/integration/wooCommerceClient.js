@@ -741,8 +741,12 @@ const buildOrderPayload = async ({ order, customer }) => {
     ? firstNonEmptyText(
       order.facilityPickupRecipientName,
       order.facility_pickup_recipient_name,
+      shippingAddress?.recipientName,
+      shippingAddress?.recipient_name,
       shippingAddress?.name,
       shippingAddress?.fullName,
+      billingAddress?.recipientName,
+      billingAddress?.recipient_name,
       billingAddress?.name,
       billingAddress?.fullName,
     )

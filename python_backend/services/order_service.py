@@ -1827,10 +1827,16 @@ def _build_facility_pickup_shipping_address(
     shipping_address: Optional[Dict],
     recipient_name: object = None,
 ) -> Dict[str, Optional[str]]:
+    shipping_address = shipping_address if isinstance(shipping_address, dict) else {}
     submitted_name = _normalize_address_field(
         recipient_name
         if recipient_name is not None
-        else ((shipping_address or {}).get("name") if isinstance(shipping_address, dict) else None)
+        else (
+            shipping_address.get("recipientName")
+            or shipping_address.get("recipient_name")
+            or shipping_address.get("fullName")
+            or shipping_address.get("name")
+        )
     )
     if submitted_name and _is_facility_pickup_recipient_placeholder(submitted_name):
         submitted_name = None
@@ -2439,7 +2445,7 @@ def create_order(
 
         try:
             print(
-                f"[checkout] woo linked order_id={order.get('id')} woo_id={order.get('wooOrderId')} woo_number={order.get('wooOrderNumber')} sales_rep_id={order.get('doctorSalesRepId')}",
+                f"[checkout] woo linked order_id={order.get('id')} woo_id={order.get('wooOrderId')} woo_number={order.get('wooOrderNumber')} sales_rep_id={order.get('doctorSalesRepId')} facility_pickup={order.get('facilityPickup')} recipient={order.get('facilityPickupRecipientName')} shipping_name={(order.get('shippingAddress') or {}).get('name') if isinstance(order.get('shippingAddress'), dict) else None} billing_name={(order.get('billingAddress') or {}).get('name') if isinstance(order.get('billingAddress'), dict) else None}",
                 flush=True,
             )
         except Exception:

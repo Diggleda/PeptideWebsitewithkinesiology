@@ -415,6 +415,7 @@ class CreateOrderTests(unittest.TestCase):
                 shipping_total=0.0,
                 shipping_address={
                     "name": "Sales Lead User",
+                    "recipientName": "Recipient Patient",
                     "addressLine1": "640 S Grand Ave",
                     "addressLine2": "Unit #107",
                     "city": "Santa Ana",
@@ -422,7 +423,6 @@ class CreateOrderTests(unittest.TestCase):
                     "postalCode": "92705",
                     "country": "US",
                 },
-                facility_pickup_recipient_name="Recipient Patient",
                 facility_pickup=True,
                 shipping_rate={
                     "carrierId": "facility_pickup",
