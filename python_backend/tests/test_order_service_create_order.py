@@ -414,7 +414,7 @@ class CreateOrderTests(unittest.TestCase):
                 tax_total=0.0,
                 shipping_total=0.0,
                 shipping_address={
-                    "name": "Recipient Patient",
+                    "name": "Sales Lead User",
                     "addressLine1": "640 S Grand Ave",
                     "addressLine2": "Unit #107",
                     "city": "Santa Ana",
@@ -422,6 +422,7 @@ class CreateOrderTests(unittest.TestCase):
                     "postalCode": "92705",
                     "country": "US",
                 },
+                facility_pickup_recipient_name="Recipient Patient",
                 facility_pickup=True,
                 shipping_rate={
                     "carrierId": "facility_pickup",
@@ -436,6 +437,7 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(len(inserted_orders), 1)
         self.assertEqual(inserted_orders[0]["shippingAddress"]["name"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["billingAddress"]["name"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["facilityPickupRecipientName"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "facility_pickup")
         self.assertTrue(inserted_orders[0]["facilityPickup"])
 
@@ -457,13 +459,14 @@ class CreateOrderTests(unittest.TestCase):
                 "grandTotal": 25.0,
                 "shippingTotal": 0.0,
                 "taxTotal": 0.0,
+                "facilityPickupRecipientName": "Recipient Patient",
                 "shippingEstimate": {
                     "carrierId": "facility_pickup",
                     "serviceCode": "facility_pickup",
                     "serviceType": "Facility pickup",
                 },
                 "shippingAddress": {
-                    "name": "Recipient Patient",
+                    "name": "Sales Lead User",
                     "addressLine1": "640 S Grand Ave",
                     "addressLine2": "Unit #107",
                     "city": "Santa Ana",

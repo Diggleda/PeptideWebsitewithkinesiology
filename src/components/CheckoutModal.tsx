@@ -300,6 +300,7 @@ interface CheckoutModalProps {
     delegateAmountDueCurrency?: string | null;
     handDelivery?: boolean;
     facilityPickup?: boolean;
+    facilityPickupRecipientName?: string | null;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted: boolean;
     taxTotal?: number | null;
@@ -1135,6 +1136,9 @@ export function CheckoutModal({
           delegateAmountDueCurrency: delegateAmountDue != null ? 'USD' : null,
           handDelivery: isHandDeliveryEnabled,
           facilityPickup: isFacilityPickupEnabled,
+          facilityPickupRecipientName: isFacilityPickupEnabled
+            ? facilityPickupRecipientName
+            : null,
 	        expectedShipmentWindow: delegateShippingHandledByPhysician ? null : (deliveryEstimate?.deliveryWindowLabel ?? null),
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,

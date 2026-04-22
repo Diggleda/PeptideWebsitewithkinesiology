@@ -1956,6 +1956,7 @@ const createOrderInternal = async ({
   shippingEstimate,
   shippingTotal,
   facilityPickup,
+  facilityPickupRecipientName,
   handDelivery,
   physicianCertification,
   taxTotal,
@@ -1989,10 +1990,18 @@ const createOrderInternal = async ({
   const taxExempt = await isUserTaxExemptForCheckout(user);
   const checkoutProfileUser = taxExempt ? (userRepository.findById(userId) || user) : user;
   const orderExemptionSnapshot = resolveOrderExemptionSnapshot(checkoutProfileUser, taxExempt);
+  const normalizedFacilityPickupRecipientName =
+    typeof facilityPickupRecipientName === 'string' && facilityPickupRecipientName.trim()
+      ? facilityPickupRecipientName.trim()
+      : null;
+  const checkoutShippingAddress =
+    normalizedFacilityPickupRecipientName && shippingAddress && typeof shippingAddress === 'object'
+      ? { ...shippingAddress, name: normalizedFacilityPickupRecipientName }
+      : shippingAddress;
   const shippingData = resolveCheckoutShippingData({
     facilityPickup,
     handDelivery,
-    shippingAddress,
+    shippingAddress: checkoutShippingAddress,
     shippingEstimate,
     shippingTotal,
   });
@@ -2067,6 +2076,12 @@ const createOrderInternal = async ({
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress, {
       preferFallbackAddress: handDeliverySelected || facilityPickupSelected,
     }),
+    facilityPickupRecipientName: facilityPickupSelected
+      ? (shippingData.shippingAddress?.name || normalizedFacilityPickupRecipientName || null)
+      : null,
+    facility_pickup_recipient_name: facilityPickupSelected
+      ? (shippingData.shippingAddress?.name || normalizedFacilityPickupRecipientName || null)
+      : null,
     handDelivery: handDeliverySelected,
     facilityPickup: facilityPickupSelected,
     facility_pickup: facilityPickupSelected,
@@ -2262,6 +2277,7 @@ const createOrder = async ({
   shippingEstimate,
   shippingTotal,
   facilityPickup,
+  facilityPickupRecipientName,
   handDelivery,
   physicianCertification,
   taxTotal,
@@ -2292,6 +2308,7 @@ const createOrder = async ({
       shippingEstimate,
       shippingTotal,
       facilityPickup,
+      facilityPickupRecipientName,
       handDelivery,
       physicianCertification,
       taxTotal,
@@ -2333,6 +2350,7 @@ const createOrder = async ({
     shippingEstimate,
     shippingTotal,
     facilityPickup,
+    facilityPickupRecipientName,
     handDelivery,
     physicianCertification,
     taxTotal,

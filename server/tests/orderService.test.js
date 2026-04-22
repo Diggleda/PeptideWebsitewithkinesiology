@@ -411,7 +411,7 @@ test('createOrder preserves facility pickup recipient name for sales actors', as
         ...buildCheckoutPayload(),
         total: 100,
         shippingAddress: {
-          name: 'Recipient Patient',
+          name: 'Sales Lead User',
           addressLine1: '640 S Grand Ave',
           addressLine2: 'Unit #107',
           city: 'Santa Ana',
@@ -429,6 +429,7 @@ test('createOrder preserves facility pickup recipient name for sales actors', as
         shippingTotal: 0,
         handDelivery: false,
         facilityPickup: true,
+        facilityPickupRecipientName: 'Recipient Patient',
       });
       assert.equal(result.success, true);
     },
@@ -437,5 +438,6 @@ test('createOrder preserves facility pickup recipient name for sales actors', as
   assert.equal(insertedOrders.length, 1);
   assert.equal(insertedOrders[0].shippingAddress.name, 'Recipient Patient');
   assert.equal(insertedOrders[0].billingAddress.name, 'Recipient Patient');
+  assert.equal(insertedOrders[0].facilityPickupRecipientName, 'Recipient Patient');
   assert.equal(insertedOrders[0].facilityPickup, true);
 });

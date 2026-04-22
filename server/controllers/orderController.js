@@ -659,6 +659,10 @@ const createOrder = async (req, res, next) => {
       pricingMode: req.body.pricingMode,
       handDelivery: handDeliveryRequested,
       facilityPickup: facilityPickupRequested,
+      facilityPickupRecipientName:
+        req.body.facilityPickupRecipientName
+        || req.body.facility_pickup_recipient_name
+        || null,
       delegateProposalToken:
         req.body.delegateProposalToken
         || req.body.delegate_proposal_token

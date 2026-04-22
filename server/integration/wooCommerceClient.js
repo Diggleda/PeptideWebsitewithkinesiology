@@ -700,8 +700,8 @@ const buildWooAddress = ({ address, customer, fallbackAddress }) => {
 };
 
 const buildOrderPayload = async ({ order, customer }) => {
-  const shippingAddress = order.shippingAddress || null;
-  const billingAddress = order.billingAddress || shippingAddress || null;
+  let shippingAddress = order.shippingAddress || null;
+  let billingAddress = order.billingAddress || shippingAddress || null;
   const shippingTotal = typeof order.shippingTotal === 'number' && Number.isFinite(order.shippingTotal)
     ? Number(order.shippingTotal)
     : 0;
@@ -724,6 +724,37 @@ const buildOrderPayload = async ({ order, customer }) => {
   const manualTaxRateId = taxTotal > 0 ? await ensurePepProManualTaxRateId() : null;
   const feeLines = [];
   const fulfillmentMethod = String(order.fulfillmentMethod || order.fulfillment_method || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const shippingServiceCode = String(
+    order.shippingEstimate?.serviceCode ||
+      order.shippingEstimate?.carrierId ||
+      order.shippingEstimate?.serviceType ||
+      '',
+  ).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const isFacilityPickup =
+    fulfillmentMethod === 'facility_pickup' ||
+    fulfillmentMethod === 'fascility_pickup' ||
+    order.facilityPickup === true ||
+    order.facility_pickup === true ||
+    shippingServiceCode === 'facility_pickup' ||
+    shippingServiceCode === 'fascility_pickup';
+  const pickupRecipientName = isFacilityPickup
+    ? firstNonEmptyText(
+      order.facilityPickupRecipientName,
+      order.facility_pickup_recipient_name,
+      shippingAddress?.name,
+      shippingAddress?.fullName,
+      billingAddress?.name,
+      billingAddress?.fullName,
+    )
+    : null;
+  if (pickupRecipientName) {
+    if (shippingAddress && typeof shippingAddress === 'object') {
+      shippingAddress = { ...shippingAddress, name: pickupRecipientName };
+    }
+    if (billingAddress && typeof billingAddress === 'object') {
+      billingAddress = { ...billingAddress, name: pickupRecipientName };
+    }
+  }
 
   const metaData = [
     { key: 'peppro_order_id', value: order.id },
@@ -762,16 +793,8 @@ const buildOrderPayload = async ({ order, customer }) => {
   if (Number.isFinite(Number(order.shippingEstimate?.weightOz))) {
     metaData.push({ key: 'peppro_package_weight_oz', value: Number(order.shippingEstimate.weightOz) });
   }
-  if (fulfillmentMethod === 'facility_pickup') {
-    const pickupRecipientName = firstNonEmptyText(
-      shippingAddress?.name,
-      shippingAddress?.fullName,
-      billingAddress?.name,
-      billingAddress?.fullName,
-    );
-    if (pickupRecipientName) {
-      metaData.push({ key: 'peppro_facility_pickup_recipient_name', value: pickupRecipientName });
-    }
+  if (isFacilityPickup && pickupRecipientName) {
+    metaData.push({ key: 'peppro_facility_pickup_recipient_name', value: pickupRecipientName });
   }
 
   if (taxTotal > 0) {

@@ -127,6 +127,11 @@ def create_order():
     tax_total = payload.get("taxTotal")
     shipping_total = payload.get("shippingTotal")
     shipping_address = payload.get("shippingAddress")
+    facility_pickup_recipient_name = (
+        payload.get("facilityPickupRecipientName")
+        or payload.get("facility_pickup_recipient_name")
+        or None
+    )
     facility_pickup = bool(
         payload.get("handDelivery") is True
         or payload.get("facilityPickup") is True
@@ -179,6 +184,7 @@ def create_order():
             tax_total=tax_total,
             shipping_total=shipping_total,
             shipping_address=shipping_address,
+            facility_pickup_recipient_name=facility_pickup_recipient_name,
             facility_pickup=facility_pickup,
             shipping_rate=shipping_rate,
             expected_shipment_window=expected_shipment_window,

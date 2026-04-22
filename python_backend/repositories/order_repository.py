@@ -920,6 +920,20 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             "notes": row.get("notes") if row.get("notes") is not None else None,
             "shippingAddress": _read_order_json_field(row, "shipping_address", None),
             "billingAddress": billing_address,
+            "facilityPickupRecipientName": (
+                payload_order.get("facilityPickupRecipientName")
+                or payload_order.get("facility_pickup_recipient_name")
+                or payload.get("facilityPickupRecipientName")
+                or payload.get("facility_pickup_recipient_name")
+                or None
+            ),
+            "facility_pickup_recipient_name": (
+                payload_order.get("facility_pickup_recipient_name")
+                or payload_order.get("facilityPickupRecipientName")
+                or payload.get("facility_pickup_recipient_name")
+                or payload.get("facilityPickupRecipientName")
+                or None
+            ),
             "expectedShipmentWindow": row.get("expected_shipment_window") or None,
             "shippingCarrier": row.get("shipping_carrier"),
             "shippingService": row.get("shipping_service"),
@@ -1312,6 +1326,16 @@ def list_for_tax_reporting(start_utc: datetime, end_utc: datetime) -> List[Dict]
             "taxTotal": tax_total,
             "shippingAddress": shipping_address,
             "billingAddress": billing_address,
+            "facilityPickupRecipientName": (
+                order_payload.get("facilityPickupRecipientName")
+                or order_payload.get("facility_pickup_recipient_name")
+                or None
+            ),
+            "facility_pickup_recipient_name": (
+                order_payload.get("facility_pickup_recipient_name")
+                or order_payload.get("facilityPickupRecipientName")
+                or None
+            ),
             "wooOrderId": row.get("woo_order_id") or None,
             "wooOrderNumber": row.get("woo_order_number") or None,
             "createdAt": _fmt_datetime(row.get("created_at")),

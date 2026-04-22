@@ -2345,6 +2345,7 @@ const buildOrderFingerprint = (payload: {
   paymentMethod?: string | null;
   handDelivery?: boolean;
   facilityPickup?: boolean;
+  facilityPickupRecipientName?: string | null;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
   taxTotal?: number | null;
   delegateProposalToken?: string | null;
@@ -2378,6 +2379,11 @@ const buildOrderFingerprint = (payload: {
     paymentMethod: payload.paymentMethod || null,
     handDelivery: payload.handDelivery === true,
     facilityPickup: payload.facilityPickup === true,
+    facilityPickupRecipientName:
+      typeof payload.facilityPickupRecipientName === 'string' &&
+      payload.facilityPickupRecipientName.trim()
+        ? payload.facilityPickupRecipientName.trim()
+        : null,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
     delegateProposalToken:
       typeof payload.delegateProposalToken === 'string' && payload.delegateProposalToken.trim()
@@ -2441,6 +2447,7 @@ export const ordersAPI = {
       physicianCertification?: boolean;
       handDelivery?: boolean;
       facilityPickup?: boolean;
+      facilityPickupRecipientName?: string | null;
       delegateProposalToken?: string | null;
     },
     taxTotal?: number | null,
@@ -2457,6 +2464,7 @@ export const ordersAPI = {
       paymentMethod,
       handDelivery: options?.handDelivery === true,
       facilityPickup: options?.facilityPickup === true,
+      facilityPickupRecipientName: options?.facilityPickupRecipientName ?? null,
       taxTotal,
       delegateProposalToken: options?.delegateProposalToken ?? null,
     });
@@ -2485,6 +2493,8 @@ export const ordersAPI = {
         physicianCertification: options?.physicianCertification === true,
         handDelivery: options?.handDelivery === true,
         facilityPickup: options?.facilityPickup === true,
+        facilityPickupRecipientName: options?.facilityPickupRecipientName ?? null,
+        facility_pickup_recipient_name: options?.facilityPickupRecipientName ?? null,
         ...(options?.facilityPickup === true
           ? {
               facilityPickup: true,

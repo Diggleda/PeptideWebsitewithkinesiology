@@ -1825,9 +1825,12 @@ def _normalize_address_field(value: Optional[str]) -> Optional[str]:
 def _build_facility_pickup_shipping_address(
     user: Optional[Dict],
     shipping_address: Optional[Dict],
+    recipient_name: object = None,
 ) -> Dict[str, Optional[str]]:
     submitted_name = _normalize_address_field(
-        (shipping_address or {}).get("name") if isinstance(shipping_address, dict) else None
+        recipient_name
+        if recipient_name is not None
+        else ((shipping_address or {}).get("name") if isinstance(shipping_address, dict) else None)
     )
     if submitted_name and _is_facility_pickup_recipient_placeholder(submitted_name):
         submitted_name = None
@@ -2125,6 +2128,7 @@ def create_order(
     tax_total: Optional[float] = None,
     shipping_total: Optional[float] = None,
     shipping_address: Optional[Dict] = None,
+    facility_pickup_recipient_name: Optional[str] = None,
     facility_pickup: bool = False,
     shipping_rate: Optional[Dict] = None,
     expected_shipment_window: Optional[str] = None,
@@ -2170,7 +2174,11 @@ def create_order(
     bypass_shipping = is_facility_pickup or is_hand_delivery
     billing_address = None
     if is_facility_pickup:
-        shipping_address = _build_facility_pickup_shipping_address(user, shipping_address)
+        shipping_address = _build_facility_pickup_shipping_address(
+            user,
+            shipping_address,
+            recipient_name=facility_pickup_recipient_name,
+        )
         billing_address = dict(shipping_address)
         existing_rate = shipping_rate if isinstance(shipping_rate, dict) else {}
         shipping_rate = {
@@ -2258,6 +2266,12 @@ def create_order(
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
         "billingAddress": billing_address,
+        "facilityPickupRecipientName": (
+            shipping_address.get("name") if is_facility_pickup and isinstance(shipping_address, dict) else None
+        ),
+        "facility_pickup_recipient_name": (
+            shipping_address.get("name") if is_facility_pickup and isinstance(shipping_address, dict) else None
+        ),
         "handDelivery": is_hand_delivery,
         "facilityPickup": is_facility_pickup,
         "facility_pickup": is_facility_pickup,
@@ -4483,6 +4497,15 @@ def _normalize_shipstation_delivery_status(shipstation_info: Dict) -> Optional[s
 def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
     shipping_address = _ensure_dict(local_order.get("shippingAddress") or local_order.get("shipping_address"))
     billing_address = _ensure_dict(local_order.get("billingAddress") or local_order.get("billing_address"))
+    facility_pickup_recipient_name = _normalize_optional_text(
+        local_order.get("facilityPickupRecipientName")
+        or local_order.get("facility_pickup_recipient_name")
+    )
+    if facility_pickup_recipient_name:
+        if shipping_address:
+            shipping_address = {**shipping_address, "name": facility_pickup_recipient_name}
+        if billing_address:
+            billing_address = {**billing_address, "name": facility_pickup_recipient_name}
     integrations = _ensure_dict(local_order.get("integrationDetails") or local_order.get("integrations"))
     shipstation = _ensure_dict(integrations.get("shipStation") or integrations.get("shipstation"))
 
@@ -4531,6 +4554,8 @@ def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
         "paymentDetails": payment_details,
         "shippingAddress": shipping_address or None,
         "billingAddress": billing_address or (shipping_address or None),
+        "facilityPickupRecipientName": facility_pickup_recipient_name,
+        "facility_pickup_recipient_name": facility_pickup_recipient_name,
         "billingEmail": billing_email,
         "shippingEstimate": local_order.get("shippingEstimate") or None,
         "trackingNumber": _normalize_optional_text(
@@ -4809,6 +4834,27 @@ def get_sales_rep_order_detail(
         if local_order:
             local_shipping = _ensure_dict(local_order.get("shippingAddress") or local_order.get("shipping_address"))
             local_billing = _ensure_dict(local_order.get("billingAddress") or local_order.get("billing_address"))
+            local_facility_pickup_recipient_name = _normalize_optional_text(
+                local_order.get("facilityPickupRecipientName")
+                or local_order.get("facility_pickup_recipient_name")
+            )
+            if local_facility_pickup_recipient_name:
+                if local_shipping:
+                    local_shipping = {**local_shipping, "name": local_facility_pickup_recipient_name}
+                if local_billing:
+                    local_billing = {**local_billing, "name": local_facility_pickup_recipient_name}
+                mapped["facilityPickupRecipientName"] = local_facility_pickup_recipient_name
+                mapped["facility_pickup_recipient_name"] = local_facility_pickup_recipient_name
+                if _has_populated_address(mapped.get("shippingAddress")):
+                    mapped["shippingAddress"] = {
+                        **_ensure_dict(mapped.get("shippingAddress")),
+                        "name": local_facility_pickup_recipient_name,
+                    }
+                if _has_populated_address(mapped.get("billingAddress")):
+                    mapped["billingAddress"] = {
+                        **_ensure_dict(mapped.get("billingAddress")),
+                        "name": local_facility_pickup_recipient_name,
+                    }
             local_payment = (
                 local_order.get("paymentDetails")
                 or local_order.get("paymentMethod")

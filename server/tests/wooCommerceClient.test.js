@@ -63,13 +63,14 @@ test('buildOrderPayload prefers facility pickup recipient name over fallback act
       createdAt: '2026-04-22T15:00:00Z',
       paymentMethod: 'zelle',
       shippingTotal: 0,
+      facilityPickupRecipientName: 'Recipient Patient',
       shippingEstimate: {
         serviceType: 'Facility pickup',
         serviceCode: 'facility_pickup',
         carrierId: 'facility_pickup',
       },
       shippingAddress: {
-        name: 'Recipient Patient',
+        name: 'Sales Lead User',
         addressLine1: '640 S Grand Ave',
         addressLine2: 'Unit #107',
         city: 'Santa Ana',

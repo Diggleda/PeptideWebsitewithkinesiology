@@ -1078,6 +1078,8 @@ interface AccountOrderSummary {
   shippingTotal?: number | null;
   taxTotal?: number | null;
   physicianCertified?: boolean | null;
+  facilityPickupRecipientName?: string | null;
+  facility_pickup_recipient_name?: string | null;
   wooOrderNumber?: string | null;
   wooOrderId?: string | null;
   cancellationId?: string | null;
@@ -1685,9 +1687,50 @@ const resolveFacilityPickupRecipientName = (
   return null;
 };
 
+const resolveFacilityPickupRecipientNameFromOrder = (
+  order?: AccountOrderSummary | null,
+): string | null => {
+  if (!order || typeof order !== "object") {
+    return null;
+  }
+  const readMetaValue = (source: unknown, key: string): string | null => {
+    const parsed = parseMaybeJson(source);
+    if (!parsed) return null;
+    if (Array.isArray(parsed)) {
+      const match = parsed.find((entry: any) => entry?.key === key);
+      return typeof match?.value === "string" ? match.value : null;
+    }
+    if (typeof parsed === "object") {
+      const obj = parsed as Record<string, any>;
+      if (typeof obj[key] === "string") return obj[key];
+      return (
+        readMetaValue(obj.meta_data, key) ||
+        readMetaValue(obj.metaData, key) ||
+        readMetaValue(obj.payload?.meta_data, key) ||
+        readMetaValue(obj.payload?.metaData, key) ||
+        readMetaValue(obj.response?.meta_data, key) ||
+        readMetaValue(obj.response?.metaData, key) ||
+        null
+      );
+    }
+    return null;
+  };
+  const integrations = parseMaybeJson(order.integrationDetails || order.integrations) || {};
+  return resolveFacilityPickupRecipientName(
+    (order as any).facilityPickupRecipientName,
+    (order as any).facility_pickup_recipient_name,
+    (order as any).pickupRecipientName,
+    (order as any).pickup_recipient_name,
+    readMetaValue(integrations, "peppro_facility_pickup_recipient_name"),
+    readMetaValue((integrations as any)?.wooCommerce, "peppro_facility_pickup_recipient_name"),
+    readMetaValue((integrations as any)?.woocommerce, "peppro_facility_pickup_recipient_name"),
+  );
+};
+
 const withFacilityPickupRecipientName = (
   address?: AccountOrderAddress | null,
   options?: {
+    preferredName?: string | null;
     billingAddress?: AccountOrderAddress | null;
     fallbackName?: string | null;
   },
@@ -1695,11 +1738,27 @@ const withFacilityPickupRecipientName = (
   if (!address || !isFacilityPickupAddress(address)) {
     return address ?? null;
   }
-  const recipientName = resolveFacilityPickupRecipientName(
-    address.name,
-    options?.billingAddress?.name,
-    options?.fallbackName,
-  );
+  const preferredName = resolveFacilityPickupRecipientName(options?.preferredName);
+  const addressName = resolveFacilityPickupRecipientName(address.name);
+  const billingName = resolveFacilityPickupRecipientName(options?.billingAddress?.name);
+  const fallbackName = resolveFacilityPickupRecipientName(options?.fallbackName);
+  const namesMatch = (left?: string | null, right?: string | null) =>
+    Boolean(
+      left &&
+        right &&
+        left.trim().toLowerCase() === right.trim().toLowerCase(),
+    );
+  const recipientName =
+    preferredName ||
+    (addressName && !namesMatch(addressName, fallbackName)
+      ? addressName
+      : null) ||
+    (billingName && !namesMatch(billingName, fallbackName)
+      ? billingName
+      : null) ||
+    addressName ||
+    billingName ||
+    fallbackName;
   if (!recipientName) {
     return address;
   }
@@ -3189,6 +3248,14 @@ const normalizeAccountOrdersResponse = (
           paymentMethod,
           paymentDetails,
           integrationDetails: order?.integrationDetails || null,
+          facilityPickupRecipientName:
+            normalizeStringField(
+              order?.facilityPickupRecipientName ?? order?.facility_pickup_recipient_name,
+            ) || null,
+          facility_pickup_recipient_name:
+            normalizeStringField(
+              order?.facility_pickup_recipient_name ?? order?.facilityPickupRecipientName,
+            ) || null,
           shippingAddress: sanitizeOrderAddress(
             order?.shippingAddress || order?.shipping_address || order?.shipping,
           ),
@@ -3282,6 +3349,14 @@ const normalizeAccountOrdersResponse = (
           paymentMethod,
           paymentDetails,
           integrationDetails: order?.integrationDetails || null,
+          facilityPickupRecipientName:
+            normalizeStringField(
+              order?.facilityPickupRecipientName ?? order?.facility_pickup_recipient_name,
+            ) || null,
+          facility_pickup_recipient_name:
+            normalizeStringField(
+              order?.facility_pickup_recipient_name ?? order?.facilityPickupRecipientName,
+            ) || null,
           shippingAddress: sanitizeOrderAddress(
             order?.shippingAddress || order?.shipping_address || order?.shipping,
           ),
@@ -3382,6 +3457,14 @@ const normalizeAccountOrdersResponse = (
           paymentMethod,
           paymentDetails,
           integrationDetails: order?.integrationDetails || null,
+          facilityPickupRecipientName:
+            normalizeStringField(
+              order?.facilityPickupRecipientName ?? order?.facility_pickup_recipient_name,
+            ) || null,
+          facility_pickup_recipient_name:
+            normalizeStringField(
+              order?.facility_pickup_recipient_name ?? order?.facilityPickupRecipientName,
+            ) || null,
           shippingAddress: sanitizeOrderAddress(
             order?.shippingAddress || order?.shipping || order?.shipping_address,
           ),
@@ -25970,6 +26053,7 @@ function MainApp() {
     delegateAmountDueCurrency?: string | null;
     handDelivery?: boolean;
     facilityPickup?: boolean;
+    facilityPickupRecipientName?: string | null;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted?: boolean;
     taxTotal?: number | null;
@@ -26135,6 +26219,7 @@ function MainApp() {
 	            options?.physicianCertificationAccepted === true,
             handDelivery: options?.handDelivery === true,
             facilityPickup: options?.facilityPickup === true,
+            facilityPickupRecipientName: options?.facilityPickupRecipientName ?? null,
             delegateProposalToken: delegationProposalReview?.token ?? null,
 	        },
 	        taxTotal,
@@ -41097,8 +41182,11 @@ function MainApp() {
                 const isFacilityPickupOrder = isSalesOrderFacilityPickup(
                   salesOrderDetail as any,
                 );
+                const facilityPickupRecipientName =
+                  resolveFacilityPickupRecipientNameFromOrder(salesOrderDetail as any);
                 const shippingAddressForDisplay = isFacilityPickupOrder
                   ? withFacilityPickupRecipientName(shippingAddress, {
+                      preferredName: facilityPickupRecipientName,
                       billingAddress,
                       fallbackName:
                         typeof salesOrderDetail.doctorName === "string" && salesOrderDetail.doctorName.trim().length > 0

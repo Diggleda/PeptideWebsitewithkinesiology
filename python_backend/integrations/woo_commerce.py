@@ -1342,6 +1342,21 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             or _is_facility_pickup_shipping_estimate(shipping_estimate)
         )
     )
+    pickup_recipient_name = None
+    if is_facility_pickup:
+        pickup_recipient_name = _first_non_empty_text(
+            order.get("facilityPickupRecipientName"),
+            order.get("facility_pickup_recipient_name"),
+            shipping_address.get("name") if isinstance(shipping_address, dict) else None,
+            shipping_address.get("fullName") if isinstance(shipping_address, dict) else None,
+            billing_address.get("name") if isinstance(billing_address, dict) else None,
+            billing_address.get("fullName") if isinstance(billing_address, dict) else None,
+        )
+        if pickup_recipient_name:
+            if isinstance(shipping_address, dict):
+                shipping_address = {**shipping_address, "name": pickup_recipient_name}
+            if isinstance(billing_address, dict):
+                billing_address = {**billing_address, "name": pickup_recipient_name}
     sales_rep_id = (
         order.get("doctorSalesRepId")
         or order.get("salesRepId")
@@ -1395,20 +1410,13 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         meta_data.append({"key": "peppro_sales_rep_id", "value": sales_rep_id})
     if sales_rep_code:
         meta_data.append({"key": "peppro_sales_rep_code", "value": sales_rep_code})
-    if is_facility_pickup:
-        pickup_recipient_name = _first_non_empty_text(
-            shipping_address.get("name") if isinstance(shipping_address, dict) else None,
-            shipping_address.get("fullName") if isinstance(shipping_address, dict) else None,
-            billing_address.get("name") if isinstance(billing_address, dict) else None,
-            billing_address.get("fullName") if isinstance(billing_address, dict) else None,
+    if is_facility_pickup and pickup_recipient_name:
+        meta_data.append(
+            {
+                "key": "peppro_facility_pickup_recipient_name",
+                "value": pickup_recipient_name,
+            }
         )
-        if pickup_recipient_name:
-            meta_data.append(
-                {
-                    "key": "peppro_facility_pickup_recipient_name",
-                    "value": pickup_recipient_name,
-                }
-            )
     if is_hand_delivery:
         meta_data.append({"key": "peppro_delivery_method", "value": HAND_DELIVERY_CODE})
 
