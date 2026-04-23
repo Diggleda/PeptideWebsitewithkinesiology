@@ -43,7 +43,16 @@ def _address_lines(addr: Optional[Dict[str, Any]]) -> List[str]:
     if not isinstance(addr, dict):
         return []
     lines: List[str] = []
-    name = (addr.get("name") or "").strip()
+    name = (
+        addr.get("recipientName")
+        or addr.get("recipient_name")
+        or addr.get("orderRecipientName")
+        or addr.get("order_recipient_name")
+        or addr.get("pickupRecipientName")
+        or addr.get("pickup_recipient_name")
+        or addr.get("name")
+        or ""
+    ).strip()
     if name:
         lines.append(name)
     line1 = (addr.get("addressLine1") or addr.get("address_1") or "").strip()
@@ -228,4 +237,3 @@ def build_invoice_pdf(
 
     pdf_bytes = _build_simple_text_pdf(lines)
     return pdf_bytes, _invoice_filename(order_number)
-

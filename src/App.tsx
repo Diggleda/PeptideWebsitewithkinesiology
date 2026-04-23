@@ -1637,9 +1637,28 @@ const sanitizeAccountAddress = (
   if (!address && !fallbackName) {
     return undefined;
   }
+  const recipientName =
+    normalizeAddressPart(address?.recipientName) ||
+    normalizeAddressPart(address?.recipient_name) ||
+    normalizeAddressPart(address?.orderRecipientName) ||
+    normalizeAddressPart(address?.order_recipient_name) ||
+    normalizeAddressPart(address?.pickupRecipientName) ||
+    normalizeAddressPart(address?.pickup_recipient_name) ||
+    null;
+  const normalizedName =
+    recipientName ||
+    normalizeAddressPart(address?.fullName) ||
+    normalizeAddressPart(address?.name) ||
+    normalizeAddressPart(fallbackName);
   return {
-    name:
-      normalizeAddressPart(address?.name) || normalizeAddressPart(fallbackName),
+    name: normalizedName,
+    fullName: recipientName || normalizeAddressPart(address?.fullName) || normalizedName,
+    recipientName,
+    recipient_name: recipientName,
+    orderRecipientName: recipientName,
+    order_recipient_name: recipientName,
+    pickupRecipientName: recipientName,
+    pickup_recipient_name: recipientName,
     company: normalizeAddressPart(address?.company),
     addressLine1: normalizeAddressPart(address?.addressLine1),
     addressLine2: normalizeAddressPart(address?.addressLine2),
@@ -1741,14 +1760,6 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     (order as any).billing ||
     null;
   return resolveFacilityPickupRecipientName(
-    (order as any).facilityPickupRecipientName,
-    (order as any).facility_pickup_recipient_name,
-    (order as any).pickupRecipientName,
-    (order as any).pickup_recipient_name,
-    (order as any).recipientName,
-    (order as any).recipient_name,
-    (order as any).orderRecipientName,
-    (order as any).order_recipient_name,
     shippingAddress?.recipientName,
     shippingAddress?.recipient_name,
     shippingAddress?.orderRecipientName,
@@ -1764,6 +1775,18 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     readMetaValue(integrations, "peppro_facility_pickup_recipient_name"),
     readMetaValue((integrations as any)?.wooCommerce, "peppro_facility_pickup_recipient_name"),
     readMetaValue((integrations as any)?.woocommerce, "peppro_facility_pickup_recipient_name"),
+    shippingAddress?.fullName,
+    shippingAddress?.name,
+    billingAddress?.fullName,
+    billingAddress?.name,
+    (order as any).facilityPickupRecipientName,
+    (order as any).facility_pickup_recipient_name,
+    (order as any).pickupRecipientName,
+    (order as any).pickup_recipient_name,
+    (order as any).recipientName,
+    (order as any).recipient_name,
+    (order as any).orderRecipientName,
+    (order as any).order_recipient_name,
   );
 };
 
@@ -2750,9 +2773,29 @@ const sanitizeOrderAddress = (address: any): AccountOrderAddress | null => {
     normalizeStringField(address.last_name) ||
     normalizeStringField(address.lastName);
   const fallbackName = [first, last].filter(Boolean).join(" ").trim() || null;
+  const recipientName =
+    normalizeStringField(address.recipientName) ||
+    normalizeStringField(address.recipient_name) ||
+    normalizeStringField(address.orderRecipientName) ||
+    normalizeStringField(address.order_recipient_name) ||
+    normalizeStringField(address.pickupRecipientName) ||
+    normalizeStringField(address.pickup_recipient_name) ||
+    null;
+  const normalizedName =
+    recipientName ||
+    normalizeStringField(address.fullName) ||
+    normalizeStringField(address.name) ||
+    fallbackName;
 
   return {
-    name: normalizeStringField(address.name) || fallbackName,
+    name: normalizedName,
+    fullName: recipientName || normalizeStringField(address.fullName) || normalizedName,
+    recipientName,
+    recipient_name: recipientName,
+    orderRecipientName: recipientName,
+    order_recipient_name: recipientName,
+    pickupRecipientName: recipientName,
+    pickup_recipient_name: recipientName,
     company: normalizeStringField(address.company),
     addressLine1:
       normalizeStringField(address.addressLine1) ||
@@ -3156,6 +3199,36 @@ const mergeWooSummaryIntoLocal = (
   }
   if (!hasSavedAddress(localOrder.billingAddress) && hasSavedAddress(wooOrder.billingAddress)) {
     localOrder.billingAddress = wooOrder.billingAddress;
+  }
+  const mergedFacilityPickupRecipientName =
+    (isSalesOrderFacilityPickup(wooOrder)
+      ? resolveFacilityPickupRecipientNameFromOrder(wooOrder)
+      : null) ||
+    (isSalesOrderFacilityPickup(localOrder)
+      ? resolveFacilityPickupRecipientNameFromOrder(localOrder)
+      : null);
+  if (mergedFacilityPickupRecipientName) {
+    localOrder.facilityPickupRecipientName = mergedFacilityPickupRecipientName;
+    localOrder.facility_pickup_recipient_name = mergedFacilityPickupRecipientName;
+    (localOrder as any).pickupRecipientName = mergedFacilityPickupRecipientName;
+    (localOrder as any).pickup_recipient_name = mergedFacilityPickupRecipientName;
+    (localOrder as any).recipientName = mergedFacilityPickupRecipientName;
+    (localOrder as any).recipient_name = mergedFacilityPickupRecipientName;
+    (localOrder as any).orderRecipientName = mergedFacilityPickupRecipientName;
+    (localOrder as any).order_recipient_name = mergedFacilityPickupRecipientName;
+    (localOrder as any).customerName = mergedFacilityPickupRecipientName;
+    (localOrder as any).customer_name = mergedFacilityPickupRecipientName;
+    localOrder.doctorName = mergedFacilityPickupRecipientName;
+    localOrder.shippingAddress =
+      withFacilityPickupRecipientName(localOrder.shippingAddress, {
+        preferredName: mergedFacilityPickupRecipientName,
+        billingAddress: localOrder.billingAddress,
+      }) || localOrder.shippingAddress;
+    localOrder.billingAddress =
+      withFacilityPickupRecipientName(localOrder.billingAddress, {
+        preferredName: mergedFacilityPickupRecipientName,
+        billingAddress: localOrder.shippingAddress,
+      }) || localOrder.billingAddress;
   }
   if (!localOrder.shippingEstimate && wooOrder.shippingEstimate) {
     localOrder.shippingEstimate = wooOrder.shippingEstimate;
@@ -41354,7 +41427,12 @@ function MainApp() {
                   ) : null}
                 </DialogTitle>
                 <DialogDescription>
-                  {salesOrderDetail.doctorName || salesOrderDetail.doctorEmail || ""}
+                  {(isSalesOrderFacilityPickup(salesOrderDetail as any)
+                    ? resolveFacilityPickupRecipientNameFromOrder(salesOrderDetail as any)
+                    : null) ||
+                    salesOrderDetail.doctorName ||
+                    salesOrderDetail.doctorEmail ||
+                    ""}
                 </DialogDescription>
               </DialogHeader>
               {(() => {

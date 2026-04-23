@@ -3948,6 +3948,22 @@ def get_on_hold_orders_for_sales_rep(
             in ("facility_pickup", "fascility_pickup")
         )
         facility_pickup_recipient_name = _first_text(
+            shipping.get("recipientName"),
+            shipping.get("recipient_name"),
+            shipping.get("orderRecipientName"),
+            shipping.get("order_recipient_name"),
+            shipping.get("pickupRecipientName"),
+            shipping.get("pickup_recipient_name"),
+            shipping.get("fullName"),
+            shipping.get("name"),
+            billing.get("recipientName"),
+            billing.get("recipient_name"),
+            billing.get("orderRecipientName"),
+            billing.get("order_recipient_name"),
+            billing.get("pickupRecipientName"),
+            billing.get("pickup_recipient_name"),
+            billing.get("fullName"),
+            billing.get("name"),
             local.get("facilityPickupRecipientName"),
             local.get("facility_pickup_recipient_name"),
             local.get("pickupRecipientName"),
@@ -3956,18 +3972,6 @@ def get_on_hold_orders_for_sales_rep(
             local.get("recipient_name"),
             local.get("orderRecipientName"),
             local.get("order_recipient_name"),
-            shipping.get("recipientName"),
-            shipping.get("recipient_name"),
-            shipping.get("orderRecipientName"),
-            shipping.get("order_recipient_name"),
-            shipping.get("pickupRecipientName"),
-            shipping.get("pickup_recipient_name"),
-            billing.get("recipientName"),
-            billing.get("recipient_name"),
-            billing.get("orderRecipientName"),
-            billing.get("order_recipient_name"),
-            billing.get("pickupRecipientName"),
-            billing.get("pickup_recipient_name"),
             shipping_name,
             billing_name,
         )
@@ -5057,12 +5061,16 @@ def get_sales_rep_order_detail(
                     or local_shipping.get("order_recipient_name")
                     or local_shipping.get("pickupRecipientName")
                     or local_shipping.get("pickup_recipient_name")
+                    or local_shipping.get("fullName")
+                    or local_shipping.get("name")
                     or local_billing.get("recipientName")
                     or local_billing.get("recipient_name")
                     or local_billing.get("orderRecipientName")
                     or local_billing.get("order_recipient_name")
                     or local_billing.get("pickupRecipientName")
                     or local_billing.get("pickup_recipient_name")
+                    or local_billing.get("fullName")
+                    or local_billing.get("name")
                     or local_order.get("facilityPickupRecipientName")
                     or local_order.get("facility_pickup_recipient_name")
                     or local_order.get("pickupRecipientName")
@@ -5075,8 +5083,6 @@ def get_sales_rep_order_detail(
                     or local_order.get("customer_name")
                     or local_order.get("doctorName")
                     or local_order.get("doctor_name")
-                    or local_shipping.get("fullName")
-                    or local_billing.get("fullName")
                 )
             if local_facility_pickup_recipient_name:
                 if local_shipping:
@@ -5201,12 +5207,16 @@ def get_sales_rep_order_detail(
             or mapped_shipping.get("order_recipient_name")
             or mapped_shipping.get("pickupRecipientName")
             or mapped_shipping.get("pickup_recipient_name")
+            or mapped_shipping.get("fullName")
+            or mapped_shipping.get("name")
             or mapped_billing.get("recipientName")
             or mapped_billing.get("recipient_name")
             or mapped_billing.get("orderRecipientName")
             or mapped_billing.get("order_recipient_name")
             or mapped_billing.get("pickupRecipientName")
             or mapped_billing.get("pickup_recipient_name")
+            or mapped_billing.get("fullName")
+            or mapped_billing.get("name")
             or mapped.get("facilityPickupRecipientName")
             or mapped.get("facility_pickup_recipient_name")
             or mapped.get("pickupRecipientName")

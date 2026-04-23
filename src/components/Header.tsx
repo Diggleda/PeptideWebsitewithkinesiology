@@ -383,6 +383,8 @@ interface AccountOrderAddress {
   fullName?: string | null;
   recipientName?: string | null;
   recipient_name?: string | null;
+  orderRecipientName?: string | null;
+  order_recipient_name?: string | null;
   pickupRecipientName?: string | null;
   pickup_recipient_name?: string | null;
   company?: string | null;
@@ -435,6 +437,8 @@ interface AccountOrderSummary {
   createdAt?: string | null;
   updatedAt?: string | null;
   source: 'local' | 'woocommerce' | 'peppro';
+  doctorName?: string | null;
+  doctorEmail?: string | null;
   lineItems?: AccountOrderLineItem[];
   integrations?: Record<string, string | null> | null;
   paymentMethod?: string | null;
@@ -447,6 +451,14 @@ interface AccountOrderSummary {
   physicianCertified?: boolean | null;
   facilityPickupRecipientName?: string | null;
   facility_pickup_recipient_name?: string | null;
+  pickupRecipientName?: string | null;
+  pickup_recipient_name?: string | null;
+  recipientName?: string | null;
+  recipient_name?: string | null;
+  orderRecipientName?: string | null;
+  order_recipient_name?: string | null;
+  customerName?: string | null;
+  customer_name?: string | null;
   expectedShipmentWindow?: string | null;
   upsTrackingStatus?: string | null;
   upsDeliveredAt?: string | null;
@@ -937,6 +949,25 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     (order as any).billing ||
     null;
   return resolveFacilityPickupRecipientName(
+    shippingAddress?.recipientName,
+    shippingAddress?.recipient_name,
+    shippingAddress?.orderRecipientName,
+    shippingAddress?.order_recipient_name,
+    shippingAddress?.pickupRecipientName,
+    shippingAddress?.pickup_recipient_name,
+    billingAddress?.recipientName,
+    billingAddress?.recipient_name,
+    billingAddress?.orderRecipientName,
+    billingAddress?.order_recipient_name,
+    billingAddress?.pickupRecipientName,
+    billingAddress?.pickup_recipient_name,
+    readMetaValue(integrations, 'peppro_facility_pickup_recipient_name'),
+    readMetaValue((integrations as any)?.wooCommerce, 'peppro_facility_pickup_recipient_name'),
+    readMetaValue((integrations as any)?.woocommerce, 'peppro_facility_pickup_recipient_name'),
+    shippingAddress?.fullName,
+    shippingAddress?.name,
+    billingAddress?.fullName,
+    billingAddress?.name,
     (order as any).facilityPickupRecipientName,
     (order as any).facility_pickup_recipient_name,
     (order as any).pickupRecipientName,
@@ -945,17 +976,6 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     (order as any).recipient_name,
     (order as any).orderRecipientName,
     (order as any).order_recipient_name,
-    shippingAddress?.recipientName,
-    shippingAddress?.recipient_name,
-    shippingAddress?.pickupRecipientName,
-    shippingAddress?.pickup_recipient_name,
-    billingAddress?.recipientName,
-    billingAddress?.recipient_name,
-    billingAddress?.pickupRecipientName,
-    billingAddress?.pickup_recipient_name,
-    readMetaValue(integrations, 'peppro_facility_pickup_recipient_name'),
-    readMetaValue((integrations as any)?.wooCommerce, 'peppro_facility_pickup_recipient_name'),
-    readMetaValue((integrations as any)?.woocommerce, 'peppro_facility_pickup_recipient_name'),
   );
 };
 
@@ -974,6 +994,8 @@ const withFacilityPickupRecipientName = (
   const addressName = resolveFacilityPickupRecipientName(
     address.recipientName,
     address.recipient_name,
+    address.orderRecipientName,
+    address.order_recipient_name,
     address.pickupRecipientName,
     address.pickup_recipient_name,
     address.fullName,
@@ -982,6 +1004,8 @@ const withFacilityPickupRecipientName = (
   const billingName = resolveFacilityPickupRecipientName(
     options?.billingAddress?.recipientName,
     options?.billingAddress?.recipient_name,
+    options?.billingAddress?.orderRecipientName,
+    options?.billingAddress?.order_recipient_name,
     options?.billingAddress?.pickupRecipientName,
     options?.billingAddress?.pickup_recipient_name,
     options?.billingAddress?.fullName,
@@ -1006,6 +1030,8 @@ const withFacilityPickupRecipientName = (
     fullName: recipientName,
     recipientName,
     recipient_name: recipientName,
+    orderRecipientName: recipientName,
+    order_recipient_name: recipientName,
     pickupRecipientName: recipientName,
     pickup_recipient_name: recipientName,
   };
@@ -1101,8 +1127,23 @@ const convertWooAddress = (addr: any): AccountOrderAddress | null => {
   const first = addr.first_name || '';
   const last = addr.last_name || '';
   const name = [first, last].filter(Boolean).join(' ').trim() || addr.name || null;
+  const recipientName = resolveFacilityPickupRecipientName(
+    addr.recipientName,
+    addr.recipient_name,
+    addr.orderRecipientName,
+    addr.order_recipient_name,
+    addr.pickupRecipientName,
+    addr.pickup_recipient_name,
+  );
   return {
-    name,
+    name: recipientName || name,
+    fullName: recipientName || name,
+    recipientName,
+    recipient_name: recipientName,
+    orderRecipientName: recipientName,
+    order_recipient_name: recipientName,
+    pickupRecipientName: recipientName,
+    pickup_recipient_name: recipientName,
     company: addr.company || null,
     addressLine1: addr.address_1 || addr.addressLine1 || null,
     addressLine2: addr.address_2 || addr.addressLine2 || null,
@@ -3074,6 +3115,14 @@ export function Header({
       normalize(selectedOrder.paymentDetails ?? selectedOrder.paymentMethod ?? '');
     const integrationChanged =
       JSON.stringify(match.integrationDetails ?? null) !== JSON.stringify(selectedOrder.integrationDetails ?? null);
+    const matchedFacilityPickupRecipientName = isSalesOrderFacilityPickup(match)
+      ? resolveFacilityPickupRecipientNameFromOrder(match)
+      : null;
+    const selectedFacilityPickupRecipientName = isSalesOrderFacilityPickup(selectedOrder)
+      ? resolveFacilityPickupRecipientNameFromOrder(selectedOrder)
+      : null;
+    const recipientChanged =
+      normalize(matchedFacilityPickupRecipientName) !== normalize(selectedFacilityPickupRecipientName);
     const selectedExpectedShipmentWindow =
       selectedOrderStickyEstimateWindow ||
       resolveExpectedShipmentWindow(selectedOrder) ||
@@ -3092,6 +3141,7 @@ export function Header({
       trackingChanged ||
       paymentChanged ||
       integrationChanged ||
+      recipientChanged ||
       estimateChanged
     ) {
       if (nextExpectedShipmentWindow) {
@@ -3107,13 +3157,42 @@ export function Header({
         getRememberedSelectedOrderEstimateWindow(match) ||
         getRememberedSelectedOrderEstimateWindow(selectedOrder) ||
         null;
+      const mergedFacilityPickupRecipientName =
+        matchedFacilityPickupRecipientName || selectedFacilityPickupRecipientName;
+      const mergedShippingAddress =
+        match.shippingAddress ?? selectedOrder.shippingAddress ?? null;
+      const mergedBillingAddress =
+        match.billingAddress ?? selectedOrder.billingAddress ?? null;
       setSelectedOrder({
         ...selectedOrder,
         ...match,
+        ...(mergedFacilityPickupRecipientName
+          ? {
+              facilityPickupRecipientName: mergedFacilityPickupRecipientName,
+              facility_pickup_recipient_name: mergedFacilityPickupRecipientName,
+              pickupRecipientName: mergedFacilityPickupRecipientName,
+              pickup_recipient_name: mergedFacilityPickupRecipientName,
+              recipientName: mergedFacilityPickupRecipientName,
+              recipient_name: mergedFacilityPickupRecipientName,
+              orderRecipientName: mergedFacilityPickupRecipientName,
+              order_recipient_name: mergedFacilityPickupRecipientName,
+              doctorName: mergedFacilityPickupRecipientName,
+            }
+          : {}),
         expectedShipmentWindow: mergedExpectedShipmentWindow,
         shippingEstimate: match.shippingEstimate ?? selectedOrder.shippingEstimate ?? null,
-        shippingAddress: match.shippingAddress ?? selectedOrder.shippingAddress ?? null,
-        billingAddress: match.billingAddress ?? selectedOrder.billingAddress ?? null,
+        shippingAddress: mergedFacilityPickupRecipientName
+          ? withFacilityPickupRecipientName(mergedShippingAddress, {
+              preferredName: mergedFacilityPickupRecipientName,
+              billingAddress: mergedBillingAddress,
+            }) || mergedShippingAddress
+          : mergedShippingAddress,
+        billingAddress: mergedFacilityPickupRecipientName
+          ? withFacilityPickupRecipientName(mergedBillingAddress, {
+              preferredName: mergedFacilityPickupRecipientName,
+              billingAddress: mergedShippingAddress,
+            }) || mergedBillingAddress
+          : mergedBillingAddress,
         integrationDetails: match.integrationDetails ?? selectedOrder.integrationDetails ?? null,
       });
     }
@@ -6376,6 +6455,13 @@ export function Header({
                 ? computedGrandTotal
                 : baseTotal;
             const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
+            const facilityPickupRecipientName = isSalesOrderFacilityPickup(order)
+              ? resolveFacilityPickupRecipientNameFromOrder(order)
+              : null;
+            const orderRecipientDisplayName =
+              facilityPickupRecipientName ||
+              order.doctorName ||
+              "Physician";
             
           return (
             <div
@@ -6499,13 +6585,13 @@ export function Header({
 		                            </span>
 		                          )}
 		                        </p>
-	                          {repView && (order.doctorName || order.doctorEmail) && (
-	                            <p className="text-sm text-slate-700 break-words">
-	                              <span className="font-semibold">
-	                                {order.doctorName || "Physician"}
-	                              </span>
-	                              {order.doctorEmail ? ` — ${order.doctorEmail}` : ""}
-	                            </p>
+                          {repView && (facilityPickupRecipientName || order.doctorName || order.doctorEmail) && (
+                            <p className="text-sm text-slate-700 break-words">
+                              <span className="font-semibold">
+                                {orderRecipientDisplayName}
+                              </span>
+                              {order.doctorEmail ? ` — ${order.doctorEmail}` : ""}
+                            </p>
 	                          )}
 			                      </div>
 		                    </div>
