@@ -3216,9 +3216,6 @@ const mergeWooSummaryIntoLocal = (
     (localOrder as any).recipient_name = mergedFacilityPickupRecipientName;
     (localOrder as any).orderRecipientName = mergedFacilityPickupRecipientName;
     (localOrder as any).order_recipient_name = mergedFacilityPickupRecipientName;
-    (localOrder as any).customerName = mergedFacilityPickupRecipientName;
-    (localOrder as any).customer_name = mergedFacilityPickupRecipientName;
-    localOrder.doctorName = mergedFacilityPickupRecipientName;
     localOrder.shippingAddress =
       withFacilityPickupRecipientName(localOrder.shippingAddress, {
         preferredName: mergedFacilityPickupRecipientName,
@@ -3374,9 +3371,6 @@ const normalizeAccountOrdersResponse = (
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
           doctorName:
-            (isSalesOrderFacilityPickup(order as any)
-              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
-              : null) ||
             normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
             null,
           doctorEmail:
@@ -3484,9 +3478,6 @@ const normalizeAccountOrdersResponse = (
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
           doctorName:
-            (isSalesOrderFacilityPickup(order as any)
-              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
-              : null) ||
             normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
             null,
           doctorEmail:
@@ -3601,9 +3592,6 @@ const normalizeAccountOrdersResponse = (
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
           doctorName:
-            (isSalesOrderFacilityPickup(order as any)
-              ? resolveFacilityPickupRecipientNameFromOrder(order as any)
-              : null) ||
             normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
             null,
           doctorEmail:
@@ -13071,11 +13059,7 @@ function MainApp() {
         null;
       const normalizedDoctorEmail =
         typeof doctorEmail === "string" ? doctorEmail.trim().toLowerCase() : "";
-      const facilityPickupRecipientName = isSalesOrderFacilityPickup(orderAny)
-        ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
-        : null;
       const doctorName =
-        facilityPickupRecipientName ||
         (typeof fallbackLabel === "string" && fallbackLabel.trim() ? fallbackLabel.trim() : "") ||
         (typeof order?.doctorName === "string" && order.doctorName.trim() ? order.doctorName.trim() : "") ||
         (typeof orderAny?.doctor_name === "string" && orderAny.doctor_name.trim()
@@ -21202,8 +21186,6 @@ function MainApp() {
                   recipient_name: mergedFacilityPickupRecipientName,
                   orderRecipientName: mergedFacilityPickupRecipientName,
                   order_recipient_name: mergedFacilityPickupRecipientName,
-                  customerName: mergedFacilityPickupRecipientName,
-                  customer_name: mergedFacilityPickupRecipientName,
                 }
               : {}),
             createdAt: merged.createdAt || createdAt,
@@ -21223,7 +21205,6 @@ function MainApp() {
               (order as any)?.billing_email ||
               null,
             doctorName:
-              mergedFacilityPickupRecipientName ||
               doctorInfo?.name ||
               (original as any)?.doctorName ||
               (original as any)?.billing_name ||
@@ -22267,14 +22248,10 @@ function MainApp() {
     >();
 	    for (const order of scopedSalesTrackingOrders) {
       const orderAny = order as any;
-      const facilityPickupRecipientNameForOrder = isSalesOrderFacilityPickup(orderAny)
-        ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
-        : null;
       const doctorId =
         resolveOrderDoctorIdForBucket(order) || order.userId || `anon:${order.id}`;
       const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
       const doctorName =
-        facilityPickupRecipientNameForOrder ||
         doctorInfo?.name ||
         salesRepDoctorsById.get(doctorId) ||
         order.doctorName ||
@@ -28051,9 +28028,6 @@ function MainApp() {
 	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
                     const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
                     const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
-                    const facilityPickupRecipientName = isSalesOrderFacilityPickup(orderAny)
-                      ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
-                      : null;
                     const doctorNameFromApi =
 	                      (rawDoctorName &&
 	                      normalizedDoctorName !== "unknown doctor" &&
@@ -28066,7 +28040,6 @@ function MainApp() {
 	                        ? rawDoctorNameSnake
 	                        : "");
                     const doctorLabel =
-                      facilityPickupRecipientName ||
                       doctorNameFromApi ||
 	                      shippingName ||
 	                      billingName ||
@@ -28215,9 +28188,6 @@ function MainApp() {
 	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
                     const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
                     const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
-                    const facilityPickupRecipientName = isSalesOrderFacilityPickup(orderAny)
-                      ? resolveFacilityPickupRecipientNameFromOrder(orderAny)
-                      : null;
                     const doctorNameFromApi =
 	                      (rawDoctorName &&
 	                      normalizedDoctorName !== "unknown doctor" &&
@@ -28230,7 +28200,6 @@ function MainApp() {
 	                        ? rawDoctorNameSnake
 	                        : "");
                     const doctorLabel =
-                      facilityPickupRecipientName ||
                       doctorNameFromApi ||
 	                      shippingName ||
 	                      billingName ||
@@ -41427,12 +41396,7 @@ function MainApp() {
                   ) : null}
                 </DialogTitle>
                 <DialogDescription>
-                  {(isSalesOrderFacilityPickup(salesOrderDetail as any)
-                    ? resolveFacilityPickupRecipientNameFromOrder(salesOrderDetail as any)
-                    : null) ||
-                    salesOrderDetail.doctorName ||
-                    salesOrderDetail.doctorEmail ||
-                    ""}
+                  {salesOrderDetail.doctorName || salesOrderDetail.doctorEmail || ""}
                 </DialogDescription>
               </DialogHeader>
               {(() => {

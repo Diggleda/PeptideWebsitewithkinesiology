@@ -335,8 +335,8 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(inserted_orders[0]["facilityPickupRecipientName"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["orderRecipientName"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["recipientName"], "Recipient Patient")
-        self.assertEqual(inserted_orders[0]["doctorName"], "Recipient Patient")
-        self.assertEqual(inserted_orders[0]["customerName"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["doctorName"], "Admin Pepper")
+        self.assertEqual(inserted_orders[0]["customerName"], "Admin Pepper")
         self.assertEqual(inserted_orders[0]["shippingEstimate"]["serviceCode"], "facility_pickup")
         self.assertEqual(inserted_orders[0]["shippingTotal"], 0.0)
 
@@ -578,10 +578,10 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(inserted_orders[0]["recipient_name"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["orderRecipientName"], "Recipient Patient")
         self.assertEqual(inserted_orders[0]["order_recipient_name"], "Recipient Patient")
-        self.assertEqual(inserted_orders[0]["customerName"], "Recipient Patient")
-        self.assertEqual(inserted_orders[0]["customer_name"], "Recipient Patient")
-        self.assertEqual(inserted_orders[0]["doctorName"], "Recipient Patient")
-        self.assertEqual(inserted_orders[0]["doctor_name"], "Recipient Patient")
+        self.assertEqual(inserted_orders[0]["customerName"], "Sales Lead User")
+        self.assertEqual(inserted_orders[0]["customer_name"], "Sales Lead User")
+        self.assertEqual(inserted_orders[0]["doctorName"], "Sales Lead User")
+        self.assertEqual(inserted_orders[0]["doctor_name"], "Sales Lead User")
         self.assertEqual(inserted_orders[0]["fulfillmentMethod"], "facility_pickup")
         self.assertTrue(inserted_orders[0]["facilityPickup"])
 
@@ -649,6 +649,59 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(payload["billing"]["last_name"], "Patient")
         meta = {entry["key"]: entry.get("value") for entry in payload["meta_data"]}
         self.assertEqual(meta["peppro_facility_pickup_recipient_name"], "Recipient Patient")
+
+    def test_on_hold_facility_pickup_uses_placer_name_for_display(self):
+        service = self.order_service
+        local_order = {
+            "id": "order-1",
+            "userId": "admin-1",
+            "status": "on-hold",
+            "total": 50.0,
+            "grandTotal": 50.0,
+            "facilityPickup": True,
+            "fulfillmentMethod": "facility_pickup",
+            "doctorName": "Recipient Patient",
+            "customerName": "Recipient Patient",
+            "facilityPickupRecipientName": "Recipient Patient",
+            "shippingAddress": {
+                "name": "Recipient Patient",
+                "recipientName": "Recipient Patient",
+                "addressLine1": "640 S Grand Ave",
+                "city": "Santa Ana",
+                "state": "CA",
+                "postalCode": "92705",
+                "country": "US",
+            },
+        }
+
+        with patch.object(
+            service.user_repository,
+            "get_all",
+            return_value=[
+                {
+                    "id": "admin-1",
+                    "name": "Admin Pepper",
+                    "email": "admin@example.com",
+                    "role": "admin",
+                }
+            ],
+        ), patch.object(
+            service.sales_rep_repository, "get_all", return_value=[]
+        ), patch.object(
+            service.order_repository,
+            "list_recent_sales_tracking",
+            return_value=[local_order],
+        ):
+            result = service.get_on_hold_orders_for_sales_rep(
+                None,
+                include_all_doctors=True,
+                limit=10,
+            )
+
+        order = result["orders"][0]
+        self.assertEqual(order["doctorName"], "Admin Pepper")
+        self.assertEqual(order["customerName"], "Admin Pepper")
+        self.assertEqual(order["facilityPickupRecipientName"], "Recipient Patient")
 
     def test_woo_summary_restores_facility_pickup_name_from_metadata(self):
         service = self.order_service

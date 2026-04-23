@@ -534,7 +534,6 @@ def admin_on_hold_orders():
                 shipping.get("email"),
             )
             doctor_name = _first_text(
-                facility_pickup_recipient_name if is_facility_pickup else None,
                 doctor.get("name"),
                 local.get("doctorName"),
                 local.get("doctor_name"),
@@ -566,8 +565,8 @@ def admin_on_hold_orders():
                 "recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
                 "orderRecipientName": facility_pickup_recipient_name if is_facility_pickup else None,
                 "order_recipient_name": facility_pickup_recipient_name if is_facility_pickup else None,
-                "customerName": facility_pickup_recipient_name if is_facility_pickup else None,
-                "customer_name": facility_pickup_recipient_name if is_facility_pickup else None,
+                "customerName": doctor_name if is_facility_pickup else None,
+                "customer_name": doctor_name if is_facility_pickup else None,
                 "doctorEmail": doctor_email,
                 "userId": doctor.get("id") or local_user_id or None,
                 "lineItems": local.get("items") or [],

@@ -2296,22 +2296,17 @@ export function CheckoutModal({
                             }
                             className="squircle-sm bg-slate-50 border-2"
                           />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-10 shrink-0 border-green-300 bg-white/80 text-green-900 hover:bg-green-50"
-                            onClick={() => saveFacilityPickupRecipientName(false)}
-                          >
-                            Save
-                          </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+                              onClick={() => saveFacilityPickupRecipientName(false)}
+                            >
+                              Save
+                            </Button>
+                          </div>
                         </div>
-                        {facilityPickupRecipientNameSaved ? (
-                          <p className="text-xs font-medium text-green-800">
-                            Saved recipient: {facilityPickupRecipientNameSaved}
-                          </p>
-                        ) : null}
-                      </div>
                       <div className="space-y-1 text-sm text-slate-800">
                       <p>640 S Grand Ave</p>
                       <p>Unit #107</p>

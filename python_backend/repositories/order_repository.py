@@ -968,6 +968,34 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             "notes": row.get("notes") if row.get("notes") is not None else None,
             "shippingAddress": _read_order_json_field(row, "shipping_address", None),
             "billingAddress": billing_address,
+            "customerName": (
+                payload_order.get("customerName")
+                or payload_order.get("customer_name")
+                or payload.get("customerName")
+                or payload.get("customer_name")
+                or None
+            ),
+            "customer_name": (
+                payload_order.get("customer_name")
+                or payload_order.get("customerName")
+                or payload.get("customer_name")
+                or payload.get("customerName")
+                or None
+            ),
+            "doctorName": (
+                payload_order.get("doctorName")
+                or payload_order.get("doctor_name")
+                or payload.get("doctorName")
+                or payload.get("doctor_name")
+                or None
+            ),
+            "doctor_name": (
+                payload_order.get("doctor_name")
+                or payload_order.get("doctorName")
+                or payload.get("doctor_name")
+                or payload.get("doctorName")
+                or None
+            ),
             "facilityPickupRecipientName": (
                 payload_order.get("facilityPickupRecipientName")
                 or payload_order.get("facility_pickup_recipient_name")
@@ -1039,10 +1067,6 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             entry.get("recipient_name"),
             entry.get("orderRecipientName"),
             entry.get("order_recipient_name"),
-            entry.get("customerName"),
-            entry.get("customer_name"),
-            entry.get("doctorName"),
-            entry.get("doctor_name"),
         )
         if entry.get("facilityPickup") and facility_pickup_recipient_name:
             entry["facilityPickupRecipientName"] = facility_pickup_recipient_name
@@ -1053,10 +1077,6 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             entry["recipient_name"] = facility_pickup_recipient_name
             entry["orderRecipientName"] = facility_pickup_recipient_name
             entry["order_recipient_name"] = facility_pickup_recipient_name
-            entry["customerName"] = facility_pickup_recipient_name
-            entry["customer_name"] = facility_pickup_recipient_name
-            entry["doctorName"] = facility_pickup_recipient_name
-            entry["doctor_name"] = facility_pickup_recipient_name
             if isinstance(entry.get("shippingAddress"), dict):
                 entry["shippingAddress"] = _apply_facility_pickup_recipient_name(
                     entry.get("shippingAddress"),
@@ -1460,10 +1480,6 @@ def list_for_tax_reporting(start_utc: datetime, end_utc: datetime) -> List[Dict]
                 order_payload.get("recipient_name"),
                 order_payload.get("orderRecipientName"),
                 order_payload.get("order_recipient_name"),
-                order_payload.get("customerName"),
-                order_payload.get("customer_name"),
-                order_payload.get("doctorName"),
-                order_payload.get("doctor_name"),
             )
             if is_facility_pickup
             else None
@@ -1484,10 +1500,10 @@ def list_for_tax_reporting(start_utc: datetime, end_utc: datetime) -> List[Dict]
             "recipient_name": facility_pickup_recipient_name,
             "orderRecipientName": facility_pickup_recipient_name,
             "order_recipient_name": facility_pickup_recipient_name,
-            "customerName": facility_pickup_recipient_name,
-            "customer_name": facility_pickup_recipient_name,
-            "doctorName": facility_pickup_recipient_name,
-            "doctor_name": facility_pickup_recipient_name,
+            "customerName": order_payload.get("customerName") or order_payload.get("customer_name") or None,
+            "customer_name": order_payload.get("customer_name") or order_payload.get("customerName") or None,
+            "doctorName": order_payload.get("doctorName") or order_payload.get("doctor_name") or None,
+            "doctor_name": order_payload.get("doctor_name") or order_payload.get("doctorName") or None,
             "wooOrderId": row.get("woo_order_id") or None,
             "wooOrderNumber": row.get("woo_order_number") or None,
             "createdAt": _fmt_datetime(row.get("created_at")),
@@ -2402,10 +2418,6 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         order.get("recipient_name"),
         order.get("orderRecipientName"),
         order.get("order_recipient_name"),
-        order.get("customerName"),
-        order.get("customer_name"),
-        order.get("doctorName"),
-        order.get("doctor_name"),
     )
     if bool(order.get("facilityPickup")) and facility_pickup_recipient_name:
         order["facilityPickupRecipientName"] = facility_pickup_recipient_name
@@ -2416,10 +2428,6 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         order["recipient_name"] = facility_pickup_recipient_name
         order["orderRecipientName"] = facility_pickup_recipient_name
         order["order_recipient_name"] = facility_pickup_recipient_name
-        order["customerName"] = facility_pickup_recipient_name
-        order["customer_name"] = facility_pickup_recipient_name
-        order["doctorName"] = facility_pickup_recipient_name
-        order["doctor_name"] = facility_pickup_recipient_name
         if isinstance(order.get("shippingAddress"), dict):
             order["shippingAddress"] = _apply_facility_pickup_recipient_name(
                 order.get("shippingAddress"),

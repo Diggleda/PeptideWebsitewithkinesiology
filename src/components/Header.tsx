@@ -3176,7 +3176,6 @@ export function Header({
               recipient_name: mergedFacilityPickupRecipientName,
               orderRecipientName: mergedFacilityPickupRecipientName,
               order_recipient_name: mergedFacilityPickupRecipientName,
-              doctorName: mergedFacilityPickupRecipientName,
             }
           : {}),
         expectedShipmentWindow: mergedExpectedShipmentWindow,
@@ -6455,11 +6454,7 @@ export function Header({
                 ? computedGrandTotal
                 : baseTotal;
             const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
-            const facilityPickupRecipientName = isSalesOrderFacilityPickup(order)
-              ? resolveFacilityPickupRecipientNameFromOrder(order)
-              : null;
             const orderRecipientDisplayName =
-              facilityPickupRecipientName ||
               order.doctorName ||
               "Physician";
             
@@ -6585,7 +6580,7 @@ export function Header({
 		                            </span>
 		                          )}
 		                        </p>
-                          {repView && (facilityPickupRecipientName || order.doctorName || order.doctorEmail) && (
+                          {repView && (order.doctorName || order.doctorEmail) && (
                             <p className="text-sm text-slate-700 break-words">
                               <span className="font-semibold">
                                 {orderRecipientDisplayName}
