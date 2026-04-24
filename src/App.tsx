@@ -28039,7 +28039,7 @@ function MainApp() {
 	                      normalizedDoctorNameSnake !== "unknown"
 	                        ? rawDoctorNameSnake
 	                        : "");
-                    const doctorLabel =
+                    const doctorLabelFallback =
                       doctorNameFromApi ||
 	                      shippingName ||
 	                      billingName ||
@@ -28050,7 +28050,15 @@ function MainApp() {
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown physician";
-                      const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabel);
+                      const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabelFallback);
+                      const doctorLabel =
+                        normalizeStringField(
+                          (doctorModalEntry as any)?.name ??
+                            (doctorModalEntry as any)?.displayName ??
+                            (doctorModalEntry as any)?.fullName ??
+                            (doctorModalEntry as any)?.email,
+                        ) ||
+                        doctorLabelFallback;
                       const canOpenDoctorModal = Boolean(doctorModalEntry);
 	                    const orderPlacedAt =
 	                      formatOrderPlacedAtForLocalDisplay(order as any);
@@ -28199,7 +28207,7 @@ function MainApp() {
 	                      normalizedDoctorNameSnake !== "unknown"
 	                        ? rawDoctorNameSnake
 	                        : "");
-                    const doctorLabel =
+                    const doctorLabelFallback =
                       doctorNameFromApi ||
 	                      shippingName ||
 	                      billingName ||
@@ -28210,7 +28218,15 @@ function MainApp() {
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown physician";
-                    const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabel);
+                    const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabelFallback);
+                    const doctorLabel =
+                      normalizeStringField(
+                        (doctorModalEntry as any)?.name ??
+                          (doctorModalEntry as any)?.displayName ??
+                          (doctorModalEntry as any)?.fullName ??
+                          (doctorModalEntry as any)?.email,
+                      ) ||
+                      doctorLabelFallback;
                     const canOpenDoctorModal = Boolean(doctorModalEntry);
                     const orderPlacedAt =
                       formatOrderPlacedAtForLocalDisplay(order as any);
@@ -41396,7 +41412,19 @@ function MainApp() {
                   ) : null}
                 </DialogTitle>
                 <DialogDescription>
-                  {salesOrderDetail.doctorName || salesOrderDetail.doctorEmail || ""}
+                  {(() => {
+                    const fallbackName = salesOrderDetail.doctorName || salesOrderDetail.doctorEmail || "";
+                    const modalEntry = resolveOrderUserModalEntry(salesOrderDetail as any, fallbackName);
+                    return (
+                      normalizeStringField(
+                        (modalEntry as any)?.name ??
+                          (modalEntry as any)?.displayName ??
+                          (modalEntry as any)?.fullName ??
+                          (modalEntry as any)?.email,
+                      ) ||
+                      fallbackName
+                    );
+                  })()}
                 </DialogDescription>
               </DialogHeader>
               {(() => {

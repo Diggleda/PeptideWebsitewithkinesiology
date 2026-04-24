@@ -55,12 +55,21 @@ def _to_order_timezone_iso(value: object) -> Optional[str]:
 _WOO_PROXY_DISK_CACHE_ENABLED = os.environ.get("WOO_PROXY_DISK_CACHE", "true").strip().lower() == "true"
 _WOO_PROXY_MAX_STALE_MS = int(os.environ.get("WOO_PROXY_MAX_STALE_MS", str(24 * 60 * 60 * 1000)).strip() or 0)
 _WOO_PROXY_MAX_STALE_MS = _WOO_PROXY_MAX_STALE_MS if _WOO_PROXY_MAX_STALE_MS > 0 else 24 * 60 * 60 * 1000
+_WOO_PROXY_DISK_CACHE_WRITE_QUEUE_SIZE = int(
+    os.environ.get("WOO_PROXY_DISK_CACHE_WRITE_QUEUE_SIZE", "64").strip() or 64
+)
+_WOO_PROXY_DISK_CACHE_WRITE_QUEUE_SIZE = max(1, min(_WOO_PROXY_DISK_CACHE_WRITE_QUEUE_SIZE, 512))
 
 _catalog_cache: Dict[str, Dict[str, Any]] = {}
 _catalog_cache_lock = threading.Lock()
 _inflight: Dict[str, Dict[str, Any]] = {}
 _MAX_IN_MEMORY_CACHE_KEYS = 500
 _proxy_failures: Dict[str, Dict[str, Any]] = {}
+_disk_cache_write_queue: "queue.Queue[tuple[str, Dict[str, Any]]]" = queue.Queue(
+    maxsize=_WOO_PROXY_DISK_CACHE_WRITE_QUEUE_SIZE
+)
+_disk_cache_writer_lock = threading.Lock()
+_disk_cache_writer_started = False
 _WOO_PROXY_FAILURE_COOLDOWN_SECONDS = int(os.environ.get("WOO_PROXY_FAILURE_COOLDOWN_SECONDS", "30").strip() or 30)
 _WOO_PROXY_FAILURE_COOLDOWN_SECONDS = max(5, min(_WOO_PROXY_FAILURE_COOLDOWN_SECONDS, 900))
 _WOO_PROXY_FAILURE_MAX_COOLDOWN_SECONDS = int(os.environ.get("WOO_PROXY_FAILURE_MAX_COOLDOWN_SECONDS", "300").strip() or 300)
@@ -484,7 +493,26 @@ def _read_disk_cache(cache_key: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _write_disk_cache(cache_key: str, payload: Dict[str, Any]) -> None:
+def _ensure_disk_cache_writer() -> None:
+    global _disk_cache_writer_started
+    with _disk_cache_writer_lock:
+        if _disk_cache_writer_started:
+            return
+        worker = threading.Thread(target=_disk_cache_writer_loop, name="woo-disk-cache-writer", daemon=True)
+        worker.start()
+        _disk_cache_writer_started = True
+
+
+def _disk_cache_writer_loop() -> None:
+    while True:
+        cache_key, payload = _disk_cache_write_queue.get()
+        try:
+            _write_disk_cache_sync(cache_key, payload)
+        finally:
+            _disk_cache_write_queue.task_done()
+
+
+def _write_disk_cache_sync(cache_key: str, payload: Dict[str, Any]) -> None:
     if not _WOO_PROXY_DISK_CACHE_ENABLED:
         return
     try:
@@ -496,6 +524,20 @@ def _write_disk_cache(cache_key: str, payload: Dict[str, Any]) -> None:
         os.replace(tmp, path)
     except Exception:
         logger.debug("Woo proxy disk cache write failed", exc_info=True, extra={"cacheKey": cache_key})
+
+
+def _write_disk_cache(cache_key: str, payload: Dict[str, Any]) -> None:
+    if not _WOO_PROXY_DISK_CACHE_ENABLED:
+        return
+    try:
+        _ensure_disk_cache_writer()
+    except Exception:
+        logger.debug("Woo proxy disk cache writer unavailable", exc_info=True, extra={"cacheKey": cache_key})
+        return
+    try:
+        _disk_cache_write_queue.put_nowait((cache_key, payload))
+    except queue.Full:
+        logger.debug("Woo proxy disk cache write skipped; queue full", extra={"cacheKey": cache_key})
 
 
 def _should_retry_status(status: Optional[int]) -> bool:

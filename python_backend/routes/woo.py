@@ -18,6 +18,7 @@ from logging import getLogger
 from ..middleware.auth import require_auth
 from ..config import get_config
 from ..integrations import woo_commerce, woo_commerce_webhook
+from ..services import catalog_snapshot_service
 from ..repositories import product_document_repository
 from ..utils.http import handle_action, json_error, require_admin as _require_admin
 from ..utils.security import verify_woocommerce_webhook_signature
@@ -32,6 +33,11 @@ _COA_MAX_BYTES = int(os.environ.get("COA_MAX_BYTES", str(20 * 1024 * 1024)))  # 
 _WOO_MEDIA_FETCH_CONCURRENCY = int(os.environ.get("WOO_MEDIA_FETCH_CONCURRENCY") or 6)
 _WOO_MEDIA_FETCH_CONCURRENCY = max(1, min(_WOO_MEDIA_FETCH_CONCURRENCY, 32))
 _WOO_MEDIA_FETCH_SEMAPHORE = threading.BoundedSemaphore(_WOO_MEDIA_FETCH_CONCURRENCY)
+_CATALOG_SNAPSHOT_TTL_SECONDS = int(os.environ.get("CATALOG_SNAPSHOT_TTL_SECONDS") or 600)
+
+
+def _is_truthy_flag(value: object) -> bool:
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _with_publish_status(args) -> dict:
@@ -109,6 +115,24 @@ def list_product_variations(product_id: int):
 @blueprint.get("/products/<int:product_id>")
 def get_product(product_id: int):
     try:
+        if not _is_truthy_flag(request.args.get("force")):
+            try:
+                snapshot = catalog_snapshot_service.get_catalog_product(product_id)
+            except Exception as exc:
+                status = getattr(exc, "status", None)
+                if status not in (404, 503):
+                    logger.warning(
+                        "Catalog snapshot lookup failed; falling back to live Woo product fetch",
+                        exc_info=True,
+                        extra={"wooProductId": product_id, "status": status},
+                    )
+            else:
+                _reject_if_not_published(snapshot)
+                return _json_with_cache_headers(
+                    snapshot,
+                    cache="SNAPSHOT",
+                    ttl_seconds=_CATALOG_SNAPSHOT_TTL_SECONDS,
+                )
         endpoint = f"products/{product_id}"
         data, meta = woo_commerce.fetch_catalog_proxy(endpoint, _with_publish_status(request.args))
         _reject_if_not_published(data)

@@ -131,6 +131,30 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
 
         self.assertEqual(getattr(ctx.exception, "status", None), 503)
 
+    def test_proxy_returns_before_disk_cache_write_finishes(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_write(cache_key, payload):
+            started.set()
+            release.wait(timeout=1.0)
+
+        with (
+            patch.object(woo_commerce, "is_configured", return_value=True),
+            patch.object(woo_commerce, "_read_disk_cache", return_value=None),
+            patch.object(woo_commerce, "_fetch_catalog_http", return_value={"id": 1512}),
+            patch.object(woo_commerce, "_write_disk_cache_sync", side_effect=slow_write),
+        ):
+            started_at = time.perf_counter()
+            data, meta = woo_commerce.fetch_catalog_proxy("products/1512", {"status": "publish"})
+            elapsed = time.perf_counter() - started_at
+            self.assertTrue(started.wait(timeout=1.0))
+            release.set()
+
+        self.assertEqual(data, {"id": 1512})
+        self.assertEqual(meta["cache"], "MISS")
+        self.assertLess(elapsed, 0.1)
+
 
 if __name__ == "__main__":
     unittest.main()
