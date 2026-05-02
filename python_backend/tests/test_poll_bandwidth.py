@@ -27,7 +27,7 @@ class TestPollBandwidth(unittest.TestCase):
 
     def test_parse_http_access_line_reads_new_request_log_format(self):
         line = (
-            "2026-03-27 11:32:10,123 INFO peppro.http :: "
+            "2026-03-27 11:32:10,123 INFO trufusion.http :: "
             "HTTP method=GET path=/api/orders/abc123 route=/api/orders/<order_id> "
             "status=200 duration_ms=42.5 req_bytes=0 resp_bytes=8192 "
             "client_ip=203.0.113.10 resp_type=application/json"
@@ -99,7 +99,7 @@ class TestPollBandwidth(unittest.TestCase):
     def test_diagnose_log_window_detects_legacy_http_lines(self):
         hints = self.module.diagnose_log_window(
             [
-                "2026-03-27 11:40:00,000 INFO peppro.http :: HTTP GET /api/orders -> 200 (12.0 ms)",
+                "2026-03-27 11:40:00,000 INFO trufusion.http :: HTTP GET /api/orders -> 200 (12.0 ms)",
             ]
         )
 

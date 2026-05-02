@@ -26,6 +26,7 @@ const {
 const { logger } = require('../config/logger');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
 const mysqlClient = require('../database/mysqlClient');
+const { withLegacyMetaKeys } = require('../config/brand');
 const { DELETED_USER_ID, DELETED_USER_NAME } = require('../constants/deletedUser');
 const crypto = require('crypto');
 const { resolvePacificDayWindowUtc } = require('../utils/timeZone');
@@ -846,7 +847,7 @@ const resolveOrderExemptionSnapshot = (user, taxExempt = false) => {
 };
 
 const extractWooMetaValue = (wooOrder, keys) => {
-  const lookup = Array.isArray(keys) ? keys : [keys];
+  const lookup = withLegacyMetaKeys(keys);
   const metaData = Array.isArray(wooOrder?.meta_data) ? wooOrder.meta_data : [];
   for (const key of lookup) {
     const entry = metaData.find((item) => item?.key === key);
@@ -891,7 +892,7 @@ const appendWooRefundNote = async ({
   wooOrderId,
   wooOrderNumber,
   stripeRefund,
-  pepproOrderId,
+  trufusionOrderId,
 }) => {
   if (!stripeRefund || !wooOrderId || typeof wooCommerceClient.addOrderNote !== 'function') {
     return;
@@ -903,7 +904,7 @@ const appendWooRefundNote = async ({
     `Stripe refund ${stripeRefund.id} issued`,
     amountLabel ? `amount: ${amountLabel}` : null,
     wooOrderNumber ? `Woo order #${String(wooOrderNumber).replace(/^#/, '')}` : null,
-    pepproOrderId ? `PepPro order ${pepproOrderId}` : null,
+    trufusionOrderId ? `TruFusionLabs order ${trufusionOrderId}` : null,
   ].filter(Boolean);
   const note = noteParts.join(' — ') || `Stripe refund ${stripeRefund.id} processed`;
   try {
@@ -916,10 +917,10 @@ const appendWooRefundNote = async ({
   }
 };
 
-const buildStripeRefundMetadata = ({ pepproOrderId, wooOrderId, wooOrderNumber }) => {
+const buildStripeRefundMetadata = ({ trufusionOrderId, wooOrderId, wooOrderNumber }) => {
   const metadata = {};
-  if (pepproOrderId) {
-    metadata.peppro_order_id = pepproOrderId;
+  if (trufusionOrderId) {
+    metadata.trufusion_order_id = trufusionOrderId;
   }
   if (wooOrderId) {
     metadata.woo_order_id = wooOrderId;
@@ -1005,7 +1006,7 @@ const scheduleWooCancellationRetry = ({
   wooOrderId,
   reason,
   stripeRefund,
-  pepproOrderId,
+  trufusionOrderId,
   wooOrderNumber,
   error,
 }) => {
@@ -1040,7 +1041,7 @@ const scheduleWooCancellationRetry = ({
           wooOrderId,
           wooOrderNumber: wooOrderNumber || wooOrderId,
           stripeRefund,
-          pepproOrderId,
+          trufusionOrderId,
         });
       }
       wooCancellationRetryTracker.delete(wooOrderId);
@@ -1051,7 +1052,7 @@ const scheduleWooCancellationRetry = ({
         wooOrderId,
         reason,
         stripeRefund,
-        pepproOrderId,
+        trufusionOrderId,
         wooOrderNumber,
         error: retryError,
       });
@@ -1369,9 +1370,9 @@ const resolveShipStationOrderNumber = (order) => {
     candidates.push(order.integrationDetails.wooCommerce.wooOrderNumber);
   }
   const metaData = Array.isArray(order.meta_data) ? order.meta_data : [];
-  const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
-  if (pepproMeta && pepproMeta.value !== undefined && pepproMeta.value !== null) {
-    candidates.push(pepproMeta.value);
+  const trufusionMeta = metaData.find((entry) => withLegacyMetaKeys('trufusion_order_id').includes(entry?.key));
+  if (trufusionMeta && trufusionMeta.value !== undefined && trufusionMeta.value !== null) {
+    candidates.push(trufusionMeta.value);
   }
   for (const candidate of candidates) {
     if (candidate === undefined || candidate === null) {
@@ -1690,7 +1691,7 @@ const HAND_DELIVERY_SERVICE_CODE = 'hand_delivery';
 const FACILITY_PICKUP_LABEL = 'Facility pickup';
 const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup';
 const FACILITY_PICKUP_LOCATION = {
-  name: 'PepPro Facility Pickup',
+  name: 'TruFusionLabs Facility Pickup',
   addressLine1: '640 S Grand Ave',
   addressLine2: 'Unit #107',
   city: 'Santa Ana',
@@ -2501,7 +2502,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
     wooCancellation = null,
     stripeRefund = null,
     stripePaymentIntentId = null,
-    pepproOrderId = null,
+    trufusionOrderId = null,
   }) => {
     const refundSummary = toStripeRefundSummary(stripeRefund);
     const wooOrderNumber = wooOrder?.number || String(normalizedWooOrderId);
@@ -2522,7 +2523,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
             : null,
           wooCommerce: {
             wooOrderNumber,
-            pepproOrderId,
+            trufusionOrderId,
             status,
           },
         },
@@ -2595,8 +2596,8 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
   }
 
   const wooOrderNumber = wooOrder?.number || String(normalizedWooOrderId);
-  const pepproOrderId = extractWooMetaValue(wooOrder, 'peppro_order_id');
-  const stripePaymentIntentId = extractWooMetaValue(wooOrder, ['stripe_payment_intent', 'peppro_payment_intent', 'payment_intent']);
+  const trufusionOrderId = extractWooMetaValue(wooOrder, 'trufusion_order_id');
+  const stripePaymentIntentId = extractWooMetaValue(wooOrder, ['stripe_payment_intent', 'trufusion_payment_intent', 'payment_intent']);
   const wooPaymentMethodLabel = wooOrder?.payment_method_title || wooOrder?.payment_method || null;
   const totalCents = Number.isFinite(Number(wooOrder?.total))
     ? Math.max(Math.round(Number(wooOrder.total) * 100), 0)
@@ -2610,7 +2611,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
         amountCents: totalCents || undefined,
         reason: cancellationReason,
         metadata: buildStripeRefundMetadata({
-          pepproOrderId,
+          trufusionOrderId,
           wooOrderId: normalizedWooOrderId,
           wooOrderNumber,
         }),
@@ -2634,7 +2635,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
         wooOrderId: normalizedWooOrderId,
         wooOrderNumber,
         stripeRefund,
-        pepproOrderId: pepproOrderId || null,
+        trufusionOrderId: trufusionOrderId || null,
       });
     }
     const manualRefundReviewRequired = !stripeRefund && isManualPaymentMethod(wooPaymentMethodLabel);
@@ -2673,7 +2674,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
       wooCancellation,
       stripeRefund,
       stripePaymentIntentId,
-      pepproOrderId,
+      trufusionOrderId,
     });
   } catch (error) {
     logger.warn({ err: error, wooOrderId: normalizedWooOrderId, userId }, 'WooCommerce cancellation failed; returning fallback success');
@@ -2683,7 +2684,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
         wooOrderId: normalizedWooOrderId,
         reason: cancellationReason,
         stripeRefund,
-        pepproOrderId,
+        trufusionOrderId,
         wooOrderNumber,
         error,
       });
@@ -2698,7 +2699,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
       },
       stripeRefund,
       stripePaymentIntentId,
-      pepproOrderId,
+      trufusionOrderId,
     });
   }
 };
@@ -2773,7 +2774,7 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
       0,
     );
     const refundMetadata = buildStripeRefundMetadata({
-      pepproOrderId: order.id,
+      trufusionOrderId: order.id,
       wooOrderId: order.wooOrderId || null,
       wooOrderNumber: wooOrderNumber || order.wooOrderId || null,
     });
@@ -2810,7 +2811,7 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
           wooOrderId: order.wooOrderId,
           reason: cancellationReason,
           stripeRefund,
-          pepproOrderId: order.id,
+          trufusionOrderId: order.id,
           wooOrderNumber,
           error,
         });
@@ -2870,7 +2871,7 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
       wooOrderId: updatedOrder.wooOrderId,
       wooOrderNumber: wooOrderNumber || updatedOrder.wooOrderNumber || updatedOrder.wooOrderId,
       stripeRefund,
-      pepproOrderId: order.id,
+      trufusionOrderId: order.id,
     });
   }
 
@@ -2988,11 +2989,11 @@ const getOrdersForUser = async (userId) => {
         // eslint-disable-next-line no-restricted-syntax
         for (const rawOrder of wooOrders) {
           const order = await enrichOrderWithShipStation(rawOrder);
-          const pepproOrderId = order?.integrationDetails?.wooCommerce?.pepproOrderId
-            || order?.integrationDetails?.wooCommerce?.peppro_order_id
+          const trufusionOrderId = order?.integrationDetails?.wooCommerce?.trufusionOrderId
+            || order?.integrationDetails?.wooCommerce?.trufusion_order_id
             || null;
-          const localOrder = pepproOrderId ? orderRepository.findById(pepproOrderId) : null;
-          const sqlOrder = pepproOrderId ? await orderSqlRepository.fetchById(pepproOrderId) : null;
+          const localOrder = trufusionOrderId ? orderRepository.findById(trufusionOrderId) : null;
+          const sqlOrder = trufusionOrderId ? await orderSqlRepository.fetchById(trufusionOrderId) : null;
           const sqlOrderByWoo = !localOrder && !sqlOrder && order?.id
             ? await orderSqlRepository.fetchByWooOrderId(order.id)
             : null;
@@ -4496,7 +4497,7 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
     }
   }
 
-  // Fallback for non-Woo IDs (e.g. local/MySQL PepPro order IDs).
+  // Fallback for non-Woo IDs (e.g. local/MySQL TruFusionLabs order IDs).
   const localOrder = orderRepository.findById(orderId);
   if (localOrder) {
     const summary = buildLocalOrderSummary(localOrder);

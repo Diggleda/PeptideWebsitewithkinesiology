@@ -114,7 +114,7 @@ const buildInvoicePdf = (wooOrder, { orderToken } = {}) => {
 
   const lineItems = Array.isArray(wooOrder?.line_items) ? wooOrder.line_items : [];
   const lines = [];
-  lines.push(`PepPro Invoice`);
+  lines.push(`TruFusionLabs Invoice`);
   lines.push(`Order: #${number}`);
   if (createdAt) lines.push(`Date: ${createdAt}`);
   if (email) lines.push(`Customer: ${email}`);
@@ -143,7 +143,7 @@ const buildInvoicePdf = (wooOrder, { orderToken } = {}) => {
   lines.push(`Total: ${formatMoney(grandTotal, currency)}`);
 
   const pdf = buildSimpleTextPdf(lines);
-  const filename = `PepPro_Invoice_${String(number).replace(/[^\w-]+/g, '') || 'order'}.pdf`;
+  const filename = `TruFusion_Labs_Invoice_${String(number).replace(/[^\w-]+/g, '') || 'order'}.pdf`;
   return { pdf, filename };
 };
 

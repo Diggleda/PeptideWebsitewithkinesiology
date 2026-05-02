@@ -109,7 +109,22 @@ function replaceRegionalAdministrator(html) {
 
 function normalizeSupportEmails(html) {
   // Underwriting/compliance requires a domain-based email. Keep a single canonical contact email.
-  return html.replace(/support@peppro\.com/gi, 'support@peppro.net');
+  return html
+    .replace(/support@peppro\.net/gi, 'support@trufusionlabs.com')
+    .replace(/support@trufusion\.com/gi, 'support@trufusionlabs.com');
+}
+
+function normalizeBrandTerms(html) {
+  return html
+    .replace(/api\.peppro\.net/gi, 'api.trufusionlabs.com')
+    .replace(/shop\.peppro\.net/gi, 'shop.trufusionlabs.com')
+    .replace(/port\.peppro\.net/gi, 'port.trufusionlabs.com')
+    .replace(/www\.peppro\.net/gi, 'www.trufusionlabs.com')
+    .replace(/peppro\.net/gi, 'trufusionlabs.com')
+    .replace(/PepPro/g, 'TruFusionLabs')
+    .replace(/PEPPRO/g, 'TRUFUSION')
+    .replace(/Peppro/g, 'Trufusion')
+    .replace(/peppro/g, 'trufusion');
 }
 
 async function convertDocument({ docx, html }) {
@@ -131,7 +146,7 @@ async function convertDocument({ docx, html }) {
 
   const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const content = bodyMatch ? bodyMatch[1].trim() : rawHtml.trim();
-  const normalizedContent = normalizeSupportEmails(replaceRegionalAdministrator(linkifyEmails(content)));
+  const normalizedContent = normalizeBrandTerms(normalizeSupportEmails(replaceRegionalAdministrator(linkifyEmails(content))));
   const isLegalDoc = html.includes('src/content/legal/');
   const lexendScopedStyle = isLegalDoc
     ? `<style>

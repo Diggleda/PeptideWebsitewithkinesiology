@@ -61,7 +61,7 @@ try:
 except (ModuleNotFoundError, ImportError):
     Flask = None
     fake_flask = types.ModuleType("flask")
-    fake_flask.__peppro_fake__ = True
+    fake_flask.__trufusion_fake__ = True
     fake_flask.Response = object
     fake_flask.jsonify = lambda value=None, *args, **kwargs: value
     fake_flask.request = types.SimpleNamespace(headers={}, args={}, json=None)

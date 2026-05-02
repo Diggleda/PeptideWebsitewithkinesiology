@@ -14,7 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover - local env fallback
 class TestSettingsLiveUsers(unittest.TestCase):
     @staticmethod
     def _load_settings_module():
-        if flask is None or getattr(flask, "__peppro_fake__", False):
+        if flask is None or getattr(flask, "__trufusion_fake__", False):
             raise unittest.SkipTest("flask not installed")
         try:
             import python_backend  # noqa: F401

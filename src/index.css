@@ -891,7 +891,7 @@ body {
   object-fit: contain;
 }
 
-.peppro-placeholder-img {
+.trufusion-placeholder-img {
   transform: scale(0.75);
   transform-origin: center;
 }

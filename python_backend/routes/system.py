@@ -26,7 +26,7 @@ from ..utils.http import handle_action, utc_now_iso as _now
 blueprint = Blueprint("system", __name__, url_prefix="/api")
 
 
-_HEALTH_PASSWORD_ENV = "PEPPRO_HEALTH_PASSWORD"
+_HEALTH_PASSWORD_ENV = "TRUFUSION_HEALTH_PASSWORD"
 _HEALTH_PASSWORD_HEADER = "X-Health-Password"
 
 
@@ -651,7 +651,7 @@ def _background_job_stats() -> dict[str, Any]:
     from ..services import shipstation_status_sync_service
     from ..services import ups_status_sync_service
 
-    web_mode = str(os.environ.get("PEPPRO_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower() or "thread"
+    web_mode = str(os.environ.get("TRUFUSION_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower() or "thread"
     jobs = {
         "productDocumentSync": product_document_sync_service.get_status(),
         "shipstationStatusSync": shipstation_status_sync_service.get_status(),
@@ -678,7 +678,7 @@ def _background_job_stats() -> dict[str, Any]:
 
 
 def _active_request_warn_seconds() -> float:
-    raw = str(os.environ.get("PEPPRO_HEALTH_ACTIVE_REQUEST_WARN_SECONDS") or "20").strip()
+    raw = str(os.environ.get("TRUFUSION_HEALTH_ACTIVE_REQUEST_WARN_SECONDS") or "20").strip()
     try:
         value = float(raw)
     except Exception:
@@ -715,7 +715,7 @@ def _health_password_form_response(
         """
         if configured
         else """
-        <p class="note">Set <code>PEPPRO_HEALTH_PASSWORD</code> in the backend environment to enable this page.</p>
+        <p class="note">Set <code>TRUFUSION_HEALTH_PASSWORD</code> in the backend environment to enable this page.</p>
         """
     )
     error_html = (
@@ -729,7 +729,7 @@ def _health_password_form_response(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PepPro Server Health</title>
+    <title>TruFusionLabs Server Health</title>
     <style>
       :root {{
         color-scheme: light;
@@ -1026,7 +1026,7 @@ def help_endpoint():
         config = get_config()
         return {
             "ok": True,
-            "service": "PepPro Backend",
+            "service": "TruFusionLabs Backend",
             "build": config.backend_build,
             "mysql": {"enabled": bool(getattr(config, "mysql", {}).get("enabled"))},
             "integrations": {

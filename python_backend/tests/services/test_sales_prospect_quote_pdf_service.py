@@ -67,8 +67,8 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         with patch.object(service, "_get_logo_data_url", return_value="data:image/png;base64,abc123"):
             html = service._render_quote_html(quote)
 
-        self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="PepPro" />', html)
-        self.assertNotIn('<div class="brand">PepPro</div>', html)
+        self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="TruFusionLabs" />', html)
+        self.assertNotIn('<div class="brand">TruFusionLabs</div>', html)
         self.assertIn('<div class="meta-label">Physician</div>', html)
         self.assertNotIn('<div class="meta-label">Prospect</div>', html)
         self.assertIn("317-555-0101", html)
@@ -199,12 +199,12 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(service, "_run_node_bridge", return_value=None), patch.object(
             service,
             "_run_system_browser_renderer",
-            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "TruFusion_Labs_Quote_Client_Example_2.pdf"},
         ), patch.object(service, "_allow_text_fallback", return_value=False):
             rendered = service.generate_prospect_quote_pdf({"revisionNumber": 2, "quotePayloadJson": {}})
 
         self.assertEqual(rendered["pdf"], b"%PDF-1.4 styled")
-        self.assertEqual(rendered["filename"], "PepPro_Quote_Client_Example_2.pdf")
+        self.assertEqual(rendered["filename"], "TruFusion_Labs_Quote_Client_Example_2.pdf")
 
     def test_generate_prospect_quote_pdf_caches_successful_result_for_same_quote(self) -> None:
         quote = {"id": "quote-1", "revisionNumber": 2, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
@@ -212,7 +212,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(
             service,
             "_run_node_bridge",
-            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "TruFusion_Labs_Quote_Client_Example_2.pdf"},
         ) as run_node_bridge, patch.object(service, "_run_system_browser_renderer") as run_system_browser_renderer:
             first = service.generate_prospect_quote_pdf(quote)
             second = service.generate_prospect_quote_pdf(quote)
@@ -228,7 +228,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(
             service,
             "_run_node_bridge",
-            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "TruFusion_Labs_Quote_Client_Example_2.pdf"},
         ) as run_node_bridge, patch.object(service, "_run_system_browser_renderer") as run_system_browser_renderer:
             first = service.generate_prospect_quote_pdf(quote)
             service._QUOTE_PDF_RENDER_CACHE.clear()
@@ -245,7 +245,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         with patch.object(service, "_run_node_worker_bridge", return_value=None), patch.object(
             service,
             "_run_node_bridge",
-            return_value={"pdf": b"%PDF-1.4 styled", "filename": "PepPro_Quote_Client_Example_2.pdf"},
+            return_value={"pdf": b"%PDF-1.4 styled", "filename": "TruFusion_Labs_Quote_Client_Example_2.pdf"},
         ), patch.object(service, "_store_rendered_quote_pdf_to_disk", wraps=service._store_rendered_quote_pdf_to_disk) as store_to_disk:
             first = service.generate_prospect_quote_pdf(quote)
 
@@ -290,7 +290,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         with patch.object(
             service,
             "_run_node_worker_bridge",
-            return_value={"pdf": b"%PDF-1.4 worker", "filename": "PepPro_Quote_Worker_Example_3.pdf"},
+            return_value={"pdf": b"%PDF-1.4 worker", "filename": "TruFusion_Labs_Quote_Worker_Example_3.pdf"},
         ) as run_node_worker, patch.object(service, "_run_node_bridge", side_effect=AssertionError("one-shot bridge should not run")), patch.object(
             service, "_run_system_browser_renderer", side_effect=AssertionError("browser fallback should not run")
         ):
@@ -298,7 +298,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
 
         self.assertEqual(run_node_worker.call_count, 1)
         self.assertEqual(rendered["pdf"], b"%PDF-1.4 worker")
-        self.assertEqual(rendered["filename"], "PepPro_Quote_Worker_Example_3.pdf")
+        self.assertEqual(rendered["filename"], "TruFusion_Labs_Quote_Worker_Example_3.pdf")
 
     def test_generate_prospect_quote_pdf_deduplicates_inflight_render_for_same_quote(self) -> None:
         quote = {"id": "quote-inflight-1", "revisionNumber": 4, "quotePayloadJson": {"prospect": {"contactName": "Client Example"}}}
@@ -313,7 +313,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
                 render_calls += 1
             render_started.set()
             self.assertTrue(release_render.wait(timeout=1.0))
-            return {"pdf": b"%PDF-1.4 shared", "filename": "PepPro_Quote_Client_Example_4.pdf"}
+            return {"pdf": b"%PDF-1.4 shared", "filename": "TruFusion_Labs_Quote_Client_Example_4.pdf"}
 
         with patch.object(service, "_run_node_worker_bridge", side_effect=render), patch.object(
             service, "_run_node_bridge", side_effect=AssertionError("fallback renderer should not run")
@@ -442,7 +442,7 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
             rendered = service.generate_prospect_quote_pdf(quote)
 
         self.assertTrue(rendered["pdf"].startswith(b"%PDF-1.4"))
-        self.assertEqual(rendered["filename"], "PepPro_Quote_Client_Example_2.pdf")
+        self.assertEqual(rendered["filename"], "TruFusion_Labs_Quote_Client_Example_2.pdf")
 
     def test_build_fallback_quote_pdf_uses_physician_label(self) -> None:
         quote = {

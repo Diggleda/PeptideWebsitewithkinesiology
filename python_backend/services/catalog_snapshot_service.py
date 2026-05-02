@@ -363,7 +363,7 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
     if not _enabled():
         return {"ok": False, "skipped": True, "reason": "snapshot_disabled"}
 
-    lock_name = "peppro:sync:catalog-snapshot"
+    lock_name = "trufusion:sync:catalog-snapshot"
     if not _try_acquire_lock(lock_name):
         return {"ok": False, "skipped": True, "reason": "lock_busy"}
 

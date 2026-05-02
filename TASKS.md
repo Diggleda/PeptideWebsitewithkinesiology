@@ -28,7 +28,7 @@ Use this as the single source of truth for active work.
 - Notes:
   - presence traffic is already split to `peppr-presence.service`
   - April 21, 2026 browser evidence shows proxy-level failures without Flask CORS headers:
-    - `502` on `https://api.peppro.net/api/referrals/dashboard?...`
+    - `502` on `https://api.trufusionlabs.com/api/referrals/dashboard?...`
     - `504` on `/api/auth/me/profile-image`
     - `504` on `/api/news/peptides?...`
   - April 21, 2026 health output was `status=ok`, but only proved one worker could answer health; it did not include in-flight stuck requests yet.

@@ -17,6 +17,7 @@ except Exception:  # pragma: no cover - optional dependency
 from ..services import get_config
 from ..services import settings_service
 from ..repositories import order_repository
+from ..brand import with_legacy_meta_keys
 from . import woo_commerce
 
 
@@ -106,7 +107,7 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
     amount = int(round(grand_total * 100))
     currency = "usd"
     metadata = {
-        "peppro_order_id": order.get("id"),
+        "trufusion_order_id": order.get("id"),
         "user_id": order.get("userId"),
         "items_subtotal": f"{items_subtotal:.2f}",
         "shipping_total": f"{shipping_total:.2f}",
@@ -115,19 +116,19 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
         "grand_total": f"{grand_total:.2f}",
     }
     if order.get("discountCode"):
-        metadata["peppro_discount_code"] = str(order.get("discountCode"))
+        metadata["trufusion_discount_code"] = str(order.get("discountCode"))
     sales_rep_id = order.get("doctorSalesRepId") or order.get("salesRepId")
     sales_rep_name = order.get("doctorSalesRepName") or order.get("salesRepName")
     sales_rep_email = order.get("doctorSalesRepEmail") or order.get("salesRepEmail")
     sales_rep_code = order.get("doctorSalesRepCode") or order.get("salesRepCode")
     if sales_rep_id:
-        metadata["peppro_sales_rep_id"] = str(sales_rep_id)
+        metadata["trufusion_sales_rep_id"] = str(sales_rep_id)
     if sales_rep_name:
-        metadata["peppro_sales_rep_name"] = str(sales_rep_name)
+        metadata["trufusion_sales_rep_name"] = str(sales_rep_name)
     if sales_rep_email:
-        metadata["peppro_sales_rep_email"] = str(sales_rep_email)
+        metadata["trufusion_sales_rep_email"] = str(sales_rep_email)
     if sales_rep_code:
-        metadata["peppro_sales_rep_code"] = str(sales_rep_code)
+        metadata["trufusion_sales_rep_code"] = str(sales_rep_code)
     woo_order_id = order.get("wooOrderId")
     if woo_order_id:
         metadata["woo_order_id"] = woo_order_id
@@ -150,8 +151,8 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
         if normalized_woo_number:
             description_parts.append(f"Woo Order #{normalized_woo_number}")
         if order.get("id"):
-            description_parts.append(f"PepPro Order {order.get('id')}")
-        description = " · ".join(description_parts) if description_parts else "PepPro Order"
+            description_parts.append(f"TruFusionLabs Order {order.get('id')}")
+        description = " · ".join(description_parts) if description_parts else "TruFusionLabs Order"
         intent = stripe.PaymentIntent.create(
             amount=amount,
             currency=currency,
@@ -340,7 +341,7 @@ def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
     intent = result.get("intent") or {}
     card_summary = _extract_card_summary(intent) or {}
     metadata = intent.get("metadata") or {}
-    order_id = metadata.get("peppro_order_id")
+    order_id = next((metadata.get(key) for key in with_legacy_meta_keys("trufusion_order_id") if metadata.get(key)), None)
     order = order_repository.find_by_id(order_id) if order_id else None
     woo_order_id = _resolve_woo_order_id(metadata, order)
     order_key = _resolve_order_key(metadata, order)

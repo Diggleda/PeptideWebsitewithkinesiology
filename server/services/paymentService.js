@@ -2,6 +2,7 @@ const orderRepository = require('../repositories/orderRepository');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const stripeClient = require('../integration/stripeClient');
 const { logger } = require('../config/logger');
+const { withLegacyMetaKeys } = require('../config/brand');
 
 const titleCase = (value) => {
   if (!value) {
@@ -87,7 +88,9 @@ const createStripePayment = async ({ order, customer, wooOrderId, wooOrderNumber
 
 const finalizePaymentIntent = async ({ paymentIntentId }) => {
   const intent = await stripeClient.retrievePaymentIntent(paymentIntentId);
-  const orderId = intent?.metadata?.peppro_order_id || null;
+  const orderId = withLegacyMetaKeys('trufusion_order_id')
+    .map((key) => intent?.metadata?.[key])
+    .find(Boolean) || null;
   const metadataWooOrderId = intent?.metadata?.woo_order_id || null;
   const order = orderId
     ? orderRepository.findById(orderId)
@@ -205,7 +208,9 @@ const handleStripeWebhook = async ({ payload, signature }) => {
         'Failed to hydrate payment intent from webhook; using payload intent',
       );
     }
-    const orderId = hydratedIntent.metadata?.peppro_order_id || null;
+    const orderId = withLegacyMetaKeys('trufusion_order_id')
+      .map((key) => hydratedIntent.metadata?.[key])
+      .find(Boolean) || null;
     const metadataWooOrderId = hydratedIntent.metadata?.woo_order_id || null;
     const order = orderId
       ? orderRepository.findById(orderId)

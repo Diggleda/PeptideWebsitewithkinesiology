@@ -32,7 +32,7 @@ test('exportPdf sets pdf headers and sends the generated buffer', async () => {
       service: {
         exportProspectQuote: async () => ({
           quote: { id: 'quote-1' },
-          filename: 'PepPro_Quote_Test_1.pdf',
+          filename: 'TruFusion_Labs_Quote_Test_1.pdf',
           pdf: Buffer.from('%PDF-1.4 mock'),
           diagnostics: {
             totalMs: 37.6,
@@ -89,13 +89,13 @@ test('exportPdf sets pdf headers and sends the generated buffer', async () => {
 
       assert.equal(statusCode, 200);
       assert.equal(headers['Content-Type'], 'application/pdf');
-      assert.equal(headers['Content-Disposition'], 'attachment; filename="PepPro_Quote_Test_1.pdf"');
-      assert.equal(headers['X-PepPro-Quote-Export-Ms'], '37.6');
-      assert.equal(headers['X-PepPro-Quote-Pdf-Ms'], '33.1');
-      assert.equal(headers['X-PepPro-Quote-Render-Ms'], '32.4');
-      assert.equal(headers['X-PepPro-Quote-Image-Ms'], '17.4');
-      assert.equal(headers['X-PepPro-Quote-Renderer'], 'playwright_browser');
-      assert.equal(headers['X-PepPro-Quote-Pdf-Bytes'], String(Buffer.from('%PDF-1.4 mock').length));
+      assert.equal(headers['Content-Disposition'], 'attachment; filename="TruFusion_Labs_Quote_Test_1.pdf"');
+      assert.equal(headers['X-TruFusion-Quote-Export-Ms'], '37.6');
+      assert.equal(headers['X-TruFusion-Quote-Pdf-Ms'], '33.1');
+      assert.equal(headers['X-TruFusion-Quote-Render-Ms'], '32.4');
+      assert.equal(headers['X-TruFusion-Quote-Image-Ms'], '17.4');
+      assert.equal(headers['X-TruFusion-Quote-Renderer'], 'playwright_browser');
+      assert.equal(headers['X-TruFusion-Quote-Pdf-Bytes'], String(Buffer.from('%PDF-1.4 mock').length));
       assert.match(headers['Server-Timing'], /quote_total;dur=37\.6/);
       assert.match(headers['Server-Timing'], /pdf_images;dur=17\.4/);
       assert.match(body.toString('utf8'), /^%PDF/);

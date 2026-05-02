@@ -19,7 +19,7 @@ def handle_order_updated(order_data: Dict[str, Any]) -> Dict[str, Any]:
         raise ServiceError("Missing required order data", 400)
 
     local_sync: Dict[str, Any] | None = None
-    # Mirror status locally (best-effort) so PepPro reflects Woo changes promptly,
+    # Mirror status locally (best-effort) so TruFusionLabs reflects Woo changes promptly,
     # including refunded orders (source of truth is WooCommerce).
     try:
         local_sync = order_service.sync_order_status_from_woo_webhook(order_data)

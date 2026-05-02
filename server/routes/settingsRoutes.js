@@ -1289,31 +1289,31 @@ const fallbackLiveUsers = [
   {
     id: 'pseudo-live-1',
     name: 'Courtney Gillenwater',
-    email: 'demo.live1@peppro.net',
+    email: 'demo.live1@trufusionlabs.com',
     role: 'sales_rep',
   },
   {
     id: 'pseudo-live-2',
     name: 'Linden Mosk',
-    email: 'demo.live2@peppro.net',
+    email: 'demo.live2@trufusionlabs.com',
     role: 'admin',
   },
   {
     id: 'pseudo-live-3',
     name: 'Avery Stone',
-    email: 'demo.live3@peppro.net',
+    email: 'demo.live3@trufusionlabs.com',
     role: 'doctor',
   },
   {
     id: 'pseudo-live-4',
     name: 'Jordan Miles',
-    email: 'demo.live4@peppro.net',
+    email: 'demo.live4@trufusionlabs.com',
     role: 'sales_rep',
   },
   {
     id: 'pseudo-live-5',
     name: 'Riley Quinn',
-    email: 'demo.live5@peppro.net',
+    email: 'demo.live5@trufusionlabs.com',
     role: 'doctor',
   },
 ];

@@ -139,7 +139,7 @@ export function LegalFooter({
   const handleLinkClick = useCallback((key: LegalDocumentKey, options: { preserveDialogs?: boolean } = {}) => {
     console.debug('[LegalFooter] Link clicked', { key });
     if (!options.preserveDialogs) {
-      window.dispatchEvent(new Event('peppro:close-dialogs'));
+      window.dispatchEvent(new Event('trufusion:close-dialogs'));
     }
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
@@ -181,8 +181,8 @@ export function LegalFooter({
       }
       handleLinkClick(key, { preserveDialogs: Boolean(custom.detail?.preserveDialogs) });
     };
-    window.addEventListener('peppro:open-legal', handleExternalOpen);
-    return () => window.removeEventListener('peppro:open-legal', handleExternalOpen);
+    window.addEventListener('trufusion:open-legal', handleExternalOpen);
+    return () => window.removeEventListener('trufusion:open-legal', handleExternalOpen);
   }, [handleLinkClick]);
 
   useEffect(() => {
@@ -209,10 +209,10 @@ export function LegalFooter({
 
   useEffect(() => {
     const open = Boolean(selectedDocument || contactOpen || bugOpen);
-    window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open } }));
+    window.dispatchEvent(new CustomEvent('trufusion:legal-state', { detail: { open } }));
     return () => {
       if (open) {
-        window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open: false } }));
+        window.dispatchEvent(new CustomEvent('trufusion:legal-state', { detail: { open: false } }));
       }
     };
   }, [selectedDocument, contactOpen, bugOpen]);
@@ -313,9 +313,9 @@ export function LegalFooter({
           : undefined;
       handleBugOpen(sourceOverride);
     };
-    window.addEventListener('peppro:open-bug-report', openBugReport);
+    window.addEventListener('trufusion:open-bug-report', openBugReport);
     return () => {
-      window.removeEventListener('peppro:open-bug-report', openBugReport);
+      window.removeEventListener('trufusion:open-bug-report', openBugReport);
     };
   }, [handleBugOpen]);
 
@@ -336,7 +336,7 @@ export function LegalFooter({
         if (res.status === 404) {
           const fallbackRes = await api.post('/contact', {
             name: 'Bug Report',
-            email: 'support@peppro.net',
+            email: 'support@trufusionlabs.com',
             phone: '',
             source: activeBugReportSource,
           });
@@ -374,7 +374,7 @@ export function LegalFooter({
                     <button
                       type="button"
                       onClick={() => {
-                        window.dispatchEvent(new Event('peppro:close-dialogs'));
+                        window.dispatchEvent(new Event('trufusion:close-dialogs'));
                         handleContactOpen();
                       }}
                       className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
@@ -386,7 +386,7 @@ export function LegalFooter({
                     <button
                       type="button"
                       onClick={() => {
-                        window.dispatchEvent(new Event('peppro:close-dialogs'));
+                        window.dispatchEvent(new Event('trufusion:close-dialogs'));
                         handleBugOpen();
                       }}
                       className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
@@ -399,7 +399,7 @@ export function LegalFooter({
 
                 <div className="w-full max-w-5xl mx-auto flex flex-col items-center gap-3 text-center">
                   <div className="text-xs text-slate-600 space-y-1">
-                    <p className="font-semibold text-slate-900">PepPro</p>
+                    <p className="font-semibold text-slate-900">TruFusionLabs</p>
                     <p>DBA: {MERCHANT_IDENTITY.dba}</p>
                     <p>Legal Entity: {MERCHANT_IDENTITY.legalEntity}</p>
                     <p>Address: {MERCHANT_IDENTITY.address}</p>
@@ -439,7 +439,7 @@ export function LegalFooter({
                     ))}
                   </nav>
                   <p className="text-xs text-slate-600">
-                    {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@peppro.net
+                    {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@trufusionlabs.com
                   </p>
                   <p className="text-xs text-slate-600">640 S Grand Ave, Santa Ana, Ca 92705, Unit #107</p>
                 </div>
@@ -453,7 +453,7 @@ export function LegalFooter({
                 <button
                   type="button"
                   onClick={() => {
-                    window.dispatchEvent(new Event('peppro:close-dialogs'));
+                    window.dispatchEvent(new Event('trufusion:close-dialogs'));
                     handleContactOpen();
                   }}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
@@ -469,7 +469,7 @@ export function LegalFooter({
                 <button
                   type="button"
                   onClick={() => {
-                    window.dispatchEvent(new Event('peppro:close-dialogs'));
+                    window.dispatchEvent(new Event('trufusion:close-dialogs'));
                     handleBugOpen();
                   }}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
@@ -483,14 +483,14 @@ export function LegalFooter({
             {/* Disclaimer - left column on desktop, middle stack on mobile */}
             <div className="legal-disclaimer flex items-start justify-start w-full lg:w-auto lg:pr-10 lg:mr-auto lg:ml-0 lg:place-self-start lg:justify-self-start">
               <p className="text-xs text-slate-500 leading-relaxed pt-4 text-center lg:text-left w-full">
-                PepPro peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
+                TruFusionLabs peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
               </p>
             </div>
 
             {/* Legal text + links - middle column on desktop, bottom on mobile */}
             <div className="legal-links flex flex-col items-center text-center gap-1 w-full lg:items-start lg:text-left">
               <div className="space-y-1 text-sm text-slate-600 w-full">
-                <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
+                <p className="text-xs text-slate-500">© {new Date().getFullYear()} TruFusionLabs. All rights reserved.</p>
                 <p className="text-xs text-slate-500"> This website design is guided by consciousness calibration.</p>
               </div>
               <nav className="mt-2 mb-2 flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
@@ -521,7 +521,7 @@ export function LegalFooter({
               </nav>
 
               <p className="text-xs leading-snug break-words text-slate-600">
-                {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@peppro.net
+                {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@trufusionlabs.com
               </p>
               <p className="text-xs leading-snug break-words text-slate-600">640 S Grand Ave, Santa Ana, Ca 92705, Unit #107</p>
 
@@ -693,7 +693,7 @@ export function LegalFooter({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700" htmlFor="contact-source">How did you get introduced to PepPro?</label>
+                <label className="text-sm font-medium text-slate-700" htmlFor="contact-source">How did you get introduced to TruFusionLabs?</label>
                 <input
                   id="contact-source"
                   type="text"

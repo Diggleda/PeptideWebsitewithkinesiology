@@ -403,7 +403,7 @@ const parseJson = (value, fallback = null) => {
 };
 
 const readInlineJsonField = (row, tableName, fieldName) => {
-  const candidateTables = Array.from(new Set([tableName, 'orders', 'peppro_orders'].filter(Boolean)));
+  const candidateTables = Array.from(new Set([tableName, 'orders', 'trufusion_orders'].filter(Boolean)));
   for (const candidateTable of candidateTables) {
     const decoded = decryptJson(row?.[fieldName], {
       aad: {
@@ -423,10 +423,10 @@ const readInlineJsonField = (row, tableName, fieldName) => {
   return parseJson(row?.[fieldName], null);
 };
 
-const readEncryptedOrderPayload = (row, tableName = 'peppro_orders') => {
+const readEncryptedOrderPayload = (row, tableName = 'trufusion_orders') => {
   const legacy = decryptJson(row?.payload_encrypted, {
     aad: {
-      table: 'peppro_orders',
+      table: 'trufusion_orders',
       record_ref: sanitizeString(row?.phi_payload_ref || row?.id) || 'pending',
       field: 'payload',
     },
@@ -569,7 +569,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
       buildEncryptedOrderPayload(order, createdAtRawWithPst || createdAtRaw, orderPlacedAt, shippedAt),
       {
         aad: {
-          table: 'peppro_orders',
+          table: 'trufusion_orders',
           record_ref: sanitizeString(order.id) || 'pending',
           field: 'payload',
         },
@@ -582,7 +582,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
   try {
     await mysqlClient.execute(
       `
-        INSERT INTO peppro_orders (
+        INSERT INTO trufusion_orders (
           id,
           user_id,
           pricing_mode,
@@ -682,7 +682,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
 
 const mapRowToOrder = (row, options = {}) => {
   if (!row) return null;
-  const tableName = options?.source === 'mysql:orders' ? 'orders' : 'peppro_orders';
+  const tableName = options?.source === 'mysql:orders' ? 'orders' : 'trufusion_orders';
   const payload = readEncryptedOrderPayload(row, tableName);
   // Node backend stores payload as `{ order: {...}, integrations: ... }`, while the Python backend
   // stores the order dict directly as the payload. Tolerate both.
@@ -928,12 +928,12 @@ const dedupeOrders = (orders) => {
 
 const fetchAll = async () => {
   if (!mysqlClient.isEnabled()) return [];
-  const [pepproRows, legacyRows] = await Promise.all([
-    safeFetchAll('SELECT * FROM peppro_orders'),
+  const [trufusionRows, legacyRows] = await Promise.all([
+    safeFetchAll('SELECT * FROM trufusion_orders'),
     safeFetchAll('SELECT * FROM orders'),
   ]);
   const orders = []
-    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(trufusionRows) ? trufusionRows.map((row) => mapRowToOrder(row, { source: 'mysql:trufusion_orders' })) : [])
     .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
     .filter(Boolean);
   return dedupeOrders(orders);
@@ -943,12 +943,12 @@ const fetchById = async (orderId) => {
   if (!mysqlClient.isEnabled() || !orderId) {
     return null;
   }
-  const [pepproRow, legacyRow] = await Promise.all([
-    safeFetchOne('SELECT * FROM peppro_orders WHERE id = :id LIMIT 1', { id: orderId }),
+  const [trufusionRow, legacyRow] = await Promise.all([
+    safeFetchOne('SELECT * FROM trufusion_orders WHERE id = :id LIMIT 1', { id: orderId }),
     safeFetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1', { id: orderId }),
   ]);
   const candidates = [];
-  if (pepproRow) candidates.push(mapRowToOrder(pepproRow, { source: 'mysql:peppro_orders' }));
+  if (trufusionRow) candidates.push(mapRowToOrder(trufusionRow, { source: 'mysql:trufusion_orders' }));
   if (legacyRow) candidates.push(mapRowToOrder(legacyRow, { source: 'mysql:orders' }));
   return dedupeOrders(candidates)[0] || null;
 };
@@ -958,7 +958,7 @@ const fetchByShipStationOrderId = async (shipStationOrderId) => {
     return null;
   }
   const row = await mysqlClient.fetchOne(
-    'SELECT * FROM peppro_orders WHERE shipstation_order_id = :shipStationOrderId LIMIT 1',
+    'SELECT * FROM trufusion_orders WHERE shipstation_order_id = :shipStationOrderId LIMIT 1',
     { shipStationOrderId: String(shipStationOrderId) },
   );
   return mapRowToOrder(row);
@@ -983,13 +983,13 @@ const fetchByWooOrderId = async (wooOrderId) => {
     }
   };
 
-  const [pepproRow, legacyRow] = await Promise.all([
-    safeFetchOneCompat('SELECT * FROM peppro_orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: value }),
+  const [trufusionRow, legacyRow] = await Promise.all([
+    safeFetchOneCompat('SELECT * FROM trufusion_orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: value }),
     safeFetchOneCompat('SELECT * FROM orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: value }),
   ]);
 
   const candidates = [];
-  if (pepproRow) candidates.push(mapRowToOrder(pepproRow, { source: 'mysql:peppro_orders' }));
+  if (trufusionRow) candidates.push(mapRowToOrder(trufusionRow, { source: 'mysql:trufusion_orders' }));
   if (legacyRow) candidates.push(mapRowToOrder(legacyRow, { source: 'mysql:orders' }));
   return dedupeOrders(candidates)[0] || null;
 };
@@ -1014,8 +1014,8 @@ const fetchByWooOrderNumber = async (wooOrderNumber) => {
   };
 
   const numericValue = Number.parseInt(value, 10);
-  const directMatchPepPro = Number.isFinite(numericValue)
-    ? await safeFetchOneCompat('SELECT * FROM peppro_orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: numericValue })
+  const directMatchTruFusion = Number.isFinite(numericValue)
+    ? await safeFetchOneCompat('SELECT * FROM trufusion_orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: numericValue })
     : null;
   const directMatchLegacy = await safeFetchOneCompat(
     `
@@ -1028,19 +1028,19 @@ const fetchByWooOrderNumber = async (wooOrderNumber) => {
   );
 
   const candidates = [];
-  if (directMatchPepPro) candidates.push(mapRowToOrder(directMatchPepPro, { source: 'mysql:peppro_orders' }));
+  if (directMatchTruFusion) candidates.push(mapRowToOrder(directMatchTruFusion, { source: 'mysql:trufusion_orders' }));
   if (directMatchLegacy) candidates.push(mapRowToOrder(directMatchLegacy, { source: 'mysql:orders' }));
   const directMatch = dedupeOrders(candidates).find((order) => extractWooOrderTokens(order).has(value));
   if (directMatch) {
     return directMatch;
   }
 
-  const [pepproRows, legacyRows] = await Promise.all([
-    safeFetchAllCompat('SELECT * FROM peppro_orders ORDER BY COALESCE(updated_at, created_at) DESC'),
+  const [trufusionRows, legacyRows] = await Promise.all([
+    safeFetchAllCompat('SELECT * FROM trufusion_orders ORDER BY COALESCE(updated_at, created_at) DESC'),
     safeFetchAllCompat('SELECT * FROM orders ORDER BY COALESCE(updated_at, created_at) DESC'),
   ]);
   const orders = []
-    .concat((pepproRows || []).map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })))
+    .concat((trufusionRows || []).map((row) => mapRowToOrder(row, { source: 'mysql:trufusion_orders' })))
     .concat((legacyRows || []).map((row) => mapRowToOrder(row, { source: 'mysql:orders' })))
     .filter(Boolean);
   return dedupeOrders(orders).find((order) => extractWooOrderTokens(order).has(value)) || null;
@@ -1051,12 +1051,12 @@ const fetchByUserIds = async (userIds = []) => {
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
   const placeholders = userIds.map((_, idx) => `:id${idx}`).join(', ');
   const params = userIds.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
-  const [pepproRows, legacyRows] = await Promise.all([
-    safeFetchAll(`SELECT * FROM peppro_orders WHERE user_id IN (${placeholders})`, params),
+  const [trufusionRows, legacyRows] = await Promise.all([
+    safeFetchAll(`SELECT * FROM trufusion_orders WHERE user_id IN (${placeholders})`, params),
     safeFetchAll(`SELECT * FROM orders WHERE user_id IN (${placeholders})`, params),
   ]);
   const orders = []
-    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(trufusionRows) ? trufusionRows.map((row) => mapRowToOrder(row, { source: 'mysql:trufusion_orders' })) : [])
     .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
     .filter(Boolean);
   return dedupeOrders(orders);
@@ -1074,13 +1074,13 @@ const fetchByBillingEmails = async (emails = []) => {
     ),
   );
   if (normalized.length === 0) return [];
-  const [pepproRows, legacyRows] = await Promise.all([
-    safeFetchAllCompat('SELECT * FROM peppro_orders ORDER BY COALESCE(updated_at, created_at) DESC'),
+  const [trufusionRows, legacyRows] = await Promise.all([
+    safeFetchAllCompat('SELECT * FROM trufusion_orders ORDER BY COALESCE(updated_at, created_at) DESC'),
     safeFetchAllCompat('SELECT * FROM orders ORDER BY COALESCE(updated_at, created_at) DESC'),
   ]);
 
   const orders = []
-    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(trufusionRows) ? trufusionRows.map((row) => mapRowToOrder(row, { source: 'mysql:trufusion_orders' })) : [])
     .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
     .filter(Boolean);
 
@@ -1092,12 +1092,12 @@ const fetchByBillingEmails = async (emails = []) => {
 
 const fetchByUserId = async (userId) => {
   if (!mysqlClient.isEnabled() || !userId) return [];
-  const [pepproRows, legacyRows] = await Promise.all([
-    safeFetchAll('SELECT * FROM peppro_orders WHERE user_id = :userId ORDER BY created_at DESC', { userId }),
+  const [trufusionRows, legacyRows] = await Promise.all([
+    safeFetchAll('SELECT * FROM trufusion_orders WHERE user_id = :userId ORDER BY created_at DESC', { userId }),
     safeFetchAll('SELECT * FROM orders WHERE user_id = :userId ORDER BY created_at DESC', { userId }),
   ]);
   const orders = []
-    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(trufusionRows) ? trufusionRows.map((row) => mapRowToOrder(row, { source: 'mysql:trufusion_orders' })) : [])
     .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
     .filter(Boolean);
   return dedupeOrders(orders).sort((a, b) => (Date.parse(String(b.createdAt || '')) || 0) - (Date.parse(String(a.createdAt || '')) || 0));
@@ -1128,11 +1128,11 @@ const fetchByStatuses = async (statuses = [], options = {}) => {
     : 500;
 
   const statusExpr = "LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-'))";
-  const [pepproRows, legacyRows] = await Promise.all([
+  const [trufusionRows, legacyRows] = await Promise.all([
     safeFetchAll(
       `
         SELECT *
-        FROM peppro_orders
+        FROM trufusion_orders
         WHERE COALESCE(status_normalized, '') IN (${placeholders})
         ORDER BY COALESCE(created_at, updated_at) DESC
         LIMIT ${limit}
@@ -1152,7 +1152,7 @@ const fetchByStatuses = async (statuses = [], options = {}) => {
   ]);
 
   const orders = []
-    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(trufusionRows) ? trufusionRows.map((row) => mapRowToOrder(row, { source: 'mysql:trufusion_orders' })) : [])
     .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
     .filter(Boolean);
 
@@ -1170,7 +1170,7 @@ const updateUpsTrackingStatus = async (orderId, { upsTrackingStatus } = {}) => {
 
   await mysqlClient.execute(
     `
-      UPDATE peppro_orders
+      UPDATE trufusion_orders
       SET ups_tracking_status = :upsTrackingStatus,
           updated_at = :updatedAt
       WHERE id = :id
@@ -1196,7 +1196,7 @@ const fetchRecentForUpsSync = async ({ lookbackDays = 60, limit = 250 } = {}) =>
   const rows = await safeFetchAll(
     `
       SELECT *
-      FROM peppro_orders
+      FROM trufusion_orders
       WHERE COALESCE(updated_at, created_at) >= :cutoff
         AND COALESCE(facility_pickup, 0) = 0
         AND COALESCE(ups_tracking_status, '') <> 'delivered'
@@ -1209,7 +1209,7 @@ const fetchRecentForUpsSync = async ({ lookbackDays = 60, limit = 250 } = {}) =>
 
   return dedupeOrders(
     (rows || [])
-      .map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' }))
+      .map((row) => mapRowToOrder(row, { source: 'mysql:trufusion_orders' }))
       .filter(Boolean),
   );
 };

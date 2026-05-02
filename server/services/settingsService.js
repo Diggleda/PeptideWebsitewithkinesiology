@@ -512,8 +512,8 @@ const databaseVisualizerMockTables = [
   KEY \`users_sales_rep_idx\` (\`salesRepId\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
     rows: [
-      { id: 'admin-001', name: 'Linden Mosk', email: 'linden@peppro.net', role: 'admin', status: 'active', salesRepId: null, lastLoginAt: '2026-03-25T13:42:00.000Z', createdAt: '2025-11-01T08:15:00.000Z' },
-      { id: 'sales-014', name: 'Courtney Gillenwater', email: 'courtney@peppro.net', role: 'sales_rep', status: 'active', salesRepId: 'sales-014', lastLoginAt: '2026-03-25T12:11:00.000Z', createdAt: '2025-09-12T10:20:00.000Z' },
+      { id: 'admin-001', name: 'Linden Mosk', email: 'linden@trufusionlabs.com', role: 'admin', status: 'active', salesRepId: null, lastLoginAt: '2026-03-25T13:42:00.000Z', createdAt: '2025-11-01T08:15:00.000Z' },
+      { id: 'sales-014', name: 'Courtney Gillenwater', email: 'courtney@trufusionlabs.com', role: 'sales_rep', status: 'active', salesRepId: 'sales-014', lastLoginAt: '2026-03-25T12:11:00.000Z', createdAt: '2025-09-12T10:20:00.000Z' },
       { id: 'doctor-201', name: 'Avery Stone', email: 'avery.stone@example.com', role: 'doctor', status: 'active', salesRepId: 'sales-014', lastLoginAt: '2026-03-25T11:00:00.000Z', createdAt: '2026-01-05T15:31:00.000Z' },
       { id: 'doctor-202', name: 'Jordan Miles', email: 'jordan.miles@example.com', role: 'doctor', status: 'pending', salesRepId: 'sales-014', lastLoginAt: null, createdAt: '2026-02-08T09:04:00.000Z' },
       { id: 'doctor-203', name: 'Riley Quinn', email: 'riley.quinn@example.com', role: 'test_doctor', status: 'active', salesRepId: null, lastLoginAt: '2026-03-24T18:22:00.000Z', createdAt: '2026-02-14T17:40:00.000Z' },
@@ -852,7 +852,7 @@ const getDatabaseVisualizerMockPayload = ({
   if (!selectedSource) {
     return {
       mysqlEnabled: false,
-      databaseName: 'PepPro Mock',
+      databaseName: 'TruFusionLabs Mock',
       hostScope: 'local',
       refreshedAt: new Date().toISOString(),
       tables,
@@ -892,7 +892,7 @@ const getDatabaseVisualizerMockPayload = ({
 
   return {
     mysqlEnabled: false,
-    databaseName: 'PepPro Mock',
+    databaseName: 'TruFusionLabs Mock',
     hostScope: 'local',
     refreshedAt: new Date().toISOString(),
     tables,

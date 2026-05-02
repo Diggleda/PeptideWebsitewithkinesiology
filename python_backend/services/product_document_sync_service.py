@@ -181,7 +181,7 @@ def sync_woo_products_to_product_documents() -> Dict[str, Any]:
     if not _enabled():
         return {"ok": False, "skipped": True, "reason": "sync_disabled"}
 
-    lock_name = "peppro:sync:woo-product-docs"
+    lock_name = "trufusion:sync:woo-product-docs"
     if not _try_acquire_lock(lock_name):
         return {"ok": False, "skipped": True, "reason": "lock_busy"}
 
@@ -304,7 +304,7 @@ def start_product_document_sync(*, force: bool = False) -> None:
         background_job_supervisor.start_supervised_job(
             _JOB_NAME,
             _worker,
-            thread_name="peppro-product-doc-sync",
+            thread_name="trufusion-product-doc-sync",
             restart_delay_seconds=min(60.0, max(5.0, float(interval) / 2.0)),
             enabled=True,
             mode="thread",

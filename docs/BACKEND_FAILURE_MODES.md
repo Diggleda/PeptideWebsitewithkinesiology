@@ -28,7 +28,7 @@ Production should be split into four units:
 
 Recommended env:
 
-- `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external`
+- `TRUFUSION_WEB_BACKGROUND_JOBS_MODE=external`
 - shared `DATA_DIR`
 - `Restart=always` on both long-lived services
 

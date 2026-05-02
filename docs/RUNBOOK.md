@@ -1,4 +1,4 @@
-# PepPro Runbook
+# TruFusionLabs Runbook
 
 ## Incident tracking
 
@@ -8,17 +8,17 @@
 
 ## Health checks
 
-- API: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://localhost:3001/api/health | jq`
+- API: `curl -fsS -H "X-Health-Password: $TRUFUSION_HEALTH_PASSWORD" http://localhost:3001/api/health | jq`
 - Diagnostics: `curl -fsS http://localhost:3001/api/help | jq`
-- Background jobs in `thread` mode: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://localhost:3001/api/health | jq '.backgroundJobs'`
-- In-flight request pressure: `curl -fsS -H "X-Health-Password: $PEPPRO_HEALTH_PASSWORD" http://127.0.0.1:8000/api/health | jq '.requests'`
-- Configure the public health-page password with `PEPPRO_HEALTH_PASSWORD`.
+- Background jobs in `thread` mode: `curl -fsS -H "X-Health-Password: $TRUFUSION_HEALTH_PASSWORD" http://localhost:3001/api/health | jq '.backgroundJobs'`
+- In-flight request pressure: `curl -fsS -H "X-Health-Password: $TRUFUSION_HEALTH_PASSWORD" http://127.0.0.1:8000/api/health | jq '.requests'`
+- Configure the public health-page password with `TRUFUSION_HEALTH_PASSWORD`.
 
 Production recommendation:
 
 - Run the API with `systemd` + gunicorn using [`ops/peppr-api.service.example`](../ops/peppr-api.service.example).
 - Run long-lived background jobs in a separate `systemd` service using [`ops/peppr-background-jobs.service.example`](../ops/peppr-background-jobs.service.example).
-- Set `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external` in `/etc/peppr-api.env` so gunicorn workers do not each start their own copy of the job threads.
+- Set `TRUFUSION_WEB_BACKGROUND_JOBS_MODE=external` in `/etc/peppr-api.env` so gunicorn workers do not each start their own copy of the job threads.
 - If you enable an API watchdog, use the hardened examples in
   [`ops/peppr-api-watchdog.sh.example`](../ops/peppr-api-watchdog.sh.example),
   [`ops/peppr-api-watchdog.service.example`](../ops/peppr-api-watchdog.service.example),
@@ -41,7 +41,7 @@ Production recommendation:
 Fast capture:
 
 - From `/opt/peppr/backend`, run:
-  - `PEPPRO_HEALTH_PASSWORD="$PEPPRO_HEALTH_PASSWORD" SINCE="30 minutes ago" ops/peppr-main-api-triage.sh.example`
+  - `TRUFUSION_HEALTH_PASSWORD="$TRUFUSION_HEALTH_PASSWORD" SINCE="30 minutes ago" ops/peppr-main-api-triage.sh.example`
 - Save the output with the incident task in [`TASKS.md`](../TASKS.md).
 
 1. Verify the process is running and listening:
@@ -66,7 +66,7 @@ Fast capture:
    - `journalctl -u peppr-background-jobs.service -n 200 --no-pager`
 3. Restart the worker:
    - `sudo systemctl restart peppr-background-jobs.service`
-4. If you intentionally run jobs in the API process (`PEPPRO_WEB_BACKGROUND_JOBS_MODE=thread`), inspect `.backgroundJobs.unhealthyJobs` and each job’s `health`, `lastError`, `lastHeartbeatAt`, and `lifecycle`.
+4. If you intentionally run jobs in the API process (`TRUFUSION_WEB_BACKGROUND_JOBS_MODE=thread`), inspect `.backgroundJobs.unhealthyJobs` and each job’s `health`, `lastError`, `lastHeartbeatAt`, and `lifecycle`.
 
 ### Repeated/duplicate checkouts
 

@@ -139,7 +139,7 @@ exports.getDaily = async (_req, res, next) => {
     const list = await getQuotesList();
 
     if (list.length === 0) {
-      return res.status(200).json({ text: 'Excellence is an attitude.', author: 'PepPro' });
+      return res.status(200).json({ text: 'Excellence is an attitude.', author: 'TruFusionLabs' });
     }
 
     if (cached && cached.date === key) {

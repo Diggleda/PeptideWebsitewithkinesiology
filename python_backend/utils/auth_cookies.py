@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from flask import Response, request
 
+from ..brand import LEGACY_BRAND
 
-MEDIA_AUTH_COOKIE_NAME = "peppro_media_token"
+MEDIA_AUTH_COOKIE_NAME = "trufusion_media_token"
+LEGACY_MEDIA_AUTH_COOKIE_NAME = LEGACY_BRAND["media_auth_cookie_name"]
 
 
 def read_media_auth_cookie() -> str | None:
-    raw = request.cookies.get(MEDIA_AUTH_COOKIE_NAME)
+    raw = request.cookies.get(MEDIA_AUTH_COOKIE_NAME) or request.cookies.get(LEGACY_MEDIA_AUTH_COOKIE_NAME)
     if not isinstance(raw, str):
         return None
     normalized = raw.strip()
@@ -32,6 +34,13 @@ def set_media_auth_cookie(response: Response, token: str) -> Response:
 def clear_media_auth_cookie(response: Response) -> Response:
     response.delete_cookie(
         MEDIA_AUTH_COOKIE_NAME,
+        path="/api",
+        secure=_request_is_secure(),
+        samesite="Lax",
+        httponly=True,
+    )
+    response.delete_cookie(
+        LEGACY_MEDIA_AUTH_COOKIE_NAME,
         path="/api",
         secure=_request_is_secure(),
         samesite="Lax",

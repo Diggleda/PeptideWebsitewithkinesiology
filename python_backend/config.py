@@ -215,8 +215,8 @@ def load_config() -> AppConfig:
             "webhook_secret": _s(os.environ.get("WC_WEBHOOK_SECRET")),
             "api_version": _s(os.environ.get("WC_API_VERSION") or "wc/v3"),
             "auto_submit_orders": os.environ.get("WC_AUTO_SUBMIT_ORDERS", "").lower() == "true",
-            # Optional: send PepPro emails using WooCommerce's mailer via a small WP plugin endpoint.
-            # This works even when the user only exists in PepPro (not as a WP/Woo customer).
+            # Optional: send TruFusionLabs emails using WooCommerce's mailer via a small WP plugin endpoint.
+            # This works even when the user only exists in TruFusionLabs (not as a WP/Woo customer).
             "mailer_url": _s(os.environ.get("WC_MAILER_URL") or os.environ.get("WC_EMAIL_SERVICE_URL") or ""),
             "mailer_secret": _s(os.environ.get("WC_MAILER_SECRET") or os.environ.get("WC_EMAIL_SERVICE_SECRET") or ""),
         },
@@ -331,7 +331,7 @@ def load_config() -> AppConfig:
         quotes={
             "source_url": _s(
                 os.environ.get("QUOTES_SOURCE_URL")
-                or "https://port.peppro.net/api/integrations/google-sheets/quotes/quotes.php"
+                or "https://port.trufusionlabs.com/api/integrations/google-sheets/quotes/quotes.php"
             ),
             "secret": _s(
                 os.environ.get("QUOTES_WEBHOOK_SECRET")
@@ -371,7 +371,7 @@ def load_config() -> AppConfig:
     try:
         wc_store_url = (config.woo_commerce.get("store_url") or "").rstrip("/")
         if wc_store_url and not (config.woo_commerce.get("mailer_url") or "").strip():
-            config.woo_commerce["mailer_url"] = f"{wc_store_url}/wp-json/peppr/v1/email/password-reset"
+            config.woo_commerce["mailer_url"] = f"{wc_store_url}/wp-json/trufusion/v1/email/password-reset"
     except Exception:
         pass
 

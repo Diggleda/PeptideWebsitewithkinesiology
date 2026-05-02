@@ -28,7 +28,7 @@ def _audit(event: str, details: dict) -> None:
     global _AUDIT_LOGGER
     if _AUDIT_LOGGER is None:
         import logging
-        _AUDIT_LOGGER = logging.getLogger("peppro.auth_audit")
+        _AUDIT_LOGGER = logging.getLogger("trufusion.auth_audit")
     try:
         _AUDIT_LOGGER.info("auth_audit %s", {"event": event, **(details or {})})
     except Exception:

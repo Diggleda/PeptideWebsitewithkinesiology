@@ -49,7 +49,7 @@ def _extract_notification_state(order: Dict[str, Any]) -> Dict[str, Any]:
     integrations = _extract_integrations(order)
     pep_pro = _coerce_object(
         integrations.get("pepProNotifications")
-        or integrations.get("pepproNotifications")
+        or integrations.get("trufusionNotifications")
         or integrations.get("pep_pro_notifications")
     )
     return _coerce_object(
@@ -164,7 +164,7 @@ def _mark_sent(order: Dict[str, Any], status: str, recipient: str) -> None:
     integrations = _extract_integrations(order)
     pep_pro = _coerce_object(
         integrations.get("pepProNotifications")
-        or integrations.get("pepproNotifications")
+        or integrations.get("trufusionNotifications")
         or integrations.get("pep_pro_notifications")
     )
     shipping_state = _coerce_object(

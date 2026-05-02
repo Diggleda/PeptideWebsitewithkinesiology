@@ -32,7 +32,7 @@ class QuotesServiceTests(unittest.TestCase):
                         "date": quotes_service._today_key(),
                         "id": "quote-1",
                         "text": "Cached daily quote",
-                        "author": "PepPro",
+                        "author": "TruFusionLabs",
                     }
                 )
             )
@@ -49,7 +49,7 @@ class QuotesServiceTests(unittest.TestCase):
             result,
             {
                 "text": "Cached daily quote",
-                "author": "PepPro",
+                "author": "TruFusionLabs",
             },
         )
 
@@ -64,7 +64,7 @@ class QuotesServiceTests(unittest.TestCase):
                             {
                                 "id": "quote-2",
                                 "text": "Feed cached quote",
-                                "author": "PepPro",
+                                "author": "TruFusionLabs",
                             }
                         ],
                     }
@@ -88,7 +88,7 @@ class QuotesServiceTests(unittest.TestCase):
             result,
             {
                 "text": "Feed cached quote",
-                "author": "PepPro",
+                "author": "TruFusionLabs",
             },
         )
         self.assertEqual(stored["text"], "Feed cached quote")
@@ -111,7 +111,7 @@ class QuotesServiceTests(unittest.TestCase):
                     {
                         "id": 165,
                         "text": "Database quote",
-                        "author": "PepPro",
+                        "author": "TruFusionLabs",
                     }
                 ],
             )
@@ -133,11 +133,11 @@ class QuotesServiceTests(unittest.TestCase):
             result,
             {
                 "text": "Database quote",
-                "author": "PepPro",
+                "author": "TruFusionLabs",
             },
         )
         self.assertEqual(stored["text"], "Database quote")
-        self.assertEqual(stored["author"], "PepPro")
+        self.assertEqual(stored["author"], "TruFusionLabs")
 
     def test_get_daily_quote_returns_fallback_and_schedules_refresh_when_no_cache_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -154,7 +154,7 @@ class QuotesServiceTests(unittest.TestCase):
             result,
             {
                 "text": "Excellence is an attitude.",
-                "author": "PepPro",
+                "author": "TruFusionLabs",
                 "stale": True,
             },
         )

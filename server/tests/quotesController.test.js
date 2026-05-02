@@ -36,7 +36,7 @@ const withFreshController = async ({ axios, env, mysqlClient }, run) => {
 };
 
 test('getDaily reads quotes from MySQL and stores the full daily cache payload', async () => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peppro-quotes-'));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trufusion-quotes-'));
 
   try {
     let statusCode = 0;
@@ -62,7 +62,7 @@ test('getDaily reads quotes from MySQL and stores the full daily cache payload',
             {
               id: 165,
               text: 'Database quote',
-              author: 'PepPro',
+              author: 'TruFusionLabs',
             },
           ],
         },
@@ -92,11 +92,11 @@ test('getDaily reads quotes from MySQL and stores the full daily cache payload',
     assert.equal(statusCode, 200);
     assert.deepEqual(jsonPayload, {
       text: 'Database quote',
-      author: 'PepPro',
+      author: 'TruFusionLabs',
     });
     assert.equal(stored.id, 165);
     assert.equal(stored.text, 'Database quote');
-    assert.equal(stored.author, 'PepPro');
+    assert.equal(stored.author, 'TruFusionLabs');
   } finally {
     fs.rmSync(dataDir, { recursive: true, force: true });
   }

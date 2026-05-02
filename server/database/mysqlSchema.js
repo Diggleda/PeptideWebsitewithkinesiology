@@ -30,7 +30,7 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
   `
-    CREATE TABLE IF NOT EXISTS peppro_orders (
+    CREATE TABLE IF NOT EXISTS trufusion_orders (
       id VARCHAR(64) PRIMARY KEY,
       user_id VARCHAR(64) NOT NULL,
       pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale',
@@ -60,11 +60,11 @@ const STATEMENTS = [
       payload LONGTEXT NULL,
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
-      INDEX idx_peppro_orders_user (user_id),
-      INDEX idx_peppro_orders_user_created (user_id, created_at),
-      INDEX idx_peppro_orders_status_norm_created (status_normalized, created_at),
-      INDEX idx_peppro_orders_woo (woo_order_id),
-      INDEX idx_peppro_orders_shipstation (shipstation_order_id)
+      INDEX idx_trufusion_orders_user (user_id),
+      INDEX idx_trufusion_orders_user_created (user_id, created_at),
+      INDEX idx_trufusion_orders_status_norm_created (status_normalized, created_at),
+      INDEX idx_trufusion_orders_woo (woo_order_id),
+      INDEX idx_trufusion_orders_shipstation (shipstation_order_id)
     ) CHARACTER SET utf8mb4
   `,
   `
@@ -680,84 +680,84 @@ const ensureOrderColumns = async () => {
     {
       name: 'Payment Details',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN \`Payment Details\` VARCHAR(255) NULL AFTER status
       `,
     },
     {
       name: 'pricing_mode',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale' AFTER user_id
       `,
     },
     {
       name: 'is_tax_exempt',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN is_tax_exempt TINYINT(1) NOT NULL DEFAULT 0 AFTER pricing_mode
       `,
     },
     {
       name: 'tax_exempt_source',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN tax_exempt_source VARCHAR(64) NULL AFTER is_tax_exempt
       `,
     },
     {
       name: 'tax_exempt_reason',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN tax_exempt_reason VARCHAR(255) NULL AFTER tax_exempt_source
       `,
     },
     {
       name: 'reseller_permit_file_path',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN reseller_permit_file_path VARCHAR(255) NULL AFTER tax_exempt_reason
       `,
     },
     {
       name: 'reseller_permit_file_name',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN reseller_permit_file_name VARCHAR(255) NULL AFTER reseller_permit_file_path
       `,
     },
     {
       name: 'reseller_permit_uploaded_at',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN reseller_permit_uploaded_at DATETIME NULL AFTER reseller_permit_file_name
       `,
     },
     {
       name: 'items_subtotal',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN items_subtotal DECIMAL(12,2) NULL AFTER shipstation_order_id
       `,
     },
     {
       name: 'facility_pickup',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN facility_pickup TINYINT(1) NOT NULL DEFAULT 0 AFTER shipping_service
       `,
     },
     {
       name: 'fulfillment_method',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN fulfillment_method VARCHAR(32) NULL AFTER facility_pickup
       `,
     },
     {
       name: 'status_normalized',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN status_normalized VARCHAR(64)
           GENERATED ALWAYS AS (LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')))
           STORED
@@ -766,21 +766,21 @@ const ensureOrderColumns = async () => {
     {
       name: 'order_placed_at',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN order_placed_at DATETIME NULL AFTER status
       `,
     },
     {
       name: 'shipped_at',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN shipped_at DATETIME NULL AFTER order_placed_at
       `,
     },
     {
       name: 'ups_tracking_status',
       ddl: `
-        ALTER TABLE peppro_orders
+        ALTER TABLE trufusion_orders
         ADD COLUMN ups_tracking_status VARCHAR(32) NULL AFTER shipped_at
       `,
     },
@@ -792,36 +792,36 @@ const ensureOrderColumns = async () => {
           SELECT COLUMN_NAME
           FROM INFORMATION_SCHEMA.COLUMNS
           WHERE TABLE_SCHEMA = DATABASE()
-            AND TABLE_NAME = 'peppro_orders'
+            AND TABLE_NAME = 'trufusion_orders'
             AND COLUMN_NAME = :columnName
         `,
         { columnName: column.name },
       );
       if (!existing) {
         await mysqlClient.execute(column.ddl);
-        logger.info({ column: column.name }, 'MySQL peppro_orders column added');
+        logger.info({ column: column.name }, 'MySQL trufusion_orders column added');
       }
     } catch (error) {
-      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL peppro_orders column');
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL trufusion_orders column');
     }
   }
   await ensureIndex(
-    'peppro_orders',
-    'idx_peppro_orders_user_created',
-    'ALTER TABLE peppro_orders ADD INDEX idx_peppro_orders_user_created (user_id, created_at)',
+    'trufusion_orders',
+    'idx_trufusion_orders_user_created',
+    'ALTER TABLE trufusion_orders ADD INDEX idx_trufusion_orders_user_created (user_id, created_at)',
   );
   await ensureIndex(
-    'peppro_orders',
-    'idx_peppro_orders_status_norm_created',
-    'ALTER TABLE peppro_orders ADD INDEX idx_peppro_orders_status_norm_created (status_normalized, created_at)',
+    'trufusion_orders',
+    'idx_trufusion_orders_status_norm_created',
+    'ALTER TABLE trufusion_orders ADD INDEX idx_trufusion_orders_status_norm_created (status_normalized, created_at)',
   );
   await copyLegacyCiphertext({
-    tableName: 'peppro_orders',
+    tableName: 'trufusion_orders',
     baseColumn: 'payload',
     legacyColumn: 'payload_encrypted',
   });
-  await dropColumnIfExists('peppro_orders', 'payload_encrypted');
-  await dropColumnIfExists('peppro_orders', 'phi_payload_ref');
+  await dropColumnIfExists('trufusion_orders', 'payload_encrypted');
+  await dropColumnIfExists('trufusion_orders', 'phi_payload_ref');
   for (const columnName of ['pickup_ready_notice', 'pickup_location']) {
     try {
       const existing = await mysqlClient.fetchOne(
@@ -829,17 +829,17 @@ const ensureOrderColumns = async () => {
           SELECT COLUMN_NAME
           FROM INFORMATION_SCHEMA.COLUMNS
           WHERE TABLE_SCHEMA = DATABASE()
-            AND TABLE_NAME = 'peppro_orders'
+            AND TABLE_NAME = 'trufusion_orders'
             AND COLUMN_NAME = :columnName
         `,
         { columnName },
       );
       if (existing) {
-        await mysqlClient.execute(`ALTER TABLE peppro_orders DROP COLUMN ${columnName}`);
-        logger.info({ column: columnName }, 'MySQL peppro_orders legacy column dropped');
+        await mysqlClient.execute(`ALTER TABLE trufusion_orders DROP COLUMN ${columnName}`);
+        logger.info({ column: columnName }, 'MySQL trufusion_orders legacy column dropped');
       }
     } catch (error) {
-      logger.error({ err: error, column: columnName }, 'Failed to drop legacy MySQL peppro_orders column');
+      logger.error({ err: error, column: columnName }, 'Failed to drop legacy MySQL trufusion_orders column');
     }
   }
 };

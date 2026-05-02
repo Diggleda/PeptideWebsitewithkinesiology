@@ -103,7 +103,7 @@ const serveCachedResponse = ({
   data,
 }) => {
   res.set('Cache-Control', `public, max-age=${ttlSeconds}`);
-  res.set('X-PepPro-Cache', cacheLabel);
+  res.set('X-TruFusion-Cache', cacheLabel);
   res.json(data);
   if (requestedEndpoint === 'products' || requestedEndpoint === 'products/categories') {
     logger.info(
@@ -307,7 +307,7 @@ const proxyCatalog = async (req, res, next) => {
           expiresAt: now + ttlSeconds * 1000,
         });
         res.set('Cache-Control', 'no-store');
-        res.set('X-PepPro-Cache', 'BYPASS');
+        res.set('X-TruFusion-Cache', 'BYPASS');
         res.json(data);
         return;
       } catch (error) {
@@ -440,7 +440,7 @@ const proxyCatalog = async (req, res, next) => {
       expiresAt: now + ttlSeconds * 1000,
     });
     res.set('Cache-Control', `public, max-age=${ttlSeconds}`);
-    res.set('X-PepPro-Cache', 'MISS');
+    res.set('X-TruFusion-Cache', 'MISS');
     res.json(data);
     if (requestedEndpoint === 'products' || requestedEndpoint === 'products/categories') {
       logger.info(

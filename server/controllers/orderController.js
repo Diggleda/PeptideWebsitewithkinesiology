@@ -35,7 +35,7 @@ const normalizeBooleanFlag = (value) => {
 
 const shouldServeFakeAdminReports = () => {
   if (env?.nodeEnv === 'production') return false;
-  const flag = (process.env.PEPPRO_FAKE_ADMIN_REPORTS || '').trim().toLowerCase();
+  const flag = (process.env.TRUFUSION_FAKE_ADMIN_REPORTS || '').trim().toLowerCase();
   if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false;
   return true;
 };
@@ -76,7 +76,7 @@ const startOfUtcDayIso = (value) => `${formatDateOnly(value)}T00:00:00.000Z`;
 const endOfUtcDayIso = (value) => `${formatDateOnly(value)}T23:59:59.999Z`;
 
 const getFakeAdminReportsToday = () => {
-  const override = (process.env.PEPPRO_FAKE_ADMIN_REPORTS_DATE || '').trim();
+  const override = (process.env.TRUFUSION_FAKE_ADMIN_REPORTS_DATE || '').trim();
   const parsedOverride = toDateOnly(override);
   if (parsedOverride) return parsedOverride;
   const now = new Date();
@@ -133,7 +133,7 @@ const buildFakeSalesByRepReport = ({
       salesRepId: 'rep-101',
       salesRepUserId: 'rep-101',
       salesRepName: 'Jordan Kim',
-      salesRepEmail: 'jordan.kim@peppro.net',
+      salesRepEmail: 'jordan.kim@trufusionlabs.com',
       role: 'sales_rep',
       retailBias: 0.34,
     },
@@ -141,7 +141,7 @@ const buildFakeSalesByRepReport = ({
       salesRepId: 'rep-102',
       salesRepUserId: 'rep-102',
       salesRepName: 'Taylor Reed',
-      salesRepEmail: 'taylor.reed@peppro.net',
+      salesRepEmail: 'taylor.reed@trufusionlabs.com',
       role: 'sales_rep',
       retailBias: 0.41,
     },
@@ -149,7 +149,7 @@ const buildFakeSalesByRepReport = ({
       salesRepId: 'lead-201',
       salesRepUserId: 'lead-201',
       salesRepName: 'Alexis Harper',
-      salesRepEmail: 'alexis.harper@peppro.net',
+      salesRepEmail: 'alexis.harper@trufusionlabs.com',
       role: 'sales_lead',
       retailBias: 0.29,
     },
@@ -157,7 +157,7 @@ const buildFakeSalesByRepReport = ({
       salesRepId: 'partner-301',
       salesRepUserId: 'partner-301',
       salesRepName: 'Morgan Blake',
-      salesRepEmail: 'morgan.blake@peppro.net',
+      salesRepEmail: 'morgan.blake@trufusionlabs.com',
       role: 'sales_partner',
       retailBias: 0.52,
       isPartner: true,
@@ -1099,7 +1099,7 @@ const downloadInvoice = async (req, res, next) => {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('X-PepPro-Invoice-Source', 'fallback');
+      res.setHeader('X-TruFusion-Invoice-Source', 'fallback');
       return res.status(200).send(pdf);
     }
 
@@ -1109,7 +1109,7 @@ const downloadInvoice = async (req, res, next) => {
       maxRedirects: 5,
       headers: {
         Accept: 'application/pdf',
-        'User-Agent': 'PepPro Invoice Proxy',
+        'User-Agent': 'TruFusionLabs Invoice Proxy',
       },
       validateStatus: (status) => status >= 200 && status < 400,
     });
@@ -1133,15 +1133,15 @@ const downloadInvoice = async (req, res, next) => {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('X-PepPro-Invoice-Source', permissionLike ? 'fallback-permission' : 'fallback');
+      res.setHeader('X-TruFusion-Invoice-Source', permissionLike ? 'fallback-permission' : 'fallback');
       return res.status(200).send(pdf);
     }
 
-    const filename = `PepPro_Invoice_${normalizeOrderToken(wooOrder?.number || wooOrder?.id || token)}.pdf`;
+    const filename = `TruFusion_Labs_Invoice_${normalizeOrderToken(wooOrder?.number || wooOrder?.id || token)}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-PepPro-Invoice-Source', 'wpo');
+    res.setHeader('X-TruFusion-Invoice-Source', 'wpo');
     return res.status(200).send(buffer);
   } catch (error) {
     next(error);

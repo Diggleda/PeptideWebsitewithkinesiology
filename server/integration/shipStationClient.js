@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
+const { withLegacyMetaKeys } = require('../config/brand');
 
 const API_BASE_URL = 'https://ssapi.shipstation.com';
 
@@ -99,7 +100,7 @@ const buildShipTo = (shippingAddress = {}, customer = {}) => ({
 });
 
 const buildShipFrom = () => ({
-  name: env.shipStation.shipFrom.name || env.shipStation.shipFrom.company || 'PepPro',
+  name: env.shipStation.shipFrom.name || env.shipStation.shipFrom.company || 'TruFusionLabs',
   company: env.shipStation.shipFrom.company || '',
   street1: env.shipStation.shipFrom.addressLine1 || '',
   street2: env.shipStation.shipFrom.addressLine2 || '',
@@ -185,7 +186,7 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
   const wooOrderId = wooOrder?.response?.id || wooOrder?.response?.orderId || null;
   const wooMetaData = Array.isArray(wooOrder?.payload?.meta_data) ? wooOrder.payload.meta_data : [];
   const wooOrderNumber = wooOrder?.response?.number
-    || (wooMetaData.find((meta) => meta?.key === 'peppro_order_id')?.value)
+    || (wooMetaData.find((meta) => withLegacyMetaKeys('trufusion_order_id').includes(meta?.key))?.value)
     || null;
   const estimatedWeight = order?.shippingEstimate?.weightOz;
   const totalWeightOz = resolveTotalWeightOz(order.items || [], estimatedWeight);
@@ -198,7 +199,7 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
   const payload = {
     orderNumber: wooOrderNumber || order.id,
     orderKey: wooOrderId ? `woo-${wooOrderId}` : order.id,
-    orderSource: 'PepPro Checkout',
+    orderSource: 'TruFusionLabs Checkout',
     orderStatus: isAwaitingPayment ? 'awaiting_payment' : 'awaiting_shipment',
     orderDate: order.createdAt,
     ...(isAwaitingPayment ? {} : { paymentDate: order.createdAt }),
@@ -214,7 +215,7 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     shippingPaid: shippingTotal,
     taxAmount: Number(order.taxTotal) || 0,
     billTo: {
-      name: customer.name || 'PepPro Customer',
+      name: customer.name || 'TruFusionLabs Customer',
       company: customer.company || '',
       street1: order.shippingAddress.addressLine1,
       street2: order.shippingAddress.addressLine2 || '',

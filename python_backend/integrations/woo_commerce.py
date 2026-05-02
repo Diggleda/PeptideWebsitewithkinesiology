@@ -18,6 +18,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from ..services import get_config
+from ..brand import with_legacy_meta_keys
 
 logger = logging.getLogger(__name__)
 
@@ -1236,40 +1237,40 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
     return prepared
 
 
-_PEPPRO_MANUAL_TAX_RATE_NAME = "PepPro Manual Tax"
-_peppro_manual_tax_rate_id: Optional[int] = None
-_peppro_manual_tax_rate_lock = threading.Lock()
+_TRUFUSION_MANUAL_TAX_RATE_NAME = "TruFusionLabs Manual Tax"
+_trufusion_manual_tax_rate_id: Optional[int] = None
+_trufusion_manual_tax_rate_lock = threading.Lock()
 
 
-def _ensure_peppro_manual_tax_rate_id() -> Optional[int]:
+def _ensure_trufusion_manual_tax_rate_id() -> Optional[int]:
     """
     WooCommerce taxes must reference an existing tax rate id to register totals that surface in
-    admin + emails. We create (once) a 0% "PepPro Manual Tax" rate and then attach explicit tax
+    admin + emails. We create (once) a 0% "TruFusionLabs Manual Tax" rate and then attach explicit tax
     amounts to the order/line items.
     """
-    global _peppro_manual_tax_rate_id
+    global _trufusion_manual_tax_rate_id
 
-    if _peppro_manual_tax_rate_id is not None:
-        return _peppro_manual_tax_rate_id
+    if _trufusion_manual_tax_rate_id is not None:
+        return _trufusion_manual_tax_rate_id
     if not is_configured():
         return None
 
-    with _peppro_manual_tax_rate_lock:
-        if _peppro_manual_tax_rate_id is not None:
-            return _peppro_manual_tax_rate_id
+    with _trufusion_manual_tax_rate_lock:
+        if _trufusion_manual_tax_rate_id is not None:
+            return _trufusion_manual_tax_rate_id
 
         try:
             existing = fetch_catalog(
                 "taxes",
-                {"per_page": 100, "search": _PEPPRO_MANUAL_TAX_RATE_NAME},
+                {"per_page": 100, "search": _TRUFUSION_MANUAL_TAX_RATE_NAME},
             )
             if isinstance(existing, list):
                 for rate in existing:
-                    if str((rate or {}).get("name") or "").strip().lower() != _PEPPRO_MANUAL_TAX_RATE_NAME.lower():
+                    if str((rate or {}).get("name") or "").strip().lower() != _TRUFUSION_MANUAL_TAX_RATE_NAME.lower():
                         continue
                     rate_id = _parse_woo_id((rate or {}).get("id"))
                     if rate_id:
-                        _peppro_manual_tax_rate_id = rate_id
+                        _trufusion_manual_tax_rate_id = rate_id
                         return rate_id
         except Exception:
             logger.debug("Woo manual tax rate lookup failed", exc_info=True)
@@ -1283,7 +1284,7 @@ def _ensure_peppro_manual_tax_rate_id() -> Optional[int]:
                 "postcode": "",
                 "city": "",
                 "rate": "0.0000",
-                "name": _PEPPRO_MANUAL_TAX_RATE_NAME,
+                "name": _TRUFUSION_MANUAL_TAX_RATE_NAME,
                 "priority": 1,
                 "compound": False,
                 "shipping": False,
@@ -1311,7 +1312,7 @@ def _ensure_peppro_manual_tax_rate_id() -> Optional[int]:
                 data = None
             rate_id = _parse_woo_id((data or {}).get("id"))
             if rate_id:
-                _peppro_manual_tax_rate_id = rate_id
+                _trufusion_manual_tax_rate_id = rate_id
                 return rate_id
         except Exception:
             logger.warning("Woo manual tax rate creation failed", exc_info=True)
@@ -1332,7 +1333,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             override_amount = 0.01
         override_amount = max(0.01, round(override_amount, 2))
 
-    # Discounts (referral credits + discount codes) are tracked in PepPro + stored as Woo meta fields.
+    # Discounts (referral credits + discount codes) are tracked in TruFusionLabs + stored as Woo meta fields.
     # Do not send Woo "discount lines"/negative fees; instead, reduce line item totals so Woo total matches.
     applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
     discount_code_amount = float(order.get("discountCodeAmount") or 0) or 0.0
@@ -1400,7 +1401,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     except Exception:
         tax_total = 0.0
     tax_total = max(0.0, tax_total)
-    tax_rate_id = _ensure_peppro_manual_tax_rate_id() if tax_total > 0 else None
+    tax_rate_id = _ensure_trufusion_manual_tax_rate_id() if tax_total > 0 else None
     # Prefer representing tax as a true Woo tax total (tax fields on line_items). Only fall back
     # to the legacy fee-line approach when we cannot resolve a manual tax rate id.
     if tax_total > 0 and tax_rate_id is None:
@@ -1516,38 +1517,38 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         order_total = max(0.0, items_total - applied_credit + shipping_total + tax_total)
 
     meta_data = [
-        {"key": "peppro_order_id", "value": order.get("id")},
-        {"key": "peppro_total", "value": order.get("total")},
-        {"key": "peppro_tax_total", "value": tax_total},
-        {"key": "peppro_manual_tax_rate_id", "value": int(tax_rate_id or 0)},
-        {"key": "peppro_grand_total", "value": order.get("grandTotal")},
-        {"key": "peppro_created_at", "value": _to_order_timezone_iso(order.get("createdAt"))},
-        {"key": "peppro_shipping_total", "value": shipping_total},
-        {"key": "peppro_shipping_service", "value": method_title},
-        {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId") or method_code},
+        {"key": "trufusion_order_id", "value": order.get("id")},
+        {"key": "trufusion_total", "value": order.get("total")},
+        {"key": "trufusion_tax_total", "value": tax_total},
+        {"key": "trufusion_manual_tax_rate_id", "value": int(tax_rate_id or 0)},
+        {"key": "trufusion_grand_total", "value": order.get("grandTotal")},
+        {"key": "trufusion_created_at", "value": _to_order_timezone_iso(order.get("createdAt"))},
+        {"key": "trufusion_shipping_total", "value": shipping_total},
+        {"key": "trufusion_shipping_service", "value": method_title},
+        {"key": "trufusion_shipping_carrier", "value": shipping_estimate.get("carrierId") or method_code},
         {
-            "key": "peppro_fulfillment_method",
+            "key": "trufusion_fulfillment_method",
             "value": "facility_pickup" if is_facility_pickup else ("hand_delivery" if is_hand_delivery else "shipping"),
         },
-        {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
+        {"key": "trufusion_physician_certified", "value": order.get("physicianCertificationAccepted")},
     ]
     if order.get("discountCode"):
-        meta_data.append({"key": "peppro_discount_code", "value": order.get("discountCode")})
+        meta_data.append({"key": "trufusion_discount_code", "value": order.get("discountCode")})
     if order.get("discountCodeAmount"):
-        meta_data.append({"key": "peppro_discount_code_amount", "value": order.get("discountCodeAmount")})
+        meta_data.append({"key": "trufusion_discount_code_amount", "value": order.get("discountCodeAmount")})
     if sales_rep_id:
-        meta_data.append({"key": "peppro_sales_rep_id", "value": sales_rep_id})
+        meta_data.append({"key": "trufusion_sales_rep_id", "value": sales_rep_id})
     if sales_rep_code:
-        meta_data.append({"key": "peppro_sales_rep_code", "value": sales_rep_code})
+        meta_data.append({"key": "trufusion_sales_rep_code", "value": sales_rep_code})
     if is_facility_pickup and pickup_recipient_name:
         meta_data.append(
             {
-                "key": "peppro_facility_pickup_recipient_name",
+                "key": "trufusion_facility_pickup_recipient_name",
                 "value": pickup_recipient_name,
             }
         )
     if is_hand_delivery:
-        meta_data.append({"key": "peppro_delivery_method", "value": HAND_DELIVERY_CODE})
+        meta_data.append({"key": "trufusion_delivery_method", "value": HAND_DELIVERY_CODE})
 
     payment_method = str(order.get("paymentMethod") or "").strip().lower()
     if payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer"):
@@ -1597,7 +1598,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         payload["tax_lines"] = [
             {
                 "rate_id": int(tax_rate_id),
-                "label": _PEPPRO_MANUAL_TAX_RATE_NAME,
+                "label": _TRUFUSION_MANUAL_TAX_RATE_NAME,
                 "compound": False,
                 "tax_total": f"{tax_total:.2f}",
                 "shipping_tax_total": "0.00",
@@ -1724,9 +1725,9 @@ def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
     if details.get("order_key"):
         meta.append({"key": "order_key", "value": details.get("order_key")})
     if details.get("card_last4"):
-        meta.append({"key": "peppro_card_last4", "value": details.get("card_last4")})
+        meta.append({"key": "trufusion_card_last4", "value": details.get("card_last4")})
     if details.get("card_brand"):
-        meta.append({"key": "peppro_card_brand", "value": details.get("card_brand")})
+        meta.append({"key": "trufusion_card_brand", "value": details.get("card_brand")})
     timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
     now_iso = datetime.utcnow().isoformat()
     card_last4 = str(details.get("card_last4") or "").strip()
@@ -1772,7 +1773,7 @@ def update_order_metadata(details: Dict[str, Any]) -> Dict[str, Any]:
     """
     Update WooCommerce order fields/meta without marking it as paid.
 
-    Useful for attaching `stripe_payment_intent`, `order_key`, or other PepPro metadata
+    Useful for attaching `stripe_payment_intent`, `order_key`, or other TruFusionLabs metadata
     immediately after order creation (even before payment succeeds).
     """
     if not is_configured():
@@ -1787,27 +1788,27 @@ def update_order_metadata(details: Dict[str, Any]) -> Dict[str, Any]:
     meta: list[dict] = []
     if details.get("payment_intent_id"):
         meta.append({"key": "stripe_payment_intent", "value": details.get("payment_intent_id")})
-        meta.append({"key": "peppro_payment_intent", "value": details.get("payment_intent_id")})
+        meta.append({"key": "trufusion_payment_intent", "value": details.get("payment_intent_id")})
     if details.get("order_key"):
         meta.append({"key": "order_key", "value": details.get("order_key")})
-    if details.get("peppro_order_id"):
-        meta.append({"key": "peppro_order_id", "value": details.get("peppro_order_id")})
+    if details.get("trufusion_order_id"):
+        meta.append({"key": "trufusion_order_id", "value": details.get("trufusion_order_id")})
     if details.get("stripe_mode"):
-        meta.append({"key": "peppro_stripe_mode", "value": details.get("stripe_mode")})
+        meta.append({"key": "trufusion_stripe_mode", "value": details.get("stripe_mode")})
     if details.get("sales_rep_id"):
-        meta.append({"key": "peppro_sales_rep_id", "value": details.get("sales_rep_id")})
+        meta.append({"key": "trufusion_sales_rep_id", "value": details.get("sales_rep_id")})
     if details.get("sales_rep_code"):
-        meta.append({"key": "peppro_sales_rep_code", "value": details.get("sales_rep_code")})
+        meta.append({"key": "trufusion_sales_rep_code", "value": details.get("sales_rep_code")})
     if details.get("refunded") is not None:
-        meta.append({"key": "peppro_refunded", "value": "true" if details.get("refunded") else "false"})
+        meta.append({"key": "trufusion_refunded", "value": "true" if details.get("refunded") else "false"})
     if details.get("stripe_refund_id"):
-        meta.append({"key": "peppro_stripe_refund_id", "value": details.get("stripe_refund_id")})
+        meta.append({"key": "trufusion_stripe_refund_id", "value": details.get("stripe_refund_id")})
     if details.get("refund_amount") is not None:
-        meta.append({"key": "peppro_refund_amount", "value": details.get("refund_amount")})
+        meta.append({"key": "trufusion_refund_amount", "value": details.get("refund_amount")})
     if details.get("refund_currency"):
-        meta.append({"key": "peppro_refund_currency", "value": details.get("refund_currency")})
+        meta.append({"key": "trufusion_refund_currency", "value": details.get("refund_currency")})
     if details.get("refund_created_at"):
-        meta.append({"key": "peppro_refund_created_at", "value": details.get("refund_created_at")})
+        meta.append({"key": "trufusion_refund_created_at", "value": details.get("refund_created_at")})
 
     payload: Dict[str, Any] = {"meta_data": meta}
     if details.get("payment_method"):
@@ -1937,7 +1938,7 @@ def create_refund(
 
     payload: Dict[str, Any] = {
         "amount": f"{amount_value:.2f}",
-        "reason": reason or "Refunded via PepPro",
+        "reason": reason or "Refunded via TruFusionLabs",
         "api_refund": False,
     }
     if isinstance(metadata, dict) and metadata:
@@ -2257,10 +2258,10 @@ def apply_shipstation_shipment_update(
             return None
 
     keys = {
-        "status": "_peppro_shipstation_status",
-        "tracking": "_peppro_shipstation_tracking_number",
-        "carrier": "_peppro_shipstation_carrier_code",
-        "shipDate": "_peppro_shipstation_ship_date",
+        "status": "_trufusion_shipstation_status",
+        "tracking": "_trufusion_shipstation_tracking_number",
+        "carrier": "_trufusion_shipstation_carrier_code",
+        "shipDate": "_trufusion_shipstation_ship_date",
     }
 
     existing = existing_meta_data if isinstance(existing_meta_data, list) else []
@@ -2434,8 +2435,9 @@ def _map_address(address: Optional[Dict[str, Any]]) -> Optional[Dict[str, Option
 
 
 def _meta_value(meta: List[Dict[str, Any]], key: str) -> Optional[Any]:
+    keys = set(with_legacy_meta_keys(key))
     for entry in meta or []:
-        if entry.get("key") == key:
+        if entry.get("key") in keys:
             return entry.get("value")
     return None
 
@@ -2460,9 +2462,9 @@ def _map_shipping_estimate(order: Dict[str, Any], meta: List[Dict[str, Any]]) ->
     shipping_lines = order.get("shipping_lines") or []
     first_line = shipping_lines[0] if shipping_lines else {}
     estimate: Dict[str, Any] = {}
-    meta_service = _meta_value(meta, "peppro_shipping_service")
-    meta_carrier = _meta_value(meta, "peppro_shipping_carrier")
-    meta_total = _meta_value(meta, "peppro_shipping_total")
+    meta_service = _meta_value(meta, "trufusion_shipping_service")
+    meta_carrier = _meta_value(meta, "trufusion_shipping_carrier")
+    meta_total = _meta_value(meta, "trufusion_shipping_total")
     if meta_service:
         estimate["serviceType"] = meta_service
     if meta_carrier:
@@ -2495,12 +2497,12 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
 
     meta_data = order.get("meta_data") or []
     shipping_estimate = _map_shipping_estimate(order, meta_data)
-    fulfillment_method = _meta_value(meta_data, "peppro_fulfillment_method") or (
+    fulfillment_method = _meta_value(meta_data, "trufusion_fulfillment_method") or (
         "facility_pickup" if _is_facility_pickup_shipping_estimate(shipping_estimate) else "shipping"
     )
-    peppro_order_id_raw = _meta_value(meta_data, "peppro_order_id")
-    peppro_order_id = str(peppro_order_id_raw).strip() if peppro_order_id_raw is not None else None
-    shipping_total = _num(order.get("shipping_total"), _num(_meta_value(meta_data, "peppro_shipping_total"), 0.0))
+    trufusion_order_id_raw = _meta_value(meta_data, "trufusion_order_id")
+    trufusion_order_id = str(trufusion_order_id_raw).strip() if trufusion_order_id_raw is not None else None
+    shipping_total = _num(order.get("shipping_total"), _num(_meta_value(meta_data, "trufusion_shipping_total"), 0.0))
     invoice_url = _build_invoice_url(order.get("id"), order.get("order_key"))
     first_shipping_line = (order.get("shipping_lines") or [None])[0] or {}
     raw_number = order.get("number")
@@ -2523,15 +2525,15 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
 
-    card_last4 = _meta_value(meta_data, "peppro_card_last4")
-    card_brand = _meta_value(meta_data, "peppro_card_brand")
+    card_last4 = _meta_value(meta_data, "trufusion_card_last4")
+    card_brand = _meta_value(meta_data, "trufusion_card_brand")
     if card_last4:
         payment_label = f"{card_brand or 'Card'} •••• {card_last4}"
     else:
         payment_label = order.get("payment_method_title") or order.get("payment_method")
 
     tax_total = _num(
-        _meta_value(meta_data, "peppro_tax_total"),
+        _meta_value(meta_data, "trufusion_tax_total"),
         _num(order.get("total_tax"), 0.0),
     )
     if tax_total <= 0:
@@ -2552,7 +2554,7 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     shipping_address = _map_address(order.get("shipping"))
     billing_address = _map_address(order.get("billing"))
     facility_pickup_recipient_name = _first_non_empty_text(
-        _meta_value(meta_data, "peppro_facility_pickup_recipient_name")
+        _meta_value(meta_data, "trufusion_facility_pickup_recipient_name")
     )
     if is_facility_pickup and facility_pickup_recipient_name:
         if shipping_address:
@@ -2568,7 +2570,7 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "status": order.get("status"),
         "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
         "taxTotal": tax_total,
-        "grandTotal": _num(_meta_value(meta_data, "peppro_grand_total"), _num(order.get("total"), 0.0)),
+        "grandTotal": _num(_meta_value(meta_data, "trufusion_grand_total"), _num(order.get("total"), 0.0)),
         "currency": order.get("currency") or "USD",
         "paymentMethod": payment_label,
         "paymentDetails": payment_label,
@@ -2613,7 +2615,7 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
             "wooCommerce": {
                 "wooOrderId": woo_order_id,
                 "wooOrderNumber": public_number or identifier,
-                "pepproOrderId": peppro_order_id,
+                "trufusionOrderId": trufusion_order_id,
                 "status": order.get("status"),
                 "invoiceUrl": invoice_url,
                 "shippingLine": first_shipping_line,
@@ -2630,7 +2632,7 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
             extra={
                 "raw_id": raw_id,
                 "raw_number": raw_number,
-                "peppro_order_id": peppro_order_id,
+                "trufusion_order_id": trufusion_order_id,
                 "mapped_id": mapped.get("id"),
                 "mapped_number": mapped.get("number"),
                 "mapped_woo_order_number": mapped.get("wooOrderNumber"),
@@ -2641,7 +2643,7 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         # Best-effort logging only; never block mapping.
         pass
 
-    if _is_truthy(_meta_value(meta_data, "peppro_refunded")):
+    if _is_truthy(_meta_value(meta_data, "trufusion_refunded")):
         mapped["status"] = "refunded"
         mapped["integrationDetails"]["wooCommerce"]["status"] = "refunded"
     return mapped
@@ -2770,7 +2772,7 @@ def fetch_order(woo_order_id: str) -> Optional[Dict[str, Any]]:
 
 def fetch_order_summary(woo_order_id: str) -> Dict[str, Any]:
     """
-    Fetch a single Woo order by id and map to PepPro order summary.
+    Fetch a single Woo order by id and map to TruFusionLabs order summary.
 
     Unlike `fetch_order()`, this returns a structured status that differentiates 404/not_found
     from transient errors so callers can safely reconcile local records.
@@ -2847,41 +2849,42 @@ def fetch_order_by_number(order_number: str, search_window: int = 25) -> Optiona
     return None
 
 
-def fetch_order_by_peppro_id(peppro_order_id: str, search_window: int = 25) -> Optional[Dict[str, Any]]:
+def fetch_order_by_trufusion_id(trufusion_order_id: str, search_window: int = 25) -> Optional[Dict[str, Any]]:
     """
-    Attempt to locate a Woo order via the `peppro_order_id` meta tag that we attach when creating orders.
+    Attempt to locate a Woo order via the `trufusion_order_id` meta tag that we attach when creating orders.
     """
-    if not peppro_order_id or not is_configured():
+    if not trufusion_order_id or not is_configured():
         return None
 
-    params = {
-        "per_page": max(1, min(search_window, 50)),
-        "orderby": "date",
-        "order": "desc",
-        "meta_key": "peppro_order_id",
-        "meta_value": str(peppro_order_id).strip(),
-    }
+    for meta_key in with_legacy_meta_keys("trufusion_order_id"):
+        params = {
+            "per_page": max(1, min(search_window, 50)),
+            "orderby": "date",
+            "order": "desc",
+            "meta_key": meta_key,
+            "meta_value": str(trufusion_order_id).strip(),
+        }
 
-    try:
-        payload = fetch_catalog("orders", params)
-    except IntegrationError as exc:  # pragma: no cover - network path
-        if getattr(exc, "status", None) == 404:
-            return None
-        raise
-    except Exception as exc:  # pragma: no cover
-        logger.error("Failed to search Woo order by peppro id", exc_info=True, extra={"pepproOrderId": peppro_order_id})
-        return None
-
-    if not isinstance(payload, list):
-        return None
-
-    for entry in payload:
-        if not isinstance(entry, dict):
-            continue
-        metadata = entry.get("meta_data") or []
-        for meta in metadata:
-            if not isinstance(meta, dict):
+        try:
+            payload = fetch_catalog("orders", params)
+        except IntegrationError as exc:  # pragma: no cover - network path
+            if getattr(exc, "status", None) == 404:
                 continue
-            if meta.get("key") == "peppro_order_id" and str(meta.get("value")) == str(peppro_order_id):
-                return entry
+            raise
+        except Exception as exc:  # pragma: no cover
+            logger.error("Failed to search Woo order by trufusion id", exc_info=True, extra={"trufusionOrderId": trufusion_order_id})
+            return None
+
+        if not isinstance(payload, list):
+            continue
+
+        for entry in payload:
+            if not isinstance(entry, dict):
+                continue
+            metadata = entry.get("meta_data") or []
+            for meta in metadata:
+                if not isinstance(meta, dict):
+                    continue
+                if meta.get("key") == meta_key and str(meta.get("value")) == str(trufusion_order_id):
+                    return entry
     return None

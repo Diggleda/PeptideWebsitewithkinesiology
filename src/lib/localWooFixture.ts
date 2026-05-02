@@ -27,7 +27,7 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
       image,
     }));
 
-    // Bulk tiers: try fixed rules first, then peppro_tier_*_price meta (absolute $); convert to percentage vs basePrice
+    // Bulk tiers: try fixed rules first, then trufusion_tier_*_price meta (absolute $); convert to percentage vs basePrice
     const bulkPricingTiers: BulkPricingTier[] = [];
     const metas = Array.isArray(p.meta_data) ? p.meta_data : [];
     const fixedRules = (p.tiered_pricing_fixed_rules as any[]) || [];
@@ -44,7 +44,7 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
       }
     }
     if (bulkPricingTiers.length === 0) {
-      const tierMeta = metas.filter((m: any) => String(m?.key || '').includes('peppro_tier_'));
+      const tierMeta = metas.filter((m: any) => String(m?.key || '').includes('trufusion_tier_'));
       for (const m of tierMeta) {
         const key = String(m.key || '');
         const val = Number(String(m.value || '').replace(/[^\d.]/g, ''));
@@ -70,8 +70,8 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
       originalPrice: undefined,
       rating: 5,
       reviews: 0,
-      image: image || resolveStaticAssetUrl('/PepPro_icon.png'),
-      images: gallery.length ? gallery : [image || resolveStaticAssetUrl('/PepPro_icon.png')],
+      image: image || resolveStaticAssetUrl('/Trufusionpeptides_icon.png'),
+      images: gallery.length ? gallery : [image || resolveStaticAssetUrl('/Trufusionpeptides_icon.png')],
       inStock: true,
       prescription: false,
       dosage: options.length ? `${options.length} options` : 'See details',

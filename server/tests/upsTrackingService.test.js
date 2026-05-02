@@ -95,7 +95,7 @@ test('fetchUpsTrackingStatus uses UPS OAuth once and normalizes live statuses', 
       merchantId: '',
       useCie: false,
       locale: 'en_US',
-      transactionSrc: 'peppro',
+      transactionSrc: 'trufusion',
       requestTimeoutMs: 15000,
     },
   };

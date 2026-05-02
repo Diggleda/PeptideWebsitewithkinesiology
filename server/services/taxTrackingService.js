@@ -3,6 +3,7 @@ const path = require('path');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
+const { withLegacyMetaKeys } = require('../config/brand');
 const { resolvePacificDayWindowUtc } = require('../utils/timeZone');
 
 const TAX_TRACKING_TTL_SECONDS = Math.max(
@@ -288,14 +289,15 @@ const parseWooDateMs = (value) => {
 
 const metaValue = (meta, key) => {
   if (!Array.isArray(meta)) return null;
-  const match = meta.find((entry) => entry && entry.key === key);
+  const lookup = withLegacyMetaKeys(key);
+  const match = meta.find((entry) => entry && lookup.includes(entry.key));
   return match ? match.value : null;
 };
 
 const resolveWooTaxTotal = (wooOrder) => {
   const metaData = Array.isArray(wooOrder?.meta_data) ? wooOrder.meta_data : [];
-  const metaTax = safeNumber(metaValue(metaData, 'peppro_tax_total'), 0);
-  if (metaTax > 0) return { taxTotal: Number(metaTax.toFixed(2)), taxSource: 'meta:peppro_tax_total' };
+  const metaTax = safeNumber(metaValue(metaData, 'trufusion_tax_total'), 0);
+  if (metaTax > 0) return { taxTotal: Number(metaTax.toFixed(2)), taxSource: 'meta:trufusion_tax_total' };
   const orderTax = safeNumber(wooOrder?.total_tax, 0);
   if (orderTax > 0) return { taxTotal: Number(orderTax.toFixed(2)), taxSource: 'order:total_tax' };
   const feeLines = Array.isArray(wooOrder?.fee_lines) ? wooOrder.fee_lines : [];
@@ -328,7 +330,7 @@ const fetchWooMetrics = async ({ startMs, endMs, type }) => {
       const status = String(wooOrder?.status || '').trim().toLowerCase();
       if (!['processing', 'completed'].includes(status)) continue;
       const metaData = Array.isArray(wooOrder?.meta_data) ? wooOrder.meta_data : [];
-      if (parseBoolean(metaValue(metaData, 'peppro_refunded')) || status === 'refunded') continue;
+      if (parseBoolean(metaValue(metaData, 'trufusion_refunded')) || status === 'refunded') continue;
 
       const createdAtMs = parseWooDateMs(
         wooOrder?.date_created_gmt || wooOrder?.date_created || wooOrder?.date,

@@ -218,7 +218,7 @@ test('exportProspectQuote freezes draft revisions before rendering pdf output', 
           renderCalls.push(quote);
           return {
           pdf: Buffer.from('%PDF-1.4 mock'),
-          filename: 'PepPro_Quote_Dr_One_1.pdf',
+          filename: 'TruFusion_Labs_Quote_Dr_One_1.pdf',
           diagnostics: {
             renderer: 'playwright_browser',
             totalMs: 18.7,
@@ -240,7 +240,7 @@ test('exportProspectQuote freezes draft revisions before rendering pdf output', 
       assert.equal(upserts.length, 1);
       assert.equal(upserts[0].status, 'exported');
       assert.match(result.pdf.toString('utf8'), /^%PDF/);
-      assert.equal(result.filename, 'PepPro_Quote_Dr_One_1.pdf');
+      assert.equal(result.filename, 'TruFusion_Labs_Quote_Dr_One_1.pdf');
       assert.equal(typeof result.diagnostics?.totalMs, 'number');
       assert.equal(typeof result.diagnostics?.accessMs, 'number');
       assert.equal(typeof result.diagnostics?.pdfMs, 'number');
@@ -287,7 +287,7 @@ test('exportProspectQuote uses the scoped prospect contact name for filename whe
       pdfService: {
         generateProspectQuotePdf: async (quote) => ({
           pdf: Buffer.from('%PDF-1.4 mock'),
-          filename: `PepPro_Quote_${quote?.quotePayloadJson?.prospect?.contactName}_${quote?.revisionNumber}.pdf`,
+          filename: `TruFusion_Labs_Quote_${quote?.quotePayloadJson?.prospect?.contactName}_${quote?.revisionNumber}.pdf`,
         }),
       },
     },
@@ -298,7 +298,7 @@ test('exportProspectQuote uses the scoped prospect contact name for filename whe
         user: { id: 'rep-1', role: 'sales_rep' },
       });
 
-      assert.equal(result.filename, 'PepPro_Quote_Example Lead_2.pdf');
+      assert.equal(result.filename, 'TruFusion_Labs_Quote_Example Lead_2.pdf');
     },
   );
 });

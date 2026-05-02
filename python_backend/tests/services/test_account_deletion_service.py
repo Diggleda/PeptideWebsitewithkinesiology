@@ -53,12 +53,12 @@ class AccountDeletionServiceTests(unittest.TestCase):
             ],
         )
 
-    def test_rewrite_mysql_json_field_reads_legacy_peppro_sidecar_payload(self) -> None:
+    def test_rewrite_mysql_json_field_reads_legacy_trufusion_sidecar_payload(self) -> None:
         executed = []
 
         def fake_decrypt(value, aad=None):
             if value == "legacy-payload" and aad == {
-                "table": "peppro_orders",
+                "table": "trufusion_orders",
                 "record_ref": "legacy-ref",
                 "field": "payload",
             }:
@@ -77,9 +77,9 @@ class AccountDeletionServiceTests(unittest.TestCase):
             patch.object(service, "decrypt_json", side_effect=fake_decrypt), \
             patch.object(service, "encrypt_json", side_effect=fake_encrypt):
             result = service._rewrite_mysql_json_field(
-                table_name="peppro_orders",
+                table_name="trufusion_orders",
                 field_name="payload",
-                label="peppro_orders.payload",
+                label="trufusion_orders.payload",
                 target_id="doctor-1",
                 replacement_id=service.DELETED_USER_ID,
                 legacy_fields=["payload_encrypted"],
@@ -91,10 +91,10 @@ class AccountDeletionServiceTests(unittest.TestCase):
             executed,
             [
                 (
-                    "UPDATE peppro_orders SET payload = %(value)s WHERE id = %(id)s",
+                    "UPDATE trufusion_orders SET payload = %(value)s WHERE id = %(id)s",
                     {
                         "id": "order-2",
-                        "value": f"cipher:peppro_orders:legacy-ref:{service.DELETED_USER_ID}",
+                        "value": f"cipher:trufusion_orders:legacy-ref:{service.DELETED_USER_ID}",
                     },
                 )
             ],

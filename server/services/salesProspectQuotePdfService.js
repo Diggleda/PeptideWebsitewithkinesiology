@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { env } = require('../config/env');
+const { BRAND } = require('../config/brand');
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -10,8 +11,8 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-let cachedPepProLogoDataUrl;
-let cachedPepProIconDataUrl;
+let cachedTruFusionLogoDataUrl;
+let cachedTruFusionIconDataUrl;
 let cachedWooSkuImageMap;
 const remoteImageDataUrlCache = new Map();
 const remoteImageDataUrlInflight = new Map();
@@ -51,6 +52,18 @@ const wooMediaProxyBaseUrl = String(
     || `http://127.0.0.1:${env?.port || 3001}`,
 ).trim().replace(/\/+$/, '');
 const WOO_MEDIA_PROXY_PATH_PATTERN = /\/woo\/media$/i;
+const WOO_MEDIA_PATH_PATTERN = /\/wp-content\//i;
+const WOO_STORE_HOSTS = new Set(
+  [normalizedWooStoreUrl, BRAND.shopUrl]
+    .map((value) => {
+      try {
+        return new URL(value).hostname.toLowerCase();
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean),
+);
 const QUOTE_PDF_IMAGE_FETCH_TIMEOUT_MS = (() => {
   const parsed = Number.parseInt(String(process.env.QUOTE_PDF_IMAGE_FETCH_TIMEOUT_MS || '').trim(), 10);
   if (Number.isFinite(parsed) && parsed >= 1000) {
@@ -82,11 +95,13 @@ const stripWooSizeSuffix = (raw) => {
 };
 
 const isWooStoreUrl = (candidate) => {
-  if (!candidate || !normalizedWooStoreUrl) {
+  if (!candidate) {
     return false;
   }
   try {
-    return new URL(candidate).hostname === new URL(normalizedWooStoreUrl).hostname;
+    const parsed = new URL(candidate);
+    const hostname = parsed.hostname.toLowerCase();
+    return WOO_STORE_HOSTS.has(hostname) || WOO_MEDIA_PATH_PATTERN.test(parsed.pathname);
   } catch {
     return false;
   }
@@ -148,11 +163,11 @@ const findStaticAssetPath = ({ preferredRelativePaths = [], matchTokens = [] }) 
 };
 
 const loadStaticAssetDataUrl = ({ cacheKey, preferredRelativePaths, matchTokens, fallbackType }) => {
-  if (cacheKey === 'logo' && cachedPepProLogoDataUrl !== undefined) {
-    return cachedPepProLogoDataUrl;
+  if (cacheKey === 'logo' && cachedTruFusionLogoDataUrl !== undefined) {
+    return cachedTruFusionLogoDataUrl;
   }
-  if (cacheKey === 'icon' && cachedPepProIconDataUrl !== undefined) {
-    return cachedPepProIconDataUrl;
+  if (cacheKey === 'icon' && cachedTruFusionIconDataUrl !== undefined) {
+    return cachedTruFusionIconDataUrl;
   }
 
   const assetPath = findStaticAssetPath({ preferredRelativePaths, matchTokens });
@@ -167,19 +182,19 @@ const loadStaticAssetDataUrl = ({ cacheKey, preferredRelativePaths, matchTokens,
   }
 
   if (cacheKey === 'logo') {
-    cachedPepProLogoDataUrl = dataUrl;
+    cachedTruFusionLogoDataUrl = dataUrl;
   } else if (cacheKey === 'icon') {
-    cachedPepProIconDataUrl = dataUrl;
+    cachedTruFusionIconDataUrl = dataUrl;
   }
   return dataUrl;
 };
 
-const getPepProLogoDataUrl = () => {
+const getTruFusionLogoDataUrl = () => {
   return loadStaticAssetDataUrl({
     cacheKey: 'logo',
     preferredRelativePaths: [
-      '../../public/PepPro_fulllogo.png',
-      '../../public/Peppro_fulllogo.png',
+      '../../public/turfusionlabsphysiciansportal.png',
+      '../../public/turfusionlabsphysiciansportal.png',
     ],
     matchTokens: ['pep', 'fulllogo'],
     fallbackType: 'image/png',
@@ -215,12 +230,12 @@ const extractImageSource = (value, visited = new Set()) => {
   return null;
 };
 
-const getPepProIconDataUrl = () => {
+const getTruFusionIconDataUrl = () => {
   return loadStaticAssetDataUrl({
     cacheKey: 'icon',
     preferredRelativePaths: [
-      '../../public/PepPro_icon.png',
-      '../../public/Peppro_icon.png',
+      '../../public/turfusionlabsphysiciansportal.png',
+      '../../public/turfusionlabsphysiciansportal.png',
     ],
     matchTokens: ['pep', 'icon'],
     fallbackType: 'image/png',
@@ -291,7 +306,7 @@ const buildQuoteFilename = (quote) => {
     || 'Prospect';
   const safeProspectName = sanitizeFilename(prospectName) || 'Prospect';
   const revision = Math.max(1, Math.floor(Number(quote?.revisionNumber) || 1));
-  return `PepPro_Quote_${safeProspectName}_${revision}.pdf`;
+  return `TruFusion_Labs_Quote_${safeProspectName}_${revision}.pdf`;
 };
 
 const findExistingExecutablePath = (candidates = []) => candidates
@@ -511,8 +526,8 @@ const renderQuoteHtml = async (quote) => {
   const prospect = payload?.prospect || {};
   const salesRep = payload?.salesRep || {};
   const items = Array.isArray(payload?.items) ? payload.items : [];
-  const logoDataUrl = getPepProLogoDataUrl();
-  const fallbackItemImage = getPepProIconDataUrl();
+  const logoDataUrl = getTruFusionLogoDataUrl();
+  const fallbackItemImage = getTruFusionIconDataUrl();
   const title = quote?.title || payload?.title || 'Quote';
   const currency = quote?.currency || payload?.currency || 'USD';
   const notes = typeof payload?.notes === 'string' ? payload.notes.trim() : '';
@@ -747,8 +762,8 @@ const renderQuoteHtml = async (quote) => {
       <div class="hero">
         <div class="hero-brand">
           ${logoDataUrl
-            ? `<img class="brand-logo" src="${logoDataUrl}" alt="PepPro" />`
-            : '<div class="brand">PepPro</div>'}
+            ? `<img class="brand-logo" src="${logoDataUrl}" alt="TruFusionLabs" />`
+            : '<div class="brand">TruFusionLabs</div>'}
           <div class="title">${escapeHtml(title)}</div>
           <div class="subtle">Revision R${Math.max(1, Math.floor(Number(quote?.revisionNumber) || 1))}</div>
         </div>
@@ -766,7 +781,7 @@ const renderQuoteHtml = async (quote) => {
         <div class="meta-card">
           <div class="meta-label">Sales Rep</div>
           <div class="meta-value">
-            <div>${escapeHtml(salesRep?.name || 'PepPro')}</div>
+            <div>${escapeHtml(salesRep?.name || 'TruFusionLabs')}</div>
             ${salesRep?.email ? `<div>${escapeHtml(salesRep.email)}</div>` : ''}
             ${salesRep?.phone ? `<div>${escapeHtml(salesRep.phone)}</div>` : ''}
           </div>
@@ -800,7 +815,7 @@ const renderQuoteHtml = async (quote) => {
       </div>
 
       <div class="footer">
-        This quote is a sales summary generated by PepPro. Shipping, tax, and payment terms are excluded from this revision.
+        This quote is a sales summary generated by TruFusionLabs. Shipping, tax, and payment terms are excluded from this revision.
       </div>
     </div>
   </body>

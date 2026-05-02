@@ -1,8 +1,8 @@
 export const RESEARCH_SUPPLY_DISCLOSURES = [
-  'PepPro provides research materials only. Products are not intended for human consumption.',
-  'PepPro does not provide prescriptions, treatment, dosing, therapy, or patient instructions.',
+  'TruFusionLabs provides research materials only. Products are not intended for human consumption.',
+  'TruFusionLabs does not provide prescriptions, treatment, dosing, therapy, or patient instructions.',
   'Physicians are responsible for any independent research protocols.',
-  'PepPro does not direct or control physician activities.',
+  'TruFusionLabs does not direct or control physician activities.',
 ];
 
 const normalizeToken = (value?: string | null) => {
@@ -89,4 +89,4 @@ export const productMatchesAllowedSku = (
 export const physicianCompensationDisclosure = (markupPercent?: number | null) =>
   Number(markupPercent || 0) > 0
     ? 'Your physician receives compensation from this transaction.'
-    : 'Your physician does not receive compensation from this PepPro transaction.';
+    : 'Your physician does not receive compensation from this TruFusionLabs transaction.';

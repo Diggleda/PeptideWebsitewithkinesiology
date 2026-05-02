@@ -71,7 +71,7 @@ const getHealth = (_req, res) => {
 const getHelp = (_req, res) => {
   const payload = {
     ok: true,
-    service: 'PepPro Backend',
+    service: 'TruFusionLabs Backend',
     build: env.backendBuild,
     integrations: {
       wooCommerce: {

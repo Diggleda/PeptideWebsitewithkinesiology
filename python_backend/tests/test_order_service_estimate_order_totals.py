@@ -169,7 +169,7 @@ class EstimateOrderTotalsTests(unittest.TestCase):
                 user_id="admin-1",
                 items=[{"productId": 101, "price": 25.0, "quantity": 2}],
                 shipping_address={
-                    "name": "PepPro Facility Pickup",
+                    "name": "TruFusionLabs Facility Pickup",
                     "addressLine1": "640 S Grand Ave",
                     "addressLine2": "Unit #107",
                     "city": "Santa Ana",

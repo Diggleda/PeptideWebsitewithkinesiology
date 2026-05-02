@@ -164,11 +164,11 @@ const env = {
   },
   passkeys: {
     rpId: process.env.PASSKEY_RP_ID || '',
-    rpName: process.env.PASSKEY_RP_NAME || 'PepPro',
+    rpName: process.env.PASSKEY_RP_NAME || 'TruFusionLabs',
     origins: parseList(process.env.PASSKEY_ALLOWED_ORIGINS || ''),
   },
   quotes: {
-    sourceUrl: process.env.QUOTES_SOURCE_URL || 'https://port.peppro.net/api/integrations/google-sheets/quotes/quotes.php',
+    sourceUrl: process.env.QUOTES_SOURCE_URL || 'https://port.trufusionlabs.com/api/integrations/google-sheets/quotes/quotes.php',
     secret: process.env.QUOTES_WEBHOOK_SECRET || process.env.GOOGLE_SHEETS_WEBHOOK_SECRET || '',
   },
   googleSheets: {
@@ -276,7 +276,7 @@ const env = {
     merchantId: process.env.UPS_MERCHANT_ID || '',
     useCie: parseBooleanEnv(process.env.UPS_USE_CIE) === true,
     locale: process.env.UPS_LOCALE || 'en_US',
-    transactionSrc: process.env.UPS_TRANSACTION_SRC || 'peppro',
+    transactionSrc: process.env.UPS_TRANSACTION_SRC || 'trufusion',
     requestTimeoutMs: toNumber(process.env.UPS_REQUEST_TIMEOUT_MS, 15_000),
   },
   upsSync: {
@@ -326,7 +326,7 @@ env.mysql = {
   port: toNumber(process.env.MYSQL_PORT, 3306),
   user: process.env.MYSQL_USER || 'root',
   password: process.env.MYSQL_PASSWORD || '',
-  database: process.env.MYSQL_DATABASE || 'peppro',
+  database: process.env.MYSQL_DATABASE || 'trufusion',
   connectionLimit: toNumber(process.env.MYSQL_CONNECTION_LIMIT, 8),
   ssl: process.env.MYSQL_SSL === 'true',
   sslRequireNegotiated: process.env.MYSQL_SSL_ENFORCE === 'true',

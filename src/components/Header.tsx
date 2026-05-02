@@ -13,6 +13,7 @@ import clsx from 'clsx';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { resolveStaticAssetUrl, withStaticAssetStamp } from '../lib/assetUrl';
+import { withLegacyMetaKeys } from '../lib/legacyBrandCompatibility';
 import { formatOrderStatusLabel } from '../lib/orderStatusLabels.mjs';
 import { shouldDisplayShippingStatusForOrder } from '../lib/orderStatusPrecedence.mjs';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
@@ -26,7 +27,7 @@ import {
 
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const LOGIN_BACKEND_DOWN_TOAST_ID = 'login-backend-down';
-const LOGIN_BACKEND_DOWN_MESSAGE = 'PepPro is unavailable right now. Please try again in a minute.';
+const LOGIN_BACKEND_DOWN_MESSAGE = 'TruFusionLabs is unavailable right now. Please try again in a minute.';
 const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (value === true || value === false) return value;
   if (value == null) return null;
@@ -436,7 +437,7 @@ interface AccountOrderSummary {
   notes?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  source: 'local' | 'woocommerce' | 'peppro';
+  source: 'local' | 'woocommerce' | 'trufusion';
   doctorName?: string | null;
   doctorEmail?: string | null;
   lineItems?: AccountOrderLineItem[];
@@ -567,7 +568,7 @@ const resolveOrderPlacedAt = (order?: AccountOrderSummary | null): string | null
   const sourceToken = String((order as any)?.source || '').trim().toLowerCase();
   const isMysqlSource =
     sourceToken === 'mysql'
-    || sourceToken === 'peppro'
+    || sourceToken === 'trufusion'
     || sourceToken === 'local'
     || Boolean((order as any)?.created_at);
   if (!isMysqlSource) return null;
@@ -801,7 +802,7 @@ const normalizeOrderAddressComparisonPart = (value?: string | null) => {
 };
 
 const isFacilityPickupRecipientPlaceholder = (value?: string | null) =>
-  normalizeOrderAddressComparisonPart(value) === 'peppro facility pickup';
+  normalizeOrderAddressComparisonPart(value) === 'trufusion facility pickup';
 
 const isFacilityPickupAddress = (address?: AccountOrderAddress | null) => {
   if (!address) return false;
@@ -814,7 +815,7 @@ const isFacilityPickupAddress = (address?: AccountOrderAddress | null) => {
   const state = normalizeOrderAddressComparisonPart(address.state);
   const postalCode = normalizeOrderAddressComparisonPart(address.postalCode);
 
-  const matchesName = name === 'peppro facility pickup';
+  const matchesName = name === 'trufusion facility pickup';
   const matchesStreet =
     line1 === '640 s grand ave' || combinedLine.includes('640 s grand ave');
   const matchesUnit =
@@ -917,13 +918,16 @@ const resolveFacilityPickupRecipientNameFromOrder = (
   const readMetaValue = (source: unknown, key: string): string | null => {
     const parsed = parseMaybeJson(source);
     if (!parsed) return null;
+    const keys = withLegacyMetaKeys(key);
     if (Array.isArray(parsed)) {
-      const match = parsed.find((entry: any) => entry?.key === key);
+      const match = parsed.find((entry: any) => keys.includes(String(entry?.key || '')));
       return typeof match?.value === 'string' ? match.value : null;
     }
     if (typeof parsed === 'object') {
       const obj = parsed as Record<string, any>;
-      if (typeof obj[key] === 'string') return obj[key];
+      for (const candidateKey of keys) {
+        if (typeof obj[candidateKey] === 'string') return obj[candidateKey];
+      }
       return (
         readMetaValue(obj.meta_data, key) ||
         readMetaValue(obj.metaData, key) ||
@@ -961,9 +965,9 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     billingAddress?.order_recipient_name,
     billingAddress?.pickupRecipientName,
     billingAddress?.pickup_recipient_name,
-    readMetaValue(integrations, 'peppro_facility_pickup_recipient_name'),
-    readMetaValue((integrations as any)?.wooCommerce, 'peppro_facility_pickup_recipient_name'),
-    readMetaValue((integrations as any)?.woocommerce, 'peppro_facility_pickup_recipient_name'),
+    readMetaValue(integrations, 'trufusion_facility_pickup_recipient_name'),
+    readMetaValue((integrations as any)?.wooCommerce, 'trufusion_facility_pickup_recipient_name'),
+    readMetaValue((integrations as any)?.woocommerce, 'trufusion_facility_pickup_recipient_name'),
     shippingAddress?.fullName,
     shippingAddress?.name,
     billingAddress?.fullName,
@@ -2414,7 +2418,7 @@ export function Header({
         updateApiQuality({ ok: false });
       }
     };
-    window.addEventListener('peppro:api-reachability', apiListener as any);
+    window.addEventListener('trufusion:api-reachability', apiListener as any);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     const conn = (navigator as any)?.connection;
@@ -2438,7 +2442,7 @@ export function Header({
       if (throughputAbort) throughputAbort.abort();
       window.removeEventListener('online', updateFromConnection);
       window.removeEventListener('offline', updateFromConnection);
-      window.removeEventListener('peppro:api-reachability', apiListener as any);
+      window.removeEventListener('trufusion:api-reachability', apiListener as any);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (conn && typeof conn.removeEventListener === 'function') {
         conn.removeEventListener('change', updateFromConnection);
@@ -3480,12 +3484,12 @@ export function Header({
       handleLogoutClick();
     };
     window.addEventListener(
-      "peppro:logout-with-thanks",
+      "trufusion:logout-with-thanks",
       handleLogoutWithThanks as EventListener,
     );
     return () => {
       window.removeEventListener(
-        "peppro:logout-with-thanks",
+        "trufusion:logout-with-thanks",
         handleLogoutWithThanks as EventListener,
       );
     };
@@ -3540,9 +3544,9 @@ export function Header({
       setWelcomeOpen(false);
       setLoginOpen(false);
     };
-    window.addEventListener('peppro:close-dialogs', handleGlobalClose);
+    window.addEventListener('trufusion:close-dialogs', handleGlobalClose);
     return () => {
-      window.removeEventListener('peppro:close-dialogs', handleGlobalClose);
+      window.removeEventListener('trufusion:close-dialogs', handleGlobalClose);
     };
   }, []);
 
@@ -3552,9 +3556,9 @@ export function Header({
       const custom = event as CustomEvent<{ open?: boolean }>;
       setLegalModalOpen(Boolean(custom.detail?.open));
     };
-    window.addEventListener('peppro:legal-state', handleLegalState);
+    window.addEventListener('trufusion:legal-state', handleLegalState);
     return () => {
-      window.removeEventListener('peppro:legal-state', handleLegalState);
+      window.removeEventListener('trufusion:legal-state', handleLegalState);
     };
   }, []);
 
@@ -4093,7 +4097,7 @@ export function Header({
     try {
       const api = await import('../services/api');
       const { blob, filename } = await api.ordersAPI.downloadInvoice(resolvedId);
-      triggerBrowserDownload(blob, filename || `PepPro_Invoice_${resolvedId}.pdf`);
+      triggerBrowserDownload(blob, filename || `TruFusion_Labs_Invoice_${resolvedId}.pdf`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to download invoice right now.';
       toast.error(message);
@@ -4114,7 +4118,7 @@ export function Header({
           (order.integrationDetails as any)?.wooCommerce ||
           (order.integrationDetails as any)?.woocommerce,
         );
-        return source === 'woocommerce' || source === 'peppro' || source === 'local' || hasWooIntegration;
+        return source === 'woocommerce' || source === 'trufusion' || source === 'local' || hasWooIntegration;
       })
       .filter((order) => {
         if (showCanceledOrders) {
@@ -4769,7 +4773,7 @@ export function Header({
     storeAccountTabScrollPosition();
     setLegalModalOpen(true);
     window.dispatchEvent(
-      new CustomEvent('peppro:open-legal', {
+      new CustomEvent('trufusion:open-legal', {
         detail: { key, preserveDialogs: true },
       }),
     );
@@ -5848,7 +5852,7 @@ export function Header({
     >
       <h3 className="text-base font-semibold text-slate-800">Research</h3>
       <p className="text-sm text-slate-600">
-        This section is currently in development. Soon you&apos;ll be able to access research tools and resources here to share your findings securely and anonymously with the PepPro network of physicians.
+        This section is currently in development. Soon you&apos;ll be able to access research tools and resources here to share your findings securely and anonymously with the TruFusionLabs network of physicians.
       </p>
     </div>
   );
@@ -5989,7 +5993,7 @@ export function Header({
     const readMetaValue = (meta: any, keys: string[]) => {
       if (!Array.isArray(meta)) return '';
       const normalizedKeys = new Set(
-        keys.map((key) => String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')),
+        withLegacyMetaKeys(keys).map((key) => String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')),
       );
       const match = meta.find((entry: any) => {
         const key = String(entry?.key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -6017,13 +6021,13 @@ export function Header({
         'delegate_proposal_token',
         'proposal_token',
         'delegation_token',
-        'peppro_delegate_proposal_token',
+        'trufusion_delegate_proposal_token',
       ]),
       readMetaValue(wooPayload?.meta_data, [
         'delegate_proposal_token',
         'proposal_token',
         'delegation_token',
-        'peppro_delegate_proposal_token',
+        'trufusion_delegate_proposal_token',
       ]),
     ];
     const delegateTokens = Array.from(
@@ -6260,7 +6264,7 @@ export function Header({
           (order.integrationDetails as any)?.wooCommerce ||
           (order.integrationDetails as any)?.woocommerce,
         );
-        return source === 'woocommerce' || source === 'peppro' || source === 'local' || hasWooIntegration;
+        return source === 'woocommerce' || source === 'trufusion' || source === 'local' || hasWooIntegration;
       })
       .filter((order) => {
         const status = String(order.status || '').toLowerCase().trim();
@@ -6385,13 +6389,13 @@ export function Header({
                 : [];
             const findWooMetaValue = (key: string) => {
               if (!key) return null;
-              const normalizedKey = String(key).trim().toLowerCase();
+              const normalizedKeys = withLegacyMetaKeys(key).map((entry) => String(entry).trim().toLowerCase());
               const match = Array.isArray(wooMeta)
-                ? wooMeta.find((entry: any) => String(entry?.key || '').trim().toLowerCase() === normalizedKey)
+                ? wooMeta.find((entry: any) => normalizedKeys.includes(String(entry?.key || '').trim().toLowerCase()))
                 : null;
               return match?.value ?? null;
             };
-            const discountCodeAmountFromWoo = findWooMetaValue('peppro_discount_code_amount');
+            const discountCodeAmountFromWoo = findWooMetaValue('trufusion_discount_code_amount');
             const discountCodeAmount = Math.abs(
               parseWooMoney(
                 (order as any).discountCodeAmount,
@@ -6710,10 +6714,10 @@ export function Header({
 	              <p>
 	                Support:{' '}
 	                <a
-	                  href="mailto:support@peppro.net"
+	                  href="mailto:support@trufusionlabs.com"
 	                  className="underline hover:text-[rgb(95,179,249)]"
 	                >
-	                  support@peppro.net
+	                  support@trufusionlabs.com
 	                </a>
 	              </p>
 	            </div>
@@ -6846,14 +6850,14 @@ export function Header({
         : [];
     const findWooMetaValue = (key: string) => {
       if (!key) return null;
-      const normalizedKey = String(key).trim().toLowerCase();
+      const normalizedKeys = withLegacyMetaKeys(key).map((entry) => String(entry).trim().toLowerCase());
       const match = Array.isArray(wooMeta)
-        ? wooMeta.find((entry: any) => String(entry?.key || '').trim().toLowerCase() === normalizedKey)
+        ? wooMeta.find((entry: any) => normalizedKeys.includes(String(entry?.key || '').trim().toLowerCase()))
         : null;
       return match?.value ?? null;
     };
-    const discountCodeFromWoo = findWooMetaValue('peppro_discount_code');
-    const discountCodeAmountFromWoo = findWooMetaValue('peppro_discount_code_amount');
+    const discountCodeFromWoo = findWooMetaValue('trufusion_discount_code');
+    const discountCodeAmountFromWoo = findWooMetaValue('trufusion_discount_code_amount');
     const discountCode = String(
       (selectedOrder as any).discountCode ?? discountCodeFromWoo ?? '',
     )
@@ -7281,7 +7285,7 @@ export function Header({
 		            {typeof selectedOrder.notes === 'string' && selectedOrder.notes.trim().length > 0 && (
 		              <div className="space-y-2">
 		                <h4 className="text-base font-semibold text-slate-900">
-		                  Notes <span className="label-paren">(from PepPro)</span>
+		                  Notes <span className="label-paren">(from TruFusionLabs)</span>
 		                </h4>
 		                <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
 		                  <p className="text-sm text-slate-700 whitespace-pre-wrap">
@@ -7379,7 +7383,7 @@ export function Header({
     || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegatePreviewSecondaryColor = hexToRgbCss(delegatePreviewSecondaryHex);
   const delegatePreviewTranslucentSecondary = hexToRgbaCss(delegatePreviewSecondaryHex, 0.18);
-  const delegateSupportEmail = 'support@peppro.net';
+  const delegateSupportEmail = 'support@trufusionlabs.com';
   const delegateSalesRepEmail = String(localUser?.salesRep?.email || '').trim();
   const hasDelegateSalesRepEmail = delegateSalesRepEmail.length > 0;
   const delegateFunnelStageData = DELEGATE_LINK_FUNNEL_STAGES.map((stage) => ({
@@ -7481,7 +7485,7 @@ export function Header({
             textDecorationColor: 'rgb(95,179,249)',
             textUnderlineOffset: '2px',
           }}
-          onClick={() => window.dispatchEvent(new CustomEvent('peppro:open-bug-report', {
+          onClick={() => window.dispatchEvent(new CustomEvent('trufusion:open-bug-report', {
             detail: { source: 'delegate_link' },
           }))}
         >
@@ -7723,7 +7727,7 @@ export function Header({
 	                onChange={(event) => setPatientLinkTermsAccepted(event.target.checked)}
 	              />
 	              <label htmlFor="delegate-link-terms" className="text-sm text-slate-700 leading-snug flex-1 min-w-0">
-	                I certify that I am {localUser?.name || user?.name || 'the licensed physician for this account'}, and I agree to PepPro&apos;s{' '}
+	                I certify that I am {localUser?.name || user?.name || 'the licensed physician for this account'}, and I agree to TruFusionLabs&apos;s{' '}
 	                <button
 	                  type="button"
 	                  className="legal-inline-link"
@@ -7797,7 +7801,7 @@ export function Header({
 	                          typeof localUser?.delegateLogoUrl === 'string' &&
 	                          localUser.delegateLogoUrl.trim().length > 0
 	                            ? localUser.delegateLogoUrl
-	                            : withStaticAssetStamp('/PepPro_fulllogo.png')
+	                            : withStaticAssetStamp('/turfusionlabsphysiciansportal.png')
 	                        }
 	                        alt="Delegate header logo preview"
 	                        className="relative z-[1] flex-shrink-0"
@@ -7869,7 +7873,7 @@ export function Header({
 	              <p className="text-sm font-semibold text-slate-900 truncate">
 	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
 	                  ? 'Custom logo set'
-	                  : 'Using PepPro logo'}
+	                  : 'Using TruFusionLabs logo'}
 	              </p>
 	              <p className="text-xs text-slate-600">Max ~5MB. Stored on your account (we resize to fit the header).</p>
 	            </div>
@@ -8817,7 +8821,7 @@ export function Header({
           </DialogHeader>
 	          <div className="space-y-4 px-6 py-5">
 	            <p className="text-sm leading-6 text-slate-700">
-	              By deleting your account, you understand that all of your data stored within PepPro databases will be lost except anything publically available to the network on PepPro&apos;s research services or otherwise. For those publications, it is your responsibility to fascilitate closure, and if you need further assistance after account suspension contact support@peppro.net.
+	              By deleting your account, you understand that all of your data stored within TruFusionLabs databases will be lost except anything publically available to the network on TruFusionLabs&apos;s research services or otherwise. For those publications, it is your responsibility to fascilitate closure, and if you need further assistance after account suspension contact support@trufusionlabs.com.
 	            </p>
 	            <div className="flex justify-end gap-3">
 	              <Button
@@ -8892,7 +8896,7 @@ export function Header({
           </VisuallyHidden>
           <div className="px-8 py-10 text-center sm:px-10 sm:py-16">
             <p className="text-base leading-relaxed" style={{ color: secondaryColor }}>
-              Thank you for being a partner of ours and a joy to those around you. We at PepPro wish you a great rest
+              Thank you for being a partner of ours and a joy to those around you. We at TruFusionLabs wish you a great rest
               of your day and will be here when you need us!
 	            </p>
 	          </div>
@@ -8935,8 +8939,8 @@ export function Header({
 	              </DialogTitle>
 	              <DialogDescription>
 	                {authMode === 'login'
-	                  ? 'Login to enter your PepPro account.'
-	                  : 'Create your PepPro physician account to access PepPro.'}
+	                  ? 'Login to enter your TruFusionLabs account.'
+	                  : 'Create your TruFusionLabs physician account to access TruFusionLabs.'}
 	              </DialogDescription>
 	              {authMode === 'signup' && (
 	                <p className="text-base leading-snug" style={{ color: secondaryColor }}>
@@ -9040,7 +9044,7 @@ export function Header({
                 </Button>
               </form>
               <p className="text-center text-sm text-gray-600">
-                New to PepPro?{' '}
+                New to TruFusionLabs?{' '}
                 <button
                   type="button"
                   onClick={() => setAuthMode('signup')}
@@ -9243,7 +9247,7 @@ export function Header({
             <div className="flex flex-col gap-1">
               <h3 className="text-base font-semibold text-slate-800">Track an order</h3>
               <p className="text-sm text-slate-600">
-                Enter your PepPro order ID and email. We&apos;ll email you the latest fulfillment update.
+                Enter your TruFusionLabs order ID and email. We&apos;ll email you the latest fulfillment update.
               </p>
             </div>
             <form autoComplete="off" className="grid gap-3 sm:grid-cols-2" onSubmit={handleTrackOrder}>
@@ -9333,10 +9337,10 @@ export function Header({
 	                      delegateMode
 	                        ? ((typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
 	                          ? delegateLogoUrl
-	                          : withStaticAssetStamp('/PepPro_fulllogo.png'))
-	                        : withStaticAssetStamp('/PepPro_fulllogo.png')
+	                          : withStaticAssetStamp('/turfusionlabsphysiciansportal.png'))
+	                        : withStaticAssetStamp('/turfusionlabsphysiciansportal.png')
 		                    }
-	                    alt={delegateMode ? 'Physician logo' : 'PepPro logo'}
+	                    alt={delegateMode ? 'Physician logo' : 'TruFusionLabs logo'}
 		                    className="relative z-[1] flex-shrink-0"
 		                    style={{
 		                      display: 'block',

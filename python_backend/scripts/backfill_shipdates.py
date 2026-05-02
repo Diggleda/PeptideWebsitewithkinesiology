@@ -15,7 +15,7 @@ from python_backend.integrations import ship_station
 from python_backend.logging_config import configure_logging
 from python_backend.services import configure_services
 
-LOGGER = logging.getLogger("peppro.backfill_shipdates")
+LOGGER = logging.getLogger("trufusion.backfill_shipdates")
 
 
 def _strip_wrapping_quotes(value: str) -> str:
@@ -34,7 +34,7 @@ def _load_setenv_from_htaccess() -> Dict[str, str]:
     repo_root = Path(__file__).resolve().parents[2]
     candidates = [
         repo_root / "public_html" / ".htaccess",
-        repo_root / "server" / "php" / "public_html" / "port.peppro.net" / ".htaccess",
+        repo_root / "server" / "php" / "public_html" / "port.trufusionlabs.com" / ".htaccess",
     ]
 
     for path in candidates:
@@ -257,11 +257,11 @@ def _patch_payload(payload_raw: Any, ship_info: Dict[str, Any]) -> Optional[str]
 
 def _fetch_candidates(table: str, limit: int, offset: int, *, force: bool = False) -> List[Dict[str, Any]]:
     shipped_at_filter = "" if force else "AND shipped_at IS NULL"
-    if table == "peppro_orders":
+    if table == "trufusion_orders":
         return mysql_client.fetch_all(
             f"""
             SELECT id, woo_order_id, shipstation_order_id, status, payload
-            FROM peppro_orders
+            FROM trufusion_orders
             WHERE LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')) IN ('shipped', 'completed')
               {shipped_at_filter}
             ORDER BY created_at DESC
@@ -301,10 +301,10 @@ def _apply_update(
 
     payload_next = _patch_payload(payload_raw, ship_info)
 
-    if table == "peppro_orders":
+    if table == "trufusion_orders":
         mysql_client.execute(
             """
-            UPDATE peppro_orders
+            UPDATE trufusion_orders
             SET shipped_at = %(shipped_at)s,
                 payload = CASE
                   WHEN %(payload)s IS NULL THEN payload
@@ -365,9 +365,9 @@ def run(*, apply: bool, limit: int, offset: int, sleep_ms: int, require_tracking
     if not ship_station.is_configured():
         raise RuntimeError("ShipStation is not configured. Set SHIPSTATION credentials first.")
 
-    tables = [table for table in ("peppro_orders", "orders") if _table_exists(table)]
+    tables = [table for table in ("trufusion_orders", "orders") if _table_exists(table)]
     if not tables:
-        raise RuntimeError("Neither peppro_orders nor orders table exists in this database.")
+        raise RuntimeError("Neither trufusion_orders nor orders table exists in this database.")
 
     for table in tables:
         _ensure_shipped_at_column(table)

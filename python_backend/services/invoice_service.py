@@ -79,7 +79,7 @@ def _address_lines(addr: Optional[Dict[str, Any]]) -> List[str]:
 
 def _invoice_filename(order_number: str) -> str:
     safe = "".join([c for c in (order_number or "").strip() if c.isalnum() or c in ("-", "_")]) or "order"
-    return f"PepPro_Invoice_{safe}.pdf"
+    return f"TruFusion_Labs_Invoice_{safe}.pdf"
 
 
 def _pdf_escape_text(value: str) -> str:
@@ -205,7 +205,7 @@ def build_invoice_pdf(
     grand_total = _as_float(mapped_summary.get("grandTotal"), _as_float(woo_order.get("total"), subtotal + shipping_total + tax_total))
 
     lines: List[str] = []
-    lines.append("PepPro Invoice")
+    lines.append("TruFusionLabs Invoice")
     lines.append("")
     if invoice_date:
         lines.append(f"Date: {invoice_date}")

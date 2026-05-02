@@ -33,7 +33,7 @@ const runEnvModule = ({ cwd, extraEnv = {} }) =>
   );
 
 test('production ignores repo .env fallback files', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peppro-env-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trufusion-env-'));
   fs.writeFileSync(path.join(tempDir, '.env'), 'PORT=9999\n');
 
   const result = runEnvModule({ cwd: tempDir });
@@ -44,7 +44,7 @@ test('production ignores repo .env fallback files', () => {
 });
 
 test('production rejects DOTENV_CONFIG_PATH inside the working tree', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peppro-env-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trufusion-env-'));
   const envFile = path.join(tempDir, 'peppr-api.env');
   fs.writeFileSync(envFile, 'PORT=9999\n');
 
@@ -60,7 +60,7 @@ test('production rejects DOTENV_CONFIG_PATH inside the working tree', () => {
 });
 
 test('production requires MYSQL_SSL when MySQL is enabled', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peppro-env-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trufusion-env-'));
 
   const result = runEnvModule({
     cwd: tempDir,
@@ -77,7 +77,7 @@ test('production requires MYSQL_SSL when MySQL is enabled', () => {
 });
 
 test('production allows localhost MySQL without MYSQL_SSL', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peppro-env-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trufusion-env-'));
 
   const result = runEnvModule({
     cwd: tempDir,

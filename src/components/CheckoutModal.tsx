@@ -124,7 +124,7 @@ type ShippingAddress = {
 
 const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup';
 const FACILITY_PICKUP_ADDRESS: ShippingAddress = {
-  name: 'PepPro Facility Pickup',
+  name: 'TruFusionLabs Facility Pickup',
   addressLine1: '640 S Grand Ave',
   addressLine2: 'Unit #107',
   city: 'Santa Ana',
@@ -523,8 +523,8 @@ export function CheckoutModal({
       const custom = event as CustomEvent<{ open?: boolean }>;
       setLegalModalOpen(Boolean(custom.detail?.open));
     };
-    window.addEventListener('peppro:legal-state', handler);
-    return () => window.removeEventListener('peppro:legal-state', handler);
+    window.addEventListener('trufusion:legal-state', handler);
+    return () => window.removeEventListener('trufusion:legal-state', handler);
   }, []);
   const storeScrollPosition = useCallback(() => {
     if (checkoutScrollRef.current) {
@@ -547,7 +547,7 @@ export function CheckoutModal({
   const openLegalDocument = useCallback((key: 'terms' | 'shipping' | 'privacy') => {
     storeScrollPosition();
     setLegalModalOpen(true);
-    window.dispatchEvent(new CustomEvent('peppro:open-legal', { detail: { key, preserveDialogs: true } }));
+    window.dispatchEvent(new CustomEvent('trufusion:open-legal', { detail: { key, preserveDialogs: true } }));
   }, [storeScrollPosition]);
 
   const resolvedPricingMode: PricingMode = pricingMode ?? 'wholesale';
@@ -1303,8 +1303,8 @@ export function CheckoutModal({
 	      const transferSuccessMessage = (() => {
 	        if (isZelle) {
 	          return normalizedOrderNumber
-	            ? `We received your order! Please Zelle support@peppro.net with the memo 'Order #${normalizedOrderNumber}'. Instructions to follow in an email.`
-	            : `We received your order! Please Zelle support@peppro.net. Instructions to follow in an email.`;
+	            ? `We received your order! Please Zelle support@trufusionlabs.com with the memo 'Order #${normalizedOrderNumber}'. Instructions to follow in an email.`
+	            : `We received your order! Please Zelle support@trufusionlabs.com. Instructions to follow in an email.`;
 	        }
 	        if (isBankTransfer) {
 	          return 'We received your order! An email will follow with Direct Bank Trasnfer (ACH) instructions.';
@@ -1876,7 +1876,7 @@ export function CheckoutModal({
                                 Facility Pickup
                               </label>
                               <span className="text-xs text-slate-600">
-                                Use PepPro&apos;s facility address and skip shipping rates
+                                Use TruFusionLabs&apos;s facility address and skip shipping rates
                               </span>
                             </div>
                           </div>
@@ -2498,7 +2498,7 @@ export function CheckoutModal({
 	                    <>
 	                      {paymentMethod === 'zelle' ? (
 	                        <p className="mt-2 text-[13px] text-slate-700">
-	                          Send Zelle to <span className="font-mono">support@peppro.net</span> with memo:{' '}
+	                          Send Zelle to <span className="font-mono">support@trufusionlabs.com</span> with memo:{' '}
 	                          <span className="font-mono">({placedOrderNumber ? `Order #${placedOrderNumber}` : '#order number'})</span>. We will resend Zelle
 	                          instructions to{' '}
 	                          {typeof customerEmail === 'string' && customerEmail.trim().length > 0 ? (
@@ -2521,7 +2521,7 @@ export function CheckoutModal({
 	                        {paymentMethod === 'zelle'
 	                          ? 'Ensure your bank supports Zelle and that your Zelle account is set up and ready.'
 	                          : 'Include your order number in the payment memo/notes (we’ll show it here after you place the order).'}{' '}
-                          Expect an email to arrive in your inbox within a minute. If you don’t see it, please check your spam/junk folder. If you still can’t find it, contact us at <span className="font-mono">support@peppro.net.</span>
+                          Expect an email to arrive in your inbox within a minute. If you don’t see it, please check your spam/junk folder. If you still can’t find it, contact us at <span className="font-mono">support@trufusionlabs.com.</span>
                         </p>
 	                    </>
 	                  )}
@@ -2620,15 +2620,15 @@ export function CheckoutModal({
 	                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
 	                  {isDelegateFlow ? (
 	                    <>
-	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Physician'}), and I agree to PepPro&apos;s{' '}
+	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Physician'}), and I agree to TruFusionLabs&apos;s{' '}
 	                    </>
 	                  ) : typeof agreementTextPrefix === 'string' && agreementTextPrefix.trim().length > 0 ? (
 	                    <>
-	                      {agreementTextPrefix.trim()}, and I agree to PepPro&apos;s{' '}
+	                      {agreementTextPrefix.trim()}, and I agree to TruFusionLabs&apos;s{' '}
 	                    </>
 	                  ) : (
 	                    <>
-	                      I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to PepPro&apos;s{' '}
+	                      I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to TruFusionLabs&apos;s{' '}
 	                    </>
 	                  )}
 	                  <button

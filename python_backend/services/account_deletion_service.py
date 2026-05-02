@@ -214,8 +214,8 @@ def _rewrite_mysql_references(target_id: str, replacement_id: str) -> List[Dict[
             {"target_id": target_id, "replacement_id": replacement_id},
         ),
         (
-            "peppro_orders.user_id",
-            "UPDATE peppro_orders SET user_id = %(replacement_id)s WHERE user_id = %(target_id)s",
+            "trufusion_orders.user_id",
+            "UPDATE trufusion_orders SET user_id = %(replacement_id)s WHERE user_id = %(target_id)s",
             {"target_id": target_id, "replacement_id": replacement_id},
         ),
         (
@@ -317,12 +317,12 @@ def _rewrite_mysql_references(target_id: str, replacement_id: str) -> List[Dict[
                     replacement_id=replacement_id,
                 )
             )
-        if label == "peppro_orders.user_id":
+        if label == "trufusion_orders.user_id":
             results.append(
                 _rewrite_mysql_json_field(
-                    table_name="peppro_orders",
+                    table_name="trufusion_orders",
                     field_name="payload",
-                    label="peppro_orders.payload",
+                    label="trufusion_orders.payload",
                     target_id=target_id,
                     replacement_id=replacement_id,
                     legacy_fields=["payload_encrypted"],

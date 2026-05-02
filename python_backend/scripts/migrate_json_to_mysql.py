@@ -18,7 +18,7 @@ from ..repositories import (
 )
 
 
-LOGGER = logging.getLogger("peppro.migrate")
+LOGGER = logging.getLogger("trufusion.migrate")
 
 
 def _ensure_mysql_enabled(config) -> None:

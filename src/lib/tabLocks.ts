@@ -4,7 +4,7 @@ type LockRecord = {
   updatedAt: number;
 };
 
-const TAB_ID_STORAGE_KEY = '__peppro_tab_id__';
+const TAB_ID_STORAGE_KEY = '__trufusion_tab_id__';
 
 const safeSessionStorageGet = (key: string): string | null => {
   try {
@@ -63,7 +63,7 @@ export const getTabId = (): string => {
   return id;
 };
 
-const lockKey = (name: string) => `peppro:lock:${name}`;
+const lockKey = (name: string) => `trufusion:lock:${name}`;
 
 export const isTabLeader = (name: string, ttlMs: number): boolean => {
   if (typeof window === 'undefined') return true;

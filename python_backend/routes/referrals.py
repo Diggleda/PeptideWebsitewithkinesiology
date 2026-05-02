@@ -77,10 +77,10 @@ def _attach_quote_export_debug_headers(response, result: dict) -> None:
     html_diagnostics = renderer_diagnostics.get("html") if isinstance(renderer_diagnostics.get("html"), dict) else {}
 
     header_values = {
-        "X-PepPro-Quote-Export-Ms": diagnostics.get("totalMs"),
-        "X-PepPro-Quote-Pdf-Ms": diagnostics.get("pdfMs"),
-        "X-PepPro-Quote-Render-Ms": pdf_diagnostics.get("renderMs"),
-        "X-PepPro-Quote-Image-Ms": html_diagnostics.get("imageResolveMs"),
+        "X-TruFusion-Quote-Export-Ms": diagnostics.get("totalMs"),
+        "X-TruFusion-Quote-Pdf-Ms": diagnostics.get("pdfMs"),
+        "X-TruFusion-Quote-Render-Ms": pdf_diagnostics.get("renderMs"),
+        "X-TruFusion-Quote-Image-Ms": html_diagnostics.get("imageResolveMs"),
     }
     for header_name, header_value in header_values.items():
         formatted = _format_debug_timing_ms(header_value)
@@ -89,14 +89,14 @@ def _attach_quote_export_debug_headers(response, result: dict) -> None:
 
     renderer = str(pdf_diagnostics.get("renderer") or "").strip()
     if renderer:
-        response.headers["X-PepPro-Quote-Renderer"] = renderer
+        response.headers["X-TruFusion-Quote-Renderer"] = renderer
 
     cache_layer = str(pdf_diagnostics.get("cacheLayer") or "").strip()
     if cache_layer:
-        response.headers["X-PepPro-Quote-Cache"] = cache_layer
+        response.headers["X-TruFusion-Quote-Cache"] = cache_layer
 
     try:
-        response.headers["X-PepPro-Quote-Pdf-Bytes"] = str(len(result.get("pdf") or b""))
+        response.headers["X-TruFusion-Quote-Pdf-Bytes"] = str(len(result.get("pdf") or b""))
     except Exception:
         pass
 
@@ -809,7 +809,7 @@ def admin_export_prospect_quote(identifier: str, quote_id: str):
             download_name=result["filename"],
         )
         response.headers["Cache-Control"] = "no-store"
-        response.headers["X-PepPro-Quote-Id"] = str((result.get("quote") or {}).get("id") or "")
+        response.headers["X-TruFusion-Quote-Id"] = str((result.get("quote") or {}).get("id") or "")
         _attach_quote_export_debug_headers(response, result)
         return response
 

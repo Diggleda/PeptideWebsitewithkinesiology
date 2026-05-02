@@ -18,7 +18,7 @@ UPS_CIE_BASE_URL = "https://wwwcie.ups.com"
 UPS_PROD_BASE_URL = "https://onlinetools.ups.com"
 UPS_TOKEN_PATH = "/security/v1/oauth/token"
 UPS_TRACK_PATH = "/api/track/v1/details"
-UPS_TRANSACTION_SOURCE = "peppro"
+UPS_TRANSACTION_SOURCE = "trufusion"
 
 _TRACKING_CACHE_TTL_SECONDS = 300.0
 _tracking_cache_lock = threading.Lock()

@@ -2684,7 +2684,7 @@ def get_stripe():
         mode = settings_service.get_effective_stripe_mode()
         config = get_config()
         mysql_enabled = bool(config.mysql.get("enabled"))
-        settings_logger = __import__("logging").getLogger("peppro.settings")
+        settings_logger = __import__("logging").getLogger("trufusion.settings")
         settings_logger.debug("Stripe settings requested", extra={"mode": mode, "mysqlEnabled": mysql_enabled})
         try:
             resolved = settings_service.resolve_stripe_publishable_key(mode)
@@ -2725,7 +2725,7 @@ def update_stripe():
             mode = "test"
         config = get_config()
         mysql_enabled = bool(config.mysql.get("enabled"))
-        settings_logger = __import__("logging").getLogger("peppro.settings")
+        settings_logger = __import__("logging").getLogger("trufusion.settings")
         settings_logger.info("Stripe mode update requested", extra={"requestedMode": mode, "mysqlEnabled": mysql_enabled, "userId": (getattr(g, "current_user", None) or {}).get("id")})
         settings_service.update_settings({"stripeMode": mode})
         resolved_mode = settings_service.get_effective_stripe_mode()
@@ -3041,7 +3041,7 @@ def _compute_user_activity_cached(
 
 
 def _compute_user_activity(window_key: str, *, raw_window: str | None = None, include_logs: bool = True) -> dict:
-    logger = logging.getLogger("peppro.user_activity")
+    logger = logging.getLogger("trufusion.user_activity")
     cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
     presence = presence_service.snapshot()
     # "Online right now" should reflect recent heartbeats (not a 45-minute window).

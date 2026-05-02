@@ -57,7 +57,7 @@ const buildResetUrl = (token) => {
   return `${base}/reset-password?token=${token}`;
 };
 
-const FROM_ADDRESS = process.env.MAIL_FROM || '"PepPro" <support@peppro.net>';
+const FROM_ADDRESS = process.env.MAIL_FROM || '"TruFusionLabs" <support@trufusionlabs.com>';
 
 const normalizeEmailAddress = (value) => {
   if (!value) return null;
@@ -122,7 +122,7 @@ const sendPasswordResetEmail = async (to, token) => {
 };
 
 const buildPaymentInstructionsSections = () => {
-  const supportEmail = normalizeEmailAddress(process.env.SUPPORT_EMAIL) || 'support@peppro.net';
+  const supportEmail = normalizeEmailAddress(process.env.SUPPORT_EMAIL) || 'support@trufusionlabs.com';
   const zelleRecipient = String(process.env.PAYMENT_ZELLE_RECIPIENT || '').trim();
   const zelleEmail = normalizeEmailAddress(process.env.PAYMENT_ZELLE_EMAIL);
   const zellePhone = String(process.env.PAYMENT_ZELLE_PHONE || '').trim();
@@ -209,7 +209,7 @@ const sendOrderPaymentInstructionsEmail = async ({
   const templatePath = path.join(__dirname, '..', 'templates', 'paymentInstructions.html');
   const htmlTemplate = fs.readFileSync(templatePath, 'utf8');
   const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
-  const displayName = String(customerName || 'PepPro Customer').trim() || 'PepPro Customer';
+  const displayName = String(customerName || 'TruFusionLabs Customer').trim() || 'TruFusionLabs Customer';
   const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
   const normalizedDiscountCode = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
   const discountDetails = normalizedDiscountCode
@@ -226,7 +226,7 @@ const sendOrderPaymentInstructionsEmail = async ({
     .replaceAll('{{zelleSection}}', zelleSection)
     .replaceAll('{{bankTransferSection}}', bankSection);
 
-  const subjectBase = process.env.PAYMENT_INSTRUCTIONS_SUBJECT || 'PepPro payment instructions';
+  const subjectBase = process.env.PAYMENT_INSTRUCTIONS_SUBJECT || 'TruFusionLabs payment instructions';
   const subject = displayOrderNumber ? `${subjectBase} — Order ${displayOrderNumber}` : subjectBase;
   const bcc = normalizeEmailAddress(process.env.PAYMENT_INSTRUCTIONS_BCC);
 
@@ -320,7 +320,7 @@ const sendManualRefundReviewEmail = async ({
   const displayEmail = String(customerEmail || '').trim();
   const displayPayment = String(paymentMethod || 'Manual payment').trim();
 
-  const subjectBase = process.env.REFUND_NOTIFICATION_SUBJECT || 'PepPro manual refund review';
+  const subjectBase = process.env.REFUND_NOTIFICATION_SUBJECT || 'TruFusionLabs manual refund review';
   const subject = displayOrderNumber ? `${subjectBase} — Order ${displayOrderNumber}` : subjectBase;
 
   const html = `

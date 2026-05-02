@@ -12,7 +12,7 @@ from ..middleware.auth import require_auth
 
 blueprint = Blueprint("moderation", __name__, url_prefix="/api/moderation")
 
-logger = logging.getLogger("peppro.moderation")
+logger = logging.getLogger("trufusion.moderation")
 
 
 def _extract_openai_moderation_result(payload: Dict[str, Any]) -> tuple[bool, Optional[Dict[str, Any]]]:

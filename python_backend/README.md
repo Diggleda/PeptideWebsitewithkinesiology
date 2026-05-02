@@ -1,4 +1,4 @@
-## PepPro Python Backend
+## TruFusionLabs Python Backend
 
 This directory hosts the new Flask-based backend that mirrors the capabilities
 of the original Node/Express service.  The app uses a modular structure so it
@@ -35,7 +35,7 @@ Production runtime notes:
 
 - The live Python backend runs under `systemd` as `peppr-api.service`.
 - Use a dedicated `peppr-background-jobs.service` for long-lived sync/sweep loops.
-- Set `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external` for gunicorn-backed API workers so only the dedicated worker service owns background loops.
+- Set `TRUFUSION_WEB_BACKGROUND_JOBS_MODE=external` for gunicorn-backed API workers so only the dedicated worker service owns background loops.
 - Production secrets must be stored manually on the server in
   `/etc/peppr-api.env`, not in repo `.env` files.
 - The runtime env file should be root-managed and non-world-readable:
@@ -55,7 +55,10 @@ Required production settings:
 - `DATA_ENCRYPTION_BLIND_INDEX_KEY=<stable random value>`
 - `DATA_ENCRYPTION_KEY_VERSION=prod-v1`
 - `MYSQL_SSL=true`
-- `FRONTEND_BASE_URL=https://your-domain`
+- `FRONTEND_BASE_URL=https://www.trufusionlabs.com`
+- `CORS_ALLOW_ORIGINS=https://www.trufusionlabs.com,https://trufusionlabs.com,https://shop.trufusionlabs.com`
+- `PASSKEY_RP_ID=trufusionlabs.com`
+- `PASSKEY_ALLOWED_ORIGINS=https://www.trufusionlabs.com`
 
 Optional production settings:
 
@@ -78,14 +81,14 @@ Scheduled background jobs:
   [`ops/peppr-catalog-snapshot.service.example`](../ops/peppr-catalog-snapshot.service.example)
   and
   [`ops/peppr-catalog-snapshot.timer.example`](../ops/peppr-catalog-snapshot.timer.example).
-- When the web process owns background jobs (`PEPPRO_WEB_BACKGROUND_JOBS_MODE=thread`),
+- When the web process owns background jobs (`TRUFUSION_WEB_BACKGROUND_JOBS_MODE=thread`),
   `/api/health` reports per-job status under `.backgroundJobs.jobs`, including
   heartbeat age, lifecycle, and the most recent error when a job loop fails and
   is restarted.
 - `/api/health` accepts the normal admin bearer session used by the dashboard,
   and also supports a separate public password gate for direct browser access.
-  Set `PEPPRO_HEALTH_PASSWORD` in the backend environment if you want the open
-  `api.peppro.net/api/health` page to require a standalone password.
+  Set `TRUFUSION_HEALTH_PASSWORD` in the backend environment if you want the open
+  `api.trufusionlabs.com/api/health` page to require a standalone password.
 
 Quote PDF renderer settings:
 

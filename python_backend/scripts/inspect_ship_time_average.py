@@ -11,7 +11,7 @@ from python_backend.logging_config import configure_logging
 from python_backend.services import configure_services
 from python_backend.scripts.backfill_shipdates import _bootstrap_cli_env
 
-LOGGER = logging.getLogger("peppro.inspect_ship_time_average")
+LOGGER = logging.getLogger("trufusion.inspect_ship_time_average")
 
 
 def _business_days_between(start_at: datetime, end_at: datetime) -> float:

@@ -34,7 +34,7 @@ const withFreshPdfService = async (deps, run) => {
 };
 
 test('generateProspectQuotePdf embeds a recovered product image as a data URL instead of a broken localhost media URL', async () => {
-  const localhostMediaUrl = 'http://localhost:3001/api/woo/media?src=https%3A%2F%2Fshop.peppro.net%2Fwp-content%2Fuploads%2F2025%2F12%2FPhysicians_Nasal-label_oxy-1.jpg';
+  const localhostMediaUrl = 'http://localhost:3001/api/woo/media?src=https%3A%2F%2Fshop.trufusionlabs.com%2Fwp-content%2Fuploads%2F2025%2F12%2FPhysicians_Nasal-label_oxy-1.jpg';
   const axiosCalls = [];
   let renderedHtml = '';
   let evaluatedImagePass = 0;
@@ -107,11 +107,11 @@ test('generateProspectQuotePdf embeds a recovered product image as a data URL in
       });
 
       const expectedImageUrl = normalizeWebsiteQuoteImageUrl(localhostMediaUrl);
-      assert.equal(result.filename, 'PepPro_Quote_Client_Example_5.pdf');
+      assert.equal(result.filename, 'TruFusion_Labs_Quote_Client_Example_5.pdf');
       assert.equal(axiosCalls.length, 1);
       assert.equal(
         axiosCalls[0].url,
-        'https://shop.peppro.net/wp-content/uploads/2025/12/Physicians_Nasal-label_oxy-1.jpg',
+        'https://shop.trufusionlabs.com/wp-content/uploads/2025/12/Physicians_Nasal-label_oxy-1.jpg',
       );
       assert.equal(evaluatedImagePass, 1);
       assert.equal(wooLookupCount, 0);
@@ -119,7 +119,7 @@ test('generateProspectQuotePdf embeds a recovered product image as a data URL in
       assert.match(renderedHtml, /data:image\/jpeg;base64,/);
       assert.doesNotMatch(renderedHtml, /\/api\/woo\/media\?src=/);
       assert.match(renderedHtml, /<img class="brand-logo" src="data:image\/png;base64,/);
-      assert.doesNotMatch(renderedHtml, /<div class="brand">PepPro<\/div>/);
+      assert.doesNotMatch(renderedHtml, /<div class="brand">TruFusionLabs<\/div>/);
       assert.match(renderedHtml, /class="summary-row"/);
       assert.doesNotMatch(renderedHtml, /class="summary"/);
       assert.match(renderedHtml, /<div class="summary-row">\s*<span>Subtotal:<\/span>\s*<span>\$93\.91<\/span>\s*<\/div>/);
@@ -141,7 +141,7 @@ test('generateProspectQuotePdf embeds a recovered product image as a data URL in
 });
 
 test('generateProspectQuotePdf resolves nested thumbnail objects for quote item images', async () => {
-  const remoteImageUrl = 'https://shop.peppro.net/wp-content/uploads/2025/12/Physicians_Vial-label_MOTS.jpg';
+  const remoteImageUrl = 'https://shop.trufusionlabs.com/wp-content/uploads/2025/12/Physicians_Vial-label_MOTS.jpg';
   const axiosCalls = [];
   let renderedHtml = '';
 
@@ -225,7 +225,7 @@ test('generateProspectQuotePdf skips live Woo SKU lookups when no cached quote i
         findProductBySku: async () => {
           wooLookupCount += 1;
           return {
-            image: 'https://shop.peppro.net/wp-content/uploads/2025/12/should-not-be-used.jpg',
+            image: 'https://shop.trufusionlabs.com/wp-content/uploads/2025/12/should-not-be-used.jpg',
           };
         },
       },
@@ -276,7 +276,7 @@ test('generateProspectQuotePdf skips live Woo SKU lookups when no cached quote i
 });
 
 test('normalizeWebsiteQuoteImageUrl unwraps nested Woo media proxy URLs', async () => {
-  const nestedProxyUrl = 'https://api.peppro.net/api/woo/media?src=https%3A%2F%2Fapi.peppro.net%2Fapi%2Fwoo%2Fmedia%3Fsrc%3Dhttps%253A%252F%252Fshop.peppro.net%252Fwp-content%252Fuploads%252F2025%252F12%252FPhysicians_Nasal-label_BPC-TB-1.jpg&_imgRetry=1774882889344_1';
+  const nestedProxyUrl = 'https://api.trufusionlabs.com/api/woo/media?src=https%3A%2F%2Fapi.trufusionlabs.com%2Fapi%2Fwoo%2Fmedia%3Fsrc%3Dhttps%253A%252F%252Fshop.trufusionlabs.com%252Fwp-content%252Fuploads%252F2025%252F12%252FPhysicians_Nasal-label_BPC-TB-1.jpg&_imgRetry=1774882889344_1';
 
   await withFreshPdfService(
     {
@@ -302,7 +302,7 @@ test('normalizeWebsiteQuoteImageUrl unwraps nested Woo media proxy URLs', async 
     async ({ normalizeWebsiteQuoteImageUrl }) => {
       assert.equal(
         normalizeWebsiteQuoteImageUrl(nestedProxyUrl),
-        'http://127.0.0.1:3001/api/woo/media?src=https%3A%2F%2Fshop.peppro.net%2Fwp-content%2Fuploads%2F2025%2F12%2FPhysicians_Nasal-label_BPC-TB-1.jpg',
+        'http://127.0.0.1:3001/api/woo/media?src=https%3A%2F%2Fshop.trufusionlabs.com%2Fwp-content%2Fuploads%2F2025%2F12%2FPhysicians_Nasal-label_BPC-TB-1.jpg',
       );
     },
   );

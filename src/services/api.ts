@@ -1,6 +1,7 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText';
 import { readDelegateTokenFromLocation } from '../lib/researchSupplyLinks';
+import { LEGACY_AUTH_CHANNEL_NAME, readStorageWithLegacy } from '../lib/legacyBrandCompatibility';
 import type {
   ProspectQuoteDetail,
   ProspectQuoteImportPayload,
@@ -123,14 +124,15 @@ type AuthTabEvent = {
 
 type AuthSessionMode = 'standard' | 'shadow';
 
-const AUTH_TAB_ID_KEY = 'peppro_tab_id_v1';
-const AUTH_SESSION_ID_KEY = 'peppro_session_id_v1';
-const AUTH_USER_ID_KEY = 'peppro_user_id_v1';
-const AUTH_EMAIL_KEY = 'peppro_auth_email_v1';
-const AUTH_SESSION_STARTED_AT_KEY = 'peppro_session_started_at_v1';
-const AUTH_EVENT_STORAGE_KEY = 'peppro_auth_event_v1';
-const AUTH_MODE_KEY = 'peppro_auth_mode_v1';
-const AUTH_EVENT_NAME = 'peppro:force-logout';
+const AUTH_TAB_ID_KEY = 'trufusion_tab_id_v1';
+const AUTH_SESSION_ID_KEY = 'trufusion_session_id_v1';
+const AUTH_USER_ID_KEY = 'trufusion_user_id_v1';
+const AUTH_EMAIL_KEY = 'trufusion_auth_email_v1';
+const AUTH_SESSION_STARTED_AT_KEY = 'trufusion_session_started_at_v1';
+const AUTH_EVENT_STORAGE_KEY = 'trufusion_auth_event_v1';
+const AUTH_MODE_KEY = 'trufusion_auth_mode_v1';
+const AUTH_EVENT_NAME = 'trufusion:force-logout';
+const AUTH_CHANNEL_NAME = 'trufusion-auth';
 const SHADOW_READ_ONLY_CODE = 'SHADOW_READ_ONLY';
 const SHADOW_READ_ONLY_MESSAGE = 'Maintenance mode is read-only';
 const AUTH_CHECK_FAILED_CODE = 'AUTH_CHECK_FAILED';
@@ -155,7 +157,7 @@ const _randomId = () => {
 
 const getOrCreateTabId = () => {
   try {
-    const existing = sessionStorage.getItem(AUTH_TAB_ID_KEY);
+    const existing = readStorageWithLegacy(sessionStorage, AUTH_TAB_ID_KEY);
     if (existing && existing.trim()) return existing;
     const next = _randomId();
     sessionStorage.setItem(AUTH_TAB_ID_KEY, next);
@@ -167,7 +169,7 @@ const getOrCreateTabId = () => {
 
 const getSessionId = () => {
   try {
-    const value = sessionStorage.getItem(AUTH_SESSION_ID_KEY);
+    const value = readStorageWithLegacy(sessionStorage, AUTH_SESSION_ID_KEY);
     return value && value.trim() ? value : null;
   } catch {
     return null;
@@ -176,7 +178,7 @@ const getSessionId = () => {
 
 const getAuthMode = (): AuthSessionMode => {
   try {
-    const value = sessionStorage.getItem(AUTH_MODE_KEY);
+    const value = readStorageWithLegacy(sessionStorage, AUTH_MODE_KEY);
     return value === 'shadow' ? 'shadow' : 'standard';
   } catch {
     return 'standard';
@@ -227,7 +229,7 @@ const clearSessionStartedAt = () => {
 
 const getAuthUserId = () => {
   try {
-    const value = sessionStorage.getItem(AUTH_USER_ID_KEY);
+    const value = readStorageWithLegacy(sessionStorage, AUTH_USER_ID_KEY);
     return value && value.trim() ? value : null;
   } catch {
     return null;
@@ -249,7 +251,7 @@ const setAuthUserId = (userId: string | null | undefined) => {
 
 const getAuthEmail = () => {
   try {
-    const value = sessionStorage.getItem(AUTH_EMAIL_KEY);
+    const value = readStorageWithLegacy(sessionStorage, AUTH_EMAIL_KEY);
     return value && value.trim() ? value : null;
   } catch {
     return null;
@@ -327,7 +329,7 @@ const emitAuthEvent = (payload: AuthTabEvent) => {
   try {
     // BroadcastChannel is fast and avoids localStorage writes in most modern browsers.
     if ('BroadcastChannel' in window) {
-      const channel = new (window as any).BroadcastChannel('peppro-auth');
+      const channel = new (window as any).BroadcastChannel(AUTH_CHANNEL_NAME);
       channel.postMessage(payload);
       channel.close();
     }
@@ -408,12 +410,12 @@ if (typeof window !== 'undefined') {
       setSessionId(_randomId());
     }
     if (existingToken && existingToken.trim()) {
-      const existingMode = sessionStorage.getItem(AUTH_MODE_KEY);
+      const existingMode = readStorageWithLegacy(sessionStorage, AUTH_MODE_KEY);
       if (existingMode !== 'shadow' && existingMode !== 'standard') {
         setAuthMode('standard');
       }
     }
-    const startedAtRaw = sessionStorage.getItem(AUTH_SESSION_STARTED_AT_KEY);
+    const startedAtRaw = readStorageWithLegacy(sessionStorage, AUTH_SESSION_STARTED_AT_KEY);
     const startedAt = startedAtRaw ? Number(startedAtRaw) : NaN;
     if (existingToken && existingToken.trim() && !Number.isFinite(startedAt)) {
       setSessionStartedAt(Date.now());
@@ -425,14 +427,17 @@ if (typeof window !== 'undefined') {
   // BroadcastChannel listener
   try {
     if ('BroadcastChannel' in window) {
-      const channel = new (window as any).BroadcastChannel('peppro-auth');
-      channel.addEventListener('message', (event: any) => {
+      const handleMessage = (event: any) => {
         try {
           handleIncomingAuthEvent(event?.data as AuthTabEvent);
         } catch {
           // ignore
         }
-      });
+      };
+      const channel = new (window as any).BroadcastChannel(AUTH_CHANNEL_NAME);
+      channel.addEventListener('message', handleMessage);
+      const legacyChannel = new (window as any).BroadcastChannel(LEGACY_AUTH_CHANNEL_NAME);
+      legacyChannel.addEventListener('message', handleMessage);
     }
   } catch {
     // ignore
@@ -480,7 +485,7 @@ const persistAuthToken = (
   setAuthMode(mode);
 
   // Prefer scoping to account id so other accounts can remain signed in in other tabs.
-  // Callers should set `peppro_user_id_v1` (via `setAuthUserId`) before persisting the token.
+  // Callers should set `trufusion_user_id_v1` (via `setAuthUserId`) before persisting the token.
 
   if (mode === 'shadow' || options?.suppressBroadcast === true) {
     if (!getSessionId()) {
@@ -576,23 +581,23 @@ const dispatchApiReachability = (payload: { ok: boolean; status?: number | null;
       at: Date.now(),
       backgroundCooldownRemainingMs: getApiBackgroundCooldownRemainingMs(),
     };
-    window.dispatchEvent(new CustomEvent('peppro:api-reachability', { detail }));
+    window.dispatchEvent(new CustomEvent('trufusion:api-reachability', { detail }));
   } catch {
     // ignore
   }
 };
 
-const _PEPPRO_BACKGROUND_COOLDOWN_MIN_MS = 15_000;
-const _PEPPRO_BACKGROUND_COOLDOWN_BASE_MS = 30_000;
-const _PEPPRO_BACKGROUND_COOLDOWN_MAX_MS = 5 * 60 * 1000;
+const _TRUFUSION_BACKGROUND_COOLDOWN_MIN_MS = 15_000;
+const _TRUFUSION_BACKGROUND_COOLDOWN_BASE_MS = 30_000;
+const _TRUFUSION_BACKGROUND_COOLDOWN_MAX_MS = 5 * 60 * 1000;
 
 let _backgroundApiCooldownUntil = 0;
 let _backgroundApiCooldownFailures = 0;
 
 const clampBackgroundCooldownMs = (value: number) =>
   Math.max(
-    _PEPPRO_BACKGROUND_COOLDOWN_MIN_MS,
-    Math.min(_PEPPRO_BACKGROUND_COOLDOWN_MAX_MS, Math.floor(value)),
+    _TRUFUSION_BACKGROUND_COOLDOWN_MIN_MS,
+    Math.min(_TRUFUSION_BACKGROUND_COOLDOWN_MAX_MS, Math.floor(value)),
   );
 
 const parseRetryAfterMs = (value?: string | null) => {
@@ -618,7 +623,7 @@ const resolveBackgroundCooldownMs = (payload?: {
     return clampBackgroundCooldownMs(payload.retryAfterMs);
   }
   const attempt = Math.min(6, Math.max(1, _backgroundApiCooldownFailures + 1));
-  const baseMs = payload?.status === 429 ? _PEPPRO_BACKGROUND_COOLDOWN_BASE_MS : 12_000;
+  const baseMs = payload?.status === 429 ? _TRUFUSION_BACKGROUND_COOLDOWN_BASE_MS : 12_000;
   return clampBackgroundCooldownMs(baseMs * Math.pow(2, attempt - 1));
 };
 
@@ -661,53 +666,53 @@ const buildBackgroundCooldownError = () => {
   return error;
 };
 
-const _PEPPRO_DEFAULT_TIMEOUT_MS = 45000;
-const _PEPPRO_AUTH_TIMEOUT_MS = 20000;
-const _PEPPRO_HEALTH_TIMEOUT_MS = 5000;
-const _PEPPRO_HEALTH_SUCCESS_TTL_MS = 15000;
-const _PEPPRO_HEALTH_FAILURE_COOLDOWN_MS = 45000;
-const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
-const _PEPPRO_CATALOG_TIMEOUT_MS = 90000;
-const _PEPPRO_WOO_TIMEOUT_MS = 90000;
-const _PEPPRO_CHECKOUT_TIMEOUT_MS = 90000;
-const _PEPPRO_SALES_TRACKING_TIMEOUT_MS = 90000;
-const _PEPPRO_SALES_SUMMARY_TIMEOUT_MS = 90000;
-const _PEPPRO_MODAL_TIMEOUT_MS = 60000;
-const _PEPPRO_REFERRAL_TIMEOUT_MS = 90000;
-const _PEPPRO_MAINTENANCE_TIMEOUT_MS = 60000;
-const _PEPPRO_QUOTE_EXPORT_TIMEOUT_MS = 90000;
+const _TRUFUSION_DEFAULT_TIMEOUT_MS = 45000;
+const _TRUFUSION_AUTH_TIMEOUT_MS = 20000;
+const _TRUFUSION_HEALTH_TIMEOUT_MS = 5000;
+const _TRUFUSION_HEALTH_SUCCESS_TTL_MS = 15000;
+const _TRUFUSION_HEALTH_FAILURE_COOLDOWN_MS = 45000;
+const _TRUFUSION_LONGPOLL_TIMEOUT_MS = 30000;
+const _TRUFUSION_CATALOG_TIMEOUT_MS = 90000;
+const _TRUFUSION_WOO_TIMEOUT_MS = 90000;
+const _TRUFUSION_CHECKOUT_TIMEOUT_MS = 90000;
+const _TRUFUSION_SALES_TRACKING_TIMEOUT_MS = 90000;
+const _TRUFUSION_SALES_SUMMARY_TIMEOUT_MS = 90000;
+const _TRUFUSION_MODAL_TIMEOUT_MS = 60000;
+const _TRUFUSION_REFERRAL_TIMEOUT_MS = 90000;
+const _TRUFUSION_MAINTENANCE_TIMEOUT_MS = 60000;
+const _TRUFUSION_QUOTE_EXPORT_TIMEOUT_MS = 90000;
 
 const _timeoutMsForRequest = (url: string, method: string) => {
   const normalized = String(url || '').toLowerCase();
-  if (normalized.includes('/api/health')) return _PEPPRO_HEALTH_TIMEOUT_MS;
-  if (normalized.includes('/api/auth/shadow-sessions')) return _PEPPRO_MAINTENANCE_TIMEOUT_MS;
-  if (normalized.includes('/api/auth/')) return _PEPPRO_AUTH_TIMEOUT_MS;
-  if (normalized.includes('/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
-  if (normalized.includes('/api/catalog/')) return _PEPPRO_CATALOG_TIMEOUT_MS;
-  if (normalized.includes('/api/woo/')) return _PEPPRO_WOO_TIMEOUT_MS;
-  if (normalized.includes('/api/settings/users')) return _PEPPRO_MODAL_TIMEOUT_MS;
+  if (normalized.includes('/api/health')) return _TRUFUSION_HEALTH_TIMEOUT_MS;
+  if (normalized.includes('/api/auth/shadow-sessions')) return _TRUFUSION_MAINTENANCE_TIMEOUT_MS;
+  if (normalized.includes('/api/auth/')) return _TRUFUSION_AUTH_TIMEOUT_MS;
+  if (normalized.includes('/longpoll')) return _TRUFUSION_LONGPOLL_TIMEOUT_MS;
+  if (normalized.includes('/api/catalog/')) return _TRUFUSION_CATALOG_TIMEOUT_MS;
+  if (normalized.includes('/api/woo/')) return _TRUFUSION_WOO_TIMEOUT_MS;
+  if (normalized.includes('/api/settings/users')) return _TRUFUSION_MODAL_TIMEOUT_MS;
   if (normalized.includes('/api/orders/sales-rep/users/') && normalized.includes('/modal-detail')) {
-    return _PEPPRO_MODAL_TIMEOUT_MS;
+    return _TRUFUSION_MODAL_TIMEOUT_MS;
   }
   if (normalized.includes('/api/orders/admin/taxes-by-state')) {
-    return _PEPPRO_SALES_TRACKING_TIMEOUT_MS;
+    return _TRUFUSION_SALES_TRACKING_TIMEOUT_MS;
   }
   if (normalized.includes('/api/orders/sales-rep-summary')) {
-    return _PEPPRO_SALES_SUMMARY_TIMEOUT_MS;
+    return _TRUFUSION_SALES_SUMMARY_TIMEOUT_MS;
   }
-  if (normalized.includes('/api/referrals/dashboard')) return _PEPPRO_REFERRAL_TIMEOUT_MS;
+  if (normalized.includes('/api/referrals/dashboard')) return _TRUFUSION_REFERRAL_TIMEOUT_MS;
   if (method === 'GET' && normalized.includes('/api/referrals/sales-prospects/') && normalized.includes('/quotes/') && normalized.includes('/export')) {
-    return _PEPPRO_QUOTE_EXPORT_TIMEOUT_MS;
+    return _TRUFUSION_QUOTE_EXPORT_TIMEOUT_MS;
   }
   if (method === 'GET' && normalized.includes('/api/orders/sales-rep')) {
-    return _PEPPRO_SALES_TRACKING_TIMEOUT_MS;
+    return _TRUFUSION_SALES_TRACKING_TIMEOUT_MS;
   }
   // Order placement can be slower because it may sync with WooCommerce.
   if (method === 'POST' && (normalized.endsWith('/api/orders') || normalized.includes('/api/orders/'))) {
-    return _PEPPRO_CHECKOUT_TIMEOUT_MS;
+    return _TRUFUSION_CHECKOUT_TIMEOUT_MS;
   }
-  if (method === 'GET') return _PEPPRO_DEFAULT_TIMEOUT_MS;
-  return _PEPPRO_DEFAULT_TIMEOUT_MS;
+  if (method === 'GET') return _TRUFUSION_DEFAULT_TIMEOUT_MS;
+  return _TRUFUSION_DEFAULT_TIMEOUT_MS;
 };
 
 const isNetworkLikeFetchError = (error: any) => {
@@ -803,15 +808,15 @@ const buildSameOriginApiFallbackUrl = (url: string) => {
     if (!parsed.pathname.toLowerCase().startsWith('/api/')) {
       return null;
     }
-    // Auth on `peppro.net/api` is not the same backend as `api.peppro.net/api`.
+    // Auth on `trufusionlabs.com/api` is not the same backend as `api.trufusionlabs.com/api`.
     // Keep auth requests pinned to the configured API origin so login/account checks
     // always hit the authoritative auth service.
     if (parsed.pathname.toLowerCase().startsWith('/api/auth/')) {
       return null;
     }
-    const isPepProPrimaryHost = currentHost === 'peppro.net' || currentHost === 'www.peppro.net';
-    const isPepProApiHost = targetHost === 'api.peppro.net';
-    if (!isPepProPrimaryHost || !isPepProApiHost) {
+    const isTruFusionPrimaryHost = currentHost === 'trufusionlabs.com' || currentHost === 'www.trufusionlabs.com';
+    const isTruFusionApiHost = targetHost === 'api.trufusionlabs.com';
+    if (!isTruFusionPrimaryHost || !isTruFusionApiHost) {
       return null;
     }
     return `${currentOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
@@ -1395,14 +1400,14 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
   const filename = filenameMatch && filenameMatch[1] ? filenameMatch[1] : null;
   const debugHeaderNames = [
     'server-timing',
-    'x-peppro-quote-export-ms',
-    'x-peppro-quote-pdf-ms',
-    'x-peppro-quote-render-ms',
-    'x-peppro-quote-image-ms',
-    'x-peppro-quote-renderer',
-    'x-peppro-quote-cache',
-    'x-peppro-quote-pdf-bytes',
-    'x-peppro-quote-id',
+    'x-trufusion-quote-export-ms',
+    'x-trufusion-quote-pdf-ms',
+    'x-trufusion-quote-render-ms',
+    'x-trufusion-quote-image-ms',
+    'x-trufusion-quote-renderer',
+    'x-trufusion-quote-cache',
+    'x-trufusion-quote-pdf-bytes',
+    'x-trufusion-quote-id',
   ];
   const debugHeaders: Record<string, string> = {};
   for (const headerName of debugHeaderNames) {
@@ -2291,7 +2296,7 @@ type CheckoutIdempotencyRecord = {
   createdAt: number;
 };
 
-const CHECKOUT_IDEMPOTENCY_STORAGE_KEY = 'peppro_checkout_idempotency_v1';
+const CHECKOUT_IDEMPOTENCY_STORAGE_KEY = 'trufusion_checkout_idempotency_v1';
 const CHECKOUT_IDEMPOTENCY_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 const generateIdempotencyKey = () => {
@@ -2307,7 +2312,7 @@ const generateIdempotencyKey = () => {
 
 const safeReadCheckoutIdempotencyRecord = (): CheckoutIdempotencyRecord | null => {
   try {
-    const raw = sessionStorage.getItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY);
+    const raw = readStorageWithLegacy(sessionStorage, CHECKOUT_IDEMPOTENCY_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CheckoutIdempotencyRecord>;
     if (!parsed || typeof parsed !== 'object') return null;
@@ -2443,7 +2448,7 @@ const normalizeFacilityPickupRecipientForOrder = (...candidates: unknown[]) => {
     if (typeof candidate !== 'string') continue;
     const trimmed = candidate.trim();
     const comparable = trimmed.toLowerCase().replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
-    if (trimmed && comparable !== 'peppro facility pickup') {
+    if (trimmed && comparable !== 'trufusion facility pickup') {
       return trimmed;
     }
   }
@@ -3537,10 +3542,10 @@ export const checkServerHealth = async (options: { force?: boolean; quiet?: bool
   const now = Date.now();
   if (!options.force && _healthCheckLastAt > 0) {
     const ageMs = now - _healthCheckLastAt;
-    if (_healthCheckLastOk && ageMs < _PEPPRO_HEALTH_SUCCESS_TTL_MS) {
+    if (_healthCheckLastOk && ageMs < _TRUFUSION_HEALTH_SUCCESS_TTL_MS) {
       return true;
     }
-    if (!_healthCheckLastOk && ageMs < _PEPPRO_HEALTH_FAILURE_COOLDOWN_MS) {
+    if (!_healthCheckLastOk && ageMs < _TRUFUSION_HEALTH_FAILURE_COOLDOWN_MS) {
       return false;
     }
   }

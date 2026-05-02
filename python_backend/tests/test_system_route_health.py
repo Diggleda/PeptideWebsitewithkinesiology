@@ -141,7 +141,7 @@ class SystemRouteHealthTests(unittest.TestCase):
         with app.test_client() as client, patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_PASSWORD": "health-pass",
+                "TRUFUSION_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
         ):
@@ -160,7 +160,7 @@ class SystemRouteHealthTests(unittest.TestCase):
         with app.test_client() as client, patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_PASSWORD": "health-pass",
+                "TRUFUSION_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
         ):
@@ -312,7 +312,7 @@ class SystemRouteHealthTests(unittest.TestCase):
         ), patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_PASSWORD": "health-pass",
+                "TRUFUSION_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
         ):
@@ -387,7 +387,7 @@ class SystemRouteHealthTests(unittest.TestCase):
         ), patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_PASSWORD": "health-pass",
+                "TRUFUSION_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
         ):
@@ -460,7 +460,7 @@ class SystemRouteHealthTests(unittest.TestCase):
         ), patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_PASSWORD": "health-pass",
+                "TRUFUSION_HEALTH_PASSWORD": "health-pass",
             },
             clear=False,
         ):
@@ -485,7 +485,7 @@ class SystemRouteHealthTests(unittest.TestCase):
         with app.test_client() as client, patch.dict(
             os.environ,
             {
-                "PEPPRO_HEALTH_PASSWORD": "",
+                "TRUFUSION_HEALTH_PASSWORD": "",
             },
             clear=False,
         ):

@@ -1,5 +1,5 @@
 [Unit]
-Description=Run PepPro catalog snapshot sync on a schedule
+Description=Run TruFusionLabs catalog snapshot sync on a schedule
 
 [Timer]
 OnBootSec=10m

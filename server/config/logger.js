@@ -98,7 +98,7 @@ const buildTransport = ({
 };
 
 const logger = pino({
-  name: 'peppro-backend',
+  name: 'trufusion-backend',
   level: env.logLevel,
   mixin() {
     const context = getRequestContext();

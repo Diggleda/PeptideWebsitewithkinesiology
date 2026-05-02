@@ -65,7 +65,7 @@ def _json_with_cache_headers(data, *, cache: str, ttl_seconds: int, no_store: bo
         response.headers["Cache-Control"] = "no-store"
     else:
         response.headers["Cache-Control"] = f"public, max-age={ttl_seconds}"
-    response.headers["X-PepPro-Cache"] = cache
+    response.headers["X-TruFusion-Cache"] = cache
     return response
 
 
@@ -175,7 +175,7 @@ def handle_webhook():
             # Some proxies/CDNs can strip custom headers. As a fallback, allow a query token
             # (or header) that matches the configured webhook secret.
             token = (request.args.get("token") or "").strip()
-            token_header = (request.headers.get("X-PepPro-Webhook-Token") or "").strip()
+            token_header = (request.headers.get("X-TruFusion-Webhook-Token") or "").strip()
             if (token and hmac.compare_digest(token, secret)) or (token_header and hmac.compare_digest(token_header, secret)):
                 logger.warning(
                     "Woo webhook accepted via token fallback (missing signature header)",
@@ -355,7 +355,7 @@ def proxy_media():
         if content_type:
             response.headers["Content-Type"] = content_type
         response.headers["Cache-Control"] = "public, max-age=86400"
-        response.headers["X-PepPro-Media-Cache"] = "HIT"
+        response.headers["X-TruFusion-Media-Cache"] = "HIT"
         return response
 
     acquired = _WOO_MEDIA_FETCH_SEMAPHORE.acquire(timeout=2)
@@ -408,7 +408,7 @@ def proxy_media():
     if content_type:
         response.headers["Content-Type"] = content_type
     response.headers["Cache-Control"] = "public, max-age=86400"
-    response.headers["X-PepPro-Media-Cache"] = "MISS"
+    response.headers["X-TruFusion-Media-Cache"] = "MISS"
     return response
 
 

@@ -1,4 +1,4 @@
-const WEBHOOK_URL = 'https://api.peppro.net/api/integrations/google-sheets/sales-reps.php';
+const WEBHOOK_URL = 'https://api.trufusionlabs.com/api/integrations/google-sheets/sales-reps.php';
 const WEBHOOK_SECRET = 'wqEpTQeBJzrDBZV6Ao5CIU7EQZV5KJUD+kd1gdI1Stw=';
 const TIMEZONE = 'America/Indiana/Indianapolis';
 

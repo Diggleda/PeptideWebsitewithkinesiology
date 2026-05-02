@@ -45,25 +45,25 @@ const appendUrlParam = (value: string, key: string, paramValue: string) => {
 
 const forceFavicon = () => {
   const stamp = String(Date.now());
-  const ico = appendUrlParam(resolveStaticAssetUrl("/peppro-favicon-v3.ico"), "ts", stamp);
+  const ico = appendUrlParam(resolveStaticAssetUrl("/favicon.ico"), "ts", stamp);
   ensureHeadLink('link[rel="icon"][sizes="any"]', { rel: "icon", sizes: "any", href: ico });
   ensureHeadLink('link[rel="shortcut icon"]', { rel: "shortcut icon", href: ico });
   ensureHeadLink('link[rel="icon"][sizes="32x32"]', {
     rel: "icon",
     type: "image/png",
     sizes: "32x32",
-    href: appendUrlParam(resolveStaticAssetUrl("/peppro-favicon-v3-32x32.png"), "ts", stamp),
+    href: appendUrlParam(resolveStaticAssetUrl("/favicon.ico"), "ts", stamp),
   });
   ensureHeadLink('link[rel="icon"][sizes="16x16"]', {
     rel: "icon",
     type: "image/png",
     sizes: "16x16",
-    href: appendUrlParam(resolveStaticAssetUrl("/peppro-favicon-v3-16x16.png"), "ts", stamp),
+    href: appendUrlParam(resolveStaticAssetUrl("/favicon.ico"), "ts", stamp),
   });
   ensureHeadLink('link[rel="apple-touch-icon"]', {
     rel: "apple-touch-icon",
     sizes: "180x180",
-    href: appendUrlParam(resolveStaticAssetUrl("/peppro-apple-touch-icon-v3.png"), "ts", stamp),
+    href: appendUrlParam(resolveStaticAssetUrl("/favicon.ico"), "ts", stamp),
   });
 };
 

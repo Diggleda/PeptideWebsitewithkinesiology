@@ -30,7 +30,7 @@ class WooRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), snapshot)
-        self.assertEqual(response.headers.get("X-PepPro-Cache"), "SNAPSHOT")
+        self.assertEqual(response.headers.get("X-TruFusion-Cache"), "SNAPSHOT")
         get_catalog_product.assert_called_once_with(1512)
         fetch_catalog_proxy.assert_not_called()
 
@@ -52,7 +52,7 @@ class WooRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), live_payload)
-        self.assertEqual(response.headers.get("X-PepPro-Cache"), "MISS")
+        self.assertEqual(response.headers.get("X-TruFusion-Cache"), "MISS")
         get_catalog_product.assert_called_once_with(1512)
         fetch_catalog_proxy.assert_called_once()
 

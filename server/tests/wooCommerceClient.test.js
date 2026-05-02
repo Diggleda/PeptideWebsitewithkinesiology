@@ -52,8 +52,8 @@ test('buildOrderPayload preserves customer address data while keeping extra meta
   assert.equal(payload.shipping.phone, '555-123-4567');
   assert.deepEqual(payload.line_items[0].meta_data, []);
   assert.equal('customer_note' in payload, false);
-  assert.equal(metaKeys.has('peppro_hand_delivery_address'), false);
-  assert.equal(metaKeys.has('peppro_payment_method'), false);
+  assert.equal(metaKeys.has('trufusion_hand_delivery_address'), false);
+  assert.equal(metaKeys.has('trufusion_payment_method'), false);
 });
 
 test('buildOrderPayload prefers facility pickup recipient name over fallback actor names', async () => {
@@ -111,7 +111,7 @@ test('buildOrderPayload prefers facility pickup recipient name over fallback act
   assert.equal(
     payload.meta_data.some(
       (entry) =>
-        entry.key === 'peppro_facility_pickup_recipient_name' &&
+        entry.key === 'trufusion_facility_pickup_recipient_name' &&
         entry.value === 'Recipient Patient',
     ),
     true,
@@ -128,8 +128,8 @@ test('mapWooOrderSummary restores facility pickup recipient name from metadata',
     shipping_total: '0.00',
     date_created: '2026-04-22T15:00:00',
     meta_data: [
-      { key: 'peppro_fulfillment_method', value: 'facility_pickup' },
-      { key: 'peppro_facility_pickup_recipient_name', value: 'Recipient Patient' },
+      { key: 'trufusion_fulfillment_method', value: 'facility_pickup' },
+      { key: 'trufusion_facility_pickup_recipient_name', value: 'Recipient Patient' },
     ],
     shipping: {
       first_name: 'Sales',

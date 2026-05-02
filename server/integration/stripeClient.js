@@ -79,7 +79,7 @@ const createPaymentIntent = async ({ order, wooOrderId, wooOrderNumber, customer
   const stripe = getClient();
   const amount = Math.max(Math.round(Number(order.total || 0) * 100), 50);
   const metadata = {
-    peppro_order_id: order.id ? String(order.id) : '',
+    trufusion_order_id: order.id ? String(order.id) : '',
     user_id: order.userId ? String(order.userId) : '',
   };
   if (wooOrderId) {
@@ -99,11 +99,11 @@ const createPaymentIntent = async ({ order, wooOrderId, wooOrderNumber, customer
     descriptionParts.push(`Woo Order #${normalizedWooOrderNumber}`);
   }
   if (order?.id) {
-    descriptionParts.push(`PepPro Order ${order.id}`);
+    descriptionParts.push(`TruFusionLabs Order ${order.id}`);
   }
   const description = descriptionParts.length > 0
     ? descriptionParts.join(' · ')
-    : 'PepPro Order';
+    : 'TruFusionLabs Order';
 
   try {
     const intent = await stripe.paymentIntents.create({

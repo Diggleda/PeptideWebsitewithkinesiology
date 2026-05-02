@@ -12,7 +12,7 @@ from ..storage import init_storage
 from ..repositories import sales_prospect_repository, user_repository
 
 
-LOGGER = logging.getLogger("peppro.backfill_doctor_sales_prospects")
+LOGGER = logging.getLogger("trufusion.backfill_doctor_sales_prospects")
 
 
 def _normalize_role(value: object) -> str:

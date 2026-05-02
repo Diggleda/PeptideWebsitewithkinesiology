@@ -102,7 +102,7 @@ def init_rate_limit(app: Flask) -> None:
                 )
                 response.status_code = 429
                 response.headers["Retry-After"] = str(retry_after)
-                response.headers["X-PepPro-Rate-Limiter"] = "app"
+                response.headers["X-TruFusion-Rate-Limiter"] = "app"
                 return response
 
             bucket.append(now)

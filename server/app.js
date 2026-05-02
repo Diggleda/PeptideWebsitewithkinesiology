@@ -180,10 +180,10 @@ const buildCorsOptions = () => {
   // Production safety net: keep core web origins allowed even if env allow-list drifts.
   const productionFallbackAllowList = env.nodeEnv === 'production'
     ? [
-      'https://peppro.net',
-      'https://www.peppro.net',
-      'https://port.peppro.net',
-      'https://www.port.peppro.net',
+      'https://trufusionlabs.com',
+      'https://www.trufusionlabs.com',
+      'https://port.trufusionlabs.com',
+      'https://www.port.trufusionlabs.com',
     ]
     : [];
   const allowList = Array.from(new Set([
@@ -238,17 +238,17 @@ const buildCorsOptions = () => {
         }
       }
 
-      // Allow specifying hostnames (e.g. "peppro.net") or wildcard subdomains (e.g. "*.peppro.net").
+      // Allow specifying hostnames (e.g. "trufusionlabs.com") or wildcard subdomains (e.g. "*.trufusionlabs.com").
       if (hostname) {
         const normalizedCandidate = candidate.toLowerCase();
         if (normalizedCandidate === hostname) return true;
         if (normalizedCandidate.startsWith('*.')) {
-          const suffix = normalizedCandidate.slice(1); // ".peppro.net"
+          const suffix = normalizedCandidate.slice(1); // ".trufusionlabs.com"
           if (hostname.endsWith(suffix) && hostname.length > suffix.length) {
             return true;
           }
         } else if (normalizedCandidate.startsWith('.')) {
-          const suffix = normalizedCandidate; // ".peppro.net"
+          const suffix = normalizedCandidate; // ".trufusionlabs.com"
           if (hostname.endsWith(suffix) && hostname.length > suffix.length) {
             return true;
           }
@@ -310,14 +310,14 @@ const buildCorsOptions = () => {
       'Content-Disposition',
       'Content-Type',
       'Server-Timing',
-      'X-PepPro-Quote-Export-Ms',
-      'X-PepPro-Quote-Pdf-Ms',
-      'X-PepPro-Quote-Render-Ms',
-      'X-PepPro-Quote-Image-Ms',
-      'X-PepPro-Quote-Renderer',
-      'X-PepPro-Quote-Cache',
-      'X-PepPro-Quote-Pdf-Bytes',
-      'X-PepPro-Quote-Id',
+      'X-TruFusion-Quote-Export-Ms',
+      'X-TruFusion-Quote-Pdf-Ms',
+      'X-TruFusion-Quote-Render-Ms',
+      'X-TruFusion-Quote-Image-Ms',
+      'X-TruFusion-Quote-Renderer',
+      'X-TruFusion-Quote-Cache',
+      'X-TruFusion-Quote-Pdf-Bytes',
+      'X-TruFusion-Quote-Id',
       'X-Request-Id',
     ],
   };

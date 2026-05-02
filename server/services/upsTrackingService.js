@@ -327,7 +327,7 @@ const fetchUpsTrackingStatus = async (trackingNumber) => {
           Accept: 'application/json',
           Authorization: `Bearer ${accessToken}`,
           transId: createTransactionId(),
-          transactionSrc: env.ups?.transactionSrc || 'peppro',
+          transactionSrc: env.ups?.transactionSrc || 'trufusion',
         },
       },
     );

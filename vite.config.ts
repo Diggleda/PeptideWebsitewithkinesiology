@@ -12,7 +12,7 @@ const isReplit = Boolean(
 );
 const repoPathLooksCloudBacked = /Mobile Documents|iCloud/i.test(process.cwd());
 
-const viteCacheDir = process.env.VITE_CACHE_DIR || path.join(os.tmpdir(), 'peppro-vite-cache');
+const viteCacheDir = process.env.VITE_CACHE_DIR || path.join(os.tmpdir(), 'trufusion-vite-cache');
 const ignoredWatchGlobs = [
   '**/.git/**',
   '**/node_modules/**',
@@ -37,7 +37,7 @@ const ignoredWatchGlobs = [
 ];
 
 export default defineConfig(({ command }) => ({
-  envFile: process.env.PEPPRO_VITE_SKIP_ENV_FILES === 'true' ? false : undefined,
+  envFile: process.env.TRUFUSION_VITE_SKIP_ENV_FILES === 'true' ? false : undefined,
   // Production builds are currently hanging inside the React SWC plugin path.
   // Vite's native esbuild TSX handling is sufficient for build output here,
   // so keep SWC only for dev where fast refresh matters.

@@ -1,10 +1,13 @@
+import { BRAND } from './brand';
+
 export const MERCHANT_IDENTITY = {
-  brand: 'PepPro',
-  dba: 'PepPro',
+  brand: BRAND.name,
+  dba: BRAND.name,
   legalEntity: '[LEGAL ENTITY NAME]',
   address: '640 S Grand Ave, Santa Ana, Ca 92705, Unit #107',
   phone: '(714) 932-0232',
-  email: 'support@peppro.net',
+  email: BRAND.supportEmail,
+  legacyEmail: BRAND.legacySupportEmail,
   businessHours: 'Mon–Fri, 9am–5pm CT',
 } as const;
 

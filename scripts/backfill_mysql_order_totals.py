@@ -51,9 +51,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--table",
-        choices=("orders", "peppro_orders"),
+        choices=("orders", "trufusion_orders"),
         default="orders",
-        help="Which table to backfill (python backend uses `orders`; node backend uses `peppro_orders`).",
+        help="Which table to backfill (python backend uses `orders`; node backend uses `trufusion_orders`).",
     )
     args = parser.parse_args()
 
@@ -116,7 +116,7 @@ def main() -> int:
             payload_obj = {}
         if not isinstance(payload_obj, dict) or not payload_obj:
             continue
-        # peppro_orders stores { order, integrations }; orders stores the order dict.
+        # trufusion_orders stores { order, integrations }; orders stores the order dict.
         payload = payload_obj.get("order") if isinstance(payload_obj.get("order"), dict) else payload_obj
 
         computed = _compute_grand_total(payload, row_total)

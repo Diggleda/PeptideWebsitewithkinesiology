@@ -181,7 +181,7 @@ class TestOrderRepositoryShippedAt(unittest.TestCase):
                 "items_subtotal": 50.0,
                 "shipping_total": 0.0,
                 "shipping_rate": '{"carrierId":"facility_pickup","serviceCode":"facility_pickup","serviceType":"Facility pickup"}',
-                "shipping_address": '{"name":"PepPro Facility Pickup","addressLine1":"640 S Grand Ave","addressLine2":"Unit #107","city":"Santa Ana","state":"CA","postalCode":"92705","country":"US"}',
+                "shipping_address": '{"name":"TruFusionLabs Facility Pickup","addressLine1":"640 S Grand Ave","addressLine2":"Unit #107","city":"Santa Ana","state":"CA","postalCode":"92705","country":"US"}',
                 "facility_pickup": 1,
                 "fulfillment_method": "facility_pickup",
                 "shipping_service": "Facility pickup",

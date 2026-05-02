@@ -55,7 +55,7 @@ fake_user_repository = _module(
 sys.modules["python_backend.services.auth_service"] = fake_auth_service
 sys.modules["python_backend.repositories.user_repository"] = fake_user_repository
 services_pkg.auth_service = fake_auth_service
-services_pkg.get_config = lambda: SimpleNamespace(frontend_base_url="https://portal.peppro.test")
+services_pkg.get_config = lambda: SimpleNamespace(frontend_base_url="https://portal.trufusion.test")
 repositories_pkg.user_repository = fake_user_repository
 
 sys.modules.pop("python_backend.repositories.admin_shadow_session_repository", None)
@@ -112,7 +112,7 @@ class AdminShadowSessionServiceTests(unittest.TestCase):
             issued["expires_in_seconds"] = expires_in_seconds
             return "shadow-jwt"
 
-        with patch.object(admin_shadow_session_service, "get_config", return_value=SimpleNamespace(frontend_base_url="https://portal.peppro.test")), \
+        with patch.object(admin_shadow_session_service, "get_config", return_value=SimpleNamespace(frontend_base_url="https://portal.trufusion.test")), \
             patch.object(admin_shadow_session_service.user_repository, "find_by_id", side_effect=fake_find_by_id), \
             patch.object(admin_shadow_session_service.auth_service, "_create_auth_token", side_effect=fake_create_auth_token), \
             patch.object(
@@ -134,7 +134,7 @@ class AdminShadowSessionServiceTests(unittest.TestCase):
             self.assertTrue(str(created["launchToken"]).strip())
             self.assertEqual(
                 created["launchUrl"],
-                f"https://portal.peppro.test/?shadow={created['launchToken']}",
+                f"https://portal.trufusion.test/?shadow={created['launchToken']}",
             )
 
             exchanged = admin_shadow_session_service.exchange_shadow_session(created["launchToken"])

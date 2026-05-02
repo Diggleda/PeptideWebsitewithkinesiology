@@ -9,7 +9,7 @@ const nodeCommand = process.execPath;
 const serverEntry = path.join(process.cwd(), 'server', 'index.js');
 const localBackendEntry = path.join(process.cwd(), 'scripts', 'start-backend-local-runtime.js');
 const viteEntry = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js');
-const requestedLocalRuntime = process.env.PEPPRO_USE_LOCAL_BACKEND_RUNTIME;
+const requestedLocalRuntime = process.env.TRUFUSION_USE_LOCAL_BACKEND_RUNTIME;
 const shouldUseLocalBackendRuntime = requestedLocalRuntime === 'true';
 
 if (shouldUseLocalBackendRuntime) {
@@ -76,7 +76,7 @@ const listPortPids = (port) => safeExec(`lsof -ti:${port}`)
 const commandForPid = (pid) => safeExec(`ps -p ${pid} -o command=`)
   .trim();
 
-const isPepProBackendCommand = (command) => {
+const isTruFusionBackendCommand = (command) => {
   if (!command) {
     return false;
   }
@@ -84,10 +84,10 @@ const isPepProBackendCommand = (command) => {
     || command.includes('node server/index.js')
     || command.includes('node scripts/dev-full.js')
     || command.includes(path.join(process.cwd(), 'scripts', 'dev-full.js'))
-    || command.includes('peppro-backend-runtime/server/index.js');
+    || command.includes('trufusion-backend-runtime/server/index.js');
 };
 
-const isPepProFrontendCommand = (command) => {
+const isTruFusionFrontendCommand = (command) => {
   if (!command) {
     return false;
   }
@@ -99,9 +99,9 @@ const isPepProFrontendCommand = (command) => {
 
 const cleanupStalePorts = () => {
   const portMatchers = [
-    { port: 3000, matches: isPepProFrontendCommand, label: 'frontend' },
-    { port: 3001, matches: isPepProBackendCommand, label: 'backend' },
-    { port: 3002, matches: isPepProBackendCommand, label: 'backend' },
+    { port: 3000, matches: isTruFusionFrontendCommand, label: 'frontend' },
+    { port: 3001, matches: isTruFusionBackendCommand, label: 'backend' },
+    { port: 3002, matches: isTruFusionBackendCommand, label: 'backend' },
   ];
   for (const { port, matches, label } of portMatchers) {
     for (const pid of listPortPids(port)) {
@@ -219,7 +219,7 @@ const startFrontend = () => {
   frontendStarted = true;
   const frontendEnv = {
     ...loadFrontendEnv(),
-    PEPPRO_VITE_SKIP_ENV_FILES: 'true',
+    TRUFUSION_VITE_SKIP_ENV_FILES: 'true',
   };
   if (selectedBackendPort) {
     frontendEnv.VITE_API_URL = `http://localhost:${selectedBackendPort}`;

@@ -140,7 +140,7 @@ def handle_action(action: Callable[[], Any], status: int = 200) -> Response:
     except Exception as exc:  # pragma: no cover - error paths
         import logging
 
-        logger = logging.getLogger("peppro.api")
+        logger = logging.getLogger("trufusion.api")
         http_status = getattr(exc, "status", None)
         if http_status is None and isinstance(exc, HTTPException):
             http_status = getattr(exc, "code", None)

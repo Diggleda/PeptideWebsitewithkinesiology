@@ -23,6 +23,7 @@ from ..repositories import (
 from ..database import mysql_client
 from ..integrations import ship_station, stripe_payments, ups_tracking, woo_commerce
 from .. import storage
+from ..brand import with_legacy_meta_keys
 from . import referral_service
 from . import settings_service
 from . import discount_code_service
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 _PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
 FACILITY_PICKUP_LOCATION = {
-    "name": "PepPro Facility Pickup",
+    "name": "TruFusionLabs Facility Pickup",
     "addressLine1": "640 S Grand Ave",
     "addressLine2": "Unit #107",
     "city": "Santa Ana",
@@ -740,7 +741,7 @@ def _is_facility_pickup_address(address: object) -> bool:
         address.get("postalCode") if address.get("postalCode") is not None else address.get("postcode")
     )
 
-    matches_name = name == "peppro facility pickup"
+    matches_name = name == "trufusion facility pickup"
     matches_street = line1 == "640 s grand ave" or "640 s grand ave" in combined
     matches_unit = line2 == "unit 107" or "unit 107" in combined
     matches_location = city == "santa ana" and state == "ca" and postal_code == "92705"
@@ -998,13 +999,13 @@ def _extract_woo_details(integrations_value):
     return _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
 
 
-def _extract_peppro_order_id_from_integrations(integrations_value, fallback=None):
+def _extract_trufusion_order_id_from_integrations(integrations_value, fallback=None):
     woo_details = _extract_woo_details(integrations_value)
-    return (
-        woo_details.get("pepproOrderId")
-        or woo_details.get("peppro_order_id")
-        or fallback
-    )
+    for key in with_legacy_meta_keys("trufusionOrderId", "trufusion_order_id"):
+        value = woo_details.get(key)
+        if value:
+            return value
+    return fallback
 
 
 def _extract_image_source(value: object) -> Optional[str]:
@@ -1584,20 +1585,20 @@ def _is_ups_order_for_refresh(*orders: Optional[Dict]) -> bool:
     return False
 
 
-def _resolve_peppro_order_id_for_ups_refresh(order: Dict, local_order: Optional[Dict]) -> Optional[str]:
+def _resolve_trufusion_order_id_for_ups_refresh(order: Dict, local_order: Optional[Dict]) -> Optional[str]:
     candidates: List[Any] = []
     if isinstance(local_order, dict):
         candidates.append(local_order.get("id"))
 
     if isinstance(order, dict):
         candidates.append(order.get("id"))
-        candidates.append(order.get("pepproOrderId"))
+        candidates.append(order.get("trufusionOrderId"))
         integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
         woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
         candidates.extend(
             [
-                woo_details.get("pepproOrderId"),
-                woo_details.get("peppro_order_id"),
+                woo_details.get("trufusionOrderId"),
+                woo_details.get("trufusion_order_id"),
             ]
         )
 
@@ -1640,14 +1641,14 @@ def _iter_order_identifier_candidates_for_ups_refresh(*orders: Optional[Dict]) -
         payload = _ensure_dict(woo_details.get("payload"))
         for candidate in (
             order.get("id"),
-            order.get("pepproOrderId"),
+            order.get("trufusionOrderId"),
             order.get("wooOrderId"),
             order.get("woo_order_id"),
             order.get("wooOrderNumber"),
             order.get("woo_order_number"),
             order.get("number"),
-            woo_details.get("pepproOrderId"),
-            woo_details.get("peppro_order_id"),
+            woo_details.get("trufusionOrderId"),
+            woo_details.get("trufusion_order_id"),
             woo_details.get("id"),
             woo_details.get("orderId"),
             woo_details.get("orderNumber"),
@@ -1692,7 +1693,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
                 "trackingNumber": tracking_number,
                 "orderId": (
                     (local_order or {}).get("id")
-                    or _resolve_peppro_order_id_for_ups_refresh(order, local_order)
+                    or _resolve_trufusion_order_id_for_ups_refresh(order, local_order)
                     or order.get("id")
                 ),
             },
@@ -1738,7 +1739,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
     current_expected_shipment_window = _extract_ups_expected_shipment_window(order, local_order)
 
     refreshed_local_order = local_order
-    peppro_order_id = _resolve_peppro_order_id_for_ups_refresh(order, local_order)
+    trufusion_order_id = _resolve_trufusion_order_id_for_ups_refresh(order, local_order)
     should_persist = current_status != normalized or (
         delivery_date and current_persisted_delivery_date != delivery_date
     ) or (
@@ -1750,10 +1751,10 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
             or (expected_shipment_window and current_expected_shipment_window != expected_shipment_window)
         )
     )
-    if peppro_order_id and should_persist:
+    if trufusion_order_id and should_persist:
         try:
             persisted = order_repository.update_ups_tracking_status(
-                peppro_order_id,
+                trufusion_order_id,
                 ups_tracking_status=normalized,
                 delivered_at=delivered_at,
                 estimated_arrival_date=estimated_arrival_date,
@@ -1766,7 +1767,7 @@ def _refresh_authoritative_ups_status_for_order_view(order: Dict, *, local_order
             logger.warning(
                 "Failed to persist refreshed UPS tracking status",
                 exc_info=True,
-                extra={"orderId": peppro_order_id, "trackingNumber": live_tracking_number, "upsTrackingStatus": normalized},
+                extra={"orderId": trufusion_order_id, "trackingNumber": live_tracking_number, "upsTrackingStatus": normalized},
             )
 
     for target in (order, local_order, refreshed_local_order):
@@ -2676,7 +2677,7 @@ def _find_order_by_woo_id(woo_order_id: str) -> Optional[Dict]:
 
 def sync_order_status_from_woo_webhook(order_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Mirror Woo order status into the local PepPro `orders` table (best-effort).
+    Mirror Woo order status into the local TruFusionLabs `orders` table (best-effort).
 
     This enables near-real-time status updates (e.g., on-hold -> processing) without relying on polling.
     """
@@ -2692,19 +2693,20 @@ def sync_order_status_from_woo_webhook(order_data: Dict[str, Any]) -> Dict[str, 
     if not woo_order_id or not status:
         return {"status": "skipped", "reason": "missing_id_or_status"}
 
-    peppro_order_id = None
+    trufusion_order_id = None
     meta = order_data.get("meta_data") or []
     if isinstance(meta, list):
+        order_id_keys = set(with_legacy_meta_keys("trufusion_order_id"))
         for entry in meta:
             if not isinstance(entry, dict):
                 continue
-            if str(entry.get("key") or "").strip() == "peppro_order_id":
+            if str(entry.get("key") or "").strip() in order_id_keys:
                 value = entry.get("value")
-                peppro_order_id = str(value).strip() if value is not None else None
-                if peppro_order_id:
+                trufusion_order_id = str(value).strip() if value is not None else None
+                if trufusion_order_id:
                     break
 
-    local_order = order_repository.find_by_id(peppro_order_id) if peppro_order_id else None
+    local_order = order_repository.find_by_id(trufusion_order_id) if trufusion_order_id else None
     if not local_order:
         local_order = _find_order_by_woo_id(woo_order_id) or (_find_order_by_woo_id(woo_order_number) if woo_order_number else None)
     if not local_order:
@@ -2760,7 +2762,7 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
         if not woo_order:
             woo_order = woo_commerce.fetch_order_by_number(order_id)
         if not woo_order:
-            woo_order = woo_commerce.fetch_order_by_peppro_id(order_id)
+            woo_order = woo_commerce.fetch_order_by_trufusion_id(order_id)
         if woo_order and woo_order.get("id"):
             woo_order_id = str(woo_order.get("id"))
 
@@ -2769,7 +2771,7 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
         woo_order = (
             woo_commerce.fetch_order(woo_order_id)
             or woo_commerce.fetch_order_by_number(woo_order_id)
-            or woo_commerce.fetch_order_by_peppro_id(woo_order_id)
+            or woo_commerce.fetch_order_by_trufusion_id(woo_order_id)
         )
 
     if not woo_order_id:
@@ -2861,7 +2863,7 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
                     payment_intent_id,
                     amount_cents=target_amount_cents,
                     reason=reason or None,
-                    metadata={"peppro_order_id": local_order.get("id") if local_order else None, "woo_order_id": order_id},
+                    metadata={"trufusion_order_id": local_order.get("id") if local_order else None, "woo_order_id": order_id},
                 )
                 did_refund = bool(stripe_refund) and stripe_refund.get("status") not in (None, "skipped")
                 if did_refund:
@@ -2874,7 +2876,7 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
                             {
                                 "woo_order_id": str(woo_order_id),
                                 "payment_intent_id": payment_intent_id,
-                                "peppro_order_id": local_order.get("id") if local_order else None,
+                                "trufusion_order_id": local_order.get("id") if local_order else None,
                                 "refunded": True,
                                 "stripe_refund_id": stripe_refund.get("id") if isinstance(stripe_refund, dict) else None,
                                 "refund_amount": refund_amount,
@@ -2899,10 +2901,10 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
                 woo_refund = woo_commerce.create_refund(
                     woo_order_id=str(woo_order_id),
                     amount=float(refund_amount),
-                    reason=reason or "Refunded via PepPro (Stripe)",
+                    reason=reason or "Refunded via TruFusionLabs (Stripe)",
                     metadata={
                         "stripe_payment_intent": payment_intent_id,
-                        "peppro_order_id": local_order.get("id") if local_order else None,
+                        "trufusion_order_id": local_order.get("id") if local_order else None,
                     },
                 )
             except Exception:
@@ -3018,7 +3020,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
                 "paymentDetails": local.get("paymentDetails") or local.get("paymentMethod") or None,
                 "integrationDetails": local.get("integrationDetails") or None,
                 "lineItems": local.get("items") or [],
-                "source": "peppro",
+                "source": "trufusion",
             }
         )
 
@@ -3078,12 +3080,8 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
     for order in woo_orders:
         integrations = _ensure_dict(order.get("integrationDetails"))
         woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
-        peppro_order_id = (
-            woo_details.get("pepproOrderId")
-            or woo_details.get("peppro_order_id")
-            or order.get("pepproOrderId")
-        )
-        local_order = local_lookup.get(str(peppro_order_id)) if peppro_order_id else None
+        trufusion_order_id = _extract_trufusion_order_id_from_integrations(integrations, order.get("trufusionOrderId"))
+        local_order = local_lookup.get(str(trufusion_order_id)) if trufusion_order_id else None
         if not local_order:
             woo_id = order.get("wooOrderId") or order.get("id")
             woo_number = order.get("wooOrderNumber") or order.get("number")
@@ -3256,7 +3254,7 @@ def update_order_fields(
     expected_shipment_window: Optional[str] = None,
 ) -> Dict:
     """
-    Update local order fields for display in the app (PepPro-local metadata).
+    Update local order fields for display in the app (TruFusionLabs-local metadata).
 
     Allowed:
     - admin
@@ -3587,14 +3585,15 @@ def get_orders_for_sales_rep(
     def _meta_value(meta: object, key: str):
         if not isinstance(meta, list):
             return None
+        keys = set(with_legacy_meta_keys(key))
         for entry in meta:
-            if isinstance(entry, dict) and entry.get("key") == key:
+            if isinstance(entry, dict) and entry.get("key") in keys:
                 return entry.get("value")
         return None
 
-    # Pull local PepPro orders to support:
+    # Pull local TruFusionLabs orders to support:
     # - reps seeing orders even when billing email doesn't match the doctor email
-    # - resolving doctorId via Woo meta `peppro_order_id`
+    # - resolving doctorId via Woo meta `trufusion_order_id`
     local_by_id: Dict[str, Dict] = {}
     try:
         doctor_ids = [str(doc.get("id")) for doc in doctors if doc.get("id") is not None]
@@ -3760,7 +3759,7 @@ def get_orders_for_sales_rep(
                 "doctorSalesRepEmail": (local_rep.get("email") if isinstance(local_rep, dict) else None)
                 or doctor_meta.get("salesRepEmail"),
                 "userId": doctor_meta.get("id") or local_user_id or None,
-                "source": "peppro",
+                "source": "trufusion",
             }
             if force:
                 _enrich_with_shipstation(summary)
@@ -4019,7 +4018,7 @@ def get_on_hold_orders_for_sales_rep(
                 "doctorSalesRepEmail": rep_record.get("email") if isinstance(rep_record, dict) else None,
                 "userId": doctor.get("id") or local_user_id or None,
                 "lineItems": local.get("items") or [],
-                "source": "peppro",
+                "source": "trufusion",
             }
         )
 
@@ -4573,12 +4572,12 @@ def _enrich_with_shipstation(order: Dict) -> None:
     if info.get("trackingNumber"):
         order["trackingNumber"] = info["trackingNumber"]
 
-    peppro_order_id = _extract_peppro_order_id_from_integrations(
+    trufusion_order_id = _extract_trufusion_order_id_from_integrations(
         order.get("integrationDetails") or order.get("integrations"),
         fallback=order.get("id"),
     )
     _persist_shipping_update(
-        peppro_order_id,
+        trufusion_order_id,
         order.get("shippingEstimate"),
         order.get("trackingNumber"),
         info,
@@ -4587,7 +4586,7 @@ def _enrich_with_shipstation(order: Dict) -> None:
 
 def _normalize_shipstation_delivery_status(shipstation_info: Dict) -> Optional[str]:
     """
-    Best-effort mapping from ShipStation shipment/order status fields to a PepPro-friendly token.
+    Best-effort mapping from ShipStation shipment/order status fields to a TruFusionLabs-friendly token.
 
     ShipStation frequently reports orderStatus='shipped' even after delivery; the shipments payload
     may include additional delivery/tracking status strings. We normalize these into:
@@ -4722,7 +4721,7 @@ def _build_sales_rep_order_detail_from_local(local_order: Dict) -> Dict:
 
     mapped = {
         "id": woo_order_id or local_id or order_number,
-        "pepproOrderId": local_id,
+        "trufusionOrderId": local_id,
         "number": order_number,
         "wooOrderId": woo_order_id,
         "wooOrderNumber": woo_order_number,
@@ -4815,7 +4814,7 @@ def get_sales_rep_order_detail(
 
     def _is_unusable_email(value: object) -> bool:
         normalized = _normalize_email(str(value or ""))
-        return (not normalized) or normalized == "[encrypted]" or normalized.endswith("@peppro.example")
+        return (not normalized) or normalized == "[encrypted]" or normalized.endswith("@trufusion.example")
 
     def _pick_doctor(local_order: Optional[Dict]) -> Optional[Dict]:
         billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
@@ -4997,26 +4996,26 @@ def get_sales_rep_order_detail(
             mapped["shippingService"] = service_code
         if shipstation_info.get("trackingNumber"):
             mapped["trackingNumber"] = shipstation_info["trackingNumber"]
-        peppro_order_id = _extract_peppro_order_id_from_integrations(
+        trufusion_order_id = _extract_trufusion_order_id_from_integrations(
             mapped.get("integrationDetails") or mapped.get("integrations"),
             fallback=mapped.get("id"),
         )
         _persist_shipping_update(
-            peppro_order_id,
+            trufusion_order_id,
             mapped.get("shippingEstimate"),
             mapped.get("trackingNumber"),
             shipstation_info,
         )
 
-    # Pull local PepPro order fields for fallback detail hydration and display-only metadata.
+    # Pull local TruFusionLabs order fields for fallback detail hydration and display-only metadata.
     # This keeps the detail modal usable when Woo returns sparse billing/shipping data or when
     # the order was authored before the current Woo payload shape.
     try:
         integrations = _ensure_dict(mapped.get("integrationDetails") or mapped.get("integrations"))
         woo_details = _extract_woo_details(integrations)
-        peppro_order_id = _extract_peppro_order_id_from_integrations(integrations)
-        if peppro_order_id and not local_order:
-            local_order = order_repository.find_by_id(str(peppro_order_id))
+        trufusion_order_id = _extract_trufusion_order_id_from_integrations(integrations)
+        if trufusion_order_id and not local_order:
+            local_order = order_repository.find_by_id(str(trufusion_order_id))
         if not local_order:
             local_order = (
                 order_repository.find_by_order_identifier(
@@ -5284,8 +5283,9 @@ def get_sales_by_rep(
     def _meta_value(meta: object, key: str):
         if not isinstance(meta, list):
             return None
+        keys = set(with_legacy_meta_keys(key))
         for entry in meta:
-            if isinstance(entry, dict) and entry.get("key") == key:
+            if isinstance(entry, dict) and entry.get("key") in keys:
                 return entry.get("value")
         return None
 
@@ -5769,7 +5769,7 @@ def get_sales_by_rep(
                     meta_data = []
             if not isinstance(meta_data, list):
                 meta_data = []
-            if _is_truthy(_meta_value(meta_data, "peppro_refunded")):
+            if _is_truthy(_meta_value(meta_data, "trufusion_refunded")):
                 skipped_refunded += 1
                 continue
 
@@ -5836,21 +5836,21 @@ def get_sales_by_rep(
             ).strip()
 
             meta_rep_id = _normalize_rep_id(
-                _meta_value(meta_data, "peppro_sales_rep_id")
+                _meta_value(meta_data, "trufusion_sales_rep_id")
                 or _meta_value(meta_data, "sales_rep_id")
                 or _meta_value(meta_data, "salesRepId")
                 or _meta_value(meta_data, "doctor_sales_rep_id")
                 or _meta_value(meta_data, "doctorSalesRepId")
             )
             meta_rep_email = _norm_email(
-                _meta_value(meta_data, "peppro_sales_rep_email")
+                _meta_value(meta_data, "trufusion_sales_rep_email")
                 or _meta_value(meta_data, "sales_rep_email")
                 or _meta_value(meta_data, "salesRepEmail")
                 or _meta_value(meta_data, "doctor_sales_rep_email")
                 or _meta_value(meta_data, "doctorSalesRepEmail")
             )
             meta_rep_code = str(
-                _meta_value(meta_data, "peppro_sales_rep_code")
+                _meta_value(meta_data, "trufusion_sales_rep_code")
                 or _meta_value(meta_data, "sales_rep_code")
                 or _meta_value(meta_data, "salesRepCode")
                 or _meta_value(meta_data, "doctor_sales_rep_code")
@@ -5966,8 +5966,8 @@ def get_sales_by_rep(
                 or local_order.get("pricing_mode")
                 or integrations.get("pricingMode")
                 or integrations.get("pricing_mode")
-                or _meta_value(meta_data, "peppro_pricing_mode")
-                or _meta_value(meta_data, "peppro_pricingMode")
+                or _meta_value(meta_data, "trufusion_pricing_mode")
+                or _meta_value(meta_data, "trufusion_pricingMode")
                 or _meta_value(meta_data, "pricing_mode")
                 or _meta_value(meta_data, "pricingMode")
             )
@@ -6587,8 +6587,9 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
     def _meta_value(meta: object, key: str):
         if not isinstance(meta, list):
             return None
+        keys = set(with_legacy_meta_keys(key))
         for entry in meta:
-            if isinstance(entry, dict) and entry.get("key") == key:
+            if isinstance(entry, dict) and entry.get("key") in keys:
                 return entry.get("value")
         return None
 
@@ -7082,21 +7083,21 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             ).strip()
 
             meta_rep_id = _normalize_rep_id(
-                _meta_value(meta_data, "peppro_sales_rep_id")
+                _meta_value(meta_data, "trufusion_sales_rep_id")
                 or _meta_value(meta_data, "sales_rep_id")
                 or _meta_value(meta_data, "salesRepId")
                 or _meta_value(meta_data, "doctor_sales_rep_id")
                 or _meta_value(meta_data, "doctorSalesRepId")
             )
             meta_rep_email = _norm_email(
-                _meta_value(meta_data, "peppro_sales_rep_email")
+                _meta_value(meta_data, "trufusion_sales_rep_email")
                 or _meta_value(meta_data, "sales_rep_email")
                 or _meta_value(meta_data, "salesRepEmail")
                 or _meta_value(meta_data, "doctor_sales_rep_email")
                 or _meta_value(meta_data, "doctorSalesRepEmail")
             )
             meta_rep_code = str(
-                _meta_value(meta_data, "peppro_sales_rep_code")
+                _meta_value(meta_data, "trufusion_sales_rep_code")
                 or _meta_value(meta_data, "sales_rep_code")
                 or _meta_value(meta_data, "salesRepCode")
                 or _meta_value(meta_data, "doctor_sales_rep_code")

@@ -190,7 +190,7 @@ class AuthHttpRegressionTests(unittest.TestCase):
             "iat": None,
         }
         self.auth.jwt.decode = lambda *args, **kwargs: payload
-        self.auth.request.cookies = {"peppro_media_token": "cookie-token"}
+        self.auth.request.cookies = {"trufusion_media_token": "cookie-token"}
         self.auth.user_repository.find_session_by_id = lambda _user_id: {"id": "user-1", "sessionId": "session-1"}
         self.auth.presence_service.snapshot = lambda: {}
 

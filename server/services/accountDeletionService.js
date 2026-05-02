@@ -230,8 +230,8 @@ const rewriteMysqlReferences = async (targetId, replacementId) => {
 
   const statements = [
     {
-      label: 'peppro_orders.user_id',
-      query: 'UPDATE peppro_orders SET user_id = :replacementId WHERE user_id = :targetId',
+      label: 'trufusion_orders.user_id',
+      query: 'UPDATE trufusion_orders SET user_id = :replacementId WHERE user_id = :targetId',
       params: { targetId, replacementId },
     },
     {
@@ -272,12 +272,12 @@ const rewriteMysqlReferences = async (targetId, replacementId) => {
     // eslint-disable-next-line no-await-in-loop
     const result = await executeMysql(statement.query, statement.params, statement.label);
     results.push(result);
-    if (statement.label === 'peppro_orders.user_id') {
+    if (statement.label === 'trufusion_orders.user_id') {
       // eslint-disable-next-line no-await-in-loop
       results.push(await rewriteInlineJsonTableField({
-        tableName: 'peppro_orders',
+        tableName: 'trufusion_orders',
         fieldName: 'payload',
-        label: 'peppro_orders.payload',
+        label: 'trufusion_orders.payload',
         targetId,
         replacementId,
         legacyFields: ['payload_encrypted'],

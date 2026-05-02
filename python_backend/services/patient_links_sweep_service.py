@@ -63,7 +63,7 @@ def sweep_once() -> Dict[str, Any]:
     except Exception:
         return {"ok": False, "skipped": True, "reason": "mysql_disabled"}
 
-    lock_name = "peppro:patient_links:sweep"
+    lock_name = "trufusion:patient_links:sweep"
     if not _try_acquire_lock(lock_name):
         return {"ok": False, "skipped": True, "reason": "lock_busy"}
 

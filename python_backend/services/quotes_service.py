@@ -69,7 +69,7 @@ def _normalize_quotes(raw_quotes: object) -> List[Dict]:
                 quotes.append(normalized)
 
     if not quotes:
-        quotes.append({"id": "fallback", "text": "Excellence is an attitude.", "author": "PepPro"})
+        quotes.append({"id": "fallback", "text": "Excellence is an attitude.", "author": "TruFusionLabs"})
     return quotes
 
 
@@ -305,7 +305,7 @@ def get_daily_quote() -> Dict:
                     "author": cache.get("author"),
                     "stale": True,
                 }
-        return {"text": "Excellence is an attitude.", "author": "PepPro", "stale": True}
+        return {"text": "Excellence is an attitude.", "author": "TruFusionLabs", "stale": True}
 
     yesterday_id = cache.get("id") if cache and cache.get("date") != today else None
     selection = _pick_quote(quotes, yesterday_id)

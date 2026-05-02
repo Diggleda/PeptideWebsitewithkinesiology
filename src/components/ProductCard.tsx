@@ -46,8 +46,8 @@ const AUTO_CYCLE_STRENGTH_DELAY_MS = (() => {
   return 175;
 })();
 
-const PLACEHOLDER_VARIATION_ID = '__peppro_needs_variant__';
-const PLACEHOLDER_IMAGE_SRC = resolveStaticAssetUrl('/PepPro_icon.png');
+const PLACEHOLDER_VARIATION_ID = '__trufusion_needs_variant__';
+const PLACEHOLDER_IMAGE_SRC = resolveStaticAssetUrl('/Trufusionpeptides_icon.png');
 
 const roundCurrency = (value: number) =>
   Math.round((value + Number.EPSILON) * 100) / 100;

@@ -86,11 +86,11 @@ test('deleteAccountAndRewriteReferences rewrites inline encrypted JSON fields', 
           },
         ];
       }
-      if (query === 'SELECT * FROM peppro_orders') {
+      if (query === 'SELECT * FROM trufusion_orders') {
         return [
           {
             id: 'order-2',
-            payload_encrypted: 'cipher-peppro-payload',
+            payload_encrypted: 'cipher-trufusion-payload',
             phi_payload_ref: 'legacy-ref',
           },
         ];
@@ -123,8 +123,8 @@ test('deleteAccountAndRewriteReferences rewrites inline encrypted JSON fields', 
           return { contactId: 'doctor-1' };
         }
         if (
-          value === 'cipher-peppro-payload'
-          && options?.aad?.table === 'peppro_orders'
+          value === 'cipher-trufusion-payload'
+          && options?.aad?.table === 'trufusion_orders'
           && options?.aad?.record_ref === 'legacy-ref'
           && options?.aad?.field === 'payload'
         ) {
@@ -148,7 +148,7 @@ test('deleteAccountAndRewriteReferences rewrites inline encrypted JSON fields', 
     && params.id === 'order-1'
     && params.value.includes('0000000000000')));
   assert.ok(executeCalls.some(({ query, params }) =>
-    query === 'UPDATE peppro_orders SET payload = :value WHERE id = :id'
+    query === 'UPDATE trufusion_orders SET payload = :value WHERE id = :id'
     && params.id === 'order-2'
     && params.value.includes('0000000000000')));
   assert.ok(!executeCalls.some(({ query }) => /REPLACE\(payload/i.test(query)));

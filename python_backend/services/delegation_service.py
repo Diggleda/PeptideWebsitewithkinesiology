@@ -208,15 +208,15 @@ def _validate_delegate_review_notes(value: Optional[str]) -> Optional[str]:
 def _compensation_disclosure(markup_percent: object) -> str:
     if _normalize_markup_percent(markup_percent) > 0:
         return "Your physician receives compensation from this transaction."
-    return "Your physician does not receive compensation from this PepPro transaction."
+    return "Your physician does not receive compensation from this TruFusionLabs transaction."
 
 
 def _research_supply_disclosures(markup_percent: object) -> List[str]:
     return [
-        "PepPro provides research materials only. Products are not intended for human consumption.",
-        "PepPro does not provide prescriptions, treatment, dosing, therapy, or patient instructions.",
+        "TruFusionLabs provides research materials only. Products are not intended for human consumption.",
+        "TruFusionLabs does not provide prescriptions, treatment, dosing, therapy, or patient instructions.",
         "Physicians are responsible for any independent research protocols.",
-        "PepPro does not direct or control physician activities.",
+        "TruFusionLabs does not direct or control physician activities.",
         _compensation_disclosure(markup_percent),
     ]
 

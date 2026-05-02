@@ -32,10 +32,10 @@ const attachQuoteExportDebugHeaders = (res, result) => {
     : {};
 
   const headerValues = {
-    'X-PepPro-Quote-Export-Ms': diagnostics.totalMs,
-    'X-PepPro-Quote-Pdf-Ms': diagnostics.pdfMs,
-    'X-PepPro-Quote-Render-Ms': pdfDiagnostics.renderMs ?? pdfDiagnostics.totalMs,
-    'X-PepPro-Quote-Image-Ms': htmlDiagnostics.imageResolveMs,
+    'X-TruFusion-Quote-Export-Ms': diagnostics.totalMs,
+    'X-TruFusion-Quote-Pdf-Ms': diagnostics.pdfMs,
+    'X-TruFusion-Quote-Render-Ms': pdfDiagnostics.renderMs ?? pdfDiagnostics.totalMs,
+    'X-TruFusion-Quote-Image-Ms': htmlDiagnostics.imageResolveMs,
   };
 
   Object.entries(headerValues).forEach(([headerName, headerValue]) => {
@@ -47,17 +47,17 @@ const attachQuoteExportDebugHeaders = (res, result) => {
 
   const renderer = String(pdfDiagnostics.renderer || '').trim();
   if (renderer) {
-    res.setHeader('X-PepPro-Quote-Renderer', renderer);
+    res.setHeader('X-TruFusion-Quote-Renderer', renderer);
   }
 
   const cacheLayer = String(pdfDiagnostics.cacheLayer || '').trim();
   if (cacheLayer) {
-    res.setHeader('X-PepPro-Quote-Cache', cacheLayer);
+    res.setHeader('X-TruFusion-Quote-Cache', cacheLayer);
   }
 
   const pdfLength = typeof result?.pdf?.length === 'number' ? result.pdf.length : null;
   if (Number.isFinite(pdfLength) && pdfLength >= 0) {
-    res.setHeader('X-PepPro-Quote-Pdf-Bytes', String(pdfLength));
+    res.setHeader('X-TruFusion-Quote-Pdf-Bytes', String(pdfLength));
   }
 
   const serverTiming = [];
@@ -145,7 +145,7 @@ const exportPdf = async (req, res, next) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-PepPro-Quote-Id', result.quote?.id || '');
+    res.setHeader('X-TruFusion-Quote-Id', result.quote?.id || '');
     attachQuoteExportDebugHeaders(res, result);
     res.status(200).send(result.pdf);
   } catch (error) {

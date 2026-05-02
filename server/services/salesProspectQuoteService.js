@@ -94,7 +94,7 @@ const resolveSalesRepSnapshot = (prospect, actor) => {
     name: normalizeOptionalText(repRecord?.name)
       || normalizeOptionalText(linkedUser?.name)
       || normalizeOptionalText(actor?.name)
-      || 'PepPro',
+      || 'TruFusionLabs',
     email: normalizeOptionalText(repRecord?.email)
       || normalizeOptionalText(linkedUser?.email)
       || normalizeOptionalText(actor?.email),
@@ -384,7 +384,7 @@ const exportProspectQuote = async ({
         name:
           normalizeOptionalText(quote?.quotePayloadJson?.salesRep?.name)
           || normalizeOptionalText(resolvedSalesRep?.name)
-          || 'PepPro',
+          || 'TruFusionLabs',
         email:
           normalizeOptionalText(quote?.quotePayloadJson?.salesRep?.email)
           || normalizeOptionalText(resolvedSalesRep?.email),

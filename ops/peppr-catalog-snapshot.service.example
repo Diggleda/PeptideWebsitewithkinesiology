@@ -1,11 +1,11 @@
 [Unit]
-Description=PepPro catalog snapshot sync
+Description=TruFusionLabs catalog snapshot sync
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=pepproadmin
+User=trufusionadmin
 WorkingDirectory=/opt/peppr/backend
 EnvironmentFile=/etc/peppr-api.env
 Environment=PYTHONUNBUFFERED=1

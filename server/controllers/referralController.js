@@ -842,7 +842,7 @@ const getDoctorLedger = (req, res, next) => {
           const rows = await mysqlClient.fetchAll(
             `
               SELECT user_id AS userId, COUNT(*) AS count
-              FROM peppro_orders
+              FROM trufusion_orders
               WHERE user_id IN (${placeholders})
               GROUP BY user_id
             `,

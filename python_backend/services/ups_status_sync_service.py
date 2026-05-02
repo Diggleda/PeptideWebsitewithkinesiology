@@ -157,7 +157,7 @@ def _shipping_status_email_sent(order: Dict[str, Any], status: str) -> bool:
     integrations = _coerce_object(order.get("integrationDetails") or order.get("integrations"))
     pep_pro = _coerce_object(
         integrations.get("pepProNotifications")
-        or integrations.get("pepproNotifications")
+        or integrations.get("trufusionNotifications")
         or integrations.get("pep_pro_notifications")
     )
     shipping_state = _coerce_object(

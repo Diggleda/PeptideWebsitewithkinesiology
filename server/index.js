@@ -103,7 +103,7 @@ const start = async () => {
 
     logger.info(
       {
-        service: 'peppro-backend',
+        service: 'trufusion-backend',
         port,
         nodeEnv: env.nodeEnv,
       },

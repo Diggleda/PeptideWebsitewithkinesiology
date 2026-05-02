@@ -136,7 +136,7 @@ def create_order():
             if value is None:
                 continue
             text = str(value).strip()
-            if text and " ".join(text.lower().replace(".", "").replace(",", "").split()) != "peppro facility pickup":
+            if text and " ".join(text.lower().replace(".", "").replace(",", "").split()) != "trufusion facility pickup":
                 return text
         return None
 
@@ -570,7 +570,7 @@ def admin_on_hold_orders():
                 "doctorEmail": doctor_email,
                 "userId": doctor.get("id") or local_user_id or None,
                 "lineItems": local.get("items") or [],
-                "source": "peppro",
+                "source": "trufusion",
             }
             summaries.append(summary)
 
@@ -1008,7 +1008,7 @@ def download_invoice(order_id: str) -> Response:
         try:
             woo_order = woo_commerce.fetch_order(order_id)
             if not woo_order:
-                woo_order = woo_commerce.fetch_order_by_number(order_id) or woo_commerce.fetch_order_by_peppro_id(order_id)
+                woo_order = woo_commerce.fetch_order_by_number(order_id) or woo_commerce.fetch_order_by_trufusion_id(order_id)
         except Exception as exc:
             if isinstance(exc, getattr(woo_commerce, "IntegrationError", Exception)):
                 woo_error = exc
@@ -1022,9 +1022,9 @@ def download_invoice(order_id: str) -> Response:
                 pdf_bytes, filename = _build_invoice_from_local_order(local_order, customer_email=user_email or None)
                 resp = make_response(pdf_bytes)
                 resp.headers["Content-Type"] = "application/pdf"
-                resp.headers["Content-Disposition"] = f'attachment; filename="{filename or "PepPro_Invoice.pdf"}"'
+                resp.headers["Content-Disposition"] = f'attachment; filename="{filename or "TruFusion_Labs_Invoice.pdf"}"'
                 resp.headers["Cache-Control"] = "no-store"
-                resp.headers["X-PepPro-Invoice-Source"] = "fallback-local"
+                resp.headers["X-TruFusion-Invoice-Source"] = "fallback-local"
                 return resp
 
         if not woo_order:
@@ -1130,7 +1130,7 @@ def download_invoice(order_id: str) -> Response:
                     },
                     timeout=25,
                     allow_redirects=True,
-                    headers={"Accept": "application/pdf", "User-Agent": "PepPro Invoice Proxy"},
+                    headers={"Accept": "application/pdf", "User-Agent": "TruFusionLabs Invoice Proxy"},
                 )
                 resp.raise_for_status()
                 body = resp.content or b""
@@ -1155,9 +1155,9 @@ def download_invoice(order_id: str) -> Response:
 
         resp = make_response(pdf_bytes)
         resp.headers["Content-Type"] = "application/pdf"
-        resp.headers["Content-Disposition"] = f'attachment; filename="{filename or "PepPro_Invoice.pdf"}"'
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename or "TruFusion_Labs_Invoice.pdf"}"'
         resp.headers["Cache-Control"] = "no-store"
-        resp.headers["X-PepPro-Invoice-Source"] = invoice_source
+        resp.headers["X-TruFusion-Invoice-Source"] = invoice_source
         return resp
 
     return handle_action(action)

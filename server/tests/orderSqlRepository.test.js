@@ -76,7 +76,7 @@ test('persistOrder stores ciphertext inline in payload without sidecar columns',
   );
 
   assert.equal(calls.length, 1);
-  assert.match(calls[0].query, /INSERT INTO peppro_orders/);
+  assert.match(calls[0].query, /INSERT INTO trufusion_orders/);
   assert.doesNotMatch(calls[0].query, /payload_encrypted/);
   assert.doesNotMatch(calls[0].query, /phi_payload_ref/);
   assert.equal(calls[0].params.payload, 'cipher:payload:order-1:order-1');
@@ -88,7 +88,7 @@ test('fetchByBillingEmails reads inline encrypted payload values', async () => {
     execute: async () => 1,
     fetchOne: async () => null,
     fetchAll: async (query) => {
-      if (query.includes('FROM peppro_orders')) {
+      if (query.includes('FROM trufusion_orders')) {
         return [
           {
             id: 'order-2',
@@ -191,7 +191,7 @@ test('persistOrder and fetchById round-trip ups_tracking_status as authoritative
     },
     fetchAll: async () => [],
     fetchOne: async (query) => {
-      if (query.includes('FROM peppro_orders')) {
+      if (query.includes('FROM trufusion_orders')) {
         return {
           id: 'order-ups-1',
           user_id: 'user-1',

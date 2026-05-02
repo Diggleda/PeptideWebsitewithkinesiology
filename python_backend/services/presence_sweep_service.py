@@ -126,7 +126,7 @@ def sweep_once() -> Dict[str, Any]:
 
     config = get_config()
     if bool(getattr(config, "mysql", {}).get("enabled")):
-        lock_name = "peppro:presence:sweep"
+        lock_name = "trufusion:presence:sweep"
         if not _try_acquire_lock(lock_name):
             return {"ok": False, "skipped": True, "reason": "lock_busy", "cutoff": cutoff_sql, "pruned": pruned}
         try:

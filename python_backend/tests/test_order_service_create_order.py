@@ -648,7 +648,7 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(payload["billing"]["first_name"], "Recipient")
         self.assertEqual(payload["billing"]["last_name"], "Patient")
         meta = {entry["key"]: entry.get("value") for entry in payload["meta_data"]}
-        self.assertEqual(meta["peppro_facility_pickup_recipient_name"], "Recipient Patient")
+        self.assertEqual(meta["trufusion_facility_pickup_recipient_name"], "Recipient Patient")
 
     def test_on_hold_facility_pickup_uses_placer_name_for_display(self):
         service = self.order_service
@@ -716,9 +716,9 @@ class CreateOrderTests(unittest.TestCase):
                 "shipping_total": "0.00",
                 "date_created": "2026-04-22T00:00:00",
                 "meta_data": [
-                    {"key": "peppro_fulfillment_method", "value": "facility_pickup"},
+                    {"key": "trufusion_fulfillment_method", "value": "facility_pickup"},
                     {
-                        "key": "peppro_facility_pickup_recipient_name",
+                        "key": "trufusion_facility_pickup_recipient_name",
                         "value": "Recipient Patient",
                     },
                 ],

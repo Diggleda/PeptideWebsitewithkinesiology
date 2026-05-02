@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 
 const repoRoot = process.cwd();
-const configuredCacheDir = process.env.VITE_CACHE_DIR || path.join(os.tmpdir(), 'peppro-vite-cache');
+const configuredCacheDir = process.env.VITE_CACHE_DIR || path.join(os.tmpdir(), 'trufusion-vite-cache');
 
 const candidatePaths = [
   path.join(repoRoot, 'node_modules', '.vite'),

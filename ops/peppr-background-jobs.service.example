@@ -1,11 +1,11 @@
 [Unit]
-Description=PepPro background jobs
+Description=TruFusionLabs background jobs
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=pepproadmin
+User=trufusionadmin
 WorkingDirectory=/opt/peppr/backend
 EnvironmentFile=/etc/peppr-api.env
 Environment=PYTHONUNBUFFERED=1

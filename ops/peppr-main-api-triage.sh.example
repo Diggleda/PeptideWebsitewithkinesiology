@@ -34,10 +34,10 @@ run_shell() {
 curl_timing() {
   local path="$1"
   local extra_header=()
-  if [[ "$path" == "/api/health" && -n "${PEPPRO_HEALTH_PASSWORD:-}" ]]; then
-    extra_header=(-H "X-Health-Password: ${PEPPRO_HEALTH_PASSWORD}")
+  if [[ "$path" == "/api/health" && -n "${TRUFUSION_HEALTH_PASSWORD:-}" ]]; then
+    extra_header=(-H "X-Health-Password: ${TRUFUSION_HEALTH_PASSWORD}")
   elif [[ "$path" == "/api/health" ]]; then
-    printf 'skip %s: set PEPPRO_HEALTH_PASSWORD to include authenticated health output\n' "$path"
+    printf 'skip %s: set TRUFUSION_HEALTH_PASSWORD to include authenticated health output\n' "$path"
     return 0
   fi
 
@@ -82,7 +82,7 @@ section "Recent API Errors"
 run_shell "journalctl -u '$API_SERVICE' --since '$SINCE' --no-pager | egrep -i 'WORKER TIMEOUT|CRITICAL|ERROR|Traceback|timeout|timed out|502|504|referrals/dashboard|news/peptides|profile-image|woo/products|catalog/products' | tail -n 260"
 
 section "Slow Flask Requests"
-run_shell "journalctl -u '$API_SERVICE' --since '$SINCE' --no-pager | awk -v slow='$SLOW_MS' '/peppro.http/ && /duration_ms=/ { duration=\$0; sub(/^.*duration_ms=/, \"\", duration); sub(/ .*/, \"\", duration); if ((duration + 0) >= slow) print }' | tail -n 160"
+run_shell "journalctl -u '$API_SERVICE' --since '$SINCE' --no-pager | awk -v slow='$SLOW_MS' '/trufusion.http/ && /duration_ms=/ { duration=\$0; sub(/^.*duration_ms=/, \"\", duration); sub(/ .*/, \"\", duration); if ((duration + 0) >= slow) print }' | tail -n 160"
 
 section "Nginx/System Proxy Errors"
 run_shell "journalctl -u nginx --since '$SINCE' --no-pager | egrep -i 'upstream|timed out|502|504|connect\\(\\)|referrals/dashboard|news/peptides|profile-image' | tail -n 220"

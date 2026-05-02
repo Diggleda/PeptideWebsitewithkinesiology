@@ -101,7 +101,7 @@ const pickCandidateOrderNumbersFromOrder = (order) => {
     ? woo.response
     : {};
   const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
-  const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
+  const trufusionMeta = metaData.find((entry) => entry?.key === 'trufusion_order_id');
 
   const candidates = [
     order?.wooOrderNumber,
@@ -110,7 +110,7 @@ const pickCandidateOrderNumbersFromOrder = (order) => {
     woo?.wooOrderNumber,
     wooResponse?.number,
     wooResponse?.id,
-    pepproMeta?.value,
+    trufusionMeta?.value,
   ]
     .map((value) => normalizeToken(value))
     .filter(Boolean);
@@ -284,7 +284,7 @@ const main = async () => {
     rows = await mysqlClient.fetchAll(
       `
         SELECT id, woo_order_id, shipstation_order_id, status, payload
-        FROM peppro_orders
+        FROM trufusion_orders
         WHERE shipped_at IS NULL
           AND LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')) IN ('shipped', 'completed')
         ORDER BY created_at DESC

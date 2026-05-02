@@ -6,7 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const repoRoot = process.cwd();
-const runtimeRoot = path.join(os.tmpdir(), 'peppro-backend-runtime');
+const runtimeRoot = path.join(os.tmpdir(), 'trufusion-backend-runtime');
 const statePath = path.join(runtimeRoot, '.runtime-state.json');
 
 const copyTargets = [
@@ -185,7 +185,7 @@ const child = spawnSync(process.execPath, [serverEntry], {
   env: {
     ...process.env,
     DATA_DIR: dataDir,
-    PEPPRO_RUNTIME_SOURCE_ROOT: repoRoot,
+    TRUFUSION_RUNTIME_SOURCE_ROOT: repoRoot,
   },
 });
 

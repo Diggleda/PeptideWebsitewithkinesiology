@@ -28,7 +28,7 @@ class EmailServiceTests(unittest.TestCase):
         with patch.object(
             email_service,
             "get_config",
-            return_value=SimpleNamespace(frontend_base_url="https://peppro.net"),
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com"),
         ), patch.object(email_service, "_dispatch_email") as dispatch_email:
             email_service.send_order_shipping_status_email(
                 "holly@example.com",
@@ -42,21 +42,21 @@ class EmailServiceTests(unittest.TestCase):
         dispatch_email.assert_called_once()
         self.assertEqual(dispatch_email.call_args.args[0], "holly@example.com")
         html = dispatch_email.call_args.args[2]
-        self.assertIn('src="cid:peppro-logo"', html)
+        self.assertIn('src="cid:trufusion-logo"', html)
         self.assertIn('width="360"', html)
         self.assertIn("width:360px", html)
         self.assertIn("max-width:70%", html)
         self.assertNotIn("width:100%", html)
-        self.assertIn('background="cid:peppro-leaf"', html)
-        self.assertIn("url('cid:peppro-leaf')", html)
+        self.assertIn('background="cid:trufusion-leaf"', html)
+        self.assertIn("url('cid:trufusion-leaf')", html)
         self.assertIn("background:rgba(255,255,255,0.78)", html)
         self.assertIn("backdrop-filter:blur(34px) saturate(1.9)", html)
-        self.assertIn('class="peppro-track-button"', html)
-        self.assertIn(".peppro-track-button:hover", html)
+        self.assertIn('class="trufusion-track-button"', html)
+        self.assertIn(".trufusion-track-button:hover", html)
         self.assertIn("background-color:rgb(95,179,249) !important", html)
         self.assertIn("color:#ffffff !important", html)
-        self.assertIn('href="https://peppro.net"', html)
-        self.assertIn(">peppro.net</a>", html)
+        self.assertIn('href="https://trufusionlabs.com"', html)
+        self.assertIn(">trufusionlabs.com</a>", html)
         self.assertIn("Sign in to your account", dispatch_email.call_args.args[3])
         self.assertIn("background-color:rgba(255,255,255,0.95)", html)
         self.assertIn("color:rgb(95,179,249)", html)
@@ -64,9 +64,9 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("border-radius:12px", html)
         self.assertNotIn("border-radius:999px", html)
         self.assertNotIn("background-color:#5FB3F9", html)
-        self.assertNotIn("https://peppro.net/PepPro_fulllogo.png", html)
-        self.assertNotIn("https://peppro.net/leafTexture.jpg", html)
-        self.assertNotIn("/Peppro_fulllogo.png", html)
+        self.assertNotIn("https://trufusionlabs.com/turfusionlabsphysiciansportal.png", html)
+        self.assertNotIn("https://trufusionlabs.com/leafTexture.jpg", html)
+        self.assertNotIn("/turfusionlabsphysiciansportal.png", html)
         self.assertEqual(dispatch_email.call_args.kwargs["bcc"], ("petergibbons7@icloud.com",))
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertNotIn("cc", dispatch_email.call_args.kwargs)
@@ -79,12 +79,12 @@ class EmailServiceTests(unittest.TestCase):
         with patch.object(email_service.http_client, "post", return_value=response) as post:
             email_service._send_via_sendgrid(
                 "holly@example.com",
-                "PepPro order 1505 has shipped",
+                "TruFusionLabs order 1505 has shipped",
                 "<p>Shipped</p>",
                 {
                     "sendgrid_api_key": "sendgrid-key",
                     "sendgrid_endpoint": "https://sendgrid.example.test/send",
-                    "from": "PepPro <support@peppro.net>",
+                    "from": "TruFusionLabs <support@trufusionlabs.com>",
                     "timeout": 15,
                 },
                 plain_text="Shipped",
@@ -105,12 +105,12 @@ class EmailServiceTests(unittest.TestCase):
         with patch.object(email_service.http_client, "post", return_value=response) as post:
             email_service._send_via_sendgrid(
                 "holly@example.com",
-                "PepPro order 1505 has shipped",
+                "TruFusionLabs order 1505 has shipped",
                 "<p>Shipped</p>",
                 {
                     "sendgrid_api_key": "sendgrid-key",
                     "sendgrid_endpoint": "https://sendgrid.example.test/send",
-                    "from": "PepPro <support@peppro.net>",
+                    "from": "TruFusionLabs <support@trufusionlabs.com>",
                     "timeout": 15,
                 },
                 plain_text="Shipped",
@@ -129,15 +129,15 @@ class EmailServiceTests(unittest.TestCase):
         response = SimpleNamespace(status_code=202, text="", raise_for_status=lambda: None)
         inline_images = (
             {
-                "content_id": "peppro-logo",
-                "filename": "PepPro_fulllogo.png",
+                "content_id": "trufusion-logo",
+                "filename": "turfusionlabsphysiciansportal.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",
                 "data": b"logo",
             },
             {
-                "content_id": "peppro-leaf",
+                "content_id": "trufusion-leaf",
                 "filename": "leafTexture-email.jpg",
                 "mime_type": "image/jpeg",
                 "maintype": "image",
@@ -153,21 +153,21 @@ class EmailServiceTests(unittest.TestCase):
         ) as post:
             email_service._send_via_sendgrid(
                 "holly@example.com",
-                "PepPro order 1505 has shipped",
-                '<img src="cid:peppro-logo" /><table background="cid:peppro-leaf"></table>',
+                "TruFusionLabs order 1505 has shipped",
+                '<img src="cid:trufusion-logo" /><table background="cid:trufusion-leaf"></table>',
                 {
                     "sendgrid_api_key": "sendgrid-key",
                     "sendgrid_endpoint": "https://sendgrid.example.test/send",
-                    "from": "PepPro <support@peppro.net>",
+                    "from": "TruFusionLabs <support@trufusionlabs.com>",
                     "timeout": 15,
                 },
                 plain_text="Shipped",
             )
 
         attachments = post.call_args.kwargs["json"]["attachments"]
-        self.assertEqual([attachment["content_id"] for attachment in attachments], ["peppro-logo", "peppro-leaf"])
+        self.assertEqual([attachment["content_id"] for attachment in attachments], ["trufusion-logo", "trufusion-leaf"])
         self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
-        self.assertEqual([attachment["filename"] for attachment in attachments], ["PepPro_fulllogo.png", "leafTexture-email.jpg"])
+        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "leafTexture-email.jpg"])
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
@@ -197,15 +197,15 @@ class EmailServiceTests(unittest.TestCase):
 
         inline_images = (
             {
-                "content_id": "peppro-logo",
-                "filename": "PepPro_fulllogo.png",
+                "content_id": "trufusion-logo",
+                "filename": "turfusionlabsphysiciansportal.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",
                 "data": b"logo",
             },
             {
-                "content_id": "peppro-leaf",
+                "content_id": "trufusion-leaf",
                 "filename": "leafTexture-email.jpg",
                 "mime_type": "image/jpeg",
                 "maintype": "image",
@@ -221,10 +221,10 @@ class EmailServiceTests(unittest.TestCase):
         ):
             email_service._send_via_smtp(
                 "holly@example.com",
-                "PepPro order 1505 has shipped",
-                '<img src="cid:peppro-logo" /><table background="cid:peppro-leaf"></table>',
+                "TruFusionLabs order 1505 has shipped",
+                '<img src="cid:trufusion-logo" /><table background="cid:trufusion-leaf"></table>',
                 {
-                    "from": "PepPro <support@peppro.net>",
+                    "from": "TruFusionLabs <support@trufusionlabs.com>",
                     "timeout": 15,
                     "smtp": {
                         "host": "smtp-relay.gmail.com",
@@ -240,13 +240,13 @@ class EmailServiceTests(unittest.TestCase):
 
         self.assertIn(("connect", "smtp-relay.gmail.com", 587, 15), events)
         self.assertIn(("starttls",), events)
-        self.assertNotIn(("login", "support@peppro.net", ""), events)
+        self.assertNotIn(("login", "support@trufusionlabs.com", ""), events)
         self.assertIn(
             ("send_message", "holly@example.com", "petergibbons7@icloud.com", ("holly@example.com", "petergibbons7@icloud.com")),
             events,
         )
         content_ids = [part["Content-ID"] for part in messages[0].walk() if part["Content-ID"]]
-        self.assertEqual(content_ids, ["<peppro-logo>", "<peppro-leaf>"])
+        self.assertEqual(content_ids, ["<trufusion-logo>", "<trufusion-leaf>"])
 
     def test_shipping_status_email_raises_when_production_dispatch_has_no_provider(self):
         from python_backend.services import email_service
@@ -254,12 +254,12 @@ class EmailServiceTests(unittest.TestCase):
         with patch.object(
             email_service,
             "get_config",
-            return_value=SimpleNamespace(frontend_base_url="https://peppro.net", is_production=True),
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com", is_production=True),
         ), patch.object(
             email_service,
             "_email_settings",
             return_value={
-                "from": "PepPro <support@peppro.net>",
+                "from": "TruFusionLabs <support@trufusionlabs.com>",
                 "timeout": 15,
                 "sendgrid_api_key": None,
                 "sendgrid_endpoint": "https://sendgrid.example.test/send",

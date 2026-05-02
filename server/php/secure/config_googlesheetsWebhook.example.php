@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 /**
  * Copy this file to the VPS as the secure config consumed by:
- * - `server/php/public_html/port.peppro.net/api/integrations/google-sheets/sales-reps.php`
- * - `server/php/public_html/port.peppro.net/api/integrations/google-sheets/quotes/quotes.php`
+ * - `server/php/public_html/port.trufusionlabs.com/api/integrations/google-sheets/sales-reps.php`
+ * - `server/php/public_html/port.trufusionlabs.com/api/integrations/google-sheets/quotes/quotes.php`
  *
  * Suggested destination on the VPS:
  * `/home/oz0fsscenn2m/secure/config_googlesheetsWebhook.php`
@@ -13,8 +13,8 @@ declare(strict_types=1);
  */
 
 return [
-    'db_dsn' => 'mysql:host=127.0.0.1;port=3306;dbname=PepPro;charset=utf8mb4',
-    'db_user' => 'peppro_api',
+    'db_dsn' => 'mysql:host=127.0.0.1;port=3306;dbname=TruFusionLabs;charset=utf8mb4',
+    'db_user' => 'trufusion_api',
     'db_password' => 'replace-with-vps-db-password',
 
     // Preserve the existing Google Sheets webhook secret(s) here.

@@ -35,7 +35,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
     ...rest
   } = props
 
-  const PLACEHOLDER = resolveStaticAssetUrl('/PepPro_icon.png');
+  const PLACEHOLDER = resolveStaticAssetUrl('/Trufusionpeptides_icon.png');
   const normalizedSrc = typeof src === 'string' ? src.trim() : '';
   const baseSrc = normalizedSrc ? normalizedSrc : PLACEHOLDER;
   const effectiveSrc = displaySrc ?? baseSrc;
@@ -171,7 +171,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
         crossOrigin={crossOrigin}
         className={`block object-contain transition-opacity duration-300 ${
           isPlaceholder || isLoaded ? 'opacity-100' : 'opacity-0'
-        } ${isPlaceholder ? 'peppro-placeholder-img' : ''} ${className ?? ''}`}
+        } ${isPlaceholder ? 'trufusion-placeholder-img' : ''} ${className ?? ''}`}
         {...rest}
         onLoad={handleLoad}
         onError={handleError}

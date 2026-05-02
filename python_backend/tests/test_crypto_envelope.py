@@ -152,8 +152,8 @@ class WooPayloadSanitizationTests(unittest.TestCase):
         self.assertEqual(payload["billing"]["email"], "john@example.com")
         self.assertEqual(payload["shipping"]["phone"], "555-123-4567")
         self.assertEqual(payload["line_items"][0]["meta_data"], [])
-        self.assertNotIn("peppro_hand_delivery_address", meta_keys)
-        self.assertNotIn("peppro_payment_method", meta_keys)
+        self.assertNotIn("trufusion_hand_delivery_address", meta_keys)
+        self.assertNotIn("trufusion_payment_method", meta_keys)
         self.assertNotIn("customer_note", payload)
 
 

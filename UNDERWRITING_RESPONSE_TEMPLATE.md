@@ -1,15 +1,15 @@
-# PepPro — Underwriting Response Template (Fill-in)
+# TruFusionLabs — Underwriting Response Template (Fill-in)
 
 Use this as a checklist + copy/paste response. Replace bracketed placeholders with exact values from your merchant application.
 
 ## 1) Merchant identity (visible on website)
 
-- PepPro  
-- DBA: PepPro  
+- TruFusionLabs  
+- DBA: TruFusionLabs  
 - Legal Entity: **[EXACT LEGAL ENTITY NAME FROM MERCHANT APP]**  
 - Address: **[FULL PHYSICAL ADDRESS — MUST MATCH MERCHANT APP]**  
 - Phone: **[LIVE PHONE NUMBER]**  
-- Email: **support@peppro.net**  
+- Email: **support@trufusionlabs.com**  
 - Business Hours: Mon–Fri, 9am–5pm CT
 
 ## 2) Customer service access
@@ -50,7 +50,7 @@ Footer includes links to:
 - Pricing
 
 Footer includes:
-- © 2026 PepPro. All Rights Reserved.
+- © 2026 TruFusionLabs. All Rights Reserved.
 
 ## 7) Peptides enhanced due diligence (EDD) consistency
 
@@ -71,7 +71,7 @@ Create a temporary reviewer account with read-only permissions:
 
 ## 10) Suggested response email structure
 
-Subject: PepPro — Underwriting requested items
+Subject: TruFusionLabs — Underwriting requested items
 
 Body:
 

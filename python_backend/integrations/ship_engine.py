@@ -52,7 +52,7 @@ def build_shipment_payload(order: Dict, customer: Dict) -> Optional[Dict]:
     return {
         "service_code": config.ship_engine.get("default_service_code") or "usps_priority_mail",
         "ship_to": {
-            "name": customer.get("name") or "PepPro Customer",
+            "name": customer.get("name") or "TruFusionLabs Customer",
             "phone": customer.get("phone") or "",
             "email": customer.get("email") or "",
             "address_line1": shipping.get("addressLine1"),
@@ -63,7 +63,7 @@ def build_shipment_payload(order: Dict, customer: Dict) -> Optional[Dict]:
             "country_code": shipping.get("country") or "US",
         },
         "ship_from": {
-            "name": config.ship_engine.get("ship_from_name") or "PepPro Fulfillment",
+            "name": config.ship_engine.get("ship_from_name") or "TruFusionLabs Fulfillment",
             "address_line1": config.ship_engine.get("ship_from_address1") or "",
             "address_line2": config.ship_engine.get("ship_from_address2") or "",
             "city_locality": config.ship_engine.get("ship_from_city") or "",
@@ -193,7 +193,7 @@ def _normalize_shipengine_status_token(value: Any) -> Optional[str]:
 
 def _map_shipengine_status_code(status_code: Any, status_description: Any) -> Optional[str]:
     """
-    Map ShipEngine tracking status_code/status_description into PepPro-friendly tokens.
+    Map ShipEngine tracking status_code/status_description into TruFusionLabs-friendly tokens.
 
     ShipEngine codes:
       IT = in_transit

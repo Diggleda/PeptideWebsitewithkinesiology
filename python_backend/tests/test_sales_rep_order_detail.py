@@ -326,7 +326,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
                 "wooOrderId": "9505",
                 "wooOrderNumber": "1505",
                 "integrationDetails": {
-                    "wooCommerce": json.dumps({"pepproOrderId": "local-1505"})
+                    "wooCommerce": json.dumps({"trufusionOrderId": "local-1505"})
                 },
                 "trackingNumber": "",
                 "shippingEstimate": {"status": "exception"},
@@ -414,7 +414,7 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             )
             self.assertEqual(
                 result["integrationDetails"]["wooCommerce"],
-                json.dumps({"pepproOrderId": "local-1505"}),
+                json.dumps({"trufusionOrderId": "local-1505"}),
             )
             self.assertEqual(
                 persisted_ups_updates,

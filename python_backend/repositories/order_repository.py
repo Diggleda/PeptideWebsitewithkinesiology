@@ -25,7 +25,7 @@ def _normalize_optional_string(value: object) -> Optional[str]:
 def _is_facility_pickup_recipient_placeholder(value: object) -> bool:
     text = str(value or "").strip().lower().replace(".", "").replace(",", "")
     text = " ".join(text.split())
-    return text == "peppro facility pickup"
+    return text == "trufusion facility pickup"
 
 
 def _normalize_facility_pickup_recipient_name(*values: object) -> Optional[str]:

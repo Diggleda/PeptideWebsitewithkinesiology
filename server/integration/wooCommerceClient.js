@@ -4,6 +4,7 @@ const http = require('http');
 const https = require('https');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
+const { withLegacyMetaKeys } = require('../config/brand');
 const { calculateEstimatedArrivalDate } = require('../services/shippingValidation');
 
 const isConfigured = () => Boolean(
@@ -17,7 +18,7 @@ const RETRIABLE_NETWORK_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'EAI_AGAIN
 const MAX_WOO_REQUEST_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 750;
 
-const PEPPRO_MANUAL_TAX_RATE_NAME = 'PepPro Manual Tax';
+const TRUFUSION_MANUAL_TAX_RATE_NAME = 'TruFusionLabs Manual Tax';
 
 const KEEP_ALIVE_MAX_SOCKETS = (() => {
   return 30;
@@ -318,22 +319,22 @@ const roundCurrency = (value) => {
   return Math.round((normalized + Number.EPSILON) * 100) / 100;
 };
 
-let pepproManualTaxRateId = null;
-let pepproManualTaxRatePromise = null;
-let pepproManualTaxRatePercent = null;
+let trufusionManualTaxRateId = null;
+let trufusionManualTaxRatePromise = null;
+let trufusionManualTaxRatePercent = null;
 
-const ensurePepProManualTaxRateId = async () => {
-  if (pepproManualTaxRateId) {
-    return pepproManualTaxRateId;
+const ensureTruFusionManualTaxRateId = async () => {
+  if (trufusionManualTaxRateId) {
+    return trufusionManualTaxRateId;
   }
   if (!isConfigured()) {
     return null;
   }
-  if (pepproManualTaxRatePromise) {
-    return pepproManualTaxRatePromise;
+  if (trufusionManualTaxRatePromise) {
+    return trufusionManualTaxRatePromise;
   }
 
-  pepproManualTaxRatePromise = (async () => {
+  trufusionManualTaxRatePromise = (async () => {
     const clientFactories = [getClient, getTaxClient];
 
     const fetchRates = async () => {
@@ -359,7 +360,7 @@ const ensurePepProManualTaxRateId = async () => {
         postcode: '',
         city: '',
         rate: '0.0000',
-        name: PEPPRO_MANUAL_TAX_RATE_NAME,
+        name: TRUFUSION_MANUAL_TAX_RATE_NAME,
         priority: 1,
         compound: false,
         shipping: false,
@@ -383,10 +384,10 @@ const ensurePepProManualTaxRateId = async () => {
 
     try {
       const rates = await fetchRates();
-      const match = rates.find((rate) => String(rate?.name || '').trim().toLowerCase() === PEPPRO_MANUAL_TAX_RATE_NAME.toLowerCase());
+      const match = rates.find((rate) => String(rate?.name || '').trim().toLowerCase() === TRUFUSION_MANUAL_TAX_RATE_NAME.toLowerCase());
       const id = parseWooNumericId(match?.id);
       if (id) {
-        pepproManualTaxRateId = id;
+        trufusionManualTaxRateId = id;
         return id;
       }
     } catch (error) {
@@ -396,7 +397,7 @@ const ensurePepProManualTaxRateId = async () => {
     try {
       const id = await createRate();
       if (id) {
-        pepproManualTaxRateId = id;
+        trufusionManualTaxRateId = id;
         return id;
       }
     } catch (error) {
@@ -407,18 +408,18 @@ const ensurePepProManualTaxRateId = async () => {
   })();
 
   try {
-    return await pepproManualTaxRatePromise;
+    return await trufusionManualTaxRatePromise;
   } finally {
-    pepproManualTaxRatePromise = null;
+    trufusionManualTaxRatePromise = null;
   }
 };
 
-const syncPepProManualTaxRatePercent = async ({ taxRateId, ratePercent }) => {
+const syncTruFusionManualTaxRatePercent = async ({ taxRateId, ratePercent }) => {
   if (!taxRateId || !Number.isFinite(ratePercent) || ratePercent <= 0) {
     return null;
   }
   const normalized = roundCurrency(ratePercent);
-  if (pepproManualTaxRatePercent !== null && Math.abs(pepproManualTaxRatePercent - normalized) < 0.0001) {
+  if (trufusionManualTaxRatePercent !== null && Math.abs(trufusionManualTaxRatePercent - normalized) < 0.0001) {
     return normalized;
   }
   try {
@@ -427,7 +428,7 @@ const syncPepProManualTaxRatePercent = async ({ taxRateId, ratePercent }) => {
     const response = await client.put(`/taxes/${Number(taxRateId)}`, payload);
     const updatedRate = Number(response.data?.rate);
     if (Number.isFinite(updatedRate)) {
-      pepproManualTaxRatePercent = updatedRate;
+      trufusionManualTaxRatePercent = updatedRate;
       return updatedRate;
     }
   } catch (error) {
@@ -558,12 +559,12 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
       || shippingEstimate.carrierId
       || null;
     const normalizedMethodId = handDelivery
-      ? 'peppro_hand_delivery'
+      ? 'trufusion_hand_delivery'
       : facilityPickup
-        ? 'peppro_facility_pickup'
+        ? 'trufusion_facility_pickup'
       : (rawMethodId
-        ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
-        : 'peppro_shipstation');
+        ? `trufusion_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+        : 'trufusion_shipstation');
     const methodTitle = handDelivery
       ? 'Hand Delivered'
       : facilityPickup
@@ -571,23 +572,23 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
       : (shippingEstimate.serviceType
         || shippingEstimate.serviceCode
         || shippingEstimate.carrierId
-        || 'PepPro Shipping');
+        || 'TruFusionLabs Shipping');
     const deliveryAddress = normalizeDeliveryAddress(shippingAddress);
     const metaData = [
-      shippingEstimate.carrierId ? { key: 'peppro_carrier_id', value: shippingEstimate.carrierId } : null,
-      shippingEstimate.serviceCode ? { key: 'peppro_service_code', value: shippingEstimate.serviceCode } : null,
-      shippingEstimate.serviceType ? { key: 'peppro_service_type', value: shippingEstimate.serviceType } : null,
-      handDelivery ? { key: 'peppro_delivery_method', value: 'hand_delivery' } : null,
-      facilityPickup ? { key: 'peppro_delivery_method', value: 'facility_pickup' } : null,
+      shippingEstimate.carrierId ? { key: 'trufusion_carrier_id', value: shippingEstimate.carrierId } : null,
+      shippingEstimate.serviceCode ? { key: 'trufusion_service_code', value: shippingEstimate.serviceCode } : null,
+      shippingEstimate.serviceType ? { key: 'trufusion_service_type', value: shippingEstimate.serviceType } : null,
+      handDelivery ? { key: 'trufusion_delivery_method', value: 'hand_delivery' } : null,
+      facilityPickup ? { key: 'trufusion_delivery_method', value: 'facility_pickup' } : null,
       Number.isFinite(shippingEstimate.estimatedDeliveryDays)
-        ? { key: 'peppro_estimated_delivery_days', value: shippingEstimate.estimatedDeliveryDays }
+        ? { key: 'trufusion_estimated_delivery_days', value: shippingEstimate.estimatedDeliveryDays }
         : null,
-      shippingEstimate.packageCode ? { key: 'peppro_package_code', value: shippingEstimate.packageCode } : null,
+      shippingEstimate.packageCode ? { key: 'trufusion_package_code', value: shippingEstimate.packageCode } : null,
       Number.isFinite(Number(shippingEstimate.weightOz))
-        ? { key: 'peppro_package_weight_oz', value: Number(shippingEstimate.weightOz) }
+        ? { key: 'trufusion_package_weight_oz', value: Number(shippingEstimate.weightOz) }
         : null,
       shippingEstimate.packageDimensions
-        ? { key: 'peppro_package_dimensions', value: JSON.stringify(shippingEstimate.packageDimensions) }
+        ? { key: 'trufusion_package_dimensions', value: JSON.stringify(shippingEstimate.packageDimensions) }
         : null,
     ].filter(Boolean);
     return [
@@ -721,7 +722,7 @@ const buildOrderPayload = async ({ order, customer }) => {
     : null;
   const useProvidedTotal = providedTotal !== null && Math.abs(providedTotal - computedTotal) < 0.01;
   const finalTotal = useProvidedTotal ? providedTotal : computedTotal;
-  const manualTaxRateId = taxTotal > 0 ? await ensurePepProManualTaxRateId() : null;
+  const manualTaxRateId = taxTotal > 0 ? await ensureTruFusionManualTaxRateId() : null;
   const feeLines = [];
   const fulfillmentMethod = String(order.fulfillmentMethod || order.fulfillment_method || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   const shippingServiceCode = String(
@@ -761,44 +762,44 @@ const buildOrderPayload = async ({ order, customer }) => {
   }
 
   const metaData = [
-    { key: 'peppro_order_id', value: order.id },
+    { key: 'trufusion_order_id', value: order.id },
     // NOTE: This historically mapped to item subtotal in Woo. Keep it stable.
-    { key: 'peppro_total', value: itemsSubtotal },
-    { key: 'peppro_grand_total', value: finalTotal },
-    { key: 'peppro_items_subtotal', value: itemsSubtotal },
-    ...(providedTotal !== null ? [{ key: 'peppro_client_total', value: providedTotal }] : []),
-    ...(taxTotal > 0 ? [{ key: 'peppro_tax_total', value: taxTotal }] : []),
-    { key: 'peppro_created_at', value: order.createdAt },
-    { key: 'peppro_origin', value: 'PepPro Web Checkout' },
+    { key: 'trufusion_total', value: itemsSubtotal },
+    { key: 'trufusion_grand_total', value: finalTotal },
+    { key: 'trufusion_items_subtotal', value: itemsSubtotal },
+    ...(providedTotal !== null ? [{ key: 'trufusion_client_total', value: providedTotal }] : []),
+    ...(taxTotal > 0 ? [{ key: 'trufusion_tax_total', value: taxTotal }] : []),
+    { key: 'trufusion_created_at', value: order.createdAt },
+    { key: 'trufusion_origin', value: 'TruFusionLabs Web Checkout' },
     ...(fulfillmentMethod
-      ? [{ key: 'peppro_fulfillment_method', value: fulfillmentMethod }]
+      ? [{ key: 'trufusion_fulfillment_method', value: fulfillmentMethod }]
       : []),
     { key: '_order_number', value: order.id },
     { key: '_order_number_formatted', value: order.id },
-    { key: 'peppro_display_order_id', value: order.id },
+    { key: 'trufusion_display_order_id', value: order.id },
   ];
 
   if (shippingTotal > 0) {
-    metaData.push({ key: 'peppro_shipping_total', value: shippingTotal });
+    metaData.push({ key: 'trufusion_shipping_total', value: shippingTotal });
   }
   if (manualTaxRateId) {
-    metaData.push({ key: 'peppro_manual_tax_rate_id', value: manualTaxRateId });
+    metaData.push({ key: 'trufusion_manual_tax_rate_id', value: manualTaxRateId });
   }
 
   if (order.shippingEstimate) {
-    metaData.push({ key: 'peppro_shipping_estimate', value: JSON.stringify(order.shippingEstimate) });
+    metaData.push({ key: 'trufusion_shipping_estimate', value: JSON.stringify(order.shippingEstimate) });
   }
   if (order.shippingEstimate?.packageCode) {
-    metaData.push({ key: 'peppro_package_code', value: order.shippingEstimate.packageCode });
+    metaData.push({ key: 'trufusion_package_code', value: order.shippingEstimate.packageCode });
   }
   if (order.shippingEstimate?.packageDimensions) {
-    metaData.push({ key: 'peppro_package_dimensions', value: JSON.stringify(order.shippingEstimate.packageDimensions) });
+    metaData.push({ key: 'trufusion_package_dimensions', value: JSON.stringify(order.shippingEstimate.packageDimensions) });
   }
   if (Number.isFinite(Number(order.shippingEstimate?.weightOz))) {
-    metaData.push({ key: 'peppro_package_weight_oz', value: Number(order.shippingEstimate.weightOz) });
+    metaData.push({ key: 'trufusion_package_weight_oz', value: Number(order.shippingEstimate.weightOz) });
   }
   if (isFacilityPickup && pickupRecipientName) {
-    metaData.push({ key: 'peppro_facility_pickup_recipient_name', value: pickupRecipientName });
+    metaData.push({ key: 'trufusion_facility_pickup_recipient_name', value: pickupRecipientName });
   }
 
   if (taxTotal > 0) {
@@ -815,7 +816,7 @@ const buildOrderPayload = async ({ order, customer }) => {
 
   const payload = {
     status: 'pending',
-    created_via: 'peppro_app',
+    created_via: 'trufusion_app',
     set_paid: false,
     total: finalTotal.toFixed(2),
     total_tax: manualTaxRateId ? taxTotal.toFixed(2) : '0.00',
@@ -832,7 +833,7 @@ const buildOrderPayload = async ({ order, customer }) => {
   if (manualTaxRateId && taxTotal > 0) {
     payload.tax_lines = [{
       rate_id: Number(manualTaxRateId),
-      label: 'PepPro Manual Tax',
+      label: 'TruFusionLabs Manual Tax',
       compound: false,
       tax_total: taxTotal.toFixed(2),
       shipping_tax_total: '0.00',
@@ -1071,7 +1072,7 @@ const mapWooAddress = (address = {}) => {
 };
 
 const parseShippingEstimateMeta = (metaData = [], order = {}) => {
-  const entry = metaData.find((meta) => meta?.key === 'peppro_shipping_estimate');
+  const entry = metaData.find((meta) => withLegacyMetaKeys('trufusion_shipping_estimate').includes(meta?.key));
   if (!entry || entry.value === undefined || entry.value === null) {
     return null;
   }
@@ -1124,8 +1125,8 @@ const parseDelegateLabelMeta = (metaData = []) => {
     'as_delegate',
     'delegateorderlabel',
     'delegate_order_label',
-    'pepproasdelegate',
-    'peppro_as_delegate',
+    'trufusionasdelegate',
+    'trufusion_as_delegate',
   ].map((key) => normalizeKey(key)));
   const tokenKeys = new Set([
     'delegateproposaltoken',
@@ -1134,8 +1135,8 @@ const parseDelegateLabelMeta = (metaData = []) => {
     'proposal_token',
     'delegationtoken',
     'delegation_token',
-    'pepprodelegateproposaltoken',
-    'peppro_delegate_proposal_token',
+    'trufusiondelegateproposaltoken',
+    'trufusion_delegate_proposal_token',
   ].map((key) => normalizeKey(key)));
 
   for (const entry of metaData) {
@@ -1168,14 +1169,17 @@ const normalizeWooDateString = (value, { assumeUtc = false } = {}) => {
 
 const mapWooOrderSummary = (order) => {
   const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
-  const metaValue = (key) => metaData.find((entry) => entry?.key === key)?.value ?? null;
-  const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
-  const pepproOrderId = pepproMeta?.value ? String(pepproMeta.value) : null;
+  const metaValue = (key) => {
+    const lookup = withLegacyMetaKeys(key);
+    return metaData.find((entry) => lookup.includes(entry?.key))?.value ?? null;
+  };
+  const trufusionMeta = metaData.find((entry) => withLegacyMetaKeys('trufusion_order_id').includes(entry?.key));
+  const trufusionOrderId = trufusionMeta?.value ? String(trufusionMeta.value) : null;
   const wooNumber = typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null);
   const shippingEstimate = parseShippingEstimateMeta(metaData, order);
-  const fulfillmentMethod = String(metaValue('peppro_fulfillment_method') || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const fulfillmentMethod = String(metaValue('trufusion_fulfillment_method') || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   const isFacilityPickup = fulfillmentMethod === 'facility_pickup' || fulfillmentMethod === 'fascility_pickup';
-  const facilityPickupRecipientName = firstNonEmptyText(metaValue('peppro_facility_pickup_recipient_name'));
+  const facilityPickupRecipientName = firstNonEmptyText(metaValue('trufusion_facility_pickup_recipient_name'));
   const shippingAddress = mapWooAddress(order?.shipping);
   const billingAddress = mapWooAddress(order?.billing);
   if (isFacilityPickup && facilityPickupRecipientName) {
@@ -1193,7 +1197,7 @@ const mapWooOrderSummary = (order) => {
     id: order?.id ? String(order.id) : crypto.randomUUID(),
     asDelegate: asDelegateLabel,
     as_delegate: asDelegateLabel,
-    number: wooNumber || pepproOrderId,
+    number: wooNumber || trufusionOrderId,
     status: order?.status || 'pending',
     currency: order?.currency || 'USD',
     total: normalizeNumber(order?.total, normalizeNumber(order?.total_ex_tax)),
@@ -1219,7 +1223,7 @@ const mapWooOrderSummary = (order) => {
     integrationDetails: {
       wooCommerce: {
         wooOrderNumber: wooNumber,
-        pepproOrderId,
+        trufusionOrderId,
         status: order?.status || 'pending',
         invoiceUrl: buildInvoiceUrl(order?.id, order?.order_key),
       },
@@ -1333,8 +1337,8 @@ const fetchOrderByNumber = async (orderNumber, { perPage = 50, maxPages = 20 } =
         if (matchesToken(order?.number)) return true;
         if (matchesToken(order?.id)) return true;
         const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
-        const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
-        if (matchesToken(pepproMeta?.value)) return true;
+        const trufusionMeta = metaData.find((entry) => withLegacyMetaKeys('trufusion_order_id').includes(entry?.key));
+        if (matchesToken(trufusionMeta?.value)) return true;
         return false;
       });
 
@@ -1486,10 +1490,10 @@ const applyShipStationShipmentUpdate = async ({
   const findExistingMeta = (key) => existingMetaArray.find((entry) => String(entry?.key || '') === key) || null;
 
   const META_KEYS = {
-    status: '_peppro_shipstation_status',
-    tracking: '_peppro_shipstation_tracking_number',
-    carrier: '_peppro_shipstation_carrier_code',
-    shipDate: '_peppro_shipstation_ship_date',
+    status: '_trufusion_shipstation_status',
+    tracking: '_trufusion_shipstation_tracking_number',
+    carrier: '_trufusion_shipstation_carrier_code',
+    shipDate: '_trufusion_shipstation_ship_date',
   };
 
   const desiredMeta = [

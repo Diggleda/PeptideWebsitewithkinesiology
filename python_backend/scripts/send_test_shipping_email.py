@@ -16,7 +16,7 @@ STATUSES = ("shipped", "out_for_delivery", "delivered")
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Send PepPro shipping lifecycle test emails through the backend mailer.",
+        description="Send TruFusionLabs shipping lifecycle test emails through the backend mailer.",
     )
     parser.add_argument(
         "--recipient",
@@ -87,7 +87,7 @@ def _provider_summary() -> dict[str, object]:
     }
     return {
         "nodeEnv": os.environ.get("NODE_ENV") or None,
-        "mailFrom": os.environ.get("MAIL_FROM") or "PepPro <support@peppro.net>",
+        "mailFrom": os.environ.get("MAIL_FROM") or "TruFusionLabs <support@trufusionlabs.com>",
         "hasSendGridKey": bool(os.environ.get("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_TOKEN")),
         "smtp": smtp,
     }
@@ -106,7 +106,7 @@ def main() -> int:
         email_service.send_order_shipping_status_email(
             args.recipient,
             status=status,
-            customer_name="PepPro Test",
+            customer_name="TruFusionLabs Test",
             order_number=args.order_number,
             tracking_number=args.tracking_number,
             carrier_code=args.carrier,

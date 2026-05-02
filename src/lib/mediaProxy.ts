@@ -1,7 +1,7 @@
 import { API_BASE_URL } from "../services/api";
 
 // Default ON because Woo media often sets restrictive CORP/CORS headers that block
-// cross-site image loads (e.g. peppro.net -> shop.peppro.net). Disable explicitly if needed.
+// cross-site image loads (e.g. trufusionlabs.com -> shop.trufusionlabs.com). Disable explicitly if needed.
 const shouldProxyMedia =
   String(import.meta.env?.VITE_PROXY_WOO_MEDIA || "").toLowerCase() !== "false";
 
@@ -10,7 +10,7 @@ const WOO_MEDIA_PROXY_PATH_PATTERN = /\/woo\/media$/i;
 const proxyParseBase =
   typeof window !== "undefined" && typeof window.location?.origin === "string" && window.location.origin
     ? window.location.origin
-    : "https://peppro.net";
+    : "https://trufusionlabs.com";
 
 const unwrapWooMediaProxySource = (value?: string | null): string | null => {
   if (typeof value !== "string") {

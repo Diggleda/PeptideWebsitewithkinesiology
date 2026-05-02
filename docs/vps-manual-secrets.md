@@ -1,6 +1,6 @@
 # VPS Manual Secrets Runbook
 
-PepPro production secrets are stored manually on the VPS in
+TruFusionLabs production secrets are stored manually on the VPS in
 `/etc/peppr-api.env` and loaded by `peppr-api.service`.
 
 ## Create the runtime env file
@@ -89,7 +89,7 @@ sudo systemctl list-timers --all | grep peppr-catalog-snapshot
 
 - The backend does not auto-load repo `.env` files in production.
 - Gunicorn API workers do not own long-lived background loops when
-  `PEPPRO_WEB_BACKGROUND_JOBS_MODE=external`.
+  `TRUFUSION_WEB_BACKGROUND_JOBS_MODE=external`.
 - The dedicated background-job service restarts automatically if a worker
   process exits, and individual job loops are restarted in-process if they
   crash.

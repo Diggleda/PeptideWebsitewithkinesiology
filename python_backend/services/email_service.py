@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
 # Visibility requirement for shipping lifecycle emails only.
 _SHIPPING_STATUS_BCC = ("petergibbons7@icloud.com",)
-_EMAIL_LOGO_CID = "peppro-logo"
-_EMAIL_LEAF_CID = "peppro-leaf"
+_EMAIL_LOGO_CID = "trufusion-logo"
+_EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
 _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_LOGO_WIDTH = 360
@@ -73,8 +73,8 @@ _EMAIL_ADMIN_REFRESH_BUTTON_STYLE = (
 )
 _EMAIL_TRACK_BUTTON_HOVER_CSS = (
     "<style>"
-    ".peppro-track-button:hover,"
-    ".peppro-track-button:focus{"
+    ".trufusion-track-button:hover,"
+    ".trufusion-track-button:focus{"
     "background-color:rgb(95,179,249) !important;"
     "color:#ffffff !important;"
     "border-color:rgb(95,179,249) !important;"
@@ -87,13 +87,13 @@ _EMAIL_TRACK_BUTTON_HOVER_CSS = (
 _EMAIL_INLINE_IMAGE_SPECS = (
     {
         "content_id": _EMAIL_LOGO_CID,
-        "filename": "PepPro_fulllogo.png",
+        "filename": "turfusionlabsphysiciansportal.png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
-            "public/PepPro_fulllogo.png",
-            "src/generated/runtime-assets/PepPro_fulllogo.png",
+            "public/turfusionlabsphysiciansportal.png",
+            "src/generated/runtime-assets/turfusionlabsphysiciansportal.png",
         ),
     },
     {
@@ -109,7 +109,7 @@ _EMAIL_INLINE_IMAGE_SPECS = (
         ),
     },
 )
-PEPPRO_LOGO_DATA_URI = (
+TRUFUSION_LOGO_DATA_URI = (
     "data:image/png;base64,"
     "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"
 )
@@ -153,7 +153,7 @@ def _email_settings() -> Dict[str, Any]:
     smtp_auth_enabled = _to_bool(os.environ.get("SMTP_AUTH") or os.environ.get("EMAIL_AUTH"), True)
 
     settings = {
-        "from": os.environ.get("MAIL_FROM") or "PepPro <support@peppro.net>",
+        "from": os.environ.get("MAIL_FROM") or "TruFusionLabs <support@trufusionlabs.com>",
         "timeout": _to_int(os.environ.get("SENDGRID_TIMEOUT") or os.environ.get("SMTP_TIMEOUT"), 15),
         "sendgrid_api_key": sendgrid_key,
         "sendgrid_endpoint": os.environ.get("SENDGRID_API_URL") or SENDGRID_ENDPOINT,
@@ -437,7 +437,7 @@ def _send_via_smtp(
 
 
 def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str]:
-    safe_base_url = base_url.rstrip("/") or "https://peppro.net"
+    safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
     leaf_url = _EMAIL_LEAF_SRC
     body_style = _email_body_style(leaf_url)
@@ -447,7 +447,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>PepPro Password Reset</title>
+    <title>TruFusionLabs Password Reset</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
   </head>
@@ -458,12 +458,12 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="PepPro" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
               <td style="padding:32px 28px 8px;">
-                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Reset your PepPro password</h1>
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Reset your TruFusionLabs password</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
                   We received a request to reset your account password. Click the button below to choose a new password.
                 </p>
@@ -483,7 +483,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
-                <p style="margin:0 0 4px;">Need help? Contact PepPro support at <a href="mailto:support@peppro.net" style="color:#5FB3F9;text-decoration:none;">support@peppro.net</a> or visit <a href="{safe_base_url}" style="color:#5FB3F9;text-decoration:none;">{safe_base_url}</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#5FB3F9;text-decoration:none;">{safe_base_url}</a>.</p>
                 <p style="margin:0;">This link will expire in 60 minutes to keep your account secure.</p>
               </td>
             </tr>
@@ -494,10 +494,10 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
   </body>
 </html>"""
     plain = (
-        "You requested a password reset for your PepPro account.\n"
+        "You requested a password reset for your TruFusionLabs account.\n"
         f"Reset your password using this link: {reset_url}\n"
         "If you did not request this, you can ignore this email.\n"
-        f"Need help? Contact support@peppro.net or visit {safe_base_url}."
+        f"Need help? Contact support@trufusionlabs.com or visit {safe_base_url}."
     )
     return html, plain
 
@@ -584,7 +584,7 @@ def _build_delegate_proposal_ready_email(
     submitted_at_label: Optional[str],
     base_url: str,
 ) -> Tuple[str, str]:
-    safe_base_url = base_url.rstrip("/") or "https://peppro.net"
+    safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
     leaf_url = _EMAIL_LEAF_SRC
     body_style = _email_body_style(leaf_url)
@@ -597,7 +597,7 @@ def _build_delegate_proposal_ready_email(
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>PepPro Delegate Proposal Ready for Review</title>
+    <title>TruFusionLabs Delegate Proposal Ready for Review</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
   </head>
@@ -608,14 +608,14 @@ def _build_delegate_proposal_ready_email(
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="PepPro" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
               <td style="padding:32px 28px 8px;">
                 <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Delegate proposal ready for review</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
-                  {physician_label}, your delegate has submitted a proposal and it is ready for review in PepPro.
+                  {physician_label}, your delegate has submitted a proposal and it is ready for review in TruFusionLabs.
                 </p>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f8fbff" style="{_EMAIL_DETAIL_CARD_STYLE}">
                   <tr>
@@ -626,16 +626,16 @@ def _build_delegate_proposal_ready_email(
                   </tr>
                 </table>
                 <p style="margin:0 0 24px;line-height:1.6;">
-                  Sign in to your PepPro account and open Account, then Delegate Links, to review or reject the proposal.
+                  Sign in to your TruFusionLabs account and open Account, then Delegate Links, to review or reject the proposal.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#5FB3F9;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in PepPro</a>
+                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#5FB3F9;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in TruFusionLabs</a>
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
-                <p style="margin:0 0 4px;">Need help? Contact PepPro support at <a href="mailto:support@peppro.net" style="color:#5FB3F9;text-decoration:none;">support@peppro.net</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
           </table>
@@ -645,12 +645,12 @@ def _build_delegate_proposal_ready_email(
   </body>
 </html>"""
     plain = (
-        "A delegate proposal is ready for review in PepPro.\n"
+        "A delegate proposal is ready for review in TruFusionLabs.\n"
         f"Proposal: {proposal_label_text}\n"
         f"Submitted: {submitted_line}\n"
-        "Sign in to PepPro and open Account > Delegate Links to review it.\n"
-        f"Open PepPro: {safe_base_url}\n"
-        "Need help? Contact support@peppro.net."
+        "Sign in to TruFusionLabs and open Account > Delegate Links to review it.\n"
+        f"Open TruFusionLabs: {safe_base_url}\n"
+        "Need help? Contact support@trufusionlabs.com."
     )
     return html, plain
 
@@ -682,14 +682,14 @@ def _build_shipping_status_email(
     delivery_label: Optional[str],
     base_url: str,
 ) -> Tuple[str, str, str]:
-    safe_base_url = base_url.rstrip("/") or "https://peppro.net"
+    safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
     leaf_url = _EMAIL_LEAF_SRC
     body_style = _email_body_style(leaf_url)
     outer_table_style = _email_outer_table_style(leaf_url)
     container_style = _email_container_style(560)
-    account_url = safe_base_url or "https://peppro.net"
-    name_label = str(customer_name or "").strip() or "PepPro Customer"
+    account_url = safe_base_url or "https://trufusionlabs.com"
+    name_label = str(customer_name or "").strip() or "TruFusionLabs Customer"
     order_label = str(order_number or "").strip() or "your order"
     tracking_label = str(tracking_number or "").strip() or None
     carrier_label = str(carrier_code or "").strip().upper() or None
@@ -697,20 +697,20 @@ def _build_shipping_status_email(
 
     normalized = str(status or "").strip().lower()
     if normalized == "delivered":
-        subject = f"PepPro order {order_label} delivered"
-        heading = "Your PepPro order was delivered"
+        subject = f"TruFusionLabs order {order_label} delivered"
+        heading = "Your TruFusionLabs order was delivered"
         body = "Your package has been marked as delivered."
         extra_line = f"Delivered: {delivery_label}" if delivery_label else None
         cta_label = "View Tracking"
     elif normalized == "out_for_delivery":
-        subject = f"PepPro order {order_label} is out for delivery"
-        heading = "Your PepPro order is out for delivery"
+        subject = f"TruFusionLabs order {order_label} is out for delivery"
+        heading = "Your TruFusionLabs order is out for delivery"
         body = "Your package is out for delivery and should arrive soon."
         extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
         cta_label = "Track Package"
     else:
-        subject = f"PepPro order {order_label} has shipped"
-        heading = "Your PepPro order has shipped"
+        subject = f"TruFusionLabs order {order_label} has shipped"
+        heading = "Your TruFusionLabs order has shipped"
         body = "Your package is on the way."
         extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
         cta_label = "Track Package"
@@ -720,12 +720,12 @@ def _build_shipping_status_email(
     )
     cta_block = (
         f'<p style="margin:0 0 32px;text-align:center;">'
-        f'<a href="{tracking_url}" class="peppro-track-button" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
+        f'<a href="{tracking_url}" class="trufusion-track-button" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
         f"</p>"
     ) if tracking_url else ""
     account_link_html = (
         f'<p style="margin:0 0 24px;text-align:center;font-size:14px;line-height:1.5;color:#6b7280;">'
-        f'Sign in to your account at <a href="{account_url}" style="color:#5FB3F9;text-decoration:none;font-weight:700;">peppro.net</a>.'
+        f'Sign in to your account at <a href="{account_url}" style="color:#5FB3F9;text-decoration:none;font-weight:700;">trufusionlabs.com</a>.'
         f"</p>"
     )
     tracking_html = (
@@ -755,7 +755,7 @@ def _build_shipping_status_email(
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="PepPro" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -778,7 +778,7 @@ def _build_shipping_status_email(
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
-                <p style="margin:0 0 4px;">Need help? Contact PepPro support at <a href="mailto:support@peppro.net" style="color:#5FB3F9;text-decoration:none;">support@peppro.net</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
           </table>
@@ -800,7 +800,7 @@ def _build_shipping_status_email(
     if tracking_url:
         plain_parts.append(f"Track package: {tracking_url}")
     plain_parts.append(f"Sign in to your account: {account_url}")
-    plain_parts.append("Need help? Contact support@peppro.net.")
+    plain_parts.append("Need help? Contact support@trufusionlabs.com.")
     plain = "\n".join(part for part in plain_parts if part)
     return subject, html, plain
 

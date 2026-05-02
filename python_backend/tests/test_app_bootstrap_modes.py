@@ -30,7 +30,7 @@ class AppBootstrapModeTests(unittest.TestCase):
             self.assertEqual(python_backend._resolve_web_background_jobs_mode(), "thread")
 
     def test_web_background_jobs_mode_accepts_external(self) -> None:
-        with patch.dict(os.environ, {"PEPPRO_WEB_BACKGROUND_JOBS_MODE": "external"}, clear=True):
+        with patch.dict(os.environ, {"TRUFUSION_WEB_BACKGROUND_JOBS_MODE": "external"}, clear=True):
             self.assertEqual(python_backend._resolve_web_background_jobs_mode(), "external")
 
     def test_create_app_initializes_storage_before_starting_background_jobs(self) -> None:

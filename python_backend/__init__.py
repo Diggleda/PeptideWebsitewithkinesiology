@@ -12,7 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _resolve_web_background_jobs_mode() -> str:
-    raw = str(os.environ.get("PEPPRO_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower()
+    raw = str(os.environ.get("TRUFUSION_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower()
     if raw in {"", "thread", "threads", "web", "inprocess", "1", "true", "yes", "on", "enabled"}:
         return "thread"
     if raw in {"external", "off", "false", "no", "disabled"}:

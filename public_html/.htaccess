@@ -7,9 +7,10 @@ PassengerAppLogFile "/home/oz0fsscenn2m/logs/passenger.log"
 Options -MultiViews
 DirectoryIndex index.html index.php
 RewriteEngine On
-# Force www.peppro.net to the apex domain without keeping the path
-RewriteCond %{HTTP_HOST} ^www\.peppro\.net$ [NC]
-RewriteRule ^ https://peppro.net [L,R=301]
+# Canonical TruFusion Labs public host. Preserve path/query during legacy redirects.
+RewriteCond %{HTTP_HOST} ^(www\.)?peppro\.net$ [NC,OR]
+RewriteCond %{HTTP_HOST} ^trufusionlabs\.com$ [NC]
+RewriteRule ^ https://www.trufusionlabs.com%{REQUEST_URI} [L,R=301]
 <IfModule mod_headers.c>
   <FilesMatch "\.(html)$">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
@@ -24,9 +25,12 @@ RewriteRule ^ https://peppro.net [L,R=301]
 # Do not redirect OPTIONS for API
 RewriteCond %{REQUEST_METHOD} OPTIONS
 RewriteRule ^/api/ - [L]
-# --- Route shop.peppro.net into its own folder, then stop processing ---
-RewriteCond %{HTTP_HOST} ^shop\.peppro\.net$ [NC]
-RewriteRule ^(.*)$ /shop.peppro.net/$1 [L]
+# --- Route shop host aliases into their own folder, then stop processing ---
+RewriteCond %{HTTP_HOST} ^(shop\.peppro\.net|shop\.trufusionlabs\.com)$ [NC]
+RewriteRule ^(.*)$ /shop.trufusionlabs.com/$1 [L]
+# --- Route webhook/port host aliases into their own folder, then stop processing ---
+RewriteCond %{HTTP_HOST} ^(port\.peppro\.net|port\.trufusionlabs\.com)$ [NC]
+RewriteRule ^(.*)$ /port.trufusionlabs.com/$1 [L]
 # --- SPA + Passenger rules for the primary site(s) only ---
 # Let Passenger handle /api
 RewriteCond %{REQUEST_URI} ^/api [NC]
@@ -44,13 +48,13 @@ PassengerStartupFile passenger_wsgi.py
 # DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
 <IfModule Litespeed>
 SetEnv BODY_LIMIT 1mb
-SetEnv CORS_ALLOW_ORIGINS https://peppro.net,https://shop.peppro.net
+SetEnv CORS_ALLOW_ORIGINS https://www.trufusionlabs.com,https://trufusionlabs.com,https://shop.trufusionlabs.com,https://peppro.net,https://shop.peppro.net
 SetEnv DATA_DIR /home/oz0fsscenn2m/PepPro/server-data
 SetEnv DOTENV_CONFIG_PATH /home/oz0fsscenn2m/PepPro/.env
 SetEnv GOOGLE_SHEETS_WEBHOOK_SECRET wqEpTQeBJzrDBZV6Ao5CIU7EQZV5KJUD+kd1gdI1Stw=
 SetEnv JWT_SECRET fniaxMM6E5tyhbjCqYaTonj/khRnjjIN/+v8GBGzRx8=
 SetEnv LOG_LEVEL info
-SetEnv MAIL_FROM "support@peppro.net"
+SetEnv MAIL_FROM "TruFusion Labs <support@trufusionlabs.com>"
 SetEnv MYSQL_DATABASE PepPro
 SetEnv MYSQL_ENABLED true
 SetEnv MYSQL_HOST localhost
@@ -82,7 +86,7 @@ SetEnv SHIPSTATION_PACKAGE_CODE package
 SetEnv SHIPSTATION_SHIP_FROM_ADDRESS1 640 S. Grand Ave
 SetEnv SHIPSTATION_SHIP_FROM_ADDRESS2 107
 SetEnv SHIPSTATION_SHIP_FROM_CITY Santa Ana
-SetEnv SHIPSTATION_SHIP_FROM_COMPANY PepPro
+SetEnv SHIPSTATION_SHIP_FROM_COMPANY TruFusion Labs
 SetEnv SHIPSTATION_SHIP_FROM_COUNTRY US
 SetEnv SHIPSTATION_SHIP_FROM_NAME Peptra
 SetEnv SHIPSTATION_SHIP_FROM_PHONE 7149320232
@@ -95,7 +99,9 @@ SetEnv WC_API_VERSION wc/v3
 SetEnv WC_AUTO_SUBMIT_ORDERS false
 SetEnv WC_CONSUMER_KEY ck_743edbf5d45339cf19d7e248ee0f4a4da77e70f4
 SetEnv WC_CONSUMER_SECRET cs_047db46ebd6befcbf4ee185548b108100b50e712
-SetEnv WC_STORE_URL https://shop.peppro.net 
-SetEnv FRONTEND_BASE_URL https://peppro.net
+SetEnv WC_STORE_URL https://shop.trufusionlabs.com
+SetEnv FRONTEND_BASE_URL https://www.trufusionlabs.com
+SetEnv PASSKEY_RP_ID trufusionlabs.com
+SetEnv PASSKEY_ALLOWED_ORIGINS https://www.trufusionlabs.com
 </IfModule>
 # DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END

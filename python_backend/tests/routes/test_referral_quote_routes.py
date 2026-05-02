@@ -32,7 +32,7 @@ class ReferralQuoteRouteTests(unittest.TestCase):
             return_value={
                 "quote": {"id": "quote-1"},
                 "pdf": b"%PDF-1.4 mock",
-                "filename": "PepPro_Quote_Example_1.pdf",
+                "filename": "TruFusion_Labs_Quote_Example_1.pdf",
                 "diagnostics": {
                     "totalMs": 321.4,
                     "pdfMs": 287.9,
@@ -62,18 +62,19 @@ class ReferralQuoteRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/pdf", response.headers.get("Content-Type", ""))
-        self.assertIn("PepPro_Quote_Example_1.pdf", response.headers.get("Content-Disposition", ""))
+        self.assertIn("TruFusion_Labs_Quote_Example_1.pdf", response.headers.get("Content-Disposition", ""))
         self.assertEqual(response.headers.get("Cache-Control"), "no-store")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Id"), "quote-1")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Renderer"), "node_worker")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Cache"), "miss")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Export-Ms"), "321.4")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Pdf-Ms"), "287.9")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Render-Ms"), "280.1")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Image-Ms"), "84.5")
-        self.assertEqual(response.headers.get("X-PepPro-Quote-Pdf-Bytes"), str(len(b"%PDF-1.4 mock")))
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Id"), "quote-1")
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Renderer"), "node_worker")
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Cache"), "miss")
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Export-Ms"), "321.4")
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Pdf-Ms"), "287.9")
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Render-Ms"), "280.1")
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Image-Ms"), "84.5")
+        self.assertEqual(response.headers.get("X-TruFusion-Quote-Pdf-Bytes"), str(len(b"%PDF-1.4 mock")))
         self.assertIn("quote_total;dur=321.4", response.headers.get("Server-Timing", ""))
         self.assertIn("pdf_images;dur=84.5", response.headers.get("Server-Timing", ""))
+        response.direct_passthrough = False
         self.assertEqual(response.get_data(), b"%PDF-1.4 mock")
 
     def test_delete_quote_route_returns_delete_payload(self) -> None:
@@ -89,9 +90,10 @@ class ReferralQuoteRouteTests(unittest.TestCase):
                 method="DELETE",
             ):
                 g.current_user = {"id": "rep-1", "role": "sales_rep"}
-                response = referrals.admin_delete_prospect_quote.__wrapped__("doctor-1", "quote-1")
+                response = self._make_response(referrals.admin_delete_prospect_quote.__wrapped__("doctor-1", "quote-1"))
 
-        self.assertEqual(response, {"deleted": True, "quoteId": "quote-1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"deleted": True, "quoteId": "quote-1"})
 
 
 if __name__ == "__main__":

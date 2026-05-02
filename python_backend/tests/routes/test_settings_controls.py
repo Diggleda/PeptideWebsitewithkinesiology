@@ -602,7 +602,7 @@ class TestSettingsControls(unittest.TestCase):
                 }
             self.fail(f"Unexpected fetch_one query: {query}")
 
-        fake_config = types.SimpleNamespace(mysql={"enabled": True, "database": "PepPro", "host": "127.0.0.1"})
+        fake_config = types.SimpleNamespace(mysql={"enabled": True, "database": "TruFusionLabs", "host": "127.0.0.1"})
 
         with patch.object(settings, "get_config", return_value=fake_config), \
             patch.object(settings.mysql_client, "fetch_all", side_effect=fake_fetch_all), \
@@ -618,7 +618,7 @@ class TestSettingsControls(unittest.TestCase):
                 payload = response.get_json()
 
         self.assertTrue(payload["mysqlEnabled"])
-        self.assertEqual(payload["databaseName"], "PepPro")
+        self.assertEqual(payload["databaseName"], "TruFusionLabs")
         self.assertEqual(payload["hostScope"], "local")
         self.assertEqual(payload["tables"][0]["name"], "users")
         self.assertEqual(payload["tables"][0]["rowCount"], 29)

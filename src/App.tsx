@@ -14,6 +14,7 @@ import {
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
+import { withLegacyMetaKeys } from "./lib/legacyBrandCompatibility";
 import { formatOrderStatusLabel } from "./lib/orderStatusLabels.mjs";
 import { shouldDisplayShippingStatusForOrder } from "./lib/orderStatusPrecedence.mjs";
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
@@ -418,19 +419,19 @@ const MAINTENANCE_TARGET_ROLES = new Set([
   "sales_partner",
   "sales_lead",
 ]);
-const MAINTENANCE_OPENER_PING_EVENT = "PEPPRO_MAINTENANCE_PING";
-const MAINTENANCE_OPENER_EXIT_EVENT = "PEPPRO_MAINTENANCE_EXIT";
+const MAINTENANCE_OPENER_PING_EVENT = "TRUFUSION_MAINTENANCE_PING";
+const MAINTENANCE_OPENER_EXIT_EVENT = "TRUFUSION_MAINTENANCE_EXIT";
 const MAINTENANCE_OPENER_LAUNCH_FAILED_EVENT =
-  "PEPPRO_MAINTENANCE_LAUNCH_FAILED";
+  "TRUFUSION_MAINTENANCE_LAUNCH_FAILED";
 const MAINTENANCE_ADMIN_SESSION_ENDED_EVENT =
-  "PEPPRO_MAINTENANCE_ADMIN_SESSION_ENDED";
+  "TRUFUSION_MAINTENANCE_ADMIN_SESSION_ENDED";
 const MAINTENANCE_TAB_TITLE = "Physician's Portal - Maintenance";
 const DELEGATE_TAB_TITLE_SUFFIX = " - Physician Portal";
 const MAINTENANCE_ALREADY_ACTIVE_TOAST =
   "A maintenance is active. Please coordinate with yout admin team.";
 const LOGIN_BACKEND_DOWN_TOAST_ID = "login-backend-down";
 const LOGIN_BACKEND_DOWN_MESSAGE =
-  "PepPro is unavailable right now. Please try again in a minute.";
+  "TruFusionLabs is unavailable right now. Please try again in a minute.";
 const MAINTENANCE_OPENER_PING_INTERVAL_MS = 30_000;
 
 const getErrorStatusCode = (error: any): number | null =>
@@ -1076,7 +1077,7 @@ interface AccountOrderSummary {
   notes?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  source: "local" | "woocommerce" | "peppro";
+  source: "local" | "woocommerce" | "trufusion";
   doctorId?: string | null;
   doctorName?: string | null;
   doctorEmail?: string | null;
@@ -1205,7 +1206,7 @@ const buildOrderTrackingStatusLine = (order?: AccountOrderSummary | null): strin
   return label;
 };
 
-const formatPepProPaymentMethodLabel = (value?: string | null): string | null => {
+const formatTruFusionPaymentMethodLabel = (value?: string | null): string | null => {
   if (!value) return null;
   const raw = String(value).trim();
   if (!raw) return null;
@@ -1608,7 +1609,7 @@ const describeSalesOrderStatus = (
   return humanizeAccountOrderStatus(raw);
 };
 
-const VARIATION_CACHE_STORAGE_KEY = "peppro_variation_cache_v2";
+const VARIATION_CACHE_STORAGE_KEY = "trufusion_variation_cache_v2";
 
 const normalizeAddressPart = (value?: string | null) => {
   if (typeof value === "string") {
@@ -1689,7 +1690,7 @@ const isFacilityPickupAddress = (address?: AccountOrderAddress | null) => {
   const state = normalizeAddressComparisonPart(address.state);
   const postalCode = normalizeAddressComparisonPart(address.postalCode);
 
-  const matchesName = name === "peppro facility pickup";
+  const matchesName = name === "trufusion facility pickup";
   const matchesStreet =
     line1 === "640 s grand ave" || combinedLine.includes("640 s grand ave");
   const matchesUnit =
@@ -1704,7 +1705,7 @@ const isFacilityPickupAddress = (address?: AccountOrderAddress | null) => {
 };
 
 const isFacilityPickupRecipientPlaceholder = (value?: string | null) =>
-  normalizeAddressComparisonPart(value) === "peppro facility pickup";
+  normalizeAddressComparisonPart(value) === "trufusion facility pickup";
 
 const resolveFacilityPickupRecipientName = (
   ...candidates: Array<string | null | undefined>
@@ -1729,13 +1730,16 @@ const resolveFacilityPickupRecipientNameFromOrder = (
   const readMetaValue = (source: unknown, key: string): string | null => {
     const parsed = parseMaybeJson(source);
     if (!parsed) return null;
+    const keys = withLegacyMetaKeys(key);
     if (Array.isArray(parsed)) {
-      const match = parsed.find((entry: any) => entry?.key === key);
+      const match = parsed.find((entry: any) => keys.includes(String(entry?.key || "")));
       return typeof match?.value === "string" ? match.value : null;
     }
     if (typeof parsed === "object") {
       const obj = parsed as Record<string, any>;
-      if (typeof obj[key] === "string") return obj[key];
+      for (const candidateKey of keys) {
+        if (typeof obj[candidateKey] === "string") return obj[candidateKey];
+      }
       return (
         readMetaValue(obj.meta_data, key) ||
         readMetaValue(obj.metaData, key) ||
@@ -1772,9 +1776,9 @@ const resolveFacilityPickupRecipientNameFromOrder = (
     billingAddress?.order_recipient_name,
     billingAddress?.pickupRecipientName,
     billingAddress?.pickup_recipient_name,
-    readMetaValue(integrations, "peppro_facility_pickup_recipient_name"),
-    readMetaValue((integrations as any)?.wooCommerce, "peppro_facility_pickup_recipient_name"),
-    readMetaValue((integrations as any)?.woocommerce, "peppro_facility_pickup_recipient_name"),
+    readMetaValue(integrations, "trufusion_facility_pickup_recipient_name"),
+    readMetaValue((integrations as any)?.wooCommerce, "trufusion_facility_pickup_recipient_name"),
+    readMetaValue((integrations as any)?.woocommerce, "trufusion_facility_pickup_recipient_name"),
     shippingAddress?.fullName,
     shippingAddress?.name,
     billingAddress?.fullName,
@@ -1927,7 +1931,7 @@ const deriveShippingAddressFromOrders = (
   return undefined;
 };
 
-const WOO_PLACEHOLDER_IMAGE = resolveStaticAssetUrl("/PepPro_icon.png");
+const WOO_PLACEHOLDER_IMAGE = resolveStaticAssetUrl("/Trufusionpeptides_icon.png");
 
 const normalizeWooImageUrl = (value?: string | null): string | null => {
   if (typeof value !== "string") {
@@ -1977,7 +1981,7 @@ const normalizeProfileAvatarUrl = (value: unknown): string | null => {
     try {
       const parsed = new URL(candidate);
       const shouldUseWooProxy =
-        parsed.hostname === "shop.peppro.net" || /\/wp-content\//i.test(parsed.pathname);
+        parsed.hostname === "shop.trufusionlabs.com" || /\/wp-content\//i.test(parsed.pathname);
       if (shouldUseWooProxy) {
         return normalizeWooImageUrl(candidate);
       }
@@ -1995,7 +1999,7 @@ const normalizeProfileAvatarUrl = (value: unknown): string | null => {
     const base =
       typeof window !== "undefined" && window.location?.origin
         ? window.location.origin
-        : "https://peppro.net";
+        : "https://trufusionlabs.com";
     return new URL(candidate, base).toString();
   } catch {
     return candidate;
@@ -2486,7 +2490,7 @@ const resolveOrderPlacedAt = (order: any): string | null => {
   const readMetaValue = (meta: any, keys: string[]) => {
     if (!Array.isArray(meta)) return null;
     const normalizedKeys = new Set(
-      keys.map((key) => String(key || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "")),
+      withLegacyMetaKeys(keys).map((key) => String(key || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "")),
     );
     const found = meta.find((entry: any) => {
       const key = String(entry?.key || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -2505,9 +2509,9 @@ const resolveOrderPlacedAt = (order: any): string | null => {
     normalizeStringField(order?.created_at) ||
     resolveNestedMysqlCreatedAtCandidate(order) ||
     normalizeStringField(order?.createdAt) ||
-    readMetaValue(order?.meta_data, ["peppro_created_at"]) ||
-    readMetaValue(wooResponse?.meta_data, ["peppro_created_at"]) ||
-    readMetaValue(wooPayload?.meta_data, ["peppro_created_at"]);
+    readMetaValue(order?.meta_data, ["trufusion_created_at"]) ||
+    readMetaValue(wooResponse?.meta_data, ["trufusion_created_at"]) ||
+    readMetaValue(wooPayload?.meta_data, ["trufusion_created_at"]);
   return rawMysqlCreatedAt || null;
 };
 
@@ -2663,14 +2667,14 @@ const resolveOrderAsDelegateLabel = (order: any): string | null => {
       "asdelegate",
       "delegate_order_label",
       "delegateorderlabel",
-      "peppro_as_delegate",
+      "trufusion_as_delegate",
     ]) ||
     readMeta(wooPayload?.meta_data, [
       "as_delegate",
       "asdelegate",
       "delegate_order_label",
       "delegateorderlabel",
-      "peppro_as_delegate",
+      "trufusion_as_delegate",
     ]);
   if (metaLabel) return metaLabel;
 
@@ -3177,8 +3181,8 @@ const mergeWooSummaryIntoLocal = (
       normalizeStringField(wooOrder.asDelegate) ||
       normalizeStringField(localOrder.asDelegate);
   }
-  // Prefer PepPro's computed grand total when present; don't overwrite with Woo totals
-  // (Woo totals can omit PepPro-side discounts).
+  // Prefer TruFusionLabs's computed grand total when present; don't overwrite with Woo totals
+  // (Woo totals can omit TruFusionLabs-side discounts).
   if (!localTotalCandidate && wooTotalCandidate) {
     localOrder.total = wooTotalCandidate;
     localOrder.grandTotal = wooTotalCandidate;
@@ -3366,7 +3370,7 @@ const normalizeAccountOrdersResponse = (
           notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt,
           updatedAt,
-          source: "peppro",
+          source: "trufusion",
           doctorId:
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
@@ -3473,7 +3477,7 @@ const normalizeAccountOrdersResponse = (
           notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt,
           updatedAt,
-          source: "peppro",
+          source: "trufusion",
           doctorId:
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
@@ -3584,9 +3588,9 @@ const normalizeAccountOrdersResponse = (
           updatedAt,
           source:
             String(order?.source || "").trim().toLowerCase() === "mysql" ||
-            String(order?.source || "").trim().toLowerCase() === "peppro" ||
+            String(order?.source || "").trim().toLowerCase() === "trufusion" ||
             String(order?.source || "").trim().toLowerCase() === "local"
-              ? "peppro"
+              ? "trufusion"
               : "woocommerce",
           doctorId:
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
@@ -3657,12 +3661,12 @@ const normalizeAccountOrdersResponse = (
             normalizeWooOrderId(order?.number) ||
             identifier,
         };
-        const pepproOrderId = normalizeStringField(
-          order?.integrationDetails?.wooCommerce?.pepproOrderId,
+        const trufusionOrderId = normalizeStringField(
+          order?.integrationDetails?.wooCommerce?.trufusionOrderId,
         );
         const wooKey = normalizeWooOrderNumberKey(wooEntry.wooOrderNumber);
         const localMatch =
-          (pepproOrderId && localById.get(pepproOrderId)) ||
+          (trufusionOrderId && localById.get(trufusionOrderId)) ||
           (wooKey && localByWooNumber.get(wooKey));
         if (localMatch) {
           mergeWooSummaryIntoLocal(localMatch, wooEntry);
@@ -3912,7 +3916,7 @@ const CATALOG_PAGE_CONCURRENCY = (() => {
 })();
 
 if (typeof window !== "undefined") {
-  (window as any).__PEPPRO_BUILD__ = FRONTEND_BUILD_ID;
+  (window as any).__TRUFUSION_BUILD__ = FRONTEND_BUILD_ID;
 }
 const VARIANT_PREFETCH_CONCURRENCY = (() => {
   const raw = String(
@@ -4648,7 +4652,7 @@ const parseFixedPriceRules = (
     .sort((a, b) => a.minQuantity - b.minQuantity);
 };
 
-const parsePepproTiersFromMeta = (
+const parseTrufusionTiersFromMeta = (
   meta: WooMeta[] | undefined,
   basePrice: number,
 ): BulkPricingTier[] => {
@@ -4658,7 +4662,7 @@ const parsePepproTiersFromMeta = (
   const tiers: BulkPricingTier[] = [];
   meta.forEach((entry) => {
     const key = String(entry?.key || "");
-    if (!key.includes("peppro_tier") || key.includes("note")) {
+    if (!key.includes("trufusion_tier") || key.includes("note")) {
       return;
     }
     const qtyMatch = key.match(/(\d+)/);
@@ -4697,7 +4701,7 @@ const parseVariantBulkPricing = (
   if (fromMeta.length > 0) {
     return fromMeta;
   }
-  return parsePepproTiersFromMeta(meta as WooMeta[], basePrice);
+  return parseTrufusionTiersFromMeta(meta as WooMeta[], basePrice);
 };
 
 const parseWeightOz = (value?: string | null) => {
@@ -5190,7 +5194,7 @@ const toCardProduct = (
       : needsVariantSelection
         ? [
             {
-              id: "__peppro_needs_variant__",
+              id: "__trufusion_needs_variant__",
               strength: "Select strength",
               basePrice: applyMarkup(product.price),
               image: product.image,
@@ -5367,7 +5371,7 @@ function MainApp() {
   const [delegateValidatedToken, setDelegateValidatedToken] = useState<
     string | null
   >(null);
-  const DELEGATE_EXPIRY_CACHE_PREFIX = "peppro_delegate_expiry_v1:";
+  const DELEGATE_EXPIRY_CACHE_PREFIX = "trufusion_delegate_expiry_v1:";
   const [delegateExpiryMs, setDelegateExpiryMs] = useState<number | null>(null);
   const [delegateNowMs, setDelegateNowMs] = useState(() => Date.now());
   const [delegateContext, setDelegateContext] = useState<{
@@ -5557,8 +5561,8 @@ function MainApp() {
     <div className="mb-6 flex justify-center">
       <div className="brand-logo">
         <img
-          src={withStaticAssetStamp("/PepPro_fulllogo.png")}
-          alt="PepPro"
+          src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
+          alt="TruFusionLabs"
           style={{
             display: "block",
             width: "auto",
@@ -6136,9 +6140,9 @@ function MainApp() {
       const custom = event as CustomEvent<{ open?: boolean }>;
       setResearchTermsLegalModalOpen(Boolean(custom.detail?.open));
     };
-    window.addEventListener("peppro:legal-state", handleLegalState);
+    window.addEventListener("trufusion:legal-state", handleLegalState);
     return () => {
-      window.removeEventListener("peppro:legal-state", handleLegalState);
+      window.removeEventListener("trufusion:legal-state", handleLegalState);
     };
   }, []);
 
@@ -7183,7 +7187,7 @@ function MainApp() {
   >(null);
   const [showCanceledOrders, setShowCanceledOrders] = useState(true);
   const postCheckoutOrderRef = useRef<{
-    pepproOrderId: string | null;
+    trufusionOrderId: string | null;
     wooOrderId: string | null;
     wooOrderNumber: string | null;
     createdAtMs: number;
@@ -7395,20 +7399,20 @@ function MainApp() {
 	              ? String(optimistic.number).trim()
 	              : "";
 	            const optimisticId = optimistic.id ? String(optimistic.id).trim() : "";
-	            const optimisticPepproId = optimisticMeta.pepproOrderId
-	              ? String(optimisticMeta.pepproOrderId).trim()
+	            const optimisticTrufusionId = optimisticMeta.trufusionOrderId
+	              ? String(optimisticMeta.trufusionOrderId).trim()
 	              : "";
 	            const exists = normalized.some((order) => {
 	              const orderNumber = order.number ? String(order.number).trim() : "";
 	              const orderId = order.id ? String(order.id).trim() : "";
-	              const orderPepproId =
-	                typeof (order as any)?.integrationDetails?.wooCommerce?.pepproOrderId === "string"
-	                  ? String((order as any).integrationDetails.wooCommerce.pepproOrderId).trim()
+	              const orderTrufusionId =
+	                typeof (order as any)?.integrationDetails?.wooCommerce?.trufusionOrderId === "string"
+	                  ? String((order as any).integrationDetails.wooCommerce.trufusionOrderId).trim()
 	                  : "";
 	              return (
 	                (optimisticNumber && orderNumber && orderNumber === optimisticNumber) ||
 	                (optimisticId && orderId && orderId === optimisticId) ||
-	                (optimisticPepproId && orderPepproId && orderPepproId === optimisticPepproId)
+	                (optimisticTrufusionId && orderTrufusionId && orderTrufusionId === optimisticTrufusionId)
 	              );
 	            });
             if (exists) {
@@ -7469,7 +7473,7 @@ function MainApp() {
 	    const meta = postCheckoutOrderRef.current;
 	    const targetWooNumber = meta?.wooOrderNumber || null;
 	    const targetWooId = meta?.wooOrderId || null;
-	    const targetPepproId = meta?.pepproOrderId || null;
+	    const targetTrufusionId = meta?.trufusionOrderId || null;
 	    const attempts = [0, 900, 1800, 3500];
 
 	    const tryRefresh = async () => {
@@ -7478,14 +7482,14 @@ function MainApp() {
 	        const found = latest.some((order) => {
 	          const number = String(order.number || "").trim();
 	          const id = String(order.id || "").trim();
-	          const pepproId =
-	            typeof (order as any)?.integrationDetails?.wooCommerce?.pepproOrderId === "string"
-	              ? String((order as any).integrationDetails.wooCommerce.pepproOrderId).trim()
+	          const trufusionId =
+	            typeof (order as any)?.integrationDetails?.wooCommerce?.trufusionOrderId === "string"
+	              ? String((order as any).integrationDetails.wooCommerce.trufusionOrderId).trim()
 	              : "";
 	          return (
 	            (targetWooNumber && number && number === targetWooNumber) ||
 	            (targetWooId && id && id === targetWooId) ||
-	            (targetPepproId && pepproId && pepproId === targetPepproId)
+	            (targetTrufusionId && trufusionId && trufusionId === targetTrufusionId)
 	          );
 	        });
 	        if (found) return true;
@@ -7706,7 +7710,7 @@ function MainApp() {
     (key: "terms" | "shipping" | "privacy") => {
       if (typeof window === "undefined") return;
       window.dispatchEvent(
-        new CustomEvent("peppro:open-legal", {
+        new CustomEvent("trufusion:open-legal", {
           detail: { key, preserveDialogs: true },
         }),
       );
@@ -7997,7 +8001,7 @@ function MainApp() {
 
 	  useEffect(() => {
 	    try {
-	      const stored = localStorage.getItem("peppro:shop-enabled");
+	      const stored = localStorage.getItem("trufusion:shop-enabled");
 	      if (stored !== null) {
 	        setShopEnabled(stored !== "false");
 	      }
@@ -8005,7 +8009,7 @@ function MainApp() {
 	      setShopEnabled(true);
 	    }
       try {
-        const stored = localStorage.getItem("peppro:patient-links-enabled");
+        const stored = localStorage.getItem("trufusion:patient-links-enabled");
         if (stored !== null) {
           setPatientLinksEnabled(stored === "true");
         }
@@ -8013,7 +8017,7 @@ function MainApp() {
         setPatientLinksEnabled(false);
       }
       try {
-        const stored = localStorage.getItem("peppro:crm-enabled");
+        const stored = localStorage.getItem("trufusion:crm-enabled");
         if (stored !== null) {
           setCrmEnabled(stored !== "false");
         }
@@ -8021,7 +8025,7 @@ function MainApp() {
         setCrmEnabled(true);
       }
 	    try {
-	      const stored = localStorage.getItem("peppro:peptide-forum-enabled");
+	      const stored = localStorage.getItem("trufusion:peptide-forum-enabled");
 	      if (stored !== null) {
 	        setPeptideForumEnabled(stored !== "false");
 	      }
@@ -8029,7 +8033,7 @@ function MainApp() {
 	      setPeptideForumEnabled(true);
 	    }
 	    try {
-	      const stored = localStorage.getItem("peppro:research-dashboard-enabled");
+	      const stored = localStorage.getItem("trufusion:research-dashboard-enabled");
 	      if (stored !== null) {
 	        setResearchDashboardEnabled(stored !== "false");
 	      }
@@ -8037,7 +8041,7 @@ function MainApp() {
 	      setResearchDashboardEnabled(false);
 	    }
       try {
-        const stored = localStorage.getItem("peppro:physician-map-enabled");
+        const stored = localStorage.getItem("trufusion:physician-map-enabled");
         if (stored !== null) {
           setPhysicianMapEnabled(stored === "true");
         }
@@ -8045,7 +8049,7 @@ function MainApp() {
         setPhysicianMapEnabled(false);
       }
       try {
-        const stored = localStorage.getItem("peppro:test-payments-override-enabled");
+        const stored = localStorage.getItem("trufusion:test-payments-override-enabled");
         if (stored !== null) {
           setTestPaymentsOverrideEnabled(stored === "true");
         }
@@ -8054,7 +8058,7 @@ function MainApp() {
       }
 	    let researchSupported = true;
 	    try {
-	      const stored = localStorage.getItem("peppro:settings-support:research");
+	      const stored = localStorage.getItem("trufusion:settings-support:research");
 	      if (stored !== null) {
 	        researchSupported = stored !== "false";
 	      }
@@ -8091,7 +8095,7 @@ function MainApp() {
 	          if (shop && typeof shop.shopEnabled === "boolean") {
 	            setShopEnabled(shop.shopEnabled);
 	            localStorage.setItem(
-	              "peppro:shop-enabled",
+	              "trufusion:shop-enabled",
 	              shop.shopEnabled ? "true" : "false",
 	            );
 	          }
@@ -8106,7 +8110,7 @@ function MainApp() {
               setCrmEnabled(crm.crmEnabled);
               try {
                 localStorage.setItem(
-                  "peppro:crm-enabled",
+                  "trufusion:crm-enabled",
                   crm.crmEnabled ? "true" : "false",
                 );
               } catch {
@@ -8120,7 +8124,7 @@ function MainApp() {
 		          if (classes && typeof classes.peptideForumEnabled === "boolean") {
 		            setPeptideForumEnabled(classes.peptideForumEnabled);
 		            localStorage.setItem(
-	              "peppro:peptide-forum-enabled",
+	              "trufusion:peptide-forum-enabled",
 	              classes.peptideForumEnabled ? "true" : "false",
 	            );
 	          }
@@ -8131,13 +8135,13 @@ function MainApp() {
 		          if (research && typeof research.researchDashboardEnabled === "boolean") {
 		            setSettingsSupport((prev) => ({ ...prev, research: true }));
 		            try {
-		              localStorage.setItem("peppro:settings-support:research", "true");
+		              localStorage.setItem("trufusion:settings-support:research", "true");
 		            } catch {
 		              // ignore
 		            }
 		            setResearchDashboardEnabled(research.researchDashboardEnabled);
 		            localStorage.setItem(
-		              "peppro:research-dashboard-enabled",
+		              "trufusion:research-dashboard-enabled",
 		              research.researchDashboardEnabled ? "true" : "false",
 	            );
 	          }
@@ -8147,7 +8151,7 @@ function MainApp() {
 		          if (status === 404) {
 		            setSettingsSupport((prev) => ({ ...prev, research: false }));
 		            try {
-		              localStorage.setItem("peppro:settings-support:research", "false");
+		              localStorage.setItem("trufusion:settings-support:research", "false");
 		            } catch {
 		              // ignore
 		            }
@@ -8160,7 +8164,7 @@ function MainApp() {
                 setPhysicianMapEnabled(physicianMap.physicianMapEnabled);
                 try {
                   localStorage.setItem(
-                    "peppro:physician-map-enabled",
+                    "trufusion:physician-map-enabled",
                     physicianMap.physicianMapEnabled ? "true" : "false",
                   );
                 } catch {
@@ -8242,7 +8246,7 @@ function MainApp() {
           setTestPaymentsOverrideEnabled(result.testPaymentsOverrideEnabled);
           try {
             localStorage.setItem(
-              "peppro:test-payments-override-enabled",
+              "trufusion:test-payments-override-enabled",
               result.testPaymentsOverrideEnabled ? "true" : "false",
             );
           } catch {
@@ -8272,14 +8276,14 @@ function MainApp() {
 	        if (research && typeof (research as any).researchDashboardEnabled === "boolean") {
 	          setSettingsSupport((prev) => ({ ...prev, research: true }));
 	          try {
-	            localStorage.setItem("peppro:settings-support:research", "true");
+	            localStorage.setItem("trufusion:settings-support:research", "true");
 	          } catch {
 	            // ignore
 	          }
 	          setResearchDashboardEnabled((research as any).researchDashboardEnabled);
 	          try {
 	            localStorage.setItem(
-	              "peppro:research-dashboard-enabled",
+	              "trufusion:research-dashboard-enabled",
 	              (research as any).researchDashboardEnabled ? "true" : "false",
 	            );
 	          } catch {
@@ -8292,7 +8296,7 @@ function MainApp() {
 	        if (status === 404) {
 	          setSettingsSupport((prev) => ({ ...prev, research: false }));
 	          try {
-	            localStorage.setItem("peppro:settings-support:research", "false");
+	            localStorage.setItem("trufusion:settings-support:research", "false");
 	          } catch {
 	            // ignore
 	          }
@@ -8319,7 +8323,7 @@ function MainApp() {
 	        return value;
 	      });
 	      try {
-	        localStorage.setItem("peppro:shop-enabled", value ? "true" : "false");
+	        localStorage.setItem("trufusion:shop-enabled", value ? "true" : "false");
 	      } catch {
 	        // ignore
 	      }
@@ -8332,7 +8336,7 @@ function MainApp() {
 	        setShopEnabled(confirmed);
 	        try {
 	          localStorage.setItem(
-	            "peppro:shop-enabled",
+	            "trufusion:shop-enabled",
 	            confirmed ? "true" : "false",
 	          );
 	        } catch {
@@ -8344,7 +8348,7 @@ function MainApp() {
 	        setShopEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
-	            "peppro:shop-enabled",
+	            "trufusion:shop-enabled",
 	            previousValue ? "true" : "false",
 	          );
 	        } catch {
@@ -8369,7 +8373,7 @@ function MainApp() {
           return value;
         });
         try {
-          localStorage.setItem("peppro:crm-enabled", value ? "true" : "false");
+          localStorage.setItem("trufusion:crm-enabled", value ? "true" : "false");
         } catch {
           // ignore
         }
@@ -8382,7 +8386,7 @@ function MainApp() {
           setCrmEnabled(confirmed);
           try {
             localStorage.setItem(
-              "peppro:crm-enabled",
+              "trufusion:crm-enabled",
               confirmed ? "true" : "false",
             );
           } catch {
@@ -8394,7 +8398,7 @@ function MainApp() {
           setCrmEnabled(previousValue);
           try {
             localStorage.setItem(
-              "peppro:crm-enabled",
+              "trufusion:crm-enabled",
               previousValue ? "true" : "false",
             );
           } catch {
@@ -8420,7 +8424,7 @@ function MainApp() {
 	      });
 	      try {
 	        localStorage.setItem(
-	          "peppro:peptide-forum-enabled",
+	          "trufusion:peptide-forum-enabled",
 	          value ? "true" : "false",
         );
 	      } catch {
@@ -8435,7 +8439,7 @@ function MainApp() {
 	        setPeptideForumEnabled(confirmed);
 	        try {
 	          localStorage.setItem(
-	            "peppro:peptide-forum-enabled",
+	            "trufusion:peptide-forum-enabled",
 	            confirmed ? "true" : "false",
 	          );
 	        } catch {
@@ -8447,7 +8451,7 @@ function MainApp() {
 	        setPeptideForumEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
-	            "peppro:peptide-forum-enabled",
+	            "trufusion:peptide-forum-enabled",
 	            previousValue ? "true" : "false",
 	          );
 	        } catch {
@@ -8477,7 +8481,7 @@ function MainApp() {
 	      });
 	      try {
 	        localStorage.setItem(
-	          "peppro:research-dashboard-enabled",
+	          "trufusion:research-dashboard-enabled",
 	          value ? "true" : "false",
 	        );
 	      } catch {
@@ -8493,7 +8497,7 @@ function MainApp() {
 	        setResearchDashboardEnabled(confirmed);
 	        try {
 	          localStorage.setItem(
-	            "peppro:research-dashboard-enabled",
+	            "trufusion:research-dashboard-enabled",
 	            confirmed ? "true" : "false",
 	          );
 	        } catch {
@@ -8505,7 +8509,7 @@ function MainApp() {
 	        if (status === 404) {
 	          setSettingsSupport((prev) => ({ ...prev, research: false }));
 	          try {
-	            localStorage.setItem("peppro:settings-support:research", "false");
+	            localStorage.setItem("trufusion:settings-support:research", "false");
 	          } catch {
 	            // ignore
 	          }
@@ -8522,7 +8526,7 @@ function MainApp() {
 	            if (probeStatus === 404) {
 	              setSettingsSupport((prev) => ({ ...prev, research: false }));
 	              try {
-	                localStorage.setItem("peppro:settings-support:research", "false");
+	                localStorage.setItem("trufusion:settings-support:research", "false");
 	              } catch {
 	                // ignore
 	              }
@@ -8535,7 +8539,7 @@ function MainApp() {
 	        setResearchDashboardEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
-	            "peppro:research-dashboard-enabled",
+	            "trufusion:research-dashboard-enabled",
 	            previousValue ? "true" : "false",
 	          );
 	        } catch {
@@ -8561,7 +8565,7 @@ function MainApp() {
       });
       try {
         localStorage.setItem(
-          "peppro:physician-map-enabled",
+          "trufusion:physician-map-enabled",
           value ? "true" : "false",
         );
       } catch {
@@ -8576,7 +8580,7 @@ function MainApp() {
         setPhysicianMapEnabled(confirmed);
         try {
           localStorage.setItem(
-            "peppro:physician-map-enabled",
+            "trufusion:physician-map-enabled",
             confirmed ? "true" : "false",
           );
         } catch {
@@ -8588,7 +8592,7 @@ function MainApp() {
         setPhysicianMapEnabled(previousValue);
         try {
           localStorage.setItem(
-            "peppro:physician-map-enabled",
+            "trufusion:physician-map-enabled",
             previousValue ? "true" : "false",
           );
         } catch {
@@ -8614,7 +8618,7 @@ function MainApp() {
 	      });
 	      try {
 	        localStorage.setItem(
-	          "peppro:test-payments-override-enabled",
+	          "trufusion:test-payments-override-enabled",
 	          value ? "true" : "false",
 	        );
 	      } catch {
@@ -8629,7 +8633,7 @@ function MainApp() {
 	        setTestPaymentsOverrideEnabled(confirmed);
 	        try {
 	          localStorage.setItem(
-	            "peppro:test-payments-override-enabled",
+	            "trufusion:test-payments-override-enabled",
 	            confirmed ? "true" : "false",
 	          );
 	        } catch {
@@ -8641,7 +8645,7 @@ function MainApp() {
 	        setTestPaymentsOverrideEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
-	            "peppro:test-payments-override-enabled",
+	            "trufusion:test-payments-override-enabled",
 	            previousValue ? "true" : "false",
 	          );
 	        } catch {
@@ -9085,7 +9089,7 @@ function MainApp() {
 	  const userSalesRepId = user?.salesRepId || null;
 	  const salesDoctorNotesStorageKey = useMemo(() => {
 	    const ownerKey = userSalesRepId || userId || null;
-	    return ownerKey ? `peppro:sales-doctor-notes:v1:${String(ownerKey)}` : null;
+	    return ownerKey ? `trufusion:sales-doctor-notes:v1:${String(ownerKey)}` : null;
 	  }, [userId, userSalesRepId]);
 	  const [salesDoctorNotes, setSalesDoctorNotes] = useState<Record<string, string>>(
 	    {},
@@ -15629,7 +15633,7 @@ function MainApp() {
     );
     try {
       localStorage.setItem(
-        "peppro:patient-links-enabled",
+        "trufusion:patient-links-enabled",
         info.patientLinksEnabled ? "true" : "false",
       );
     } catch {
@@ -16246,7 +16250,7 @@ function MainApp() {
       });
       try {
         localStorage.setItem(
-          "peppro:patient-links-enabled",
+          "trufusion:patient-links-enabled",
           value ? "true" : "false",
         );
       } catch {
@@ -16271,7 +16275,7 @@ function MainApp() {
         );
         try {
           localStorage.setItem(
-            "peppro:patient-links-enabled",
+            "trufusion:patient-links-enabled",
             confirmed ? "true" : "false",
           );
         } catch {
@@ -16283,7 +16287,7 @@ function MainApp() {
         setPatientLinksEnabled(previousValue);
         try {
           localStorage.setItem(
-            "peppro:patient-links-enabled",
+            "trufusion:patient-links-enabled",
             previousValue ? "true" : "false",
           );
         } catch {
@@ -16990,12 +16994,12 @@ function MainApp() {
     const role = normalizeRole(user?.role || "");
     const ownerId = String(user?.salesRepId || user?.id || "").trim();
     if (!role || !ownerId) return null;
-    return `peppro:presence:v2:live-clients:${role}:${ownerId}`;
+    return `trufusion:presence:v2:live-clients:${role}:${ownerId}`;
   }, [user?.id, user?.role, user?.salesRepId]);
   const adminLiveUsersPresenceCacheKey = useMemo(() => {
     const ownerId = String(user?.id || "").trim();
     if (!ownerId) return null;
-    return `peppro:presence:v2:admin-live-users:${ownerId}`;
+    return `trufusion:presence:v2:admin-live-users:${ownerId}`;
   }, [user?.id]);
 	  type HandDeliveryEntry = {
 	    userId: string;
@@ -20492,7 +20496,7 @@ function MainApp() {
         (salesQuotesCurrentDraft?.id === quoteId ? salesQuotesCurrentDraft : null) ||
         salesQuotesHistory.find((quote) => quote.id === quoteId) ||
         null;
-      const fallbackFilename = `PepPro_Quote_${
+      const fallbackFilename = `TruFusion_Labs_Quote_${
         sanitizeDownloadFilenamePart(selectedSalesQuoteProspect.name, "Prospect")
       }_${
         Math.max(1, Math.floor(Number(matchingQuote?.revisionNumber) || 1))
@@ -20508,17 +20512,17 @@ function MainApp() {
         blobSize: result.blob.size,
         fetchAndBlobMs: exportFetchMs,
         blobReadMs: typeof result.blobReadMs === "number" ? result.blobReadMs : null,
-        renderer: result.debugHeaders?.["x-peppro-quote-renderer"] || null,
-        cache: result.debugHeaders?.["x-peppro-quote-cache"] || null,
-        backendExportMs: result.debugHeaders?.["x-peppro-quote-export-ms"] || null,
-        backendPdfMs: result.debugHeaders?.["x-peppro-quote-pdf-ms"] || null,
-        backendRenderMs: result.debugHeaders?.["x-peppro-quote-render-ms"] || null,
-        backendImageMs: result.debugHeaders?.["x-peppro-quote-image-ms"] || null,
-        backendPdfBytes: result.debugHeaders?.["x-peppro-quote-pdf-bytes"] || null,
+        renderer: result.debugHeaders?.["x-trufusion-quote-renderer"] || null,
+        cache: result.debugHeaders?.["x-trufusion-quote-cache"] || null,
+        backendExportMs: result.debugHeaders?.["x-trufusion-quote-export-ms"] || null,
+        backendPdfMs: result.debugHeaders?.["x-trufusion-quote-pdf-ms"] || null,
+        backendRenderMs: result.debugHeaders?.["x-trufusion-quote-render-ms"] || null,
+        backendImageMs: result.debugHeaders?.["x-trufusion-quote-image-ms"] || null,
+        backendPdfBytes: result.debugHeaders?.["x-trufusion-quote-pdf-bytes"] || null,
         serverTiming: result.debugHeaders?.["server-timing"] || null,
       };
       try {
-        (window as any).__PEPPRO_LAST_QUOTE_EXPORT_DEBUG = debugInfo;
+        (window as any).__TRUFUSION_LAST_QUOTE_EXPORT_DEBUG = debugInfo;
       } catch {
         // Ignore window assignment failures outside the browser.
       }
@@ -22653,9 +22657,9 @@ function MainApp() {
             page or contact{" "}
             <a
               className="text-[rgb(95,179,249)] underline"
-              href="mailto:support@peppro.net"
+              href="mailto:support@trufusionlabs.com"
             >
-              support@peppro.net
+              support@trufusionlabs.com
             </a>
             .
           </>,
@@ -24324,9 +24328,9 @@ function MainApp() {
       setSelectedProduct(null);
       setCheckoutOpen(false);
     };
-    window.addEventListener("peppro:close-dialogs", closeAllDialogs);
+    window.addEventListener("trufusion:close-dialogs", closeAllDialogs);
     return () =>
-      window.removeEventListener("peppro:close-dialogs", closeAllDialogs);
+      window.removeEventListener("trufusion:close-dialogs", closeAllDialogs);
   }, []);
 
   const loginWithRetry = async (
@@ -24681,7 +24685,7 @@ function MainApp() {
         npiNumber: normalizedNpi || undefined,
       });
       applyLoginSuccessState(user);
-      // toast.success(`Welcome to PepPro, ${user.name}!`);
+      // toast.success(`Welcome to TruFusionLabs, ${user.name}!`);
       console.debug("[Auth] Create account success", { userId: user.id });
       return { status: "success" };
     } catch (error: any) {
@@ -25066,12 +25070,12 @@ function MainApp() {
       setLogoutThanksActive(true);
     };
     window.addEventListener(
-      "peppro:logout-with-thanks",
+      "trufusion:logout-with-thanks",
       handleLogoutThanks as EventListener,
     );
     return () => {
       window.removeEventListener(
-        "peppro:logout-with-thanks",
+        "trufusion:logout-with-thanks",
         handleLogoutThanks as EventListener,
       );
     };
@@ -25108,12 +25112,12 @@ function MainApp() {
       });
     };
     window.addEventListener(
-      "peppro:force-logout",
+      "trufusion:force-logout",
       handleForcedLogout as EventListener,
     );
     return () => {
       window.removeEventListener(
-        "peppro:force-logout",
+        "trufusion:force-logout",
         handleForcedLogout as EventListener,
       );
     };
@@ -25239,7 +25243,7 @@ function MainApp() {
     const idleThresholdMs = 10_000;
     const idleLogoutMs = 60 * 60 * 1000;
     const sessionMaxMs = 24 * 60 * 60 * 1000;
-    const sessionStartedAtKey = "peppro_session_started_at_v1";
+    const sessionStartedAtKey = "trufusion_session_started_at_v1";
     let sessionStartedAt = Date.now();
     try {
       const raw = window.sessionStorage.getItem(sessionStartedAtKey);
@@ -25685,7 +25689,7 @@ function MainApp() {
     const product = catalogProducts.find((item) => item.id === productId);
     if (!product) return;
 
-    if (variantId === "__peppro_needs_variant__") {
+    if (variantId === "__trufusion_needs_variant__") {
       variantId = null;
     }
 
@@ -26267,7 +26271,7 @@ function MainApp() {
         if (typeof candidate !== "string") continue;
         const trimmed = candidate.trim();
         const comparable = normalizeAddressComparisonPart(trimmed);
-        if (!trimmed || comparable === "peppro facility pickup") {
+        if (!trimmed || comparable === "trufusion facility pickup") {
           continue;
         }
         return trimmed;
@@ -26458,7 +26462,7 @@ function MainApp() {
 	      );
 	      try {
 	        const created = response?.order as any;
-	        const pepproOrderId = created?.id ? String(created.id).trim() : null;
+	        const trufusionOrderId = created?.id ? String(created.id).trim() : null;
 	        const wooResp = (response as any)?.integrations?.wooCommerce?.response || null;
 	        const wooOrderIdRaw =
 	          wooResp?.id ||
@@ -26476,7 +26480,7 @@ function MainApp() {
 	        const wooOrderId = wooOrderIdRaw ? String(wooOrderIdRaw).trim() : null;
 	        const wooOrderNumber = wooOrderNumberRaw ? String(wooOrderNumberRaw).trim() : null;
 	        postCheckoutOrderRef.current = {
-	          pepproOrderId,
+	          trufusionOrderId,
 	          wooOrderId,
 	          wooOrderNumber,
 	          createdAtMs: Date.now(),
@@ -26487,7 +26491,7 @@ function MainApp() {
 	          if (!created.wooOrderNumber && wooOrderNumber) created.wooOrderNumber = wooOrderNumber;
 	        }
 			      } catch {
-			        postCheckoutOrderRef.current = { pepproOrderId: null, wooOrderId: null, wooOrderNumber: null, createdAtMs: Date.now() };
+			        postCheckoutOrderRef.current = { trufusionOrderId: null, wooOrderId: null, wooOrderNumber: null, createdAtMs: Date.now() };
 			      }
 
 			      if (delegationProposalReview) {
@@ -26496,7 +26500,7 @@ function MainApp() {
 			          const orderId =
 			            meta?.wooOrderId
 			            || meta?.wooOrderNumber
-			            || meta?.pepproOrderId
+			            || meta?.trufusionOrderId
 			            || null;
 			          await delegationAPI.reviewLinkProposal(delegationProposalReview.token, {
 			            status: delegationProposalReview.status,
@@ -26616,7 +26620,7 @@ function MainApp() {
                 : Number(created?.grandTotal) || Number(created?.total) || null,
             createdAt: typeof createdAt === "string" ? createdAt : new Date().toISOString(),
             updatedAt: null,
-            source: "peppro",
+            source: "trufusion",
             lineItems,
             integrations: created?.integrations ?? null,
             paymentMethod: null,
@@ -28614,7 +28618,7 @@ function MainApp() {
                 <div className="flex min-w-0 max-w-full flex-col items-stretch">
                   <div className="border-b border-[#c9c9c9] px-3 py-3">
                     <p className="max-w-full truncate text-xs text-slate-600">
-                      {payload.hostScope === "local" ? "localhost:3306" : "remote"} • {payload.databaseName || "PepPro"}
+                      {payload.hostScope === "local" ? "localhost:3306" : "remote"} • {payload.databaseName || "TruFusionLabs"}
                     </p>
                     <p className="mt-1 max-w-full truncate text-[11px] text-slate-500">
                       {payload.refreshedAt ? `Refreshed ${formatDateTime(payload.refreshedAt)}` : "Live snapshot"} • {totalRows.toLocaleString()} rows tracked
@@ -28631,7 +28635,7 @@ function MainApp() {
                   </div>
                   <div className="max-h-[48rem] overflow-x-auto overflow-y-auto px-2 py-2">
                     <div className="mb-2 text-sm font-semibold italic text-slate-600">
-                      {payload.databaseName || "PepPro"}
+                      {payload.databaseName || "TruFusionLabs"}
                     </div>
                     <div className="flex flex-col items-start gap-1">
                       {tableCards.map((table) => {
@@ -28674,7 +28678,7 @@ function MainApp() {
                     <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-[rgb(95,179,249)]">
                       Server: {payload.databaseHost || (payload.hostScope === "local" ? "localhost" : "remote")}
                       {payload.databasePort ? `:${payload.databasePort}` : ""}
-                      {" "}» Database: {payload.databaseName || "PepPro"} » Table: {selectedTable.name}
+                      {" "}» Database: {payload.databaseName || "TruFusionLabs"} » Table: {selectedTable.name}
                     </div>
 
                     <div className="border-b border-slate-200/60 bg-white/70 px-3">
@@ -29130,7 +29134,7 @@ function MainApp() {
 		              </h2>
               <p className="text-sm text-slate-600">
                 {isAdmin(user?.role)
-                  ? "Monitor PepPro business activities, sales reps, and keep track of your sales."
+                  ? "Monitor TruFusionLabs business activities, sales reps, and keep track of your sales."
                   : isSalesLead(user?.role)
                     ? "Keep track of your team and develop your sales."
                     : "Develop your leads and sales."}
@@ -29139,7 +29143,7 @@ function MainApp() {
 	            {isAdmin(user?.role) && (
 	              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
 		                <a
-		                  href="https://shop.peppro.net/wp-admin/"
+		                  href="https://shop.trufusionlabs.com/wp-admin/"
 		                  target="_blank"
 		                  rel="noopener noreferrer"
 		                  className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
@@ -29897,9 +29901,9 @@ function MainApp() {
 		                  <h4 className="text-lg font-semibold text-slate-900">Network</h4>
 		                  <p className="text-sm text-slate-600">
 		                    {isAdmin(user?.role)
-		                      ? "Everyone in the PepPro network."
+		                      ? "Everyone in the TruFusionLabs network."
 		                      : isSalesLead(user?.role)
-		                        ? "The PepPro team and your clients."
+		                        ? "The TruFusionLabs team and your clients."
 		                        : `Your clients, ${
 		                            scopedLiveClients.filter((entry: any) =>
 		                              isSalesLead(entry?.role),
@@ -30963,7 +30967,7 @@ function MainApp() {
                       return reasons;
                     })();
                     const healthDiagnosticLines = [
-                      `PepPro API health: ${overallStatusLabel}`,
+                      `TruFusionLabs API health: ${overallStatusLabel}`,
                       snapshotFullLabel ? `Snapshot: ${snapshotFullLabel}` : null,
                       ...healthAlertReasons.map((reason) => `Issue: ${reason}`),
                       ...workerPoolLines,
@@ -32000,7 +32004,7 @@ function MainApp() {
 	                          Hand Delivery
 	                        </h4>
 	                        <p className="text-sm text-slate-600">
-	                          Sales reps who have a local jurisdiction to the PepPro facility.
+	                          Sales reps who have a local jurisdiction to the TruFusionLabs facility.
 	                        </p>
 	                      </div>
                         </button>
@@ -32075,7 +32079,7 @@ function MainApp() {
                       Network
                     </h4>
                     <p className="text-sm text-slate-600">
-                      Everyone in the PepPro network.
+                      Everyone in the TruFusionLabs network.
                     </p>
                   </div>
 
@@ -35665,7 +35669,7 @@ function MainApp() {
 				                                      nextValue === "account_created" &&
 				                                      !hasContactAccount &&
 				                                      !window.confirm(
-				                                        "They have not yet created a PepPro account, are you sure you want to promote them to Account Created?",
+				                                        "They have not yet created a TruFusionLabs account, are you sure you want to promote them to Account Created?",
 				                                      )
 				                                    ) {
 				                                      return;
@@ -36165,7 +36169,7 @@ function MainApp() {
 	                                            nextValue === "account_created" &&
 	                                            !referral.referredContactHasAccount &&
 	                                            !window.confirm(
-	                                              "They have not created a PepPro account, yet are you sure you want to promote them?",
+	                                              "They have not created a TruFusionLabs account, yet are you sure you want to promote them?",
 	                                            )
 	                                          ) {
 	                                            return;
@@ -36260,7 +36264,7 @@ function MainApp() {
                       </p>
                     ) : contactFormQueue.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
-                        Nobody has submitted their details to the PepPro contact form yet.
+                        Nobody has submitted their details to the TruFusionLabs contact form yet.
                       </p>
                     ) : (
                     <div className="sales-rep-table-wrapper admin-dashboard-list">
@@ -36272,7 +36276,7 @@ function MainApp() {
                             <th className="px-4 py-3">Email</th>
                             <th className="px-4 py-3">Phone</th>
                             <th className="px-4 py-3">
-                              How did you get introduced to PepPro?
+                              How did you get introduced to TruFusionLabs?
                             </th>
                             <th className="px-4 py-3">Received</th>
                             <th className="px-4 py-3">Status</th>
@@ -36427,9 +36431,9 @@ function MainApp() {
           Send dashboard recommendations and ideas to{" "}
           <a
             className="text-[rgb(95,179,249)] underline-offset-2 hover:underline"
-            href="mailto:pgibbons@peppro.net?subject=Dashboard%20Recommendation%20(PepPro)"
+            href="mailto:pgibbons@trufusionlabs.com?subject=Dashboard%20Recommendation%20(TruFusionLabs)"
           >
-            pgibbons@peppro.net
+            pgibbons@trufusionlabs.com
           </a>
           .
         </p>
@@ -36968,7 +36972,7 @@ function MainApp() {
           </DialogHeader>
           <div className="space-y-4 text-sm leading-relaxed text-slate-700">
             <p>
-              By proceeding, you agree to join the PepPro research network
+              By proceeding, you agree to join the TruFusionLabs research network
               where, at your discretion, you contribute your time,
               expertise, and de-identified, anonymized patient outcome data
               constructively, and with integrity, to advance healthcare. You
@@ -36976,7 +36980,7 @@ function MainApp() {
               and professional obligations.
             </p>
             <div className="text-sm leading-snug text-slate-700">
-              Continuing also confirms your acceptance of PepPro&apos;s{" "}
+              Continuing also confirms your acceptance of TruFusionLabs&apos;s{" "}
               <button
                 type="button"
                 className="legal-inline-link"
@@ -37076,7 +37080,7 @@ function MainApp() {
             requireGreaterArea
             requireStudyFocus
             allowIncompleteSubmit
-            preActionsNote={'Use the network toggle above to control whether your profile will appear in the PepPro physician network. These details can be updated anytime in your account settings.'}
+            preActionsNote={'Use the network toggle above to control whether your profile will appear in the TruFusionLabs physician network. These details can be updated anytime in your account settings.'}
             submitLabel="Save and Continue"
             submittingLabel="Saving profile…"
             skipLabel="Skip for now"
@@ -37265,8 +37269,8 @@ function MainApp() {
 		                      <div className="flex-shrink-0">
 		                        <div className="brand-logo brand-logo--landing">
 			                          <img
-			                            src={withStaticAssetStamp("/PepPro_fulllogo.png")}
-			                            alt="PepPro"
+			                            src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
+			                            alt="TruFusionLabs"
 	                            style={{
                               display: "block",
                               width: "auto",
@@ -37306,8 +37310,8 @@ function MainApp() {
                       <div className="flex w-full items-center justify-between gap-4 px-4">
                         <div className="brand-logo brand-logo--landing flex-shrink-0">
 	                          <img
-	                            src={withStaticAssetStamp("/PepPro_fulllogo.png")}
-	                            alt="PepPro"
+	                            src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
+	                            alt="TruFusionLabs"
 	                            style={{
                               display: "block",
                               width: "auto",
@@ -37400,8 +37404,8 @@ function MainApp() {
                 >
                   <div className="brand-logo brand-logo--landing">
 	                    <img
-	                      src={withStaticAssetStamp("/PepPro_fulllogo.png")}
-	                      alt="PepPro"
+	                      src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
+	                      alt="TruFusionLabs"
 	                      style={{
                         display: "block",
                         width: "auto",
@@ -37618,7 +37622,7 @@ function MainApp() {
                               onClick={() => {
                                 if (typeof window !== "undefined") {
                                   window.dispatchEvent(
-                                    new CustomEvent("peppro:logout-with-thanks"),
+                                    new CustomEvent("trufusion:logout-with-thanks"),
                                   );
                                 } else {
                                   handleLogout();
@@ -37785,7 +37789,7 @@ function MainApp() {
 		                                <p className="text-xs text-slate-500">
 	                                  Stay tuned! New classes will be scheduled here and on our{" "}
 	                                  <a
-	                                    href="https://www.linkedin.com/company/peppro/posts/?feedView=all"
+	                                    href="https://www.linkedin.com/company/trufusion/posts/?feedView=all"
 	                                    target="_blank"
 	                                    rel="noreferrer"
 	                                    className="text-[rgb(26,85,173)] hover:underline"
@@ -38020,7 +38024,7 @@ function MainApp() {
 	                                      issue === "offline"
 	                                        ? "No internet connection detected. Please turn on Wi‑Fi or cellular data and try again."
 	                                        : issue === "network"
-	                                          ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	                                          ? "Can't reach TruFusionLabs right now. This usually means your internet is offline or very slow. Please check your connection and try again."
 	                                          : "Unable to log in. Please try again.",
 	                                    );
 	                                  }
@@ -38034,7 +38038,7 @@ function MainApp() {
 	                                  issue === "offline"
 	                                    ? "No internet connection detected. Please turn on Wi‑Fi or cellular data and try again."
 	                                    : issue === "network"
-	                                      ? "We cannot reach the PepPro serverright now. Please check your connection and try again in a minute."
+	                                      ? "We cannot reach the TruFusionLabs serverright now. Please check your connection and try again in a minute."
 	                                      : "Unable to log in. Please try again.",
 	                                );
 	                              } finally {
@@ -38251,7 +38255,7 @@ function MainApp() {
                                 role="status"
                               >
                                 Expect an email to arrive in your inbox within a minute. If you don’t see it, please check your spam/junk folder. If you still can’t
-                                find it, contact us at <span className="font-mono">support@peppro.net</span>.
+                                find it, contact us at <span className="font-mono">support@trufusionlabs.com</span>.
                               </p>
                             )}
                             <Button
@@ -38454,7 +38458,7 @@ function MainApp() {
 	                        <>
 	                          <div className="text-center space-y-2">
 	                            <h1 className="text-2xl font-semibold">
-	                              Join the PepPro Network
+	                              Join the TruFusionLabs Network
 	                            </h1>
 	                          </div>
 	                          <form
@@ -38524,7 +38528,7 @@ function MainApp() {
                                 res.status === "npi_already_registered"
                               ) {
                                 setLandingSignupError(
-                                  "An account already exists for this NPI number. Please sign in or contact support@peppro.net.",
+                                  "An account already exists for this NPI number. Please sign in or contact support@trufusionlabs.com.",
                                 );
                               } else if (
                                 res.status === "npi_verification_failed"
@@ -39113,7 +39117,7 @@ function MainApp() {
               : isSalesPartner(user?.role, coerceOptionalBoolean(user?.salesRep?.isPartner))
                 ? `I acknowledge that I am placing this order as a ${getSalesPartnerLabel(coerceOptionalBoolean(user?.salesRep?.allowedRetail))}`
                 : user?.role && (isRep(user.role) || isAdmin(user.role))
-                  ? 'I acknowledge that I am placing this order under my PepPro account'
+                  ? 'I acknowledge that I am placing this order under my TruFusionLabs account'
                   : null
         }
         customerEmail={isDelegateMode ? null : user?.email || null}
@@ -41530,7 +41534,7 @@ function MainApp() {
 		                      return "Card payment";
 		                    }
 		                    if (typeof fallback === "string") {
-		                      return formatPepProPaymentMethodLabel(fallback) || fallback;
+		                      return formatTruFusionPaymentMethodLabel(fallback) || fallback;
 		                    }
 		                    return fallback;
 		                  })();
@@ -41813,7 +41817,7 @@ function MainApp() {
 	                            <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
 	                              <div className="flex items-center justify-between gap-3">
 	                                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
-	                                  Edit (PepPro)
+	                                  Edit (TruFusionLabs)
 	                                </p>
 	                                <p className="text-[11px] text-slate-500">
 	                                  {dirty ? "Unsaved changes" : "Saved"}
@@ -41838,7 +41842,7 @@ function MainApp() {
 	                                <label className="text-xs text-slate-600">
 	                                  Status
 	                                  <input
-	                                    list="peppro-order-status-options"
+	                                    list="trufusion-order-status-options"
 	                                    value={salesOrderFieldsDraft.status}
 	                                    onChange={(e) =>
 	                                      setSalesOrderFieldsDraft((prev) => ({
@@ -41854,7 +41858,7 @@ function MainApp() {
 	                                <label className="text-xs text-slate-600">
 	                                  Carrier
 	                                  <input
-	                                    list="peppro-order-carrier-options"
+	                                    list="trufusion-order-carrier-options"
 	                                    value={salesOrderFieldsDraft.shippingCarrier}
 	                                    onChange={(e) =>
 	                                      setSalesOrderFieldsDraft((prev) => ({
@@ -41918,7 +41922,7 @@ function MainApp() {
 	                                  {salesOrderFieldsSaving ? "Saving…" : "Save"}
 	                                </Button>
 	                              </div>
-	                              <datalist id="peppro-order-status-options">
+	                              <datalist id="trufusion-order-status-options">
 	                                <option value="processing" />
 	                                <option value="awaiting_shipment" />
 	                                <option value="shipped" />
@@ -41929,14 +41933,14 @@ function MainApp() {
 	                                <option value="cancelled" />
 	                                <option value="refunded" />
 	                              </datalist>
-	                              <datalist id="peppro-order-carrier-options">
+	                              <datalist id="trufusion-order-carrier-options">
 	                                <option value="ups" />
 	                                <option value="usps" />
 	                                <option value="fedex" />
 	                                <option value="dhl" />
 	                              </datalist>
 	                              <p className="text-[11px] text-slate-500">
-	                                Updates are saved in PepPro for display; this does not push changes to WooCommerce/ShipStation.
+	                                Updates are saved in TruFusionLabs for display; this does not push changes to WooCommerce/ShipStation.
 	                              </p>
 	                            </div>
 	                          );
@@ -42116,7 +42120,7 @@ function MainApp() {
                   Manufacturing &amp; Quality Standards
                 </DialogTitle>
                 <DialogDescription className="leading-snug" style={{ marginTop: 0 }}>
-                  PepPro manufacturing, testing, delivery, and compliance standards.
+                  TruFusionLabs manufacturing, testing, delivery, and compliance standards.
                 </DialogDescription>
               </DialogHeader>
               <DialogClose
@@ -42155,7 +42159,7 @@ function MainApp() {
                   <span>Clinical Research-Grade Manufacturing</span>
                 </h3>
                 <p className="font-semibold" style={{ color: "#ffffff" }}>
-                  PepPro partners exclusively with FDA-registered and NSF-certified
+                  TruFusionLabs partners exclusively with FDA-registered and NSF-certified
                   manufacturing facilities to ensure clinical research-grade quality and
                   consistency. All peptide formulations are produced in GMP-compliant
                   facilities.
@@ -42197,7 +42201,7 @@ function MainApp() {
                     <span>Proprietary Delivery Technology</span>
                   </h3>
                   <p>
-                    PepPro utilizes the {" "}
+                    TruFusionLabs utilizes the {" "}
                     <img
                       src={withStaticAssetStamp("/protixa.png")}
                       alt="Protixa"
@@ -42243,7 +42247,7 @@ function MainApp() {
                     <span>Batch Testing &amp; COA Transparency</span>
                   </h3>
                   <p>
-                    Each PepPro peptide is backed by a Certificate of Analysis as well as
+                    Each TruFusionLabs peptide is backed by a Certificate of Analysis as well as
                     third party testing to verify:
                   </p>
                   <ul className="space-y-1">
@@ -42303,7 +42307,7 @@ function MainApp() {
                   Every formula is designed by a cross-disciplinary team of experts in
                   pharmaceutical R&amp;D, biochemistry, and regulatory compliance. From
                   clinical research-grade peptides to white-label consumer products,
-                  PepPro bridges science and accessibility with full transparency and
+                  TruFusionLabs bridges science and accessibility with full transparency and
                   safety.
                 </p>
               </section>

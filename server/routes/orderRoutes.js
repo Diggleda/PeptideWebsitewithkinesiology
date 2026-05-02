@@ -5,7 +5,7 @@ const { env } = require('../config/env');
 
 const shouldServeFakeAdminReports = () => {
   if (env?.nodeEnv === 'production') return false;
-  const flag = (process.env.PEPPRO_FAKE_ADMIN_REPORTS || '').trim().toLowerCase();
+  const flag = (process.env.TRUFUSION_FAKE_ADMIN_REPORTS || '').trim().toLowerCase();
   if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false;
   return true;
 };

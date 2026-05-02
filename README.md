@@ -1,6 +1,6 @@
-# PepPro
+# TruFusionLabs
 
-PepPro is a Vite + React front end paired with a Python backend in production (`python_backend/`) and a legacy Express backend (`server/`) retained for migration and local compatibility.
+TruFusionLabs is a Vite + React front end paired with a Python backend in production (`python_backend/`) and a legacy Express backend (`server/`) retained for migration and local compatibility.
 
 ## Project Layout
 
@@ -57,7 +57,7 @@ Vite only exposes variables prefixed with `VITE_`. Copy `.env.example` to `.env.
 
 ### Universal builds (staging + prod)
 
-To deploy the same static frontend bundle to multiple domains (e.g. `peppro.net` and `staging.peppro.net`):
+To deploy the same static frontend bundle to multiple domains (e.g. `trufusionlabs.com` and `staging.trufusionlabs.com`):
 
 - Prefer serving the API under `/api` on the **same origin** as the frontend.
 - Leave `VITE_API_URL` unset at build time (so the app uses `window.location.origin + "/api"` in production).
@@ -92,7 +92,7 @@ The backend builds a WooCommerce order payload for every checkout and will forwa
 
 | Variable | Description |
 | --- | --- |
-| `WC_STORE_URL` | Base store URL (e.g. `https://store.example.com`). |
+| `WC_STORE_URL` | Base store URL (production: `https://shop.trufusionlabs.com`). |
 | `WC_CONSUMER_KEY`/`WC_CONSUMER_SECRET` | REST API credentials generated in WooCommerce. |
 | `WC_API_VERSION` | WooCommerce API namespace (defaults to `wc/v3`). |
 | `WC_AUTO_SUBMIT_ORDERS` | When `true`, orders are pushed immediately; when `false`, payloads are logged and saved for manual submission. |
