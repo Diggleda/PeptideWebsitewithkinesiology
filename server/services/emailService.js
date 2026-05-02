@@ -124,7 +124,7 @@ const sendPasswordResetEmail = async (to, token) => {
 const buildPaymentInstructionsSections = () => {
   const supportEmail = normalizeEmailAddress(process.env.SUPPORT_EMAIL) || 'support@trufusionlabs.com';
   const zelleRecipient = String(process.env.PAYMENT_ZELLE_RECIPIENT || '').trim();
-  const zelleEmail = normalizeEmailAddress(process.env.PAYMENT_ZELLE_EMAIL);
+  const zelleEmail = normalizeEmailAddress(process.env.PAYMENT_ZELLE_EMAIL) || 'support@peppro.net';
   const zellePhone = String(process.env.PAYMENT_ZELLE_PHONE || '').trim();
 
   const bankName = String(process.env.PAYMENT_BANK_NAME || '').trim();

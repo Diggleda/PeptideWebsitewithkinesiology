@@ -534,6 +534,11 @@ interface SeamlessRawEntry {
   createdAt?: string | null;
 }
 
+type PhysicianCsvRow = {
+  name: string;
+  email: string;
+};
+
 // Feature flags for passkey UX. Defaults keep prompts manual-only.
 const PASSKEY_AUTOPROMPT =
   String(
@@ -853,6 +858,15 @@ const triggerBrowserDownload = (
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+const escapeCsvCell = (value: unknown) => {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
 };
 
 const sanitizeDownloadFilenamePart = (value: string | null | undefined, fallback: string) => {
@@ -5490,10 +5504,6 @@ function MainApp() {
   const doctorResellerPermitInputRef = useRef<HTMLInputElement | null>(null);
   const doctorProfileGateRefreshSeqRef = useRef(0);
   const handleLogoutRef = useRef<() => void>(() => {});
-  const unloadLogoutTriggeredRef = useRef(false);
-  useEffect(() => {
-    unloadLogoutTriggeredRef.current = false;
-  }, [user?.id]);
   const showResearchTermsAgreementModal = Boolean(
     user && isDoctorRole(user.role) && !user.researchTermsAgreement,
   );
@@ -5805,34 +5815,6 @@ function MainApp() {
       window.removeEventListener("beforeunload", handlePageExit);
     };
   }, [isMaintenanceMode, user?.id]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (!user?.id) {
-      return;
-    }
-
-    const handlePageExitLogout = () => {
-      if (unloadLogoutTriggeredRef.current) {
-        return;
-      }
-      unloadLogoutTriggeredRef.current = true;
-      try {
-        authAPI.logout();
-      } catch {
-        // ignore
-      }
-    };
-
-    window.addEventListener("pagehide", handlePageExitLogout);
-    window.addEventListener("beforeunload", handlePageExitLogout);
-    return () => {
-      window.removeEventListener("pagehide", handlePageExitLogout);
-      window.removeEventListener("beforeunload", handlePageExitLogout);
-    };
-  }, [user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -19676,7 +19658,7 @@ function MainApp() {
     );
   }, [contactFormEntries, hasLeadPlacedOrder, historicReferralEntries]);
 
-			  const activeProspectEntries = useMemo(() => {
+	  const activeProspectEntries = useMemo(() => {
 		    const getActiveProspectKey = (
 		      entry: { kind: "referral" | "contact_form"; record: any },
 		      index: number,
@@ -19821,8 +19803,186 @@ function MainApp() {
     contactFormPipeline,
     manualProspectEntries,
     hasLeadPlacedOrder,
-    shouldRemoveFromActiveProspects,
-  ]);
+	    shouldRemoveFromActiveProspects,
+	  ]);
+
+  const activePhysiciansCsvData = useMemo<{
+    networkUsers: PhysicianCsvRow[];
+    leads: PhysicianCsvRow[];
+  }>(() => {
+    const dashboardAny = salesRepDashboard as any;
+    const rawAccounts = [
+      ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
+      ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
+      ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
+    ];
+    const normalizeDisplayName = (...values: unknown[]) => {
+      for (const value of values) {
+        if (Array.isArray(value)) {
+          const joined = value
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          if (joined) return joined;
+          continue;
+        }
+        const text = String(value ?? "").trim();
+        if (text) return text;
+      }
+      return "";
+    };
+    const collectEmails = (...values: unknown[]) => {
+      const emails: string[] = [];
+      const seen = new Set<string>();
+      const addValue = (value: unknown) => {
+        if (Array.isArray(value)) {
+          value.forEach(addValue);
+          return;
+        }
+        if (value === null || value === undefined) return;
+        String(value)
+          .split(",")
+          .map((part) => normalizeEmailIdentity(part))
+          .filter(Boolean)
+          .forEach((email) => {
+            const normalized = String(email);
+            if (seen.has(normalized)) return;
+            seen.add(normalized);
+            emails.push(normalized);
+          });
+      };
+      values.forEach(addValue);
+      return emails;
+    };
+    const isInactiveUserStatus = (value: unknown) => {
+      const normalized = String(value || "active").trim().toLowerCase();
+      return ["inactive", "disabled", "deleted", "archived", "suspended"].includes(
+        normalized,
+      );
+    };
+    const compareRows = (a: PhysicianCsvRow, b: PhysicianCsvRow) => {
+      const nameCompare = a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+      });
+      return nameCompare || a.email.localeCompare(b.email, undefined, {
+        sensitivity: "base",
+      });
+    };
+
+    const networkUsers: PhysicianCsvRow[] = [];
+    const leads: PhysicianCsvRow[] = [];
+    const networkEmails = new Set<string>();
+    const leadEmails = new Set<string>();
+
+    rawAccounts.forEach((account: any) => {
+      if (!account || typeof account !== "object") return;
+      const role = normalizeRole(account?.role);
+      if (role !== "doctor") return;
+      if (isInactiveUserStatus(account?.status)) return;
+      const emails = collectEmails(
+        account?.email,
+        account?.userEmail,
+        account?.doctorEmail,
+        account?.contactEmail,
+      );
+      if (emails.length === 0) return;
+      const name =
+        normalizeDisplayName(
+          account?.name,
+          [account?.firstName, account?.lastName],
+          account?.doctorName,
+          account?.displayName,
+          account?.username,
+        ) || emails[0];
+      emails.forEach((email) => {
+        if (email === "test@doctor.com") return;
+        if (networkEmails.has(email)) return;
+        networkEmails.add(email);
+        networkUsers.push({ name, email });
+      });
+    });
+
+    activeProspectEntries.forEach(({ record }) => {
+      if (!record || typeof record !== "object") return;
+      if ((record as any)?.syntheticAccountProspect) return;
+      if ((record as any)?.referredContactHasAccount === true) return;
+      if (isDeletedProspectLead(record)) return;
+      if (record?.creditIssuedAt) return;
+      if (sanitizeReferralStatus(record?.status) === "nuture") return;
+
+      const emails = collectEmails(
+        (record as any)?.contactEmails,
+        (record as any)?.contact_emails,
+        record?.referredContactEmail,
+        (record as any)?.contactEmail,
+        (record as any)?.email,
+        (record as any)?.doctorEmail,
+        (record as any)?.userEmail,
+      ).filter((email) => !networkEmails.has(email));
+      if (emails.length === 0) return;
+      const name =
+        normalizeDisplayName(
+          record?.referredContactName,
+          (record as any)?.contactName,
+          (record as any)?.name,
+          (record as any)?.doctorName,
+          record?.referredContactAccountName,
+        ) || emails[0];
+      emails.forEach((email) => {
+        if (leadEmails.has(email)) return;
+        leadEmails.add(email);
+        leads.push({ name, email });
+      });
+    });
+
+    return {
+      networkUsers: networkUsers.sort(compareRows),
+      leads: leads.sort(compareRows),
+    };
+  }, [activeProspectEntries, normalizeEmailIdentity, salesRepDashboard]);
+
+  const downloadActivePhysiciansCsv = useCallback(() => {
+    try {
+      const totalRows =
+        activePhysiciansCsvData.networkUsers.length +
+        activePhysiciansCsvData.leads.length;
+      if (totalRows === 0) {
+        toast.error("No active physicians available to download.");
+        return;
+      }
+
+      const exportedAt = new Date();
+      const exportedAtIso = exportedAt.toISOString();
+      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+      const rows: string[] = [
+        escapeCsvCell("Active Physicians"),
+        "",
+        escapeCsvCell("Active Users in Network"),
+        ["Name", "Email"].join(","),
+        ...activePhysiciansCsvData.networkUsers.map((row) =>
+          [escapeCsvCell(row.name), escapeCsvCell(row.email)].join(","),
+        ),
+        "",
+        escapeCsvCell("Leads"),
+        ["Name", "Email"].join(","),
+        ...activePhysiciansCsvData.leads.map((row) =>
+          [escapeCsvCell(row.name), escapeCsvCell(row.email)].join(","),
+        ),
+      ];
+      const blob = new Blob([rows.join("\n")], {
+        type: "text/csv;charset=utf-8",
+      });
+      triggerBrowserDownload(
+        blob,
+        `active-physicians_${FRONTEND_BUILD_ID}_${stamp}.csv`,
+        { forceMimeType: "text/csv;charset=utf-8" },
+      );
+    } catch (error) {
+      console.error("[Active Physicians] CSV export failed", error);
+      toast.error("Unable to download active physicians right now.");
+    }
+  }, [activePhysiciansCsvData]);
 
   const filteredActiveProspects = useMemo(() => {
     const statusFiltered =
@@ -22844,10 +23004,18 @@ function MainApp() {
         });
       } catch (error: any) {
         console.error("[Referral] Manual prospect create failed", error);
+        const rawMessage =
+          typeof error?.message === "string" && error.message.trim()
+            ? error.message.trim()
+            : "";
+        const errorCode =
+          typeof error?.code === "string" && error.code.trim()
+            ? error.code.trim()
+            : "";
         const message =
-          typeof error?.message === "string"
-            ? error.message
-            : "Unable to add lead right now.";
+          rawMessage === "EMAIL_ALREADY_EXISTS" || errorCode === "EMAIL_ALREADY_EXISTS"
+            ? "Email already exists."
+            : rawMessage || "Unable to add lead right now.";
         toast.error(message);
       } finally {
         setManualProspectSubmitting(false);
@@ -24871,9 +25039,8 @@ function MainApp() {
     [isMaintenanceMode],
   );
 
-  const handleLogout = useCallback(() => {
+	  const handleLogout = useCallback(() => {
 	    console.debug("[Auth] Logout");
-      unloadLogoutTriggeredRef.current = true;
       closeTrackedMaintenanceWindow("logout");
 	    authAPI.logout();
 	    setUser(null);
@@ -24924,12 +25091,12 @@ function MainApp() {
       forcedLogoutReasonRef.current = resolvedReason || null;
 
       if (shouldShowToast) {
-        const forcedByOtherLogin =
-          resolvedReason === "another_tab_login" || resolvedReason === "token_revoked";
-        if (forcedByOtherLogin) {
+        if (resolvedReason === "another_tab_login") {
           toast.error(
-            'Your account was signed in on another device, so this session was ended. If this was not you, reset your password and sign in again.',
+            "Your account was signed in from another tab, so this session was ended.",
           );
+        } else if (resolvedReason === "token_revoked") {
+          toast.info("Your session was ended. Please sign in again.");
         } else if (resolvedReason === "auth_revoked") {
           toast.info("Your session expired. Please sign in again.");
         }
@@ -28296,6 +28463,45 @@ function MainApp() {
 	        </div>
 	      </div>
 	    );
+    const renderActivePhysiciansCsvCard = () => {
+      const networkUserCount = activePhysiciansCsvData.networkUsers.length;
+      const leadCount = activePhysiciansCsvData.leads.length;
+      const totalCount = networkUserCount + leadCount;
+      return (
+        <div className="sales-rep-leads-card sales-rep-combined-card">
+          <div className="mb-0 flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Active Physicians CSV
+              </h3>
+              <p className="text-sm text-slate-600">
+                Active physician users and active leads, separated in one file.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                <span className="rounded-full border border-slate-200/80 bg-white/70 px-3 py-1">
+                  Network users: {networkUserCount.toLocaleString()}
+                </span>
+                <span className="rounded-full border border-slate-200/80 bg-white/70 px-3 py-1">
+                  Leads: {leadCount.toLocaleString()}
+                </span>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2 self-start"
+              onClick={downloadActivePhysiciansCsv}
+              disabled={totalCount === 0}
+              title="Download CSV"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download CSV
+            </Button>
+          </div>
+        </div>
+      );
+    };
     const renderPendingResellerPermitApprovalsCard = () => (
       <div className="sales-rep-leads-card sales-rep-combined-card">
         <div className="mb-0 flex w-full items-start justify-between gap-3">
@@ -29824,10 +30030,11 @@ function MainApp() {
 		                      </div>
 		                    </div>
 		                  )}
-		                </div>
-		              </div>
-		            </div>
-		          )}
+			                </div>
+			              </div>
+                  {renderActivePhysiciansCsvCard()}
+			            </div>
+			          )}
 
                 {isAdmin(user?.role) && (
                   <div className="relative mb-3 w-full account-tab-shell">
@@ -34439,6 +34646,7 @@ function MainApp() {
 		            </div>
 		              )}
 		            </div>
+                {renderActivePhysiciansCsvCard()}
 			              </div>
 			            </div>
 			          )}
@@ -39313,7 +39521,9 @@ function MainApp() {
                   placeholder="lead@email.com, alternate@email.com"
                   className="border-slate-300/90 bg-transparent"
                 />
-                <p className="text-xs text-slate-500">Comma separated.</p>
+                <p className="text-xs" style={{ color: "#64748b" }}>
+                  Comma seperated
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">
@@ -39330,7 +39540,9 @@ function MainApp() {
                   placeholder="(444) 222 4224, (555) 333 1212"
                   className="border-slate-300/90 bg-transparent"
                 />
-                <p className="text-xs text-slate-500">Comma separated.</p>
+                <p className="text-xs" style={{ color: "#64748b" }}>
+                  Comma seperated
+                </p>
 	              </div>
 	            </div>
 	            <div className="space-y-2">

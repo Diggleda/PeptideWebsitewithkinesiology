@@ -206,6 +206,72 @@ def _build_contact_form_email_lookup(emails: List[str]) -> Tuple[str, Dict[str, 
     return "", {}
 
 
+def _email_already_exists_error() -> Exception:
+    error = _service_error("Email already exists.", 400)
+    setattr(error, "error_code", "EMAIL_ALREADY_EXISTS")
+    return error
+
+
+def _email_exists_in_referrals(contact_emails: List[str]) -> bool:
+    candidates = {str(email or "").strip().lower() for email in contact_emails if str(email or "").strip()}
+    if not candidates:
+        return False
+    try:
+        referrals = referral_repository.get_all()
+    except Exception:
+        logger.warning("Unable to check referral emails while creating manual prospect", exc_info=True)
+        return False
+    for referral in referrals or []:
+        referral_emails = set(_sanitize_email_list(referral.get("contactEmails") or []))
+        primary_email = _sanitize_email(referral.get("referredContactEmail"))
+        if primary_email:
+            referral_emails.add(primary_email)
+        if candidates.intersection(referral_emails):
+            return True
+    return False
+
+
+def _email_exists_in_sales_prospects(contact_emails: List[str]) -> bool:
+    candidates = {str(email or "").strip().lower() for email in contact_emails if str(email or "").strip()}
+    if not candidates:
+        return False
+    try:
+        prospects = sales_prospect_repository.get_all()
+    except Exception:
+        logger.warning("Unable to check sales prospect emails while creating manual prospect", exc_info=True)
+        return False
+    for prospect in prospects or []:
+        prospect_emails = set(_sanitize_email_list(prospect.get("contactEmails") or []))
+        primary_email = _sanitize_email(prospect.get("contactEmail"))
+        if primary_email:
+            prospect_emails.add(primary_email)
+        if candidates.intersection(prospect_emails):
+            return True
+    return False
+
+
+def _email_exists_in_contact_forms(contact_emails: List[str]) -> bool:
+    try:
+        mysql_enabled = bool(get_config().mysql.get("enabled"))
+    except Exception:
+        logger.warning("Unable to read MySQL config while checking contact form emails", exc_info=True)
+        return False
+    if not mysql_enabled:
+        return False
+    try:
+        where_clause, params = _build_contact_form_email_lookup(contact_emails)
+        if not where_clause:
+            return False
+        row = mysql_client.fetch_one(
+            f"SELECT id FROM contact_forms WHERE {where_clause} LIMIT 1",
+            params,
+        )
+        return bool(row)
+    except Exception:
+        logger.warning("Unable to check contact form emails while creating manual prospect", exc_info=True)
+        return False
+
+
 def _is_deleted_user_identifier(value: Optional[str]) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -893,45 +959,15 @@ def create_manual_prospect(data: Dict) -> Dict:
     if contact_emails:
         for candidate_email in contact_emails:
             if user_repository.find_by_email(candidate_email):
-                raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+                raise _email_already_exists_error()
             if sales_rep_repository.find_by_email(candidate_email):
-                raise _service_error("EMAIL_ALREADY_EXISTS", 400)
-        try:
-            for referral in referral_repository.get_all():
-                referral_email = (referral.get("referredContactEmail") or "").strip().lower()
-                if referral_email and referral_email in contact_emails:
-                    raise _service_error("EMAIL_ALREADY_EXISTS", 400)
-        except Exception:
-            pass
-        try:
-            for prospect in sales_prospect_repository.get_all():
-                prospect_emails = {
-                    str(email or "").strip().lower()
-                    for email in (prospect.get("contactEmails") or [])
-                    if str(email or "").strip()
-                }
-                primary_email = (prospect.get("contactEmail") or "").strip().lower()
-                if primary_email:
-                    prospect_emails.add(primary_email)
-                if any(candidate in prospect_emails for candidate in contact_emails):
-                    raise _service_error("EMAIL_ALREADY_EXISTS", 400)
-        except Exception:
-            pass
-        try:
-            if get_config().mysql.get("enabled"):
-                where_clause, params = _build_contact_form_email_lookup(contact_emails)
-                row = (
-                    mysql_client.fetch_one(
-                        f"SELECT id FROM contact_forms WHERE {where_clause} LIMIT 1",
-                        params,
-                    )
-                    if where_clause
-                    else None
-                )
-                if row:
-                    raise _service_error("EMAIL_ALREADY_EXISTS", 400)
-        except Exception:
-            pass
+                raise _email_already_exists_error()
+        if (
+            _email_exists_in_referrals(contact_emails)
+            or _email_exists_in_sales_prospects(contact_emails)
+            or _email_exists_in_contact_forms(contact_emails)
+        ):
+            raise _email_already_exists_error()
 
     prospect_id = _generate_manual_id()
     record = sales_prospect_repository.upsert(

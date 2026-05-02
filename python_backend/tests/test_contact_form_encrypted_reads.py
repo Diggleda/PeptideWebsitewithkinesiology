@@ -15,6 +15,7 @@ def _install_test_stubs() -> None:
         flask.request = types.SimpleNamespace(method="GET", path="/")
         flask.g = types.SimpleNamespace(current_user=None)
         flask.jsonify = lambda payload=None, *args, **kwargs: payload
+        flask.has_request_context = lambda: False
         sys.modules["flask"] = flask
 
     if "werkzeug" not in sys.modules:
@@ -100,10 +101,30 @@ def _install_test_stubs() -> None:
         def _blocked(*_args, **_kwargs):
             raise RuntimeError("requests used during unit test")
 
+        class RequestException(Exception):
+            pass
+
+        class Timeout(RequestException):
+            pass
+
+        class HTTPError(RequestException):
+            pass
+
+        class ConnectionError(RequestException):
+            pass
+
+        class Response:
+            pass
+
         class HTTPBasicAuth:
             def __init__(self, *_args, **_kwargs):
                 pass
 
+        requests.RequestException = RequestException
+        requests.Timeout = Timeout
+        requests.HTTPError = HTTPError
+        requests.ConnectionError = ConnectionError
+        requests.Response = Response
         requests.get = _blocked
         requests.post = _blocked
         requests.put = _blocked

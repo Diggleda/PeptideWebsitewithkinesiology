@@ -634,7 +634,7 @@ function trufusion_bacs_thankyou_instructions($order_id) {
   if (empty($gateways['bacs'])) return;
 
   if (trufusion_is_zelle_order($order)) {
-    echo '<p>' . esc_html("We received your order! Please Zelle support@trufusionlabs.com with the memo 'Order #{$order->get_order_number()}'. Instructions to follow in an email.") . '</p>';
+    echo '<p>' . esc_html("We received your order! Please Zelle support@peppro.net with the memo 'Order #{$order->get_order_number()}'. Instructions to follow in an email.") . '</p>';
     return;
   }
 

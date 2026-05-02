@@ -24,6 +24,8 @@ import { computeUnitPrice, type PricingMode } from '../lib/pricing';
 
 type CheckoutPaymentMethod = 'zelle' | 'bank_transfer' | 'none';
 
+const ZELLE_PAYMENT_EMAIL = 'support@peppro.net';
+
 const normalizeCheckoutPaymentMethod = (value: unknown): CheckoutPaymentMethod | null => {
   const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (!raw) return null;
@@ -1303,8 +1305,8 @@ export function CheckoutModal({
 	      const transferSuccessMessage = (() => {
 	        if (isZelle) {
 	          return normalizedOrderNumber
-	            ? `We received your order! Please Zelle support@trufusionlabs.com with the memo 'Order #${normalizedOrderNumber}'. Instructions to follow in an email.`
-	            : `We received your order! Please Zelle support@trufusionlabs.com. Instructions to follow in an email.`;
+	            ? `We received your order! Please Zelle ${ZELLE_PAYMENT_EMAIL} with the memo 'Order #${normalizedOrderNumber}'. Instructions to follow in an email.`
+	            : `We received your order! Please Zelle ${ZELLE_PAYMENT_EMAIL}. Instructions to follow in an email.`;
 	        }
 	        if (isBankTransfer) {
 	          return 'We received your order! An email will follow with Direct Bank Trasnfer (ACH) instructions.';
@@ -2498,7 +2500,7 @@ export function CheckoutModal({
 	                    <>
 	                      {paymentMethod === 'zelle' ? (
 	                        <p className="mt-2 text-[13px] text-slate-700">
-	                          Send Zelle to <span className="font-mono">support@trufusionlabs.com</span> with memo:{' '}
+	                          Send Zelle to <span className="font-mono">{ZELLE_PAYMENT_EMAIL}</span> with memo:{' '}
 	                          <span className="font-mono">({placedOrderNumber ? `Order #${placedOrderNumber}` : '#order number'})</span>. We will resend Zelle
 	                          instructions to{' '}
 	                          {typeof customerEmail === 'string' && customerEmail.trim().length > 0 ? (
