@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
 # Visibility requirement for shipping lifecycle emails only.
-_SHIPPING_STATUS_BCC = ("petergibbons7@icloud.com",)
+_SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
@@ -48,7 +48,21 @@ _EMAIL_GLASS_CONTAINER_STYLE = (
     "backdrop-filter:blur(34px) saturate(1.9);"
     "color-scheme:light;"
 )
+_EMAIL_ORDER_GLASS_CONTAINER_STYLE = (
+    "background-color:#ffffff;"
+    "background:rgba(255,255,255,0.78);"
+    "border:1px solid rgba(255,255,255,0.82);"
+    "border-radius:28px;"
+    "overflow:hidden;"
+    "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
+    "0 6px 14px -10px rgba(15,23,42,0.35),"
+    "inset 0 1px rgba(255,255,255,0.85);"
+    "-webkit-backdrop-filter:blur(12px) saturate(1.9);"
+    "backdrop-filter:blur(12px) saturate(1.9);"
+    "color-scheme:light;"
+)
 _EMAIL_LOGO_CELL_STYLE = "background:rgba(255,255,255,0.36);padding:24px 24px 12px;"
+_EMAIL_ORDER_OUTER_CELL_STYLE = "padding:0 14px;"
 _EMAIL_DETAIL_CARD_STYLE = (
     "margin:0 0 24px;"
     "border:1px solid rgba(95,179,249,0.26);"
@@ -298,6 +312,10 @@ def _email_outer_table_style(leaf_url: str) -> str:
 
 def _email_container_style(max_width: int) -> str:
     return f"max-width:{max_width}px;{_EMAIL_GLASS_CONTAINER_STYLE}"
+
+
+def _email_order_container_style(max_width: int) -> str:
+    return f"max-width:{max_width}px;{_EMAIL_ORDER_GLASS_CONTAINER_STYLE}"
 
 
 def _normalize_extra_recipients(recipients: Optional[Iterable[str] | str]) -> list[str]:
@@ -687,7 +705,7 @@ def _build_shipping_status_email(
     leaf_url = _EMAIL_LEAF_SRC
     body_style = _email_body_style(leaf_url)
     outer_table_style = _email_outer_table_style(leaf_url)
-    container_style = _email_container_style(560)
+    container_style = _email_order_container_style(560)
     account_url = safe_base_url or "https://trufusionlabs.com"
     name_label = str(customer_name or "").strip() or "TruFusionLabs Customer"
     order_label = str(order_number or "").strip() or "your order"
@@ -715,9 +733,7 @@ def _build_shipping_status_email(
         extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
         cta_label = "Track Package"
 
-    tracking_line = f"{carrier_label} tracking: {tracking_label}" if carrier_label and tracking_label else (
-        f"Tracking: {tracking_label}" if tracking_label else None
-    )
+    tracking_line = f"Tracking: {tracking_label}" if tracking_label else None
     cta_block = (
         f'<p style="margin:0 0 32px;text-align:center;">'
         f'<a href="{tracking_url}" class="trufusion-track-button" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
@@ -734,7 +750,7 @@ def _build_shipping_status_email(
         else ""
     )
     extra_html = (
-        f'<p style="margin:0;font-size:14px;line-height:1.5;color:#0f172a;">{extra_line}</p>'
+        f'<p style="margin:0;font-size:14px;line-height:1.5;color:#0f172a;"><strong>{extra_line}</strong></p>'
         if extra_line
         else ""
     )
@@ -751,7 +767,7 @@ def _build_shipping_status_email(
   <body style="{body_style}">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="{leaf_url}" style="{outer_table_style}">
       <tr>
-        <td align="center">
+        <td align="center" style="{_EMAIL_ORDER_OUTER_CELL_STYLE}">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
@@ -766,7 +782,7 @@ def _build_shipping_status_email(
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f8fbff" style="{_EMAIL_DETAIL_CARD_STYLE}">
                   <tr>
                     <td style="padding:16px 18px;">
-                      <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#0f172a;"><strong>Order:</strong> {order_label}</p>
+                      <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#0f172a;"><strong>Order: {order_label}</strong></p>
                       {tracking_html}
                       {extra_html}
                     </td>

@@ -28,6 +28,7 @@ import {
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const LOGIN_BACKEND_DOWN_TOAST_ID = 'login-backend-down';
 const LOGIN_BACKEND_DOWN_MESSAGE = 'TruFusionLabs is unavailable right now. Please try again in a minute.';
+const ACCOUNT_ORDERS_LOADING_DELAY_MS = 750;
 const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (value === true || value === false) return value;
   if (value == null) return null;
@@ -1893,6 +1894,7 @@ export function Header({
   const trackingStatusCacheRef = useRef<Map<string, any>>(new Map());
   const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const cachedAccountOrdersRef = useRef<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
+  const [showAccountOrdersLoadingState, setShowAccountOrdersLoadingState] = useState(false);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [orderLineImageCache, setOrderLineImageCache] = useState<Record<string, string | null>>({});
   const orderLineImageCacheRef = useRef<Record<string, string | null>>({});
@@ -3073,6 +3075,27 @@ export function Header({
   useEffect(() => {
     cachedAccountOrdersRef.current = cachedAccountOrders;
   }, [cachedAccountOrders]);
+
+  useEffect(() => {
+    const shouldDelayLoadingState =
+      welcomeOpen &&
+      accountTab === 'orders' &&
+      accountOrdersLoading &&
+      cachedAccountOrders.length === 0;
+
+    if (!shouldDelayLoadingState) {
+      setShowAccountOrdersLoadingState(false);
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowAccountOrdersLoadingState(true);
+    }, ACCOUNT_ORDERS_LOADING_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [accountOrdersLoading, accountTab, cachedAccountOrders.length, welcomeOpen]);
 
   // Keep the open order details view in sync with refreshed order data.
   // Without this, the list can refresh (showing a new status) while the modal
@@ -6309,7 +6332,7 @@ export function Header({
       });
 
     if (accountOrdersLoading && cachedAccountOrders.length === 0) {
-      return renderOrdersLoadingState();
+      return showAccountOrdersLoadingState ? renderOrdersLoadingState() : null;
     }
 
     if (!visibleOrders.length) {

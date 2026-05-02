@@ -22,7 +22,7 @@ if "requests" not in sys.modules:
 
 
 class EmailServiceTests(unittest.TestCase):
-    def test_shipping_status_email_bccs_petergibbons(self):
+    def test_shipping_status_email_bccs_pgibbons_trufusionlabs(self):
         from python_backend.services import email_service
 
         with patch.object(
@@ -50,7 +50,11 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn('background="cid:trufusion-leaf"', html)
         self.assertIn("url('cid:trufusion-leaf')", html)
         self.assertIn("background:rgba(255,255,255,0.78)", html)
-        self.assertIn("backdrop-filter:blur(34px) saturate(1.9)", html)
+        self.assertIn("backdrop-filter:blur(12px) saturate(1.9)", html)
+        self.assertIn('td align="center" style="padding:0 14px;"', html)
+        self.assertIn("<strong>Order: 1505</strong>", html)
+        self.assertIn("<strong>Tracking: 1ZSHIP1505</strong>", html)
+        self.assertNotIn("UPS tracking", html)
         self.assertIn('class="trufusion-track-button"', html)
         self.assertIn(".trufusion-track-button:hover", html)
         self.assertIn("background-color:rgb(95,179,249) !important", html)
@@ -67,7 +71,7 @@ class EmailServiceTests(unittest.TestCase):
         self.assertNotIn("https://trufusionlabs.com/turfusionlabsphysiciansportal.png", html)
         self.assertNotIn("https://trufusionlabs.com/leafTexture.jpg", html)
         self.assertNotIn("/turfusionlabsphysiciansportal.png", html)
-        self.assertEqual(dispatch_email.call_args.kwargs["bcc"], ("petergibbons7@icloud.com",))
+        self.assertEqual(dispatch_email.call_args.kwargs["bcc"], ("pgibbons@trufusionlabs.com",))
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertNotIn("cc", dispatch_email.call_args.kwargs)
 

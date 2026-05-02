@@ -210,6 +210,8 @@ const sendOrderPaymentInstructionsEmail = async ({
   const htmlTemplate = fs.readFileSync(templatePath, 'utf8');
   const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
   const displayName = String(customerName || 'TruFusionLabs Customer').trim() || 'TruFusionLabs Customer';
+  const frontendBaseUrl = String(env.frontendBaseUrl || 'https://www.trufusionlabs.com').replace(/\/+$/, '');
+  const logoUrl = `${frontendBaseUrl}/turfusionlabsphysiciansportal.png`;
   const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
   const normalizedDiscountCode = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
   const discountDetails = normalizedDiscountCode
@@ -223,6 +225,7 @@ const sendOrderPaymentInstructionsEmail = async ({
     .replaceAll('{{orderTotal}}', escapeHtml(formattedTotal))
     .replaceAll('{{discountDetails}}', discountDetails)
     .replaceAll('{{supportEmail}}', escapeHtml(supportEmail))
+    .replaceAll('{{logoUrl}}', escapeHtml(logoUrl))
     .replaceAll('{{zelleSection}}', zelleSection)
     .replaceAll('{{bankTransferSection}}', bankSection);
 
