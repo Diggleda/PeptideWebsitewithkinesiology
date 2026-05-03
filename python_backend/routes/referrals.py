@@ -11,6 +11,7 @@ from ..services import referral_service, auth_service, sales_prospect_quote_serv
 from ..utils.http import handle_action
 
 blueprint = Blueprint("referrals", __name__, url_prefix="/api/referrals")
+_DASHBOARD_SCOPE_ALL_ROLES = ("admin", "sales_lead", "saleslead")
 
 
 def _normalize_role(value) -> str:
@@ -19,6 +20,10 @@ def _normalize_role(value) -> str:
 
 def _is_sales_rep_like_role(value) -> bool:
     return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "sales_lead", "saleslead", "sales_lead", "admin")
+
+
+def _can_scope_all_dashboard(*roles) -> bool:
+    return any(_normalize_role(role) in _DASHBOARD_SCOPE_ALL_ROLES for role in roles)
 
 
 def _sanitize_string(value, max_length=190):
@@ -137,6 +142,7 @@ def _build_sales_rep_payload(rep):
         "id": str(rep.get("id") or "").strip() or None,
         "name": rep.get("name"),
         "email": rep.get("email"),
+        "role": _normalize_role(rep.get("role")) or None,
         "phone": rep.get("phone"),
         "jurisdiction": rep.get("jurisdiction"),
         "isPartner": _normalize_bool(
@@ -293,9 +299,16 @@ def admin_dashboard():
         _require_sales_rep(user)
         requested_sales_rep_id = (request.args.get("salesRepId") or user.get("salesRepId") or user.get("id") or "").strip()
         scope_all = (request.args.get("scope") or "").lower() == "all"
-        token_role = (g.current_user.get("role") or "").lower()
-        role = (user.get("role") or "").lower()
-        can_scope_all = token_role == "admin" or role == "admin" or token_role in ("sales_lead", "saleslead", "sales-lead") or role in ("sales_lead", "saleslead", "sales-lead")
+        token_role = _normalize_role(g.current_user.get("role"))
+        role = _normalize_role(user.get("role"))
+        try:
+            current_sales_rep_record = auth_service._resolve_sales_rep_record_for_user(user)  # pylint: disable=protected-access
+        except Exception:
+            current_sales_rep_record = None
+        sales_rep_role = _normalize_role(
+            current_sales_rep_record.get("role") if isinstance(current_sales_rep_record, dict) else None
+        )
+        can_scope_all = _can_scope_all_dashboard(token_role, role, sales_rep_role)
         raw_include = str(request.args.get("include") or "").strip().lower()
         includes = {part.strip() for part in raw_include.split(",") if part.strip()}
         debug_active_physicians = (
@@ -352,13 +365,7 @@ def admin_dashboard():
             payload["salesReps"] = sales_reps
 
         if wants("currentsalesrep", "current_sales_rep", "currentSalesRep", "currentSalesRepId", "currentSalesRepAllowedRetail"):
-            current_sales_rep_payload = None
-            try:
-                current_sales_rep_payload = _build_sales_rep_payload(
-                    auth_service._resolve_sales_rep_record_for_user(user)  # pylint: disable=protected-access
-                )
-            except Exception:
-                current_sales_rep_payload = None
+            current_sales_rep_payload = _build_sales_rep_payload(current_sales_rep_record)
             payload["currentSalesRep"] = current_sales_rep_payload
             payload["currentSalesRepId"] = current_sales_rep_payload.get("id") if current_sales_rep_payload else None
             payload["currentSalesRepAllowedRetail"] = (
@@ -392,6 +399,7 @@ def admin_dashboard():
                     "canScopeAll": bool(can_scope_all),
                     "tokenRole": token_role or None,
                     "userRole": role or None,
+                    "salesRepRole": sales_rep_role or None,
                     "includes": sorted(includes) if includes else ["*"],
                     "counts": {
                         "users": len(debug_users),

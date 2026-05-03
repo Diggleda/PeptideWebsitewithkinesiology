@@ -165,6 +165,9 @@ def _is_sales_rep_like_role(value: Any) -> bool:
 def _resolve_sales_user_role(sales_rep: Optional[Dict]) -> str:
     if not isinstance(sales_rep, dict):
         return "sales_rep"
+    raw_role = _normalize_role(sales_rep.get("role"))
+    if raw_role in ("sales_lead", "saleslead"):
+        return "sales_lead"
     is_partner = _normalize_bool(
         sales_rep.get("isPartner") if "isPartner" in sales_rep else sales_rep.get("is_partner")
     )
@@ -721,7 +724,7 @@ def _register_sales_rep_account(
         "name": name,
         "email": email,
         "phone": phone or sales_rep.get("phone"),
-        "role": "sales_rep",
+        "role": "sales_lead" if resolved_user_role == "sales_lead" else "sales_rep",
         "legacyUserId": user_record.get("id") or sales_rep.get("legacyUserId"),
         "status": "active",
         "updatedAt": now,

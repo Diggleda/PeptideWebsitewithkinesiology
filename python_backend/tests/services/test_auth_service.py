@@ -88,6 +88,26 @@ from python_backend.services import auth_service
 
 
 class AuthServiceTests(unittest.TestCase):
+    def test_resolve_sales_user_role_preserves_sales_lead_role(self) -> None:
+        self.assertEqual(
+            auth_service._resolve_sales_user_role({"role": "sales_lead", "isPartner": False}),
+            "sales_lead",
+        )
+        self.assertEqual(
+            auth_service._resolve_sales_user_role({"role": "Sales Lead", "isPartner": False}),
+            "sales_lead",
+        )
+
+    def test_resolve_sales_user_role_still_handles_partners_and_reps(self) -> None:
+        self.assertEqual(
+            auth_service._resolve_sales_user_role({"role": "sales_rep", "isPartner": True}),
+            "sales_partner",
+        )
+        self.assertEqual(
+            auth_service._resolve_sales_user_role({"role": "sales_rep", "isPartner": False}),
+            "sales_rep",
+        )
+
     def test_sanitize_user_rewrites_embedded_media_to_auth_routes(self) -> None:
         if Flask is None:
             self.skipTest("flask not installed")
