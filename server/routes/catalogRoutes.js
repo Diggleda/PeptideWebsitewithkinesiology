@@ -17,6 +17,20 @@ const recommendationsEnabled = () => {
 
 const normalizeRole = (role) => String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const isDoctorRole = (role) => ['doctor', 'test_doctor'].includes(normalizeRole(role));
+const isRecommendationRole = (role) => [
+  'doctor',
+  'test_doctor',
+  'admin',
+  'lead',
+  'partner',
+  'sales_rep',
+  'salesrep',
+  'sales_partner',
+  'sales_lead',
+  'saleslead',
+  'rep',
+  'test_rep',
+].includes(normalizeRole(role));
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const simulationEmails = () => new Set(
   String(process.env.RECOMMENDATION_SIMULATION_EMAILS || DEFAULT_SIMULATION_EMAILS.join(','))
@@ -25,7 +39,7 @@ const simulationEmails = () => new Set(
     .filter(Boolean),
 );
 const isSimulationUser = (user) => simulationEmails().has(normalizeEmail(user?.email));
-const canReadRecommendations = (user) => isDoctorRole(user?.role) || isSimulationUser(user);
+const canReadRecommendations = (user) => isRecommendationRole(user?.role) || isSimulationUser(user);
 
 const parsePositiveInt = (value) => {
   if (value == null || typeof value === 'boolean') return null;
@@ -120,7 +134,15 @@ const fetchCatalogSimulationCandidates = async (limit) => {
 const buildRecommendations = (user, limit) => {
   const scores = new Map();
   const reasons = new Map();
-  const primaryReasons = new Set(['repeat_purchase', 'cart_intent', 'view_intent', 'similar_physicians']);
+  const includePeerSimilarity = isDoctorRole(user?.role);
+  const primaryReasons = new Set([
+    'repeat_purchase',
+    'cart_intent',
+    'view_intent',
+    'category_affinity',
+    'tag_affinity',
+    ...(includePeerSimilarity ? ['similar_physicians'] : []),
+  ]);
   const addScore = (productId, amount, reason) => {
     if (!productId || !Number.isFinite(amount) || amount === 0) return;
     scores.set(productId, (scores.get(productId) || 0) + amount);
@@ -133,6 +155,7 @@ const buildRecommendations = (user, limit) => {
   const roleByUserId = new Map(allUsers.map((entry) => [String(entry?.id || ''), normalizeRole(entry?.role)]));
   const userOrders = orderRepository.findByUserId(userId);
   const purchased = new Set();
+  const cartProductIds = new Set();
 
   for (const order of userOrders) {
     for (const item of orderItems(order)) {
@@ -146,37 +169,40 @@ const buildRecommendations = (user, limit) => {
   for (const item of Array.isArray(user?.cart) ? user.cart : []) {
     const productId = itemProductId(item);
     if (!productId) continue;
+    cartProductIds.add(productId);
     addScore(productId, 82 + 8 * Math.log1p(itemQuantity(item)), 'cart_intent');
   }
 
-  const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
-  const coPurchaseCounts = new Map();
-  for (const order of orderRepository.getAll()) {
-    const orderUserId = String(order?.userId || order?.user_id || '').trim();
-    const role = roleByUserId.get(orderUserId);
-    if (role && !isDoctorRole(role)) continue;
-    const createdMs = Date.parse(order?.createdAt || order?.created_at || '');
-    if (Number.isFinite(createdMs) && createdMs < cutoffMs) continue;
-    const productIds = new Set();
-    for (const item of orderItems(order)) {
-      const productId = itemProductId(item);
-      if (!productId) continue;
-      productIds.add(productId);
-    }
-    if (orderUserId && orderUserId !== userId && purchased.size > 0) {
-      const overlaps = [...productIds].some((productId) => purchased.has(productId));
-      if (overlaps) {
-        for (const productId of productIds) {
-          if (!purchased.has(productId)) {
-            coPurchaseCounts.set(productId, (coPurchaseCounts.get(productId) || 0) + 1);
+  if (includePeerSimilarity) {
+    const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const coPurchaseCounts = new Map();
+    for (const order of orderRepository.getAll()) {
+      const orderUserId = String(order?.userId || order?.user_id || '').trim();
+      const role = roleByUserId.get(orderUserId);
+      if (role && !isDoctorRole(role)) continue;
+      const createdMs = Date.parse(order?.createdAt || order?.created_at || '');
+      if (Number.isFinite(createdMs) && createdMs < cutoffMs) continue;
+      const productIds = new Set();
+      for (const item of orderItems(order)) {
+        const productId = itemProductId(item);
+        if (!productId) continue;
+        productIds.add(productId);
+      }
+      if (orderUserId && orderUserId !== userId && purchased.size > 0) {
+        const overlaps = [...productIds].some((productId) => purchased.has(productId));
+        if (overlaps) {
+          for (const productId of productIds) {
+            if (!purchased.has(productId)) {
+              coPurchaseCounts.set(productId, (coPurchaseCounts.get(productId) || 0) + 1);
+            }
           }
         }
       }
     }
-  }
 
-  for (const [productId, count] of coPurchaseCounts.entries()) {
-    addScore(productId, Math.min(72, 28 * Math.log1p(count)), 'similar_physicians');
+    for (const [productId, count] of coPurchaseCounts.entries()) {
+      addScore(productId, Math.min(72, 28 * Math.log1p(count)), 'similar_physicians');
+    }
   }
 
   const recommendations = [...scores.entries()]
@@ -191,11 +217,13 @@ const buildRecommendations = (user, limit) => {
       modelVersion: MODEL_VERSION,
     }));
 
+  const hasPersonalSignal = purchased.size > 0 || cartProductIds.size > 0;
+
   return {
     recommendations,
     modelVersion: MODEL_VERSION,
-    fallback: purchased.size === 0,
-    fallbackReason: purchased.size === 0 ? 'cold_start_no_personal_signals' : null,
+    fallback: !hasPersonalSignal,
+    fallbackReason: !hasPersonalSignal ? 'cold_start_no_personal_signals' : null,
   };
 };
 
@@ -242,7 +270,7 @@ router.get('/recommendations', authenticate, async (req, res, next) => {
       return res.json({ recommendations: [], modelVersion: MODEL_VERSION, fallback: true, fallbackReason: 'disabled' });
     }
     if (!canReadRecommendations(req.user)) {
-      return res.status(403).json({ error: 'Physician access required' });
+      return res.status(403).json({ error: 'Recommendation access required' });
     }
     const requestedLimit = Number.parseInt(String(req.query?.limit || '100'), 10);
     const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 100));
@@ -259,7 +287,7 @@ router.post('/events', authenticate, (req, res) => {
     return res.status(400).json({ error: 'eventType is required' });
   }
   if (!canReadRecommendations(req.user)) {
-    return res.status(403).json({ error: 'Physician access required' });
+    return res.status(403).json({ error: 'Recommendation access required' });
   }
   return res.status(201).json({ ok: true, tracked: false, eventType });
 });

@@ -36,7 +36,26 @@ PRIMARY_RECOMMENDATION_REASONS = {
     RECOMMENDATION_REASON_LABELS["repeat_purchase"],
     RECOMMENDATION_REASON_LABELS["cart_intent"],
     RECOMMENDATION_REASON_LABELS["view_intent"],
+    RECOMMENDATION_REASON_LABELS["category_affinity"],
+    RECOMMENDATION_REASON_LABELS["tag_affinity"],
     RECOMMENDATION_REASON_LABELS["similar_physicians"],
+}
+NON_PEER_RECOMMENDATION_REASONS = PRIMARY_RECOMMENDATION_REASONS - {
+    RECOMMENDATION_REASON_LABELS["similar_physicians"],
+}
+RECOMMENDATION_ACCESS_ROLES = {
+    "doctor",
+    "test_doctor",
+    "admin",
+    "lead",
+    "partner",
+    "sales_rep",
+    "salesrep",
+    "sales_partner",
+    "sales_lead",
+    "saleslead",
+    "rep",
+    "test_rep",
 }
 
 
@@ -63,6 +82,10 @@ def _normalize_role(role: object) -> str:
 
 def _is_physician_role(role: object) -> bool:
     return _normalize_role(role) in {"doctor", "test_doctor"}
+
+
+def _can_use_recommendations(role: object) -> bool:
+    return _normalize_role(role) in RECOMMENDATION_ACCESS_ROLES
 
 
 def _service_error(message: str, status: int) -> Exception:
@@ -296,10 +319,16 @@ def _current_user_profile(user_id: str) -> Dict[str, Any]:
     return profile if isinstance(profile, dict) else {}
 
 
-def _is_recommendable_product(product_reasons: Set[str], *, has_personal_signal: bool) -> bool:
-    if has_personal_signal:
-        return bool(product_reasons & PRIMARY_RECOMMENDATION_REASONS)
-    return False
+def _is_recommendable_product(
+    product_reasons: Set[str],
+    *,
+    has_personal_signal: bool,
+    include_peer_similarity: bool,
+) -> bool:
+    if not has_personal_signal:
+        return False
+    allowed_reasons = PRIMARY_RECOMMENDATION_REASONS if include_peer_similarity else NON_PEER_RECOMMENDATION_REASONS
+    return bool(product_reasons & allowed_reasons)
 
 
 def _save_recommendation_snapshot(user_id: str, payload: Dict[str, Any]) -> None:
@@ -331,8 +360,10 @@ def get_recommendations(
             "fallback": True,
             "fallbackReason": "disabled",
         }
-    if not _is_physician_role(current_user.get("role")):
-        raise _service_error("Physician access required", 403)
+    role = current_user.get("role")
+    if not _can_use_recommendations(role):
+        raise _service_error("Recommendation access required", 403)
+    include_peer_similarity = _is_physician_role(role)
 
     user_id = str(current_user.get("id") or "").strip()
     if not user_id:
@@ -447,27 +478,28 @@ def get_recommendations(
             if tag_overlap:
                 _add_score(scores, reasons, product_id, min(18.0, 7.0 * tag_overlap), RECOMMENDATION_REASON_LABELS["tag_affinity"])
 
-    role_by_user_id = _load_physician_role_lookup()
-    co_purchase_counts: Dict[int, int] = defaultdict(int)
+    if include_peer_similarity:
+        role_by_user_id = _load_physician_role_lookup()
+        co_purchase_counts: Dict[int, int] = defaultdict(int)
 
-    for order in _recent_orders():
-        if not isinstance(order, dict):
-            continue
-        order_user_id = str(order.get("userId") or order.get("user_id") or "").strip()
-        if role_by_user_id and not _is_physician_role(role_by_user_id.get(order_user_id)):
-            continue
-        order_product_ids: Set[int] = set()
-        for item in _iter_order_items(order):
-            product_id = _resolve_item_product_id(item, sku_to_product_id)
-            if product_id not in candidates:
+        for order in _recent_orders():
+            if not isinstance(order, dict):
                 continue
-            order_product_ids.add(product_id)
-        if order_user_id != user_id and purchased_product_ids and order_product_ids & purchased_product_ids:
-            for product_id in order_product_ids - purchased_product_ids:
-                co_purchase_counts[product_id] += 1
+            order_user_id = str(order.get("userId") or order.get("user_id") or "").strip()
+            if role_by_user_id and not _is_physician_role(role_by_user_id.get(order_user_id)):
+                continue
+            order_product_ids: Set[int] = set()
+            for item in _iter_order_items(order):
+                product_id = _resolve_item_product_id(item, sku_to_product_id)
+                if product_id not in candidates:
+                    continue
+                order_product_ids.add(product_id)
+            if order_user_id != user_id and purchased_product_ids and order_product_ids & purchased_product_ids:
+                for product_id in order_product_ids - purchased_product_ids:
+                    co_purchase_counts[product_id] += 1
 
-    for product_id, count in co_purchase_counts.items():
-        _add_score(scores, reasons, product_id, min(72.0, 28.0 * math.log1p(count)), RECOMMENDATION_REASON_LABELS["similar_physicians"])
+        for product_id, count in co_purchase_counts.items():
+            _add_score(scores, reasons, product_id, min(72.0, 28.0 * math.log1p(count)), RECOMMENDATION_REASON_LABELS["similar_physicians"])
 
     has_personal_signal = bool(purchased_product_ids or cart_product_ids or event_signal_product_ids)
     recommendation_limit = min(safe_limit, _max_recommendation_results())
@@ -479,7 +511,11 @@ def get_recommendations(
         )
         if product_id in candidates
         and score > 0
-        and _is_recommendable_product(reasons.get(product_id) or set(), has_personal_signal=has_personal_signal)
+        and _is_recommendable_product(
+            reasons.get(product_id) or set(),
+            has_personal_signal=has_personal_signal,
+            include_peer_similarity=include_peer_similarity,
+        )
     ][:recommendation_limit]
 
     recommendations = [
@@ -517,8 +553,8 @@ def track_product_event(
 
     if not _enabled() or shadow_active:
         return {"ok": True, "tracked": False, "eventType": event_type}
-    if not _is_physician_role(current_user.get("role")):
-        raise _service_error("Physician access required", 403)
+    if not _can_use_recommendations(current_user.get("role")):
+        raise _service_error("Recommendation access required", 403)
 
     user_id = str(current_user.get("id") or "").strip()
     if not user_id:
@@ -567,7 +603,7 @@ def track_order_purchase_events(
     items: List[Dict[str, Any]],
     order_id: object = None,
 ) -> None:
-    if not _enabled() or not _is_physician_role(current_user.get("role")):
+    if not _enabled() or not _can_use_recommendations(current_user.get("role")):
         return
     user_id = str(current_user.get("id") or "").strip()
     if not user_id:

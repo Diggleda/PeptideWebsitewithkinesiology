@@ -1563,7 +1563,6 @@ export function ProductCard({
               <span
                 className="catalog-personalized-product-label"
                 data-tooltip={personalizedRecommendationReason || undefined}
-                title={personalizedRecommendationReason || undefined}
               >
                 Personalized Recommendation
                 <Info className="catalog-personalized-product-label__icon" aria-hidden="true" />

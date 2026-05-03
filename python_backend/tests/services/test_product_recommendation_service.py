@@ -136,7 +136,7 @@ class ProductRecommendationServiceTests(unittest.TestCase):
         self.assertEqual(result["fallbackReason"], "cold_start_no_personal_signals")
         self.assertEqual(result["recommendations"], [])
 
-    def test_category_affinity_alone_does_not_recommend_whole_catalog(self):
+    def test_category_affinity_expands_to_related_products_but_stays_capped(self):
         from python_backend.services import product_recommendation_service as svc
 
         catalog = [
@@ -144,6 +144,10 @@ class ProductRecommendationServiceTests(unittest.TestCase):
             {"id": 102, "name": "Same Category 1", "status": "publish", "sku": "B", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
             {"id": 103, "name": "Same Category 2", "status": "publish", "sku": "C", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
             {"id": 104, "name": "Same Category 3", "status": "publish", "sku": "D", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 105, "name": "Same Category 4", "status": "publish", "sku": "E", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 106, "name": "Same Category 5", "status": "publish", "sku": "F", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 107, "name": "Same Category 6", "status": "publish", "sku": "G", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 108, "name": "Unrelated", "status": "publish", "sku": "H", "categories": [{"name": "Other"}], "tags": [{"slug": "other"}]},
         ]
         user_order = {
             "userId": "doctor-1",
@@ -174,7 +178,10 @@ class ProductRecommendationServiceTests(unittest.TestCase):
         ):
             result = svc.get_recommendations({"id": "doctor-1", "role": "doctor"}, limit=100)
 
-        self.assertEqual([item["wooProductId"] for item in result["recommendations"]], [101])
+        ids = [item["wooProductId"] for item in result["recommendations"]]
+        self.assertEqual(ids[0], 101)
+        self.assertEqual(len(ids), 6)
+        self.assertNotIn(108, ids)
 
     def test_recommendations_are_capped_even_when_limit_is_large(self):
         from python_backend.services import product_recommendation_service as svc
@@ -259,13 +266,84 @@ class ProductRecommendationServiceTests(unittest.TestCase):
         self.assertFalse(result["fallback"])
         self.assertEqual(result["recommendations"][0]["wooProductId"], 101)
 
-    def test_non_physician_role_is_rejected(self):
+    def test_admin_recommendations_use_personal_signals_without_peer_similarity(self):
+        from python_backend.services import product_recommendation_service as svc
+
+        catalog = [
+            {"id": 101, "name": "Purchased", "status": "publish", "sku": "A", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 202, "name": "Same Domain", "status": "publish", "sku": "B", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 303, "name": "Peer Only", "status": "publish", "sku": "C", "categories": [{"name": "Other"}], "tags": [{"slug": "other"}]},
+        ]
+        admin_order = {
+            "userId": "admin-1",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "items": [{"productId": 101, "quantity": 1, "sku": "A"}],
+        }
+        peer_order = {
+            "userId": "doctor-2",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "items": [
+                {"productId": 101, "quantity": 1, "sku": "A"},
+                {"productId": 303, "quantity": 1, "sku": "C"},
+            ],
+        }
+
+        with self._patch_catalog(svc, catalog), patch.object(
+            svc.order_repository,
+            "find_by_user_id",
+            return_value=[admin_order],
+        ), patch.object(
+            svc.order_repository,
+            "list_for_commission",
+            return_value=[admin_order, peer_order],
+        ), patch.object(
+            svc.user_repository,
+            "find_by_id",
+            return_value={"id": "admin-1", "role": "admin", "cart": []},
+        ), patch.object(
+            svc.user_repository,
+            "get_all",
+            return_value=[
+                {"id": "admin-1", "role": "admin"},
+                {"id": "doctor-2", "role": "doctor"},
+            ],
+        ), patch.object(
+            svc.physician_product_event_repository,
+            "find_recent_for_user",
+            return_value=[],
+        ):
+            result = svc.get_recommendations({"id": "admin-1", "role": "admin"}, limit=10)
+
+        ids = [item["wooProductId"] for item in result["recommendations"]]
+        self.assertIn(101, ids)
+        self.assertIn(202, ids)
+        self.assertNotIn(303, ids)
+        self.assertTrue(all("similar_physicians" not in item["reasons"] for item in result["recommendations"]))
+
+    def test_ineligible_role_is_rejected(self):
         from python_backend.services import product_recommendation_service as svc
 
         with self.assertRaises(ValueError) as ctx:
-            svc.get_recommendations({"id": "admin-1", "role": "admin"}, limit=10)
+            svc.get_recommendations({"id": "delegate-1", "role": "delegate"}, limit=10)
 
         self.assertEqual(getattr(ctx.exception, "status", None), 403)
+
+    def test_sales_rep_event_tracking_is_allowed(self):
+        from python_backend.services import product_recommendation_service as svc
+
+        with patch.object(
+            svc.physician_product_event_repository,
+            "insert_event",
+            return_value=True,
+        ) as insert_event:
+            result = svc.track_product_event(
+                {"id": "rep-1", "role": "sales_rep"},
+                {"eventType": "product_view", "wooProductId": 101},
+            )
+
+        self.assertTrue(result["tracked"])
+        insert_event.assert_called_once()
+        self.assertEqual(insert_event.call_args.kwargs["user_id"], "rep-1")
 
     def test_track_event_requires_product_identifier_or_sku(self):
         from python_backend.services import product_recommendation_service as svc

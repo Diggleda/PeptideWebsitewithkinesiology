@@ -690,6 +690,8 @@ const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return normalized === "doctor" || normalized === "test_doctor";
 };
+const canUseProductRecommendations = (role?: string | null) =>
+  isDoctorRole(role) || isAdmin(role) || isRep(role) || isSalesLead(role);
 
 const noop = () => {};
 
@@ -3918,9 +3920,9 @@ const CATALOG_RECOMMENDATION_REASON_COPY: Record<string, string> = {
   repeat_purchase: "it was purchased before",
   cart_intent: "there was recent cart or checkout intent",
   view_intent: "it was recently viewed",
-  similar_physicians: "physicians with similar orders also purchased it",
-  category_affinity: "it matches previously ordered categories",
-  tag_affinity: "it matches previously ordered product tags",
+  similar_physicians: "peers with similar orders also purchased it",
+  category_affinity: "it matches previously ordered research domains",
+  tag_affinity: "it matches previously ordered dosage forms",
 };
 const CATALOG_RECOMMENDATION_REASON_WEIGHT: Record<string, number> = {
   repeat_purchase: 700,
@@ -18912,7 +18914,7 @@ function MainApp() {
     Boolean(
       user &&
         !isDelegateMode &&
-        (isDoctorRole(user.role) ||
+        (canUseProductRecommendations(user.role) ||
           PRODUCT_RECOMMENDATION_SIMULATION_EMAILS.has(
             String(user.email || "").trim().toLowerCase(),
           )),
