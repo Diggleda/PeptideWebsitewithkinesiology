@@ -16,6 +16,7 @@ from ..repositories import (
 from . import catalog_snapshot_service
 
 MODEL_VERSION = "heuristic-v1"
+DEFAULT_MAX_RECOMMENDATION_RESULTS = 6
 RECOMMENDATION_REASON_LABELS = {
     "repeat_purchase": "repeat_purchase",
     "cart_intent": "cart_intent",
@@ -32,11 +33,29 @@ ALLOWED_EVENT_TYPES = {
     "checkout_open",
     "purchase",
 }
+PRIMARY_RECOMMENDATION_REASONS = {
+    RECOMMENDATION_REASON_LABELS["repeat_purchase"],
+    RECOMMENDATION_REASON_LABELS["cart_intent"],
+    RECOMMENDATION_REASON_LABELS["view_intent"],
+    RECOMMENDATION_REASON_LABELS["similar_physicians"],
+}
 
 
 def _enabled() -> bool:
     raw = str(os.environ.get("RECOMMENDATIONS_ENABLED", "true")).strip().lower()
     return raw not in {"0", "false", "no", "off", "disabled"}
+
+
+def _max_recommendation_results() -> int:
+    raw = str(os.environ.get("RECOMMENDATIONS_MAX_RESULTS") or "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+        except Exception:
+            parsed = DEFAULT_MAX_RECOMMENDATION_RESULTS
+    else:
+        parsed = DEFAULT_MAX_RECOMMENDATION_RESULTS
+    return max(1, min(parsed, 50))
 
 
 def _normalize_role(role: object) -> str:
@@ -278,6 +297,12 @@ def _current_user_profile(user_id: str) -> Dict[str, Any]:
     return profile if isinstance(profile, dict) else {}
 
 
+def _is_recommendable_product(product_reasons: Set[str], *, has_personal_signal: bool) -> bool:
+    if has_personal_signal:
+        return bool(product_reasons & PRIMARY_RECOMMENDATION_REASONS)
+    return RECOMMENDATION_REASON_LABELS["global_popularity"] in product_reasons
+
+
 def _save_recommendation_snapshot(user_id: str, payload: Dict[str, Any]) -> None:
     try:
         physician_product_recommendation_repository.save_snapshot(
@@ -456,14 +481,17 @@ def get_recommendations(
         _add_score(scores, reasons, product_id, popularity_score, RECOMMENDATION_REASON_LABELS["global_popularity"])
 
     has_personal_signal = bool(purchased_product_ids or cart_product_ids or event_signal_product_ids)
+    recommendation_limit = min(safe_limit, _max_recommendation_results())
     ranked_ids = [
         product_id
         for product_id, score in sorted(
             scores.items(),
             key=lambda item: (-item[1], candidates.get(item[0], {}).get("name") or "", item[0]),
         )
-        if product_id in candidates and score > 0
-    ][:safe_limit]
+        if product_id in candidates
+        and score > 0
+        and _is_recommendable_product(reasons.get(product_id) or set(), has_personal_signal=has_personal_signal)
+    ][:recommendation_limit]
 
     recommendations = [
         {

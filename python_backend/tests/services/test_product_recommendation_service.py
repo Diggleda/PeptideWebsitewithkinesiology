@@ -136,6 +136,87 @@ class ProductRecommendationServiceTests(unittest.TestCase):
         self.assertEqual(result["fallbackReason"], "cold_start_global_popularity")
         self.assertEqual(result["recommendations"][0]["wooProductId"], 202)
 
+    def test_category_affinity_alone_does_not_recommend_whole_catalog(self):
+        from python_backend.services import product_recommendation_service as svc
+
+        catalog = [
+            {"id": 101, "name": "Purchased", "status": "publish", "sku": "A", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 102, "name": "Same Category 1", "status": "publish", "sku": "B", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 103, "name": "Same Category 2", "status": "publish", "sku": "C", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+            {"id": 104, "name": "Same Category 3", "status": "publish", "sku": "D", "categories": [{"name": "Peptides"}], "tags": [{"slug": "recovery"}]},
+        ]
+        user_order = {
+            "userId": "doctor-1",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "items": [{"productId": 101, "quantity": 1, "sku": "A"}],
+        }
+
+        with self._patch_catalog(svc, catalog), patch.object(
+            svc.order_repository,
+            "find_by_user_id",
+            return_value=[user_order],
+        ), patch.object(
+            svc.order_repository,
+            "list_for_commission",
+            return_value=[user_order],
+        ), patch.object(
+            svc.user_repository,
+            "find_by_id",
+            return_value={"id": "doctor-1", "role": "doctor", "cart": []},
+        ), patch.object(
+            svc.user_repository,
+            "get_all",
+            return_value=[{"id": "doctor-1", "role": "doctor"}],
+        ), patch.object(
+            svc.physician_product_event_repository,
+            "find_recent_for_user",
+            return_value=[],
+        ):
+            result = svc.get_recommendations({"id": "doctor-1", "role": "doctor"}, limit=100)
+
+        self.assertEqual([item["wooProductId"] for item in result["recommendations"]], [101])
+
+    def test_recommendations_are_capped_even_when_limit_is_large(self):
+        from python_backend.services import product_recommendation_service as svc
+
+        catalog = [
+            {"id": product_id, "name": f"Product {product_id}", "status": "publish", "sku": f"SKU-{product_id}", "categories": [{"name": "Peptides"}], "tags": []}
+            for product_id in range(101, 111)
+        ]
+        user_order = {
+            "userId": "doctor-1",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "items": [
+                {"productId": product["id"], "quantity": 1, "sku": product["sku"]}
+                for product in catalog
+            ],
+        }
+
+        with patch.dict(svc.os.environ, {"RECOMMENDATIONS_MAX_RESULTS": "4"}), self._patch_catalog(svc, catalog), patch.object(
+            svc.order_repository,
+            "find_by_user_id",
+            return_value=[user_order],
+        ), patch.object(
+            svc.order_repository,
+            "list_for_commission",
+            return_value=[user_order],
+        ), patch.object(
+            svc.user_repository,
+            "find_by_id",
+            return_value={"id": "doctor-1", "role": "doctor", "cart": []},
+        ), patch.object(
+            svc.user_repository,
+            "get_all",
+            return_value=[{"id": "doctor-1", "role": "doctor"}],
+        ), patch.object(
+            svc.physician_product_event_repository,
+            "find_recent_for_user",
+            return_value=[],
+        ):
+            result = svc.get_recommendations({"id": "doctor-1", "role": "doctor"}, limit=100)
+
+        self.assertEqual(len(result["recommendations"]), 4)
+
     def test_shadow_session_can_read_recommendations(self):
         from python_backend.services import product_recommendation_service as svc
 
