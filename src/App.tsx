@@ -19993,12 +19993,12 @@ function MainApp() {
     const networkEmails = new Set<string>();
     const leadEmails = new Set<string>();
 
-    rawAccounts.forEach((account: any) => {
-      if (!account || typeof account !== "object") return;
-      const role = normalizeRole(account?.role);
-      if (role !== "doctor") return;
-      if (isInactiveUserStatus(account?.status)) return;
-      const emails = collectEmails(
+	    rawAccounts.forEach((account: any) => {
+	      if (!account || typeof account !== "object") return;
+	      const role = normalizeRole(account?.role);
+	      if (role !== "doctor" && role !== "test_doctor") return;
+	      if (isInactiveUserStatus(account?.status)) return;
+	      const emails = collectEmails(
         account?.email,
         account?.userEmail,
         account?.doctorEmail,
@@ -22811,22 +22811,23 @@ function MainApp() {
           });
 	        } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
 	          // Sales leads should only see their own prospects (same scope as reps).
-	          const scopeAll = false;
+		          const scopeAll = false;
 		          const dashboardResponse = await referralAPI.getSalesRepDashboard({
 		            salesRepId: scopeAll
 		              ? undefined
 		              : user.salesRepId || user.id,
 		            scope: scopeAll ? "all" : "mine",
-                include: salesRepDashboardRef.current
-                  ? [
-                      "referrals",
-                      "statuses",
-                      "referralCreditAmount",
-                      "currentSalesRep",
-                      "currentSalesRepId",
-                      "currentSalesRepAllowedRetail",
-                    ]
-                  : undefined,
+		            include: salesRepDashboardRef.current
+		              ? [
+		                  "users",
+		                  "referrals",
+		                  "statuses",
+		                  "referralCreditAmount",
+		                  "currentSalesRep",
+		                  "currentSalesRepId",
+		                  "currentSalesRepAllowedRetail",
+		                ]
+		              : undefined,
 		          });
           const dashboard = mergeDashboardCollectionsWithFallback(
             dashboardResponse,
@@ -28602,45 +28603,69 @@ function MainApp() {
 	        </div>
 	      </div>
 	    );
-    const renderActivePhysiciansCsvCard = () => {
-      const networkUserCount = activePhysiciansCsvData.networkUsers.length;
-      const leadCount = activePhysiciansCsvData.leads.length;
-      const totalCount = networkUserCount + leadCount;
-      return (
-        <div className="sales-rep-leads-card sales-rep-combined-card">
-          <div className="mb-0 flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Active Physicians CSV
-              </h3>
-              <p className="text-sm text-slate-600">
-                Active physician users and active leads, separated in one file.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
-                <span className="rounded-full border border-slate-200/80 bg-white/70 px-3 py-1">
-                  Network users: {networkUserCount.toLocaleString()}
-                </span>
-                <span className="rounded-full border border-slate-200/80 bg-white/70 px-3 py-1">
-                  Leads: {leadCount.toLocaleString()}
-                </span>
-              </div>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-2 self-start"
-              onClick={downloadActivePhysiciansCsv}
-              disabled={totalCount === 0}
-              title="Download CSV"
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Download CSV
-            </Button>
-          </div>
-        </div>
-      );
-    };
+	    const renderActivePhysiciansCsvCard = () => {
+	      const networkUserCount = activePhysiciansCsvData.networkUsers.length;
+	      const leadCount = activePhysiciansCsvData.leads.length;
+	      const totalCount = networkUserCount + leadCount;
+	      return (
+	        <div className="sales-rep-leads-card sales-rep-combined-card">
+	          <div className="mb-0 grid w-full grid-cols-1 gap-4 lg:grid-cols-[minmax(240px,0.85fr)_minmax(320px,1fr)_auto] lg:items-start">
+	            <div className="flex min-w-0 items-start justify-between gap-3 lg:block">
+	              <div className="min-w-0">
+	                <h3 className="text-lg font-semibold text-slate-900">
+	                  Active Physicians CSV
+	                </h3>
+	                <p className="text-sm text-slate-600">
+	                  Active physician users and active leads, separated in one file.
+	                </p>
+	              </div>
+	              <Button
+	                type="button"
+	                variant="outline"
+	                size="sm"
+	                className="gap-2 shrink-0 lg:hidden"
+	                onClick={downloadActivePhysiciansCsv}
+	                disabled={totalCount === 0}
+	                title="Download CSV"
+	              >
+	                <Download className="h-4 w-4" aria-hidden="true" />
+	                Download CSV
+	              </Button>
+	            </div>
+	            <div className="admin-revenue-outlook-summary-card__stats !mt-0 w-full max-w-none">
+	              <div className="admin-revenue-outlook-summary-card__stat">
+	                <div className="admin-revenue-outlook-summary-card__stat-label">
+	                  Network Users
+	                </div>
+	                <div className="admin-revenue-outlook-summary-card__stat-value">
+	                  {networkUserCount.toLocaleString()}
+	                </div>
+	              </div>
+	              <div className="admin-revenue-outlook-summary-card__stat">
+	                <div className="admin-revenue-outlook-summary-card__stat-label">
+	                  Leads
+	                </div>
+	                <div className="admin-revenue-outlook-summary-card__stat-value">
+	                  {leadCount.toLocaleString()}
+	                </div>
+	              </div>
+	            </div>
+	            <Button
+	              type="button"
+	              variant="outline"
+	              size="sm"
+	              className="hidden gap-2 justify-self-end lg:inline-flex"
+	              onClick={downloadActivePhysiciansCsv}
+	              disabled={totalCount === 0}
+	              title="Download CSV"
+	            >
+	              <Download className="h-4 w-4" aria-hidden="true" />
+	              Download CSV
+	            </Button>
+	          </div>
+	        </div>
+	      );
+	    };
     const renderPendingResellerPermitApprovalsCard = () => (
       <div className="sales-rep-leads-card sales-rep-combined-card">
         <div className="mb-0 flex w-full items-start justify-between gap-3">

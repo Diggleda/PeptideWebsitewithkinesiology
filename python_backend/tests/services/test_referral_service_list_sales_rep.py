@@ -95,6 +95,39 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual(result[0]["id"], "prospect-1")
         self.assertEqual(result[0]["referredContactAccountId"], "doctor-1")
 
+    def test_accounts_resolve_sales_rep_aliases(self) -> None:
+        users = [
+            {
+                "id": "doctor-1",
+                "role": "doctor",
+                "email": "doctor@example.com",
+                "salesRepId": "rep-canonical",
+            },
+            {
+                "id": "test-doctor-1",
+                "role": "test_doctor",
+                "email": "test-doctor@example.com",
+                "salesRepId": "rep-canonical",
+            },
+            {
+                "id": "other-doctor",
+                "role": "doctor",
+                "email": "other@example.com",
+                "salesRepId": "rep-other",
+            },
+        ]
+
+        with patch.object(service.user_repository, "list_referral_dashboard_users", return_value=users), \
+            patch.object(service, "_resolve_sales_rep_id", return_value="rep-canonical"), \
+            patch.object(service, "_resolve_user_id", return_value="rep-canonical"), \
+            patch.object(service, "_resolve_sales_rep_aliases", return_value={"sales-user-1", "rep-canonical"}), \
+            patch.object(service, "backfill_lead_types_for_doctors", side_effect=lambda doctors: doctors), \
+            patch.object(service.order_repository, "count_by_user_ids", return_value={"doctor-1": 2}):
+            result = service.list_accounts_for_sales_rep("sales-user-1")
+
+        self.assertEqual({row["id"] for row in result}, {"doctor-1", "test-doctor-1"})
+        self.assertEqual(next(row for row in result if row["id"] == "doctor-1")["totalOrders"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

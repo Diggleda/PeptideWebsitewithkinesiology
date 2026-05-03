@@ -382,6 +382,38 @@ def _collect_existing_codes() -> set[str]:
     return existing
 
 
+def _normalize_sales_rep_owner_id(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        normalized = referral_repository._normalize_identifier(value)  # type: ignore[attr-defined] # pylint: disable=protected-access
+    except Exception:
+        normalized = str(value or "").strip() or None
+    return normalized
+
+
+def _resolve_sales_rep_owner_aliases(identifier: Optional[str]) -> set[str]:
+    candidates: list[str] = []
+
+    def add(value: Optional[str]) -> None:
+        normalized = _normalize_sales_rep_owner_id(value)
+        if normalized:
+            candidates.append(normalized)
+
+    add(identifier)
+    add(_resolve_sales_rep_id(identifier))
+    add(_resolve_user_id(identifier))
+
+    aliases = _resolve_sales_rep_aliases(candidates)
+    if aliases:
+        return {
+            normalized
+            for normalized in (_normalize_sales_rep_owner_id(alias) for alias in aliases)
+            if normalized
+        }
+    return {candidate for candidate in candidates if candidate}
+
+
 def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> List[Dict]:
     """
     Return user/account records to help clients detect account creation for referrals.
@@ -404,11 +436,11 @@ def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> L
             total_orders = int(counts.get(uid, 0)) if uid else 0
             with_counts.append({**user, "totalOrders": total_orders})
         return with_counts
-    target = str(sales_rep_id)
+    target_aliases = _resolve_sales_rep_owner_aliases(sales_rep_id)
     scoped = [
         user
         for user in all_users
-        if str(user.get("salesRepId") or user.get("sales_rep_id")) == target
+        if _normalize_sales_rep_owner_id(user.get("salesRepId") or user.get("sales_rep_id")) in target_aliases
     ]
     doctors = [u for u in scoped if (u.get("role") or "").lower() in ("doctor", "test_doctor")]
     updated_doctors = backfill_lead_types_for_doctors(doctors)
@@ -1824,11 +1856,13 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         }
         return _apply_referred_contact_account_fields(base)
 
-    prospects = (
-        sales_prospect_repository.get_all()
-        if (is_admin and scope_all)
-        else sales_prospect_repository.find_by_sales_rep(str(sales_rep_id))
-    )
+    if is_admin and scope_all:
+        prospects = sales_prospect_repository.get_all()
+    else:
+        prospect_aliases = _resolve_sales_rep_owner_aliases(str(sales_rep_id))
+        prospects = []
+        for alias in prospect_aliases or {str(sales_rep_id)}:
+            prospects.extend(sales_prospect_repository.find_by_sales_rep(alias))
 
     # Admin "mine" dashboards should still include the house pipeline so admins can track
     # inbound/house contacts without leaking other reps' pipelines.
