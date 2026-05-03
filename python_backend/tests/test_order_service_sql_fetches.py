@@ -628,6 +628,187 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
         self.assertEqual(rep_row["wholesaleBase"], 150.0)
         self.assertEqual(rep_row["amount"], 15.0)
 
+    def test_get_sales_by_rep_uses_current_doctor_rep_when_prospect_owner_is_stale(self):
+        service = self.order_service
+        stale_prospect_rep_id = "1762382696782"
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                current = cls(2026, 4, 16, 12, 0, 0, tzinfo=timezone.utc)
+                return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+        doctor = {
+            "id": "doctor-1",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "role": "doctor",
+            "salesRepId": "tony-rep",
+        }
+        rep_user = {
+            "id": "tony-user",
+            "name": "Tony",
+            "email": "tony@example.com",
+            "role": "sales_rep",
+            "salesRepId": "tony-rep",
+        }
+        local_orders = [
+            {
+                "id": "order-stale-rep-id",
+                "userId": "doctor-1",
+                "salesRepId": stale_prospect_rep_id,
+                "billingAddress": {"email": "doctor@example.com"},
+                "status": "processing",
+                "pricingMode": "wholesale",
+                "createdAt": "2026-04-10T12:00:00+00:00",
+                "items": [{"name": "Peptide", "quantity": 1, "subtotal": 100.0}],
+            },
+            {
+                "id": "order-prospect-email-fallback",
+                "userId": "doctor-1",
+                "billingAddress": {"email": "doctor@example.com"},
+                "status": "processing",
+                "pricingMode": "wholesale",
+                "createdAt": "2026-04-12T12:00:00+00:00",
+                "items": [{"name": "Peptide", "quantity": 1, "subtotal": 50.0}],
+            },
+        ]
+        prospects = [
+            {
+                "id": "prospect-stale",
+                "doctorId": "doctor-1",
+                "contactEmail": "doctor@example.com",
+                "salesRepId": stale_prospect_rep_id,
+                "updatedAt": "2026-04-01T00:00:00+00:00",
+            }
+        ]
+
+        with patch.object(service, "datetime", FixedDateTime), patch.object(
+            service.user_repository,
+            "get_all",
+            return_value=[doctor, rep_user],
+        ), patch.object(
+            service.sales_rep_repository,
+            "get_all",
+            return_value=[],
+        ), patch.object(
+            service.referral_service,
+            "backfill_lead_types_for_doctors",
+            return_value=[doctor],
+        ), patch.object(
+            service.sales_prospect_repository,
+            "get_all",
+            return_value=prospects,
+        ), patch.object(
+            service.order_repository,
+            "list_for_commission",
+            return_value=local_orders,
+        ), patch.object(
+            service,
+            "_load_contact_form_emails_from_mysql",
+            return_value=set(),
+        ), patch.object(
+            service.woo_commerce,
+            "fetch_catalog_proxy",
+            side_effect=AssertionError("sales summary should read local orders"),
+        ), patch.object(
+            service.sales_rep_repository,
+            "update_revenue_summary",
+            return_value=None,
+        ):
+            result = service.get_sales_by_rep(period_start="2026-04-01", period_end="2026-04-15", force=True)
+
+        self.assertFalse(any(row["salesRepId"] == stale_prospect_rep_id for row in result["orders"]))
+        rep_rows = [row for row in result["orders"] if row["salesRepId"] != "__house__"]
+        self.assertEqual(len(rep_rows), 1)
+        rep_row = rep_rows[0]
+        self.assertEqual(rep_row["salesRepId"], "tony-rep")
+        self.assertEqual(rep_row["salesRepUserId"], "tony-user")
+        self.assertEqual(rep_row["salesRepName"], "Tony")
+        self.assertEqual(rep_row["totalOrders"], 2)
+        self.assertEqual(rep_row["totalRevenue"], 150.0)
+
+    def test_products_commission_uses_current_doctor_rep_when_order_rep_id_is_prospect_only(self):
+        service = self.order_service
+        stale_prospect_rep_id = "1762382696782"
+        doctor = {
+            "id": "doctor-1",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "role": "doctor",
+            "salesRepId": "tony-rep",
+        }
+        rep_user = {
+            "id": "tony-user",
+            "name": "Tony",
+            "email": "tony@example.com",
+            "role": "sales_rep",
+            "salesRepId": "tony-rep",
+        }
+        prospect = {
+            "id": "prospect-stale",
+            "doctorId": "doctor-1",
+            "contactEmail": "doctor@example.com",
+            "salesRepId": stale_prospect_rep_id,
+        }
+        local_orders = [
+            {
+                "id": "order-stale-rep-id",
+                "userId": "doctor-1",
+                "salesRepId": stale_prospect_rep_id,
+                "billingAddress": {"email": "doctor@example.com"},
+                "status": "processing",
+                "pricingMode": "wholesale",
+                "createdAt": "2026-04-10T12:00:00+00:00",
+                "items": [{"name": "Peptide", "quantity": 1, "subtotal": 100.0}],
+            }
+        ]
+
+        with patch.object(
+            service.user_repository,
+            "get_all",
+            return_value=[doctor, rep_user],
+        ), patch.object(
+            service.sales_rep_repository,
+            "get_all",
+            return_value=[],
+        ), patch.object(
+            service.order_repository,
+            "list_for_commission",
+            return_value=local_orders,
+        ), patch.object(
+            service.sales_prospect_repository,
+            "find_by_contact_email",
+            return_value=prospect,
+        ), patch.object(
+            service.sales_prospect_repository,
+            "find_contact_form_by_doctor_id",
+            return_value=None,
+        ), patch.object(
+            service,
+            "_load_contact_form_emails_from_mysql",
+            return_value=set(),
+        ):
+            result = service.get_products_and_commission_for_admin(
+                period_start="2026-04-01",
+                period_end="2026-04-15",
+            )
+
+        self.assertFalse(any(str(row["id"]) == stale_prospect_rep_id for row in result["commissions"]))
+        rep_rows = [
+            row
+            for row in result["commissions"]
+            if row["role"] in ("sales_rep", "sales_partner", "rep")
+        ]
+        self.assertEqual(len(rep_rows), 1)
+        rep_row = rep_rows[0]
+        self.assertEqual(rep_row["id"], "tony-user")
+        self.assertIn("tony-rep", rep_row["aliasIds"])
+        self.assertEqual(rep_row["name"], "Tony")
+        self.assertEqual(rep_row["wholesaleOrders"], 1)
+        self.assertEqual(rep_row["wholesaleBase"], 100.0)
+        self.assertEqual(rep_row["amount"], 10.0)
+
     def test_get_sales_by_rep_uses_house_bucket_for_contact_form_orders_from_local_sql(self):
         service = self.order_service
 

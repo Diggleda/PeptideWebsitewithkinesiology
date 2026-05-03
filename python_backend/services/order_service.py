@@ -5528,6 +5528,19 @@ def get_sales_by_rep(
             rep_user_id_by_rep_id.setdefault(alias_key, linked_user_id)
             rep_user_id_by_rep_id.setdefault(canonical_key, linked_user_id)
 
+        def _canonicalize_known_rep_id(value: object) -> str:
+            normalized = str(value or "").strip()
+            if not normalized:
+                return ""
+            if normalized == "__house__" or normalized.lower() == "house":
+                return "__house__"
+            canonical = str(alias_to_rep_id.get(normalized) or "").strip()
+            if not canonical:
+                return ""
+            if canonical.lower() == "house":
+                return "__house__"
+            return canonical
+
         # Prospect-backed mapping for doctors that don't have `salesRepId` persisted yet.
         prospect_rep_by_doctor: Dict[str, str] = {}
         prospect_rep_updated_ms: Dict[str, int] = {}
@@ -5545,9 +5558,9 @@ def get_sales_by_rep(
             contact_email = _norm_email(prospect.get("contactEmail") or prospect.get("contact_email"))
             if not rep_id_raw:
                 continue
-            rep_id_norm = alias_to_rep_id.get(rep_id_raw, rep_id_raw)
-            if str(rep_id_norm or "").strip().lower() == "house":
-                rep_id_norm = "__house__"
+            rep_id_norm = _canonicalize_known_rep_id(rep_id_raw)
+            if not rep_id_norm:
+                continue
             updated_at = prospect.get("updatedAt") or prospect.get("updated_at") or prospect.get("createdAt") or prospect.get("created_at")
             updated_dt = _parse_datetime_utc(updated_at)
             updated_ms = int(updated_dt.timestamp() * 1000) if updated_dt else 0
@@ -5901,8 +5914,8 @@ def get_sales_by_rep(
                     canonical_by_email = rep_id_by_email.get(rep_email_hint) or ""
                     if canonical_by_email:
                         rep_id_candidate = str(canonical_by_email).strip()
-                rep_id = alias_to_rep_id.get(rep_id_candidate, rep_id_candidate)
-                if rep_email_hint:
+                rep_id = _canonicalize_known_rep_id(rep_id_candidate)
+                if rep_id and rep_email_hint:
                     rep_email_hint_by_rep_id[rep_id_raw] = rep_email_hint
                     rep_email_hint_by_rep_id[rep_id] = rep_email_hint
 
@@ -5918,13 +5931,6 @@ def get_sales_by_rep(
                 rep_id = _resolve_rep_from_initials_hint(rep_initials_hint)
 
             if not rep_id and attribution_email:
-                rep_id = str(prospect_rep_by_email.get(attribution_email, "") or "").strip()
-                if rep_id:
-                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
-                    if debug:
-                        debug_counts["prospectEmail"] += 1
-
-            if not rep_id and attribution_email:
                 rep_id = _resolve_rep_from_email_hint(attribution_email)
                 if rep_id and debug:
                     debug_counts["billingEmailIsRep"] += 1
@@ -5934,7 +5940,7 @@ def get_sales_by_rep(
                 if not user_match and order_user_id:
                     user_match = user_lookup.get(order_user_id)
                 if user_match:
-                    rep_id = _normalize_rep_id(user_match.get("salesRepId") or user_match.get("sales_rep_id"))
+                    rep_id = _canonicalize_known_rep_id(user_match.get("salesRepId") or user_match.get("sales_rep_id"))
                     if rep_id and debug:
                         debug_counts["userSalesRepId"] += 1
                     if not rep_id and user_match.get("id"):
@@ -5942,11 +5948,9 @@ def get_sales_by_rep(
                         if rep_id and debug:
                             debug_counts["prospectDoctorId"] += 1
                     if not rep_id and _normalize_role(user_match.get("role")) in rep_like_roles:
-                        rep_id = str(user_match.get("id") or "").strip()
+                        rep_id = _canonicalize_known_rep_id(user_match.get("id"))
                         if rep_id and debug:
                             debug_counts["userIsRep"] += 1
-                    if rep_id:
-                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
             if not rep_id:
                 doctor = doctors_by_email.get(attribution_email) if attribution_email else None
@@ -5956,7 +5960,7 @@ def get_sales_by_rep(
                 ):
                     doctor = order_user
                 rep_id = (
-                    _normalize_rep_id((doctor or {}).get("salesRepId") or (doctor or {}).get("sales_rep_id"))
+                    _canonicalize_known_rep_id((doctor or {}).get("salesRepId") or (doctor or {}).get("sales_rep_id"))
                     if doctor
                     else ""
                 )
@@ -5966,8 +5970,11 @@ def get_sales_by_rep(
                     rep_id = str(prospect_rep_by_doctor.get(str(doctor.get("id")), "") or "").strip()
                     if rep_id and debug:
                         debug_counts["prospectDoctorId"] += 1
-                if rep_id:
-                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+            if not rep_id and attribution_email:
+                rep_id = str(prospect_rep_by_email.get(attribution_email, "") or "").strip()
+                if rep_id and debug:
+                    debug_counts["prospectEmail"] += 1
 
             if str(rep_id or "").strip().lower() == "house":
                 rep_id = "__house__"
@@ -6889,6 +6896,27 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 return ""
             return str(value).strip()
 
+        def _canonicalize_known_recipient_id(value: object) -> str:
+            normalized = _normalize_rep_id(value)
+            if not normalized:
+                return ""
+            if normalized == "__house__" or normalized.lower() == "house":
+                return "__house__"
+            if normalized == supplier_row_id:
+                return supplier_row_id
+            canonical = str(alias_to_rep_id.get(normalized) or normalized).strip()
+            if not canonical:
+                return ""
+            if canonical.lower() == "house":
+                return "__house__"
+            if (
+                canonical in recipient_rows
+                or canonical in rep_lookup_by_id
+                or normalized in alias_to_rep_id
+            ):
+                return canonical
+            return ""
+
         def _resolve_order_email(order: Dict[str, object]) -> str:
             for key in (
                 "doctorEmail",
@@ -7164,7 +7192,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             recipient_id = ""
             if order_user_id and (order_role in rep_like_roles or order_role == "admin"):
                 recipient_id = (
-                    alias_to_rep_id.get(order_user_id, order_user_id) if order_role in rep_like_roles else order_user_id
+                    _canonicalize_known_recipient_id(order_user_id) if order_role in rep_like_roles else order_user_id
                 )
                 recipient_source = "order_user"
             elif attribution_email and attribution_email in user_rep_id_by_email:
@@ -7190,11 +7218,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
             if not recipient_id:
                 if rep_id:
-                    rep_canonical = alias_to_rep_id.get(rep_id) or rep_id
+                    rep_canonical = _canonicalize_known_recipient_id(rep_id)
                     if str(rep_canonical or "").strip().lower() == "house":
                         recipient_id = "__house__"
                         recipient_source = "order_rep_id_house"
-                    else:
+                    elif rep_canonical:
                         recipient_id = rep_canonical
                         recipient_source = "order_rep_id"
                 if recipient_id and recipient_id not in ("__house__", supplier_row_id) and not rep_lookup_by_id.get(str(recipient_id)) and rep_email_hint:
@@ -7220,11 +7248,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 if not recipient_id and doctor:
                     doctor_rep_id = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "").strip()
                     if doctor_rep_id:
-                        doctor_rep_canonical = alias_to_rep_id.get(doctor_rep_id) or doctor_rep_id
+                        doctor_rep_canonical = _canonicalize_known_recipient_id(doctor_rep_id)
                         if str(doctor_rep_canonical or "").strip().lower() == "house":
                             recipient_id = "__house__"
                             recipient_source = "doctor_rep_id_house"
-                        else:
+                        elif doctor_rep_canonical:
                             recipient_id = doctor_rep_canonical
                             recipient_source = "doctor_rep_id"
 
