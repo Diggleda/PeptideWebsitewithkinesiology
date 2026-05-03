@@ -39,6 +39,27 @@ class CatalogRecommendationsRouteTests(unittest.TestCase):
             shadow_active=False,
         )
 
+    def test_recommendations_route_marks_shadow_session_read(self):
+        payload = {"recommendations": [{"productId": "woo-101", "score": 10}], "modelVersion": "test"}
+
+        with self.app.test_request_context("/api/catalog/recommendations?limit=7"), patch.object(
+            catalog.product_recommendation_service,
+            "get_recommendations",
+            return_value=payload,
+        ) as get_recommendations:
+            g.current_user = {"id": "doctor-1", "role": "doctor"}
+            g.shadow_context = {"active": True, "mode": "maintenance"}
+            response = catalog.list_catalog_recommendations.__wrapped__()
+
+        body, status = response
+        self.assertEqual(status, 200)
+        self.assertEqual(body.get_json(), payload)
+        get_recommendations.assert_called_once_with(
+            {"id": "doctor-1", "role": "doctor"},
+            limit=7,
+            shadow_active=True,
+        )
+
     def test_product_event_route_records_event(self):
         payload = {"ok": True, "tracked": True, "eventType": "product_view"}
 

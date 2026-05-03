@@ -6202,15 +6202,22 @@ export function Header({
           title: string;
           subtitle?: string;
           loading?: boolean;
-        }) => (
-          <div className="text-center py-12" aria-live="polite" aria-busy={loading}>
-            <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] inline-block">
-              <Package className="h-12 w-12 mx-auto mb-3 text-slate-400" />
-              <p className="text-sm font-medium text-slate-700 mb-1">{title}</p>
-              {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
+        }) => {
+          const subtitleText = subtitle || (loading ? "Your recent orders will appear here" : "");
+          return (
+            <div className="text-center py-12" aria-live="polite" aria-busy={loading}>
+              <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] inline-block">
+                <Package className="h-12 w-12 mx-auto mb-3 text-slate-400" />
+                <p className="text-sm font-medium text-slate-700 mb-1">{title}</p>
+                {subtitleText ? (
+                  <p className={clsx("text-xs text-slate-500", !subtitle && "invisible")} aria-hidden={!subtitle}>
+                    {subtitleText}
+                  </p>
+                ) : null}
+              </div>
             </div>
-          </div>
-        );
+          );
+        };
 		    const visibleOrders = cachedAccountOrders
 	      .filter((order) => {
         const source = (order.source || '').toLowerCase();
@@ -6263,7 +6270,7 @@ export function Header({
       });
 
     if (accountOrdersLoading && cachedAccountOrders.length === 0) {
-      return renderOrdersStatusState({ title: "Loading...", loading: true });
+      return renderOrdersStatusState({ title: "Loading your orders...", loading: true });
     }
 
     if (!visibleOrders.length) {

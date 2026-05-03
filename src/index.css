@@ -854,6 +854,38 @@ body {
   flex: 0 0 30%;
 }
 
+.catalog-personalized-product-card {
+  position: relative;
+  border-color: rgba(95, 179, 249, 0.82) !important;
+  border-left-color: rgb(95, 179, 249) !important;
+  box-shadow:
+    0 18px 40px -30px rgba(15, 23, 42, 0.5),
+    0 0 0 1px rgba(95, 179, 249, 0.24) !important;
+}
+
+.catalog-personalized-product-label {
+  position: absolute;
+  bottom: 0.45rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  width: max-content;
+  max-width: calc(100% - 0.75rem);
+  border: 1px solid rgba(95, 179, 249, 0.82);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: rgb(95, 179, 249);
+  font-family: 'Lexend', var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+  padding: 0.34rem 0.5rem;
+  box-shadow: 0 10px 22px -18px rgba(15, 23, 42, 0.7);
+  pointer-events: none;
+}
+
 .catalog-skeleton-thumb::after,
 .catalog-skeleton-line::after,
 .catalog-skeleton-pill::after {

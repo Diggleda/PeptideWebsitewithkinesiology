@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from ..repositories import (
     order_repository,
     physician_product_event_repository,
+    physician_product_recommendation_repository,
     user_repository,
 )
 from . import catalog_snapshot_service
@@ -277,25 +278,34 @@ def _current_user_profile(user_id: str) -> Dict[str, Any]:
     return profile if isinstance(profile, dict) else {}
 
 
+def _save_recommendation_snapshot(user_id: str, payload: Dict[str, Any]) -> None:
+    try:
+        physician_product_recommendation_repository.save_snapshot(
+            user_id=user_id,
+            recommendations=payload.get("recommendations") if isinstance(payload.get("recommendations"), list) else [],
+            model_version=str(payload.get("modelVersion") or MODEL_VERSION),
+            fallback=bool(payload.get("fallback")),
+            fallback_reason=payload.get("fallbackReason"),
+        )
+    except Exception:
+        pass
+
+
 def get_recommendations(
     current_user: Dict[str, Any],
     *,
     limit: int = 100,
     shadow_active: bool = False,
 ) -> Dict[str, Any]:
+    # Maintenance/shadow sessions are read-only, but they should still be able to
+    # inspect the target physician's ranked catalog. Event writes remain disabled
+    # in track_product_event and by the shadow-mode middleware.
     if not _enabled():
         return {
             "recommendations": [],
             "modelVersion": MODEL_VERSION,
             "fallback": True,
             "fallbackReason": "disabled",
-        }
-    if shadow_active:
-        return {
-            "recommendations": [],
-            "modelVersion": MODEL_VERSION,
-            "fallback": True,
-            "fallbackReason": "shadow_session_disabled",
         }
     if not _is_physician_role(current_user.get("role")):
         raise _service_error("Physician access required", 403)
@@ -311,12 +321,14 @@ def get_recommendations(
 
     candidates = _load_catalog_candidates()
     if not candidates:
-        return {
+        payload = {
             "recommendations": [],
             "modelVersion": MODEL_VERSION,
             "fallback": True,
             "fallbackReason": "empty_catalog",
         }
+        _save_recommendation_snapshot(user_id, payload)
+        return payload
     sku_to_product_id = {
         str(candidate.get("sku")).lower(): product_id
         for product_id, candidate in candidates.items()
@@ -464,12 +476,14 @@ def get_recommendations(
         for product_id in ranked_ids
     ]
 
-    return {
+    payload = {
         "recommendations": recommendations,
         "modelVersion": MODEL_VERSION,
         "fallback": not has_personal_signal,
         "fallbackReason": "cold_start_global_popularity" if not has_personal_signal and recommendations else None,
     }
+    _save_recommendation_snapshot(user_id, payload)
+    return payload
 
 
 def track_product_event(

@@ -1,11 +1,14 @@
 const { Router } = require('express');
 const wooController = require('../controllers/wooController');
+const wooCommerceClient = require('../integration/wooCommerceClient');
 const { authenticate } = require('../middleware/authenticate');
 const orderRepository = require('../repositories/orderRepository');
 const userRepository = require('../repositories/userRepository');
 
 const router = Router();
 const MODEL_VERSION = 'heuristic-v1-node-fallback';
+const SIMULATION_MODEL_VERSION = 'heuristic-v1-node-simulation';
+const DEFAULT_SIMULATION_EMAILS = ['diggledadiggz@gmail.com'];
 
 const recommendationsEnabled = () => {
   const raw = String(process.env.RECOMMENDATIONS_ENABLED || 'true').trim().toLowerCase();
@@ -14,6 +17,15 @@ const recommendationsEnabled = () => {
 
 const normalizeRole = (role) => String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const isDoctorRole = (role) => ['doctor', 'test_doctor'].includes(normalizeRole(role));
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const simulationEmails = () => new Set(
+  String(process.env.RECOMMENDATION_SIMULATION_EMAILS || DEFAULT_SIMULATION_EMAILS.join(','))
+    .split(',')
+    .map((entry) => normalizeEmail(entry))
+    .filter(Boolean),
+);
+const isSimulationUser = (user) => simulationEmails().has(normalizeEmail(user?.email));
+const canReadRecommendations = (user) => isDoctorRole(user?.role) || isSimulationUser(user);
 
 const parsePositiveInt = (value) => {
   if (value == null || typeof value === 'boolean') return null;
@@ -48,6 +60,62 @@ const itemProductId = (item) => (
 );
 
 const itemQuantity = (item) => Math.max(1, Math.floor(Number(item?.quantity || item?.qty || 1) || 1));
+
+const normalizeFilterKey = (value) => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/&/g, 'and')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+const containsSubscription = (value) => String(value || '').trim().toLowerCase().includes('subscription');
+
+const isExcludedCatalogProduct = (product) => {
+  const status = String(product?.status || '').trim().toLowerCase();
+  if (status && status !== 'publish') return true;
+  if (containsSubscription(product?.type) || containsSubscription(product?.name)) return true;
+
+  for (const category of Array.isArray(product?.categories) ? product.categories : []) {
+    const name = category?.name;
+    const slug = category?.slug;
+    if (containsSubscription(name) || containsSubscription(slug)) return true;
+    if (normalizeFilterKey(name) === 'add-on' || normalizeFilterKey(slug) === 'add-on') return true;
+  }
+
+  return normalizeFilterKey(product?.sku) === 'add-on' || normalizeFilterKey(product?.slug) === 'add-on';
+};
+
+const fetchCatalogSimulationCandidates = async (limit) => {
+  const candidates = [];
+  const seen = new Set();
+  const safeLimit = Math.max(3, Math.min(Number(limit) || 100, 100));
+
+  for (let page = 1; page <= 4 && candidates.length < safeLimit; page += 1) {
+    const products = await wooCommerceClient.fetchCatalog('products', {
+      per_page: 100,
+      page,
+      status: 'publish',
+      orderby: 'id',
+      order: 'asc',
+    });
+    if (!Array.isArray(products) || products.length === 0) break;
+
+    for (const product of products) {
+      const productId = parsePositiveInt(product?.id);
+      if (!productId || seen.has(productId) || isExcludedCatalogProduct(product)) continue;
+      seen.add(productId);
+      candidates.push({
+        productId,
+        name: String(product?.name || '').trim(),
+      });
+      if (candidates.length >= safeLimit) break;
+    }
+
+    if (products.length < 100) break;
+  }
+
+  return candidates;
+};
 
 const buildRecommendations = (user, limit) => {
   const scores = new Map();
@@ -135,18 +203,55 @@ const buildRecommendations = (user, limit) => {
   };
 };
 
+const buildSimulatedRecommendations = async (user, existingResult, limit) => {
+  if (!isSimulationUser(user)) {
+    return existingResult;
+  }
+
+  const existing = Array.isArray(existingResult?.recommendations)
+    ? existingResult.recommendations
+    : [];
+  const existingIds = new Set(
+    existing
+      .map((entry) => parsePositiveInt(entry?.wooProductId) || parsePositiveInt(entry?.productId))
+      .filter(Boolean),
+  );
+
+  const candidates = await fetchCatalogSimulationCandidates(limit);
+  const simulated = candidates
+    .filter((candidate) => !existingIds.has(candidate.productId))
+    .map((candidate, index) => ({
+      productId: `woo-${candidate.productId}`,
+      wooProductId: candidate.productId,
+      score: Math.max(50, 415 - index * 22),
+      reasons: ['node_simulation', 'global_popularity'],
+      modelVersion: SIMULATION_MODEL_VERSION,
+    }));
+
+  const recommendations = [...existing, ...simulated].slice(0, limit);
+  return {
+    recommendations,
+    modelVersion: SIMULATION_MODEL_VERSION,
+    fallback: existingResult?.fallback ?? true,
+    fallbackReason: recommendations.length > 0
+      ? 'node_simulation_for_diggledadiggz'
+      : (existingResult?.fallbackReason || null),
+  };
+};
+
 // Reuse the same proxy as the /api/woo routes so the client can hit /api/catalog
-router.get('/recommendations', authenticate, (req, res, next) => {
+router.get('/recommendations', authenticate, async (req, res, next) => {
   try {
     if (!recommendationsEnabled()) {
       return res.json({ recommendations: [], modelVersion: MODEL_VERSION, fallback: true, fallbackReason: 'disabled' });
     }
-    if (!isDoctorRole(req.user?.role)) {
+    if (!canReadRecommendations(req.user)) {
       return res.status(403).json({ error: 'Physician access required' });
     }
     const requestedLimit = Number.parseInt(String(req.query?.limit || '100'), 10);
     const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 100));
-    return res.json(buildRecommendations(req.user, limit));
+    const baseRecommendations = buildRecommendations(req.user, limit);
+    return res.json(await buildSimulatedRecommendations(req.user, baseRecommendations, limit));
   } catch (error) {
     return next(error);
   }
@@ -157,7 +262,7 @@ router.post('/events', authenticate, (req, res) => {
   if (!eventType) {
     return res.status(400).json({ error: 'eventType is required' });
   }
-  if (!isDoctorRole(req.user?.role)) {
+  if (!canReadRecommendations(req.user)) {
     return res.status(403).json({ error: 'Physician access required' });
   }
   return res.status(201).json({ ok: true, tracked: false, eventType });

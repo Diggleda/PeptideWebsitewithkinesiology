@@ -398,6 +398,22 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS physician_product_recommendations (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(32) NOT NULL,
+        model_version VARCHAR(64) NOT NULL,
+        recommendations_json LONGTEXT NOT NULL,
+        fallback TINYINT(1) NOT NULL DEFAULT 0,
+        fallback_reason VARCHAR(128) NULL,
+        generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_physician_recs_user_model (user_id, model_version),
+        KEY idx_physician_recs_user_generated (user_id, generated_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS discount_codes (
         code VARCHAR(64) PRIMARY KEY,
         discount_value DECIMAL(6,2) NOT NULL DEFAULT 0,
@@ -793,6 +809,15 @@ def ensure_schema() -> None:
         "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS metadata_json LONGTEXT NULL",
         "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS user_id VARCHAR(32) NOT NULL",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS model_version VARCHAR(64) NOT NULL",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS recommendations_json LONGTEXT NULL",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS fallback TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS fallback_reason VARCHAR(128) NULL",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS expires_at DATETIME NULL",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions LONGTEXT NULL",
         "ALTER TABLE patient_links MODIFY COLUMN patient_id LONGTEXT NULL",
@@ -1306,6 +1331,32 @@ def ensure_schema() -> None:
             if not _index_exists("physician_product_events", "idx_physician_product_events_event_time"):
                 mysql_client.execute(
                     "ALTER TABLE physician_product_events ADD INDEX idx_physician_product_events_event_time (event_type, occurred_at)"
+                )
+    except Exception:
+        pass
+
+    try:
+        if _table_exists("physician_product_recommendations"):
+            legacy_columns = [
+                ("woo_product_id", "BIGINT UNSIGNED NULL"),
+                ("product_id", "VARCHAR(64) NULL"),
+                ("rank_position", "INT UNSIGNED NULL"),
+            ]
+            for column_name, column_type in legacy_columns:
+                try:
+                    if _column_exists("physician_product_recommendations", column_name):
+                        mysql_client.execute(
+                            f"ALTER TABLE physician_product_recommendations MODIFY COLUMN {column_name} {column_type}"
+                        )
+                except Exception:
+                    pass
+            if not _index_exists("physician_product_recommendations", "uniq_physician_recs_user_model"):
+                mysql_client.execute(
+                    "ALTER TABLE physician_product_recommendations ADD UNIQUE KEY uniq_physician_recs_user_model (user_id, model_version)"
+                )
+            if not _index_exists("physician_product_recommendations", "idx_physician_recs_user_generated"):
+                mysql_client.execute(
+                    "ALTER TABLE physician_product_recommendations ADD INDEX idx_physician_recs_user_generated (user_id, generated_at)"
                 )
     except Exception:
         pass

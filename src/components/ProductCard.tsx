@@ -179,6 +179,7 @@ interface ProductCardProps {
   onEnsureVariants?: (options?: { force?: boolean }) => Promise<unknown> | void;
   onProductView?: (product: Product) => void;
   proposalMode?: boolean;
+  personalizedRecommendation?: boolean;
 }
 
 const pickDefaultVariation = (variations: ProductVariation[] | undefined | null) => {
@@ -718,7 +719,14 @@ function PdfPreview({
   );
 }
 
-export function ProductCard({ product, onAddToCart, onEnsureVariants, onProductView, proposalMode = false }: ProductCardProps) {
+export function ProductCard({
+  product,
+  onAddToCart,
+  onEnsureVariants,
+  onProductView,
+  proposalMode = false,
+  personalizedRecommendation = false,
+}: ProductCardProps) {
   type DocumentationTabId = 'certificate' | 'nasals';
   const isCheckoutAddOnCategory = useMemo(() => {
     const normalizedCategory = String(product.category || '')
@@ -1534,7 +1542,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, onProductV
     <>
       <Card
         ref={cardRef}
-        className="group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(95,179,249,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)]"
+        className={`group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(95,179,249,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)]${personalizedRecommendation ? ' catalog-personalized-product-card' : ''}`}
         style={{
           background:
             'linear-gradient(to right, rgba(95,179,249,0.08) 0%, rgba(255,255,255,0.35) 8px, rgba(255,255,255,0.35) 100%)',
@@ -1549,6 +1557,11 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, onProductV
               alt={product.name}
               className="product-image-frame__img"
             />
+            {personalizedRecommendation && (
+              <span className="catalog-personalized-product-label">
+                Personalized Recommendation
+              </span>
+            )}
           </div>
           <div className="p-4 pb-3 space-y-3">
             <div className="space-y-1">{productMeta}</div>

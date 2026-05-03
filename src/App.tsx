@@ -3905,6 +3905,15 @@ const PRODUCT_RECOMMENDATIONS_ENABLED =
   String((import.meta as any).env?.VITE_RECOMMENDATIONS_ENABLED || "")
     .toLowerCase()
     .trim() !== "false";
+const PRODUCT_RECOMMENDATION_SIMULATION_EMAILS = new Set(
+  String(
+    (import.meta as any).env?.VITE_RECOMMENDATION_SIMULATION_EMAILS ||
+      "diggledadiggz@gmail.com",
+  )
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean),
+);
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
   "v2.1.10";
@@ -5304,6 +5313,7 @@ interface LazyCatalogProductCardProps {
   product: Product;
   pricingMarkupPercent?: number | null;
   proposalMode?: boolean;
+  personalizedRecommendation?: boolean;
   onAddToCart: (
     productId: string,
     variationId: string | undefined | null,
@@ -5320,6 +5330,7 @@ const LazyCatalogProductCard = ({
   product,
   pricingMarkupPercent,
   proposalMode = false,
+  personalizedRecommendation = false,
   onAddToCart,
   onProductView,
   onEnsureVariants,
@@ -5333,6 +5344,7 @@ const LazyCatalogProductCard = ({
     <ProductCard
       product={cardProduct}
       proposalMode={proposalMode}
+      personalizedRecommendation={personalizedRecommendation}
       onEnsureVariants={
         typeof onEnsureVariants === "function"
           ? (opts) => onEnsureVariants(product, opts)
@@ -18854,7 +18866,14 @@ function MainApp() {
 
   const shouldUseProductRecommendations =
     PRODUCT_RECOMMENDATIONS_ENABLED &&
-    Boolean(user && isDoctorRole(user.role) && !isDelegateMode);
+    Boolean(
+      user &&
+        !isDelegateMode &&
+        (isDoctorRole(user.role) ||
+          PRODUCT_RECOMMENDATION_SIMULATION_EMAILS.has(
+            String(user.email || "").trim().toLowerCase(),
+          )),
+    );
 
   const trackPhysicianProductEvent = useCallback(
     (
@@ -18900,6 +18919,17 @@ function MainApp() {
   const catalogRecommendationSeed = useMemo(
     () => catalogProducts.map((product) => product.id).join("|"),
     [catalogProducts],
+  );
+
+  const getCatalogRecommendationScore = useCallback(
+    (product: Product) =>
+      Math.max(
+        catalogRecommendationScores[product.id] || 0,
+        product.wooId
+          ? catalogRecommendationScores[`woo-${product.wooId}`] || 0
+          : 0,
+      ),
+    [catalogRecommendationScores],
   );
 
   useEffect(() => {
@@ -28430,6 +28460,10 @@ function MainApp() {
 			                <LazyCatalogProductCard
 			                  key={product.id}
 			                  product={product}
+                        personalizedRecommendation={
+                          shouldUseProductRecommendations &&
+                          getCatalogRecommendationScore(product) > 0
+                        }
 	                      pricingMarkupPercent={delegatePricingMarkupPercent}
 	                      proposalMode={isDelegateMode}
 			                  onEnsureVariants={ensureCatalogProductHasVariants}
@@ -37207,31 +37241,31 @@ function MainApp() {
       });
     }
 
-    if (shouldUseProductRecommendations) {
-      const catalogOrder = new Map(
-        filteredProductCatalog.map((product, index) => [product.id, index]),
-      );
-      filtered = filtered.slice().sort((a, b) => {
-        const scoreA = Math.max(
-          catalogRecommendationScores[a.id] || 0,
-          a.wooId ? catalogRecommendationScores[`woo-${a.wooId}`] || 0 : 0,
-        );
-        const scoreB = Math.max(
-          catalogRecommendationScores[b.id] || 0,
-          b.wooId ? catalogRecommendationScores[`woo-${b.wooId}`] || 0 : 0,
-        );
-        if (scoreA !== scoreB) {
-          return scoreB - scoreA;
-        }
-        return (catalogOrder.get(a.id) ?? 0) - (catalogOrder.get(b.id) ?? 0);
-      });
+    if (!shouldUseProductRecommendations) {
+      return filtered;
     }
 
-    return filtered;
+    return filtered
+      .map((product, index) => {
+        const score = getCatalogRecommendationScore(product);
+        return { product, index, score };
+      })
+      .sort((a, b) => {
+        const aRecommended = a.score > 0;
+        const bRecommended = b.score > 0;
+        if (aRecommended !== bRecommended) {
+          return aRecommended ? -1 : 1;
+        }
+        if (aRecommended && bRecommended && a.score !== b.score) {
+          return b.score - a.score;
+        }
+        return a.index - b.index;
+      })
+      .map((entry) => entry.product);
   }, [
-    catalogRecommendationScores,
     filteredProductCatalog,
     filters,
+    getCatalogRecommendationScore,
     searchQuery,
     shouldUseProductRecommendations,
   ]);

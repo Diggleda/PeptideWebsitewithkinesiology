@@ -20,6 +20,14 @@ from python_backend.database import mysql_schema
 
 
 class MysqlSchemaTests(unittest.TestCase):
+    def test_physician_recommendations_table_stores_json_snapshot(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS physician_product_recommendations", schema_sql)
+        self.assertIn("recommendations_json LONGTEXT NOT NULL", schema_sql)
+        self.assertIn("UNIQUE KEY uniq_physician_recs_user_model (user_id, model_version)", schema_sql)
+        self.assertNotIn("rank_position INT UNSIGNED", schema_sql)
+
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []
 
