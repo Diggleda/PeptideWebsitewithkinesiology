@@ -104,6 +104,7 @@ import {
 	  quotesAPI,
 	  forumAPI,
 	  wooAPI,
+    catalogRecommendationsAPI,
 	  checkServerHealth,
     getServerHealth,
 	  passwordResetAPI,
@@ -3900,6 +3901,10 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
+const PRODUCT_RECOMMENDATIONS_ENABLED =
+  String((import.meta as any).env?.VITE_RECOMMENDATIONS_ENABLED || "")
+    .toLowerCase()
+    .trim() !== "false";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
   "v2.1.10";
@@ -5304,6 +5309,7 @@ interface LazyCatalogProductCardProps {
     variationId: string | undefined | null,
     quantity: number,
   ) => void;
+  onProductView?: (product: Product) => void;
   onEnsureVariants?: (
     product: Product,
     options?: { force?: boolean },
@@ -5315,6 +5321,7 @@ const LazyCatalogProductCard = ({
   pricingMarkupPercent,
   proposalMode = false,
   onAddToCart,
+  onProductView,
   onEnsureVariants,
 }: LazyCatalogProductCardProps) => {
   const cardProduct = useMemo(
@@ -5334,6 +5341,7 @@ const LazyCatalogProductCard = ({
       onAddToCart={(productId, variationId, quantity) =>
         onAddToCart(productId, variationId, quantity)
       }
+      onProductView={onProductView}
     />
   );
 };
@@ -18710,6 +18718,7 @@ function MainApp() {
   );
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const catalogProductsRef = useRef<Product[]>([]);
+  const [catalogRecommendationScores, setCatalogRecommendationScores] = useState<Record<string, number>>({});
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [catalogTypes, setCatalogTypes] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -18744,6 +18753,115 @@ function MainApp() {
   useEffect(() => {
     catalogProductsRef.current = catalogProducts;
   }, [catalogProducts]);
+
+  const shouldUseProductRecommendations =
+    PRODUCT_RECOMMENDATIONS_ENABLED &&
+    Boolean(user && isDoctorRole(user.role) && !isDelegateMode);
+
+  const trackPhysicianProductEvent = useCallback(
+    (
+      eventType: "product_view" | "add_to_cart" | "cart_remove" | "checkout_open",
+      product: Product,
+      options?: {
+        variant?: ProductVariant | null;
+        quantity?: number | null;
+        metadata?: Record<string, unknown> | null;
+      },
+    ) => {
+      if (!shouldUseProductRecommendations || !product) {
+        return;
+      }
+      const variant = options?.variant ?? null;
+      void catalogRecommendationsAPI
+        .trackEvent({
+          eventType,
+          productId: product.id,
+          wooProductId: product.wooId ?? null,
+          variationId: variant?.id ?? null,
+          wooVariationId: variant?.wooId ?? null,
+          sku: variant?.sku || product.sku || null,
+          quantity: options?.quantity ?? 1,
+          metadata: options?.metadata ?? null,
+        })
+        .catch((error) => {
+          if (CATALOG_DEBUG) {
+            console.warn("[Recommendations] Failed to track product event", {
+              eventType,
+              productId: product.id,
+              message:
+                typeof (error as any)?.message === "string"
+                  ? (error as any).message
+                  : undefined,
+            });
+          }
+        });
+    },
+    [shouldUseProductRecommendations],
+  );
+
+  const catalogRecommendationSeed = useMemo(
+    () => catalogProducts.map((product) => product.id).join("|"),
+    [catalogProducts],
+  );
+
+  useEffect(() => {
+    if (!shouldUseProductRecommendations || catalogProducts.length === 0) {
+      setCatalogRecommendationScores({});
+      return;
+    }
+
+    let cancelled = false;
+    const limit = Math.min(500, Math.max(100, catalogProducts.length));
+    void catalogRecommendationsAPI
+      .list({ limit })
+      .then((payload) => {
+        if (cancelled) return;
+        const nextScores: Record<string, number> = {};
+        const recommendations = Array.isArray(payload?.recommendations)
+          ? payload.recommendations
+          : [];
+        for (const recommendation of recommendations) {
+          const score = Number(recommendation?.score);
+          if (!Number.isFinite(score) || score <= 0) {
+            continue;
+          }
+          const productId =
+            typeof recommendation?.productId === "string"
+              ? recommendation.productId.trim()
+              : "";
+          if (productId) {
+            nextScores[productId] = Math.max(nextScores[productId] || 0, score);
+          }
+          const wooProductId = Number(recommendation?.wooProductId);
+          if (Number.isFinite(wooProductId) && wooProductId > 0) {
+            const wooKey = `woo-${Math.floor(wooProductId)}`;
+            nextScores[wooKey] = Math.max(nextScores[wooKey] || 0, score);
+          }
+        }
+        setCatalogRecommendationScores(nextScores);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setCatalogRecommendationScores({});
+        if (CATALOG_DEBUG) {
+          console.warn("[Recommendations] Failed to load catalog recommendations", {
+            message:
+              typeof (error as any)?.message === "string"
+                ? (error as any).message
+                : undefined,
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    catalogProducts.length,
+    catalogRecommendationSeed,
+    shouldUseProductRecommendations,
+    user?.id,
+  ]);
 
   useEffect(() => {
     if (!IMAGE_PREFETCH_ENABLED) {
@@ -25923,6 +26041,10 @@ function MainApp() {
         },
       ];
     });
+    trackPhysicianProductEvent("add_to_cart", product, {
+      variant: resolvedVariant,
+      quantity: quantityToAdd,
+    });
 
     console.debug("[Cart] Add to cart success", {
       productId,
@@ -26888,8 +27010,15 @@ function MainApp() {
     if (source !== "cart_button") {
       return;
     }
+    cartItems.forEach((item) => {
+      trackPhysicianProductEvent("checkout_open", item.product, {
+        variant: item.variant ?? null,
+        quantity: item.quantity,
+        metadata: { source: "cart_button" },
+      });
+    });
     setCheckoutOpen(true);
-  }, []);
+  }, [cartItems, trackPhysicianProductEvent]);
 
   const handleUpdateCartItemQuantity = (
     cartItemId: string,
@@ -26906,6 +27035,13 @@ function MainApp() {
 
   const handleRemoveCartItem = (cartItemId: string) => {
     console.debug("[Cart] Remove item", { cartItemId });
+    const removed = cartItems.find((item) => item.id === cartItemId);
+    if (removed) {
+      trackPhysicianProductEvent("cart_remove", removed.product, {
+        variant: removed.variant ?? null,
+        quantity: removed.quantity,
+      });
+    }
     setCartItems((prev) => prev.filter((item) => item.id !== cartItemId));
     // toast.success('Item removed from cart');
   };
@@ -28009,6 +28145,9 @@ function MainApp() {
 	                      pricingMarkupPercent={delegatePricingMarkupPercent}
 	                      proposalMode={isDelegateMode}
 			                  onEnsureVariants={ensureCatalogProductHasVariants}
+                        onProductView={(viewedProduct) => {
+                          trackPhysicianProductEvent("product_view", viewedProduct);
+                        }}
 			                  onAddToCart={(productId, variationId, qty) =>
 			                    handleAddToCart(productId, qty, undefined, variationId)
 			                  }
@@ -36653,6 +36792,7 @@ function MainApp() {
 
   const handleViewProduct = (product: Product) => {
     console.debug("[Product] View details", { productId: product.id });
+    trackPhysicianProductEvent("product_view", product);
     setSelectedProduct(product);
     setProductDetailOpen(true);
     const isVariable = (product.type ?? "").toLowerCase() === "variable";
@@ -36745,8 +36885,34 @@ function MainApp() {
       });
     }
 
+    if (shouldUseProductRecommendations) {
+      const catalogOrder = new Map(
+        filteredProductCatalog.map((product, index) => [product.id, index]),
+      );
+      filtered = filtered.slice().sort((a, b) => {
+        const scoreA = Math.max(
+          catalogRecommendationScores[a.id] || 0,
+          a.wooId ? catalogRecommendationScores[`woo-${a.wooId}`] || 0 : 0,
+        );
+        const scoreB = Math.max(
+          catalogRecommendationScores[b.id] || 0,
+          b.wooId ? catalogRecommendationScores[`woo-${b.wooId}`] || 0 : 0,
+        );
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA;
+        }
+        return (catalogOrder.get(a.id) ?? 0) - (catalogOrder.get(b.id) ?? 0);
+      });
+    }
+
     return filtered;
-  }, [filteredProductCatalog, searchQuery, filters]);
+  }, [
+    catalogRecommendationScores,
+    filteredProductCatalog,
+    filters,
+    searchQuery,
+    shouldUseProductRecommendations,
+  ]);
 
   const categoryCountsAll = useMemo(() => {
     const counts: Record<string, number> = {};

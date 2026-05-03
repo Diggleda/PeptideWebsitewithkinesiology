@@ -43,6 +43,14 @@ const cacheTtlSecondsForEndpoint = (endpoint) => {
 const catalogCache = new Map();
 const inFlight = new Map();
 
+const parsePositiveInt = (value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(parsed, max));
+};
+
 const DISK_CACHE_ENABLED =
   String(process.env.WOO_PROXY_DISK_CACHE || 'true').toLowerCase() === 'true';
 const MAX_STALE_MS = (() => {
@@ -54,9 +62,100 @@ const MAX_STALE_MS = (() => {
   return 24 * 60 * 60 * 1000; // 24h
 })();
 const DISK_CACHE_DIR = path.join(env.dataDir, 'woo-proxy-cache');
+const MEDIA_CACHE_DIR = path.join(env.dataDir, 'woo-media-cache');
+const MEDIA_CACHE_TTL_SECONDS = parsePositiveInt(
+  process.env.WOO_MEDIA_CACHE_TTL_SECONDS,
+  24 * 60 * 60,
+  { min: 60, max: 30 * 24 * 60 * 60 },
+);
+const MEDIA_CACHE_MAX_BYTES = parsePositiveInt(
+  process.env.WOO_MEDIA_CACHE_MAX_BYTES,
+  10 * 1024 * 1024,
+  { min: 256 * 1024, max: 50 * 1024 * 1024 },
+);
+const MEDIA_DOWNLOAD_MAX_BYTES = parsePositiveInt(
+  process.env.WOO_MEDIA_DOWNLOAD_MAX_BYTES,
+  MEDIA_CACHE_MAX_BYTES,
+  { min: 256 * 1024, max: 50 * 1024 * 1024 },
+);
+const MEDIA_REQUEST_TIMEOUT_MS = parsePositiveInt(
+  process.env.WOO_MEDIA_REQUEST_TIMEOUT_MS,
+  15000,
+  { min: 1000, max: 60000 },
+);
+const MEDIA_PROXY_PATH_PATTERN = /\/api\/(?:woo|catalog)\/media$/i;
+const DEFAULT_MEDIA_HOSTS = new Set([
+  'shop.trufusionlabs.com',
+  'trufusionlabs.com',
+  'www.trufusionlabs.com',
+  'shop.peppro.net',
+  'peppro.net',
+  'www.peppro.net',
+]);
 
 const cacheKeyToFilename = (cacheKey) =>
   crypto.createHash('sha256').update(cacheKey).digest('hex') + '.json';
+
+const mediaCachePaths = (source) => {
+  const key = crypto.createHash('sha256').update(source).digest('hex');
+  return {
+    dataPath: path.join(MEDIA_CACHE_DIR, `${key}.bin`),
+    metaPath: path.join(MEDIA_CACHE_DIR, `${key}.json`),
+  };
+};
+
+const readCachedMedia = async ({ dataPath, metaPath }, { allowStale = false } = {}) => {
+  try {
+    const rawMeta = await fs.promises.readFile(metaPath, 'utf8');
+    const meta = JSON.parse(rawMeta);
+    const expiresAt = Number(meta?.expiresAt || 0);
+    if (!allowStale && expiresAt && expiresAt < Date.now()) {
+      return null;
+    }
+    const payload = await fs.promises.readFile(dataPath);
+    return {
+      payload,
+      contentType: typeof meta?.contentType === 'string' && meta.contentType.trim()
+        ? meta.contentType.trim()
+        : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedMedia = async ({ dataPath, metaPath }, { payload, contentType }) => {
+  if (!payload || payload.length > MEDIA_CACHE_MAX_BYTES) return;
+  try {
+    await fs.promises.mkdir(MEDIA_CACHE_DIR, { recursive: true });
+    const tmpDataPath = `${dataPath}.tmp`;
+    const tmpMetaPath = `${metaPath}.tmp`;
+    await fs.promises.writeFile(tmpDataPath, payload);
+    await fs.promises.writeFile(tmpMetaPath, JSON.stringify({
+      contentType: contentType || null,
+      bytes: payload.length,
+      fetchedAt: Date.now(),
+      expiresAt: Date.now() + MEDIA_CACHE_TTL_SECONDS * 1000,
+    }), 'utf8');
+    await fs.promises.rename(tmpDataPath, dataPath);
+    await fs.promises.rename(tmpMetaPath, metaPath);
+  } catch (error) {
+    logger.debug(
+      { message: error?.message },
+      'Woo media cache write failed',
+    );
+  }
+};
+
+const sendMediaPayload = ({ res, payload, contentType, cacheLabel }) => {
+  res.set('Cache-Control', `public, max-age=${MEDIA_CACHE_TTL_SECONDS}`);
+  res.set('X-TruFusion-Media-Cache', cacheLabel);
+  res.set('Content-Length', String(payload.length));
+  if (contentType) {
+    res.set('Content-Type', contentType);
+  }
+  res.send(payload);
+};
 
 const readDiskCache = async (cacheKey) => {
   if (!DISK_CACHE_ENABLED) return null;
@@ -152,15 +251,48 @@ const refreshInBackground = ({ cacheKey, requestedEndpoint, query, ttlSeconds })
 };
 
 const resolveWooHostnames = () => {
+  const hosts = new Set(DEFAULT_MEDIA_HOSTS);
+  const configuredHosts = String(process.env.WOO_MEDIA_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  for (const host of configuredHosts) {
+    hosts.add(host);
+  }
+
   if (!env?.wooCommerce?.storeUrl) {
-    return new Set();
+    return hosts;
   }
   try {
     const parsed = new URL(env.wooCommerce.storeUrl);
-    return new Set([parsed.hostname]);
+    if (parsed.hostname) {
+      hosts.add(parsed.hostname.toLowerCase());
+    }
   } catch {
-    return new Set();
+    // Keep default/configured media hosts.
   }
+  return hosts;
+};
+
+const unwrapMediaProxySource = (value) => {
+  let candidate = String(value || '').trim();
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!candidate) break;
+    try {
+      const parsed = new URL(candidate, 'https://trufusionlabs.com');
+      if (!MEDIA_PROXY_PATH_PATTERN.test(parsed.pathname)) {
+        break;
+      }
+      const nestedSource = parsed.searchParams.get('src');
+      if (!nestedSource || nestedSource.trim() === candidate) {
+        break;
+      }
+      candidate = nestedSource.trim();
+    } catch {
+      break;
+    }
+  }
+  return candidate;
 };
 
 const allowedMediaHosts = resolveWooHostnames();
@@ -240,7 +372,7 @@ const sanitizeMediaUrl = (value) => {
   if (typeof value !== 'string') {
     return null;
   }
-  const trimmed = value.trim();
+  const trimmed = unwrapMediaProxySource(value);
   if (!trimmed) {
     return null;
   }
@@ -249,7 +381,8 @@ const sanitizeMediaUrl = (value) => {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return null;
     }
-    if (!allowedMediaHosts.has(parsed.hostname)) {
+    const hostname = String(parsed.hostname || '').toLowerCase();
+    if (!allowedMediaHosts.has(hostname)) {
       return null;
     }
     parsed.protocol = 'https:';
@@ -469,21 +602,62 @@ const proxyCatalog = async (req, res, next) => {
 };
 
 const proxyMedia = async (req, res, next) => {
+  let cachePaths = null;
   try {
     const source = sanitizeMediaUrl(req.query?.src);
     if (!source) {
       throw createHttpError('Invalid media source', 400);
     }
-    const response = await axios.get(source, {
-      responseType: 'stream',
-      timeout: 15000,
-    });
-    res.set('Cache-Control', 'public, max-age=300');
-    if (response.headers['content-type']) {
-      res.set('Content-Type', response.headers['content-type']);
+    cachePaths = mediaCachePaths(source);
+    const cached = await readCachedMedia(cachePaths);
+    if (cached) {
+      sendMediaPayload({
+        res,
+        payload: cached.payload,
+        contentType: cached.contentType,
+        cacheLabel: 'HIT',
+      });
+      return;
     }
-    response.data.pipe(res);
+
+    const response = await axios.get(source, {
+      headers: {
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      },
+      maxBodyLength: MEDIA_DOWNLOAD_MAX_BYTES,
+      maxContentLength: MEDIA_DOWNLOAD_MAX_BYTES,
+      responseType: 'arraybuffer',
+      timeout: MEDIA_REQUEST_TIMEOUT_MS,
+    });
+
+    const payload = Buffer.from(response.data || []);
+    if (payload.length > MEDIA_DOWNLOAD_MAX_BYTES) {
+      throw createHttpError('Media too large', 413);
+    }
+    const contentType = typeof response.headers['content-type'] === 'string'
+      ? response.headers['content-type']
+      : null;
+    await writeCachedMedia(cachePaths, { payload, contentType });
+    sendMediaPayload({
+      res,
+      payload,
+      contentType,
+      cacheLabel: 'MISS',
+    });
   } catch (error) {
+    const upstreamStatus = error.response?.status;
+    if (cachePaths && [408, 429, 500, 502, 503, 504].includes(Number(upstreamStatus))) {
+      const stale = await readCachedMedia(cachePaths, { allowStale: true });
+      if (stale) {
+        sendMediaPayload({
+          res,
+          payload: stale.payload,
+          contentType: stale.contentType,
+          cacheLabel: 'STALE',
+        });
+        return;
+      }
+    }
     if (error.response?.status === 404) {
       res.status(404).end();
       return;

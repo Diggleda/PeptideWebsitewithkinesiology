@@ -381,6 +381,23 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS physician_product_events (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(32) NOT NULL,
+        event_type VARCHAR(64) NOT NULL,
+        woo_product_id BIGINT UNSIGNED NULL,
+        woo_variation_id BIGINT UNSIGNED NULL,
+        sku VARCHAR(128) NULL,
+        quantity INT NOT NULL DEFAULT 1,
+        metadata_json LONGTEXT NULL,
+        occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_physician_product_events_user_time (user_id, occurred_at),
+        KEY idx_physician_product_events_product_time (woo_product_id, occurred_at),
+        KEY idx_physician_product_events_event_time (event_type, occurred_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS discount_codes (
         code VARCHAR(64) PRIMARY KEY,
         discount_value DECIMAL(6,2) NOT NULL DEFAULT 0,
@@ -767,6 +784,15 @@ def ensure_schema() -> None:
         "ALTER TABLE product_documents MODIFY COLUMN mime_type VARCHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN sha256 CHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS user_id VARCHAR(32) NOT NULL",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS event_type VARCHAR(64) NOT NULL",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS woo_product_id BIGINT UNSIGNED NULL",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS woo_variation_id BIGINT UNSIGNED NULL",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS sku VARCHAR(128) NULL",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS quantity INT NOT NULL DEFAULT 1",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS metadata_json LONGTEXT NULL",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE physician_product_events ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions LONGTEXT NULL",
         "ALTER TABLE patient_links MODIFY COLUMN patient_id LONGTEXT NULL",
@@ -1264,6 +1290,23 @@ def ensure_schema() -> None:
                     mysql_client.execute("ALTER TABLE usage_tracking ADD INDEX idx_usage_tracking_created (created_at)")
             except Exception:
                 pass
+    except Exception:
+        pass
+
+    try:
+        if _table_exists("physician_product_events"):
+            if not _index_exists("physician_product_events", "idx_physician_product_events_user_time"):
+                mysql_client.execute(
+                    "ALTER TABLE physician_product_events ADD INDEX idx_physician_product_events_user_time (user_id, occurred_at)"
+                )
+            if not _index_exists("physician_product_events", "idx_physician_product_events_product_time"):
+                mysql_client.execute(
+                    "ALTER TABLE physician_product_events ADD INDEX idx_physician_product_events_product_time (woo_product_id, occurred_at)"
+                )
+            if not _index_exists("physician_product_events", "idx_physician_product_events_event_time"):
+                mysql_client.execute(
+                    "ALTER TABLE physician_product_events ADD INDEX idx_physician_product_events_event_time (event_type, occurred_at)"
+                )
     except Exception:
         pass
 

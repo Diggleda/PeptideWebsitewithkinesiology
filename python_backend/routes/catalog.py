@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from flask import Blueprint, request
+from flask import Blueprint, g, request
 
+from ..middleware.auth import require_auth
 from ..services.catalog_snapshot_service import (
     get_catalog_categories,
     get_catalog_product,
     get_catalog_product_variations,
     get_catalog_products,
 )
+from ..services import product_recommendation_service
 from ..utils.http import handle_action
 
 
@@ -22,6 +24,39 @@ def list_catalog_products():
         return get_catalog_products(page=int(page), per_page=int(per_page))
 
     return handle_action(action)
+
+
+@blueprint.get("/recommendations")
+@require_auth
+def list_catalog_recommendations():
+    def action():
+        raw_limit = request.args.get("limit") or "100"
+        try:
+            limit = int(raw_limit)
+        except Exception:
+            limit = 100
+        return product_recommendation_service.get_recommendations(
+            getattr(g, "current_user", None) or {},
+            limit=limit,
+            shadow_active=bool(getattr(g, "shadow_context", None)),
+        )
+
+    return handle_action(action)
+
+
+@blueprint.post("/events")
+@require_auth
+def track_catalog_product_event():
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        return product_recommendation_service.track_product_event(
+            getattr(g, "current_user", None) or {},
+            payload if isinstance(payload, dict) else {},
+            shadow_active=bool(getattr(g, "shadow_context", None)),
+        )
+
+    return handle_action(action, status=201)
 
 
 @blueprint.get("/products/<int:product_id>")

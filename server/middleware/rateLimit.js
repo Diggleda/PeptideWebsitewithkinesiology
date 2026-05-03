@@ -28,6 +28,7 @@ const isExempt = (path) => {
   if (!path) return true;
   if (path === '/api/health' || path === '/api/help') return true;
   if (path === '/api/payments/stripe/webhook') return true;
+  if (path === '/api/woo/media' || path === '/api/catalog/media') return true;
   return false;
 };
 

@@ -3155,6 +3155,60 @@ export const wooAPI = {
   },
 };
 
+export type ProductRecommendation = {
+  productId?: string | null;
+  wooProductId?: number | string | null;
+  score?: number | null;
+  reasons?: string[];
+  modelVersion?: string | null;
+};
+
+export type ProductRecommendationsResponse = {
+  recommendations?: ProductRecommendation[];
+  modelVersion?: string | null;
+  fallback?: boolean;
+  fallbackReason?: string | null;
+};
+
+export const catalogRecommendationsAPI = {
+  list: async (options?: { limit?: number }) => {
+    const params = new URLSearchParams();
+    const limit = Number(options?.limit);
+    if (Number.isFinite(limit) && limit > 0) {
+      params.set('limit', String(Math.min(500, Math.floor(limit))));
+    }
+    const query = params.toString();
+    return fetchWithAuth(
+      query
+        ? `${API_BASE_URL}/catalog/recommendations?${query}`
+        : `${API_BASE_URL}/catalog/recommendations`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+      },
+    ) as Promise<ProductRecommendationsResponse>;
+  },
+
+  trackEvent: async (payload: {
+    eventType: string;
+    productId?: string | number | null;
+    wooProductId?: string | number | null;
+    variationId?: string | number | null;
+    wooVariationId?: string | number | null;
+    sku?: string | null;
+    quantity?: number | null;
+    metadata?: Record<string, unknown> | null;
+  }) => {
+    if (isShadowSessionMode()) {
+      return { ok: true, tracked: false, eventType: String(payload?.eventType || '') };
+    }
+    return fetchWithAuth(`${API_BASE_URL}/catalog/events`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+};
+
 export const shippingAPI = {
   getRates: async (payload: { shippingAddress: any; items: any[] }) => {
     return fetchWithAuth(`${API_BASE_URL}/shipping/rates`, {

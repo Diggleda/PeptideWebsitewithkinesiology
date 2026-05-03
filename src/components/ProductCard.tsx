@@ -177,6 +177,7 @@ interface ProductCardProps {
   product: Product;
   onAddToCart: (productId: string, variationId: string, quantity: number) => void;
   onEnsureVariants?: (options?: { force?: boolean }) => Promise<unknown> | void;
+  onProductView?: (product: Product) => void;
   proposalMode?: boolean;
 }
 
@@ -717,7 +718,7 @@ function PdfPreview({
   );
 }
 
-export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMode = false }: ProductCardProps) {
+export function ProductCard({ product, onAddToCart, onEnsureVariants, onProductView, proposalMode = false }: ProductCardProps) {
   type DocumentationTabId = 'certificate' | 'nasals';
   const isCheckoutAddOnCategory = useMemo(() => {
     const normalizedCategory = String(product.category || '')
@@ -1254,6 +1255,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     if (isCheckoutAddOnCategory) {
       return;
     }
+    onProductView?.(product);
     coaLoadAttemptedRef.current = false;
     setCoaOpen(true);
     setDocumentationTab(hasNasalsDocumentation ? 'nasals' : 'certificate');

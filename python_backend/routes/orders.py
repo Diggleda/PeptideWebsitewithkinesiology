@@ -13,7 +13,7 @@ from ..middleware.auth import require_auth
 from ..integrations import ship_station
 from ..integrations import woo_commerce
 from ..repositories import order_repository, patient_links_repository, user_repository
-from ..services import order_service, delegation_service, usage_tracking_service, tax_tracking_service
+from ..services import order_service, delegation_service, usage_tracking_service, tax_tracking_service, product_recommendation_service
 from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action, require_admin as _require_admin_user
 
@@ -271,6 +271,14 @@ def create_order():
                 actor=getattr(g, "current_user", None) or {},
                 metadata={"delegateProposalToken": normalized_delegate_token, "orderId": result.get("id")},
             )
+        try:
+            product_recommendation_service.track_order_purchase_events(
+                getattr(g, "current_user", None) or {},
+                items=items,
+                order_id=result.get("id") if isinstance(result, dict) else None,
+            )
+        except Exception:
+            logger.exception("Failed to record physician purchase product events")
         return result
 
     return handle_action(action)
