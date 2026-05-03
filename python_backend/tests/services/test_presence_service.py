@@ -86,6 +86,54 @@ class TestPresenceService(unittest.TestCase):
         finally:
             presence_service.clear_user(user_id)
 
+    def test_derive_online_state_prefers_recent_local_presence(self):
+        try:
+            from python_backend.services import presence_service
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        self.assertTrue(
+            presence_service.derive_online_state(
+                stored_is_online=False,
+                presence_last_seen_epoch=990.0,
+                persisted_last_seen_epoch=100.0,
+                now_epoch=1_000.0,
+                threshold_s=300.0,
+            )
+        )
+
+    def test_derive_online_state_newer_persisted_offline_wins(self):
+        try:
+            from python_backend.services import presence_service
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        self.assertFalse(
+            presence_service.derive_online_state(
+                stored_is_online=False,
+                presence_last_seen_epoch=990.0,
+                persisted_last_seen_epoch=995.0,
+                now_epoch=1_000.0,
+                threshold_s=300.0,
+            )
+        )
+
+    def test_derive_online_state_uses_recent_persisted_presence(self):
+        try:
+            from python_backend.services import presence_service
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        self.assertTrue(
+            presence_service.derive_online_state(
+                stored_is_online=True,
+                presence_last_seen_epoch=None,
+                persisted_last_seen_epoch=990.0,
+                now_epoch=1_000.0,
+                threshold_s=300.0,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

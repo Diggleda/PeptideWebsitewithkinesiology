@@ -285,6 +285,16 @@ def _audit(event: str, details: Dict[str, Any]) -> None:
 def _new_session_id() -> str:
     return secrets.token_urlsafe(24)
 
+
+def _record_local_presence_login(user_id: object) -> None:
+    try:
+        uid = str(user_id or "").strip()
+        if uid:
+            presence_service.record_ping(uid, kind="interaction", is_idle=False)
+    except Exception:
+        pass
+
+
 def _is_multi_session_exempt(email: Optional[str]) -> bool:
     # Shared demo account: allow concurrent sessions across devices/users.
     # This disables single-session enforcement (session id rotation) for this one email.
@@ -651,6 +661,7 @@ def register(data: Dict) -> Dict:
         },
     )
 
+    _record_local_presence_login(user.get("id"))
     return {"token": token, "user": _sanitize_user(user)}
 
 def _register_sales_rep_account(
@@ -759,6 +770,7 @@ def _register_sales_rep_account(
         },
     )
 
+    _record_local_presence_login(user_record.get("id"))
     return {"token": token, "user": _sanitize_user(user_record)}
 
 
@@ -814,6 +826,7 @@ def login(data: Dict) -> Dict:
                 "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             },
         )
+        _record_local_presence_login(updated.get("id") or user.get("id"))
         return {"token": token, "user": _sanitize_user(updated)}
 
     sales_rep = sales_rep_repository.find_by_email(email)
@@ -1363,8 +1376,8 @@ def _sanitize_user(user: Dict) -> Dict:
     else:
         sanitized["salesRep"] = None
 
-    # Presence: derive `isOnline` from recent heartbeats/lastSeenAt so it doesn't stick forever.
-    # Keep the persisted `users.is_online` as a gate so explicit logout still forces offline.
+    # Presence: prefer recent in-memory heartbeats, with persisted state as the
+    # fallback for other workers and explicit logout/offline transitions.
     try:
         user_id = str(sanitized.get("id") or "").strip()
         if user_id:
@@ -1378,27 +1391,24 @@ def _sanitize_user(user: Dict) -> Dict:
             except Exception:
                 presence_entry = None
 
-            last_seen_epoch = None
+            presence_last_seen_epoch = None
             if isinstance(presence_entry, dict):
                 raw_seen = presence_entry.get("lastHeartbeatAt")
                 if isinstance(raw_seen, (int, float)) and float(raw_seen) > 0:
-                    last_seen_epoch = float(raw_seen)
+                    presence_last_seen_epoch = float(raw_seen)
                 presence_public = presence_service.to_public_fields(presence_entry)
                 if presence_public.get("lastSeenAt"):
                     sanitized["lastSeenAt"] = presence_public.get("lastSeenAt")
                 if presence_public.get("lastInteractionAt"):
                     sanitized["lastInteractionAt"] = presence_public.get("lastInteractionAt")
-            if last_seen_epoch is None:
-                last_seen_epoch = _parse_utc_epoch(sanitized.get("lastSeenAt") or user.get("lastSeenAt"))
 
-            stored_is_online = bool(user.get("isOnline"))
-            sanitized["isOnline"] = bool(
-                stored_is_online
-                and presence_service.is_recent_epoch(
-                    last_seen_epoch,
-                    now_epoch=now_epoch,
-                    threshold_s=online_threshold_s,
-                )
+            persisted_last_seen_epoch = _parse_utc_epoch(user.get("lastSeenAt"))
+            sanitized["isOnline"] = presence_service.derive_online_state(
+                stored_is_online=bool(user.get("isOnline")),
+                presence_last_seen_epoch=presence_last_seen_epoch,
+                persisted_last_seen_epoch=persisted_last_seen_epoch,
+                now_epoch=now_epoch,
+                threshold_s=online_threshold_s,
             )
     except Exception:
         pass

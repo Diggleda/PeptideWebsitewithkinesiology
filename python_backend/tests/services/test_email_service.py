@@ -49,8 +49,8 @@ class EmailServiceTests(unittest.TestCase):
         self.assertNotIn("width:100%", html)
         self.assertIn('background="cid:trufusion-leaf"', html)
         self.assertIn("url('cid:trufusion-leaf')", html)
-        self.assertIn("background:rgba(255,255,255,0.78)", html)
-        self.assertIn("backdrop-filter:blur(12px) saturate(1.9)", html)
+        self.assertIn("background:rgba(255,255,255,0.64)", html)
+        self.assertIn("backdrop-filter:blur(52px) saturate(1.9)", html)
         self.assertIn('td align="center" style="padding:0 14px;"', html)
         self.assertIn("<strong>Order: 1505</strong>", html)
         self.assertIn("<strong>Tracking: 1ZSHIP1505</strong>", html)
@@ -142,10 +142,10 @@ class EmailServiceTests(unittest.TestCase):
             },
             {
                 "content_id": "trufusion-leaf",
-                "filename": "leafTexture-email.jpg",
-                "mime_type": "image/jpeg",
+                "filename": "blueleafTexture.png",
+                "mime_type": "image/png",
                 "maintype": "image",
-                "subtype": "jpeg",
+                "subtype": "png",
                 "data": b"leaf",
             },
         )
@@ -171,7 +171,7 @@ class EmailServiceTests(unittest.TestCase):
         attachments = post.call_args.kwargs["json"]["attachments"]
         self.assertEqual([attachment["content_id"] for attachment in attachments], ["trufusion-logo", "trufusion-leaf"])
         self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
-        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "leafTexture-email.jpg"])
+        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "blueleafTexture.png"])
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
@@ -210,10 +210,10 @@ class EmailServiceTests(unittest.TestCase):
             },
             {
                 "content_id": "trufusion-leaf",
-                "filename": "leafTexture-email.jpg",
-                "mime_type": "image/jpeg",
+                "filename": "blueleafTexture.png",
+                "mime_type": "image/png",
                 "maintype": "image",
-                "subtype": "jpeg",
+                "subtype": "png",
                 "data": b"leaf",
             },
         )

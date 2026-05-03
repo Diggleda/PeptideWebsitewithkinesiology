@@ -40,7 +40,7 @@ class TestSettingsPresence(unittest.TestCase):
     def test_record_presence_ignores_shadow_sessions(self):
         try:
             from flask import Flask
-        except ModuleNotFoundError as exc:
+        except (ModuleNotFoundError, ImportError) as exc:
             raise unittest.SkipTest(f"python deps not installed: {exc}") from exc
 
         settings = self._load_settings_module()
@@ -72,6 +72,46 @@ class TestSettingsPresence(unittest.TestCase):
             record_ping.assert_not_called()
             find_by_id.assert_not_called()
             update_user.assert_not_called()
+
+    def test_record_presence_persists_before_recording_local_presence(self):
+        try:
+            from flask import Flask
+        except (ModuleNotFoundError, ImportError) as exc:
+            raise unittest.SkipTest(f"python deps not installed: {exc}") from exc
+
+        settings = self._load_settings_module()
+        app = Flask(__name__)
+        calls = []
+
+        def persist_presence(*args, **kwargs):
+            calls.append("persist")
+            return True
+
+        def record_ping(*args, **kwargs):
+            calls.append("record")
+            return {}
+
+        with app.test_request_context(
+            "/api/settings/presence",
+            method="POST",
+            json={"kind": "interaction", "isIdle": False},
+        ):
+            settings.g.current_user = {
+                "id": "doctor-1",
+                "role": "doctor",
+            }
+            settings.g.shadow_context = None
+
+            with patch.object(settings.user_repository, "record_presence_ping", side_effect=persist_presence) as persist, \
+                patch.object(settings.presence_service, "record_ping", side_effect=record_ping) as local_record:
+                response, status = settings.record_presence.__wrapped__()
+
+        self.assertEqual(status, 200)
+        self.assertEqual(response.get_json(), {"ok": True})
+        self.assertEqual(calls, ["persist", "record"])
+        persist.assert_called_once()
+        self.assertEqual(persist.call_args.kwargs.get("bump_interaction"), True)
+        local_record.assert_called_once()
 
 
 if __name__ == "__main__":

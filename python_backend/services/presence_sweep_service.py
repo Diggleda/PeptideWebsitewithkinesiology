@@ -140,6 +140,8 @@ def sweep_once() -> Dict[str, Any]:
                 """,
                 {"cutoff": cutoff_sql},
             )
+            if int(updated or 0) > 0:
+                presence_service.notify_change()
             return {"ok": True, "updated": int(updated or 0), "cutoff": cutoff_sql, "pruned": pruned}
         finally:
             _release_lock(lock_name)
@@ -162,6 +164,9 @@ def sweep_once() -> Dict[str, Any]:
                 updated += 1
             except Exception:
                 continue
+
+    if updated > 0:
+        presence_service.notify_change()
 
     return {"ok": True, "updated": updated, "cutoff": cutoff_sql, "pruned": pruned, "backend": "json"}
 

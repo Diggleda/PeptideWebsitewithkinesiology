@@ -86,6 +86,82 @@ class TestSettingsLiveUsers(unittest.TestCase):
         self.assertNotIn("profileImageUrl", payload_without_avatar["users"][0])
         self.assertEqual(payload_with_avatar["etag"], payload_without_avatar["etag"])
 
+    def test_presence_snapshot_treats_fresh_local_heartbeat_as_online(self):
+        settings = self._load_settings_module()
+
+        snapshot = settings._compute_presence_snapshot(
+            {
+                "id": "doctor-1",
+                "role": "doctor",
+                "isOnline": False,
+                "lastSeenAt": "1970-01-01T00:01:40Z",
+                "lastLoginAt": "1970-01-01T00:01:40Z",
+            },
+            now_epoch=1_000.0,
+            online_threshold_s=300.0,
+            idle_threshold_s=600.0,
+            presence={
+                "doctor-1": {
+                    "lastHeartbeatAt": 990.0,
+                    "lastInteractionAt": 990.0,
+                    "onlineSinceAt": 990.0,
+                    "isIdle": False,
+                }
+            },
+        )
+
+        self.assertTrue(snapshot["isOnline"])
+        self.assertEqual(snapshot["lastSeenAt"], "1970-01-01T00:16:30Z")
+
+    def test_live_users_cache_invalidates_when_presence_revision_changes(self):
+        settings = self._load_settings_module()
+        original_cache = dict(settings._LIVE_USERS_CACHE)
+        try:
+            settings._LIVE_USERS_CACHE.clear()
+            settings._LIVE_USERS_CACHE.update(
+                {
+                    "payload": {"etag": "stale"},
+                    "expiresAt": 1_005.0,
+                    "revision": 1,
+                }
+            )
+
+            with patch.object(settings.time, "monotonic", return_value=1_000.0), \
+                patch.object(settings.presence_service, "current_revision", return_value=2), \
+                patch.object(settings, "_compute_live_users_payload", return_value={"etag": "fresh"}) as compute:
+                payload = settings._compute_live_users_cached()
+
+            self.assertEqual(payload, {"etag": "fresh"})
+            compute.assert_called_once()
+        finally:
+            settings._LIVE_USERS_CACHE.clear()
+            settings._LIVE_USERS_CACHE.update(original_cache)
+
+    def test_live_clients_cache_invalidates_when_presence_revision_changes(self):
+        settings = self._load_settings_module()
+        original_cache = dict(settings._LIVE_CLIENTS_CACHE)
+        try:
+            settings._LIVE_CLIENTS_CACHE.clear()
+            settings._LIVE_CLIENTS_CACHE["rep-1"] = {
+                "at": 1_000.0,
+                "revision": 1,
+                "payload": {"etag": "stale"},
+            }
+
+            with patch.object(settings.time, "monotonic", return_value=1_000.0), \
+                patch.object(settings.presence_service, "current_revision", return_value=2), \
+                patch.object(settings, "_compute_live_clients_payload", return_value={"etag": "fresh"}) as compute:
+                payload = settings._compute_live_clients_cached_with_scope(
+                    target_sales_rep_id="rep-1",
+                    strict_assignment=False,
+                )
+
+            self.assertEqual(payload, {"etag": "fresh"})
+            compute.assert_called_once_with(target_sales_rep_id="rep-1", strict_assignment=False)
+        finally:
+            settings._LIVE_CLIENTS_CACHE.clear()
+            settings._LIVE_CLIENTS_CACHE.update(original_cache)
+
 
 if __name__ == "__main__":
     unittest.main()

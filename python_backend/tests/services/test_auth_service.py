@@ -188,10 +188,12 @@ class AuthServiceTests(unittest.TestCase):
             patch.object(auth_service.user_repository, "record_successful_login", return_value=updated_record) as record_login, \
             patch.object(auth_service, "_safe_check_password", return_value=True), \
             patch.object(auth_service, "_create_auth_token", return_value="token-123"), \
-            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value), \
+            patch.object(auth_service.presence_service, "record_ping") as record_ping:
             result = auth_service.login({"email": "doctor@example.com", "password": "secret"})
 
         record_login.assert_called_once()
+        record_ping.assert_called_once_with("doctor-1", kind="interaction", is_idle=False)
         self.assertEqual(result["token"], "token-123")
         self.assertEqual(result["user"]["id"], "doctor-1")
         self.assertEqual(result["user"]["sessionId"], "session-new")

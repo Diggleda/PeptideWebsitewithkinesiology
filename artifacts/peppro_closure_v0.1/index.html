@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, follow" />
+    <meta name="theme-color" content="#5fb3f9" />
+    <meta
+      name="description"
+      content="PepPro has rebranded to TruFusionLabs. Visit the new TruFusionLabs website."
+    />
+    <meta property="og:site_name" content="TruFusionLabs" />
+    <meta property="og:title" content="PepPro has rebranded to TruFusionLabs" />
+    <meta
+      property="og:description"
+      content="PepPro has rebranded to TruFusionLabs. Continue to the new website."
+    />
+    <meta property="og:type" content="website" />
+    <title>PepPro has rebranded to TruFusionLabs</title>
+    <link rel="icon" href="/favicon.ico?v=0.2" />
+    <style>
+      :root {
+        color-scheme: light;
+        --brand-rgb: 95, 179, 249;
+        --brand: rgb(var(--brand-rgb));
+        --ink: #071b1b;
+        --muted: rgba(7, 27, 27, 0.68);
+        --border-1: rgba(var(--brand-rgb), 0.18);
+        --border-2: rgba(var(--brand-rgb), 0.26);
+        --squircle-sm: 12px;
+        --squircle-lg: 20px;
+        --squircle-xl: 28px;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+      }
+
+      html {
+        background: #f7fbff url("/assets/leafTexture.jpg?v=0.2") center / cover fixed no-repeat;
+      }
+
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        color: var(--ink);
+        background-image:
+          linear-gradient(
+            180deg,
+            rgba(247, 251, 255, 0.34) 0%,
+            rgba(247, 251, 255, 0.22) 44%,
+            rgba(247, 251, 255, 0.38) 100%
+          ),
+          url("/assets/leafTexture.jpg?v=0.2"),
+          url("./assets/leafTexture.jpg?v=0.2");
+        background-size: cover, cover, cover;
+        background-repeat: no-repeat, no-repeat, no-repeat;
+        background-position: center, center, center;
+        position: relative;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        pointer-events: none;
+        background-image:
+          url("/assets/leafTexture.jpg?v=0.2"),
+          url("./assets/leafTexture.jpg?v=0.2");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center;
+        opacity: 0.42;
+        z-index: 0;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        pointer-events: none;
+        background-image:
+          linear-gradient(
+            180deg,
+            rgba(var(--brand-rgb), 0.012) 0%,
+            rgba(var(--brand-rgb), 0.016) 22%,
+            rgba(var(--brand-rgb), 0.075) 100%
+          ),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.16) 0%,
+            rgba(255, 255, 255, 0.12) 44%,
+            rgba(255, 255, 255, 0.22) 100%
+          ),
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='rgba(255,255,255,0.16)'/><stop offset='1' stop-color='rgba(255,255,255,0.00)'/></linearGradient><pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'><path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/><path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/></pattern></defs><rect width='100%' height='100%' fill='url(%23p)'/><rect width='100%' height='100%' fill='url(%23g)'/></svg>");
+        background-size: cover, cover, 800px 800px;
+        background-repeat: no-repeat, no-repeat, repeat;
+        background-position: center;
+        z-index: 1;
+      }
+
+      .page {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        min-height: 100vh;
+        min-height: 100dvh;
+        align-items: flex-start;
+        justify-content: center;
+        padding: clamp(1.5rem, 5vw, 3rem);
+        padding-top: clamp(2rem, 11vh, 7rem);
+      }
+
+      .leaf-background {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+        opacity: 0.55;
+        pointer-events: none;
+        filter: saturate(1.05) contrast(1.02);
+      }
+
+      .login-shell {
+        width: min(560px, 100%);
+      }
+
+      .logo-wrap {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+      }
+
+      .logo {
+        width: min(330px, 86vw);
+        height: auto;
+        display: block;
+        filter: drop-shadow(0 16px 30px rgba(15, 23, 42, 0.08));
+      }
+
+      .card {
+        border-radius: var(--squircle-xl);
+        border: 1px solid var(--border-2);
+        background: rgba(255, 255, 255, 0.48);
+        box-shadow:
+          0 24px 70px -50px rgba(15, 23, 42, 0.72),
+          0 2px 6px -1px rgba(0, 0, 0, 0.1),
+          0 1px 2px -1px rgba(0, 0, 0, 0.06),
+          inset 0 1px rgba(255, 255, 255, 0.58);
+        -webkit-backdrop-filter: blur(38px) saturate(1.6);
+        backdrop-filter: blur(38px) saturate(1.6);
+        padding: clamp(1rem, 4vw, 1.5rem);
+      }
+
+      .card-header {
+        border-bottom: 1px solid var(--border-1);
+        padding-bottom: 0.9rem;
+        box-shadow: 0 20px 45px -18px rgba(15, 23, 42, 0.1);
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--brand);
+        font-size: clamp(1.28rem, 4.8vw, 1.75rem);
+        line-height: 1.15;
+        font-weight: 650;
+        letter-spacing: 0;
+      }
+
+      .description {
+        margin: 0.45rem 0 0;
+        color: var(--muted);
+        font-size: 0.98rem;
+        line-height: 1.55;
+      }
+
+      .card-body {
+        padding-top: 1.25rem;
+      }
+
+      .notice {
+        margin: 0 0 1.25rem;
+        color: rgba(7, 27, 27, 0.76);
+        font-size: 1rem;
+        line-height: 1.65;
+      }
+
+      .button {
+        display: inline-flex;
+        width: 100%;
+        min-height: 48px;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        border-radius: var(--squircle-sm);
+        border: 0;
+        background: var(--brand);
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 700;
+        line-height: 1.2;
+        text-decoration: none;
+        box-shadow: none;
+        transition:
+          transform 180ms ease,
+          background-color 180ms ease,
+          box-shadow 180ms ease;
+      }
+
+      .button:hover {
+        background: rgb(80, 168, 244);
+        transform: scale(1.015) translateY(-0.0525rem);
+      }
+
+      .button:active {
+        transform: translateY(0);
+      }
+
+      .button:focus-visible {
+        outline: 3px solid rgba(var(--brand-rgb), 0.35);
+        outline-offset: 3px;
+      }
+
+      .arrow {
+        width: 1.05rem;
+        height: 1.05rem;
+        flex: 0 0 auto;
+      }
+
+      .support {
+        margin: 1rem 0 0;
+        color: rgba(7, 27, 27, 0.6);
+        font-size: 0.9rem;
+        line-height: 1.5;
+        text-align: center;
+      }
+
+      .support a {
+        color: var(--brand);
+        font-weight: 650;
+        text-decoration: none;
+      }
+
+      .support a:hover,
+      .support a:focus-visible {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      @media (max-width: 440px) {
+        .page {
+          padding-inline: 1rem;
+        }
+
+        .card {
+          border-radius: var(--squircle-lg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <img
+      class="leaf-background"
+      src="/assets/leafTexture.jpg?v=0.2"
+      alt=""
+      aria-hidden="true"
+      onerror="this.onerror=null;this.src='./assets/leafTexture.jpg?v=0.2';"
+    />
+    <main class="page" aria-labelledby="closure-title">
+      <div class="login-shell">
+        <div class="logo-wrap" aria-hidden="true">
+          <img
+            class="logo"
+            src="/assets/turfusionlabsphysiciansportal.png?v=0.2"
+            alt=""
+            width="1280"
+            height="222"
+            onerror="this.onerror=null;this.src='./assets/turfusionlabsphysiciansportal.png?v=0.2';"
+          />
+        </div>
+
+        <section class="card" aria-describedby="closure-description">
+          <div class="card-header">
+            <h1 id="closure-title">PepPro has rebranded to TruFusionLabs!</h1>
+            <p class="description" id="closure-description">
+              The PepPro portal has moved under the TruFusionLabs name.
+            </p>
+          </div>
+
+          <div class="card-body">
+            <p class="notice">
+              Please continue to the new TruFusionLabs website for account access,
+              product information, and support.
+            </p>
+            <a class="button" href="https://www.trufusionlabs.com/">
+              Continue to TruFusionLabs
+              <svg
+                class="arrow"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M5 12h14"></path>
+                <path d="m12 5 7 7-7 7"></path>
+              </svg>
+            </a>
+            <p class="support">
+              Need help?
+              <a href="mailto:support@trufusionlabs.com">support@trufusionlabs.com</a>
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

@@ -37,31 +37,31 @@ _EMAIL_LOGO_IMAGE_STYLE = (
 )
 _EMAIL_GLASS_CONTAINER_STYLE = (
     "background-color:#ffffff;"
-    "background:rgba(255,255,255,0.78);"
+    "background:rgba(255,255,255,0.64);"
     "border:1px solid rgba(255,255,255,0.82);"
     "border-radius:28px;"
     "overflow:hidden;"
     "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
     "0 6px 14px -10px rgba(15,23,42,0.35),"
     "inset 0 1px rgba(255,255,255,0.85);"
-    "-webkit-backdrop-filter:blur(34px) saturate(1.9);"
-    "backdrop-filter:blur(34px) saturate(1.9);"
+    "-webkit-backdrop-filter:blur(52px) saturate(1.9);"
+    "backdrop-filter:blur(52px) saturate(1.9);"
     "color-scheme:light;"
 )
 _EMAIL_ORDER_GLASS_CONTAINER_STYLE = (
     "background-color:#ffffff;"
-    "background:rgba(255,255,255,0.78);"
+    "background:rgba(255,255,255,0.64);"
     "border:1px solid rgba(255,255,255,0.82);"
     "border-radius:28px;"
     "overflow:hidden;"
     "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
     "0 6px 14px -10px rgba(15,23,42,0.35),"
     "inset 0 1px rgba(255,255,255,0.85);"
-    "-webkit-backdrop-filter:blur(12px) saturate(1.9);"
-    "backdrop-filter:blur(12px) saturate(1.9);"
+    "-webkit-backdrop-filter:blur(52px) saturate(1.9);"
+    "backdrop-filter:blur(52px) saturate(1.9);"
     "color-scheme:light;"
 )
-_EMAIL_LOGO_CELL_STYLE = "background:rgba(255,255,255,0.36);padding:24px 24px 12px;"
+_EMAIL_LOGO_CELL_STYLE = "padding:24px 24px 0;"
 _EMAIL_ORDER_OUTER_CELL_STYLE = "padding:0 14px;"
 _EMAIL_DETAIL_CARD_STYLE = (
     "margin:0 0 24px;"
@@ -112,14 +112,13 @@ _EMAIL_INLINE_IMAGE_SPECS = (
     },
     {
         "content_id": _EMAIL_LEAF_CID,
-        "filename": "leafTexture-email.jpg",
-        "mime_type": "image/jpeg",
+        "filename": "blueleafTexture.png",
+        "mime_type": "image/png",
         "maintype": "image",
-        "subtype": "jpeg",
+        "subtype": "png",
         "paths": (
-            "public/leafTexture-email.jpg",
-            "public/leafTexture.jpg",
-            "src/generated/runtime-assets/leafTexture.jpg",
+            "public/blueleafTexture.png",
+            "src/generated/runtime-assets/blueleafTexture.png",
         ),
     },
 )
@@ -287,8 +286,7 @@ def _sendgrid_inline_attachments(html: str) -> list[Dict[str, str]]:
 def _email_background_style(leaf_url: str) -> str:
     return (
         "background-color:#edf7fb;"
-        "background-image:linear-gradient(180deg,rgba(255,255,255,0.86) 0%,rgba(255,255,255,0.62) 48%,rgba(255,255,255,0.78) 100%),"
-        f"url('{leaf_url}');"
+        f"background-image:url('{leaf_url}');"
         "background-size:cover;"
         "background-position:center;"
         "background-repeat:no-repeat;"
@@ -480,7 +478,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
               </td>
             </tr>
             <tr>
-              <td style="padding:32px 28px 8px;">
+              <td style="padding:44px 28px 8px;">
                 <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Reset your TruFusionLabs password</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
                   We received a request to reset your account password. Click the button below to choose a new password.
@@ -500,7 +498,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
               </td>
             </tr>
             <tr>
-              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
+              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
                 <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#5FB3F9;text-decoration:none;">{safe_base_url}</a>.</p>
                 <p style="margin:0;">This link will expire in 60 minutes to keep your account secure.</p>
               </td>
@@ -630,10 +628,10 @@ def _build_delegate_proposal_ready_email(
               </td>
             </tr>
             <tr>
-              <td style="padding:32px 28px 8px;">
+              <td style="padding:44px 28px 8px;">
                 <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Delegate proposal ready for review</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
-                  {physician_label}, your delegate has submitted a proposal and it is ready for review in TruFusionLabs.
+                  {physician_label}, your delegate has submitted a proposal and it is ready for review in your portal.
                 </p>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f8fbff" style="{_EMAIL_DETAIL_CARD_STYLE}">
                   <tr>
@@ -652,7 +650,7 @@ def _build_delegate_proposal_ready_email(
               </td>
             </tr>
             <tr>
-              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
+              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
                 <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
@@ -740,7 +738,7 @@ def _build_shipping_status_email(
         f"</p>"
     ) if tracking_url else ""
     account_link_html = (
-        f'<p style="margin:0 0 24px;text-align:center;font-size:14px;line-height:1.5;color:#6b7280;">'
+        f'<p style="margin:0;text-align:center;font-size:14px;line-height:1.5;color:#6b7280;">'
         f'Sign in to your account at <a href="{account_url}" style="color:#5FB3F9;text-decoration:none;font-weight:700;">trufusionlabs.com</a>.'
         f"</p>"
     )
@@ -775,7 +773,7 @@ def _build_shipping_status_email(
               </td>
             </tr>
             <tr>
-              <td style="padding:32px 28px 8px;">
+              <td style="padding:56px 28px 0;">
                 <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">{heading}</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">Hi {name_label},</p>
                 <p style="margin:0 0 24px;line-height:1.6;">{body}</p>
@@ -793,7 +791,7 @@ def _build_shipping_status_email(
               </td>
             </tr>
             <tr>
-              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
+              <td style="padding:8px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
                 <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>

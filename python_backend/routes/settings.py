@@ -1168,23 +1168,24 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
     last_seen_dt = _parse_iso_datetime(user.get("lastSeenAt") or None)
     last_interaction_dt = _parse_iso_datetime(user.get("lastInteractionAt") or None)
 
-    last_seen_epoch = None
+    presence_last_seen_epoch = None
     try:
         raw_seen = presence_entry.get("lastHeartbeatAt") if isinstance(presence_entry, dict) else None
         if isinstance(raw_seen, (int, float)) and float(raw_seen) > 0:
-            last_seen_epoch = float(raw_seen)
+            presence_last_seen_epoch = float(raw_seen)
     except Exception:
-        last_seen_epoch = None
-    if last_seen_epoch is None and last_seen_dt:
-        last_seen_epoch = float(last_seen_dt.timestamp())
+        presence_last_seen_epoch = None
 
-    derived_online = presence_service.is_recent_epoch(
-        last_seen_epoch,
+    persisted_last_seen_epoch = float(last_seen_dt.timestamp()) if last_seen_dt else None
+    last_seen_epoch = presence_last_seen_epoch if presence_last_seen_epoch is not None else persisted_last_seen_epoch
+
+    derived_online = presence_service.derive_online_state(
+        stored_is_online=bool(user.get("isOnline")),
+        presence_last_seen_epoch=presence_last_seen_epoch,
+        persisted_last_seen_epoch=persisted_last_seen_epoch,
         now_epoch=now_epoch,
         threshold_s=online_threshold_s,
     )
-    if derived_online and not bool(user.get("isOnline")):
-        derived_online = False
 
     idle_anchor_epoch = None
     try:
@@ -1372,6 +1373,7 @@ def _compute_live_clients_cached_with_scope(
     strict_assignment: bool,
 ) -> dict:
     now = time.monotonic()
+    revision = presence_service.current_revision()
     ttl_s = float(os.environ.get("LIVE_CLIENTS_CACHE_TTL_SECONDS") or 1.0)
     ttl_s = max(0.25, min(ttl_s, 5.0))
 
@@ -1384,7 +1386,8 @@ def _compute_live_clients_cached_with_scope(
     with _LIVE_CLIENTS_CACHE_LOCK:
         cached = _LIVE_CLIENTS_CACHE.get(cache_key) or {}
         cached_at = float(cached.get("at") or 0.0)
-        if cached and cached_at > 0 and (now - cached_at) < ttl_s:
+        cached_revision = int(cached.get("revision") or -1)
+        if cached and cached_at > 0 and cached_revision == revision and (now - cached_at) < ttl_s:
             payload = cached.get("payload")
             if isinstance(payload, dict):
                 return payload
@@ -1394,7 +1397,7 @@ def _compute_live_clients_cached_with_scope(
         strict_assignment=strict_assignment,
     )
     with _LIVE_CLIENTS_CACHE_LOCK:
-        _LIVE_CLIENTS_CACHE[cache_key] = {"at": now, "payload": payload}
+        _LIVE_CLIENTS_CACHE[cache_key] = {"at": now, "revision": revision, "payload": payload}
     return payload
 
 
@@ -1493,19 +1496,22 @@ def _compute_live_users_payload() -> dict:
 
 def _compute_live_users_cached() -> dict:
     now = time.monotonic()
+    revision = presence_service.current_revision()
     ttl_s = float(os.environ.get("LIVE_USERS_CACHE_TTL_SECONDS") or 1.0)
     ttl_s = max(0.25, min(ttl_s, 5.0))
 
     with _LIVE_USERS_CACHE_LOCK:
         cached = _LIVE_USERS_CACHE.get("payload")
         expires_at = float(_LIVE_USERS_CACHE.get("expiresAt") or 0.0)
-        if cached and expires_at > now:
+        cached_revision = int(_LIVE_USERS_CACHE.get("revision") or -1)
+        if cached and cached_revision == revision and expires_at > now:
             return cached
 
     payload = _compute_live_users_payload()
     with _LIVE_USERS_CACHE_LOCK:
         _LIVE_USERS_CACHE["payload"] = payload
         _LIVE_USERS_CACHE["expiresAt"] = now + ttl_s
+        _LIVE_USERS_CACHE["revision"] = revision
     return payload
 
 
@@ -1881,24 +1887,19 @@ def record_presence():
         kind = str(payload.get("kind") or "heartbeat").strip().lower()
         is_idle_raw = payload.get("isIdle")
         is_idle = is_idle_raw if isinstance(is_idle_raw, bool) else None
-        presence_service.record_ping(str(user_id), kind=kind, is_idle=is_idle)
-        # Persist the heartbeat into MySQL so "online" isn't a sticky flag.
-        # This also enables server-side idle/session enforcement in `require_auth`.
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        should_bump_interaction = kind == "interaction" or (kind == "heartbeat" and is_idle is False)
+        # Persist first, then bump the in-memory revision so long-poll waiters see
+        # the completed state instead of a stale cache/DB snapshot.
         try:
-            existing = user_repository.find_by_id(str(user_id)) or {}
-            now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            should_bump_interaction = kind == "interaction" or (kind == "heartbeat" and is_idle is False)
-            next_user = {
-                **existing,
-                "id": str(user_id),
-                "isOnline": True,
-                "lastSeenAt": now_iso,
-                "lastInteractionAt": now_iso if should_bump_interaction else (existing.get("lastInteractionAt") or None),
-            }
-            if existing:
-                user_repository.update(next_user)
+            user_repository.record_presence_ping(
+                str(user_id),
+                at=now_iso,
+                bump_interaction=should_bump_interaction,
+            )
         except Exception:
             pass
+        presence_service.record_ping(str(user_id), kind=kind, is_idle=is_idle)
         return {"ok": True}
 
     return handle_action(action)
@@ -3022,6 +3023,7 @@ def _compute_user_activity_cached(
     Cache for a short TTL so concurrent longpolls share work.
     """
     now = time.monotonic()
+    revision = presence_service.current_revision()
     ttl_s = float(os.environ.get("USER_ACTIVITY_CACHE_TTL_SECONDS") or 1.0)
     ttl_s = max(0.25, min(ttl_s, 5.0))
 
@@ -3029,14 +3031,15 @@ def _compute_user_activity_cached(
     with _USER_ACTIVITY_CACHE_LOCK:
         cached = _USER_ACTIVITY_CACHE.get(cache_key) or {}
         cached_at = float(cached.get("at") or 0.0)
-        if cached and cached_at > 0 and (now - cached_at) < ttl_s:
+        cached_revision = int(cached.get("revision") or -1)
+        if cached and cached_at > 0 and cached_revision == revision and (now - cached_at) < ttl_s:
             payload = cached.get("payload")
             if isinstance(payload, dict):
                 return payload
 
     payload = _compute_user_activity(window_key, raw_window=raw_window, include_logs=include_logs)
     with _USER_ACTIVITY_CACHE_LOCK:
-        _USER_ACTIVITY_CACHE[cache_key] = {"at": now, "payload": payload}
+        _USER_ACTIVITY_CACHE[cache_key] = {"at": now, "revision": revision, "payload": payload}
     return payload
 
 
@@ -3080,15 +3083,16 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
         persisted_interaction_dt = _parse_iso_datetime(user.get("lastInteractionAt") or None)
         persisted_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
 
-        last_seen_epoch = None
+        presence_last_seen_epoch = None
         try:
             raw_seen = presence_entry.get("lastHeartbeatAt") if isinstance(presence_entry, dict) else None
             if isinstance(raw_seen, (int, float)) and float(raw_seen) > 0:
-                last_seen_epoch = float(raw_seen)
+                presence_last_seen_epoch = float(raw_seen)
         except Exception:
-            last_seen_epoch = None
-        if last_seen_epoch is None and persisted_seen_dt:
-            last_seen_epoch = float(persisted_seen_dt.timestamp())
+            presence_last_seen_epoch = None
+
+        persisted_last_seen_epoch = float(persisted_seen_dt.timestamp()) if persisted_seen_dt else None
+        last_seen_epoch = presence_last_seen_epoch if presence_last_seen_epoch is not None else persisted_last_seen_epoch
 
         last_interaction_epoch = None
         try:
@@ -3100,14 +3104,12 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
         if last_interaction_epoch is None and persisted_interaction_dt:
             last_interaction_epoch = float(persisted_interaction_dt.timestamp())
 
-        is_online_db = bool(user.get("isOnline"))
-        derived_online = bool(
-            is_online_db
-            and presence_service.is_recent_epoch(
-                last_seen_epoch,
-                now_epoch=now_epoch,
-                threshold_s=online_threshold_s,
-            )
+        derived_online = presence_service.derive_online_state(
+            stored_is_online=bool(user.get("isOnline")),
+            presence_last_seen_epoch=presence_last_seen_epoch,
+            persisted_last_seen_epoch=persisted_last_seen_epoch,
+            now_epoch=now_epoch,
+            threshold_s=online_threshold_s,
         )
 
         session_start_epoch = float(persisted_login_dt.timestamp()) if persisted_login_dt else None

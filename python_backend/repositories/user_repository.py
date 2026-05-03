@@ -921,6 +921,62 @@ def record_successful_login(user_id: str, *, session_id: Optional[str], at: Opti
     )
 
 
+def record_presence_ping(
+    user_id: str,
+    *,
+    at: Optional[str],
+    bump_interaction: bool = False,
+) -> bool:
+    target_id = str(user_id or "").strip()
+    if not target_id:
+        return False
+
+    if _using_mysql():
+        if bump_interaction:
+            rows = mysql_client.execute(
+                """
+                UPDATE users
+                SET
+                    is_online = 1,
+                    last_seen_at = %(at)s,
+                    last_interaction_at = %(at)s
+                WHERE id = %(id)s
+                """,
+                {
+                    "id": target_id,
+                    "at": to_mysql_datetime(at),
+                },
+            )
+        else:
+            rows = mysql_client.execute(
+                """
+                UPDATE users
+                SET
+                    is_online = 1,
+                    last_seen_at = %(at)s
+                WHERE id = %(id)s
+                """,
+                {
+                    "id": target_id,
+                    "at": to_mysql_datetime(at),
+                },
+            )
+        return int(rows or 0) > 0
+
+    existing = find_by_id(target_id)
+    if not existing:
+        return False
+    payload = {
+        **existing,
+        "id": target_id,
+        "isOnline": True,
+        "lastSeenAt": at,
+    }
+    if bump_interaction:
+        payload["lastInteractionAt"] = at
+    return update(payload) is not None
+
+
 def remove_by_id(user_id: str) -> bool:
     target = str(user_id or "").strip()
     if not target:

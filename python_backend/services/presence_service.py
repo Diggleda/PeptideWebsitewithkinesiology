@@ -32,6 +32,13 @@ def wait_for_change(since_revision: int, *, timeout_s: float) -> int:
             _CONDITION.wait(timeout=timeout)
         return int(_REVISION)
 
+
+def notify_change() -> int:
+    with _CONDITION:
+        _bump_revision_locked()
+        return int(_REVISION)
+
+
 def is_recent_epoch(
     ts_epoch: float | int | None,
     *,
@@ -60,6 +67,42 @@ def is_recent_epoch(
     if delta < -float(future_skew_s):
         return False
     return delta <= float(threshold_s)
+
+
+def derive_online_state(
+    *,
+    stored_is_online: bool,
+    presence_last_seen_epoch: float | int | None,
+    persisted_last_seen_epoch: float | int | None,
+    now_epoch: float | None = None,
+    threshold_s: float,
+) -> bool:
+    """
+    Derive online state from the freshest available signal.
+
+    A local in-memory heartbeat should make a user online immediately, even if a
+    slow or failed storage write still has is_online=0. A newer persisted offline
+    timestamp still wins, which keeps explicit logout from being masked by stale
+    process-local memory.
+    """
+    now = float(now_epoch) if now_epoch is not None else time.time()
+    presence_seen = _coerce_epoch(presence_last_seen_epoch)
+    persisted_seen = _coerce_epoch(persisted_last_seen_epoch)
+
+    if is_recent_epoch(presence_seen, threshold_s=threshold_s, now_epoch=now):
+        if (
+            not bool(stored_is_online)
+            and persisted_seen is not None
+            and presence_seen is not None
+            and persisted_seen > presence_seen
+        ):
+            return False
+        return True
+
+    return bool(
+        stored_is_online
+        and is_recent_epoch(persisted_seen, threshold_s=threshold_s, now_epoch=now)
+    )
 
 
 def _epoch_to_iso(ts: float) -> str:
