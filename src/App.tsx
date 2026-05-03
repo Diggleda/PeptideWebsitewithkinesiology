@@ -14314,7 +14314,11 @@ function MainApp() {
       });
       const mappedCommissionRows = filteredCommissions.map((row) => ({
         id: String((row as any)?.id || ""),
-        aliasIds: [] as string[],
+        aliasIds: Array.isArray((row as any)?.aliasIds)
+          ? ((row as any).aliasIds as unknown[])
+              .map((value) => String(value || "").trim())
+              .filter((value) => value.length > 0)
+          : ([] as string[]),
         name: String((row as any)?.name || ""),
         role: String((row as any)?.role || ""),
         amount: Number((row as any)?.amount || 0),
@@ -15276,7 +15280,7 @@ function MainApp() {
           : [];
         const targetId = String(salesDoctorDetail.doctorId || "").trim();
         const targetAlias = String((salesDoctorDetail as any)?.ownerSalesRepId || "").trim();
-        const match = commissions.find((row) => {
+        const matchingRows = commissions.filter((row) => {
           const rowId = String((row as any)?.id || "").trim();
           const aliasIds = Array.isArray((row as any)?.aliasIds)
             ? ((row as any).aliasIds as unknown[])
@@ -15291,11 +15295,26 @@ function MainApp() {
             (Boolean(targetAlias) && aliasIds.includes(targetAlias))
           );
 	        });
-	        const amount = match != null ? Number((match as any)?.amount || 0) : null;
-	        const regularWholesaleBase = Number((match as any)?.wholesaleBase || 0);
-	        const regularRetailBase = Number((match as any)?.retailBase || 0);
-	        const houseWholesaleBase = Number((match as any)?.houseWholesaleBase || 0);
-	        const houseRetailBase = Number((match as any)?.houseRetailBase || 0);
+	        const amount =
+            matchingRows.length > 0
+              ? matchingRows.reduce((sum, row) => sum + Number((row as any)?.amount || 0), 0)
+              : null;
+	        const regularWholesaleBase = matchingRows.reduce(
+            (sum, row) => sum + Number((row as any)?.wholesaleBase || 0),
+            0,
+          );
+	        const regularRetailBase = matchingRows.reduce(
+            (sum, row) => sum + Number((row as any)?.retailBase || 0),
+            0,
+          );
+	        const houseWholesaleBase = matchingRows.reduce(
+            (sum, row) => sum + Number((row as any)?.houseWholesaleBase || 0),
+            0,
+          );
+	        const houseRetailBase = matchingRows.reduce(
+            (sum, row) => sum + Number((row as any)?.houseRetailBase || 0),
+            0,
+          );
 	        const salesRevenueTotal =
 	          regularWholesaleBase + regularRetailBase + houseWholesaleBase + houseRetailBase;
 	        if (salesDoctorCommissionRequestIdRef.current === requestId) {

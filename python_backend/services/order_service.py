@@ -5482,6 +5482,24 @@ def get_sales_by_rep(
         for u in users:
             if _normalize_role(u.get("role")) not in rep_like_roles:
                 continue
+            user_id = str(u.get("id") or "").strip()
+            rep_alias = str(u.get("salesRepId") or u.get("sales_rep_id") or "").strip()
+            linked_record = _resolve_sales_rep_record_for_user(u, rep_records)
+            linked_record_id = str((linked_record or {}).get("id") or "").strip()
+            canonical_rep_id = linked_record_id or rep_alias or user_id
+            if not canonical_rep_id:
+                continue
+            if user_id:
+                alias_to_rep_id[user_id] = canonical_rep_id
+                rep_user_id_by_rep_id.setdefault(user_id, user_id)
+                rep_user_id_by_rep_id.setdefault(canonical_rep_id, user_id)
+            if rep_alias:
+                alias_to_rep_id[rep_alias] = canonical_rep_id
+                if user_id:
+                    rep_user_id_by_rep_id.setdefault(rep_alias, user_id)
+        for u in users:
+            if _normalize_role(u.get("role")) not in rep_like_roles:
+                continue
             email = _norm_email(u.get("email"))
             if not email:
                 continue
@@ -6100,7 +6118,14 @@ def get_sales_by_rep(
         for rep in reps:
             rep_id = rep.get("id")
             if rep_id:
+                rep_id_str = str(rep_id)
+                canonical = alias_to_rep_id.get(rep_id_str, rep_id_str)
+                rep_lookup[canonical] = rep
                 rep_lookup[str(rep_id)] = rep
+            rep_alias = str(rep.get("salesRepId") or rep.get("sales_rep_id") or "").strip()
+            if rep_alias:
+                canonical = alias_to_rep_id.get(rep_alias, rep_alias)
+                rep_lookup[canonical] = rep
         # Fill in any remaining reps from sales_reps (canonicalized).
         for rep_id, rep_record in rep_records.items():
             canonical = alias_to_rep_id.get(rep_id, rep_id)
@@ -6732,11 +6757,24 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 continue
             rep_id_str = str(rep_id)
             rep_email = _norm_email(rep.get("email"))
-            canonical = admin_id_by_email.get(rep_email) or user_rep_id_by_email.get(rep_email) or rep_id_str
+            canonical = (
+                admin_id_by_email.get(rep_email)
+                or user_rep_id_by_email.get(rep_email)
+                or alias_to_rep_id.get(rep_id_str)
+                or rep_id_str
+            )
             alias_to_rep_id[rep_id_str] = canonical
             legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
             if legacy_id:
                 alias_to_rep_id[str(legacy_id)] = canonical
+
+        aliases_by_rep_id: Dict[str, set[str]] = {}
+        for alias, canonical in alias_to_rep_id.items():
+            alias_key = str(alias or "").strip()
+            canonical_key = str(canonical or "").strip()
+            if not alias_key or not canonical_key:
+                continue
+            aliases_by_rep_id.setdefault(canonical_key, set()).update({canonical_key, alias_key})
 
         def _norm_sales_code(value: object) -> str:
             raw = str(value or "").strip()
@@ -7553,6 +7591,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             "commissions": [
                 {
                     "id": row.get("id"),
+                    "aliasIds": sorted(aliases_by_rep_id.get(str(row.get("id")), {str(row.get("id"))})),
                     "name": row.get("name"),
                     "role": row.get("role"),
                     "amount": round(float(row.get("amount") or 0.0), 2),

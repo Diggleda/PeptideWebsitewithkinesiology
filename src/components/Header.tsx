@@ -28,7 +28,6 @@ import {
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const LOGIN_BACKEND_DOWN_TOAST_ID = 'login-backend-down';
 const LOGIN_BACKEND_DOWN_MESSAGE = 'TruFusionLabs is unavailable right now. Please try again in a minute.';
-const ACCOUNT_ORDERS_LOADING_DELAY_MS = 750;
 const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (value === true || value === false) return value;
   if (value == null) return null;
@@ -1894,7 +1893,6 @@ export function Header({
   const trackingStatusCacheRef = useRef<Map<string, any>>(new Map());
   const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const cachedAccountOrdersRef = useRef<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
-  const [showAccountOrdersLoadingState, setShowAccountOrdersLoadingState] = useState(false);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [orderLineImageCache, setOrderLineImageCache] = useState<Record<string, string | null>>({});
   const orderLineImageCacheRef = useRef<Record<string, string | null>>({});
@@ -3075,27 +3073,6 @@ export function Header({
   useEffect(() => {
     cachedAccountOrdersRef.current = cachedAccountOrders;
   }, [cachedAccountOrders]);
-
-  useEffect(() => {
-    const shouldDelayLoadingState =
-      welcomeOpen &&
-      accountTab === 'orders' &&
-      accountOrdersLoading &&
-      cachedAccountOrders.length === 0;
-
-    if (!shouldDelayLoadingState) {
-      setShowAccountOrdersLoadingState(false);
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setShowAccountOrdersLoadingState(true);
-    }, ACCOUNT_ORDERS_LOADING_DELAY_MS);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [accountOrdersLoading, accountTab, cachedAccountOrders.length, welcomeOpen]);
 
   // Keep the open order details view in sync with refreshed order data.
   // Without this, the list can refresh (showing a new status) while the modal
@@ -6217,67 +6194,21 @@ export function Header({
 		    const doctorView = Boolean(isDoctorRole(accountRole));
 		    const salesRepEmail = (localUser?.salesRep?.email || '').trim();
         const normalizedQuery = ordersSearchQuery.trim().toLowerCase();
-        const renderOrdersLoadingState = () => (
-          <div className="space-y-4 pb-4" aria-live="polite" aria-busy="true">
-            {Array.from({ length: 2 }).map((_, index) => (
-              <div
-                key={`account-order-skeleton-${index}`}
-                className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden"
-              >
-                <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9]">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap items-center gap-8 text-sm text-slate-700">
-                      <div className="space-y-2">
-                        <div className="news-loading-line news-loading-shimmer w-24" />
-                        <div className="news-loading-line news-loading-shimmer w-28" />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="news-loading-line news-loading-shimmer w-16" />
-                        <div className="news-loading-line news-loading-shimmer w-20" />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="news-loading-line news-loading-shimmer w-20" />
-                        <div className="news-loading-line news-loading-shimmer w-32" />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="news-loading-line news-loading-shimmer w-28" />
-                      <div className="news-loading-line news-loading-shimmer w-24" />
-                    </div>
-                  </div>
-                </div>
-                <div className="px-6 pt-5 pb-6">
-                  <div className="flex flex-col gap-4 pt-4 md:flex-row md:items-start md:gap-6">
-                    <div className="space-y-4 flex-1 min-w-0">
-                      <div className="space-y-2">
-                        <div className="news-loading-line news-loading-shimmer w-40" />
-                        <div className="news-loading-line news-loading-shimmer w-32" />
-                      </div>
-                      <div className="space-y-3">
-                        {Array.from({ length: 2 }).map((__, lineIdx) => (
-                          <div
-                            key={`account-order-skeleton-line-${index}-${lineIdx}`}
-                            className="flex items-center gap-4 min-h-[60px]"
-                          >
-                            <div className="h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex-shrink-0">
-                              <div className="h-full w-full bg-slate-100" />
-                            </div>
-                            <div className="flex-1 space-y-2">
-                              <div className="news-loading-line news-loading-shimmer w-48" />
-                              <div className="news-loading-line news-loading-shimmer w-20" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="w-full md:w-auto md:min-w-[12rem] space-y-3">
-                      <div className="h-9 w-full rounded-[10px] bg-slate-100" />
-                      <div className="h-9 w-full rounded-[10px] bg-slate-100" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+        const renderOrdersStatusState = ({
+          title,
+          subtitle,
+          loading = false,
+        }: {
+          title: string;
+          subtitle?: string;
+          loading?: boolean;
+        }) => (
+          <div className="text-center py-12" aria-live="polite" aria-busy={loading}>
+            <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] inline-block">
+              <Package className="h-12 w-12 mx-auto mb-3 text-slate-400" />
+              <p className="text-sm font-medium text-slate-700 mb-1">{title}</p>
+              {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
+            </div>
           </div>
         );
 		    const visibleOrders = cachedAccountOrders
@@ -6332,19 +6263,14 @@ export function Header({
       });
 
     if (accountOrdersLoading && cachedAccountOrders.length === 0) {
-      return showAccountOrdersLoadingState ? renderOrdersLoadingState() : null;
+      return renderOrdersStatusState({ title: "Loading...", loading: true });
     }
 
     if (!visibleOrders.length) {
-      return (
-        <div className="text-center py-12">
-          <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] inline-block">
-            <Package className="h-12 w-12 mx-auto mb-3 text-slate-400" />
-            <p className="text-sm font-medium text-slate-700 mb-1">No orders found</p>
-            <p className="text-xs text-slate-500">Your recent orders will appear here</p>
-          </div>
-        </div>
-      );
+      return renderOrdersStatusState({
+        title: "No orders found",
+        subtitle: "Your recent orders will appear here",
+      });
     }
 
 	    return (
