@@ -86,7 +86,7 @@ class ProductRecommendationServiceTests(unittest.TestCase):
         self.assertEqual(snapshot_kwargs["model_version"], result["modelVersion"])
         self.assertFalse(snapshot_kwargs["fallback"])
 
-    def test_cold_start_uses_global_physician_popularity(self):
+    def test_cold_start_requires_personal_signal(self):
         from python_backend.services import product_recommendation_service as svc
 
         catalog = [
@@ -133,8 +133,8 @@ class ProductRecommendationServiceTests(unittest.TestCase):
             result = svc.get_recommendations({"id": "doctor-1", "role": "doctor"}, limit=10)
 
         self.assertTrue(result["fallback"])
-        self.assertEqual(result["fallbackReason"], "cold_start_global_popularity")
-        self.assertEqual(result["recommendations"][0]["wooProductId"], 202)
+        self.assertEqual(result["fallbackReason"], "cold_start_no_personal_signals")
+        self.assertEqual(result["recommendations"], [])
 
     def test_category_affinity_alone_does_not_recommend_whole_catalog(self):
         from python_backend.services import product_recommendation_service as svc

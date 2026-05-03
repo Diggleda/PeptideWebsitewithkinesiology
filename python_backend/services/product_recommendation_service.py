@@ -24,7 +24,6 @@ RECOMMENDATION_REASON_LABELS = {
     "category_affinity": "category_affinity",
     "tag_affinity": "tag_affinity",
     "similar_physicians": "similar_physicians",
-    "global_popularity": "global_popularity",
 }
 ALLOWED_EVENT_TYPES = {
     "product_view",
@@ -300,7 +299,7 @@ def _current_user_profile(user_id: str) -> Dict[str, Any]:
 def _is_recommendable_product(product_reasons: Set[str], *, has_personal_signal: bool) -> bool:
     if has_personal_signal:
         return bool(product_reasons & PRIMARY_RECOMMENDATION_REASONS)
-    return RECOMMENDATION_REASON_LABELS["global_popularity"] in product_reasons
+    return False
 
 
 def _save_recommendation_snapshot(user_id: str, payload: Dict[str, Any]) -> None:
@@ -449,8 +448,6 @@ def get_recommendations(
                 _add_score(scores, reasons, product_id, min(18.0, 7.0 * tag_overlap), RECOMMENDATION_REASON_LABELS["tag_affinity"])
 
     role_by_user_id = _load_physician_role_lookup()
-    global_quantity: Dict[int, int] = defaultdict(int)
-    global_buyers: Dict[int, Set[str]] = defaultdict(set)
     co_purchase_counts: Dict[int, int] = defaultdict(int)
 
     for order in _recent_orders():
@@ -465,20 +462,12 @@ def get_recommendations(
             if product_id not in candidates:
                 continue
             order_product_ids.add(product_id)
-            global_quantity[product_id] += _item_quantity(item)
-            if order_user_id:
-                global_buyers[product_id].add(order_user_id)
         if order_user_id != user_id and purchased_product_ids and order_product_ids & purchased_product_ids:
             for product_id in order_product_ids - purchased_product_ids:
                 co_purchase_counts[product_id] += 1
 
     for product_id, count in co_purchase_counts.items():
-        _add_score(scores, reasons, product_id, min(44.0, 14.0 * math.log1p(count)), RECOMMENDATION_REASON_LABELS["similar_physicians"])
-
-    for product_id, quantity in global_quantity.items():
-        buyer_count = len(global_buyers.get(product_id) or set())
-        popularity_score = min(30.0, 4.0 * math.log1p(quantity) + 3.0 * math.log1p(buyer_count))
-        _add_score(scores, reasons, product_id, popularity_score, RECOMMENDATION_REASON_LABELS["global_popularity"])
+        _add_score(scores, reasons, product_id, min(72.0, 28.0 * math.log1p(count)), RECOMMENDATION_REASON_LABELS["similar_physicians"])
 
     has_personal_signal = bool(purchased_product_ids or cart_product_ids or event_signal_product_ids)
     recommendation_limit = min(safe_limit, _max_recommendation_results())
@@ -508,7 +497,7 @@ def get_recommendations(
         "recommendations": recommendations,
         "modelVersion": MODEL_VERSION,
         "fallback": not has_personal_signal,
-        "fallbackReason": "cold_start_global_popularity" if not has_personal_signal and recommendations else None,
+        "fallbackReason": "cold_start_no_personal_signals" if not has_personal_signal else None,
     }
     _save_recommendation_snapshot(user_id, payload)
     return payload

@@ -869,9 +869,14 @@ body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 0.32rem;
   width: max-content;
-  max-width: calc(100% - 0.75rem);
-  border: 1px solid rgba(95, 179, 249, 0.82);
+  max-width: none;
+  border: none;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.94);
   color: rgb(95, 179, 249);
@@ -883,7 +888,44 @@ body {
   white-space: nowrap;
   padding: 0.34rem 0.5rem;
   box-shadow: 0 10px 22px -18px rgba(15, 23, 42, 0.7);
+  cursor: help;
+  pointer-events: auto;
+}
+
+.catalog-personalized-product-label__icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  stroke-width: 2.2;
+}
+
+.catalog-personalized-product-label[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.45rem);
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 2rem));
+  transform: translateX(-50%) translateY(0.2rem);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #fff;
+  font-family: 'Lexend', var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 0.5rem 0.6rem;
+  white-space: normal;
+  box-shadow: 0 18px 34px -22px rgba(15, 23, 42, 0.9);
+  opacity: 0;
   pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.catalog-personalized-product-label[data-tooltip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .catalog-skeleton-thumb::after,

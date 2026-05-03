@@ -6,7 +6,7 @@ import { Input } from './ui/input';
 import { ImageWithFallback } from './ImageWithFallback';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
-import { ShoppingCart, Minus, Plus, Loader2, Download, X } from 'lucide-react';
+import { ShoppingCart, Minus, Plus, Loader2, Download, X, Info } from 'lucide-react';
 import { api, wooAPI } from '../services/api';
 import { resolveStaticAssetUrl } from '../lib/assetUrl';
 import protixaIonSystemDossierPdf from '../content/documents/ProtixaIONSystemDossierS.pdf';
@@ -180,6 +180,7 @@ interface ProductCardProps {
   onProductView?: (product: Product) => void;
   proposalMode?: boolean;
   personalizedRecommendation?: boolean;
+  personalizedRecommendationReason?: string | null;
 }
 
 const pickDefaultVariation = (variations: ProductVariation[] | undefined | null) => {
@@ -726,6 +727,7 @@ export function ProductCard({
   onProductView,
   proposalMode = false,
   personalizedRecommendation = false,
+  personalizedRecommendationReason = null,
 }: ProductCardProps) {
   type DocumentationTabId = 'certificate' | 'nasals';
   const isCheckoutAddOnCategory = useMemo(() => {
@@ -1558,8 +1560,13 @@ export function ProductCard({
               className="product-image-frame__img"
             />
             {personalizedRecommendation && (
-              <span className="catalog-personalized-product-label">
+              <span
+                className="catalog-personalized-product-label"
+                data-tooltip={personalizedRecommendationReason || undefined}
+                title={personalizedRecommendationReason || undefined}
+              >
                 Personalized Recommendation
+                <Info className="catalog-personalized-product-label__icon" aria-hidden="true" />
               </span>
             )}
           </div>

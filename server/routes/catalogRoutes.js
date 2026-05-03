@@ -120,6 +120,7 @@ const fetchCatalogSimulationCandidates = async (limit) => {
 const buildRecommendations = (user, limit) => {
   const scores = new Map();
   const reasons = new Map();
+  const primaryReasons = new Set(['repeat_purchase', 'cart_intent', 'view_intent', 'similar_physicians']);
   const addScore = (productId, amount, reason) => {
     if (!productId || !Number.isFinite(amount) || amount === 0) return;
     scores.set(productId, (scores.get(productId) || 0) + amount);
@@ -149,7 +150,6 @@ const buildRecommendations = (user, limit) => {
   }
 
   const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
-  const globalQuantity = new Map();
   const coPurchaseCounts = new Map();
   for (const order of orderRepository.getAll()) {
     const orderUserId = String(order?.userId || order?.user_id || '').trim();
@@ -162,7 +162,6 @@ const buildRecommendations = (user, limit) => {
       const productId = itemProductId(item);
       if (!productId) continue;
       productIds.add(productId);
-      globalQuantity.set(productId, (globalQuantity.get(productId) || 0) + itemQuantity(item));
     }
     if (orderUserId && orderUserId !== userId && purchased.size > 0) {
       const overlaps = [...productIds].some((productId) => purchased.has(productId));
@@ -177,14 +176,11 @@ const buildRecommendations = (user, limit) => {
   }
 
   for (const [productId, count] of coPurchaseCounts.entries()) {
-    addScore(productId, Math.min(44, 14 * Math.log1p(count)), 'similar_physicians');
-  }
-  for (const [productId, quantity] of globalQuantity.entries()) {
-    addScore(productId, Math.min(30, 5 * Math.log1p(quantity)), 'global_popularity');
+    addScore(productId, Math.min(72, 28 * Math.log1p(count)), 'similar_physicians');
   }
 
   const recommendations = [...scores.entries()]
-    .filter(([, score]) => score > 0)
+    .filter(([productId, score]) => score > 0 && [...(reasons.get(productId) || [])].some((reason) => primaryReasons.has(reason)))
     .sort((a, b) => b[1] - a[1] || a[0] - b[0])
     .slice(0, limit)
     .map(([productId, score]) => ({
@@ -199,7 +195,7 @@ const buildRecommendations = (user, limit) => {
     recommendations,
     modelVersion: MODEL_VERSION,
     fallback: purchased.size === 0,
-    fallbackReason: purchased.size === 0 && recommendations.length > 0 ? 'cold_start_global_popularity' : null,
+    fallbackReason: purchased.size === 0 ? 'cold_start_no_personal_signals' : null,
   };
 };
 
@@ -224,7 +220,7 @@ const buildSimulatedRecommendations = async (user, existingResult, limit) => {
       productId: `woo-${candidate.productId}`,
       wooProductId: candidate.productId,
       score: Math.max(50, 415 - index * 22),
-      reasons: ['node_simulation', 'global_popularity'],
+      reasons: ['similar_physicians'],
       modelVersion: SIMULATION_MODEL_VERSION,
     }));
 

@@ -3914,6 +3914,45 @@ const PRODUCT_RECOMMENDATION_SIMULATION_EMAILS = new Set(
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean),
 );
+const CATALOG_RECOMMENDATION_REASON_COPY: Record<string, string> = {
+  repeat_purchase: "it was purchased before",
+  cart_intent: "there was recent cart or checkout intent",
+  view_intent: "it was recently viewed",
+  similar_physicians: "physicians with similar orders also purchased it",
+  category_affinity: "it matches previously ordered categories",
+  tag_affinity: "it matches previously ordered product tags",
+};
+const CATALOG_RECOMMENDATION_REASON_WEIGHT: Record<string, number> = {
+  repeat_purchase: 700,
+  cart_intent: 650,
+  similar_physicians: 620,
+  category_affinity: 240,
+  tag_affinity: 180,
+  view_intent: 110,
+};
+const formatCatalogRecommendationReason = (reasons: unknown): string => {
+  const normalizedReasons = Array.isArray(reasons)
+    ? reasons
+        .map((reason) => String(reason || "").trim())
+        .filter(Boolean)
+    : [];
+  const reasonText = Array.from(new Set(normalizedReasons))
+    .sort(
+      (a, b) =>
+        (CATALOG_RECOMMENDATION_REASON_WEIGHT[b] || 0) -
+          (CATALOG_RECOMMENDATION_REASON_WEIGHT[a] || 0) ||
+        a.localeCompare(b),
+    )
+    .map((reason) => CATALOG_RECOMMENDATION_REASON_COPY[reason] || reason.replace(/_/g, " "))
+    .filter(Boolean);
+  if (reasonText.length === 0) {
+    return "Recommended based on order history.";
+  }
+  if (reasonText.length === 1) {
+    return `Recommended because ${reasonText[0]}.`;
+  }
+  return `Recommended because ${reasonText.slice(0, -1).join(", ")} and ${reasonText[reasonText.length - 1]}.`;
+};
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
   "v2.1.10";
@@ -5314,6 +5353,7 @@ interface LazyCatalogProductCardProps {
   pricingMarkupPercent?: number | null;
   proposalMode?: boolean;
   personalizedRecommendation?: boolean;
+  personalizedRecommendationReason?: string | null;
   onAddToCart: (
     productId: string,
     variationId: string | undefined | null,
@@ -5331,6 +5371,7 @@ const LazyCatalogProductCard = ({
   pricingMarkupPercent,
   proposalMode = false,
   personalizedRecommendation = false,
+  personalizedRecommendationReason = null,
   onAddToCart,
   onProductView,
   onEnsureVariants,
@@ -5345,6 +5386,7 @@ const LazyCatalogProductCard = ({
       product={cardProduct}
       proposalMode={proposalMode}
       personalizedRecommendation={personalizedRecommendation}
+      personalizedRecommendationReason={personalizedRecommendationReason}
       onEnsureVariants={
         typeof onEnsureVariants === "function"
           ? (opts) => onEnsureVariants(product, opts)
@@ -18829,6 +18871,7 @@ function MainApp() {
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const catalogProductsRef = useRef<Product[]>([]);
   const [catalogRecommendationScores, setCatalogRecommendationScores] = useState<Record<string, number>>({});
+  const [catalogRecommendationReasons, setCatalogRecommendationReasons] = useState<Record<string, string>>({});
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [catalogTypes, setCatalogTypes] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -18932,9 +18975,19 @@ function MainApp() {
     [catalogRecommendationScores],
   );
 
+  const getCatalogRecommendationReason = useCallback(
+    (product: Product) =>
+      catalogRecommendationReasons[product.id] ||
+      (product.wooId
+        ? catalogRecommendationReasons[`woo-${product.wooId}`] || ""
+        : ""),
+    [catalogRecommendationReasons],
+  );
+
   useEffect(() => {
     if (!shouldUseProductRecommendations || catalogProducts.length === 0) {
       setCatalogRecommendationScores({});
+      setCatalogRecommendationReasons({});
       return;
     }
 
@@ -18945,32 +18998,49 @@ function MainApp() {
       .then((payload) => {
         if (cancelled) return;
         const nextScores: Record<string, number> = {};
+        const nextReasons: Record<string, string> = {};
         const recommendations = Array.isArray(payload?.recommendations)
           ? payload.recommendations
           : [];
+        const applyRecommendationKey = (
+          key: string,
+          score: number,
+          reasonText: string,
+        ) => {
+          if (!key) return;
+          if (score >= (nextScores[key] || 0)) {
+            nextScores[key] = score;
+            nextReasons[key] = reasonText;
+          }
+        };
         for (const recommendation of recommendations) {
           const score = Number(recommendation?.score);
           if (!Number.isFinite(score) || score <= 0) {
             continue;
           }
+          const reasonText = formatCatalogRecommendationReason(
+            recommendation?.reasons,
+          );
           const productId =
             typeof recommendation?.productId === "string"
               ? recommendation.productId.trim()
               : "";
           if (productId) {
-            nextScores[productId] = Math.max(nextScores[productId] || 0, score);
+            applyRecommendationKey(productId, score, reasonText);
           }
           const wooProductId = Number(recommendation?.wooProductId);
           if (Number.isFinite(wooProductId) && wooProductId > 0) {
             const wooKey = `woo-${Math.floor(wooProductId)}`;
-            nextScores[wooKey] = Math.max(nextScores[wooKey] || 0, score);
+            applyRecommendationKey(wooKey, score, reasonText);
           }
         }
         setCatalogRecommendationScores(nextScores);
+        setCatalogRecommendationReasons(nextReasons);
       })
       .catch((error) => {
         if (cancelled) return;
         setCatalogRecommendationScores({});
+        setCatalogRecommendationReasons({});
         if (CATALOG_DEBUG) {
           console.warn("[Recommendations] Failed to load catalog recommendations", {
             message:
@@ -28464,6 +28534,7 @@ function MainApp() {
                           shouldUseProductRecommendations &&
                           getCatalogRecommendationScore(product) > 0
                         }
+                        personalizedRecommendationReason={getCatalogRecommendationReason(product)}
 	                      pricingMarkupPercent={delegatePricingMarkupPercent}
 	                      proposalMode={isDelegateMode}
 			                  onEnsureVariants={ensureCatalogProductHasVariants}
@@ -40471,7 +40542,7 @@ function MainApp() {
 		                    placeholder={
 		                      salesDoctorNotesLoading
 		                        ? "Loading notes..."
-		                        : "Add notes about this physician"
+		                        : "Add notes"
 		                    }
 		                    className="text-sm notes-textarea"
 		                    disabled={salesDoctorNotesLoading}
