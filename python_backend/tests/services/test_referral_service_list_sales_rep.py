@@ -95,6 +95,68 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual(result[0]["id"], "prospect-1")
         self.assertEqual(result[0]["referredContactAccountId"], "doctor-1")
 
+    def test_admin_mine_scope_returns_only_owned_sales_prospects(self) -> None:
+        admin_user = {
+            "id": "admin-1",
+            "role": "admin",
+            "email": "admin@example.com",
+            "salesRepId": None,
+        }
+        own_prospect = {
+            "id": "prospect-own",
+            "salesRepId": "admin-1",
+            "contactName": "Own Lead",
+            "contactEmail": "own-lead@example.com",
+            "status": "pending",
+            "createdAt": "2026-04-10T00:00:00Z",
+            "updatedAt": "2026-04-10T00:00:00Z",
+        }
+        house_prospect = {
+            "id": "prospect-house",
+            "salesRepId": "house",
+            "contactName": "House Lead",
+            "contactEmail": "house-lead@example.com",
+            "status": "pending",
+            "createdAt": "2026-04-11T00:00:00Z",
+            "updatedAt": "2026-04-11T00:00:00Z",
+        }
+        other_prospect = {
+            "id": "prospect-other",
+            "salesRepId": "rep-other",
+            "contactName": "Other Lead",
+            "contactEmail": "other-lead@example.com",
+            "status": "pending",
+            "createdAt": "2026-04-12T00:00:00Z",
+            "updatedAt": "2026-04-12T00:00:00Z",
+        }
+
+        def find_by_sales_rep(identifier: str):
+            mapping = {
+                "admin-1": [own_prospect],
+                "house": [house_prospect],
+                "rep-other": [other_prospect],
+            }
+            return mapping.get(str(identifier), [])
+
+        with patch.object(service, "_resolve_sales_rep_id", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value=None), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"admin-1"}), \
+            patch.object(service, "_resolve_sales_rep_aliases", return_value={"admin-1"}), \
+            patch.object(service, "count_orders_for_doctor", return_value=0), \
+            patch.object(service.user_repository, "find_by_id", side_effect=lambda identifier: admin_user if str(identifier) == "admin-1" else None), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep", side_effect=find_by_sales_rep), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[own_prospect, house_prospect, other_prospect]), \
+            patch.object(service, "_load_contact_form_referrals", return_value=[house_prospect]) as load_contact_forms:
+            result = service.list_referrals_for_sales_rep(
+                "admin-1",
+                scope_all=False,
+                token_role="admin",
+            )
+
+        self.assertEqual([row["id"] for row in result], ["prospect-own"])
+        load_contact_forms.assert_not_called()
+
     def test_scope_all_keeps_all_leads_visible_for_sales_lead_overview(self) -> None:
         sales_lead_user = {
             "id": "sales-lead-1",
@@ -191,6 +253,7 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         users = [
             {"id": "doctor-1", "role": "doctor", "email": "doctor@example.com", "name": "Doctor One"},
             {"id": "doctor-2", "role": "test_doctor", "email": "test@doctor.com", "name": "Hidden Test"},
+            {"id": "doctor-3", "role": "test_doctor", "email": "test-physician@example.com", "name": "Hidden Test Physician"},
             {"id": "rep-1", "role": "sales_rep", "email": "rep@example.com", "name": "Rep One"},
         ]
         leads = [

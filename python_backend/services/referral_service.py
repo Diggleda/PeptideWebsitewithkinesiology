@@ -462,7 +462,7 @@ def get_active_physicians_csv_data() -> Dict[str, object]:
         if not isinstance(account, dict):
             continue
         role = _normalize_role(account.get("role"))
-        if role not in ("doctor", "test_doctor"):
+        if role != "doctor":
             continue
         emails = _sanitize_email_list(
             [
@@ -1991,16 +1991,6 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         for alias in prospect_aliases or {str(sales_rep_id)}:
             prospects.extend(sales_prospect_repository.find_by_sales_rep(alias))
 
-    # Admin "mine" dashboards should still include the house pipeline so admins can track
-    # inbound/house contacts without leaking other reps' pipelines.
-    if token_is_admin and not scope_all:
-        try:
-            from ..repositories.sales_prospect_repository import HOUSE_SALES_REP_ID
-
-            prospects = [*prospects, *sales_prospect_repository.find_by_sales_rep(HOUSE_SALES_REP_ID)]
-        except Exception:
-            pass
-
     seen_prospect_ids: set[str] = set()
     normalized_prospects: list[dict] = []
     for p in prospects or []:
@@ -2015,8 +2005,9 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
 
     manual_leads = [_make_manual_lead(p) for p in normalized_prospects if _is_manual_prospect(p)]
 
-    # All-scope dashboards include house contact-form leads; they are not tied to any rep sales code.
-    if token_is_admin or scope_all:
+    # All-scope dashboards include house contact-form leads; scoped "mine"
+    # views only show contact forms already assigned through sales_prospects.
+    if scope_all:
         contact_form_leads = _load_contact_form_referrals(sales_rep_id=None)
     else:
         contact_form_leads = [_make_contact_form_lead(p) for p in normalized_prospects if _is_contact_form_prospect(p)]

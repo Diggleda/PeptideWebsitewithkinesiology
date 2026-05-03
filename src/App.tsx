@@ -20088,7 +20088,7 @@ function MainApp() {
     rawAccounts.forEach((account: any) => {
       if (!account || typeof account !== "object") return;
       const role = normalizeRole(account?.role);
-      if (role !== "doctor" && role !== "test_doctor") return;
+      if (role !== "doctor") return;
       const emails = collectEmails(
         account?.email,
         account?.userEmail,
@@ -20198,7 +20198,7 @@ function MainApp() {
     const activeDoctorAccountRows = rawAccounts.filter((account) => {
       const role = normalizeRole(account?.role || "");
       return (
-        (role === "doctor" || role === "test_doctor") &&
+        role === "doctor" &&
         !isInactiveUserStatus(account?.status)
       );
     });
@@ -23069,11 +23069,12 @@ function MainApp() {
             };
           });
         } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
-          // Request the all-scope dashboard here; backend role checks decide whether it can be applied.
-          const scopeAll = true;
+          const dashboardScope: "mine" | "all" =
+            isSalesLead(user.role) && !isAdmin(user.role) ? "all" : "mine";
           const dashboardResponse = await referralAPI.getSalesRepDashboard({
-            salesRepId: scopeAll ? undefined : user.salesRepId || user.id,
-            scope: scopeAll ? "all" : "mine",
+            salesRepId:
+              dashboardScope === "all" ? undefined : user.salesRepId || user.id,
+            scope: dashboardScope,
             debug: activePhysiciansDebugEnabled
               ? "active_physicians"
               : undefined,
