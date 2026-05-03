@@ -148,24 +148,15 @@
     "officeCity": null,
     "officeState": null,
     "officePostalCode": null,
-    "lastSeenAt": "2026-05-03T01:43:01.712Z",
-    "lastInteractionAt": "2026-05-03T01:43:01.712Z",
+    "lastSeenAt": "2026-05-03T02:03:15.881Z",
+    "lastInteractionAt": "2026-05-03T02:03:02.403Z",
     "isOnline": true,
-    "isIdle": false,
+    "isIdle": true,
     "devCommission": false,
     "receiveClientOrderUpdateEmails": false,
     "handDelivered": false,
     "hand_delivered": 0,
-    "cart": [
-      {
-        "productId": "woo-1367",
-        "productWooId": 1367,
-        "variantId": "woo-variation-1368",
-        "variantWooId": 1368,
-        "quantity": 1,
-        "note": null
-      }
-    ],
+    "cart": [],
     "delegateLinksEnabled": false,
     "delegate_links_enabled": 0,
     "resellerPermitFilePath": null,

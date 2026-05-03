@@ -19955,7 +19955,17 @@ function MainApp() {
       ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
       ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
       ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
+      ...(isAdmin(user?.role) && Array.isArray(adminLiveUsers)
+        ? adminLiveUsers
+        : []),
+      ...(!isAdmin(user?.role) && Array.isArray(scopedLiveClients)
+        ? scopedLiveClients
+        : []),
     ];
+    const rawLeadRecords = Array.isArray(normalizedReferrals)
+      ? normalizedReferrals
+      : [];
+
     const normalizeDisplayName = (...values: unknown[]) => {
       for (const value of values) {
         if (Array.isArray(value)) {
@@ -19995,12 +20005,6 @@ function MainApp() {
       values.forEach(addValue);
       return emails;
     };
-    const isInactiveUserStatus = (value: unknown) => {
-      const normalized = String(value || "active").trim().toLowerCase();
-      return ["inactive", "disabled", "deleted", "archived", "suspended"].includes(
-        normalized,
-      );
-    };
     const compareRows = (a: PhysicianCsvRow, b: PhysicianCsvRow) => {
       const nameCompare = a.name.localeCompare(b.name, undefined, {
         sensitivity: "base",
@@ -20012,21 +20016,32 @@ function MainApp() {
 
     const networkUsers: PhysicianCsvRow[] = [];
     const leads: PhysicianCsvRow[] = [];
-    const networkEmails = new Set<string>();
-    const leadEmails = new Set<string>();
+    const networkUserKeys = new Set<string>();
+    const leadKeys = new Set<string>();
 
-	    rawAccounts.forEach((account: any) => {
-	      if (!account || typeof account !== "object") return;
-	      const role = normalizeRole(account?.role);
-	      if (role !== "doctor" && role !== "test_doctor") return;
-	      if (isInactiveUserStatus(account?.status)) return;
-	      const emails = collectEmails(
+    rawAccounts.forEach((account: any) => {
+      if (!account || typeof account !== "object") return;
+      const role = normalizeRole(account?.role);
+      if (role !== "doctor" && role !== "test_doctor") return;
+      const emails = collectEmails(
         account?.email,
         account?.userEmail,
         account?.doctorEmail,
         account?.contactEmail,
       );
-      if (emails.length === 0) return;
+      const accountId = String(
+        account?.id ??
+          account?.userId ??
+          account?.doctorId ??
+          account?.accountId ??
+          account?.account_id ??
+          "",
+      ).trim();
+      const email = emails[0] || "";
+      if (email === "test@doctor.com") return;
+      const key = accountId ? `id:${accountId}` : email ? `email:${email}` : "";
+      if (!key || networkUserKeys.has(key)) return;
+      networkUserKeys.add(key);
       const name =
         normalizeDisplayName(
           account?.name,
@@ -20034,23 +20049,14 @@ function MainApp() {
           account?.doctorName,
           account?.displayName,
           account?.username,
-        ) || emails[0];
-      emails.forEach((email) => {
-        if (email === "test@doctor.com") return;
-        if (networkEmails.has(email)) return;
-        networkEmails.add(email);
-        networkUsers.push({ name, email });
-      });
+        ) ||
+        email ||
+        (accountId ? `Physician ${accountId}` : "Physician");
+      networkUsers.push({ name, email });
     });
 
-    activeProspectEntries.forEach(({ record }) => {
+    rawLeadRecords.forEach((record: any, index: number) => {
       if (!record || typeof record !== "object") return;
-      if ((record as any)?.syntheticAccountProspect) return;
-      if ((record as any)?.referredContactHasAccount === true) return;
-      if (isDeletedProspectLead(record)) return;
-      if (record?.creditIssuedAt) return;
-      if (sanitizeReferralStatus(record?.status) === "nuture") return;
-
       const emails = collectEmails(
         (record as any)?.contactEmails,
         (record as any)?.contact_emails,
@@ -20059,8 +20065,19 @@ function MainApp() {
         (record as any)?.email,
         (record as any)?.doctorEmail,
         (record as any)?.userEmail,
-      ).filter((email) => !networkEmails.has(email));
+      );
       if (emails.length === 0) return;
+      const leadId = String(
+        record?.id ??
+          (record as any)?.leadId ??
+          (record as any)?.prospectId ??
+          (record as any)?.referralId ??
+          "",
+      ).trim();
+      const email = emails[0];
+      const key = leadId ? `id:${leadId}` : `email:${email}:idx:${index}`;
+      if (leadKeys.has(key)) return;
+      leadKeys.add(key);
       const name =
         normalizeDisplayName(
           record?.referredContactName,
@@ -20068,19 +20085,22 @@ function MainApp() {
           (record as any)?.name,
           (record as any)?.doctorName,
           record?.referredContactAccountName,
-        ) || emails[0];
-      emails.forEach((email) => {
-        if (leadEmails.has(email)) return;
-        leadEmails.add(email);
-        leads.push({ name, email });
-      });
+        ) || email;
+      leads.push({ name, email });
     });
 
     return {
       networkUsers: networkUsers.sort(compareRows),
       leads: leads.sort(compareRows),
     };
-  }, [activeProspectEntries, normalizeEmailIdentity, salesRepDashboard]);
+  }, [
+    adminLiveUsers,
+    normalizeEmailIdentity,
+    normalizedReferrals,
+    salesRepDashboard,
+    scopedLiveClients,
+    user?.role,
+  ]);
 
   const activePhysiciansCsvDebug = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
@@ -20222,13 +20242,23 @@ function MainApp() {
       if (totalRows === 0) {
         toast.error("No active physicians available to download.");
         return;
-      }
+	      }
 
-      const exportedAt = new Date();
-      const exportedAtIso = exportedAt.toISOString();
-      const stamp = exportedAtIso.replace(/[:.]/g, "-");
-      const rows: string[] = [
-        escapeCsvCell("Active Physicians"),
+	      const exportedAt = new Date();
+	      const filenameDate = exportedAt.toLocaleDateString("en-US", {
+	        month: "long",
+	        day: "numeric",
+	        year: "numeric",
+	      });
+	      const filenameTime = exportedAt
+	        .toLocaleTimeString("en-US", {
+	          hour: "numeric",
+	          minute: "2-digit",
+	          hour12: true,
+	        })
+	        .replace(":", "-");
+	      const rows: string[] = [
+	        escapeCsvCell("Active Physicians"),
         "",
         escapeCsvCell("Active Users in Network"),
         ["Name", "Email"].join(","),
@@ -20244,12 +20274,12 @@ function MainApp() {
       ];
       const blob = new Blob([rows.join("\n")], {
         type: "text/csv;charset=utf-8",
-      });
-      triggerBrowserDownload(
-        blob,
-        `active-physicians_${FRONTEND_BUILD_ID}_${stamp}.csv`,
-        { forceMimeType: "text/csv;charset=utf-8" },
-      );
+	      });
+	      triggerBrowserDownload(
+	        blob,
+	        `Active Physicians - ${filenameDate} at ${filenameTime}.csv`,
+	        { forceMimeType: "text/csv;charset=utf-8" },
+	      );
     } catch (error) {
       console.error("[Active Physicians] CSV export failed", error);
       toast.error("Unable to download active physicians right now.");
@@ -22964,8 +22994,8 @@ function MainApp() {
             };
           });
         } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
-          // Sales leads should only see their own prospects (same scope as reps).
-          const scopeAll = false;
+          // Request the all-scope dashboard here; backend role checks decide whether it can be applied.
+          const scopeAll = true;
           const dashboardResponse = await referralAPI.getSalesRepDashboard({
             salesRepId: scopeAll ? undefined : user.salesRepId || user.id,
             scope: scopeAll ? "all" : "mine",

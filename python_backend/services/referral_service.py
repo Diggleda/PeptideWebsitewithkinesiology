@@ -1866,7 +1866,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         }
         return _apply_referred_contact_account_fields(base)
 
-    if is_admin and scope_all:
+    if scope_all:
         prospects = sales_prospect_repository.get_all()
     else:
         prospect_aliases = _resolve_sales_rep_owner_aliases(str(sales_rep_id))
@@ -1898,8 +1898,8 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
 
     manual_leads = [_make_manual_lead(p) for p in normalized_prospects if _is_manual_prospect(p)]
 
-    # Admin dashboards include house contact-form leads; they are not tied to any rep sales code.
-    if token_is_admin:
+    # All-scope dashboards include house contact-form leads; they are not tied to any rep sales code.
+    if token_is_admin or scope_all:
         contact_form_leads = _load_contact_form_referrals(sales_rep_id=None)
     else:
         contact_form_leads = [_make_contact_form_lead(p) for p in normalized_prospects if _is_contact_form_prospect(p)]
