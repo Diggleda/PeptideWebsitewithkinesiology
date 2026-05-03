@@ -3265,6 +3265,7 @@ export const referralAPI = {
     scope?: 'mine' | 'all';
     context?: 'dashboard' | 'modal';
     include?: string[] | null;
+    debug?: string | null;
   }) => {
     if (!getAuthToken()) {
       throwLocalAuthRequired();
@@ -3287,6 +3288,9 @@ export const referralAPI = {
       if (include) {
         params.set('include', include);
       }
+    }
+    if (options?.debug) {
+      params.set('debug', String(options.debug));
     }
     const query = params.toString();
     // Use non-admin path to avoid infra path-based restrictions; backend supports both.

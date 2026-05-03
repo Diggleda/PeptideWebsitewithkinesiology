@@ -298,6 +298,10 @@ def admin_dashboard():
         can_scope_all = token_role == "admin" or role == "admin" or token_role in ("sales_lead", "saleslead", "sales-lead") or role in ("sales_lead", "saleslead", "sales-lead")
         raw_include = str(request.args.get("include") or "").strip().lower()
         includes = {part.strip() for part in raw_include.split(",") if part.strip()}
+        debug_active_physicians = (
+            str(request.args.get("debug") or "").strip().lower()
+            in ("active_physicians", "active-physicians", "activephysicians")
+        )
 
         def wants(*names: str) -> bool:
             if not includes:
@@ -365,6 +369,40 @@ def admin_dashboard():
             payload["statuses"] = referral_service.get_referral_status_choices()
         if wants("referralcreditamount", "referralCreditAmount"):
             payload["referralCreditAmount"] = referral_service.get_referral_credit_amount()
+
+        if debug_active_physicians:
+            def _as_list(value):
+                return value if isinstance(value, list) else []
+
+            def _role_counts(rows):
+                counts = {}
+                for row in _as_list(rows):
+                    role_key = _normalize_role(row.get("role") if isinstance(row, dict) else None) or "missing"
+                    counts[role_key] = counts.get(role_key, 0) + 1
+                return counts
+
+            debug_users = _as_list(payload.get("users"))
+            debug_referrals = _as_list(payload.get("referrals"))
+            payload["_debug"] = {
+                "activePhysicians": {
+                    "requestedSalesRepId": requested_sales_rep_id or None,
+                    "targetSalesRepId": target_sales_rep_id or None,
+                    "scopeAllRequested": scope_all,
+                    "scopeAllApplied": bool(scope_all and can_scope_all),
+                    "canScopeAll": bool(can_scope_all),
+                    "tokenRole": token_role or None,
+                    "userRole": role or None,
+                    "includes": sorted(includes) if includes else ["*"],
+                    "counts": {
+                        "users": len(debug_users),
+                        "referrals": len(debug_referrals),
+                    },
+                    "userRoleCounts": _role_counts(debug_users),
+                    "scope": referral_service.get_sales_rep_scope_diagnostics(
+                        target_sales_rep_id,
+                    ),
+                }
+            }
 
         return payload
 

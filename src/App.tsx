@@ -8763,6 +8763,28 @@ function MainApp() {
     return ["true", "yes", "on"].includes(raw.toLowerCase().trim());
   }, []);
 
+  const activePhysiciansDebugEnabled = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const raw = new URLSearchParams(window.location.search).get(
+      "debugActivePhysicians",
+    );
+    if (raw !== null) {
+      if (raw === "" || raw === "1") return true;
+      return ["true", "yes", "on"].includes(raw.toLowerCase().trim());
+    }
+    try {
+      return ["1", "true", "yes", "on"].includes(
+        String(
+          window.localStorage.getItem("trufusion:debug-active-physicians") || "",
+        )
+          .toLowerCase()
+          .trim(),
+      );
+    } catch {
+      return false;
+    }
+  }, []);
+
   const accountIdentitySet = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
     const rawAccounts = [
@@ -20060,6 +20082,138 @@ function MainApp() {
     };
   }, [activeProspectEntries, normalizeEmailIdentity, salesRepDashboard]);
 
+  const activePhysiciansCsvDebug = useMemo(() => {
+    const dashboardAny = salesRepDashboard as any;
+    const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+    const users = asArray(dashboardAny?.users);
+    const accounts = asArray(dashboardAny?.accounts);
+    const doctors = asArray(dashboardAny?.doctors);
+    const referrals = asArray(dashboardAny?.referrals);
+    const rawAccounts = [...users, ...accounts, ...doctors];
+    const countBy = (
+      rows: any[],
+      getKey: (row: any) => string,
+    ): Record<string, number> =>
+      rows.reduce<Record<string, number>>((acc, row) => {
+        const key = getKey(row) || "missing";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+    const isInactiveUserStatus = (value: unknown) => {
+      const normalized = String(value || "active").trim().toLowerCase();
+      return ["inactive", "disabled", "deleted", "archived", "suspended"].includes(
+        normalized,
+      );
+    };
+    const roleCounts = countBy(rawAccounts, (account) =>
+      normalizeRole(account?.role || "") || "missing",
+    );
+    const activeDoctorAccountRows = rawAccounts.filter((account) => {
+      const role = normalizeRole(account?.role || "");
+      return (
+        (role === "doctor" || role === "test_doctor") &&
+        !isInactiveUserStatus(account?.status)
+      );
+    });
+    const activeProspectStatusCounts = countBy(activeProspectEntries, ({ record }) =>
+      sanitizeReferralStatus(record?.status || "") || "missing",
+    );
+    const backendDebug =
+      dashboardAny?._debug?.activePhysicians ||
+      dashboardAny?.debug?.activePhysicians ||
+      null;
+
+    return {
+      build: FRONTEND_BUILD_ID,
+      asset: FRONTEND_ASSET_NAME,
+      user: {
+        id: user?.id || null,
+        role: user?.role || null,
+        salesRepId: user?.salesRepId || null,
+      },
+      dashboard: {
+        version: dashboardAny?.version || null,
+        currentSalesRepId: dashboardAny?.currentSalesRepId || null,
+        hasUsersKey: Object.prototype.hasOwnProperty.call(
+          dashboardAny || {},
+          "users",
+        ),
+        hasAccountsKey: Object.prototype.hasOwnProperty.call(
+          dashboardAny || {},
+          "accounts",
+        ),
+        hasDoctorsKey: Object.prototype.hasOwnProperty.call(
+          dashboardAny || {},
+          "doctors",
+        ),
+        hasReferralsKey: Object.prototype.hasOwnProperty.call(
+          dashboardAny || {},
+          "referrals",
+        ),
+      },
+      rawCounts: {
+        users: users.length,
+        accounts: accounts.length,
+        doctors: doctors.length,
+        referrals: referrals.length,
+        combinedAccountRows: rawAccounts.length,
+      },
+      derivedCounts: {
+        activeDoctorAccountRows: activeDoctorAccountRows.length,
+        activeProspectEntries: activeProspectEntries.length,
+        csvNetworkUsers: activePhysiciansCsvData.networkUsers.length,
+        csvLeads: activePhysiciansCsvData.leads.length,
+      },
+      roleCounts,
+      accountStatusCounts: countBy(rawAccounts, (account) =>
+        String(account?.status || "active").trim().toLowerCase() || "missing",
+      ),
+      activeProspectStatusCounts,
+      backend: backendDebug,
+      sampleAccounts: rawAccounts.slice(0, 5).map((account) => ({
+        id: account?.id || account?.userId || account?.doctorId || null,
+        role: account?.role || null,
+        status: account?.status || null,
+        salesRepId: account?.salesRepId || account?.sales_rep_id || null,
+        hasEmail: Boolean(
+          account?.email ||
+            account?.userEmail ||
+            account?.doctorEmail ||
+            account?.contactEmail,
+        ),
+      })),
+      sampleProspects: activeProspectEntries.slice(0, 5).map(({ kind, record }) => ({
+        kind,
+        id: record?.id || null,
+        status: record?.status || null,
+        salesRepId: record?.salesRepId || null,
+        hasEmail: Boolean(
+          (record as any)?.contactEmails ||
+            (record as any)?.contact_emails ||
+            record?.referredContactEmail ||
+            (record as any)?.contactEmail ||
+            (record as any)?.email,
+        ),
+        referredContactHasAccount: Boolean(
+          (record as any)?.referredContactHasAccount,
+        ),
+        creditIssuedAt: record?.creditIssuedAt || null,
+      })),
+    };
+  }, [
+    activePhysiciansCsvData,
+    activeProspectEntries,
+    salesRepDashboard,
+    user?.id,
+    user?.role,
+    user?.salesRepId,
+  ]);
+
+  useEffect(() => {
+    if (!activePhysiciansDebugEnabled) return;
+    console.info("[Active Physicians CSV Debug]", activePhysiciansCsvDebug);
+  }, [activePhysiciansCsvDebug, activePhysiciansDebugEnabled]);
+
   const downloadActivePhysiciansCsv = useCallback(() => {
     try {
       const totalRows =
@@ -22809,26 +22963,27 @@ function MainApp() {
               salesRep: responseSalesRep,
             };
           });
-	        } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
-	          // Sales leads should only see their own prospects (same scope as reps).
-		          const scopeAll = false;
-		          const dashboardResponse = await referralAPI.getSalesRepDashboard({
-		            salesRepId: scopeAll
-		              ? undefined
-		              : user.salesRepId || user.id,
-		            scope: scopeAll ? "all" : "mine",
-		            include: salesRepDashboardRef.current
-		              ? [
-		                  "users",
-		                  "referrals",
-		                  "statuses",
-		                  "referralCreditAmount",
-		                  "currentSalesRep",
-		                  "currentSalesRepId",
-		                  "currentSalesRepAllowedRetail",
-		                ]
-		              : undefined,
-		          });
+        } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
+          // Sales leads should only see their own prospects (same scope as reps).
+          const scopeAll = false;
+          const dashboardResponse = await referralAPI.getSalesRepDashboard({
+            salesRepId: scopeAll ? undefined : user.salesRepId || user.id,
+            scope: scopeAll ? "all" : "mine",
+            debug: activePhysiciansDebugEnabled
+              ? "active_physicians"
+              : undefined,
+            include: salesRepDashboardRef.current
+              ? [
+                  "users",
+                  "referrals",
+                  "statuses",
+                  "referralCreditAmount",
+                  "currentSalesRep",
+                  "currentSalesRepId",
+                  "currentSalesRepAllowedRetail",
+                ]
+              : undefined,
+          });
           const dashboard = mergeDashboardCollectionsWithFallback(
             dashboardResponse,
             salesRepDashboardRef.current,
@@ -22951,7 +23106,14 @@ function MainApp() {
         }
       }
     },
-    [user, setUser, referralPollingSuppressed, hasAuthToken],
+    [
+      user,
+      setUser,
+      referralPollingSuppressed,
+      hasAuthToken,
+      activePhysiciansDebugEnabled,
+      mergeDashboardCollectionsWithFallback,
+    ],
   );
 
   const tracedRefreshReferralData = useCallback(
@@ -28658,14 +28820,24 @@ function MainApp() {
 	              onClick={downloadActivePhysiciansCsv}
 	              disabled={totalCount === 0}
 	              title="Download CSV"
-	            >
-	              <Download className="h-4 w-4" aria-hidden="true" />
-	              Download CSV
-	            </Button>
-	          </div>
-	        </div>
-	      );
-	    };
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download CSV
+            </Button>
+          </div>
+          {activePhysiciansDebugEnabled && (
+            <details className="mt-4 rounded-lg border border-slate-200 bg-white/70 p-3 text-left">
+              <summary className="cursor-pointer text-xs font-semibold text-slate-700">
+                Active Physicians debug
+              </summary>
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700">
+                {JSON.stringify(activePhysiciansCsvDebug, null, 2)}
+              </pre>
+            </details>
+          )}
+        </div>
+      );
+    };
     const renderPendingResellerPermitApprovalsCard = () => (
       <div className="sales-rep-leads-card sales-rep-combined-card">
         <div className="mb-0 flex w-full items-start justify-between gap-3">

@@ -128,6 +128,17 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual({row["id"] for row in result}, {"doctor-1", "test-doctor-1"})
         self.assertEqual(next(row for row in result if row["id"] == "doctor-1")["totalOrders"], 2)
 
+    def test_scope_diagnostics_report_aliases(self) -> None:
+        with patch.object(service, "_resolve_sales_rep_id", return_value="rep-canonical"), \
+            patch.object(service, "_resolve_user_id", return_value="sales-user-1"), \
+            patch.object(service, "_resolve_sales_rep_aliases", return_value={"sales-user-1", "rep-canonical"}):
+            result = service.get_sales_rep_scope_diagnostics("sales-user-1")
+
+        self.assertEqual(result["input"], "sales-user-1")
+        self.assertEqual(result["resolvedSalesRepId"], "rep-canonical")
+        self.assertEqual(result["resolvedUserId"], "sales-user-1")
+        self.assertEqual(result["ownerAliases"], ["canonical", "sales-user-1"])
+
 
 if __name__ == "__main__":
     unittest.main()

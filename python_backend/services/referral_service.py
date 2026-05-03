@@ -414,6 +414,16 @@ def _resolve_sales_rep_owner_aliases(identifier: Optional[str]) -> set[str]:
     return {candidate for candidate in candidates if candidate}
 
 
+def get_sales_rep_scope_diagnostics(identifier: Optional[str]) -> Dict[str, object]:
+    """Return non-PII scope details for sales dashboard debugging."""
+    return {
+        "input": str(identifier or "").strip() or None,
+        "resolvedSalesRepId": _resolve_sales_rep_id(identifier),
+        "resolvedUserId": _resolve_user_id(identifier),
+        "ownerAliases": sorted(_resolve_sales_rep_owner_aliases(identifier)),
+    }
+
+
 def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> List[Dict]:
     """
     Return user/account records to help clients detect account creation for referrals.
