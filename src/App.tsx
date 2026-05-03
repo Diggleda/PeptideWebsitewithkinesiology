@@ -8677,6 +8677,12 @@ function MainApp() {
   const [salesRepDashboard, setSalesRepDashboard] =
     useState<SalesRepDashboard | null>(null);
   const salesRepDashboardRef = useRef<SalesRepDashboard | null>(null);
+  const [activePhysiciansCsvRemoteData, setActivePhysiciansCsvRemoteData] =
+    useState<{
+      networkUsers: PhysicianCsvRow[];
+      leads: PhysicianCsvRow[];
+      debug?: unknown;
+    } | null>(null);
   const referralCreditAmount = useMemo(() => {
     const doctorConfigured = Number(doctorSummary?.referralCreditAmount);
     if (Number.isFinite(doctorConfigured) && doctorConfigured > 0) {
@@ -8784,6 +8790,57 @@ function MainApp() {
       return false;
     }
   }, []);
+
+  useEffect(() => {
+    const role = user?.role || null;
+    if (
+      !role ||
+      postLoginHold ||
+      !hasAuthToken() ||
+      (!isAdmin(role) && !isSalesLead(role))
+    ) {
+      setActivePhysiciansCsvRemoteData(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const normalizeRows = (value: unknown): PhysicianCsvRow[] => {
+      if (!Array.isArray(value)) return [];
+      return value
+        .map((row: any) => ({
+          name: String(row?.name || row?.email || "").trim(),
+          email: String(row?.email || "").trim().toLowerCase(),
+        }))
+        .filter((row) => row.name || row.email);
+    };
+
+    void referralAPI
+      .getActivePhysiciansCsvData({
+        debug: activePhysiciansDebugEnabled ? "active_physicians" : undefined,
+      })
+      .then((response: any) => {
+        if (cancelled) return;
+        setActivePhysiciansCsvRemoteData({
+          networkUsers: normalizeRows(response?.networkUsers),
+          leads: normalizeRows(response?.leads),
+          debug: response?._debug || response?.debug || null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("[Active Physicians] Failed to load CSV source data", error);
+        setActivePhysiciansCsvRemoteData(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activePhysiciansDebugEnabled,
+    postLoginHold,
+    user?.id,
+    user?.role,
+  ]);
 
   const accountIdentitySet = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
@@ -20014,6 +20071,15 @@ function MainApp() {
       });
     };
 
+    if (activePhysiciansCsvRemoteData) {
+      return {
+        networkUsers: [...activePhysiciansCsvRemoteData.networkUsers].sort(
+          compareRows,
+        ),
+        leads: [...activePhysiciansCsvRemoteData.leads].sort(compareRows),
+      };
+    }
+
     const networkUsers: PhysicianCsvRow[] = [];
     const leads: PhysicianCsvRow[] = [];
     const networkUserKeys = new Set<string>();
@@ -20095,6 +20161,7 @@ function MainApp() {
     };
   }, [
     adminLiveUsers,
+    activePhysiciansCsvRemoteData,
     normalizeEmailIdentity,
     normalizedReferrals,
     salesRepDashboard,
@@ -20190,6 +20257,13 @@ function MainApp() {
       ),
       activeProspectStatusCounts,
       backend: backendDebug,
+      activePhysiciansEndpoint: activePhysiciansCsvRemoteData
+        ? {
+            networkUsers: activePhysiciansCsvRemoteData.networkUsers.length,
+            leads: activePhysiciansCsvRemoteData.leads.length,
+            debug: activePhysiciansCsvRemoteData.debug || null,
+          }
+        : null,
       sampleAccounts: rawAccounts.slice(0, 5).map((account) => ({
         id: account?.id || account?.userId || account?.doctorId || null,
         role: account?.role || null,
@@ -20222,6 +20296,7 @@ function MainApp() {
     };
   }, [
     activePhysiciansCsvData,
+    activePhysiciansCsvRemoteData,
     activeProspectEntries,
     salesRepDashboard,
     user?.id,

@@ -187,6 +187,25 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual({row["id"] for row in result}, {"doctor-1", "test-doctor-1"})
         self.assertEqual(next(row for row in result if row["id"] == "doctor-1")["totalOrders"], 2)
 
+    def test_active_physicians_csv_data_counts_physicians_and_leads_with_emails(self) -> None:
+        users = [
+            {"id": "doctor-1", "role": "doctor", "email": "doctor@example.com", "name": "Doctor One"},
+            {"id": "doctor-2", "role": "test_doctor", "email": "test@doctor.com", "name": "Hidden Test"},
+            {"id": "rep-1", "role": "sales_rep", "email": "rep@example.com", "name": "Rep One"},
+        ]
+        leads = [
+            {"id": "lead-1", "referredContactName": "Lead One", "referredContactEmail": "lead@example.com"},
+            {"id": "lead-2", "referredContactName": "No Email", "referredContactEmail": None},
+        ]
+
+        with patch.object(service.user_repository, "list_referral_dashboard_users", return_value=users), \
+            patch.object(service, "list_referrals_for_sales_rep", return_value=leads):
+            result = service.get_active_physicians_csv_data()
+
+        self.assertEqual(result["counts"], {"networkUsers": 1, "leads": 1})
+        self.assertEqual(result["networkUsers"], [{"name": "Doctor One", "email": "doctor@example.com"}])
+        self.assertEqual(result["leads"], [{"name": "Lead One", "email": "lead@example.com"}])
+
     def test_scope_diagnostics_report_aliases(self) -> None:
         with patch.object(service, "_resolve_sales_rep_id", return_value="rep-canonical"), \
             patch.object(service, "_resolve_user_id", return_value="sales-user-1"), \

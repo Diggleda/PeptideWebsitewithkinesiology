@@ -3298,6 +3298,21 @@ export const referralAPI = {
     return fetchWithAuth(url);
   },
 
+  getActivePhysiciansCsvData: async (options?: { debug?: string | null }) => {
+    if (!getAuthToken()) {
+      throwLocalAuthRequired();
+    }
+    const params = new URLSearchParams();
+    if (options?.debug) {
+      params.set('debug', String(options.debug));
+    }
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/referrals/active-physicians?${query}`
+      : `${API_BASE_URL}/referrals/active-physicians`;
+    return fetchWithAuth(url);
+  },
+
   getSalesRepById: async (salesRepId: string) => {
     if (!salesRepId) {
       throw new Error('salesRepId is required');

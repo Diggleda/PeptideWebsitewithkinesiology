@@ -424,6 +424,123 @@ def get_sales_rep_scope_diagnostics(identifier: Optional[str]) -> Dict[str, obje
     }
 
 
+def get_active_physicians_csv_data() -> Dict[str, object]:
+    """Return the all-scope Active Physicians CSV source rows."""
+
+    def _display_name(*values: object) -> str:
+        for value in values:
+            if isinstance(value, (list, tuple)):
+                joined = " ".join(str(item or "").strip() for item in value if str(item or "").strip()).strip()
+                if joined:
+                    return joined
+                continue
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _row_key(record: Dict, emails: List[str], *id_fields: str) -> Optional[str]:
+        for field in id_fields:
+            value = str(record.get(field) or "").strip()
+            if value:
+                return f"id:{value}"
+        return f"email:{emails[0]}" if emails else None
+
+    def _sort_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        return sorted(
+            rows,
+            key=lambda row: (
+                str(row.get("name") or "").casefold(),
+                str(row.get("email") or "").casefold(),
+            ),
+        )
+
+    raw_users = user_repository.list_referral_dashboard_users()
+    network_users: List[Dict[str, str]] = []
+    network_keys: set[str] = set()
+    for account in raw_users or []:
+        if not isinstance(account, dict):
+            continue
+        role = _normalize_role(account.get("role"))
+        if role not in ("doctor", "test_doctor"):
+            continue
+        emails = _sanitize_email_list(
+            [
+                account.get("email"),
+                account.get("userEmail"),
+                account.get("doctorEmail"),
+                account.get("contactEmail"),
+            ]
+        )
+        if emails and emails[0] == "test@doctor.com":
+            continue
+        key = _row_key(account, emails, "id", "userId", "doctorId", "accountId", "account_id")
+        if not key or key in network_keys:
+            continue
+        network_keys.add(key)
+        name = (
+            _display_name(
+                account.get("name"),
+                [account.get("firstName"), account.get("lastName")],
+                account.get("doctorName"),
+                account.get("displayName"),
+                account.get("username"),
+            )
+            or (emails[0] if emails else "")
+            or f"Physician {str(account.get('id') or '').strip()}"
+            or "Physician"
+        )
+        network_users.append({"name": name, "email": emails[0] if emails else ""})
+
+    raw_leads = list_referrals_for_sales_rep(
+        "active-physicians",
+        scope_all=True,
+        token_role="sales_lead",
+    )
+    leads: List[Dict[str, str]] = []
+    lead_keys: set[str] = set()
+    for index, lead in enumerate(raw_leads or []):
+        if not isinstance(lead, dict):
+            continue
+        emails = _sanitize_email_list(
+            [
+                lead.get("contactEmails"),
+                lead.get("contact_emails"),
+                lead.get("referredContactEmail"),
+                lead.get("contactEmail"),
+                lead.get("email"),
+                lead.get("doctorEmail"),
+                lead.get("userEmail"),
+            ]
+        )
+        if not emails:
+            continue
+        key = _row_key(lead, emails, "id", "leadId", "prospectId", "referralId") or f"email:{emails[0]}:idx:{index}"
+        if key in lead_keys:
+            continue
+        lead_keys.add(key)
+        name = (
+            _display_name(
+                lead.get("referredContactName"),
+                lead.get("contactName"),
+                lead.get("name"),
+                lead.get("doctorName"),
+                lead.get("referredContactAccountName"),
+            )
+            or emails[0]
+        )
+        leads.append({"name": name, "email": emails[0]})
+
+    return {
+        "networkUsers": _sort_rows(network_users),
+        "leads": _sort_rows(leads),
+        "counts": {
+            "networkUsers": len(network_users),
+            "leads": len(leads),
+        },
+    }
+
+
 def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> List[Dict]:
     """
     Return user/account records to help clients detect account creation for referrals.

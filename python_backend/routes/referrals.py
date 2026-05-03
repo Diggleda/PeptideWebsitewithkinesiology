@@ -289,6 +289,51 @@ def delete_doctor_referral(referral_id: str):
     return handle_action(action)
 
 
+@blueprint.get("/active-physicians")
+@require_auth
+def active_physicians_csv_data():
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        token_role = _normalize_role(g.current_user.get("role"))
+        role = _normalize_role(user.get("role"))
+        try:
+            current_sales_rep_record = auth_service._resolve_sales_rep_record_for_user(user)  # pylint: disable=protected-access
+        except Exception:
+            current_sales_rep_record = None
+        sales_rep_role = _normalize_role(
+            current_sales_rep_record.get("role") if isinstance(current_sales_rep_record, dict) else None
+        )
+        if not _can_scope_all_dashboard(token_role, role, sales_rep_role):
+            raise _error("SALES_LEAD_ACCESS_REQUIRED", 403)
+
+        data = referral_service.get_active_physicians_csv_data()
+        payload = {
+            "version": "python_backend",
+            "networkUsers": data.get("networkUsers") if isinstance(data, dict) else [],
+            "leads": data.get("leads") if isinstance(data, dict) else [],
+            "counts": data.get("counts") if isinstance(data, dict) else {},
+        }
+        debug_active_physicians = (
+            str(request.args.get("debug") or "").strip().lower()
+            in ("active_physicians", "active-physicians", "activephysicians")
+        )
+        if debug_active_physicians:
+            payload["_debug"] = {
+                "activePhysicians": {
+                    "tokenRole": token_role or None,
+                    "userRole": role or None,
+                    "salesRepRole": sales_rep_role or None,
+                    "scopeAllApplied": True,
+                    "counts": payload.get("counts") or {},
+                }
+            }
+        return payload
+
+    return handle_action(action)
+
+
 @blueprint.get("/admin/dashboard")
 @blueprint.get("/dashboard")
 @require_auth
