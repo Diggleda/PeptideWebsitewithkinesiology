@@ -57,17 +57,17 @@ class EmailServiceTests(unittest.TestCase):
         self.assertNotIn("UPS tracking", html)
         self.assertIn('class="trufusion-track-button"', html)
         self.assertIn(".trufusion-track-button:hover", html)
-        self.assertIn("background-color:rgb(95,179,249) !important", html)
+        self.assertIn("background-color:rgb(60,103,183) !important", html)
         self.assertIn("color:#ffffff !important", html)
         self.assertIn('href="https://trufusionlabs.com"', html)
         self.assertIn(">trufusionlabs.com</a>", html)
         self.assertIn("Sign in to your account", dispatch_email.call_args.args[3])
         self.assertIn("background-color:rgba(255,255,255,0.95)", html)
-        self.assertIn("color:rgb(95,179,249)", html)
-        self.assertIn("border:2px solid rgb(95,179,249)", html)
+        self.assertIn("color:rgb(60,103,183)", html)
+        self.assertIn("border:2px solid rgb(60,103,183)", html)
         self.assertIn("border-radius:12px", html)
         self.assertNotIn("border-radius:999px", html)
-        self.assertNotIn("background-color:#5FB3F9", html)
+        self.assertNotIn("background-color:#3C67B7", html)
         self.assertNotIn("https://trufusionlabs.com/turfusionlabsphysiciansportal.png", html)
         self.assertNotIn("https://trufusionlabs.com/leafTexture.jpg", html)
         self.assertNotIn("/turfusionlabsphysiciansportal.png", html)
@@ -142,7 +142,7 @@ class EmailServiceTests(unittest.TestCase):
             },
             {
                 "content_id": "trufusion-leaf",
-                "filename": "blueleafTexture.png",
+                "filename": "blueleafTexture-email.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",
@@ -171,7 +171,7 @@ class EmailServiceTests(unittest.TestCase):
         attachments = post.call_args.kwargs["json"]["attachments"]
         self.assertEqual([attachment["content_id"] for attachment in attachments], ["trufusion-logo", "trufusion-leaf"])
         self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
-        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "blueleafTexture.png"])
+        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "blueleafTexture-email.png"])
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
@@ -210,7 +210,7 @@ class EmailServiceTests(unittest.TestCase):
             },
             {
                 "content_id": "trufusion-leaf",
-                "filename": "blueleafTexture.png",
+                "filename": "blueleafTexture-email.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",

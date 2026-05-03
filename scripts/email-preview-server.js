@@ -117,7 +117,7 @@ else:
     raise SystemExit(f"unknown python template: {template}")
 
 html = html.replace("cid:trufusion-logo", "/assets/turfusionlabsphysiciansportal.png")
-html = html.replace("cid:trufusion-leaf", "/assets/blueleafTexture.png")
+html = html.replace("cid:trufusion-leaf", "/assets/blueleafTexture-email.png")
 
 print(json.dumps({"subject": subject, "html": html, "plain": plain}))
 `;

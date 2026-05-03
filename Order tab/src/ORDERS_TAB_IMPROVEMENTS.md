@@ -83,9 +83,9 @@ I've created improved layouts for the Orders tab in your Header component that e
 - **Pending**: Slate (`bg-slate-100`, `text-slate-600`)
 
 ### Brand Colors:
-- Primary: `rgb(95, 179, 249)`
-- Translucent: `rgba(95, 179, 249, 0.08)` for backgrounds
-- Border: `rgba(95, 179, 249, 0.2)` for badges
+- Primary: `rgb(60, 103, 183)`
+- Translucent: `rgba(60, 103, 183, 0.08)` for backgrounds
+- Border: `rgba(60, 103, 183, 0.2)` for badges
 
 ## Implementation Instructions
 

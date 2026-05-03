@@ -287,10 +287,10 @@ export function CategoryFilter({
     <Card
       ref={cardRef}
       // Stick within the products layout column on large screens
-      className="glass-card squircle-lg w-full lg:max-w-none border-l-4 border-l-[rgba(95,179,249,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)] catalog-filter-card"
+      className="glass-card squircle-lg w-full lg:max-w-none border-l-4 border-l-[rgba(60,103,183,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)] catalog-filter-card"
       style={{
         background:
-          'linear-gradient(to right, rgba(95,179,249,0.08) 0%, rgba(255,255,255,0.35) 8px, rgba(255,255,255,0.35) 100%)',
+          'linear-gradient(to right, rgba(60,103,183,0.08) 0%, rgba(255,255,255,0.35) 8px, rgba(255,255,255,0.35) 100%)',
         backdropFilter: 'blur(40px) saturate(1.7)',
       }}
     >
@@ -320,7 +320,7 @@ export function CategoryFilter({
             {categories.map((category) => (
               <div key={category} className="flex flex-wrap items-center gap-2">
                 <div className="-ml-1 flex items-center space-x-2 min-w-0">
-                  <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm text-[rgb(95,179,249)] border-0 shadow-none">
+                  <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm text-[rgb(60,103,183)] border-0 shadow-none">
                     {productCounts[category] || 0}
                   </Badge>
                   <Checkbox
@@ -350,7 +350,7 @@ export function CategoryFilter({
                       className="flex flex-wrap items-center gap-2"
                     >
                       <div className="-ml-1 flex items-center space-x-2 min-w-0">
-                        <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm text-[rgb(95,179,249)] border-0 shadow-none">
+                        <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm text-[rgb(60,103,183)] border-0 shadow-none">
                           {tag.count || 0}
                         </Badge>
                         <Checkbox

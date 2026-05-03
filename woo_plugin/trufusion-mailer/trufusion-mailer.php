@@ -126,7 +126,7 @@ function trufusion_mailer_bridge_send_password_reset_email(WP_REST_Request $requ
     $greeting = $display_name !== '' ? 'Hi ' . esc_html($display_name) . ',' : 'Hi,';
 
     $reset_button = '<a href="' . esc_url($reset_url) . '"'
-      . ' style="display:inline-block;background:#5fb3f9;color:#ffffff;text-decoration:none;'
+      . ' style="display:inline-block;background:#3c67b7;color:#ffffff;text-decoration:none;'
       . 'padding:12px 18px;border-radius:10px;font-weight:700;line-height:1.1;">'
       . 'Reset password'
       . '</a>';

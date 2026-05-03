@@ -255,7 +255,7 @@ export function ProductDetailDialog({
                         onClick={() => setSelectedImageIndex(idx)}
                         className={`flex-shrink-0 w-14 h-14 rounded-lg glass-card border-2 transition-all overflow-hidden ${
                           selectedImageIndex === idx
-                            ? 'border-[rgb(95,179,249)] scale-105'
+                            ? 'border-[rgb(60,103,183)] scale-105'
                             : 'border-[var(--brand-glass-border-2)] hover:border-slate-400'
                         }`}
                       >
@@ -276,7 +276,7 @@ export function ProductDetailDialog({
                         onClick={() => setActiveTab(tab.id)}
                         className={`px-4 py-3 text-sm font-medium whitespace-nowrap transition-all border-b-2 ${
                           activeTab === tab.id
-                            ? 'border-[rgb(95,179,249)] text-[rgb(95,179,249)]'
+                            ? 'border-[rgb(60,103,183)] text-[rgb(60,103,183)]'
                             : 'border-transparent text-slate-600 hover:text-slate-900'
                         }`}
                       >
@@ -470,7 +470,7 @@ export function ProductDetailDialog({
                       value={quantityDescription}
                       onChange={(event) => setQuantityDescription(event.target.value)}
                       placeholder="Add fulfillment notes or special instructions..."
-                      className="min-h-[100px] w-full resize-y squircle-lg p-4 text-sm border-2 border-[var(--brand-glass-border-2)] focus-visible:outline-none focus-visible:border-[rgb(95,179,249)] focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.2)] bg-slate-50"
+                      className="min-h-[100px] w-full resize-y squircle-lg p-4 text-sm border-2 border-[var(--brand-glass-border-2)] focus-visible:outline-none focus-visible:border-[rgb(60,103,183)] focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.2)] bg-slate-50"
                     />
                   </div>
 
@@ -481,7 +481,7 @@ export function ProductDetailDialog({
 	                    className={proposalMode
                         ? 'w-full h-14 text-base font-semibold squircle-lg border-0 text-white transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed'
                         : 'w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed'}
-                      style={proposalMode ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)' } : undefined}
+                      style={proposalMode ? { backgroundColor: 'rgb(60, 103, 183)', borderColor: 'rgb(60, 103, 183)' } : undefined}
 	                  >
 	                    {proposalMode ? (
 	                      <Plus className="mr-2 h-5 w-5" />

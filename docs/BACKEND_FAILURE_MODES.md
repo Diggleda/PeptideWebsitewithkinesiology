@@ -58,7 +58,11 @@ Operational response:
 - inspect `systemctl list-timers --all` for any API watchdog/timer unit
 - inspect the watchdog script before restarting the API again
 - prefer longer probe timeouts and several consecutive failures before any restart action
-- prefer a graceful `systemctl reload peppr-api.service` for healthy deploys; reserve `restart` for genuinely wedged processes
+- prefer graceful reloads for healthy deploys:
+  `systemctl reload peppr-api.service` and `systemctl reload peppr-presence.service`;
+  reserve `restart` for genuinely wedged processes because restarting the presence
+  service drops the `:8001` listener and can briefly return 502s on live presence
+  heartbeats.
 
 Residual risk:
 

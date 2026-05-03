@@ -41,7 +41,7 @@ const PublicTopNav = () => (
           />
           <span className="sr-only">TruFusionLabs home</span>
         </a>
-        <nav className="flex flex-wrap items-center gap-2 text-sm font-medium text-[rgb(95,179,249)]">
+        <nav className="flex flex-wrap items-center gap-2 text-sm font-medium text-[rgb(60,103,183)]">
           <a className="rounded-full px-3 py-1.5 btn-hover-lighter" href="/pricing">Pricing</a>
           <a className="rounded-full px-3 py-1.5 btn-hover-lighter" href="/contact">Contact</a>
           <a className="rounded-full px-3 py-1.5 btn-hover-lighter" href="/returns-refunds">Returns</a>
@@ -62,7 +62,7 @@ const ContactPage = () => (
           <p><span className="font-semibold">Legal Entity:</span> {MERCHANT_IDENTITY.legalEntity}</p>
           <p><span className="font-semibold">Address:</span> {MERCHANT_IDENTITY.address}</p>
           <p><span className="font-semibold">Phone:</span> {MERCHANT_IDENTITY.phone}</p>
-          <p><span className="font-semibold">Email:</span> <a className="text-[rgb(95,179,249)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a></p>
+          <p><span className="font-semibold">Email:</span> <a className="text-[rgb(60,103,183)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a></p>
           <p><span className="font-semibold">Business Hours:</span> {MERCHANT_IDENTITY.businessHours}</p>
         </div>
       </div>
@@ -70,7 +70,7 @@ const ContactPage = () => (
       <div className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-white/70 p-4">
         <p className="font-semibold text-slate-900">Customer service</p>
         <p className="mt-1">
-          For assistance, email <a className="text-[rgb(95,179,249)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a> or call {MERCHANT_IDENTITY.phone}.
+          For assistance, email <a className="text-[rgb(60,103,183)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a> or call {MERCHANT_IDENTITY.phone}.
         </p>
       </div>
 
@@ -103,7 +103,7 @@ const ReturnsRefundsPage = () => (
       <div className="space-y-2">
         <p className="font-semibold text-slate-900">How to request a return or refund</p>
         <p>
-          Email <a className="text-[rgb(95,179,249)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a> and include your order number, the reason for the request, and (if applicable) photos of damage.
+          Email <a className="text-[rgb(60,103,183)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a> and include your order number, the reason for the request, and (if applicable) photos of damage.
         </p>
       </div>
     </div>
@@ -161,7 +161,7 @@ const PricingPage = () => {
           {error ? <p className="text-red-700">{error}</p> : null}
           <p>Pricing is currently unavailable.</p>
           <p className="text-xs text-slate-600">
-            If you are an underwriter and cannot view pricing here, please contact <a className="text-[rgb(95,179,249)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a>.
+            If you are an underwriter and cannot view pricing here, please contact <a className="text-[rgb(60,103,183)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a>.
           </p>
         </div>
       );
@@ -219,7 +219,7 @@ export function PublicSite({ pathname }: { pathname: string }) {
         return (
           <PageContainer title="Not found">
             <p className="text-sm text-slate-700">That page does not exist.</p>
-            <a className="mt-4 inline-flex text-[rgb(95,179,249)] underline" href="/">Return home</a>
+            <a className="mt-4 inline-flex text-[rgb(60,103,183)] underline" href="/">Return home</a>
           </PageContainer>
         );
     }

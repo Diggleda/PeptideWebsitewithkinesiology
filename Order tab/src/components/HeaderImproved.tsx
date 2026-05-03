@@ -42,7 +42,7 @@ const renderOrdersList = () => {
             className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] overflow-hidden hover:shadow-md transition-all duration-300"
           >
             {/* Order Header */}
-            <div className="px-5 py-4 border-b border-[var(--brand-glass-border-1)] bg-gradient-to-r from-[rgba(95,179,249,0.04)] to-transparent">
+            <div className="px-5 py-4 border-b border-[var(--brand-glass-border-1)] bg-gradient-to-r from-[rgba(60,103,183,0.04)] to-transparent">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
@@ -77,7 +77,7 @@ const renderOrdersList = () => {
                   >
                     {status}
                   </Badge>
-                  <Badge variant="outline" className="squircle-sm bg-[rgba(95,179,249,0.08)] text-[rgb(28,109,173)] border-[rgba(95,179,249,0.2)]">
+                  <Badge variant="outline" className="squircle-sm bg-[rgba(60,103,183,0.08)] text-[rgb(60,103,183)] border-[rgba(60,103,183,0.2)]">
                     {order.source === 'woocommerce' ? 'Store' : 'PepPro'}
                   </Badge>
                 </div>
@@ -183,7 +183,7 @@ const accountOrdersPanel = localUser ? (
 
         {accountOrdersLoading && (
           <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-[rgb(95,179,249)]" />
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-[rgb(60,103,183)]" />
             <p className="text-sm text-slate-600">Loading your orders...</p>
           </div>
         )}

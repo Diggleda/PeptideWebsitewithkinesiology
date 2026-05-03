@@ -1784,7 +1784,7 @@ export function CheckoutModal({
         <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
           <div className="flex items-start justify-between gap-4">
 	            <div className="flex-1 min-w-0">
-	              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+	              <DialogTitle className="text-xl font-semibold text-[rgb(60,103,183)]">
 	                {proposalMode ? 'Proposal' : 'Checkout'}
 	              </DialogTitle>
 	              <DialogDescription>
@@ -1798,7 +1798,7 @@ export function CheckoutModal({
             <DialogClose
               className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
               style={{
-                backgroundColor: 'rgb(95, 179, 249)',
+                backgroundColor: 'rgb(60, 103, 183)',
                 borderRadius: '50%',
               }}
 	              aria-label={proposalMode ? 'Close proposal' : 'Close checkout'}
@@ -1819,7 +1819,7 @@ export function CheckoutModal({
                     className={`glass-card squircle-lg flex flex-wrap items-center justify-between gap-4 border px-6 py-4 transition-colors ${
                       retailPricingEnabled || isFacilityPickupEnabled
                         ? 'border-[rgba(34,197,94,0.38)] shadow-[0_20px_48px_-38px_rgba(34,197,94,0.35)]'
-                        : 'border-[rgba(95,179,249,0.28)] shadow-[0_20px_48px_-40px_rgba(95,179,249,0.22)] hover:border-[rgba(95,179,249,0.42)]'
+                        : 'border-[rgba(60,103,183,0.28)] shadow-[0_20px_48px_-40px_rgba(60,103,183,0.22)] hover:border-[rgba(60,103,183,0.42)]'
                     }`}
                   >
                     <div className="flex w-full flex-col gap-4">
@@ -1968,7 +1968,7 @@ export function CheckoutModal({
 	                                            <span className="ml-1 text-[11px] font-semibold text-green-700">(Retail)</span>
 	                                          ) : null}
 	                                        </span>
-	                                        <span className="text-[rgb(95,179,249)] font-semibold tabular-nums text-[12px]">
+	                                        <span className="text-[rgb(60,103,183)] font-semibold tabular-nums text-[12px]">
 	                                          <span className="text-[11px] font-semibold text-slate-500 mr-1">Delegate:</span>
 	                                          ${delegateUnitPrice.toFixed(2)}
 	                                        </span>
@@ -2021,7 +2021,7 @@ export function CheckoutModal({
                                         }
                                       >
                                         <span className="tracking-wide uppercase text-[0.65rem]">Bulk Pricing</span>
-                                        <span className="text-[rgb(95,179,249)] text-[0.65rem]">
+                                        <span className="text-[rgb(60,103,183)] text-[0.65rem]">
                                           {isBulkOpen ? 'Hide' : 'Show'}
                                         </span>
                                       </button>
@@ -2055,7 +2055,7 @@ export function CheckoutModal({
                                             ))}
                                           </div>
                                           {upcomingTier && (
-                                            <p className="text-xs text-[rgb(95,179,249)] font-medium">
+                                            <p className="text-xs text-[rgb(60,103,183)] font-medium">
                                               Buy {upcomingTier.minQuantity - item.quantity} more to save {upcomingTier.discountPercentage}%
                                             </p>
                                           )}
@@ -2074,7 +2074,7 @@ export function CheckoutModal({
 	                                    ${lineTotal.toFixed(2)}
 	                                  </p>
 	                                  {showDualPricing && delegateLineTotal != null && (
-	                                    <p className="text-[12px] font-semibold text-[rgb(95,179,249)] tabular-nums">
+	                                    <p className="text-[12px] font-semibold text-[rgb(60,103,183)] tabular-nums">
 	                                      Delegate: ${delegateLineTotal.toFixed(2)}
 	                                    </p>
 	                                  )}
@@ -2172,7 +2172,7 @@ export function CheckoutModal({
                                                   <span className="ml-1 text-[11px] font-semibold text-green-700">(Retail)</span>
                                                 ) : null}
                                               </span>
-                                              <span className="text-[rgb(95,179,249)] font-semibold tabular-nums text-[12px]">
+                                              <span className="text-[rgb(60,103,183)] font-semibold tabular-nums text-[12px]">
                                                 <span className="text-[11px] font-semibold text-slate-500 mr-1">Delegate:</span>
                                                 ${delegateUnitPrice.toFixed(2)}
                                               </span>
@@ -2220,7 +2220,7 @@ export function CheckoutModal({
                     className={`glass-card squircle-lg flex flex-wrap items-center justify-between gap-4 border px-6 py-4 transition-colors ${
                       manualHandDelivery
                         ? 'border-[rgba(34,197,94,0.38)] shadow-[0_20px_48px_-38px_rgba(34,197,94,0.35)]'
-                        : 'border-[rgba(95,179,249,0.28)] shadow-[0_20px_48px_-40px_rgba(95,179,249,0.22)] hover:border-[rgba(95,179,249,0.42)]'
+                        : 'border-[rgba(60,103,183,0.28)] shadow-[0_20px_48px_-40px_rgba(60,103,183,0.22)] hover:border-[rgba(60,103,183,0.42)]'
                     }`}
                   >
                     <div className="flex items-center gap-4">
@@ -2253,7 +2253,7 @@ export function CheckoutModal({
                   </div>
                 )}
                 {isDoctorHandDeliveryEnabled && (
-                  <div className="glass-card squircle-md border border-[rgba(95,179,249,0.45)] bg-gradient-to-r from-[rgba(95,179,249,0.16)] via-[rgba(95,179,249,0.10)] to-[rgba(255,255,255,0.75)] px-6 py-5 shadow-[0_14px_30px_-24px_rgba(95,179,249,0.9)]">
+                  <div className="glass-card squircle-md border border-[rgba(60,103,183,0.45)] bg-gradient-to-r from-[rgba(60,103,183,0.16)] via-[rgba(60,103,183,0.10)] to-[rgba(255,255,255,0.75)] px-6 py-5 shadow-[0_14px_30px_-24px_rgba(60,103,183,0.9)]">
                     <p className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-[rgb(58,142,214)]">
                       <span>Local Hand Delivery</span>
                       <svg
@@ -2317,7 +2317,7 @@ export function CheckoutModal({
                     </div>
                   </div>
                 ) : isDelegateFlow ? (
-                  <div className="glass-card squircle-md border border-[rgba(95,179,249,0.28)] bg-[rgba(95,179,249,0.08)] px-5 py-4">
+                  <div className="glass-card squircle-md border border-[rgba(60,103,183,0.28)] bg-[rgba(60,103,183,0.08)] px-5 py-4">
                     <p className="text-sm font-semibold text-slate-900">Shipping is coordinated by your physician.</p>
                     <p className="mt-1 text-sm leading-relaxed text-slate-700">
                       Additional shipping charges may be incurred if your physician has to ship to your address. Coordinate with your physician regarding shipping.
@@ -2405,7 +2405,7 @@ export function CheckoutModal({
                           onClick={handleGetRates}
                           disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
                           className={isDelegateFlow ? 'squircle-sm border-0 text-white' : 'squircle-sm'}
-                          style={isDelegateFlow ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
+                          style={isDelegateFlow ? { backgroundColor: 'rgb(60, 103, 183)', borderColor: 'rgb(60, 103, 183)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
                         >
                           {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
                         </Button>
@@ -2584,7 +2584,7 @@ export function CheckoutModal({
                           value={discountCodeDraft}
                           onChange={(event) => setDiscountCodeDraft(event.target.value)}
                           placeholder="Enter code"
-                          className="h-10 w-full sm:flex-1 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+                          className="h-10 w-full sm:flex-1 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
                         />
                         <Button
                           type="button"
@@ -2684,13 +2684,13 @@ export function CheckoutModal({
 			                {showDualPricing && delegateSubtotal != null && (
 		                  <div className="flex justify-between text-sm text-slate-700">
 		                    <span>Delegate subtotal:</span>
-		                    <span className="tabular-nums text-[rgb(95,179,249)] font-semibold">
+		                    <span className="tabular-nums text-[rgb(60,103,183)] font-semibold">
 		                      ${delegateSubtotal.toFixed(2)}
 		                    </span>
 		                  </div>
 		                )}
                     {!testOverrideApplied && discountCodeApplied && discountCodeAmount > 0 && (
-                      <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+                      <div className="flex justify-between text-sm font-semibold text-[rgb(60,103,183)]">
                         <span>Discount ({discountCodeApplied.code})</span>
                         <span>- ${discountCodeAmount.toFixed(2)}</span>
                       </div>
@@ -2699,7 +2699,7 @@ export function CheckoutModal({
                       discountCodeApplied &&
                       discountCodeAmount <= 0 &&
                       discountCodeApplied.pricingOverride?.mode === 'force_tier_band' && (
-                        <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+                        <div className="flex justify-between text-sm font-semibold text-[rgb(60,103,183)]">
                           <span>Tier pricing ({discountCodeApplied.code})</span>
                           <span>
                             {discountCodeApplied.pricingOverride.minQuantity}-
@@ -2708,7 +2708,7 @@ export function CheckoutModal({
                         </div>
                       )}
 	                {displayAppliedCredits > 0 && (
-		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+		                  <div className="flex justify-between text-sm font-semibold text-[rgb(60,103,183)]">
 		                    <span>Referral Credit</span>
 		                    <span>
 		                      - ${displayAppliedCredits.toFixed(2)}
@@ -2765,7 +2765,7 @@ export function CheckoutModal({
 	                      </span>
 			                </div>
 		                {showDualPricing && delegateTotal != null && (
-		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+		                  <div className="flex justify-between text-sm font-semibold text-[rgb(60,103,183)]">
 		                    <span>Delegate pays you:</span>
 		                    <span className="tabular-nums">
 		                      ${delegateTotal.toFixed(2)}
@@ -2838,7 +2838,7 @@ export function CheckoutModal({
                   className={isDelegateFlow
                     ? 'flex-1 squircle-sm gap-2 border-0 text-white transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0'
                     : 'flex-1 glass-brand squircle-sm gap-2 transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0'}
-                  style={isDelegateFlow ? { backgroundColor: 'rgb(95, 179, 249)', borderColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
+                  style={isDelegateFlow ? { backgroundColor: 'rgb(60, 103, 183)', borderColor: 'rgb(60, 103, 183)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
                 >
                   {isDelegateFlow ? (
                     <svg

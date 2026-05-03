@@ -41,7 +41,7 @@ type ClusterEntry = {
   kind: "precise" | "state";
 };
 
-const BRAND_BLUE = "rgb(95, 179, 249)";
+const BRAND_BLUE = "rgb(60, 103, 183)";
 const MAP_WIDTH = 960;
 const MAP_HEIGHT = 585;
 const CLUSTER_RADIUS_PX = 30;
@@ -560,27 +560,27 @@ export function PhysicianNetworkMap() {
                               default: {
                                 fill: hasDoctors
                                   ? isActive
-                                    ? "rgba(95, 179, 249, 0.28)"
-                                    : "rgba(95, 179, 249, 0.14)"
+                                    ? "rgba(60, 103, 183, 0.28)"
+                                    : "rgba(60, 103, 183, 0.14)"
                                   : "rgba(255,255,255,0.7)",
                                 outline: "none",
-                                stroke: hasDoctors ? "rgba(95,179,249,0.9)" : "rgba(95,179,249,0.44)",
+                                stroke: hasDoctors ? "rgba(60,103,183,0.9)" : "rgba(60,103,183,0.44)",
                                 strokeWidth: isActive ? 1.8 : 1.1,
                               },
                               hover: {
                                 fill: hasDoctors
-                                  ? "rgba(95, 179, 249, 0.28)"
-                                  : "rgba(95, 179, 249, 0.08)",
+                                  ? "rgba(60, 103, 183, 0.28)"
+                                  : "rgba(60, 103, 183, 0.08)",
                                 outline: "none",
-                                stroke: "rgba(95,179,249,0.92)",
+                                stroke: "rgba(60,103,183,0.92)",
                                 strokeWidth: 1.5,
                               },
                               pressed: {
                                 fill: hasDoctors
-                                  ? "rgba(95, 179, 249, 0.32)"
-                                  : "rgba(95, 179, 249, 0.10)",
+                                  ? "rgba(60, 103, 183, 0.32)"
+                                  : "rgba(60, 103, 183, 0.10)",
                                 outline: "none",
-                                stroke: "rgba(95,179,249,0.92)",
+                                stroke: "rgba(60,103,183,0.92)",
                                 strokeWidth: 1.5,
                               },
                             }}
@@ -637,7 +637,7 @@ export function PhysicianNetworkMap() {
                                 <>
                                   <circle
                                     r={isActive ? 17.5 : 15}
-                                    fill="rgba(95,179,249,0.18)"
+                                    fill="rgba(60,103,183,0.18)"
                                     stroke="white"
                                     strokeWidth={isActive ? 3 : 2}
                                   />
@@ -645,7 +645,7 @@ export function PhysicianNetworkMap() {
                                     r={isActive ? 13 : 11}
                                     fill={BRAND_BLUE}
                                     fillOpacity={isActive ? 1 : 0.96}
-                                    stroke="rgba(26,85,173,0.18)"
+                                    stroke="rgba(60,103,183,0.18)"
                                     strokeWidth={1}
                                   />
                                   <text
@@ -661,8 +661,8 @@ export function PhysicianNetworkMap() {
                                   {cluster.kind === "state" ? (
                                     <circle
                                       r={isActive ? 14 : 11.5}
-                                      fill="rgba(95,179,249,0.12)"
-                                      stroke="rgba(95,179,249,0.18)"
+                                      fill="rgba(60,103,183,0.12)"
+                                      stroke="rgba(60,103,183,0.18)"
                                       strokeWidth={1}
                                     />
                                   ) : null}

@@ -221,7 +221,7 @@ export default function OrdersTabDemo() {
               className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] overflow-hidden hover:shadow-md transition-all duration-300"
             >
               {/* Order Header */}
-              <div className="px-5 py-4 border-b border-[var(--brand-glass-border-1)] bg-gradient-to-r from-[rgba(95,179,249,0.04)] to-transparent">
+              <div className="px-5 py-4 border-b border-[var(--brand-glass-border-1)] bg-gradient-to-r from-[rgba(60,103,183,0.04)] to-transparent">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div
@@ -269,7 +269,7 @@ export default function OrdersTabDemo() {
                     </Badge>
                     <Badge
                       variant="outline"
-                      className="squircle-sm bg-[rgba(95,179,249,0.08)] text-[rgb(28,109,173)] border-[rgba(95,179,249,0.2)]"
+                      className="squircle-sm bg-[rgba(60,103,183,0.08)] text-[rgb(60,103,183)] border-[rgba(60,103,183,0.2)]"
                     >
                       {order.source === 'woocommerce' ? 'Store' : 'PepPro'}
                     </Badge>
@@ -371,7 +371,7 @@ export default function OrdersTabDemo() {
       <div className="space-y-5">
         {/* Header Section - Matching list view layout */}
         <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[var(--brand-glass-border-1)] bg-gradient-to-r from-[rgba(95,179,249,0.04)] to-transparent">
+          <div className="px-5 py-4 border-b border-[var(--brand-glass-border-1)] bg-gradient-to-r from-[rgba(60,103,183,0.04)] to-transparent">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
                 <div
@@ -436,7 +436,7 @@ export default function OrdersTabDemo() {
                 type="button"
                 size="sm"
                 onClick={handleOrderAgain}
-                className="squircle-sm mt-2 border border-[rgb(95,179,249)] text-slate-900 hover:bg-[rgba(95,179,249,0.08)]"
+                className="squircle-sm mt-2 border border-[rgb(60,103,183)] text-slate-900 hover:bg-[rgba(60,103,183,0.08)]"
               >
                 <RotateCcw className="h-4 w-4 mr-1.5" />
                 Order Again
@@ -506,7 +506,7 @@ export default function OrdersTabDemo() {
               steps.findIndex((step) => statusNormalized.includes(step)) >= 0
                 ? steps.findIndex((step) => statusNormalized.includes(step))
                 : 0;
-            const brand = 'rgb(95, 179, 249)';
+            const brand = 'rgb(60, 103, 183)';
             const muted = 'rgba(148,163,184,0.4)';
 
             return (
@@ -521,7 +521,7 @@ export default function OrdersTabDemo() {
                     width: `${(activeIndex / (steps.length - 1)) * 100}%`,
                     background: `linear-gradient(90deg, ${brand}, ${brand})`,
                     zIndex: 1,
-                    boxShadow: '0 2px 8px rgba(95,179,249,0.3)',
+                    boxShadow: '0 2px 8px rgba(60,103,183,0.3)',
                   }}
                 />
 
@@ -541,7 +541,7 @@ export default function OrdersTabDemo() {
                             borderStyle: 'solid',
                             background: reached ? 'white' : 'rgba(248,250,252,0.8)',
                             boxShadow: isActive
-                              ? `0 0 0 3px rgba(95,179,249,0.15), 0 3px 10px rgba(95,179,249,0.3)`
+                              ? `0 0 0 3px rgba(60,103,183,0.15), 0 3px 10px rgba(60,103,183,0.3)`
                               : 'none',
                             transform: isActive ? 'scale(1.1)' : 'scale(1)',
                             position: 'relative',
@@ -553,7 +553,7 @@ export default function OrdersTabDemo() {
                             className="w-3 h-3 rounded-full"
                             style={{
                               background: reached ? brand : muted,
-                              boxShadow: reached ? '0 1px 4px rgba(95,179,249,0.4)' : 'none',
+                              boxShadow: reached ? '0 1px 4px rgba(60,103,183,0.4)' : 'none',
                             }}
                           />
                         </div>
@@ -622,7 +622,7 @@ export default function OrdersTabDemo() {
             </div>
             <div className="flex items-center justify-between pt-3 border-t border-[var(--brand-glass-border-1)]">
               <span className="font-bold text-slate-900">Order Total</span>
-              <span className="text-xl font-bold text-[rgb(95,179,249)]">
+              <span className="text-xl font-bold text-[rgb(60,103,183)]">
                 {formatCurrency(selectedOrder.total, selectedOrder.currency)}
               </span>
             </div>
@@ -657,7 +657,7 @@ export default function OrdersTabDemo() {
                   <span className="text-slate-500">Tracking:</span>
                   {shipIntegration.trackingUrl ? (
                     <a
-                      className="font-semibold text-[rgb(28,109,173)] hover:underline inline-flex items-center gap-1"
+                      className="font-semibold text-[rgb(60,103,183)] hover:underline inline-flex items-center gap-1"
                       href={shipIntegration.trackingUrl}
                       target="_blank"
                       rel="noreferrer"
@@ -732,7 +732,7 @@ export default function OrdersTabDemo() {
 
             {accountOrdersLoading && (
               <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] text-center">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-[rgb(95,179,249)]" />
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-[rgb(60,103,183)]" />
                 <p className="text-sm text-slate-600">Loading your orders...</p>
               </div>
             )}

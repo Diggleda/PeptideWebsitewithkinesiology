@@ -17,7 +17,7 @@
     />
     <meta property="og:type" content="website" />
     <title>PepPro has rebranded to TruFusionLabs</title>
-    <link rel="icon" href="/favicon.ico?v=0.2" />
+    <link rel="icon" href="/favicon.ico?v=0.3" />
     <style>
       :root {
         color-scheme: light;
@@ -46,27 +46,12 @@
         margin: 0;
       }
 
-      html {
-        background: #f7fbff url("/assets/leafTexture.jpg?v=0.2") center / cover fixed no-repeat;
-      }
-
       body {
         min-height: 100vh;
         min-height: 100dvh;
         overflow-x: hidden;
         color: var(--ink);
-        background-image:
-          linear-gradient(
-            180deg,
-            rgba(247, 251, 255, 0.34) 0%,
-            rgba(247, 251, 255, 0.22) 44%,
-            rgba(247, 251, 255, 0.38) 100%
-          ),
-          url("/assets/leafTexture.jpg?v=0.2"),
-          url("./assets/leafTexture.jpg?v=0.2");
-        background-size: cover, cover, cover;
-        background-repeat: no-repeat, no-repeat, no-repeat;
-        background-position: center, center, center;
+        background-color: #f8fafc;
         position: relative;
       }
 
@@ -78,22 +63,16 @@
         min-height: 100dvh;
         pointer-events: none;
         background-image:
-          url("/assets/leafTexture.jpg?v=0.2"),
-          url("./assets/leafTexture.jpg?v=0.2");
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-position: center;
-        opacity: 0.42;
+          url("/assets/leafTexture-DEzNZYtf.jpg"),
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='rgba(255,255,255,0.01)'/><stop offset='1' stop-color='rgba(255,255,255,0.00)'/></linearGradient><pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'><path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/><path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/></pattern></defs><rect width='100%' height='100%' fill='url(%23p)'/><rect width='100%' height='100%' fill='url(%23g)'/></svg>");
+        background-size: cover, 800px 800px;
+        background-repeat: no-repeat, repeat;
+        background-position: center, center;
+        opacity: 0.04;
         z-index: 0;
       }
 
-      body::after {
-        content: "";
-        position: fixed;
-        inset: 0;
-        min-height: 100vh;
-        min-height: 100dvh;
-        pointer-events: none;
+      body.login-view::before {
         background-image:
           linear-gradient(
             180deg,
@@ -103,40 +82,83 @@
           ),
           linear-gradient(
             180deg,
-            rgba(255, 255, 255, 0.16) 0%,
-            rgba(255, 255, 255, 0.12) 44%,
-            rgba(255, 255, 255, 0.22) 100%
+            rgba(255, 255, 255, 0.01) 0%,
+            rgba(255, 255, 255, 0.01) 20%,
+            rgba(255, 255, 255, 0.14) 100%
           ),
+          url("/assets/leafTexture-DEzNZYtf.jpg"),
           url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='rgba(255,255,255,0.16)'/><stop offset='1' stop-color='rgba(255,255,255,0.00)'/></linearGradient><pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'><path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/><path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/></pattern></defs><rect width='100%' height='100%' fill='url(%23p)'/><rect width='100%' height='100%' fill='url(%23g)'/></svg>");
-        background-size: cover, cover, 800px 800px;
-        background-repeat: no-repeat, no-repeat, repeat;
-        background-position: center;
-        z-index: 1;
+        background-size: cover, cover, cover, 800px 800px;
+        background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+        background-position: center, center, center, center;
+        min-height: 100vh;
+        min-height: 100dvh;
+        opacity: 0.08;
+      }
+
+      body:before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        background-image: url(/assets/leafTexture-DEzNZYtf.jpg), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>  <defs>    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>      <stop offset='0' stop-color='rgba(255,255,255,0.01)'/>      <stop offset='1' stop-color='rgba(255,255,255,0.00)'/>    </linearGradient>    <pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'>      <path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/>      <path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/>    </pattern>  </defs>  <rect width='100%' height='100%' fill='url(%23p)'/>  <rect width='100%' height='100%' fill='url(%23g)'/></svg>");
+        background-size: cover, 800px 800px;
+        background-repeat: no-repeat, repeat;
+        background-position: center, center;
+        opacity: .04;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      body.login-view:before {
+        background-image: linear-gradient(180deg, #5fb3f903, #5fb3f904 22%, #5fb3f913), linear-gradient(180deg, #ffffff03 0% 20%, #ffffff24), url(/assets/leafTexture-DEzNZYtf.jpg), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>  <defs>    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>      <stop offset='0' stop-color='rgba(255,255,255,0.16)'/>      <stop offset='1' stop-color='rgba(255,255,255,0.00)'/>    </linearGradient>    <pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'>      <path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/>      <path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/>    </pattern>  </defs>  <rect width='100%' height='100%' fill='url(%23p)'/>  <rect width='100%' height='100%' fill='url(%23g)'/></svg>");
+        background-size: cover, cover, cover, 800px 800px;
+        background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+        background-position: center, center, center, center;
+        min-height: 100vh;
+        min-height: 100dvh;
+        opacity: .08;
       }
 
       .page {
         position: relative;
-        z-index: 2;
+        z-index: 1;
         display: flex;
         min-height: 100vh;
         min-height: 100dvh;
         align-items: flex-start;
         justify-content: center;
         padding: clamp(1.5rem, 5vw, 3rem);
-        padding-top: clamp(2rem, 11vh, 7rem);
+        padding-top: clamp(1.5rem, 5vw, 3rem);
       }
 
-      .leaf-background {
+      .app-leaf-background {
         position: fixed;
-        inset: 0;
+        top: -12vh;
+        left: -6vw;
+        width: 112vw;
+        height: 140vh;
+        background-image: url("/assets/leafTexture-DEzNZYtf.jpg");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
         z-index: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        object-position: center;
-        opacity: 0.55;
         pointer-events: none;
-        filter: saturate(1.05) contrast(1.02);
+        mask-image: linear-gradient(
+          to top,
+          rgba(0, 0, 0, 0.2) 0%,
+          rgba(0, 0, 0, 0.15) 33%,
+          rgba(0, 0, 0, 0.075) 66%,
+          rgba(0, 0, 0, 0) 100%
+        );
+        -webkit-mask-image: linear-gradient(
+          to top,
+          rgba(0, 0, 0, 0.50) 0%,
+          rgba(0, 0, 0, 0.15) 40%,
+          rgba(0, 0, 0, 0.05) 50%,
+          rgba(0, 0, 0, 0) 100%
+        );
       }
 
       .login-shell {
@@ -146,7 +168,7 @@
       .logo-wrap {
         display: flex;
         justify-content: center;
-        margin-bottom: 1.5rem;
+        margin-bottom: clamp(2.75rem, 6vh, 4.5rem);
       }
 
       .logo {
@@ -158,22 +180,22 @@
 
       .card {
         border-radius: var(--squircle-xl);
-        border: 1px solid var(--border-2);
-        background: rgba(255, 255, 255, 0.48);
+        border: 1px solid rgba(255, 255, 255, 0.52);
+        background: #ffffff6b;
         box-shadow:
-          0 24px 70px -50px rgba(15, 23, 42, 0.72),
-          0 2px 6px -1px rgba(0, 0, 0, 0.1),
-          0 1px 2px -1px rgba(0, 0, 0, 0.06),
-          inset 0 1px rgba(255, 255, 255, 0.58);
-        -webkit-backdrop-filter: blur(38px) saturate(1.6);
-        backdrop-filter: blur(38px) saturate(1.6);
+          0 2px 6px -1px #0000001a,
+          0 1px 2px -1px #0000000f,
+          inset 0 1px #ffffff80;
+        -webkit-backdrop-filter: blur(40px) saturate(1.7);
+        backdrop-filter: blur(40px) saturate(1.7);
         padding: clamp(1rem, 4vw, 1.5rem);
       }
 
       .card-header {
-        border-bottom: 1px solid var(--border-1);
-        padding-bottom: 0.9rem;
-        box-shadow: 0 20px 45px -18px rgba(15, 23, 42, 0.1);
+        border: 0;
+        padding-bottom: 0;
+        box-shadow: none;
+        background: transparent;
       }
 
       h1 {
@@ -193,7 +215,7 @@
       }
 
       .card-body {
-        padding-top: 1.25rem;
+        padding-top: 1rem;
       }
 
       .notice {
@@ -276,39 +298,30 @@
       }
     </style>
   </head>
-  <body>
-    <img
-      class="leaf-background"
-      src="/assets/leafTexture.jpg?v=0.2"
-      alt=""
-      aria-hidden="true"
-      onerror="this.onerror=null;this.src='./assets/leafTexture.jpg?v=0.2';"
-    />
+  <body class="login-view">
+    <div class="app-leaf-background" aria-hidden="true"></div>
     <main class="page" aria-labelledby="closure-title">
       <div class="login-shell">
         <div class="logo-wrap" aria-hidden="true">
           <img
             class="logo"
-            src="/assets/turfusionlabsphysiciansportal.png?v=0.2"
+            src="/assets/turfusionlabsphysiciansportal.png?v=0.3"
             alt=""
             width="1280"
             height="222"
-            onerror="this.onerror=null;this.src='./assets/turfusionlabsphysiciansportal.png?v=0.2';"
+            onerror="this.onerror=null;this.src='./assets/turfusionlabsphysiciansportal.png?v=0.3';"
           />
         </div>
 
         <section class="card" aria-describedby="closure-description">
           <div class="card-header">
             <h1 id="closure-title">PepPro has rebranded to TruFusionLabs!</h1>
-            <p class="description" id="closure-description">
-              The PepPro portal has moved under the TruFusionLabs name.
-            </p>
           </div>
 
           <div class="card-body">
             <p class="notice">
-              Please continue to the new TruFusionLabs website for account access,
-              product information, and support.
+              Login with your same credentials on the new TruFusionLabs website
+              for account access, product information, and support.
             </p>
             <a class="button" href="https://www.trufusionlabs.com/">
               Continue to TruFusionLabs

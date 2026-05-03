@@ -651,7 +651,11 @@ def _background_job_stats() -> dict[str, Any]:
     from ..services import shipstation_status_sync_service
     from ..services import ups_status_sync_service
 
-    web_mode = str(os.environ.get("TRUFUSION_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower() or "thread"
+    web_mode = str(
+        current_app.config.get("WEB_BACKGROUND_JOBS_MODE")
+        or os.environ.get("TRUFUSION_WEB_BACKGROUND_JOBS_MODE")
+        or "thread"
+    ).strip().lower()
     jobs = {
         "productDocumentSync": product_document_sync_service.get_status(),
         "shipstationStatusSync": shipstation_status_sync_service.get_status(),
@@ -741,7 +745,7 @@ def _health_password_form_response(
         display: grid;
         place-items: center;
         background:
-          radial-gradient(circle at top, rgba(95, 179, 249, 0.22), transparent 38%),
+          radial-gradient(circle at top, rgba(60, 103, 183, 0.22), transparent 38%),
           linear-gradient(180deg, #f7fafc 0%, #e2e8f0 100%);
         color: #0f172a;
       }}
@@ -786,9 +790,9 @@ def _health_password_form_response(
         background: rgba(248, 250, 252, 0.95);
       }}
       input:focus {{
-        outline: 2px solid rgba(95, 179, 249, 0.3);
+        outline: 2px solid rgba(60, 103, 183, 0.3);
         outline-offset: 1px;
-        border-color: #5fb3f9;
+        border-color: #3c67b7;
       }}
       button {{
         appearance: none;

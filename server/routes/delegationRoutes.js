@@ -62,7 +62,7 @@ const ensureDoctorBucket = (state, doctorId) => {
 };
 
 const makeToken = () => crypto.randomBytes(12).toString('hex');
-const DEFAULT_DELEGATE_SECONDARY_COLOR = '#5fb3f9';
+const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
 
 const buildDummyPaymentInstructions = (doctorName) =>
   `Reach out to ${doctorName || 'your physician'} for Zelle payment details.`;

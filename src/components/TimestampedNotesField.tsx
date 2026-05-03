@@ -342,7 +342,7 @@ export function TimestampedNotesField({
                   type="button"
                   className={cn(
                     "timestamp-chip inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold tracking-tight",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.3)]",
                     disabled ? "cursor-not-allowed opacity-60" : "",
                   )}
                   aria-label="Edit timestamp"
@@ -387,7 +387,7 @@ export function TimestampedNotesField({
                           const next = combineDateAndTime(event.target.value, timeValue);
                           if (next) handleEntryTimestampChange(index, next);
                         }}
-                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
                       />
                     </div>
                     <div className="space-y-1">
@@ -403,7 +403,7 @@ export function TimestampedNotesField({
                           const next = combineDateAndTime(dateValue, event.target.value);
                           if (next) handleEntryTimestampChange(index, next);
                         }}
-                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
                       />
                     </div>
                     </div>
@@ -434,7 +434,7 @@ export function TimestampedNotesField({
           disabled={disabled}
           className={cn(
             "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.3)]",
             disabled ? "cursor-not-allowed opacity-60" : "",
           )}
           aria-label="Add timestamped log"

@@ -377,8 +377,8 @@ export function LegalFooter({
                         window.dispatchEvent(new Event('trufusion:close-dialogs'));
                         handleContactOpen();
                       }}
-                      className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
-                      style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                      className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(60,103,183,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
+                      style={{ backgroundColor: 'rgb(60, 103, 183)' }}
                     >
                       Contact a Representative
                     </button>
@@ -390,7 +390,7 @@ export function LegalFooter({
                         handleBugOpen();
                       }}
                       className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
-                      style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
+                      style={{ backgroundColor: 'rgb(60, 103, 183)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
                     >
                       Report a bug
                     </button>
@@ -406,7 +406,7 @@ export function LegalFooter({
                     <p>Phone: {MERCHANT_IDENTITY.phone}</p>
                     <p>
                       {' '}
-                      <a className="text-[rgb(95,179,249)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>
+                      <a className="text-[rgb(60,103,183)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>
                         {MERCHANT_IDENTITY.email}
                       </a>
                     </p>
@@ -415,14 +415,14 @@ export function LegalFooter({
                   <nav className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
                     <button
                       type="button"
-                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)] btn-hover-lighter"
                       onClick={() => handleLinkClick('contact')}
                     >
                       Contact
                     </button>
                     <button
                       type="button"
-                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)] btn-hover-lighter"
                       onClick={() => handleLinkClick('returns')}
                     >
                       Returns & Refunds
@@ -431,7 +431,7 @@ export function LegalFooter({
                       <button
                         key={link.key}
                         type="button"
-                        className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                        className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)] btn-hover-lighter"
                         onClick={() => handleLinkClick(link.key)}
                       >
                         {link.label}
@@ -456,8 +456,8 @@ export function LegalFooter({
                     window.dispatchEvent(new Event('trufusion:close-dialogs'));
                     handleContactOpen();
                   }}
-                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(60,103,183,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
+                  style={{ backgroundColor: 'rgb(60, 103, 183)' }}
                 >
                   Contact a Representative
                 </button>
@@ -473,7 +473,7 @@ export function LegalFooter({
                     handleBugOpen();
                   }}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white transition duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
+                  style={{ backgroundColor: 'rgb(60, 103, 183)', color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
                 >
                   Report a bug
                 </button>
@@ -496,14 +496,14 @@ export function LegalFooter({
               <nav className="mt-2 mb-2 flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)] btn-hover-lighter"
                   onClick={() => handleLinkClick('contact')}
                 >
                   Contact
                 </button>
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)] btn-hover-lighter"
                   onClick={() => handleLinkClick('returns')}
                 >
                   Returns & Refunds
@@ -512,7 +512,7 @@ export function LegalFooter({
                   <button
                     key={link.key}
                     type="button"
-                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)] btn-hover-lighter"
                     onClick={() => handleLinkClick(link.key)}
                   >
                     {link.label}
@@ -572,14 +572,14 @@ export function LegalFooter({
               className="legal-modal-card squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] h-full flex flex-col overflow-hidden border-[3px]"
               style={{
                 backgroundColor: 'rgba(245, 251, 255, 0.94)',
-                borderColor: 'rgba(95, 179, 249, 0.65)',
+                borderColor: 'rgba(60, 103, 183, 0.65)',
                 willChange: 'backdrop-filter',
                 ['--legal-card-blur' as any]: shouldBlurBackground ? '16px' : '0px',
                 ['--legal-card-saturate' as any]: shouldBlurBackground ? '1.45' : '1',
               }}
             >
-              <div className="legal-modal-header flex items-center justify-between gap-4 px-4 sm:px-5 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
-                <h2 id="legal-dialog-title" className="flex-1 text-xl sm:text-2xl font-semibold text-[rgb(95,179,249)] pr-2">
+              <div className="legal-modal-header flex items-center justify-between gap-4 px-4 sm:px-5 flex-shrink-0 border-b" style={{ borderColor: 'rgba(60, 103, 183, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+                <h2 id="legal-dialog-title" className="flex-1 text-xl sm:text-2xl font-semibold text-[rgb(60,103,183)] pr-2">
                   {selectedDocument.title}
                 </h2>
 	                <button
@@ -589,7 +589,7 @@ export function LegalFooter({
 	                    handleClose();
 	                  }}
 	                  className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-	                  style={{ backgroundColor: 'rgb(95, 179, 249)', borderRadius: '50%' }}
+	                  style={{ backgroundColor: 'rgb(60, 103, 183)', borderRadius: '50%' }}
 	                >
 	                  <X className="h-4 w-4" aria-hidden="true" />
 	                  <span className="sr-only">Close</span>
@@ -643,17 +643,17 @@ export function LegalFooter({
             style={{
               ...supportModalPanelStyle,
               backgroundColor: 'rgba(245, 251, 255, 0.94)',
-              borderColor: 'rgba(95, 179, 249, 0.65)',
+              borderColor: 'rgba(60, 103, 183, 0.65)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
-              <h2 className="flex-1 text-lg font-semibold text-[rgb(95,179,249)]">Contact Form</h2>
+            <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(60, 103, 183, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+              <h2 className="flex-1 text-lg font-semibold text-[rgb(60,103,183)]">Contact Form</h2>
 		              <button
 	                type="button"
 	                onClick={handleContactClose}
 	                className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-	                style={{ backgroundColor: 'rgb(95, 179, 249)', borderRadius: '50%' }}
+	                style={{ backgroundColor: 'rgb(60, 103, 183)', borderRadius: '50%' }}
 	              >
 	                <X className="h-4 w-4" aria-hidden="true" />
 	                <span className="sr-only">Close</span>
@@ -668,7 +668,7 @@ export function LegalFooter({
                   value={contactForm.name}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, name: e.target.value }))}
                   required
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="space-y-1">
@@ -679,7 +679,7 @@ export function LegalFooter({
                   value={contactForm.email}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, email: e.target.value }))}
                   required
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="space-y-1">
@@ -689,7 +689,7 @@ export function LegalFooter({
                   type="tel"
                   value={contactForm.phone}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="space-y-1">
@@ -699,7 +699,7 @@ export function LegalFooter({
                   type="text"
                   value={contactForm.source}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, source: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="flex w-full items-center justify-between pt-3 mb-4">
@@ -710,8 +710,8 @@ export function LegalFooter({
                 <button
                   type="submit"
                   disabled={contactSubmitting}
-                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed mb-[3px]"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(60,103,183,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed mb-[3px]"
+                  style={{ backgroundColor: 'rgb(60, 103, 183)' }}
                 >
                   {contactSubmitting ? 'Sending…' : 'Send'}
                 </button>
@@ -757,17 +757,17 @@ export function LegalFooter({
             style={{
               ...supportModalPanelStyle,
               backgroundColor: 'rgba(245, 251, 255, 0.94)',
-              borderColor: 'rgba(95, 179, 249, 0.65)',
+              borderColor: 'rgba(60, 103, 183, 0.65)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
-              <h2 className="flex-1 text-lg font-semibold text-[rgb(95,179,249)]">Report a Bug</h2>
+            <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(60, 103, 183, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+              <h2 className="flex-1 text-lg font-semibold text-[rgb(60,103,183)]">Report a Bug</h2>
               <button
                 type="button"
                 onClick={handleBugClose}
                 className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-                style={{ backgroundColor: 'rgb(95, 179, 249)', borderRadius: '50%' }}
+                style={{ backgroundColor: 'rgb(60, 103, 183)', borderRadius: '50%' }}
               >
                 <X className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">Close</span>
@@ -784,7 +784,7 @@ export function LegalFooter({
                   onChange={(e) => setBugReport(e.target.value)}
                   required
                   rows={6}
-                  className="w-full px-3 py-2 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.25)]"
+                  className="w-full px-3 py-2 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                   placeholder="Describe what happened and how to reproduce it."
                 />
               </div>
@@ -796,8 +796,8 @@ export function LegalFooter({
                 <button
                   type="submit"
                   disabled={bugSubmitting}
-                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed mb-[3px]"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(60,103,183,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed mb-[3px]"
+                  style={{ backgroundColor: 'rgb(60, 103, 183)' }}
                 >
                   {bugSubmitting ? 'Sending…' : 'Send'}
                 </button>

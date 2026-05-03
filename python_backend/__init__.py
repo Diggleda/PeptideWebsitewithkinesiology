@@ -11,13 +11,16 @@ if TYPE_CHECKING:  # pragma: no cover
 _LOGGER = logging.getLogger(__name__)
 
 
-def _resolve_web_background_jobs_mode() -> str:
+def _resolve_web_background_jobs_mode(*, default_mode: str = "thread") -> str:
+    default = "external" if str(default_mode or "").strip().lower() == "external" else "thread"
     raw = str(os.environ.get("TRUFUSION_WEB_BACKGROUND_JOBS_MODE") or "").strip().lower()
-    if raw in {"", "thread", "threads", "web", "inprocess", "1", "true", "yes", "on", "enabled"}:
+    if raw == "":
+        return default
+    if raw in {"thread", "threads", "web", "inprocess", "1", "true", "yes", "on", "enabled"}:
         return "thread"
     if raw in {"external", "off", "false", "no", "disabled"}:
         return "external"
-    return "thread"
+    return default
 
 
 def _build_app(*, route_set: str) -> "Flask":
@@ -52,7 +55,9 @@ def _build_app(*, route_set: str) -> "Flask":
     app.config["DEBUG"] = not config.is_production
     app.config["APP_CONFIG"] = config
     app.config["APP_ROUTE_SET"] = route_set
-    app.config["WEB_BACKGROUND_JOBS_MODE"] = _resolve_web_background_jobs_mode()
+    app.config["WEB_BACKGROUND_JOBS_MODE"] = _resolve_web_background_jobs_mode(
+        default_mode="external" if config.is_production else "thread",
+    )
 
     configure_services(config)
     init_database(config)

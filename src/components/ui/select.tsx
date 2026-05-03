@@ -17,7 +17,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'inline-flex w-full items-center justify-between gap-2 squircle-sm glass-card border border-[var(--brand-glass-border-2)] px-3 py-2 text-sm text-slate-700 transition-[color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(95,179,249)] focus-visible:ring-offset-[1.5px] focus-visible:ring-offset-white/40 disabled:cursor-not-allowed disabled:opacity-50',
+      'inline-flex w-full items-center justify-between gap-2 squircle-sm glass-card border border-[var(--brand-glass-border-2)] px-3 py-2 text-sm text-slate-700 transition-[color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(60,103,183)] focus-visible:ring-offset-[1.5px] focus-visible:ring-offset-white/40 disabled:cursor-not-allowed disabled:opacity-50',
       className
     )}
     {...props}
@@ -69,12 +69,12 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-pointer select-none items-center rounded-lg pl-8 pr-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-[rgba(95,179,249,0.08)] focus:bg-[rgba(95,179,249,0.12)] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+      'relative flex w-full cursor-pointer select-none items-center rounded-lg pl-8 pr-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-[rgba(60,103,183,0.08)] focus:bg-[rgba(60,103,183,0.12)] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
       className
     )}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center text-[rgb(95,179,249)]">
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center text-[rgb(60,103,183)]">
       <SelectPrimitive.ItemIndicator>
         <Check className="h-3 w-3" />
       </SelectPrimitive.ItemIndicator>

@@ -65,7 +65,7 @@ _EMAIL_LOGO_CELL_STYLE = "padding:24px 24px 0;"
 _EMAIL_ORDER_OUTER_CELL_STYLE = "padding:0 14px;"
 _EMAIL_DETAIL_CARD_STYLE = (
     "margin:0 0 24px;"
-    "border:1px solid rgba(95,179,249,0.26);"
+    "border:1px solid rgba(60,103,183,0.26);"
     "border-radius:16px;"
     "background-color:#f8fbff;"
     "background:rgba(255,255,255,0.66);"
@@ -76,8 +76,8 @@ _EMAIL_ADMIN_REFRESH_BUTTON_STYLE = (
     "padding:10px 18px;"
     "background-color:#ffffff;"
     "background-color:rgba(255,255,255,0.95);"
-    "color:rgb(95,179,249);"
-    "border:2px solid rgb(95,179,249);"
+    "color:rgb(60,103,183);"
+    "border:2px solid rgb(60,103,183);"
     "border-radius:12px;"
     "box-shadow:none;"
     "font-size:14px;"
@@ -89,9 +89,9 @@ _EMAIL_TRACK_BUTTON_HOVER_CSS = (
     "<style>"
     ".trufusion-track-button:hover,"
     ".trufusion-track-button:focus{"
-    "background-color:rgb(95,179,249) !important;"
+    "background-color:rgb(60,103,183) !important;"
     "color:#ffffff !important;"
-    "border-color:rgb(95,179,249) !important;"
+    "border-color:rgb(60,103,183) !important;"
     "text-decoration:none !important;"
     "box-shadow:none !important;"
     "filter:none !important;"
@@ -112,11 +112,12 @@ _EMAIL_INLINE_IMAGE_SPECS = (
     },
     {
         "content_id": _EMAIL_LEAF_CID,
-        "filename": "blueleafTexture.png",
+        "filename": "blueleafTexture-email.png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
+            "public/blueleafTexture-email.png",
             "public/blueleafTexture.png",
             "src/generated/runtime-assets/blueleafTexture.png",
         ),
@@ -487,19 +488,19 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
                   If you did not request this, you can safely ignore this email—your password will remain unchanged.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{reset_url}" style="display:inline-block;padding:14px 28px;background-color:#5FB3F9;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Reset Password</a>
+                  <a href="{reset_url}" style="display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Reset Password</a>
                 </p>
                 <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#6b7280;">
                   Or copy and paste this link into your browser:
                 </p>
-                <p style="margin:0;font-size:14px;line-height:1.5;color:#5FB3F9;word-break:break-all;">
+                <p style="margin:0;font-size:14px;line-height:1.5;color:#3C67B7;word-break:break-all;">
                   {reset_url}
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#5FB3F9;text-decoration:none;">{safe_base_url}</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
                 <p style="margin:0;">This link will expire in 60 minutes to keep your account secure.</p>
               </td>
             </tr>
@@ -645,13 +646,13 @@ def _build_delegate_proposal_ready_email(
                   Sign in to your TruFusionLabs account and open Account, then Delegate Links, to review or reject the proposal.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#5FB3F9;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in TruFusionLabs</a>
+                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in TruFusionLabs</a>
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
           </table>
@@ -739,7 +740,7 @@ def _build_shipping_status_email(
     ) if tracking_url else ""
     account_link_html = (
         f'<p style="margin:0;text-align:center;font-size:14px;line-height:1.5;color:#6b7280;">'
-        f'Sign in to your account at <a href="{account_url}" style="color:#5FB3F9;text-decoration:none;font-weight:700;">trufusionlabs.com</a>.'
+        f'Sign in to your account at <a href="{account_url}" style="color:#3C67B7;text-decoration:none;font-weight:700;">trufusionlabs.com</a>.'
         f"</p>"
     )
     tracking_html = (
@@ -792,7 +793,7 @@ def _build_shipping_status_email(
             </tr>
             <tr>
               <td style="padding:8px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#5FB3F9;text-decoration:none;">support@trufusionlabs.com</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
           </table>

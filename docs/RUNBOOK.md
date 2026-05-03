@@ -50,8 +50,10 @@ Fast capture:
    - `journalctl -u peppr-api.service -n 200 --no-pager`
 3. If the process is healthy and you are deploying code or env changes, prefer a graceful reload:
    - `sudo systemctl reload peppr-api.service`
+   - `sudo systemctl reload peppr-presence.service`
 4. Use a full restart only when the process is wedged or reload is unavailable:
    - `sudo systemctl restart peppr-api.service`
+   - `sudo systemctl restart peppr-presence.service`
 5. If requests are failing but the process is healthy, grab the `X-Request-Id` from the failing response and search logs for it.
 6. If the API is being restarted unexpectedly, inspect any watchdog/timer unit before restarting again:
    - `sudo systemctl list-timers --all | egrep -i 'peppr|api|watchdog'`
