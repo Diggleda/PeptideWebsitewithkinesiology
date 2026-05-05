@@ -57,7 +57,10 @@ const buildResetUrl = (token) => {
   return `${base}/reset-password?token=${token}`;
 };
 
-const FROM_ADDRESS = process.env.MAIL_FROM || '"TruFusionLabs" <support@trufusionlabs.com>';
+const DEFAULT_FROM_ADDRESS = '"TruFusionLabs" <support@trufusionlabs.com>';
+const normalizeFromAddress = (value) => String(value || DEFAULT_FROM_ADDRESS)
+  .replace(/TruFusion Labs/g, 'TruFusionLabs');
+const FROM_ADDRESS = normalizeFromAddress(process.env.MAIL_FROM);
 
 const normalizeEmailAddress = (value) => {
   if (!value) return null;

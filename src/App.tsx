@@ -41041,7 +41041,7 @@ function MainApp() {
                             side="bottom"
                             align="start"
                             sideOffset={8}
-                            className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+                            className="calendar-popover calendar-popover--modal z-[15050] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
                           >
                             <div>
                               <DayPicker
@@ -41554,7 +41554,7 @@ function MainApp() {
                                     side="bottom"
                                     align="start"
                                     sideOffset={8}
-                                    className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+                                    className="calendar-popover calendar-popover--modal z-[15050] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
                                   >
                                     <div>
                                       <DayPicker
@@ -42170,7 +42170,7 @@ function MainApp() {
         }}
       >
         <DialogContent
-          className="max-w-4xl"
+          className="sales-order-detail-dialog max-w-4xl"
           containerClassName={salesDashboardDetailModalContainerClassName}
         >
           {salesOrderDetailLoading && !salesOrderDetail && (

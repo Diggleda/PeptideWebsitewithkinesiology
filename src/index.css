@@ -8088,6 +8088,12 @@ body.manufacturing-standards-modal-open .header-account-avatar-shell {
   margin: auto !important;
 }
 
+.account-modal[data-slot="dialog-content"],
+.sales-doctor-detail-dialog[data-slot="dialog-content"],
+.sales-order-detail-dialog[data-slot="dialog-content"] {
+  border: 2px solid rgba(148, 163, 184, 0.88) !important;
+}
+
 .documentation-modal-layer {
   position: fixed !important;
   z-index: 13000 !important;
@@ -9732,6 +9738,10 @@ a[href^="mailto:"]:hover {
   z-index: 1;
 }
 
+.calendar-popover--modal {
+  z-index: 15050 !important;
+}
+
 .calendar-popover-arrow {
   fill: rgba(255, 255, 255, 1);
   filter: drop-shadow(0 10px 18px rgba(15, 23, 42, 0.14));
@@ -10124,7 +10134,7 @@ a[href^="mailto:"]:hover {
   --theme-page-bg: #edf7fb;
   --theme-page-image:
     linear-gradient(180deg, rgba(237, 247, 251, 0.82), rgba(237, 247, 251, 0.88)),
-    url('./generated/runtime-assets/leafTexture.png');
+    url('./generated/runtime-assets/leafTexture.jpg');
   --theme-surface: rgba(255, 255, 255, 0.88);
   --theme-surface-strong: rgba(255, 255, 255, 0.94);
   --theme-surface-muted: rgba(243, 249, 255, 0.9);

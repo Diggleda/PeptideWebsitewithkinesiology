@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
 # Visibility requirement for shipping lifecycle emails only.
 _SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
+_EMAIL_DEFAULT_FROM = "TruFusionLabs <support@trufusionlabs.com>"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
@@ -29,6 +30,7 @@ _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
 _EMAIL_LOGO_WIDTH = 360
 _EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
+_EMAIL_LEAF_OVERLAY_GRADIENT = "linear-gradient(180deg, rgba(237, 247, 251, 0.82), rgba(237, 247, 251, 0.88))"
 _EMAIL_LOGO_IMAGE_STYLE = (
     f"width:{_EMAIL_LOGO_WIDTH}px;"
     "max-width:70%;"
@@ -115,14 +117,13 @@ _EMAIL_INLINE_IMAGE_SPECS = (
     },
     {
         "content_id": _EMAIL_LEAF_CID,
-        "filename": "blueleafTexture-email.png",
-        "mime_type": "image/png",
+        "filename": "leafTexture.jpg",
+        "mime_type": "image/jpeg",
         "maintype": "image",
-        "subtype": "png",
+        "subtype": "jpeg",
         "paths": (
-            "public/blueleafTexture-email.png",
-            "public/blueleafTexture.png",
-            "src/generated/runtime-assets/blueleafTexture.png",
+            "public/leafTexture.jpg",
+            "src/generated/runtime-assets/leafTexture.jpg",
         ),
     },
     {
@@ -182,7 +183,7 @@ def _email_settings() -> Dict[str, Any]:
     smtp_auth_enabled = _to_bool(os.environ.get("SMTP_AUTH") or os.environ.get("EMAIL_AUTH"), True)
 
     settings = {
-        "from": os.environ.get("MAIL_FROM") or "TruFusionLabs <support@trufusionlabs.com>",
+        "from": _normalize_from_brand(os.environ.get("MAIL_FROM")),
         "timeout": _to_int(os.environ.get("SENDGRID_TIMEOUT") or os.environ.get("SMTP_TIMEOUT"), 15),
         "sendgrid_api_key": sendgrid_key,
         "sendgrid_endpoint": os.environ.get("SENDGRID_API_URL") or SENDGRID_ENDPOINT,
@@ -224,6 +225,10 @@ def _format_from_address(raw: str) -> Dict[str, str]:
             formatted["name"] = name
         return formatted
     return {"email": raw.strip()}
+
+
+def _normalize_from_brand(raw: Optional[str]) -> str:
+    return str(raw or _EMAIL_DEFAULT_FROM).replace("TruFusion Labs", "TruFusionLabs")
 
 
 @lru_cache(maxsize=1)
@@ -302,10 +307,10 @@ def _sendgrid_inline_attachments(html: str) -> list[Dict[str, str]]:
 def _email_background_style(leaf_url: str) -> str:
     return (
         "background-color:#edf7fb;"
-        f"background-image:url('{leaf_url}');"
-        "background-size:cover;"
-        "background-position:center;"
-        "background-repeat:no-repeat;"
+        f"background-image:{_EMAIL_LEAF_OVERLAY_GRADIENT},url('{leaf_url}');"
+        "background-size:cover,cover;"
+        "background-position:center top,center top;"
+        "background-repeat:no-repeat,no-repeat;"
     )
 
 
@@ -313,6 +318,7 @@ def _email_body_style(leaf_url: str) -> str:
     return (
         "margin:0;"
         "padding:0;"
+        "min-height:100vh;"
         f"{_email_background_style(leaf_url)}"
         "font-family:Arial,Helvetica,sans-serif;"
         "color:#111827;"
@@ -321,7 +327,7 @@ def _email_body_style(leaf_url: str) -> str:
 
 
 def _email_outer_table_style(leaf_url: str) -> str:
-    return f"{_email_background_style(leaf_url)}padding:32px 0;color-scheme:light;"
+    return f"{_email_background_style(leaf_url)}min-height:100vh;height:100vh;padding:32px 0;color-scheme:light;"
 
 
 def _email_container_style(max_width: int) -> str:

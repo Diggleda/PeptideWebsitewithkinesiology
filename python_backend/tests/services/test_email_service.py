@@ -49,6 +49,11 @@ class EmailServiceTests(unittest.TestCase):
         self.assertNotIn("width:100%", html)
         self.assertIn('background="cid:trufusion-leaf"', html)
         self.assertIn("url('cid:trufusion-leaf')", html)
+        self.assertIn("linear-gradient(180deg, rgba(237, 247, 251, 0.82), rgba(237, 247, 251, 0.88))", html)
+        self.assertIn("background-size:cover,cover", html)
+        self.assertIn("background-position:center top,center top", html)
+        self.assertIn("min-height:100vh", html)
+        self.assertIn("height:100vh", html)
         self.assertIn("background:rgba(255,255,255,0.64)", html)
         self.assertIn("backdrop-filter:blur(52px) saturate(1.9)", html)
         self.assertIn('td align="center" style="padding:0 14px;"', html)
@@ -74,6 +79,27 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_args.kwargs["bcc"], ("pgibbons@trufusionlabs.com",))
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertNotIn("cc", dispatch_email.call_args.kwargs)
+
+    def test_email_settings_normalizes_trufusionlabs_sender_name(self):
+        from python_backend.services import email_service
+
+        with patch.dict("os.environ", {"MAIL_FROM": '"TruFusion Labs" <support@trufusionlabs.com>'}):
+            settings = email_service._email_settings()
+
+        self.assertEqual(settings["from"], '"TruFusionLabs" <support@trufusionlabs.com>')
+
+    def test_email_background_uses_leaf_texture_asset(self):
+        from python_backend.services import email_service
+
+        leaf_spec = next(
+            spec for spec in email_service._EMAIL_INLINE_IMAGE_SPECS if spec["content_id"] == "trufusion-leaf"
+        )
+
+        self.assertEqual(leaf_spec["filename"], "leafTexture.jpg")
+        self.assertEqual(leaf_spec["mime_type"], "image/jpeg")
+        self.assertEqual(leaf_spec["paths"][0], "public/leafTexture.jpg")
+        self.assertNotIn("leafTexture-email.jpg", ",".join(leaf_spec["paths"]))
+        self.assertNotIn("blueleafTexture", ",".join(leaf_spec["paths"]))
 
     def test_delegate_links_beta_info_email_includes_badge_image(self):
         from python_backend.services import email_service
@@ -166,10 +192,10 @@ class EmailServiceTests(unittest.TestCase):
             },
             {
                 "content_id": "trufusion-leaf",
-                "filename": "blueleafTexture-email.png",
-                "mime_type": "image/png",
+                "filename": "leafTexture.jpg",
+                "mime_type": "image/jpeg",
                 "maintype": "image",
-                "subtype": "png",
+                "subtype": "jpeg",
                 "data": b"leaf",
             },
         )
@@ -195,7 +221,7 @@ class EmailServiceTests(unittest.TestCase):
         attachments = post.call_args.kwargs["json"]["attachments"]
         self.assertEqual([attachment["content_id"] for attachment in attachments], ["trufusion-logo", "trufusion-leaf"])
         self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
-        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "blueleafTexture-email.png"])
+        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "leafTexture.jpg"])
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
@@ -234,10 +260,10 @@ class EmailServiceTests(unittest.TestCase):
             },
             {
                 "content_id": "trufusion-leaf",
-                "filename": "blueleafTexture-email.png",
-                "mime_type": "image/png",
+                "filename": "leafTexture.jpg",
+                "mime_type": "image/jpeg",
                 "maintype": "image",
-                "subtype": "png",
+                "subtype": "jpeg",
                 "data": b"leaf",
             },
         )
