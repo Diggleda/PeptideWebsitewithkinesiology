@@ -310,8 +310,16 @@ const sanitizeUser = (user) => {
     networkPresenceAgreement: normalizeBooleanFlag(
       user.networkPresenceAgreement ?? user.network_presence_agreement,
     ),
-    delegateLogoUrl: normalizeOptionalString(user.delegateLogoUrl),
-    delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
+    delegateLogoUrl: normalizeOptionalString(user.delegateLogoUrl ?? user.delegate_logo_url),
+    delegateSecondaryColor: normalizeOptionalString(
+      user.delegateSecondaryColor ?? user.delegate_secondary_color,
+    ),
+    delegateBackgroundImageUrl: normalizeOptionalString(
+      user.delegateBackgroundImageUrl ?? user.delegate_background_image_url,
+    ),
+    delegateBackgroundColor: normalizeOptionalString(
+      user.delegateBackgroundColor ?? user.delegate_background_color,
+    ),
     cart: normalizeCartItems(user.cart),
     role: normalizeRole(user.role),
     researchTermsAgreement: normalizeBooleanFlag(
@@ -341,6 +349,7 @@ const sanitizeUserForAuthResponse = (user) => {
     // The client can hydrate these later via profile fetch/update flows.
     profileImageUrl: null,
     delegateLogoUrl: null,
+    delegateBackgroundImageUrl: null,
   };
 };
 
@@ -794,6 +803,12 @@ const updateProfile = async (userId, data) => {
   }
   if (Object.prototype.hasOwnProperty.call(data, 'delegateSecondaryColor')) {
     next.delegateSecondaryColor = normalizeOptionalString(data.delegateSecondaryColor);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'delegateBackgroundImageUrl')) {
+    next.delegateBackgroundImageUrl = normalizeOptionalString(data.delegateBackgroundImageUrl);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'delegateBackgroundColor')) {
+    next.delegateBackgroundColor = normalizeOptionalString(data.delegateBackgroundColor);
   }
   if (Object.prototype.hasOwnProperty.call(data, 'receiveClientOrderUpdateEmails')) {
     next.receiveClientOrderUpdateEmails = normalizeBooleanFlag(

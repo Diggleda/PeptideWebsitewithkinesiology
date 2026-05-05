@@ -76,27 +76,24 @@ def derive_online_state(
     persisted_last_seen_epoch: float | int | None,
     now_epoch: float | None = None,
     threshold_s: float,
+    offline_stale_margin_s: float = 1.0,
 ) -> bool:
     """
     Derive online state from the freshest available signal.
 
     A local in-memory heartbeat should make a user online immediately, even if a
-    slow or failed storage write still has is_online=0. A newer persisted offline
-    timestamp still wins, which keeps explicit logout from being masked by stale
-    process-local memory.
+    slow or failed storage write still has is_online=0. Persisted offline wins
+    unless the heartbeat is clearly newer, which keeps explicit logout from being
+    masked by same-second process-local memory.
     """
     now = float(now_epoch) if now_epoch is not None else time.time()
     presence_seen = _coerce_epoch(presence_last_seen_epoch)
     persisted_seen = _coerce_epoch(persisted_last_seen_epoch)
 
     if is_recent_epoch(presence_seen, threshold_s=threshold_s, now_epoch=now):
-        if (
-            not bool(stored_is_online)
-            and persisted_seen is not None
-            and presence_seen is not None
-            and persisted_seen > presence_seen
-        ):
-            return False
+        if not bool(stored_is_online) and persisted_seen is not None and presence_seen is not None:
+            margin = max(0.0, float(offline_stale_margin_s or 0.0))
+            return presence_seen > (persisted_seen + margin)
         return True
 
     return bool(

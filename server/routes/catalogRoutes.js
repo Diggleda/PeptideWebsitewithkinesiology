@@ -9,6 +9,10 @@ const router = Router();
 const MODEL_VERSION = 'heuristic-v1-node-fallback';
 const SIMULATION_MODEL_VERSION = 'heuristic-v1-node-simulation';
 const DEFAULT_SIMULATION_EMAILS = ['diggledadiggz@gmail.com'];
+const DEFAULT_RECOMMENDATION_LIMIT = 12;
+const MAX_RECOMMENDATION_LIMIT = 24;
+const DEFAULT_SIMULATION_LIMIT = 6;
+const MAX_SIMULATION_LIMIT = 12;
 
 const recommendationsEnabled = () => {
   const raw = String(process.env.RECOMMENDATIONS_ENABLED || 'true').trim().toLowerCase();
@@ -57,6 +61,24 @@ const parsePositiveInt = (value) => {
   if (!match) return null;
   const parsed = Number.parseInt(match[1], 10);
   return parsed > 0 ? parsed : null;
+};
+
+const parseEnvPositiveInt = (name, fallback) => {
+  const parsed = parsePositiveInt(process.env[name]);
+  return parsed || fallback;
+};
+
+const resolveRecommendationLimit = (requestedLimit) => {
+  const requested = parsePositiveInt(requestedLimit) || DEFAULT_RECOMMENDATION_LIMIT;
+  const configuredMax = parseEnvPositiveInt('RECOMMENDATION_MAX_RESULTS', MAX_RECOMMENDATION_LIMIT);
+  const safeMax = Math.max(1, Math.min(configuredMax, 100));
+  return Math.max(1, Math.min(requested, safeMax));
+};
+
+const resolveSimulationLimit = (responseLimit) => {
+  const configured = parseEnvPositiveInt('RECOMMENDATION_SIMULATION_LIMIT', DEFAULT_SIMULATION_LIMIT);
+  const safeConfigured = Math.max(1, Math.min(configured, MAX_SIMULATION_LIMIT));
+  return Math.max(1, Math.min(responseLimit, safeConfigured));
 };
 
 const orderItems = (order) => {
@@ -241,9 +263,24 @@ const buildSimulatedRecommendations = async (user, existingResult, limit) => {
       .filter(Boolean),
   );
 
-  const candidates = await fetchCatalogSimulationCandidates(limit);
+  const simulationLimit = resolveSimulationLimit(limit);
+  const existingTrimmed = existing.slice(0, limit);
+  const simulationSlots = Math.max(0, simulationLimit - existingTrimmed.length);
+  if (simulationSlots <= 0) {
+    return {
+      recommendations: existingTrimmed,
+      modelVersion: existingResult?.modelVersion || MODEL_VERSION,
+      fallback: existingResult?.fallback ?? true,
+      fallbackReason: existingResult?.fallbackReason || null,
+    };
+  }
+
+  const candidates = await fetchCatalogSimulationCandidates(
+    Math.min(100, simulationSlots + existingIds.size + 12),
+  );
   const simulated = candidates
     .filter((candidate) => !existingIds.has(candidate.productId))
+    .slice(0, simulationSlots)
     .map((candidate, index) => ({
       productId: `woo-${candidate.productId}`,
       wooProductId: candidate.productId,
@@ -252,12 +289,14 @@ const buildSimulatedRecommendations = async (user, existingResult, limit) => {
       modelVersion: SIMULATION_MODEL_VERSION,
     }));
 
-  const recommendations = [...existing, ...simulated].slice(0, limit);
+  const recommendations = [...existingTrimmed, ...simulated].slice(0, limit);
   return {
     recommendations,
-    modelVersion: SIMULATION_MODEL_VERSION,
+    modelVersion: simulated.length > 0
+      ? SIMULATION_MODEL_VERSION
+      : (existingResult?.modelVersion || MODEL_VERSION),
     fallback: existingResult?.fallback ?? true,
-    fallbackReason: recommendations.length > 0
+    fallbackReason: simulated.length > 0
       ? 'node_simulation_for_diggledadiggz'
       : (existingResult?.fallbackReason || null),
   };
@@ -272,8 +311,7 @@ router.get('/recommendations', authenticate, async (req, res, next) => {
     if (!canReadRecommendations(req.user)) {
       return res.status(403).json({ error: 'Recommendation access required' });
     }
-    const requestedLimit = Number.parseInt(String(req.query?.limit || '100'), 10);
-    const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 100));
+    const limit = resolveRecommendationLimit(req.query?.limit);
     const baseRecommendations = buildRecommendations(req.user, limit);
     return res.json(await buildSimulatedRecommendations(req.user, baseRecommendations, limit));
   } catch (error) {
@@ -297,3 +335,7 @@ router.get('/media', wooController.proxyMedia);
 router.use(wooController.proxyCatalog);
 
 module.exports = router;
+module.exports.__test__ = {
+  resolveRecommendationLimit,
+  resolveSimulationLimit,
+};

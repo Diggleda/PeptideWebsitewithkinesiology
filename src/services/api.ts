@@ -131,6 +131,7 @@ const AUTH_EMAIL_KEY = 'trufusion_auth_email_v1';
 const AUTH_SESSION_STARTED_AT_KEY = 'trufusion_session_started_at_v1';
 const AUTH_EVENT_STORAGE_KEY = 'trufusion_auth_event_v1';
 const AUTH_MODE_KEY = 'trufusion_auth_mode_v1';
+const AUTH_SHADOW_EXPIRES_AT_KEY = 'trufusion_shadow_expires_at_v1';
 const AUTH_EVENT_NAME = 'trufusion:force-logout';
 const AUTH_CHANNEL_NAME = 'trufusion-auth';
 const SHADOW_READ_ONLY_CODE = 'SHADOW_READ_ONLY';
@@ -194,6 +195,55 @@ const setAuthMode = (mode: AuthSessionMode) => {
 };
 
 export const isShadowSessionMode = () => getAuthMode() === 'shadow';
+
+const setShadowExpiresAt = (value?: string | null) => {
+  try {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (normalized) {
+      sessionStorage.setItem(AUTH_SHADOW_EXPIRES_AT_KEY, normalized);
+    } else {
+      sessionStorage.removeItem(AUTH_SHADOW_EXPIRES_AT_KEY);
+    }
+  } catch {
+    // ignore
+  }
+};
+
+const syncShadowSessionMetadata = (userLike: any) => {
+  const shadowContext =
+    userLike && typeof userLike === 'object' ? userLike.shadowContext : null;
+  if (shadowContext && shadowContext.active) {
+    setAuthMode('shadow');
+    setShadowExpiresAt(
+      typeof shadowContext.expiresAt === 'string' ? shadowContext.expiresAt : null,
+    );
+    return;
+  }
+  setAuthMode('standard');
+  setShadowExpiresAt(null);
+};
+
+const getStoredShadowExpiryMs = () => {
+  try {
+    const raw = sessionStorage.getItem(AUTH_SHADOW_EXPIRES_AT_KEY);
+    if (!raw || !raw.trim()) return null;
+    const parsed = new Date(raw).getTime();
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const isStoredShadowSessionExpired = () => {
+  const expiresMs = getStoredShadowExpiryMs();
+  return Boolean(expiresMs && expiresMs <= Date.now());
+};
+
+const assertShadowSessionNotExpired = () => {
+  if (isShadowSessionMode() && isStoredShadowSessionExpired()) {
+    throwLocalAuthRequired('TOKEN_EXPIRED');
+  }
+};
 
 const setSessionId = (sessionId: string) => {
   try {
@@ -483,6 +533,9 @@ const persistAuthToken = (
     // Ignore sessionStorage errors (Safari private mode, etc.)
   }
   setAuthMode(mode);
+  if (mode !== 'shadow') {
+    setShadowExpiresAt(null);
+  }
 
   // Prefer scoping to account id so other accounts can remain signed in in other tabs.
   // Callers should set `trufusion_user_id_v1` (via `setAuthUserId`) before persisting the token.
@@ -543,6 +596,7 @@ const clearAuthToken = () => {
   } catch {
     // ignore
   }
+  setShadowExpiresAt(null);
   clearSessionStartedAt();
 };
 
@@ -837,6 +891,7 @@ const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}
   const token = getAuthToken();
   const sessionIdAtRequestStart = getSessionId();
   const method = (requestOptions.method || 'GET').toUpperCase();
+  assertShadowSessionNotExpired();
   if (isShadowSessionMode() && method !== 'GET' && method !== 'HEAD' && !isShadowReadOnlyPath(rewrittenUrl)) {
     throwShadowReadOnly();
   }
@@ -1097,6 +1152,22 @@ const buildServiceUnavailableError = (message: string) => {
   return error;
 };
 
+const buildQuietAuthFailureError = (payload: any) => {
+  const message =
+    typeof payload?.error === 'string' && payload.error.trim()
+      ? payload.error.trim()
+      : 'LOGIN_ERROR';
+  const error = new Error(message);
+  const status = Number(payload?.status);
+  if (Number.isFinite(status)) {
+    (error as any).status = status;
+  }
+  if (typeof payload?.code === 'string' && payload.code.trim()) {
+    (error as any).code = payload.code.trim();
+  }
+  return error;
+};
+
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   let requestUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
@@ -1105,6 +1176,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     ...(options.headers || {}),
   };
   const method = (options.method || 'GET').toUpperCase();
+  assertShadowSessionNotExpired();
   if (isShadowSessionMode() && method !== 'GET' && method !== 'HEAD' && !isShadowReadOnlyPath(requestUrl)) {
     throwShadowReadOnly();
   }
@@ -1264,13 +1336,17 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit & { skipAuth?
   const headers: HeadersInit = {
     ...(options.headers || {}),
   };
+  const method = (options.method || 'GET').toUpperCase();
+
+  if (!options.skipAuth) {
+    assertShadowSessionNotExpired();
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
   let response: Response;
-  const method = (options.method || 'GET').toUpperCase();
   const authenticatedSignal = token
     ? createAuthenticatedRequestSignal(options.signal)
     : null;
@@ -1452,6 +1528,8 @@ export type UpdateProfilePayload = {
   networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
+  delegateBackgroundImageUrl?: string | null;
+  delegateBackgroundColor?: string | null;
   officeAddressLine1?: string | null;
   officeAddressLine2?: string | null;
   officeCity?: string | null;
@@ -1511,8 +1589,15 @@ export const authAPI = {
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       credentials: 'include',
+      headers: {
+        'X-Quiet-Auth-Failure': '1',
+      },
       body: JSON.stringify({ email, password }),
     });
+
+    if (data && typeof data === 'object' && (data as any).ok === false) {
+      throw buildQuietAuthFailureError(data);
+    }
 
     if (
       !data
@@ -1526,6 +1611,7 @@ export const authAPI = {
 
     setAuthUserId(data?.user?.id);
     setAuthEmail(data?.user?.email ?? email);
+    syncShadowSessionMetadata(data?.user);
     persistAuthToken(data.token, { mode: 'standard' });
     return data.user;
   },
@@ -1551,6 +1637,10 @@ export const authAPI = {
     });
     setAuthUserId(data?.user?.id);
     setAuthEmail(data?.user?.email ?? null);
+    syncShadowSessionMetadata({
+      ...(data?.user || {}),
+      shadowContext: data?.user?.shadowContext || data?.shadowContext,
+    });
     persistAuthToken(data?.token, { mode: 'shadow', suppressBroadcast: true });
     return data;
   },
@@ -1580,6 +1670,13 @@ export const authAPI = {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         };
+        void fetch(`${API_BASE_URL}/settings/presence`, {
+          method: 'POST',
+          keepalive: true,
+          credentials: 'include',
+          headers,
+          body: JSON.stringify({ kind: 'logout', isIdle: false }),
+        }).catch(() => null);
         void fetch(`${API_BASE_URL}/auth/logout`, {
           method: 'POST',
           keepalive: true,
@@ -1612,7 +1709,7 @@ export const authAPI = {
         });
 	      setAuthUserId((user as any)?.id);
 	      setAuthEmail((user as any)?.email);
-        setAuthMode((user as any)?.shadowContext?.active ? 'shadow' : 'standard');
+        syncShadowSessionMetadata(user);
 	      return user;
 	    } catch (error) {
       const maybeAny = error as any;
@@ -1653,7 +1750,7 @@ export const authAPI = {
         });
         setAuthUserId((user as any)?.id);
         setAuthEmail((user as any)?.email);
-        setAuthMode((user as any)?.shadowContext?.active ? 'shadow' : 'standard');
+        syncShadowSessionMetadata(user);
         return user;
       } catch (error) {
       const maybeAny = error as any;

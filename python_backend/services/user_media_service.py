@@ -14,6 +14,7 @@ _DATA_URL_RE = re.compile(
 )
 _SELF_PROFILE_IMAGE_PATH_RE = re.compile(r"^/api/auth/me/profile-image/?$", re.IGNORECASE)
 _SELF_DELEGATE_LOGO_PATH_RE = re.compile(r"^/api/auth/me/delegate-logo/?$", re.IGNORECASE)
+_SELF_DELEGATE_BACKGROUND_PATH_RE = re.compile(r"^/api/auth/me/delegate-background/?$", re.IGNORECASE)
 _ADMIN_PROFILE_IMAGE_PATH_RE = re.compile(r"^/api/settings/users/[^/]+/profile-image/?$", re.IGNORECASE)
 _NETWORK_PROFILE_IMAGE_PATH_RE = re.compile(
     r"^/api/settings/network/doctors/[^/]+/profile-image/?$",
@@ -41,6 +42,15 @@ def resolve_self_delegate_logo_url(value: object, *, user_id: object = None) -> 
         value,
         "/api/auth/me/delegate-logo",
         matcher=is_managed_delegate_logo_value,
+        cache_scope=user_id,
+    )
+
+
+def resolve_self_delegate_background_image_url(value: object, *, user_id: object = None) -> str | None:
+    return _resolve_managed_asset_url(
+        value,
+        "/api/auth/me/delegate-background",
+        matcher=is_managed_delegate_background_image_value,
         cache_scope=user_id,
     )
 
@@ -87,6 +97,13 @@ def is_managed_delegate_logo_value(value: object) -> bool:
     return bool(_SELF_DELEGATE_LOGO_PATH_RE.match(normalized_path))
 
 
+def is_managed_delegate_background_image_value(value: object) -> bool:
+    normalized_path = _normalized_internal_path(value)
+    if normalized_path is None:
+        return False
+    return bool(_SELF_DELEGATE_BACKGROUND_PATH_RE.match(normalized_path))
+
+
 def normalize_profile_image_for_storage(value: object, *, existing_value: object = None) -> str | None:
     return _normalize_managed_media_for_storage(
         value,
@@ -100,6 +117,14 @@ def normalize_delegate_logo_for_storage(value: object, *, existing_value: object
         value,
         existing_value=existing_value,
         matcher=is_managed_delegate_logo_value,
+    )
+
+
+def normalize_delegate_background_image_for_storage(value: object, *, existing_value: object = None) -> str | None:
+    return _normalize_managed_media_for_storage(
+        value,
+        existing_value=existing_value,
+        matcher=is_managed_delegate_background_image_value,
     )
 
 

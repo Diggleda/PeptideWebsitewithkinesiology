@@ -41,7 +41,7 @@ const DialogOverlay = React.forwardRef<
     data-slot="dialog-overlay"
     className={cn(
       // Avoid keyframe animations here: backdrop-filter + opacity keyframes can flicker on Safari/WebKit.
-      "fixed inset-0 z-[9999] bg-[rgba(4,14,21,0.55)] backdrop-blur-xl opacity-0 transition-opacity duration-[80ms] data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=closed]:pointer-events-none",
+      "fixed inset-0 z-[10000] bg-[rgba(4,14,21,0.55)] backdrop-blur-xl opacity-0 transition-opacity duration-[80ms] data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=closed]:pointer-events-none",
       className,
     )}
     style={{
@@ -90,7 +90,7 @@ const DialogContent = React.forwardRef<
           ref={ref}
           data-slot="dialog-content"
           className={cn(
-            "relative z-[1001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] focus:outline-none data-[state=closed]:pointer-events-none duration-[55ms] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
+            "relative z-[10001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] focus:outline-none data-[state=closed]:pointer-events-none duration-[55ms] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
             className,
           )}
           style={{

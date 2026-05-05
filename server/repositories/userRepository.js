@@ -139,6 +139,8 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
     networkPresenceAgreement: networkPresenceAgreement ? 1 : 0,
     delegateLogoUrl: user.delegateLogoUrl || null,
     delegateSecondaryColor: normalizeOptionalString(user.delegateSecondaryColor),
+    delegateBackgroundImageUrl: user.delegateBackgroundImageUrl || null,
+    delegateBackgroundColor: normalizeOptionalString(user.delegateBackgroundColor),
     delegateLinksEnabled: user.delegateLinksEnabled ? 1 : 0,
     researchTermsAgreement: user.researchTermsAgreement ? 1 : 0,
     delegateOptIn: user.delegateOptIn ? 1 : 0,
@@ -197,6 +199,8 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           network_presence_agreement,
           delegate_logo_url,
           delegate_secondary_color,
+          delegate_background_image_url,
+          delegate_background_color,
           delegate_links_enabled,
           research_terms_agreement,
           delegate_opt_in,
@@ -237,6 +241,8 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           :networkPresenceAgreement,
           :delegateLogoUrl,
           :delegateSecondaryColor,
+          :delegateBackgroundImageUrl,
+          :delegateBackgroundColor,
           :delegateLinksEnabled,
           :researchTermsAgreement,
           :delegateOptIn,
@@ -277,6 +283,8 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           network_presence_agreement = VALUES(network_presence_agreement),
           delegate_logo_url = VALUES(delegate_logo_url),
           delegate_secondary_color = VALUES(delegate_secondary_color),
+          delegate_background_image_url = VALUES(delegate_background_image_url),
+          delegate_background_color = VALUES(delegate_background_color),
           delegate_links_enabled = VALUES(delegate_links_enabled),
           research_terms_agreement = VALUES(research_terms_agreement),
           delegate_opt_in = VALUES(delegate_opt_in),
@@ -507,8 +515,32 @@ const ensureUserDefaults = (user) => {
   normalized.delegate_links_enabled = normalized.delegateLinksEnabled ? 1 : 0;
   normalized.research_terms_agreement = normalized.researchTermsAgreement ? 1 : 0;
   normalized.delegate_opt_in = normalized.delegateOptIn ? 1 : 0;
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateLogoUrl')) {
+    normalized.delegateLogoUrl = normalizeOptionalString(normalized.delegate_logo_url);
+  } else {
+    normalized.delegateLogoUrl = normalizeOptionalString(normalized.delegateLogoUrl);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateSecondaryColor')) {
+    normalized.delegateSecondaryColor = normalizeOptionalString(normalized.delegate_secondary_color);
+  } else {
+    normalized.delegateSecondaryColor = normalizeOptionalString(normalized.delegateSecondaryColor);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateBackgroundImageUrl')) {
+    normalized.delegateBackgroundImageUrl = normalizeOptionalString(normalized.delegate_background_image_url);
+  } else {
+    normalized.delegateBackgroundImageUrl = normalizeOptionalString(normalized.delegateBackgroundImageUrl);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateBackgroundColor')) {
+    normalized.delegateBackgroundColor = normalizeOptionalString(normalized.delegate_background_color);
+  } else {
+    normalized.delegateBackgroundColor = normalizeOptionalString(normalized.delegateBackgroundColor);
+  }
   normalized.profile_onboarding = normalized.profileOnboarding ? 1 : 0;
   normalized.network_presence_agreement = normalized.networkPresenceAgreement ? 1 : 0;
+  normalized.delegate_logo_url = normalized.delegateLogoUrl;
+  normalized.delegate_secondary_color = normalized.delegateSecondaryColor;
+  normalized.delegate_background_image_url = normalized.delegateBackgroundImageUrl;
+  normalized.delegate_background_color = normalized.delegateBackgroundColor;
   normalized.reseller_permit_onboarding_presented =
     normalized.resellerPermitOnboardingPresented ? 1 : 0;
   normalized.reseller_permit_approved_by_rep =

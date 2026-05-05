@@ -47,6 +47,17 @@
           };
 
           const params = new URLSearchParams(window.location.search);
+          const themeColor = document.querySelector('meta[name="theme-color"]');
+          if (themeColor) themeColor.setAttribute("content", "#3C67B7");
+          document.documentElement.dataset.brandColor = "blue";
+          document.documentElement.style.setProperty("--primary", "rgb(60, 103, 183)");
+          document.documentElement.style.setProperty("--primary-foreground", "#ffffff");
+          document.documentElement.style.setProperty("--brand-color", "rgb(60, 103, 183)");
+          document.documentElement.style.setProperty("--brand-color-rgb", "60, 103, 183");
+          document.documentElement.style.setProperty("--brand-glass-rgb", "60, 103, 183");
+          document.documentElement.style.setProperty("--secondary", "rgb(60, 103, 183)");
+          document.documentElement.style.setProperty("--secondary-foreground", "#ffffff");
+
           const hasDelegateToken = Boolean((params.get("delegate") || "").trim());
           const title = hasDelegateToken ? "Physician Delegate" : "Physician Portal";
           document.title = title;

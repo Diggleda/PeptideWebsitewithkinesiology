@@ -1,6 +1,7 @@
 
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
 import { Toaster } from "sonner@2.0.3";
 import App from "./App.tsx";
 import "./index.css";
@@ -69,10 +70,23 @@ const forceFavicon = () => {
 
 forceFavicon();
 
+function ToastPortal() {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="toast-portal-layer">
+      <Toaster richColors position="top-center" expand visibleToasts={10} />
+    </div>,
+    document.body,
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <>
     <App />
-    <Toaster richColors position="top-center" expand visibleToasts={10} />
+    <ToastPortal />
   </>
 );
   

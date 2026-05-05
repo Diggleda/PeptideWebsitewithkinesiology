@@ -575,6 +575,25 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'delegate_background_image_url',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN delegate_background_image_url LONGTEXT NULL
+      `,
+      expectedDataType: 'longtext',
+      alter: `
+        ALTER TABLE users
+        MODIFY COLUMN delegate_background_image_url LONGTEXT NULL
+      `,
+    },
+    {
+      name: 'delegate_background_color',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN delegate_background_color VARCHAR(16) NULL
+      `,
+    },
+    {
       name: 'delegate_links_enabled',
       ddl: `
         ALTER TABLE users

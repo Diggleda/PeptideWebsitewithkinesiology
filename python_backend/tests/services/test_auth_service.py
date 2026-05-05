@@ -117,6 +117,7 @@ class AuthServiceTests(unittest.TestCase):
             "email": "doctor@example.com",
             "profileImageUrl": "data:image/png;base64,QUJD",
             "delegateLogoUrl": "data:image/png;base64,REVG",
+            "delegateBackgroundImageUrl": "data:image/jpeg;base64,R0hJ",
         }
 
         with app.test_request_context("/api/auth/me", base_url="https://api.example.com"):
@@ -124,6 +125,7 @@ class AuthServiceTests(unittest.TestCase):
 
         profile_url = urlparse(str(sanitized["profileImageUrl"]))
         delegate_url = urlparse(str(sanitized["delegateLogoUrl"]))
+        background_url = urlparse(str(sanitized["delegateBackgroundImageUrl"]))
         self.assertEqual(
             f"{profile_url.scheme}://{profile_url.netloc}{profile_url.path}",
             "https://api.example.com/api/auth/me/profile-image",
@@ -132,8 +134,13 @@ class AuthServiceTests(unittest.TestCase):
             f"{delegate_url.scheme}://{delegate_url.netloc}{delegate_url.path}",
             "https://api.example.com/api/auth/me/delegate-logo",
         )
+        self.assertEqual(
+            f"{background_url.scheme}://{background_url.netloc}{background_url.path}",
+            "https://api.example.com/api/auth/me/delegate-background",
+        )
         self.assertTrue(parse_qs(profile_url.query).get("v"))
         self.assertTrue(parse_qs(delegate_url.query).get("v"))
+        self.assertTrue(parse_qs(background_url.query).get("v"))
 
     def test_update_profile_does_not_persist_self_profile_image_route(self) -> None:
         user = {
@@ -142,6 +149,7 @@ class AuthServiceTests(unittest.TestCase):
             "name": "Doctor One",
             "email": "doctor@example.com",
             "profileImageUrl": "data:image/png;base64,QUJD",
+            "delegateBackgroundImageUrl": "data:image/jpeg;base64,R0hJ",
         }
         saved_payloads = []
 
@@ -159,11 +167,14 @@ class AuthServiceTests(unittest.TestCase):
                 "doctor-1",
                 {
                     "profileImageUrl": "https://api.example.com/api/auth/me/profile-image?v=abc123",
+                    "delegateBackgroundImageUrl": "https://api.example.com/api/auth/me/delegate-background?v=abc123",
                 },
             )
 
         self.assertEqual(saved_payloads[0]["profileImageUrl"], "data:image/png;base64,QUJD")
+        self.assertEqual(saved_payloads[0]["delegateBackgroundImageUrl"], "data:image/jpeg;base64,R0hJ")
         self.assertEqual(updated["profileImageUrl"], "data:image/png;base64,QUJD")
+        self.assertEqual(updated["delegateBackgroundImageUrl"], "data:image/jpeg;base64,R0hJ")
 
     def test_login_uses_targeted_login_update(self) -> None:
         auth_record = {

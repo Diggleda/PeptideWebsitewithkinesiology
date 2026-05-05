@@ -1010,7 +1010,7 @@ export function ProductCard({
   }, [product.id, product.variations, variantsLoading]);
 
   const bulkTiers = selectedVariation.bulkPricingTiers ?? product.bulkPricingTiers ?? [];
-  const quantityButtonClasses = 'h-8 w-8 squircle-sm';
+  const quantityButtonClasses = 'product-quantity-button h-8 w-8 squircle-sm';
 
   const calculatePrice = () => {
     if (bulkTiers.length === 0) {
@@ -1032,7 +1032,6 @@ export function ProductCard({
 
   const currentUnitPrice = calculatePrice();
   const totalPrice = roundCurrency(currentUnitPrice * quantity);
-  const nextTier = bulkTiers.find((tier) => tier.minQuantity > quantity) || null;
 
   const visibleBulkTiers = useMemo(() => {
     if (!bulkTiers.length) {
@@ -1348,7 +1347,7 @@ export function ProductCard({
 
 			  const productMeta = (
 			    <>
-	      <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
+	      <h3 className="product-card-title line-clamp-2 text-slate-900">{product.name}</h3>
       {!isCheckoutAddOnCategory && (
         <button
 	        type="button"
@@ -1427,31 +1426,29 @@ export function ProductCard({
         >
           <Minus className="h-3 w-3" />
         </Button>
-        <div className="flex-1 text-center px-3 py-1 glass-card squircle-sm">
-          <Input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            min={1}
-            value={quantityInput}
-            onChange={(event) => {
-              const digits = event.target.value.replace(/[^0-9]/g, '');
-              setQuantityInput(digits);
-              if (digits) {
-                const next = Math.max(1, Number(digits));
-                setQuantity(next);
-              }
-              setBulkOpen(true);
-            }}
-            onBlur={() => {
-              if (!quantityInput) {
-                setQuantity(1);
-                setQuantityInput('1');
-              }
-            }}
-            className="h-auto border-none bg-transparent text-center text-base font-semibold focus-visible:ring-0 focus-visible:outline-none"
-          />
-        </div>
+        <Input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          min={1}
+          value={quantityInput}
+          onChange={(event) => {
+            const digits = event.target.value.replace(/[^0-9]/g, '');
+            setQuantityInput(digits);
+            if (digits) {
+              const next = Math.max(1, Number(digits));
+              setQuantity(next);
+            }
+            setBulkOpen(true);
+          }}
+          onBlur={() => {
+            if (!quantityInput) {
+              setQuantity(1);
+              setQuantityInput('1');
+            }
+          }}
+          className="h-8 flex-1 squircle-sm border border-[var(--brand-glass-border-2)] bg-white/70 text-center text-base font-semibold shadow-sm focus-visible:border-[rgba(60,103,183,0.45)] focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.22)]"
+        />
         <Button variant="outline" size="icon" className={quantityButtonClasses} onClick={() => handleQuantityChange(1)}>
           <Plus className="h-3 w-3" />
         </Button>
@@ -1463,7 +1460,7 @@ export function ProductCard({
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-xs text-gray-600">Unit Price:</span>
-        <span className="font-bold text-green-600">${currentUnitPrice.toFixed(2)}</span>
+        <span className="font-bold text-slate-900">${currentUnitPrice.toFixed(2)}</span>
       </div>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-xs text-gray-600">Total:</span>
@@ -1491,13 +1488,13 @@ export function ProductCard({
                   key={`${tier.minQuantity}-${tier.discountPercentage}`}
                   className="flex items-center justify-between rounded-md px-2 py-1 text-[0.8rem]"
                 >
-                  <span className={quantity >= tier.minQuantity ? 'text-green-600 font-semibold' : 'text-slate-600'}>
+                  <span className={quantity >= tier.minQuantity ? 'text-[rgb(60,103,183)] font-semibold' : 'text-slate-600'}>
                     Buy {tier.minQuantity}+
                   </span>
                   <span
                     className={
                       quantity >= tier.minQuantity
-                        ? 'text-green-600 font-semibold tabular-nums'
+                        ? 'text-[rgb(60,103,183)] font-semibold tabular-nums'
                         : 'text-slate-600 tabular-nums'
                     }
                   >
@@ -1506,11 +1503,6 @@ export function ProductCard({
                 </div>
               ))}
             </div>
-            {nextTier && (
-              <p className="text-xs text-[rgb(60,103,183)] mt-1 font-medium">
-                Buy {nextTier.minQuantity - quantity} more to save {nextTier.discountPercentage}%
-              </p>
-            )}
           </>
         )}
       </>
@@ -1544,10 +1536,10 @@ export function ProductCard({
     <>
       <Card
         ref={cardRef}
-        className={`group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(60,103,183,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)]${personalizedRecommendation ? ' catalog-personalized-product-card' : ''}`}
+        className={`catalog-product-card group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(60,103,183,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.61)]${personalizedRecommendation ? ' catalog-personalized-product-card' : ''}`}
         style={{
           background:
-            'linear-gradient(to right, rgba(60,103,183,0.08) 0%, rgba(255,255,255,0.35) 8px, rgba(255,255,255,0.35) 100%)',
+            'linear-gradient(to right, rgba(60,103,183,0.08) 0%, rgba(255,255,255,0.47) 8px, rgba(255,255,255,0.47) 100%)',
           backdropFilter: 'blur(40px) saturate(1.7)',
           WebkitBackdropFilter: 'blur(40px) saturate(1.7)',
         }}
@@ -1599,7 +1591,7 @@ export function ProductCard({
 	      >
               <DialogContent
               className="checkout-modal account-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col overflow-hidden"
-              containerClassName="fixed inset-x-0 bottom-0 z-[10000] flex items-end justify-center px-3 pb-3 sm:px-4 sm:pb-3"
+              containerClassName="documentation-modal-layer fixed inset-x-0 bottom-0 z-[13000] flex items-end justify-center px-3 pb-3 sm:px-4 sm:pb-3"
               containerStyle={{
                 top: 'var(--modal-header-offset, 6rem)',
                 left: 0,
@@ -1756,6 +1748,7 @@ export function ProductCard({
                           Math.abs(current - DEFAULT_DOCUMENT_PREVIEW_SCALE) < 0.001 ? nextScale : current
                         ))}
                         showZoomControls={false}
+                        preferNativePreview
                       />
                     </div>
                   ) : null}
@@ -1779,7 +1772,7 @@ export function ProductCard({
                             Math.abs(current - DEFAULT_DOCUMENT_PREVIEW_SCALE) < 0.001 ? nextScale : current
                           ))}
                           showZoomControls={false}
-                          preferNativePreview={false}
+                          preferNativePreview
                         />
                       </div>
                     ) : (

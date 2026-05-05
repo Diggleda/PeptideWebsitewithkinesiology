@@ -1923,13 +1923,7 @@ export function CheckoutModal({
                       : computedUnitPrice;
 	                  const lineTotal = unitPrice * item.quantity;
 	                  const delegateLineTotal = delegateUnitPrice != null ? delegateUnitPrice * item.quantity : null;
-                  const activeBulkTiers = (
-                    item.variant?.bulkPricingTiers ??
-                    item.product.bulkPricingTiers ??
-                    []
-                  ).sort((a, b) => a.minQuantity - b.minQuantity);
                   const visibleTiers = getVisibleBulkTiers(item.product, item.quantity, item.variant);
-                  const upcomingTier = activeBulkTiers.find((tier) => item.quantity < tier.minQuantity) || null;
                   const isBulkOpen = bulkOpenMap[item.id] ?? false;
                   return (
                     <Card
@@ -2036,7 +2030,7 @@ export function CheckoutModal({
                                                 <span
                                                   className={
                                                     item.quantity >= tier.minQuantity
-                                                      ? 'text-green-600 font-semibold'
+                                                      ? 'text-[rgb(60,103,183)] font-semibold'
                                                       : 'text-slate-600'
                                                   }
                                                 >
@@ -2045,7 +2039,7 @@ export function CheckoutModal({
                                                 <span
                                                   className={`tabular-nums ${
                                                     item.quantity >= tier.minQuantity
-                                                      ? 'text-green-600 font-semibold'
+                                                      ? 'text-[rgb(60,103,183)] font-semibold'
                                                       : 'text-slate-600'
                                                   }`}
                                                 >
@@ -2054,11 +2048,6 @@ export function CheckoutModal({
                                               </div>
                                             ))}
                                           </div>
-                                          {upcomingTier && (
-                                            <p className="text-xs text-[rgb(60,103,183)] font-medium">
-                                              Buy {upcomingTier.minQuantity - item.quantity} more to save {upcomingTier.discountPercentage}%
-                                            </p>
-                                          )}
                                         </>
                                       )}
                                     </div>

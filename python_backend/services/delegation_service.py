@@ -1022,6 +1022,8 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             "markupPercent": _normalize_capped_markup_percent(link.get("markupPercent")),
             "doctorLogoUrl": doctor.get("delegateLogoUrl") if isinstance(doctor, dict) else None,
             "doctorSecondaryColor": doctor.get("delegateSecondaryColor") if isinstance(doctor, dict) else None,
+            "doctorBackgroundImageUrl": doctor.get("delegateBackgroundImageUrl") if isinstance(doctor, dict) else None,
+            "doctorBackgroundColor": doctor.get("delegateBackgroundColor") if isinstance(doctor, dict) else None,
             "subjectLabel": link.get("subjectLabel"),
             "studyLabel": link.get("studyLabel"),
             "patientReference": link.get("patientReference"),

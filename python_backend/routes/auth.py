@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from flask import Blueprint, Response, g, request, send_file
+from datetime import datetime, timezone
+
+from flask import Blueprint, Response, g, jsonify, request, send_file
 
 import jwt
 
@@ -30,6 +32,26 @@ def _audit(event: str, details: dict) -> None:
         pass
 
 
+_QUIET_LOGIN_FAILURE_STATUSES = {400, 401, 404, 409}
+
+
+def _wants_quiet_login_failure() -> bool:
+    value = str(request.headers.get("X-Quiet-Auth-Failure") or "").strip().lower()
+    return value in ("1", "true", "yes", "on")
+
+
+def _login_action(payload: dict):
+    try:
+        return auth_service.login(payload)
+    except Exception as exc:
+        status = int(getattr(exc, "status", None) or 500)
+        if not _wants_quiet_login_failure() or status not in _QUIET_LOGIN_FAILURE_STATUSES:
+            raise
+        message = getattr(exc, "message", None) or str(exc) or "LOGIN_ERROR"
+        code = getattr(exc, "error_code", None) or getattr(exc, "code", None) or message
+        return jsonify({"ok": False, "error": message, "code": code, "status": status})
+
+
 @blueprint.post("/register")
 def register():
     payload = request.get_json(force=True, silent=True) or {}
@@ -40,7 +62,7 @@ def register():
 @blueprint.post("/login")
 def login():
     payload = request.get_json(force=True, silent=True) or {}
-    response = handle_action(lambda: auth_service.login(payload))
+    response = handle_action(lambda: _login_action(payload))
     return _attach_media_auth_cookie(response)
 
 
@@ -117,6 +139,27 @@ def me_delegate_logo():
         response = user_media_service.build_embedded_image_response(user.get("delegateLogoUrl"))
         if response is None:
             err = RuntimeError("Delegate logo not found")
+            setattr(err, "status", 404)
+            raise err
+        return response
+
+    return handle_action(action)
+
+
+@blueprint.get("/me/delegate-background")
+@require_media_auth
+def me_delegate_background():
+    user_id = g.current_user.get("id")
+
+    def action():
+        user = user_repository.find_by_id(str(user_id or ""))
+        if not user:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+        response = user_media_service.build_embedded_image_response(user.get("delegateBackgroundImageUrl"))
+        if response is None:
+            err = RuntimeError("Delegate background not found")
             setattr(err, "status", 404)
             raise err
         return response
@@ -214,7 +257,15 @@ def logout():
             # This avoids "stuck online" when a client logs out after a session rotation.
             try:
                 if user and isinstance(user, dict):
-                    user_repository.update({**user, "isOnline": False, "isIdle": False})
+                    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    user_repository.update(
+                        {
+                            **user,
+                            "isOnline": False,
+                            "isIdle": False,
+                            "lastSeenAt": now_iso,
+                        }
+                    )
             except Exception:
                 pass
             try:

@@ -120,6 +120,14 @@ def _ensure_defaults(user: Dict) -> Dict:
         normalized["networkPresenceAgreement"] = _normalize_bool(normalized.get("network_presence_agreement"))
     normalized.setdefault("delegateLogoUrl", normalized.get("delegateLogoUrl") or None)
     normalized.setdefault("delegateSecondaryColor", normalized.get("delegateSecondaryColor") or None)
+    normalized.setdefault(
+        "delegateBackgroundImageUrl",
+        normalized.get("delegateBackgroundImageUrl") or normalized.get("delegate_background_image_url") or None,
+    )
+    normalized.setdefault(
+        "delegateBackgroundColor",
+        normalized.get("delegateBackgroundColor") or normalized.get("delegate_background_color") or None,
+    )
     if "delegateLinksEnabled" in normalized:
         normalized["delegateLinksEnabled"] = _normalize_bool(normalized.get("delegateLinksEnabled"))
     else:
@@ -289,6 +297,8 @@ _PROFILE_SELECT_FIELDS = """
     network_presence_agreement,
     delegate_logo_url,
     delegate_secondary_color,
+    delegate_background_image_url,
+    delegate_background_color,
     delegate_links_enabled,
     research_terms_agreement,
     delegate_opt_in,
@@ -1044,7 +1054,8 @@ def _mysql_insert(user: Dict) -> Dict:
             last_seen_at, last_interaction_at,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
-            office_postal_code, office_country, profile_image_url, profile_onboarding, greater_area, study_focus, bio, delegate_logo_url, zelle_contact, cart, downloads,
+            office_postal_code, office_country, profile_image_url, profile_onboarding, greater_area, study_focus, bio,
+            delegate_logo_url, delegate_background_image_url, delegate_background_color, zelle_contact, cart, downloads,
             network_presence_agreement,
             reseller_permit_onboarding_presented,
             delegate_secondary_color, delegate_links_enabled,
@@ -1063,7 +1074,8 @@ def _mysql_insert(user: Dict) -> Dict:
             %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
-            %(profile_image_url)s, %(profile_onboarding)s, %(greater_area)s, %(study_focus)s, %(bio)s, %(delegate_logo_url)s, %(zelle_contact)s, %(cart)s, %(downloads)s,
+            %(profile_image_url)s, %(profile_onboarding)s, %(greater_area)s, %(study_focus)s, %(bio)s,
+            %(delegate_logo_url)s, %(delegate_background_image_url)s, %(delegate_background_color)s, %(zelle_contact)s, %(cart)s, %(downloads)s,
             %(network_presence_agreement)s,
             %(reseller_permit_onboarding_presented)s, %(delegate_secondary_color)s, %(delegate_links_enabled)s, %(research_terms_agreement)s, %(delegate_opt_in)s,
             %(referral_credits)s,
@@ -1106,6 +1118,8 @@ def _mysql_insert(user: Dict) -> Dict:
             bio = VALUES(bio),
             network_presence_agreement = VALUES(network_presence_agreement),
             delegate_logo_url = VALUES(delegate_logo_url),
+            delegate_background_image_url = VALUES(delegate_background_image_url),
+            delegate_background_color = VALUES(delegate_background_color),
             zelle_contact = VALUES(zelle_contact),
             cart = VALUES(cart),
             downloads = VALUES(downloads),
@@ -1184,6 +1198,8 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             bio = %(bio)s,
             network_presence_agreement = %(network_presence_agreement)s,
             delegate_logo_url = %(delegate_logo_url)s,
+            delegate_background_image_url = %(delegate_background_image_url)s,
+            delegate_background_color = %(delegate_background_color)s,
             zelle_contact = %(zelle_contact)s,
             cart = %(cart)s,
             downloads = %(downloads)s,
@@ -1278,6 +1294,8 @@ def _row_to_user(row: Dict) -> Dict:
             "networkPresenceAgreement": bool(row.get("network_presence_agreement")),
             "delegateLogoUrl": row.get("delegate_logo_url"),
             "delegateSecondaryColor": row.get("delegate_secondary_color"),
+            "delegateBackgroundImageUrl": row.get("delegate_background_image_url"),
+            "delegateBackgroundColor": row.get("delegate_background_color"),
             "delegateLinksEnabled": bool(row.get("delegate_links_enabled")),
             "researchTermsAgreement": bool(row.get("research_terms_agreement")),
             "delegateOptIn": bool(row.get("delegate_opt_in")),
@@ -1356,6 +1374,8 @@ def _to_db_params(user: Dict) -> Dict:
         "network_presence_agreement": 1 if network_presence_agreement else 0,
         "delegate_logo_url": user.get("delegateLogoUrl"),
         "delegate_secondary_color": user.get("delegateSecondaryColor"),
+        "delegate_background_image_url": user.get("delegateBackgroundImageUrl"),
+        "delegate_background_color": user.get("delegateBackgroundColor"),
         "delegate_links_enabled": 1 if _normalize_bool(user.get("delegateLinksEnabled")) else 0,
         "research_terms_agreement": 1 if _normalize_bool(user.get("researchTermsAgreement")) else 0,
         "delegate_opt_in": 1 if _normalize_bool(user.get("delegateOptIn")) else 0,

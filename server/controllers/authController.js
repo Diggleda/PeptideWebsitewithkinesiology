@@ -6,6 +6,30 @@ const { env } = require('../config/env');
 const userRepository = require('../repositories/userRepository');
 const { parseMultipartSingleFile } = require('../utils/multipart');
 
+const QUIET_LOGIN_FAILURE_STATUSES = new Set([400, 401, 404, 409]);
+
+const wantsQuietLoginFailure = (req) => {
+  const value = String(req.headers?.['x-quiet-auth-failure'] || '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+};
+
+const sendQuietLoginFailure = (req, res, error) => {
+  const status = Number(error?.status) || 500;
+  if (!wantsQuietLoginFailure(req) || !QUIET_LOGIN_FAILURE_STATUSES.has(status)) {
+    return false;
+  }
+  const message = typeof error?.message === 'string' && error.message
+    ? error.message
+    : 'LOGIN_ERROR';
+  res.status(200).json({
+    ok: false,
+    error: message,
+    code: typeof error?.code === 'string' && error.code ? error.code : message,
+    status,
+  });
+  return true;
+};
+
 const register = async (req, res, next) => {
   try {
     const { token, user } = await authService.register(req.body);
@@ -20,6 +44,9 @@ const login = async (req, res, next) => {
     const { token, user } = await authService.login(req.body);
     res.json({ token, user });
   } catch (error) {
+    if (sendQuietLoginFailure(req, res, error)) {
+      return;
+    }
     next(error);
   }
 };

@@ -7,9 +7,12 @@ const targetRoot = path.join(repoRoot, "src", "generated", "runtime-assets");
 
 const assetsToSync = [
   "turfusionlabsphysiciansportal.png",
+  "TruFusionLabs_PhysicianPortal_White.png",
+  "Trufusionlabsfordarkbackground.png",
   "Trufusionpeptides_icon.png",
   "protixa.png",
-  "leafTexture.jpg",
+  "blueleafTexture-email.png",
+  "leafTexture.png",
   path.join("icons", "handshake_4233584.png"),
   path.join("logos", "woocommerce.svg"),
   path.join("logos", "shipstation.svg"),

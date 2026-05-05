@@ -101,7 +101,7 @@ export default defineConfig(({ command }) => ({
   },
   cacheDir: viteCacheDir,
   server: {
-    host: true,              // listen on 0.0.0.0 (needed on Replit)
+    host: isReplit ? true : '127.0.0.1', // listen broadly only where hosted dev URLs need it
     port: 3000,
     strictPort: false,       // allow Vite to find next available port if 3000 is busy
     open: false,

@@ -113,6 +113,50 @@ class TestSettingsPresence(unittest.TestCase):
         self.assertEqual(persist.call_args.kwargs.get("bump_interaction"), True)
         local_record.assert_called_once()
 
+    def test_record_presence_logout_clears_local_presence_after_persisting_offline(self):
+        try:
+            from flask import Flask
+        except (ModuleNotFoundError, ImportError) as exc:
+            raise unittest.SkipTest(f"python deps not installed: {exc}") from exc
+
+        settings = self._load_settings_module()
+        app = Flask(__name__)
+        existing = {
+            "id": "doctor-1",
+            "email": "doctor@example.com",
+            "isOnline": True,
+            "isIdle": True,
+            "lastSeenAt": "2026-05-03T20:00:00Z",
+        }
+
+        with app.test_request_context(
+            "/api/settings/presence",
+            method="POST",
+            json={"kind": "logout", "isIdle": False},
+        ):
+            settings.g.current_user = {
+                "id": "doctor-1",
+                "role": "doctor",
+            }
+            settings.g.shadow_context = None
+
+            with patch.object(settings.user_repository, "find_by_id", return_value=existing) as find_by_id, \
+                patch.object(settings.user_repository, "update", return_value={**existing, "isOnline": False}) as update_user, \
+                patch.object(settings.presence_service, "clear_user") as clear_user, \
+                patch.object(settings.presence_service, "record_ping") as record_ping:
+                response, status = settings.record_presence.__wrapped__()
+
+        self.assertEqual(status, 200)
+        self.assertEqual(response.get_json(), {"ok": True})
+        find_by_id.assert_called_once_with("doctor-1")
+        update_user.assert_called_once()
+        payload = update_user.call_args.args[0]
+        self.assertEqual(payload["isOnline"], False)
+        self.assertEqual(payload["isIdle"], False)
+        self.assertNotEqual(payload["lastSeenAt"], existing["lastSeenAt"])
+        clear_user.assert_called_once_with("doctor-1")
+        record_ping.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

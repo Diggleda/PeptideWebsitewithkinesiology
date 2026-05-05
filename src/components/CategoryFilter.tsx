@@ -26,6 +26,7 @@ interface CategoryFilterProps {
   productCounts: Record<string, number>;
   typeCounts?: Record<string, number>;
   tagSections?: TagSection[];
+  resultCountLabel?: string;
   onOpenManufacturingModal?: () => void;
 }
 
@@ -35,6 +36,7 @@ export function CategoryFilter({
   filters,
   onFiltersChange,
   productCounts,
+  resultCountLabel,
   onOpenManufacturingModal,
 }: CategoryFilterProps) {
   const toggleCategory = (category: string) => {
@@ -287,19 +289,24 @@ export function CategoryFilter({
     <Card
       ref={cardRef}
       // Stick within the products layout column on large screens
-      className="glass-card squircle-lg w-full lg:max-w-none border-l-4 border-l-[rgba(60,103,183,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)] catalog-filter-card"
+      className="glass-card squircle-lg w-full lg:max-w-none border-l-4 border-l-[rgba(60,103,183,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.61)] catalog-filter-card"
       style={{
         background:
-          'linear-gradient(to right, rgba(60,103,183,0.08) 0%, rgba(255,255,255,0.35) 8px, rgba(255,255,255,0.35) 100%)',
+          'linear-gradient(to right, rgba(60,103,183,0.08) 0%, rgba(255,255,255,0.47) 8px, rgba(255,255,255,0.47) 100%)',
         backdropFilter: 'blur(40px) saturate(1.7)',
       }}
     >
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center min-w-0">
-            <div className="flex items-center gap-0 truncate">
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <Filter className="w-5 h-5 flex-shrink-0" />
-              <span className="font-semibold truncate">Filters</span>
+              <span className="font-semibold">Filters</span>
+              {resultCountLabel ? (
+                <span className="shop-filter-total-label text-xs">
+                  {resultCountLabel}
+                </span>
+              ) : null}
             </div>
           </div>
           <Button
@@ -376,13 +383,13 @@ export function CategoryFilter({
 
         <p className="pt-4 border-t border-[rgba(255,255,255,0.45)] text-xs leading-relaxed text-slate-700">
           Grouping reflects areas of scientific inquiry reported in the
-          literature and ongoing physician-led research initiatives. Categories are intended to serve as a starting point for your search process. Our peptides are produced by our partner{" "}
+          literature and ongoing physician-led research initiatives. Categories are intended to serve as a starting point for your search process. Our peptides are produced in a{" "}
           <button
             type="button"
             onClick={onOpenManufacturingModal}
             className="font-semibold text-slate-900 underline decoration-[rgba(15,23,42,0.45)] underline-offset-2 transition hover:text-slate-700"
           >
-            Protixa
+            cGMP facility
           </button>
           .
         </p>

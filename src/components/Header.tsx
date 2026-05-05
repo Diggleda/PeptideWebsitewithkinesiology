@@ -19,6 +19,7 @@ import { shouldDisplayShippingStatusForOrder } from '../lib/orderStatusPrecedenc
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
 import { DoctorProfileForm } from './DoctorProfileForm';
+import { BrandLogoImage } from './BrandLogoImage';
 import delegateLinkBetaImage1 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage1.png';
 import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage2.png';
 import {
@@ -141,6 +142,7 @@ const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: 
 };
 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
+const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#edf7fb';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
   if (typeof value !== 'string') return null;
@@ -155,6 +157,17 @@ const normalizeDelegateSecondaryColor = (value?: string | null) => {
   }
   return null;
 };
+
+const normalizeDelegateBackgroundColor = normalizeDelegateSecondaryColor;
+
+const normalizeDelegateImageUrl = (value?: string | null) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const toCssUrlValue = (value: string) =>
+  `url("${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]/g, '')}")`;
 
 const hexToRgbCss = (hex: string) => {
   const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
@@ -350,6 +363,8 @@ interface HeaderUser {
   networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
+  delegateBackgroundImageUrl?: string | null;
+  delegateBackgroundColor?: string | null;
   zelleContact?: string | null;
   role?: string | null;
   referralCode?: string | null;
@@ -523,8 +538,13 @@ interface HeaderProps {
   accountOrdersError?: string | null;
   ordersLastSyncedAt?: string | null;
   onRefreshOrders?: (options?: { force?: boolean }) => Promise<unknown> | void;
-  accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number; order?: AccountOrderSummary } | null;
+  accountModalRequest?: { tab: AccountTabId; open?: boolean; token: number; order?: AccountOrderSummary } | null;
   onAccountModalRequestHandled?: (token: number) => void;
+  delegateLinksGuideStep?: 'account' | 'delegate_tab' | null;
+  onDelegateLinksGuideAccountClick?: () => void;
+  onDelegateLinksGuideTabClick?: () => void;
+  suppressHomeButton?: boolean;
+  suppressSearch?: boolean;
   suppressAccountHomeButton?: boolean;
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
@@ -1762,6 +1782,11 @@ export function Header({
   onRefreshOrders,
   accountModalRequest = null,
   onAccountModalRequestHandled,
+  delegateLinksGuideStep = null,
+  onDelegateLinksGuideAccountClick,
+  onDelegateLinksGuideTabClick,
+  suppressHomeButton = false,
+  suppressSearch = false,
   suppressAccountHomeButton = false,
   showCanceledOrders = false,
   onToggleShowCanceled,
@@ -1854,6 +1879,12 @@ export function Header({
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [logoutThanksOpen, setLogoutThanksOpen] = useState(false);
   const [logoutThanksOpacity, setLogoutThanksOpacity] = useState(0);
+
+  useEffect(() => {
+    if (suppressSearch) {
+      setMobileSearchOpen(false);
+    }
+  }, [suppressSearch]);
   const [logoutThanksTransitionMs, setLogoutThanksTransitionMs] = useState(250);
   const logoutThanksSequenceRef = useRef(0);
   const logoutThanksTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
@@ -2311,10 +2342,10 @@ export function Header({
       try {
         // Frontend-only throughput: fetch a bundled static asset so this does not rely on
         // the backend. Use a cache-busting query param to avoid cached responses.
-        const leafTextureUrl = resolveStaticAssetUrl('/leafTexture.jpg');
-        const separator = leafTextureUrl.includes('?') ? '&' : '?';
+        const blueLeafTextureUrl = resolveStaticAssetUrl('/blueleafTexture-email.png');
+        const separator = blueLeafTextureUrl.includes('?') ? '&' : '?';
         const downloadMbps = await measureFetchMbps({
-          url: `${leafTextureUrl}${separator}networkTest=1&t=${Date.now()}`,
+          url: `${blueLeafTextureUrl}${separator}networkTest=1&t=${Date.now()}`,
         });
 
         if (!mounted || requestId !== throughputRequestId) {
@@ -5270,8 +5301,11 @@ export function Header({
   );
 
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
+  const delegateBackgroundImageInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
   const [delegateSecondaryColorSaving, setDelegateSecondaryColorSaving] = useState(false);
+  const [delegateBackgroundImageUploading, setDelegateBackgroundImageUploading] = useState(false);
+  const [delegateBackgroundColorSaving, setDelegateBackgroundColorSaving] = useState(false);
   const [delegateOptInSaving, setDelegateOptInSaving] = useState(false);
   const [delegateFunnelLoading, setDelegateFunnelLoading] = useState(false);
   const [delegateFunnelError, setDelegateFunnelError] = useState<string | null>(null);
@@ -5283,6 +5317,12 @@ export function Header({
     dataUrl: string,
     maxWidthPx: number,
     maxHeightPx: number,
+    options?: {
+      forceRender?: boolean;
+      outputMime?: 'image/jpeg' | 'image/png';
+      quality?: number;
+      fillColor?: string | null;
+    },
   ) => {
     const safeMaxWidth = Number.isFinite(maxWidthPx) ? Math.max(16, Math.min(2048, Math.floor(maxWidthPx))) : 480;
     const safeMaxHeight = Number.isFinite(maxHeightPx) ? Math.max(16, Math.min(2048, Math.floor(maxHeightPx))) : 128;
@@ -5306,7 +5346,7 @@ export function Header({
     const dstW = Math.max(1, Math.round(srcW * scale));
     const dstH = Math.max(1, Math.round(srcH * scale));
 
-    if (dstW === srcW && dstH === srcH) {
+    if (dstW === srcW && dstH === srcH && !options?.forceRender) {
       return dataUrl;
     }
 
@@ -5321,10 +5361,14 @@ export function Header({
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, dstW, dstH);
+    if (options?.fillColor) {
+      ctx.fillStyle = options.fillColor;
+      ctx.fillRect(0, 0, dstW, dstH);
+    }
     ctx.drawImage(img, 0, 0, dstW, dstH);
 
-    const outputMime = dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
-    return canvas.toDataURL(outputMime, outputMime === 'image/jpeg' ? 0.85 : undefined);
+    const outputMime = options?.outputMime || (dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
+    return canvas.toDataURL(outputMime, outputMime === 'image/jpeg' ? (options?.quality ?? 0.85) : undefined);
   }, []);
 
   const handleSelectDelegateLogo = useCallback(async (file: File | null) => {
@@ -5420,6 +5464,94 @@ export function Header({
       setDelegateSecondaryColorSaving(false);
     }
   }, [delegateSecondaryColorSaving, localUser?.delegateSecondaryColor, saveProfileField]);
+
+  const handleSelectDelegateBackgroundImage = useCallback(async (file: File | null) => {
+    if (!file || delegateBackgroundImageUploading) {
+      return;
+    }
+    const maxBytes = 5_000_000;
+    if (file.size > maxBytes) {
+      toast.error('Image is too large. Please choose a smaller file.');
+      return;
+    }
+    if (!file.type || !file.type.startsWith('image/')) {
+      toast.error('Please choose an image file.');
+      return;
+    }
+    setDelegateBackgroundImageUploading(true);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('FILE_READ_FAILED'));
+        reader.readAsDataURL(file);
+      });
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+        throw new Error('INVALID_IMAGE');
+      }
+      try {
+        const { moderationAPI } = await import('../services/api');
+        const resp = await moderationAPI.checkImage({ dataUrl, purpose: 'delegate_background' });
+        if (resp?.flagged) {
+          const proceed = window.confirm(
+            'This image may contain inappropriate content. Please choose a different image.\n\nContinue anyway?',
+          );
+          if (!proceed) {
+            toast.error('Upload canceled.');
+            return;
+          }
+        }
+      } catch {
+        // Soft-fail moderation checks; never block uploads if moderation is unavailable.
+      }
+      const resized = await downscaleImageDataUrl(dataUrl, 1800, 1200, {
+        forceRender: true,
+        outputMime: 'image/jpeg',
+        quality: 0.82,
+        fillColor: '#ffffff',
+      });
+      await saveProfileField('Delegate session background', {
+        delegateBackgroundImageUrl: resized,
+      });
+    } catch {
+      // saveProfileField handles toasts
+    } finally {
+      setDelegateBackgroundImageUploading(false);
+      if (delegateBackgroundImageInputRef.current) {
+        delegateBackgroundImageInputRef.current.value = '';
+      }
+    }
+  }, [delegateBackgroundImageUploading, downscaleImageDataUrl, saveProfileField]);
+
+  const handleRemoveDelegateBackgroundImage = useCallback(async () => {
+    if (delegateBackgroundImageUploading) return;
+    setDelegateBackgroundImageUploading(true);
+    try {
+      await saveProfileField('Delegate session background', {
+        delegateBackgroundImageUrl: null,
+      });
+    } catch {
+      // saveProfileField handles toasts
+    } finally {
+      setDelegateBackgroundImageUploading(false);
+    }
+  }, [delegateBackgroundImageUploading, saveProfileField]);
+
+  const handleDelegateBackgroundColorChange = useCallback(async (value: string) => {
+    const normalized = normalizeDelegateBackgroundColor(value) || DEFAULT_DELEGATE_BACKGROUND_COLOR;
+    const current = normalizeDelegateBackgroundColor(localUser?.delegateBackgroundColor ?? null) || DEFAULT_DELEGATE_BACKGROUND_COLOR;
+    if (delegateBackgroundColorSaving || normalized === current) {
+      return;
+    }
+    setDelegateBackgroundColorSaving(true);
+    try {
+      await saveProfileField('Delegate session background color', { delegateBackgroundColor: normalized });
+    } catch {
+      // saveProfileField handles toasts
+    } finally {
+      setDelegateBackgroundColorSaving(false);
+    }
+  }, [delegateBackgroundColorSaving, localUser?.delegateBackgroundColor, saveProfileField]);
 
   useEffect(() => {
     if (!showPatientLinksTab && accountTab === 'patient_links') {
@@ -7274,12 +7406,36 @@ export function Header({
 	            </button>
 	          )}
 
-          <Input
-            value={ordersSearchQuery}
-            onChange={(event) => setOrdersSearchQuery(event.target.value)}
-            placeholder="Search orders…"
-            className="h-7 w-full sm:w-[16rem] md:w-[18rem] text-xs squircle-sm bg-white/80 border border-[var(--brand-glass-border-1)] focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.35)]"
-          />
+          <div className="relative w-full sm:w-[16rem] md:w-[18rem]">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform !text-slate-500"
+              style={{ color: delegateMode ? secondaryColor : 'rgb(100, 116, 139)' }}
+            />
+            <Input
+              type="text"
+              inputMode="search"
+              enterKeyHint="search"
+              value={ordersSearchQuery}
+              onChange={(event) => setOrdersSearchQuery(event.target.value)}
+              placeholder="Search orders..."
+              className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
+              style={{
+                '--header-search-border-color': delegateMode ? secondaryColor : undefined,
+                color: delegateMode ? secondaryColor : undefined,
+                caretColor: delegateMode ? secondaryColor : undefined,
+              } as CSSProperties}
+            />
+            {ordersSearchQuery.trim().length > 0 && (
+              <button
+                type="button"
+                aria-label="Clear order search"
+                onClick={() => setOrdersSearchQuery('')}
+                className="absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-2 ml-auto">
             <Button
@@ -7333,12 +7489,29 @@ export function Header({
     maxWidth: isLargeScreen ? '240px' : 'min(170px, 40vw)',
     heightPx: logoSlotHeightPx,
   };
+  const showInfoHeaderWelcome = suppressSearch && !delegateMode && Boolean(user);
+  const infoHeaderWelcomeText =
+    ((localUser?.visits ?? user?.visits ?? 1) > 1)
+      ? 'Welcome back!'
+      : 'Welcome!';
   const delegateUserIconClassName = 'h-5 w-5 flex-shrink-0';
   const delegatePreviewSecondaryHex =
     normalizeDelegateSecondaryColor(localUser?.delegateSecondaryColor ?? user?.delegateSecondaryColor ?? null)
     || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegatePreviewSecondaryColor = hexToRgbCss(delegatePreviewSecondaryHex);
   const delegatePreviewTranslucentSecondary = hexToRgbaCss(delegatePreviewSecondaryHex, 0.18);
+  const delegatePreviewBackgroundColorRaw = normalizeDelegateBackgroundColor(
+    localUser?.delegateBackgroundColor ?? user?.delegateBackgroundColor ?? null,
+  );
+  const delegatePreviewBackgroundColorHex = delegatePreviewBackgroundColorRaw || DEFAULT_DELEGATE_BACKGROUND_COLOR;
+  const delegatePreviewBackgroundImageUrl = normalizeDelegateImageUrl(
+    localUser?.delegateBackgroundImageUrl ?? user?.delegateBackgroundImageUrl ?? null,
+  );
+  const delegatePreviewBackgroundImageCss = delegatePreviewBackgroundImageUrl
+    ? toCssUrlValue(delegatePreviewBackgroundImageUrl)
+    : delegatePreviewBackgroundColorRaw
+      ? 'none'
+      : 'var(--email-background-image)';
   const delegateSupportEmail = 'support@trufusionlabs.com';
   const delegateSalesRepEmail = String(localUser?.salesRep?.email || '').trim();
   const hasDelegateSalesRepEmail = delegateSalesRepEmail.length > 0;
@@ -7359,7 +7532,7 @@ export function Header({
             <div className="max-w-3xl space-y-3">
               <h3 className="text-lg font-semibold text-slate-900">Welcome to Delegate Links!</h3>
               <p className="text-sm leading-relaxed text-slate-700">
-                This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate sessions for patient-specific order proposals. This means you can send your patients links to allow them to create a proposal of products for your approval, ordering, modification, or rejection.
+                This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate sessions for patient-specific order proposals. This means you can send your patients links to allow them to create a proposal of products for your approval and ordering or rejection.
               </p>
               <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
                 {[
@@ -7455,7 +7628,7 @@ export function Header({
           Configure a session for your patient, and share the link with them once configured. This tool is intended to help you fascilate independent peptide research. Please be consienscious when setting compensation, as patients will see the disclosures you set when they access the link. You can demo your own links before sharing by clicking the "View" button.
         </p>
 	        <div className="mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
-            <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
+            <div className="patient-link-group rounded-xl bg-white/55 px-4 py-4 sm:px-5">
             <div className="pt-1">
               <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(60,103,183)]">
                 Subject & Access
@@ -7513,7 +7686,7 @@ export function Header({
             className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
 	          />
             </div>
-            <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
+            <div className="patient-link-group rounded-xl bg-white/55 px-4 py-4 sm:px-5">
             <div className="pt-2">
               <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(60,103,183)]">
                 Pricing & Limits
@@ -7632,7 +7805,7 @@ export function Header({
 	            className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
 	          />
             </div>
-            <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
+            <div className="patient-link-group rounded-xl bg-white/55 px-4 py-4 sm:px-5">
             <div className="pt-2">
               <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(60,103,183)]">
                 Notes & Instructions
@@ -7739,12 +7912,12 @@ export function Header({
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
 	        <h3 className="text-lg font-semibold text-slate-900">White label your sessions</h3>
 	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
-	          Make your logo appear in the header of your patient&apos;s session. Recommended: horizontal rectangle PNG (we&apos;ll resize to fit the header).
+	          Customize the logo, colors, and background your patients see in delegate sessions.
 	        </p>
-	        <div className="mt-2 space-y-4">
+	        <div className="mt-2 space-y-2">
 	          <div className="glass-card squircle-lg p-3 !border-0">
-	            <p className="text-xs font-semibold text-slate-700">Header preview</p>
-	            <div className="mt-3 w-full max-w-full overflow-hidden app-header-blur border border-slate-200 shadow-sm rounded-xl px-4 sm:px-6 py-4">
+	            <p className="delegate-preview-label text-xs font-semibold text-slate-700">Header preview</p>
+	            <div className="w-full max-w-full overflow-hidden app-header-blur shadow-sm rounded-xl px-4 sm:px-6 py-4">
 	              <div className="flex flex-col gap-3 md:gap-4">
 	                <div className="flex w-full min-w-0 items-center gap-3 sm:gap-4 justify-between flex-nowrap">
 	                  <div className="flex items-center gap-3 min-w-0">
@@ -7824,7 +7997,22 @@ export function Header({
 	            </div>
 	          </div>
 
-	          <div className="delegate-logo-summary-row">
+	          <div className="glass-card squircle-lg p-3 !border-0">
+	            <p className="delegate-preview-label text-xs font-semibold text-slate-700">Background preview</p>
+	            <div
+	              className="delegate-session-background-preview overflow-hidden rounded-xl bg-white shadow-sm"
+	              aria-hidden="true"
+	              style={{
+	                backgroundColor: delegatePreviewBackgroundColorHex,
+	                backgroundImage: `${delegatePreviewBackgroundImageCss}, linear-gradient(${delegatePreviewBackgroundColorHex}, ${delegatePreviewBackgroundColorHex})`,
+	                backgroundSize: 'cover, cover',
+	                backgroundPosition: 'center, center',
+	                backgroundRepeat: 'no-repeat, no-repeat',
+	              }}
+	            />
+	          </div>
+
+	          <div className="delegate-logo-summary-row rounded-xl bg-white/55 px-4 py-4">
 	            <div className="delegate-logo-summary-copy">
 	              <p className="text-sm font-semibold text-slate-900 truncate">
 	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
@@ -7846,7 +8034,7 @@ export function Header({
 	                variant="outline"
 	                onClick={() => delegateLogoInputRef.current?.click()}
 	                disabled={delegateLogoUploading}
-	                className="header-home-button delegate-logo-summary-button h-11 squircle-sm gap-2 bg-white px-7 text-slate-900"
+	                className="header-home-button delegate-logo-summary-button delegate-logo-summary-button--upload h-11 squircle-sm gap-2 bg-white px-7 text-slate-900"
 	              >
                   <Upload className="h-4 w-4" aria-hidden="true" />
 	                {delegateLogoUploading ? 'Uploading…' : 'Upload your logo'}
@@ -7857,33 +8045,98 @@ export function Header({
 	                onClick={() => void handleRemoveDelegateLogo()}
 	                disabled={delegateLogoUploading}
                   aria-label="Remove logo"
-	                className="header-home-button patient-link-payment-toggle-button delegate-logo-summary-button h-11 squircle-sm bg-white text-slate-900"
+	                className="header-home-button patient-link-payment-toggle-button delegate-logo-summary-button delegate-logo-summary-button--remove h-11 squircle-sm bg-white text-slate-900"
 	              >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
 	              </Button>
 	            </div>
 	          </div>
-	          <div className="rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4">
-	            <Label htmlFor="delegate-secondary-color" className="text-sm font-semibold text-slate-700">
-	              Primary color
-	            </Label>
-	            <p className="mt-1 text-xs text-slate-500">
-	              Used for delegate header accents and session highlights.
-	            </p>
-	            <div className="mt-3 flex items-center gap-3">
-	              <input
-	                id="delegate-secondary-color"
-	                type="color"
-	                value={delegatePreviewSecondaryHex}
-	                disabled={delegateSecondaryColorSaving}
-	                onChange={(event) => void handleDelegateSecondaryColorChange(event.target.value)}
-	                className="h-11 w-16 cursor-pointer rounded-md border border-slate-200 bg-white p-1"
-	              />
-	              <div className="min-w-0">
-	                <p className="text-sm font-semibold text-slate-900">{delegatePreviewSecondaryHex.toUpperCase()}</p>
-	                {delegateSecondaryColorSaving ? (
-                    <p className="text-xs text-slate-600">Saving color…</p>
-                  ) : null}
+
+	          <div className="delegate-logo-summary-row rounded-xl bg-white/55 px-4 py-4">
+	            <div className="delegate-logo-summary-copy">
+	              <p className="text-sm font-semibold text-slate-900 truncate">
+	                {delegatePreviewBackgroundImageUrl ? 'Custom background image set' : 'Using TruFusionLabs background'}
+	              </p>
+	              <p className="text-xs text-slate-600">Images appear over the selected background color.</p>
+	            </div>
+	            <input
+	              ref={delegateBackgroundImageInputRef}
+	              type="file"
+	              accept="image/*"
+	              className="hidden"
+	              onChange={(event) => void handleSelectDelegateBackgroundImage(event.target.files?.[0] ?? null)}
+	            />
+	            <div className="delegate-logo-summary-actions">
+	              <Button
+	                type="button"
+	                variant="outline"
+	                onClick={() => delegateBackgroundImageInputRef.current?.click()}
+	                disabled={delegateBackgroundImageUploading}
+	                className="header-home-button delegate-logo-summary-button delegate-logo-summary-button--upload h-11 squircle-sm gap-2 bg-white px-7 text-slate-900"
+	              >
+	                <Upload className="h-4 w-4" aria-hidden="true" />
+		                {delegateBackgroundImageUploading ? 'Uploading…' : 'Upload background'}
+	              </Button>
+	              <Button
+	                type="button"
+	                variant="outline"
+	                onClick={() => void handleRemoveDelegateBackgroundImage()}
+	                disabled={delegateBackgroundImageUploading || !delegatePreviewBackgroundImageUrl}
+	                aria-label="Remove background image"
+	                className="header-home-button patient-link-payment-toggle-button delegate-logo-summary-button delegate-logo-summary-button--remove h-11 squircle-sm bg-white text-slate-900"
+	              >
+	                <Trash2 className="h-4 w-4" aria-hidden="true" />
+	              </Button>
+	            </div>
+	          </div>
+
+	          <div className="delegate-session-appearance rounded-xl bg-white/55 px-4 py-4">
+	            <div className="delegate-color-controls-grid">
+	              <div className="delegate-color-control">
+	                <Label htmlFor="delegate-background-color" className="text-sm font-bold text-slate-700">
+	                  Your Background color
+	                </Label>
+	                <p className="mt-1 text-xs text-slate-500">Visible as a substitute or supplement to the background image.</p>
+	                <div className="delegate-color-value-row">
+	                  <input
+	                    id="delegate-background-color"
+	                    type="color"
+	                    value={delegatePreviewBackgroundColorHex}
+	                    disabled={delegateBackgroundColorSaving}
+	                    onChange={(event) => void handleDelegateBackgroundColorChange(event.target.value)}
+	                    className="delegate-color-input"
+	                    style={{ border: 0 }}
+	                  />
+	                  <div className="min-w-0">
+	                    <p className="text-sm font-semibold text-slate-900">{delegatePreviewBackgroundColorHex.toUpperCase()}</p>
+	                    {delegateBackgroundColorSaving ? (
+	                      <p className="text-xs text-slate-600">Saving color…</p>
+	                    ) : null}
+	                  </div>
+	                </div>
+	              </div>
+	              <div className="delegate-color-control">
+	                <Label htmlFor="delegate-secondary-color" className="text-sm font-bold text-slate-700">
+	                  Your Primary color
+	                </Label>
+	                <p className="mt-1 text-xs text-slate-500">Used for header accents and session highlights.</p>
+	                <div className="delegate-color-value-row">
+	                  <input
+	                    id="delegate-secondary-color"
+	                    type="color"
+	                    value={delegatePreviewSecondaryHex}
+	                    disabled={delegateSecondaryColorSaving}
+	                    onChange={(event) => void handleDelegateSecondaryColorChange(event.target.value)}
+	                    className="delegate-color-input"
+	                    style={{ border: 0 }}
+	                  />
+	                  <div className="min-w-0">
+	                    <p className="text-sm font-semibold text-slate-900">{delegatePreviewSecondaryHex.toUpperCase()}</p>
+	                    {delegateSecondaryColorSaving ? (
+	                      <p className="text-xs text-slate-600">Saving color…</p>
+	                    ) : null}
+	                  </div>
+	                </div>
 	              </div>
 	            </div>
 	          </div>
@@ -8507,46 +8760,61 @@ export function Header({
     </div>
   ) : user ? (
     <>
+      {showInfoHeaderWelcome && (
+        <div className="info-header-welcome">
+          <p className="info-header-welcome__text">
+            {infoHeaderWelcomeText}
+          </p>
+        </div>
+      )}
       <Dialog open={welcomeOpen} modal={!legalModalOpen} onOpenChange={(open) => {
-        console.debug('[Header] Welcome dialog open change', { open });
-        if (!open && legalModalOpen) {
-          console.debug('[Header] Welcome dialog close blocked by legal modal');
-          return;
-        }
-        setWelcomeOpen(open);
-      }}>
-        <DialogTrigger asChild>
-	          <Button
-	            type="button"
-	            variant="default"
-	            size="sm"
-	            onClick={() => setWelcomeOpen(true)}
-	            className="relative overflow-visible squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button justify-start"
-	            aria-haspopup="dialog"
-	            aria-expanded={welcomeOpen}
-	          >
-	            <span className="header-account-name text-current">
-                {headerDisplayName}
-              </span>
-	            <span className="header-account-avatar-shell">
-	              {renderAvatar(isLargeScreen ? 48 : 53, 'header-account-avatar')}
-                {accountButtonIndicatorTotal > 0 && (
-                  <Badge
-                    variant="outline"
-                    className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(60,103,183)]"
-                    aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
-                    title={`Notifications: ${accountButtonIndicatorTotal}`}
-                  >
-                    {accountButtonIndicatorTotal > 9 ? '9+' : accountButtonIndicatorTotal}
-                  </Badge>
+          console.debug('[Header] Welcome dialog open change', { open });
+          if (!open && legalModalOpen) {
+            console.debug('[Header] Welcome dialog close blocked by legal modal');
+            return;
+          }
+          setWelcomeOpen(open);
+        }}>
+          <DialogTrigger asChild>
+	            <Button
+	              type="button"
+	              variant="default"
+	              size="sm"
+	              onClick={() => {
+                  if (delegateLinksGuideStep === 'account') {
+                    onDelegateLinksGuideAccountClick?.();
+                  }
+                  setWelcomeOpen(true);
+                }}
+	              className={clsx(
+                  "relative overflow-visible squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button justify-start",
+                  delegateLinksGuideStep === 'account' && "delegate-links-guide-highlight",
                 )}
-	            </span>
-          </Button>
-			        </DialogTrigger>
+	              aria-haspopup="dialog"
+	              aria-expanded={welcomeOpen}
+	            >
+	              <span className="header-account-name text-current">
+                  {headerDisplayName}
+                </span>
+	              <span className="header-account-avatar-shell">
+	                {renderAvatar(isLargeScreen ? 48 : 53, 'header-account-avatar')}
+                  {accountButtonIndicatorTotal > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(60,103,183)]"
+                      aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
+                      title={`Notifications: ${accountButtonIndicatorTotal}`}
+                    >
+                      {accountButtonIndicatorTotal > 9 ? '9+' : accountButtonIndicatorTotal}
+                    </Badge>
+                  )}
+	              </span>
+            </Button>
+			          </DialogTrigger>
 					        <DialogContent
 					          className="checkout-modal account-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
                     overlayClassName="bg-slate-950/40"
-                    containerClassName="fixed inset-0 z-[10000] flex items-start justify-center px-3 py-6 sm:px-4 sm:py-8"
+                    containerClassName="account-modal-layer fixed inset-0 z-[13000] flex items-start justify-center px-3 py-6 sm:px-4 sm:py-8"
                     containerStyle={
                       legalModalOpen
                         ? ({
@@ -8654,11 +8922,15 @@ export function Header({
                           type="button"
 	                          className={clsx(
 	                            'relative inline-flex items-center gap-2 px-3 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible',
-	                            isActive && 'text-slate-900'
+	                            isActive && 'text-slate-900',
+                              delegateLinksGuideStep === 'delegate_tab' && tab.id === 'patient_links' && 'delegate-links-guide-highlight'
 	                          )}
                           data-tab={tab.id}
                           aria-pressed={isActive}
 	                          onClick={() => {
+                              if (tab.id === 'patient_links' && delegateLinksGuideStep === 'delegate_tab') {
+                                onDelegateLinksGuideTabClick?.();
+                              }
                               setAccountTab(tab.id);
                               if (tab.id === 'patient_links') {
                                 trackUsageEvent('delegate_link_tab_clicked', {
@@ -8759,12 +9031,12 @@ export function Header({
 		          </div>
 	          </div>
 	        </DialogContent>
-      </Dialog>
+        </Dialog>
 	      <Dialog open={deleteAccountModalOpen} onOpenChange={handleDeleteAccountModalOpenChange}>
 	        <DialogContent
 	          className="glass-card squircle-lg w-full !max-w-[min(468px,calc(100vw-3rem))] sm:!max-w-[min(468px,calc(100vw-3rem))] lg:!max-w-[min(468px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 overflow-hidden"
 	          overlayClassName="bg-slate-950/40"
-	          containerClassName="fixed inset-0 z-[10001] flex items-center justify-center p-4 sm:p-6"
+	          containerClassName="account-modal-layer fixed inset-0 z-[13000] flex items-center justify-center p-4 sm:p-6"
 	          style={{
 	            backdropFilter: "blur(32px) saturate(1.45)",
 	            backgroundColor: "rgba(245, 251, 255, 0.98)",
@@ -8820,7 +9092,7 @@ export function Header({
       <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
         <DialogContent
           hideCloseButton
-          className="logout-thanks-modal relative self-start !mx-auto !mb-6 !mt-0 duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
+          className="logout-thanks-modal relative duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
           overlayClassName="logout-thanks-overlay"
           onTransitionEnd={(event) => {
             if (event.propertyName !== 'opacity') return;
@@ -8837,7 +9109,7 @@ export function Header({
               // Use a CSS var so we can override global `!important` transition rules.
               ["--logout-thanks-ms" as any]: `${logoutThanksTransitionMs}ms`,
 	          }}
-	          containerClassName="fixed inset-0 z-[10000] flex items-start justify-center px-6 pb-6 md:px-10 md:pb-10"
+	          containerClassName="logout-thanks-layer fixed inset-0 z-[12000] flex items-center justify-center px-6 py-6 md:px-10 md:py-10"
           overlayStyle={{
             backgroundColor: 'rgba(4, 14, 21, 0.45)',
             backdropFilter: 'blur(22px) saturate(1.35)',
@@ -9017,7 +9289,7 @@ export function Header({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
                   <div className="space-y-2 sm:w-36 sm:pb-0">
                     <Label htmlFor="suffix">
-                      <span>Suffix</span>
+                      <span>Preffix</span>
                       <span className="ml-2 text-xs font-normal text-gray-500">
                         Optional
                       </span>
@@ -9026,20 +9298,8 @@ export function Header({
                       id="suffix"
                       value={signupSuffix}
                       onChange={(e) => setSignupSuffix(e.target.value)}
-                      className="glass squircle-sm mt-1 w-full px-3 text-sm border transition-colors focus-visible:outline-none focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[3px] focus-visible:ring-[rgba(60,103,183,0.3)] leading-tight"
-                      style={{
-                        borderColor: translucentSecondary,
-                        backgroundColor: 'rgba(60,103,183,0.02)',
-                        WebkitAppearance: 'none',
-                        MozAppearance: 'none',
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23071b1b' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'right 0.75rem center',
-                        backgroundSize: '12px',
-                        paddingRight: '2.5rem',
-                        height: '2.5rem',
-                        lineHeight: '1.25rem'
-                      }}
+                      className="auth-prefix-select glass squircle-sm mt-1 flex h-10 w-full min-w-0 border border-input bg-input-background px-3 py-1 text-sm transition-[color,box-shadow] outline-none focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[3px] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                      style={{ borderColor: translucentSecondary }}
                     >
                       <option value="">None</option>
                       <option value="Mr.">Mr.</option>
@@ -9266,21 +9526,25 @@ export function Header({
 				      data-app-header
 			      className={clsx(
 			        "w-full app-header-blur border-b border-slate-200 shadow-sm",
-			        welcomeOpen && "app-header-hidden",
 			      )}
 			      style={{
 			        position: 'fixed',
 			        top: 0,
 			        left: 0,
 			        right: 0,
-			        zIndex: welcomeOpen ? 1 : 9500,
-			        opacity: welcomeOpen ? 0 : 1,
-			        pointerEvents: welcomeOpen ? 'none' : 'auto',
+			        zIndex: 9500,
+			        opacity: 1,
+			        pointerEvents: 'auto',
 			      }}
 			    >
       <div className="w-full px-4 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
-          <div className="flex w-full flex-nowrap items-center gap-3 sm:gap-4 justify-between">
+          <div
+            className={clsx(
+              "flex w-full items-center gap-3 sm:gap-4 justify-between",
+              showInfoHeaderWelcome ? "flex-wrap md:flex-nowrap" : "flex-nowrap",
+            )}
+          >
 	            {/* Logo (same header layout for doctor + delegate) */}
 	            <div className="flex items-center gap-3 min-w-0 flex-shrink-0 self-center">
 	              <div className="flex items-center gap-3">
@@ -9288,30 +9552,41 @@ export function Header({
 		                  className="brand-logo relative flex items-center justify-center flex-shrink-0"
 		                  style={{ height: logoSizing.heightPx }}
 		                >
-		                  <img
-	                    src={
-	                      delegateMode
-	                        ? ((typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
-	                          ? delegateLogoUrl
-	                          : withStaticAssetStamp('/turfusionlabsphysiciansportal.png'))
-	                        : withStaticAssetStamp('/turfusionlabsphysiciansportal.png')
-		                    }
-	                    alt={delegateMode ? 'Physician logo' : 'TruFusionLabs logo'}
-		                    className="relative z-[1] flex-shrink-0"
-		                    style={{
-		                      display: 'block',
-		                      width: 'auto',
-		                      height: '100%',
-		                      maxWidth: logoSizing.maxWidth,
-		                      maxHeight: '100%',
-		                      objectFit: 'contain',
-		                    }}
-	                    loading="eager"
-	                    decoding="async"
-	                  />
+                  {delegateMode && typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0 ? (
+                    <img
+                      src={delegateLogoUrl}
+                      alt="Physician logo"
+                      className="relative z-[1] flex-shrink-0"
+                      style={{
+                        display: 'block',
+                        width: 'auto',
+                        height: '100%',
+                        maxWidth: logoSizing.maxWidth,
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                      }}
+                      loading="eager"
+                      decoding="async"
+                    />
+                  ) : (
+                    <BrandLogoImage
+                      alt={delegateMode ? 'Physician logo' : 'TruFusionLabs logo'}
+                      className="relative z-[1] flex-shrink-0"
+                      style={{
+                        display: 'block',
+                        width: 'auto',
+                        height: '100%',
+                        maxWidth: logoSizing.maxWidth,
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                      }}
+                      loading="eager"
+                      decoding="async"
+                    />
+                  )}
 	                </div>
 	              </div>
-                {!delegateMode && user && onShowInfo && (
+                {!suppressHomeButton && !delegateMode && user && onShowInfo && (
                   <Button
                     type="button"
                     variant="outline"
@@ -9327,7 +9602,7 @@ export function Header({
 	            </div>
 
             {/* Search Bar - Desktop (centered) */}
-            {isLargeScreen && (
+            {!suppressSearch && isLargeScreen && (
               <form
                 onSubmit={handleSearch}
                 className="flex flex-1 items-center justify-center self-center"
@@ -9387,7 +9662,7 @@ export function Header({
 		                </div>
 		              )}
 	              {authControls}
-	              {!isLargeScreen && (
+	              {!suppressSearch && !isLargeScreen && (
                 <Button
                   type="button"
                   variant="outline"
@@ -9410,7 +9685,7 @@ export function Header({
             </div>
           </div>
 
-          {mobileSearchOpen && !isLargeScreen && (
+          {!suppressSearch && mobileSearchOpen && !isLargeScreen && (
             <div className="px-1 pb-2">
               <form onSubmit={handleSearch}>{renderSearchField()}</form>
             </div>

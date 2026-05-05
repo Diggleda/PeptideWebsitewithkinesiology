@@ -48,9 +48,9 @@ _LIVE_USERS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_USERS_LONGPOLL
 def _presence_longpoll_wait_chunk_seconds() -> float:
     raw = os.environ.get("PRESENCE_LONGPOLL_WAIT_CHUNK_SECONDS")
     try:
-        value = float(raw) if raw is not None else 5.0
+        value = float(raw) if raw is not None else 1.0
     except Exception:
-        value = 5.0
+        value = 1.0
     return max(0.5, min(value, 10.0))
 
 
@@ -1888,6 +1888,22 @@ def record_presence():
         is_idle_raw = payload.get("isIdle")
         is_idle = is_idle_raw if isinstance(is_idle_raw, bool) else None
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        if kind in ("logout", "offline"):
+            try:
+                user = user_repository.find_by_id(str(user_id))
+                if user and isinstance(user, dict):
+                    user_repository.update(
+                        {
+                            **user,
+                            "isOnline": False,
+                            "isIdle": False,
+                            "lastSeenAt": now_iso,
+                        }
+                    )
+            except Exception:
+                pass
+            presence_service.clear_user(str(user_id))
+            return {"ok": True}
         should_bump_interaction = kind == "interaction" or (kind == "heartbeat" and is_idle is False)
         # Persist first, then bump the in-memory revision so long-poll waiters see
         # the completed state instead of a stale cache/DB snapshot.

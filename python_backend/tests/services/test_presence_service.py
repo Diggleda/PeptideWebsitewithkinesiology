@@ -118,6 +118,38 @@ class TestPresenceService(unittest.TestCase):
             )
         )
 
+    def test_derive_online_state_same_second_persisted_offline_wins(self):
+        try:
+            from python_backend.services import presence_service
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        self.assertFalse(
+            presence_service.derive_online_state(
+                stored_is_online=False,
+                presence_last_seen_epoch=990.4,
+                persisted_last_seen_epoch=990.0,
+                now_epoch=1_000.0,
+                threshold_s=300.0,
+            )
+        )
+
+    def test_derive_online_state_clearly_newer_local_presence_wins(self):
+        try:
+            from python_backend.services import presence_service
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        self.assertTrue(
+            presence_service.derive_online_state(
+                stored_is_online=False,
+                presence_last_seen_epoch=992.0,
+                persisted_last_seen_epoch=990.0,
+                now_epoch=1_000.0,
+                threshold_s=300.0,
+            )
+        )
+
     def test_derive_online_state_uses_recent_persisted_presence(self):
         try:
             from python_backend.services import presence_service

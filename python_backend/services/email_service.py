@@ -23,9 +23,12 @@ SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
 _SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
+_EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
 _EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
 _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
+_EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
 _EMAIL_LOGO_WIDTH = 360
+_EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
 _EMAIL_LOGO_IMAGE_STYLE = (
     f"width:{_EMAIL_LOGO_WIDTH}px;"
     "max-width:70%;"
@@ -120,6 +123,18 @@ _EMAIL_INLINE_IMAGE_SPECS = (
             "public/blueleafTexture-email.png",
             "public/blueleafTexture.png",
             "src/generated/runtime-assets/blueleafTexture.png",
+        ),
+    },
+    {
+        "content_id": _EMAIL_WHITE_LABEL_SESSIONS_CID,
+        "filename": "delegate-links-white-label-email.png",
+        "mime_type": "image/png",
+        "maintype": "image",
+        "subtype": "png",
+        "paths": (
+            "public/delegate-links-white-label-email.png",
+            "src/content/marketing/DelegateLinks/DelegateLinkBetaImage1.png",
+            "src/generated/runtime-assets/delegate-links-white-label-email.png",
         ),
     },
 )
@@ -667,6 +682,102 @@ def _build_delegate_proposal_ready_email(
         f"Submitted: {submitted_line}\n"
         "Sign in to TruFusionLabs and open Account > Delegate Links to review it.\n"
         f"Open TruFusionLabs: {safe_base_url}\n"
+        "Need help? Contact support@trufusionlabs.com."
+    )
+    return html, plain
+
+
+def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
+    safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
+    logo_url = _EMAIL_LOGO_SRC
+    leaf_url = _EMAIL_LEAF_SRC
+    white_label_sessions_url = _EMAIL_WHITE_LABEL_SESSIONS_SRC
+    delegate_font_family = "'Lexend', Arial, Helvetica, sans-serif"
+    body_style = f"{_email_body_style(leaf_url)}font-family:{delegate_font_family};font-weight:300;"
+    outer_table_style = _email_outer_table_style(leaf_url)
+    container_style = _email_container_style(640)
+    title_style = f"margin:0 0 6px;font-family:{delegate_font_family};font-size:30px;font-weight:700;line-height:1.2;color:#0B274B;"
+    lead_style = f"margin:0 0 12px;font-family:{delegate_font_family};font-size:21px;font-weight:300;line-height:1.45;color:#111827;"
+    step_number_style = f"padding:0 16px 14px 0;font-family:{delegate_font_family};font-size:30px;font-weight:700;line-height:1.05;color:#0B274B;vertical-align:top;white-space:nowrap;"
+    step_text_style = f"padding:2px 0 14px;font-family:{delegate_font_family};font-size:15px;font-weight:300;color:#111827;line-height:1.62;vertical-align:top;"
+    cta_style = f"display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-family:{delegate_font_family};font-size:15px;font-weight:300;border-radius:999px;text-decoration:none;"
+    footer_style = f"padding:24px 32px 32px;font-family:{delegate_font_family};font-size:12px;font-weight:300;color:#6b7280;line-height:1.5;text-align:center;"
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Welcome to the Delegate Links Beta</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300&display=swap" rel="stylesheet" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+  </head>
+  <body style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="{leaf_url}" style="{outer_table_style}">
+      <tr>
+        <td align="center" style="padding:0 14px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+            <tr>
+              <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:44px 32px 8px;font-family:{delegate_font_family};font-weight:300;">
+                <table role="presentation" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" cellpadding="0" cellspacing="0" align="center" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;margin:0 auto;border-collapse:collapse;">
+                  <tr>
+                    <td style="font-family:{delegate_font_family};font-weight:300;">
+                      <h1 style="{title_style}">Welcome to the Delegate Links Beta</h1>
+                      <p style="{lead_style}">
+                        Create branded, patient-specific order proposals your delegate can submit for your review.
+                      </p>
+
+                      <div style="margin:22px 0 24px;text-align:center;">
+                        <img src="{white_label_sessions_url}" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" alt="White label your delegate sessions" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid rgba(148,163,184,0.28);border-radius:16px;outline:none;text-decoration:none;" />
+                      </div>
+
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-collapse:collapse;">
+                        <tr>
+                          <td style="{step_number_style}">1.</td>
+                          <td style="{step_text_style}">Set up your brand: add your logo and primary color.</td>
+                        </tr>
+                        <tr>
+                          <td style="{step_number_style}">2.</td>
+                          <td style="{step_text_style}">Create and share a link: add details, markup, optional limits, notes, and payment instructions, then copy the link to your delegate.</td>
+                        </tr>
+                        <tr>
+                          <td style="{step_number_style}">3.</td>
+                          <td style="{step_text_style}">Review the proposal: approve the order or reject it with notes. Shipping and delegate payment stay between you and your delegate.</td>
+                        </tr>
+                      </table>
+
+                      <p style="margin:28px 0 32px;text-align:center;">
+                        <a href="{safe_base_url}" style="{cta_style}">Open Delegate Links Beta</a>
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="{footer_style}">
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
+    plain = (
+        "Welcome to the Delegate Links Beta\n\n"
+        "Create branded, patient-specific order proposals your delegate can submit for your review.\n\n"
+        "1. Set up your brand. Add your logo and primary color.\n"
+        "2. Create and share a link. Add subject details, markup, optional limits, notes, and payment instructions, then copy the link to your delegate.\n"
+        "3. Review the proposal. Approve the order or reject it with notes. Shipping and delegate payment remain between you and your delegate.\n\n"
+        f"Open Delegate Links Beta: {safe_base_url}\n"
         "Need help? Contact support@trufusionlabs.com."
     )
     return html, plain

@@ -11,6 +11,7 @@ import {
   forwardRef,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
@@ -20,6 +21,7 @@ import { shouldDisplayShippingStatusForOrder } from "./lib/orderStatusPrecedence
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
+import { BrandLogoImage } from "./components/BrandLogoImage";
 import { DoctorProfileForm } from "./components/DoctorProfileForm";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { PhysicianNetworkMap } from "./components/PhysicianNetworkMap";
@@ -328,6 +330,8 @@ interface User {
   networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
   delegateSecondaryColor?: string | null;
+  delegateBackgroundImageUrl?: string | null;
+  delegateBackgroundColor?: string | null;
   hasPasskeys?: boolean;
   referralCode?: string | null;
   npiNumber?: string | null;
@@ -2044,6 +2048,31 @@ const readResetTokenFromLocation = () => {
   return new URLSearchParams(window.location.search).get("token");
 };
 
+const readDelegateLinksGuideFromLocation = () => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const raw =
+    params.get("delegateLinksGuide") ||
+    params.get("delegate_links_guide") ||
+    params.get("guide");
+  return /^(1|true|delegate-links|delegate_links)$/i.test(String(raw || "").trim());
+};
+
+const clearDelegateLinksGuideFromLocation = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.delete("delegateLinksGuide");
+  url.searchParams.delete("delegate_links_guide");
+  if (/^(delegate-links|delegate_links)$/i.test(String(url.searchParams.get("guide") || ""))) {
+    url.searchParams.delete("guide");
+  }
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+};
+
 const getInitialLandingMode = (): "login" | "signup" | "forgot" | "reset" =>
   isResetPasswordRoute() ? "reset" : "login";
 
@@ -2051,6 +2080,7 @@ const getInitialResetToken = () =>
   isResetPasswordRoute() ? readResetTokenFromLocation() : null;
 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
+const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#edf7fb';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
   if (typeof value !== 'string') return null;
@@ -2065,6 +2095,17 @@ const normalizeDelegateSecondaryColor = (value?: string | null) => {
   }
   return null;
 };
+
+const normalizeDelegateBackgroundColor = normalizeDelegateSecondaryColor;
+
+const normalizeDelegateImageUrl = (value?: string | null) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const toCssUrlValue = (value: string) =>
+  `url("${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]/g, '')}")`;
 
 const hexToRgbCss = (hex: string) => {
   const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
@@ -3907,6 +3948,7 @@ const PRODUCT_RECOMMENDATIONS_ENABLED =
   String((import.meta as any).env?.VITE_RECOMMENDATIONS_ENABLED || "")
     .toLowerCase()
     .trim() !== "false";
+const CATALOG_RECOMMENDATION_DISPLAY_LIMIT = 12;
 const PRODUCT_RECOMMENDATION_SIMULATION_EMAILS = new Set(
   String(
     (import.meta as any).env?.VITE_RECOMMENDATION_SIMULATION_EMAILS ||
@@ -3917,12 +3959,12 @@ const PRODUCT_RECOMMENDATION_SIMULATION_EMAILS = new Set(
     .filter(Boolean),
 );
 const CATALOG_RECOMMENDATION_REASON_COPY: Record<string, string> = {
-  repeat_purchase: "it was purchased before",
+  repeat_purchase: "this was purchased before",
   cart_intent: "there was recent cart or checkout intent",
-  view_intent: "it was recently viewed",
-  similar_physicians: "peers with similar orders also purchased it",
-  category_affinity: "it matches previously ordered research domains",
-  tag_affinity: "it matches previously ordered dosage forms",
+  view_intent: "this was recently viewed",
+  similar_physicians: "peers with similar orders also purchased this",
+  category_affinity: "this matches previously ordered research domains",
+  tag_affinity: "this matches previously ordered dosage forms",
 };
 const CATALOG_RECOMMENDATION_REASON_WEIGHT: Record<string, number> = {
   repeat_purchase: 700,
@@ -3933,6 +3975,10 @@ const CATALOG_RECOMMENDATION_REASON_WEIGHT: Record<string, number> = {
   view_intent: 110,
 };
 const formatCatalogRecommendationReason = (reasons: unknown): string => {
+  const normalizePopupCopy = (value: string) =>
+    value.replace(/\bit\b/gi, (match) =>
+      match === match.toUpperCase() ? "THIS" : match[0] === "I" ? "This" : "this",
+    );
   const normalizedReasons = Array.isArray(reasons)
     ? reasons
         .map((reason) => String(reason || "").trim())
@@ -3951,9 +3997,11 @@ const formatCatalogRecommendationReason = (reasons: unknown): string => {
     return "Recommended based on order history.";
   }
   if (reasonText.length === 1) {
-    return `Recommended because ${reasonText[0]}.`;
+    return normalizePopupCopy(`Recommended because ${reasonText[0]}.`);
   }
-  return `Recommended because ${reasonText.slice(0, -1).join(", ")} and ${reasonText[reasonText.length - 1]}.`;
+  return normalizePopupCopy(
+    `Recommended because ${reasonText.slice(0, -1).join(", ")} and ${reasonText[reasonText.length - 1]}.`,
+  );
 };
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
@@ -5459,6 +5507,8 @@ function MainApp() {
     markupPercent: number;
     doctorLogoUrl?: string | null;
     doctorSecondaryColor?: string | null;
+    doctorBackgroundImageUrl?: string | null;
+    doctorBackgroundColor?: string | null;
     subjectLabel?: string | null;
     studyLabel?: string | null;
     patientReference?: string | null;
@@ -5494,6 +5544,14 @@ function MainApp() {
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegateSecondaryColor = hexToRgbCss(delegateSecondaryColorHex);
+  const delegateBackgroundImageUrl = normalizeDelegateImageUrl(delegateContext?.doctorBackgroundImageUrl ?? null);
+  const delegateBackgroundColorRaw = normalizeDelegateBackgroundColor(delegateContext?.doctorBackgroundColor ?? null);
+  const delegateBackgroundColorHex = delegateBackgroundColorRaw || DEFAULT_DELEGATE_BACKGROUND_COLOR;
+  const delegateBackgroundImageCss = delegateBackgroundImageUrl
+    ? toCssUrlValue(delegateBackgroundImageUrl)
+    : delegateBackgroundColorRaw
+      ? 'none'
+      : 'var(--email-background-image)';
   const isDelegateThemeActive = isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError;
   const formatDelegateTimeRemaining = useCallback((expiryMs: number | null, nowMs: number) => {
     if (!expiryMs || !Number.isFinite(expiryMs)) return null;
@@ -5625,7 +5683,9 @@ function MainApp() {
   const doctorGatingModalViewportInset = "clamp(1rem, 4vh, 2.25rem)";
   const doctorGatingModalViewportInsetDouble = "clamp(2rem, 8vh, 4.5rem)";
   const doctorGatingModalContainerClassName =
-    "fixed inset-0 z-[10000] flex items-start justify-center overflow-y-auto px-3 sm:px-4";
+    "doctor-gating-modal-layer fixed inset-0 z-[13000] flex items-start justify-center overflow-y-auto px-3 sm:px-4";
+  const doctorProfileBuilderModalContainerClassName =
+    `${doctorGatingModalContainerClassName} doctor-profile-builder-modal-layer`;
   const doctorGatingModalContainerStyle: CSSProperties = {
     paddingTop: doctorGatingModalViewportInset,
     paddingBottom: doctorGatingModalViewportInset,
@@ -5634,8 +5694,7 @@ function MainApp() {
   const doctorGatingModalLogo = (
     <div className="mb-6 flex justify-center">
       <div className="brand-logo">
-        <img
-          src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
+        <BrandLogoImage
           alt="TruFusionLabs"
           style={{
             display: "block",
@@ -5818,6 +5877,65 @@ function MainApp() {
       window.clearInterval(intervalId);
     };
   }, [isMaintenanceMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!isMaintenanceMode || !maintenanceExpiresMs) {
+      return;
+    }
+
+    const expireMaintenanceSession = () => {
+      setMaintenanceNowMs(Date.now());
+      const openerWindow =
+        window.opener && !window.opener.closed ? window.opener : null;
+      if (openerWindow) {
+        try {
+          openerWindow.postMessage(
+            {
+              type: MAINTENANCE_OPENER_EXIT_EVENT,
+              at: Date.now(),
+              targetUserId: user?.id || null,
+              reason: "expired",
+            },
+            window.location.origin,
+          );
+        } catch {
+          // ignore
+        }
+      }
+      handleLogoutRef.current();
+      window.setTimeout(() => {
+        try {
+          if (openerWindow && !openerWindow.closed) {
+            openerWindow.focus();
+          }
+        } catch {
+          // ignore
+        }
+        try {
+          window.close();
+        } catch {
+          // ignore
+        }
+      }, 0);
+    };
+
+    const delayMs = maintenanceExpiresMs - Date.now();
+    if (delayMs <= 0) {
+      expireMaintenanceSession();
+      return;
+    }
+
+    const timeoutId = window.setTimeout(
+      expireMaintenanceSession,
+      Math.min(delayMs, 2_147_483_647),
+    );
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isMaintenanceMode, maintenanceExpiresMs, user?.id]);
 
   useEffect(() => {
     if (typeof document === "undefined" || isMaintenanceMode) {
@@ -6273,6 +6391,8 @@ function MainApp() {
       ['--delegate-accent-55', hexToRgbaCss(delegateSecondaryColorHex, 0.55)],
       ['--delegate-accent-65', hexToRgbaCss(delegateSecondaryColorHex, 0.65)],
       ['--delegate-accent-80', hexToRgbaCss(delegateSecondaryColorHex, 0.80)],
+      ['--delegate-session-background-color', delegateBackgroundColorHex],
+      ['--delegate-session-background-image', delegateBackgroundImageCss],
     ];
 
     if (isDelegateThemeActive) {
@@ -6287,7 +6407,13 @@ function MainApp() {
       body.setAttribute('data-delegate-theme', 'false');
       styleEntries.forEach(([key]) => body.style.removeProperty(key));
     };
-  }, [delegateSecondaryColor, delegateSecondaryColorHex, isDelegateThemeActive]);
+  }, [
+    delegateBackgroundColorHex,
+    delegateBackgroundImageCss,
+    delegateSecondaryColor,
+    delegateSecondaryColorHex,
+    isDelegateThemeActive,
+  ]);
 
   useEffect(() => {
     if (!delegateToken) {
@@ -6386,6 +6512,18 @@ function MainApp() {
 	              ? resolved.doctorSecondaryColor
 	              : typeof resolved?.doctor_secondary_color === 'string'
 	                ? resolved.doctor_secondary_color
+	                : null,
+	          doctorBackgroundImageUrl:
+	            typeof resolved?.doctorBackgroundImageUrl === 'string'
+	              ? resolved.doctorBackgroundImageUrl
+	              : typeof resolved?.doctor_background_image_url === 'string'
+	                ? resolved.doctor_background_image_url
+	                : null,
+	          doctorBackgroundColor:
+	            typeof resolved?.doctorBackgroundColor === 'string'
+	              ? resolved.doctorBackgroundColor
+	              : typeof resolved?.doctor_background_color === 'string'
+	                ? resolved.doctor_background_color
 	                : null,
 	          subjectLabel:
 	            typeof resolved?.subjectLabel === 'string'
@@ -6527,6 +6665,30 @@ function MainApp() {
 	          return {
 	            ...prev,
 	            expiresAt: nextExpiresAt,
+            doctorLogoUrl:
+              typeof resolved?.doctorLogoUrl === 'string'
+                ? resolved.doctorLogoUrl
+                : typeof resolved?.doctor_logo_url === 'string'
+                  ? resolved.doctor_logo_url
+                  : prev.doctorLogoUrl ?? null,
+            doctorSecondaryColor:
+              typeof resolved?.doctorSecondaryColor === 'string'
+                ? resolved.doctorSecondaryColor
+                : typeof resolved?.doctor_secondary_color === 'string'
+                  ? resolved.doctor_secondary_color
+                  : prev.doctorSecondaryColor ?? null,
+            doctorBackgroundImageUrl:
+              typeof resolved?.doctorBackgroundImageUrl === 'string'
+                ? resolved.doctorBackgroundImageUrl
+                : typeof resolved?.doctor_background_image_url === 'string'
+                  ? resolved.doctor_background_image_url
+                  : prev.doctorBackgroundImageUrl ?? null,
+            doctorBackgroundColor:
+              typeof resolved?.doctorBackgroundColor === 'string'
+                ? resolved.doctorBackgroundColor
+                : typeof resolved?.doctor_background_color === 'string'
+                  ? resolved.doctor_background_color
+                  : prev.doctorBackgroundColor ?? null,
 	            delegateSharedAt:
 	              typeof resolved?.delegateSharedAt === 'string'
 	                ? resolved.delegateSharedAt
@@ -18994,7 +19156,10 @@ function MainApp() {
     }
 
     let cancelled = false;
-    const limit = Math.min(500, Math.max(100, catalogProducts.length));
+    const limit = Math.max(
+      1,
+      Math.min(CATALOG_RECOMMENDATION_DISPLAY_LIMIT, catalogProducts.length),
+    );
     void catalogRecommendationsAPI
       .list({ limit })
       .then((payload) => {
@@ -19003,6 +19168,16 @@ function MainApp() {
         const nextReasons: Record<string, string> = {};
         const recommendations = Array.isArray(payload?.recommendations)
           ? payload.recommendations
+              .slice()
+              .sort((a, b) => {
+                const scoreA = Number(a?.score);
+                const scoreB = Number(b?.score);
+                return (
+                  (Number.isFinite(scoreB) ? scoreB : 0) -
+                  (Number.isFinite(scoreA) ? scoreA : 0)
+                );
+              })
+              .slice(0, CATALOG_RECOMMENDATION_DISPLAY_LIMIT)
           : [];
         const applyRecommendationKey = (
           key: string,
@@ -24873,7 +25048,7 @@ function MainApp() {
   // Set body classes to control background per view
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const isNonLoginView = Boolean(user) && !postLoginHold;
+    const isNonLoginView = Boolean(user);
     const isLoginView = !user;
     document.body.classList.toggle("non-login-bg", isNonLoginView);
     document.body.classList.toggle("login-view", isLoginView);
@@ -24881,7 +25056,7 @@ function MainApp() {
       document.body.classList.remove("non-login-bg");
       document.body.classList.remove("login-view");
     };
-  }, [user, postLoginHold]);
+  }, [user]);
 
   useEffect(() => {
     if (
@@ -25041,10 +25216,9 @@ function MainApp() {
         message === "EMAIL_REQUIRED" ||
         (typeof message === "string" &&
           message.trim() === LOGIN_BACKEND_DOWN_MESSAGE);
-      (isExpectedLoginFailure ? console.debug : console.warn)(
-        "[Auth] Login failed",
-        { email, error },
-      );
+      if (!isExpectedLoginFailure) {
+        console.warn("[Auth] Login failed", { email, error });
+      }
 
       if (message === "EMAIL_NOT_FOUND") {
         return { status: "email_not_found" };
@@ -27943,7 +28117,7 @@ function MainApp() {
                         contactPhone: event.target.value,
                       }))
                     }
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="h-[70px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
                 <div className="sm:col-span-2">
@@ -27974,7 +28148,7 @@ function MainApp() {
                 <Button
                   type="submit"
                   disabled={referralSubmitting}
-                  className="header-cart-button squircle-sm btn-hover-lighter"
+                  className="referral-submit-button squircle-sm btn-hover-lighter"
                 >
                   {referralSubmitting ? "Submitting…" : "Submit Referral"}
                 </Button>
@@ -28081,20 +28255,31 @@ function MainApp() {
               ) : (
                 <div className="space-y-4">
                   <div className="referral-toolbar">
-                    <div className="referral-toolbar__search relative">
+                    <div
+                      className="referral-toolbar__search relative"
+                      style={{
+                        "--header-search-border-color": "rgb(60, 103, 183)",
+                      } as CSSProperties}
+                    >
                       <Search
-                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform !text-slate-500"
+                        style={{ color: "rgb(100, 116, 139)" }}
                         aria-hidden="true"
                       />
-                      <input
+                      <Input
                         type="search"
+                        inputMode="search"
+                        enterKeyHint="search"
                         value={referralSearchTerm}
                         onChange={(event) =>
                           setReferralSearchTerm(event.target.value)
                         }
                         placeholder="Search by name or email"
                         aria-label="Search referrals"
-                        className="referral-search-input header-search-input h-10 pl-10 pr-3 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-0"
+                        className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
+                        style={{
+                          minWidth: "100%",
+                        }}
                       />
                     </div>
                     <Button
@@ -28425,7 +28610,7 @@ function MainApp() {
       key: string;
       label: string;
       tone?: "info" | "warn" | "error";
-    }[] = [{ key: "count", label: itemLabel }];
+    }[] = [];
     const showFilters = true;
 
     if (formattedSearch.length > 0) {
@@ -28471,6 +28656,7 @@ function MainApp() {
                 productCounts={productCounts}
                 typeCounts={{}}
                 tagSections={tagSections}
+                resultCountLabel={itemLabel}
                 onOpenManufacturingModal={() => setManufacturingQualityStandardsOpen(true)}
               />
             ) : (
@@ -28493,32 +28679,32 @@ function MainApp() {
 
         {/* Products Grid */}
         <div className="w-full min-w-0 flex-1">
-          <div className="flex flex-col gap-3 mb-6 lg:flex-row lg:flex-nowrap lg:items-center">
-            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 order-2 lg:order-1">
-              <h2 className="mr-1">Products</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                {statusChips.map((chip) => {
-                  const isSpinner = chip.label === "loading-icon";
-                  return (
-                    <span
-                      key={chip.key}
-                      className={`filter-chip glass-card${chip.tone ? ` filter-chip--${chip.tone}` : ""}`}
-                    >
-	                      {isSpinner ? (
-	                        <RefreshCw
-	                          className="h-3 w-3.1 animate-spin text-[rgb(30,41,59)]"
-	                          aria-hidden="true"
-	                        />
-	                      ) : (
-	                        <span className="whitespace-nowrap">{chip.label}</span>
-	                      )}
-                    </span>
-                  );
-                })}
+          {statusChips.length > 0 && (
+            <div className="flex flex-col gap-3 mb-6 lg:flex-row lg:flex-nowrap lg:items-center">
+              <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 order-2 lg:order-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  {statusChips.map((chip) => {
+                    const isSpinner = chip.label === "loading-icon";
+                    return (
+                      <span
+                        key={chip.key}
+                        className={`filter-chip glass-card${chip.tone ? ` filter-chip--${chip.tone}` : ""}`}
+                      >
+                        {isSpinner ? (
+                          <RefreshCw
+                            className="h-3 w-3.1 animate-spin text-[rgb(30,41,59)]"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <span className="whitespace-nowrap">{chip.label}</span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-
-          </div>
+          )}
 
           {showSkeletonGrid ? (
             <div className="grid gap-6 w-full px-4 sm:px-6 lg:px-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
@@ -37518,35 +37704,29 @@ function MainApp() {
 
   const featuredProducts = filteredProductCatalog.slice(0, 4);
   const quoteReady = showQuote && Boolean(quoteOfTheDay);
-  const hideMobileWelcomeDuringLogout =
-    logoutThanksActive && !isDesktopLandingLayout;
-  const { quoteFontSize, quoteLineClamp, quoteMobileFont } = useMemo(() => {
+  const { quoteFontSize, quoteLineClamp } = useMemo(() => {
     const len = quoteOfTheDay?.text?.length || 0;
     if (len > 260) {
       return {
         quoteFontSize: "clamp(0.55rem, 1.1vw, 0.72rem)",
         quoteLineClamp: 8,
-        quoteMobileFont: "clamp(0.68rem, 1.9vw, 0.84rem)",
       };
     }
     if (len > 180) {
       return {
         quoteFontSize: "clamp(0.6rem, 1.3vw, 0.8rem)",
         quoteLineClamp: 6,
-        quoteMobileFont: "clamp(0.72rem, 2vw, 0.88rem)",
       };
     }
     if (len > 120) {
       return {
         quoteFontSize: "clamp(0.66rem, 1.5vw, 0.9rem)",
         quoteLineClamp: 5,
-        quoteMobileFont: "clamp(0.78rem, 2.2vw, 0.94rem)",
       };
     }
     return {
       quoteFontSize: "clamp(0.74rem, 1.8vw, 0.98rem)",
       quoteLineClamp: 4,
-      quoteMobileFont: "clamp(0.84rem, 2.5vw, 1rem)",
     };
   }, [quoteOfTheDay]);
 
@@ -37613,89 +37793,10 @@ function MainApp() {
 			      </>
 			    );
 			  };
-		  const landingAvatarSize = isDesktopLandingLayout ? 48 : 53;
-      const landingAccountRole = String(user?.role || "").trim().toLowerCase();
-		  const landingAccountLabel = (() => {
-        const rawName =
-          typeof user?.name === "string" && user.name.trim()
-            ? user.name.trim()
-            : "Account";
-        if (landingAccountRole === "admin") {
-          return `Admin: ${rawName}`;
-        }
-        if (
-          landingAccountRole === "sales_lead" ||
-          landingAccountRole === "saleslead" ||
-          landingAccountRole === "sales-lead"
-        ) {
-          return `Lead: ${rawName}`;
-        }
-        const landingAccountIsPartner = coerceOptionalBoolean(
-          user?.salesRep?.isPartner,
-        );
-        const landingAccountAllowedRetail = coerceOptionalBoolean(
-          user?.salesRep?.allowedRetail,
-        );
-        if (isSalesPartner(landingAccountRole, landingAccountIsPartner)) {
-          return `${getSalesPartnerLabel(landingAccountAllowedRetail)}: ${rawName}`;
-        }
-        if (
-          landingAccountRole === "sales_rep" ||
-          landingAccountRole === "salesrep" ||
-          landingAccountRole === "rep" ||
-          landingAccountRole === "test_rep"
-        ) {
-          return `Rep: ${rawName}`;
-        }
-        return rawName;
-      })();
-		  const landingAccountButton = user ? (
-		    <Button
-		      type="button"
-		      variant="default"
-		      size="sm"
-		      onClick={openAccountDetailsTab}
-				      className="relative overflow-visible squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button justify-start"
-		      aria-label="Open account"
-		    >
-				      <span className="header-account-name text-current">
-                {landingAccountLabel}
-              </span>
-		      <span className="header-account-avatar-shell">
-			        {user.profileImageUrl ? (
-			          <img
-			            src={user.profileImageUrl}
-		            alt={user.name}
-	            className="header-account-avatar header-avatar-image"
-	            style={{ width: landingAvatarSize, height: landingAvatarSize }}
-	          />
-	        ) : (
-	          <span
-	            className="header-account-avatar header-avatar-fallback"
-	            style={{ width: landingAvatarSize, height: landingAvatarSize }}
-	            aria-hidden="true"
-	          >
-	            {getInitials(user.name)}
-	          </span>
-	        )}
-          {accountIndicatorTotal > 0 && (
-            <Badge
-              variant="outline"
-              className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(60,103,183)]"
-              aria-label={`Notifications: ${accountIndicatorTotal}`}
-              title={`Notifications: ${accountIndicatorTotal}`}
-            >
-              {accountIndicatorTotal > 9 ? "9+" : accountIndicatorTotal}
-            </Badge>
-          )}
-	      </span>
-	    </Button>
-	  ) : null;
-
 	  return (
 	    <div
 	      data-delegate-theme={isDelegateThemeActive ? 'true' : 'false'}
-	      className="min-h-screen bg-slate-50 flex flex-col safe-area-vertical"
+	      className="min-h-screen flex flex-col safe-area-vertical"
       style={{
         position: "static",
         ...(isDelegateThemeActive
@@ -37714,30 +37815,12 @@ function MainApp() {
               ['--delegate-accent-55' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.55),
               ['--delegate-accent-65' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.65),
               ['--delegate-accent-80' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.80),
+              ['--delegate-session-background-color' as const]: delegateBackgroundColorHex,
+              ['--delegate-session-background-image' as const]: delegateBackgroundImageCss,
             }
           : {}),
       }}
     >
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          top: "-12vh",
-          left: "-6vw",
-          width: "112vw",
-          height: "140vh",
-          backgroundImage: `url(${resolveStaticAssetUrl("/leafTexture.jpg")})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-          zIndex: 0,
-          pointerEvents: "none",
-          maskImage:
-            "linear-gradient(to top, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.15) 33%, rgba(0,0,0,0.075) 66%, rgba(0,0,0,0) 100%)",
-          WebkitMaskImage:
-            "linear-gradient(to top, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.05) 50%, rgba(0,0,0,0) 100%)",
-        }}
-      />
       {infoFocusActive &&
         postLoginHold &&
         user &&
@@ -37756,9 +37839,9 @@ function MainApp() {
       >
         <DialogContent
           hideCloseButton
-          className="max-w-2xl overflow-y-auto overscroll-contain"
+          className="doctor-gating-modal-content max-w-2xl overflow-y-auto overscroll-contain"
           overlayClassName={doctorGatingModalOverlayClassName}
-          containerClassName={doctorGatingModalContainerClassName}
+          containerClassName={doctorProfileBuilderModalContainerClassName}
           containerStyle={doctorGatingModalContainerStyle}
           style={doctorGatingModalContentStyle}
           trapFocus={!researchTermsLegalModalOpen}
@@ -37852,7 +37935,7 @@ function MainApp() {
       </Dialog>
       <Dialog
         open={showDoctorProfileBuilderModal}
-        modal
+        modal={false}
         onOpenChange={(open) => {
           if (!open && showDoctorProfileBuilderModal) {
             return;
@@ -37861,7 +37944,7 @@ function MainApp() {
       >
         <DialogContent
           hideCloseButton
-          className="max-w-2xl overflow-y-auto overscroll-contain"
+          className="doctor-gating-modal-content max-w-2xl overflow-y-auto overscroll-contain"
           overlayClassName={doctorGatingModalOverlayClassName}
           containerClassName={doctorGatingModalContainerClassName}
           containerStyle={doctorGatingModalContainerStyle}
@@ -37903,7 +37986,7 @@ function MainApp() {
       >
         <DialogContent
           hideCloseButton
-          className="max-w-2xl overflow-y-auto overscroll-contain"
+          className="doctor-gating-modal-content max-w-2xl overflow-y-auto overscroll-contain"
           overlayClassName={doctorGatingModalOverlayClassName}
           containerClassName={doctorGatingModalContainerClassName}
           containerStyle={doctorGatingModalContainerStyle}
@@ -37978,9 +38061,9 @@ function MainApp() {
       )}
 	      {!showDoctorGatingModal && (
 	      <div className="relative z-10 flex flex-1 flex-col">
-		        {/* Header */}
+			        {/* Header */}
 			        {user && !isDelegateMode && (
-			          <div style={{ display: postLoginHold ? "none" : undefined }}>
+			          <div>
 		                  <Header
 				              user={user}
 				              researchDashboardEnabled={researchDashboardEnabled}
@@ -38011,12 +38094,14 @@ function MainApp() {
 			              showCanceledOrders={showCanceledOrders}
 			              onToggleShowCanceled={toggleShowCanceledOrders}
 			              accountModalRequest={accountModalRequest}
-                    onAccountModalRequestHandled={(token) => {
+	                    onAccountModalRequestHandled={(token) => {
                       setAccountModalRequest((prev) => {
                         if (!prev) return prev;
                         return prev.token === token ? null : prev;
                       });
 	                    }}
+	                    suppressHomeButton={postLoginHold}
+	                    suppressSearch={postLoginHold}
 	                    suppressAccountHomeButton={false}
 				              onBuyOrderAgain={handleBuyOrderAgain}
 				              onCancelOrder={handleCancelOrder}
@@ -38063,141 +38148,20 @@ function MainApp() {
           )}
           {/* Landing Page - Show when not logged in */}
           {!sessionBootstrapPending && (!user || postLoginHold) && !isDelegateMode && (
-            <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
-              {/* Logo with Welcome and Quote Containers */}
-              {postLoginHold && user ? (
-	                <div className="w-full max-w-7xl mb-6 px-4">
-		                  {isDesktopLandingLayout ? (
-			                    <div className="flex items-center justify-between gap-6 lg:gap-8 mb-8 w-full">
-		                      <div className="flex-shrink-0">
-		                        <div className="brand-logo brand-logo--landing">
-			                          <img
-			                            src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
-			                            alt="TruFusionLabs"
-	                            style={{
-                              display: "block",
-                              width: "auto",
-                              height: "auto",
-                              maxWidth: "min(330px, 35vw)",
-                              maxHeight: "min(290px, 25vh)",
-                              objectFit: "contain",
-                            }}
-	                          />
-		                        </div>
-		                      </div>
-
-		                      <div
-		                        className={`flex items-center justify-end gap-4 transition-all duration-500 flex-shrink-0 ${
-		                          showWelcome
-		                            ? "opacity-100 translate-y-0"
-		                            : "opacity-0 translate-y-4 pointer-events-none"
-		                        }`}
-		                      >
-		                        <p
-		                          className={`font-semibold text-[rgb(60,103,183)] text-right leading-none shimmer-text ${infoFocusActive ? "is-shimmering" : "shimmer-text--cooldown"}`}
-			                          style={{
-			                            color: "rgb(60,103,183)",
-			                            fontSize: infoFocusActive
-			                              ? "clamp(1.6rem, 2.9vw, 3rem)"
-			                              : "clamp(1.35rem, 2.6vw, 2.2rem)",
-			                            transition: "font-size 800ms ease",
-			                          }}
-		                        >
-		                          Welcome{user.visits && user.visits > 1 ? " back!" : "!"}
-	                        </p>
-	                        {landingAccountButton}
-	                      </div>
-	                    </div>
-	                  ) : (
-                    <div className="flex flex-col items-center gap-6 mb-8">
-                      <div className="flex w-full items-center justify-between gap-4 px-4">
-                        <div className="brand-logo brand-logo--landing flex-shrink-0">
-	                          <img
-	                            src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
-	                            alt="TruFusionLabs"
-	                            style={{
-                              display: "block",
-                              width: "auto",
-                              height: "auto",
-                              minWidth: "180px",
-                              minHeight: "54px",
-                              maxWidth: "min(330px, 35vw)",
-                              maxHeight: "min(290px, 25vh)",
-                              objectFit: "contain",
-                            }}
-                          />
-                        </div>
-                        {landingAccountButton}
-                      </div>
-                      {!hideMobileWelcomeDuringLogout &&
-                        !showResearchTermsAgreementModal && (
-                        <div
-                          className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
-                            showWelcome
-                              ? "opacity-100 translate-y-0"
-                              : "opacity-0 -translate-y-4"
-                          } flex flex-col items-center text-center justify-center sm:justify-start`}
-                          style={{
-                            backdropFilter: "blur(20px) saturate(1.4)",
-                            minHeight:
-                              quoteReady && quoteOfTheDay
-                                ? "auto"
-                                : "min(140px, 20vh)",
-                          }}
-                        >
-                          <p
-                            className={`text-center font-semibold text-[rgb(60,103,183)] shimmer-text ${infoFocusActive ? "is-shimmering" : "shimmer-text--cooldown"}`}
-                            style={{
-                              color: "rgb(60,103,183)",
-                              fontSize:
-                                quoteReady && quoteOfTheDay
-                                  ? "clamp(1rem, 3.2vw, 1.6rem)"
-                                  : "clamp(1.32rem, 4.9vw, 1.9rem)",
-                              lineHeight: 1.2,
-                              transform:
-                                quoteReady && quoteOfTheDay
-                                  ? "translateY(-8px)"
-                                  : "translateY(0)",
-                              transition:
-                                "font-size 600ms ease, transform 600ms ease",
-                            }}
-                          >
-                            Welcome{user.visits && user.visits > 1 ? " back" : ""}, {user.name}!
-                          </p>
-                          <div
-                            className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 py-3 sm:px-4 sm:py-3 text-center shadow-inner transition-opacity duration-500 mt-6`}
-                            aria-live="polite"
-                          >
-                            {!quoteReady && (
-                              <div className="min-h-[56px] flex items-center justify-center w-full">
-                                <p className="text-sm font-semibold mt-3 text-center shimmer-text is-shimmering" style={{ color: "rgb(60,103,183)" }}>
-                                  Loading today&apos;s quote…
-                                </p>
-                              </div>
-                            )}
-                            {quoteReady && quoteOfTheDay && (
-                              <p
-                                className="px-4 sm:px-6 italic text-[rgb(60,103,183)] leading-snug break-words"
-                                style={{
-                                  color: "rgb(60,103,183)",
-                                  fontSize: quoteMobileFont,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  display: "-webkit-box",
-                                  WebkitLineClamp: quoteLineClamp,
-                                  WebkitBoxOrient: "vertical",
-                                }}
-                              >
-                                "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
+	            <div
+	              className={`min-h-screen flex flex-col items-center px-4 pb-12 ${
+	                postLoginHold && user
+	                  ? ""
+	                  : `landing-auth-shell${landingAuthMode === "signup" ? " landing-auth-shell--signup" : ""}`
+	              }`}
+              style={
+                postLoginHold && user
+                  ? { paddingTop: "calc(var(--app-header-height, 0px) + 1rem)" }
+                  : undefined
+              }
+            >
+              {/* Logo for secondary auth screens */}
+              {!user && landingAuthMode !== "login" && landingAuthMode !== "signup" ? (
                 <div
                   className={`flex justify-center ${
                     landingAuthMode === "signup"
@@ -38206,8 +38170,7 @@ function MainApp() {
                   }`}
                 >
                   <div className="brand-logo brand-logo--landing">
-	                    <img
-	                      src={withStaticAssetStamp("/turfusionlabsphysiciansportal.png")}
+	                    <BrandLogoImage
 	                      alt="TruFusionLabs"
 	                      style={{
                         display: "block",
@@ -38218,31 +38181,32 @@ function MainApp() {
                         objectFit: "contain",
                       }}
                     />
-                  </div>
-                </div>
-              )}
+	                  </div>
+	                </div>
+              ) : null}
 
               {/* Info Container - After Login */}
               {postLoginHold && user ? (
-                <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
+                <div className="post-login-content-shell w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
                   {shouldShowPhysicianMapCard ? (
-                    <div className="physician-network-card glass-card landing-glass squircle-xl mb-4 overflow-hidden px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
-                      <div className="physician-network-card__layout flex flex-col gap-5 md:flex-row md:items-center md:justify-between md:gap-8">
-                        <div className="physician-network-card__intro space-y-4">
+                    <div className="physician-network-card glass-card landing-glass squircle-xl mb-4 px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
+                      <div className="physician-network-card__layout">
+                        <div className="physician-network-card__intro">
                           <p
-                            className="text-2xl font-medium leading-relaxed sm:text-3xl"
+                            className="physician-network-card__intro-primary font-medium"
                             style={{ color: "rgb(60, 103, 183)" }}
                           >
-                            Thank you for being apart of our network of physicians across the United States that are seeing in integrity for healthcare and clinical practice. We are excited to have you join us in watching our network grow in talent.
+                            Thank you for helping us promote integrity and endogenous healing across the healthcare system. Our products and services exist to empower your ability to cure, relieve and comfort others.
                           </p>
+                          <div className="physician-network-card__divider" aria-hidden="true" />
                           <p
-                            className="text-xl leading-relaxed sm:text-2xl"
+                            className="physician-network-card__intro-secondary"
                             style={{ color: "rgb(60, 103, 183)" }}
                           >
                             Connect with your peers, build relationships, and collaborate on research.
                           </p>
                         </div>
-                        <PhysicianNetworkMap />
+                        <PhysicianNetworkMap showDetails={false} />
                       </div>
                     </div>
                   ) : null}
@@ -38733,18 +38697,41 @@ function MainApp() {
                   }`}
                 >
                   <div className="space-y-5">
-                    <div
-                      className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl"
-                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
-                    >
-                      <div
-                        className={
-                          landingAuthMode === "signup" ? "space-y-6" : "space-y-4"
-                        }
-                      >
-                        {landingAuthMode === "login" && (
-                          <>
-                            <form
+	                    <div
+	                      className={`glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] shadow-xl ${
+	                        landingAuthMode === "login"
+	                          ? "landing-login-container p-6 sm:p-8"
+	                          : landingAuthMode === "signup"
+	                            ? "landing-create-account-container p-8"
+	                          : "p-8"
+	                      }`}
+	                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
+	                    >
+	                      <div
+	                        className={
+	                          landingAuthMode === "login"
+	                            ? "landing-login-panel-content gap-10 sm:gap-12"
+	                            : landingAuthMode === "signup"
+	                              ? "space-y-6"
+	                              : "space-y-4"
+	                        }
+	                      >
+	                        {landingAuthMode === "login" && (
+	                          <>
+	                            <div className="flex justify-center">
+	                              <div className="brand-logo brand-logo--landing landing-login-logo">
+	                                <BrandLogoImage
+	                                  alt="TruFusionLabs"
+	                                  style={{
+	                                    display: "block",
+	                                    width: "auto",
+	                                    height: "auto",
+	                                    objectFit: "contain",
+	                                  }}
+	                                />
+	                              </div>
+	                            </div>
+	                            <form
                               id="landing-login-form"
                               name="login"
                               method="post"
@@ -38848,7 +38835,7 @@ function MainApp() {
 	                                setLandingLoginPending(false);
 	                              }
 	                            }}
-                              className="space-y-3"
+                              className="landing-login-form-stack space-y-3"
                               autoComplete="on"
                             >
                               <div className="space-y-2">
@@ -39004,10 +38991,43 @@ function MainApp() {
                                     Create an account
                                   </button>
                                 </p>
-                              </div>
-                            </form>
-                          </>
-                        )}
+	                              </div>
+	                            </form>
+	                            <div className="landing-login-partner flex flex-col items-center gap-1 text-center">
+	                              <div className="flex w-full justify-center">
+	                                <button
+	                                  type="button"
+	                                  onClick={() => setManufacturingQualityStandardsOpen(true)}
+	                                  className="partnered-protixa-row partnered-protixa-button squircle-xl flex max-w-full flex-row flex-wrap items-center justify-center"
+	                                >
+	                                  <span
+	                                    className="partnered-protixa-brand flex shrink-0 flex-col items-start gap-1"
+	                                    style={{ boxSizing: "border-box" }}
+	                                  >
+	                                    <span className="partnered-protixa-kicker w-full text-left font-medium text-slate-600">
+	                                      Partnered with a
+	                                    </span>
+                                      <span className="partnered-protixa-certification">
+                                        <span className="partnered-protixa-cta__label">
+                                          cGMP Certified Lab
+                                        </span>
+                                      </span>
+	                                  </span>
+	                                  <span className="partnered-protixa-cta squircle-sm inline-flex min-w-0 flex-none items-center justify-start px-0 py-0 text-left">
+	                                    <span className="partnered-protixa-cta__label">
+	                                      <span className="partnered-protixa-cta__line">
+	                                        Manufacturing &amp;
+	                                      </span>
+	                                      <span className="partnered-protixa-cta__line">
+	                                        Quality Standards
+	                                      </span>
+	                                    </span>
+	                                  </span>
+	                                </button>
+	                              </div>
+	                            </div>
+	                          </>
+	                        )}
                         {landingAuthMode === "forgot" && (
                           <>
                           <div className="text-center space-y-2">
@@ -39362,7 +39382,7 @@ function MainApp() {
                                   htmlFor="landing-suffix"
                                   className="text-sm font-medium"
                                 >
-                                  <span>Suffix</span>
+                                  <span>Preffix</span>
                                   <span className="ml-2 text-xs font-normal text-gray-500">
                                     Optional
                                   </span>
@@ -39370,20 +39390,7 @@ function MainApp() {
                                 <select
                                   id="landing-suffix"
                                   name="suffix"
-                                  className="glass squircle-sm w-full px-3 text-sm border transition-colors focus-visible:outline-none focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)] leading-tight"
-                                  style={{
-                                    borderColor: "rgba(60,103,183,0.18)",
-                                    backgroundColor: "rgba(60,103,183,0.02)",
-                                    WebkitAppearance: "none" as any,
-                                    MozAppearance: "none" as any,
-                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23071b1b' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                                    backgroundRepeat: "no-repeat",
-                                    backgroundPosition: "right 0.75rem center",
-                                    backgroundSize: "12px",
-                                    paddingRight: "2.5rem",
-                                    height: "2.5rem",
-                                    lineHeight: "1.25rem",
-                                  }}
+                                  className="auth-prefix-select w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                                 >
                                   <option value="">None</option>
                                   <option value="Mr.">Mr.</option>
@@ -39630,45 +39637,7 @@ function MainApp() {
                         )}
                       </div>
                     </div>
-                    {landingAuthMode === "login" && (
-                      <div
-                        className="flex flex-col items-center gap-1 text-center"
-                        style={{ marginTop: "6rem" }}
-                      >
-                        <div className="flex w-full justify-center">
-                          <div className="partnered-protixa-row squircle-xl flex max-w-full flex-row flex-wrap items-center justify-center">
-                            <div
-                              className="partnered-protixa-brand flex shrink-0 flex-col items-start gap-1"
-                              style={{ boxSizing: "border-box" }}
-                            >
-                              <p className="partnered-protixa-kicker w-full text-left font-medium text-slate-600">
-                                Partnered with
-                              </p>
-                              <img
-                                src={withStaticAssetStamp("/protixa.png")}
-                                alt="Protixa logo"
-                                className="partnered-protixa-logo h-auto max-w-full"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setManufacturingQualityStandardsOpen(true)}
-                              className="partnered-protixa-cta squircle-sm inline-flex min-w-0 flex-none items-center justify-start px-0 py-0 text-left"
-                            >
-                              <span className="partnered-protixa-cta__label">
-                                <span className="partnered-protixa-cta__line">
-                                  Manufacturing &amp;
-                                </span>
-                                <span className="partnered-protixa-cta__line">
-                                  Quality Standards
-                                </span>
-                              </span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+	                  </div>
                 </div>
               )}
             </div>
@@ -43008,17 +42977,10 @@ function MainApp() {
                     <span>Proprietary Delivery Technology</span>
                   </h3>
                   <p>
-                    TruFusionLabs utilizes the {" "}
-                    <img
-                      src={withStaticAssetStamp("/protixa.png")}
-                      alt="Protixa"
-                      style={{
-                        display: "inline-block",
-                        height: "0.95em",
-                        width: "auto",
-                        verticalAlign: "-0.20em",
-                      }}
-                    />{" "}
+                    TruFusionLabs utilizes the{" "}
+                    <span className="manufacturing-certification-label">
+                      cGMP Certified Lab
+                    </span>{" "}
                     ION System&trade;, an advanced ionic liquid delivery platform designed for
                     needle-free peptide administration. This
                     proprietary system enhances bioavailability through five mechanisms:
@@ -43472,13 +43434,146 @@ function InlineEditableValueRow({
   );
 }
 
+const DEV_THEME_STORAGE_KEY = "peppro.devTheme";
+const LEAF_TEXTURE_THEME_CLASS_NAME = "theme-leaf" as const;
+const LEAF_TEXTURE_BUILD_ENABLED =
+  String((import.meta as any).env?.VITE_TFL_LEAF_TEXTURE_BUILD || "")
+    .toLowerCase()
+    .trim() === "true";
+
+const DEV_THEME_OPTIONS = [
+  { className: "theme-clinical", label: "Clinical" },
+  { className: "theme-biotech", label: "Biotech" },
+  { className: "theme-community", label: "Community" },
+] as const;
+
+type DevThemeOptionClassName = (typeof DEV_THEME_OPTIONS)[number]["className"];
+type DevThemeClassName = DevThemeOptionClassName | typeof LEAF_TEXTURE_THEME_CLASS_NAME;
+
+const DEV_THEME_CLASS_NAMES = [
+  ...DEV_THEME_OPTIONS.map((option) => option.className),
+  LEAF_TEXTURE_THEME_CLASS_NAME,
+];
+
+function isDevThemeClassName(value: string | null): value is DevThemeOptionClassName {
+  return DEV_THEME_OPTIONS.some((option) => option.className === value);
+}
+
+function getInitialDevTheme(): DevThemeClassName {
+  if (LEAF_TEXTURE_BUILD_ENABLED) {
+    return LEAF_TEXTURE_THEME_CLASS_NAME;
+  }
+  if (typeof window === "undefined") {
+    return "theme-clinical";
+  }
+
+  try {
+    const stored = window.localStorage.getItem(DEV_THEME_STORAGE_KEY);
+    return isDevThemeClassName(stored) ? stored : "theme-clinical";
+  } catch {
+    return "theme-clinical";
+  }
+}
+
+function DevThemeShell({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<DevThemeClassName>(getInitialDevTheme);
+  const [switcherPortalTarget, setSwitcherPortalTarget] =
+    useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    const roots = [document.documentElement, document.body];
+    roots.forEach((root) => {
+      root.classList.remove(...DEV_THEME_CLASS_NAMES);
+      root.classList.add(theme);
+      root.setAttribute("data-dev-theme", theme);
+    });
+
+    if (!LEAF_TEXTURE_BUILD_ENABLED) {
+      try {
+        window.localStorage.setItem(DEV_THEME_STORAGE_KEY, theme);
+      } catch {
+        // Theme switching should keep working even when storage is unavailable.
+      }
+    }
+
+    const frameId =
+      typeof window !== "undefined"
+        ? window.requestAnimationFrame(() => {
+            window.dispatchEvent(new Event("resize"));
+          })
+        : null;
+
+    return () => {
+      if (frameId !== null && typeof window !== "undefined") {
+        window.cancelAnimationFrame(frameId);
+      }
+      roots.forEach((root) => {
+        root.classList.remove(...DEV_THEME_CLASS_NAMES);
+        root.removeAttribute("data-dev-theme");
+      });
+    };
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    setSwitcherPortalTarget(document.body);
+  }, []);
+
+  const themeSwitcher = LEAF_TEXTURE_BUILD_ENABLED ? null : (
+    <div
+      className="dev-theme-switcher"
+      aria-label="Development theme switcher"
+      onPointerDownCapture={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {DEV_THEME_OPTIONS.map((option) => (
+        <button
+          key={option.className}
+          type="button"
+          className={clsx(
+            "dev-theme-switcher__button",
+            option.className === theme && "is-active",
+          )}
+          aria-pressed={option.className === theme}
+          onClick={() => setTheme(option.className)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className={clsx("dev-theme-root", theme)} data-dev-theme={theme}>
+      {children}
+      {themeSwitcher && switcherPortalTarget
+        ? createPortal(themeSwitcher, switcherPortalTarget)
+        : themeSwitcher}
+    </div>
+  );
+}
+
 export default function App() {
   const pathname =
     typeof window !== "undefined"
       ? normalizePathname(window.location.pathname)
       : "/";
   if (isPublicSitePath(pathname)) {
-    return <PublicSite pathname={pathname} />;
+    return (
+      <DevThemeShell>
+        <PublicSite pathname={pathname} />
+      </DevThemeShell>
+    );
   }
-  return <MainApp />;
+  return (
+    <DevThemeShell>
+      <MainApp />
+    </DevThemeShell>
+  );
 }

@@ -33,6 +33,11 @@ const templates = [
     source: 'python_backend/services/email_service.py::_build_delegate_proposal_ready_email',
   },
   {
+    id: 'delegate-links-info',
+    label: 'Delegate Links Beta info',
+    source: 'python_backend/services/email_service.py::_build_delegate_links_beta_info_email',
+  },
+  {
     id: 'payment-instructions-node',
     label: 'Payment instructions: Node backend',
     source: 'server/templates/paymentInstructions.html',
@@ -113,11 +118,17 @@ elif template == "delegate-proposal":
         base_url=base_url,
     )
     subject = "Delegate proposal ready for review"
+elif template == "delegate-links-info":
+    html, plain = email_service._build_delegate_links_beta_info_email(
+        base_url=base_url,
+    )
+    subject = "Welcome to the Delegate Links Beta"
 else:
     raise SystemExit(f"unknown python template: {template}")
 
 html = html.replace("cid:trufusion-logo", "/assets/turfusionlabsphysiciansportal.png")
 html = html.replace("cid:trufusion-leaf", "/assets/blueleafTexture-email.png")
+html = html.replace("cid:delegate-white-label-sessions", "/assets/delegate-links-white-label-email.png")
 
 print(json.dumps({"subject": subject, "html": html, "plain": plain}))
 `;

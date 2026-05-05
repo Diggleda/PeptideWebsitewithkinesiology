@@ -91,6 +91,8 @@ CREATE_TABLE_STATEMENTS = [
         network_presence_agreement TINYINT(1) NOT NULL DEFAULT 1,
         delegate_logo_url LONGTEXT NULL,
         delegate_secondary_color VARCHAR(16) NULL,
+        delegate_background_image_url LONGTEXT NULL,
+        delegate_background_color VARCHAR(16) NULL,
         delegate_links_enabled TINYINT(1) NOT NULL DEFAULT 0,
         research_terms_agreement TINYINT(1) NOT NULL DEFAULT 0,
         zelle_contact VARCHAR(190) NULL,
@@ -747,6 +749,8 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_postal_code VARCHAR(32) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_logo_url LONGTEXT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_background_image_url LONGTEXT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_background_color VARCHAR(16) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_onboarding TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS reseller_permit_onboarding_presented TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS greater_area VARCHAR(190) NULL",
@@ -1107,6 +1111,18 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("users", "delegate_secondary_color"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN delegate_secondary_color VARCHAR(16) NULL")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("users", "delegate_background_image_url"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN delegate_background_image_url LONGTEXT NULL")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("users", "delegate_background_color"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN delegate_background_color VARCHAR(16) NULL")
     except Exception:
         pass
 

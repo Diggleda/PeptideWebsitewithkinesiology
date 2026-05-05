@@ -487,7 +487,7 @@ export function DoctorProfileForm({
               <Button
                 type="button"
                 variant="outline"
-                className={avatarButtonClassName}
+                className={`${avatarButtonClassName} header-home-button`}
                 disabled={avatarUploading || saving}
                 onClick={() => avatarInputRef.current?.click()}
               >
@@ -505,8 +505,8 @@ export function DoctorProfileForm({
               </Button>
               <Button
                 type="button"
-                variant="ghost"
-                className={`${avatarButtonClassName} text-slate-700`}
+                variant="outline"
+                className={`${avatarButtonClassName} border-slate-300 bg-white text-slate-900`}
                 disabled={avatarUploading || saving || !profileImageUrl}
                 onClick={() => setProfileImageUrl(null)}
               >

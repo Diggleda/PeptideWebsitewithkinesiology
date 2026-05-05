@@ -3,7 +3,7 @@ from __future__ import annotations
 import jwt
 from flask import Flask, jsonify, request
 
-from ..services import get_config
+from ..services import admin_shadow_session_service, get_config
 
 
 _READ_ONLY_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -29,9 +29,29 @@ def init_shadow_mode(app: Flask) -> None:
             return None
         try:
             payload = jwt.decode(token, get_config().jwt_secret, algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            try:
+                payload = jwt.decode(
+                    token,
+                    get_config().jwt_secret,
+                    algorithms=["HS256"],
+                    options={"verify_exp": False},
+                )
+            except jwt.InvalidTokenError:
+                return None
+            if payload.get("shadow") is True and payload.get("readOnly") is True:
+                return _auth_failure("Token expired", "TOKEN_EXPIRED")
+            return None
         except jwt.InvalidTokenError:
             return None
         if payload.get("shadow") is True and payload.get("readOnly") is True:
+            try:
+                admin_shadow_session_service.resolve_shadow_session(payload)
+            except Exception as exc:
+                code = getattr(exc, "error_code", None) or getattr(exc, "code", None)
+                if not isinstance(code, str) or not code.strip():
+                    code = "TOKEN_REVOKED"
+                return _auth_failure("Token revoked", code.strip())
             response = jsonify(
                 {
                     "error": "Maintenance mode is read-only",
@@ -41,3 +61,9 @@ def init_shadow_mode(app: Flask) -> None:
             response.status_code = 403
             return response
         return None
+
+
+def _auth_failure(message: str, code: str):
+    response = jsonify({"error": message, "code": code})
+    response.status_code = 403
+    return response

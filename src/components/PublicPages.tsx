@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import clsx from 'clsx';
 import { listProducts } from '../lib/wooClient';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
 import { LegalFooter } from './LegalFooter';
-import { withStaticAssetStamp } from '../lib/assetUrl';
+import { BrandLogoImage } from './BrandLogoImage';
 
 type PublicPageKey =
   | 'contact'
@@ -32,8 +31,7 @@ const PublicTopNav = () => (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <a href="/" className="flex items-center gap-3 min-w-0">
-          <img
-            src={withStaticAssetStamp('/turfusionlabsphysiciansportal.png')}
+          <BrandLogoImage
             alt="TruFusionLabs"
             className="h-10 w-auto object-contain"
             loading="eager"
@@ -226,7 +224,7 @@ export function PublicSite({ pathname }: { pathname: string }) {
   })();
 
   return (
-    <div className={clsx('min-h-screen flex flex-col', 'bg-[var(--brand-bg)]')}>
+    <div className="min-h-screen flex flex-col">
       <PublicTopNav />
       <main className="flex-1">{content}</main>
       <LegalFooter showContactCTA={false} variant="full" />

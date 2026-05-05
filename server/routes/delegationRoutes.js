@@ -67,7 +67,14 @@ const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
 const buildDummyPaymentInstructions = (doctorName) =>
   `Reach out to ${doctorName || 'your physician'} for Zelle payment details.`;
 
-const buildNodeDummyResolvePayload = (token, doctorName, doctorSecondaryColor) => {
+const buildNodeDummyResolvePayload = (
+  token,
+  doctorName,
+  doctorLogoUrl,
+  doctorSecondaryColor,
+  doctorBackgroundImageUrl,
+  doctorBackgroundColor,
+) => {
   const now = Date.now();
   const baseCreatedAt = new Date(now - 24 * 60 * 60 * 1000).toISOString();
   const baseExpiresAt = new Date(now + 71 * 60 * 60 * 1000).toISOString();
@@ -76,7 +83,10 @@ const buildNodeDummyResolvePayload = (token, doctorName, doctorSecondaryColor) =
     token: 'node-ui-dummy-link',
     doctorId: 'node-ui-dummy-doctor',
     doctorName: normalizedDoctorName,
+    doctorLogoUrl: normalizeOptionalString(doctorLogoUrl),
     doctorSecondaryColor: normalizeOptionalString(doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR,
+    doctorBackgroundImageUrl: normalizeOptionalString(doctorBackgroundImageUrl),
+    doctorBackgroundColor: normalizeOptionalString(doctorBackgroundColor),
     markupPercent: 15,
     paymentMethod: 'zelle',
     paymentInstructions: buildDummyPaymentInstructions(normalizedDoctorName),
@@ -253,7 +263,10 @@ router.get('/resolve', authenticateOptional, (req, res) => {
     const dummy = buildNodeDummyResolvePayload(
       token,
       req.user?.name || null,
+      req.user?.delegateLogoUrl || null,
       req.user?.delegateSecondaryColor || null,
+      req.user?.delegateBackgroundImageUrl || null,
+      req.user?.delegateBackgroundColor || null,
     );
     if (dummy) {
       return res.json(dummy);
@@ -283,7 +296,10 @@ router.get('/resolve', authenticateOptional, (req, res) => {
       token: link.token,
       doctorId,
       doctorName: doctor?.name || 'Doctor',
+      doctorLogoUrl: doctor?.delegateLogoUrl || null,
       doctorSecondaryColor: doctor?.delegateSecondaryColor || DEFAULT_DELEGATE_SECONDARY_COLOR,
+      doctorBackgroundImageUrl: doctor?.delegateBackgroundImageUrl || null,
+      doctorBackgroundColor: doctor?.delegateBackgroundColor || null,
       markupPercent: normalizeMarkupPercent(link.markupPercent, DEFAULT_MARKUP_PERCENT),
       paymentMethod: link.paymentMethod || 'none',
       paymentInstructions: link.paymentInstructions || '',
@@ -296,5 +312,9 @@ router.get('/resolve', authenticateOptional, (req, res) => {
   }
   return res.status(404).json({ error: 'Invalid or expired delegation link.' });
 });
+
+router.__test__ = {
+  buildNodeDummyResolvePayload,
+};
 
 module.exports = router;

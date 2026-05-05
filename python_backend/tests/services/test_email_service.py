@@ -75,6 +75,30 @@ class EmailServiceTests(unittest.TestCase):
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertNotIn("cc", dispatch_email.call_args.kwargs)
 
+    def test_delegate_links_beta_info_email_includes_badge_image(self):
+        from python_backend.services import email_service
+
+        html, plain = email_service._build_delegate_links_beta_info_email(base_url="https://trufusionlabs.com")
+
+        self.assertIn('src="cid:delegate-white-label-sessions"', html)
+        self.assertIn('alt="White label your delegate sessions"', html)
+        self.assertIn('width="560" cellpadding="0" cellspacing="0" align="center"', html)
+        self.assertIn("Welcome to the Delegate Links Beta", html)
+        self.assertIn("Set up your brand", html)
+        self.assertIn("font-family:'Lexend'", html)
+        self.assertIn("font-size:21px", html)
+        self.assertIn("font-size:30px", html)
+        self.assertIn("font-weight:700", html)
+        self.assertIn("font-weight:300", html)
+        self.assertIn('<td style="padding:0 16px 14px 0;', html)
+        self.assertIn(">1.</td>", html)
+        self.assertIn(">2.</td>", html)
+        self.assertIn(">3.</td>", html)
+        self.assertNotIn("Set up your brand: add your logo and primary color in Account > Delegate Links Beta.", html)
+        self.assertNotIn("Managing Delegate Links", html)
+        self.assertIn("Open Delegate Links Beta", html)
+        self.assertIn("1. Set up your brand", plain)
+
     def test_sendgrid_payload_includes_cc_recipients(self):
         from python_backend.services import email_service
 

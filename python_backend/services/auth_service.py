@@ -195,7 +195,7 @@ def _build_sales_rep_summary(sales_rep: Optional[Dict]) -> Optional[Dict]:
     }
 
 
-def _normalize_delegate_color(value: Any) -> Optional[str]:
+def _normalize_delegate_color(value: Any, *, error_code: str = "INVALID_DELEGATE_PRIMARY_COLOR") -> Optional[str]:
     if value is None:
         return None
     text = str(value).strip()
@@ -205,7 +205,7 @@ def _normalize_delegate_color(value: Any) -> Optional[str]:
     if re.fullmatch(r"[0-9a-fA-F]{3}", raw):
         raw = "".join(ch * 2 for ch in raw)
     if not re.fullmatch(r"[0-9a-fA-F]{6}", raw):
-        raise _bad_request("INVALID_DELEGATE_PRIMARY_COLOR")
+        raise _bad_request(error_code)
     return f"#{raw.lower()}"
 
 
@@ -1002,10 +1002,24 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         delegate_logo_url,
         existing_value=user.get("delegateLogoUrl"),
     )
+    delegate_background_image_url = (
+        data.get("delegateBackgroundImageUrl")
+        if "delegateBackgroundImageUrl" in data
+        else user.get("delegateBackgroundImageUrl") or None
+    )
+    delegate_background_image_url = user_media_service.normalize_delegate_background_image_for_storage(
+        delegate_background_image_url,
+        existing_value=user.get("delegateBackgroundImageUrl"),
+    )
     delegate_secondary_color = (
         data.get("delegateSecondaryColor")
         if "delegateSecondaryColor" in data
         else user.get("delegateSecondaryColor") or None
+    )
+    delegate_background_color = (
+        data.get("delegateBackgroundColor")
+        if "delegateBackgroundColor" in data
+        else user.get("delegateBackgroundColor") or None
     )
     zelle_contact = data.get("zelleContact") if "zelleContact" in data else user.get("zelleContact") or None
 
@@ -1018,7 +1032,18 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         if len(delegate_logo_url.encode("utf-8")) > 750_000:
             raise _bad_request("DELEGATE_LOGO_TOO_LARGE")
 
+    if delegate_background_image_url is not None:
+        lowered = delegate_background_image_url.lower()
+        if not lowered.startswith("data:image/"):
+            raise _bad_request("INVALID_DELEGATE_BACKGROUND")
+        if len(delegate_background_image_url.encode("utf-8")) > 2_500_000:
+            raise _bad_request("DELEGATE_BACKGROUND_TOO_LARGE")
+
     delegate_secondary_color = _normalize_delegate_color(delegate_secondary_color)
+    delegate_background_color = _normalize_delegate_color(
+        delegate_background_color,
+        error_code="INVALID_DELEGATE_BACKGROUND_COLOR",
+    )
 
     if zelle_contact is not None and not isinstance(zelle_contact, str):
         zelle_contact = None
@@ -1105,6 +1130,8 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "profileImageUrl": profile_image_url,
         "delegateLogoUrl": delegate_logo_url,
         "delegateSecondaryColor": delegate_secondary_color,
+        "delegateBackgroundImageUrl": delegate_background_image_url,
+        "delegateBackgroundColor": delegate_background_color,
         "zelleContact": zelle_contact,
         "receiveClientOrderUpdateEmails": receive_client_order_update_emails,
         "researchTermsAgreement": research_terms_agreement,
@@ -1319,6 +1346,10 @@ def _sanitize_user(user: Dict) -> Dict:
     )
     sanitized["delegateLogoUrl"] = user_media_service.resolve_self_delegate_logo_url(
         sanitized.get("delegateLogoUrl"),
+        user_id=sanitized.get("id"),
+    )
+    sanitized["delegateBackgroundImageUrl"] = user_media_service.resolve_self_delegate_background_image_url(
+        sanitized.get("delegateBackgroundImageUrl"),
         user_id=sanitized.get("id"),
     )
     has_greater_area = "greaterArea" in sanitized or "greater_area" in sanitized

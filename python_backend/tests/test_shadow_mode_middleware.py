@@ -158,6 +158,38 @@ class ShadowModeMiddlewareTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response["code"], "SHADOW_READ_ONLY")
 
+    def test_expired_shadow_token_expires_write_instead_of_read_only_block(self) -> None:
+        self.shadow_mode.request.method = "POST"
+        self.shadow_mode.request.path = "/api/protected-write"
+        self.shadow_mode.request.headers = {"Authorization": "Bearer shadow-token"}
+
+        def fake_decode(*args, **kwargs):
+            if kwargs.get("options", {}).get("verify_exp") is False:
+                return self._token()
+            raise self.shadow_mode.jwt.ExpiredSignatureError()
+
+        with patch("python_backend.middleware.shadow_mode.get_config", return_value=SimpleNamespace(jwt_secret=self.secret)), \
+            patch("python_backend.middleware.shadow_mode.jwt.decode", side_effect=fake_decode):
+            response = self.app.before_request_func()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response["code"], "TOKEN_EXPIRED")
+
+    def test_revoked_shadow_session_expires_write_instead_of_read_only_block(self) -> None:
+        self.shadow_mode.request.method = "POST"
+        self.shadow_mode.request.path = "/api/protected-write"
+        self.shadow_mode.request.headers = {"Authorization": "Bearer shadow-token"}
+        revoked = RuntimeError("Token revoked")
+        setattr(revoked, "error_code", "TOKEN_REVOKED")
+        with patch("python_backend.middleware.shadow_mode.get_config", return_value=SimpleNamespace(jwt_secret=self.secret)), \
+            patch("python_backend.middleware.shadow_mode.jwt.decode", return_value=self._token()), \
+            patch(
+                "python_backend.middleware.shadow_mode.admin_shadow_session_service.resolve_shadow_session",
+                side_effect=revoked,
+            ):
+            response = self.app.before_request_func()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response["code"], "TOKEN_REVOKED")
+
     def test_shadow_token_can_still_hit_logout_allowlist(self) -> None:
         self.shadow_mode.request.method = "POST"
         self.shadow_mode.request.path = "/api/auth/logout"
