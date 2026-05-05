@@ -199,7 +199,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           network_presence_agreement,
           delegate_logo_url,
           delegate_secondary_color,
-          delegate_background_image_url,
+          delegate_background_url,
           delegate_background_color,
           delegate_links_enabled,
           research_terms_agreement,
@@ -283,7 +283,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           network_presence_agreement = VALUES(network_presence_agreement),
           delegate_logo_url = VALUES(delegate_logo_url),
           delegate_secondary_color = VALUES(delegate_secondary_color),
-          delegate_background_image_url = VALUES(delegate_background_image_url),
+          delegate_background_url = VALUES(delegate_background_url),
           delegate_background_color = VALUES(delegate_background_color),
           delegate_links_enabled = VALUES(delegate_links_enabled),
           research_terms_agreement = VALUES(research_terms_agreement),
@@ -526,7 +526,9 @@ const ensureUserDefaults = (user) => {
     normalized.delegateSecondaryColor = normalizeOptionalString(normalized.delegateSecondaryColor);
   }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateBackgroundImageUrl')) {
-    normalized.delegateBackgroundImageUrl = normalizeOptionalString(normalized.delegate_background_image_url);
+    normalized.delegateBackgroundImageUrl = normalizeOptionalString(
+      normalized.delegate_background_url ?? normalized.delegate_background_image_url,
+    );
   } else {
     normalized.delegateBackgroundImageUrl = normalizeOptionalString(normalized.delegateBackgroundImageUrl);
   }
@@ -539,7 +541,7 @@ const ensureUserDefaults = (user) => {
   normalized.network_presence_agreement = normalized.networkPresenceAgreement ? 1 : 0;
   normalized.delegate_logo_url = normalized.delegateLogoUrl;
   normalized.delegate_secondary_color = normalized.delegateSecondaryColor;
-  normalized.delegate_background_image_url = normalized.delegateBackgroundImageUrl;
+  normalized.delegate_background_url = normalized.delegateBackgroundImageUrl;
   normalized.delegate_background_color = normalized.delegateBackgroundColor;
   normalized.reseller_permit_onboarding_presented =
     normalized.resellerPermitOnboardingPresented ? 1 : 0;

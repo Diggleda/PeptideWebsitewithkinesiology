@@ -310,6 +310,53 @@ class DelegationServiceTests(unittest.TestCase):
             service._audit_event = original_audit
             service.settings_service.get_settings = original_get_settings
 
+    def test_resolve_delegate_token_includes_white_label_background_settings(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_find_user = service.user_repository.find_by_id
+        original_touch_last_used = service.patient_links_repository.touch_last_used
+        original_audit = service._audit_event
+        original_get_settings = service.settings_service.get_settings
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
+                "doctorId": "doc-1",
+                "revokedAt": None,
+                "status": "active",
+                "markupPercent": 15,
+                "allowedProducts": [],
+            }
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "role": "doctor",
+                "name": "Dr. Test",
+                "delegateLogoUrl": "data:image/png;base64,LOGO",
+                "delegateSecondaryColor": "#3c67b7",
+                "delegateBackgroundImageUrl": "data:image/jpeg;base64,BACKGROUND",
+                "delegateBackgroundColor": "#edf7fb",
+            }
+            service.patient_links_repository.touch_last_used = lambda *_args, **_kwargs: None
+            service._audit_event = lambda *_args, **_kwargs: None
+            service.settings_service.get_settings = lambda: {"patientLinksEnabled": True}
+
+            resolved = service.resolve_delegate_token("tok-1")
+
+            self.assertEqual(resolved.get("doctorLogoUrl"), "data:image/png;base64,LOGO")
+            self.assertEqual(resolved.get("doctorSecondaryColor"), "#3c67b7")
+            self.assertEqual(resolved.get("doctorBackgroundImageUrl"), "data:image/jpeg;base64,BACKGROUND")
+            self.assertEqual(resolved.get("doctorBackgroundColor"), "#edf7fb")
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.user_repository.find_by_id = original_find_user
+            service.patient_links_repository.touch_last_used = original_touch_last_used
+            service._audit_event = original_audit
+            service.settings_service.get_settings = original_get_settings
+
     def test_review_link_proposal_persists_review_notes(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql

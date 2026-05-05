@@ -5686,6 +5686,8 @@ function MainApp() {
     "doctor-gating-modal-layer fixed inset-0 z-[13000] flex items-start justify-center overflow-y-auto px-3 sm:px-4";
   const doctorProfileBuilderModalContainerClassName =
     `${doctorGatingModalContainerClassName} doctor-profile-builder-modal-layer`;
+  const salesDashboardDetailModalContainerClassName =
+    "sales-dashboard-detail-modal-layer fixed inset-0 z-[14000] flex items-center justify-center overflow-y-auto px-3 py-6 sm:px-4 sm:py-8";
   const doctorGatingModalContainerStyle: CSSProperties = {
     paddingTop: doctorGatingModalViewportInset,
     paddingBottom: doctorGatingModalViewportInset,
@@ -30175,8 +30177,8 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
-                                isActive && "text-slate-900",
+                                "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-black hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                isActive && "text-black",
                               )}
                               data-sales-dashboard-tab={tab.id}
                               aria-pressed={isActive}
@@ -30805,8 +30807,8 @@ function MainApp() {
                               key={tab.id}
                               type="button"
                               className={clsx(
-                                "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
-                                isActive && "text-slate-900",
+                                "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap transition-colors text-black hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                                isActive && "text-black",
                               )}
                               data-admin-dashboard-tab={tab.id}
                               aria-pressed={isActive}
@@ -35423,8 +35425,8 @@ function MainApp() {
                         key={tab.id}
                         type="button"
                         className={clsx(
-                          "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
-                          isActive && "text-slate-900",
+                          "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap transition-colors text-black hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                          isActive && "text-black",
                         )}
                         data-sales-dashboard-tab={tab.id}
                         aria-pressed={isActive}
@@ -39934,7 +39936,10 @@ function MainApp() {
 	          }
 	        }}
 	      >
-	        <DialogContent className="glass-card squircle-lg w-full max-w-[min(720px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl">
+	        <DialogContent
+            className="glass-card squircle-lg w-full max-w-[min(720px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl"
+            containerClassName={salesDashboardDetailModalContainerClassName}
+          >
 	          <DialogHeader>
 	            <DialogTitle>Lead</DialogTitle>
 	            <DialogDescription>Lead details (no user account yet).</DialogDescription>
@@ -40039,6 +40044,7 @@ function MainApp() {
         }}
       >
         <DialogContent
+          containerClassName={salesDashboardDetailModalContainerClassName}
           style={{ maxWidth: "min(960px, calc(100vw - 3rem))" }}
         >
           <DialogHeader>
@@ -40200,6 +40206,7 @@ function MainApp() {
 		      >
 		        <DialogContent
               ref={salesDoctorDialogContentRef}
+              containerClassName={salesDashboardDetailModalContainerClassName}
               className="sales-doctor-detail-dialog max-w-2xl"
             >
 	          {salesDoctorDetailLoading && !salesDoctorDetail ? (
@@ -42162,7 +42169,10 @@ function MainApp() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl">
+        <DialogContent
+          className="max-w-4xl"
+          containerClassName={salesDashboardDetailModalContainerClassName}
+        >
           {salesOrderDetailLoading && !salesOrderDetail && (
             <>
               <VisuallyHidden>
@@ -43437,9 +43447,13 @@ function InlineEditableValueRow({
 const DEV_THEME_STORAGE_KEY = "peppro.devTheme";
 const LEAF_TEXTURE_THEME_CLASS_NAME = "theme-leaf" as const;
 const LEAF_TEXTURE_BUILD_ENABLED =
-  String((import.meta as any).env?.VITE_TFL_LEAF_TEXTURE_BUILD || "")
-    .toLowerCase()
-    .trim() === "true";
+  import.meta.env.VITE_TFL_LEAF_TEXTURE_BUILD === "true";
+
+const SWITCHABLE_DEV_THEME_CLASS_NAMES = [
+  "theme-clinical",
+  "theme-biotech",
+  "theme-community",
+] as const;
 
 const DEV_THEME_OPTIONS = [
   { className: "theme-clinical", label: "Clinical" },
@@ -43447,11 +43461,11 @@ const DEV_THEME_OPTIONS = [
   { className: "theme-community", label: "Community" },
 ] as const;
 
-type DevThemeOptionClassName = (typeof DEV_THEME_OPTIONS)[number]["className"];
+type DevThemeOptionClassName = (typeof SWITCHABLE_DEV_THEME_CLASS_NAMES)[number];
 type DevThemeClassName = DevThemeOptionClassName | typeof LEAF_TEXTURE_THEME_CLASS_NAME;
 
 const DEV_THEME_CLASS_NAMES = [
-  ...DEV_THEME_OPTIONS.map((option) => option.className),
+  ...SWITCHABLE_DEV_THEME_CLASS_NAMES,
   LEAF_TEXTURE_THEME_CLASS_NAME,
 ];
 

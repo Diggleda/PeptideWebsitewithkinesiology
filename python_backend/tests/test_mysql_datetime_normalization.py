@@ -1,7 +1,64 @@
 from __future__ import annotations
 
+import sys
+import types
 import unittest
 from unittest.mock import patch
+
+fake_pymysql = types.ModuleType("pymysql")
+fake_pymysql.connect = lambda *args, **kwargs: None
+fake_pymysql.connections = types.SimpleNamespace(Connection=object)
+fake_pymysql.err = types.SimpleNamespace(OperationalError=Exception, InterfaceError=Exception)
+fake_pymysql_cursors = types.ModuleType("pymysql.cursors")
+fake_pymysql_cursors.DictCursor = object
+fake_pymysql.cursors = fake_pymysql_cursors
+sys.modules.setdefault("pymysql", fake_pymysql)
+sys.modules.setdefault("pymysql.cursors", fake_pymysql_cursors)
+
+fake_cryptography = types.ModuleType("cryptography")
+fake_hazmat = types.ModuleType("cryptography.hazmat")
+fake_primitives = types.ModuleType("cryptography.hazmat.primitives")
+fake_ciphers = types.ModuleType("cryptography.hazmat.primitives.ciphers")
+fake_aead = types.ModuleType("cryptography.hazmat.primitives.ciphers.aead")
+
+
+class AESGCM:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def encrypt(self, _iv, data, _aad):
+        return data
+
+    def decrypt(self, _iv, data, _aad):
+        return data
+
+
+fake_aead.AESGCM = AESGCM
+sys.modules.setdefault("cryptography", fake_cryptography)
+sys.modules.setdefault("cryptography.hazmat", fake_hazmat)
+sys.modules.setdefault("cryptography.hazmat.primitives", fake_primitives)
+sys.modules.setdefault("cryptography.hazmat.primitives.ciphers", fake_ciphers)
+sys.modules.setdefault("cryptography.hazmat.primitives.ciphers.aead", fake_aead)
+
+fake_flask = types.ModuleType("flask")
+fake_flask.Response = object
+fake_flask.jsonify = lambda data=None, *args, **kwargs: data
+fake_flask.request = types.SimpleNamespace()
+fake_flask.g = types.SimpleNamespace(current_user=None)
+fake_flask.has_request_context = lambda: False
+sys.modules.setdefault("flask", fake_flask)
+
+fake_werkzeug = types.ModuleType("werkzeug")
+fake_werkzeug_exceptions = types.ModuleType("werkzeug.exceptions")
+
+
+class HTTPException(Exception):
+    code = 500
+
+
+fake_werkzeug_exceptions.HTTPException = HTTPException
+sys.modules.setdefault("werkzeug", fake_werkzeug)
+sys.modules.setdefault("werkzeug.exceptions", fake_werkzeug_exceptions)
 
 from python_backend.repositories import (
     credit_ledger_repository,
@@ -52,6 +109,40 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
         )
 
         self.assertEqual(params["network_presence_agreement"], 1)
+
+    def test_user_repository_maps_delegate_background_to_requested_sql_columns(self) -> None:
+        params = user_repository._to_db_params(
+            {
+                "id": "u1",
+                "name": "Test",
+                "email": "test@example.com",
+                "password": "pw",
+                "role": "doctor",
+                "status": "active",
+                "delegateBackgroundImageUrl": "data:image/jpeg;base64,AAA",
+                "delegateBackgroundColor": "#edf7fb",
+            }
+        )
+
+        self.assertEqual(params["delegate_background_url"], "data:image/jpeg;base64,AAA")
+        self.assertEqual(params["delegate_background_color"], "#edf7fb")
+        self.assertNotIn("delegate_background_image_url", params)
+
+    def test_user_repository_reads_delegate_background_from_requested_sql_column(self) -> None:
+        user = user_repository._row_to_user(
+            {
+                "id": "u1",
+                "name": "Test",
+                "email": "test@example.com",
+                "password": "pw",
+                "role": "doctor",
+                "delegate_background_url": "data:image/jpeg;base64,AAA",
+                "delegate_background_color": "#edf7fb",
+            }
+        )
+
+        self.assertEqual(user["delegateBackgroundImageUrl"], "data:image/jpeg;base64,AAA")
+        self.assertEqual(user["delegateBackgroundColor"], "#edf7fb")
 
     def test_user_repository_find_by_email_prefers_exact_mysql_lookup(self) -> None:
         row = {

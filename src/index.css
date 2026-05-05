@@ -8068,6 +8068,26 @@ body.manufacturing-standards-modal-open .header-account-avatar-shell {
   z-index: 1 !important;
 }
 
+.sales-dashboard-detail-modal-layer {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 14000 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  isolation: isolate !important;
+  pointer-events: auto !important;
+}
+
+.sales-dashboard-detail-modal-layer [data-slot="dialog-overlay"] {
+  z-index: 0 !important;
+}
+
+.sales-dashboard-detail-modal-layer [data-slot="dialog-content"] {
+  position: relative !important;
+  z-index: 1 !important;
+  margin: auto !important;
+}
+
 .documentation-modal-layer {
   position: fixed !important;
   z-index: 13000 !important;
@@ -10169,9 +10189,6 @@ body.theme-leaf {
 }
 
 .dev-theme-root.theme-biotech,
-html.theme-leaf,
-body.theme-leaf,
-.dev-theme-root.theme-leaf,
 html.theme-biotech,
 body.theme-biotech {
   background-repeat: no-repeat;
@@ -10180,12 +10197,66 @@ body.theme-biotech {
   background-attachment: fixed;
 }
 
+.theme-leaf {
+  background-attachment: scroll;
+}
+
+body.theme-leaf,
+body.theme-leaf.login-view,
+body.theme-leaf.non-login-bg {
+  background-image: none;
+  background-attachment: scroll;
+}
+
+body.theme-leaf::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--theme-page-bg);
+  background-image: var(--theme-page-image);
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center top;
+  pointer-events: none;
+  transform: translateZ(0);
+  z-index: 0;
+}
+
+body.theme-leaf[data-delegate-theme="true"],
+body.theme-leaf[data-delegate-theme="true"].login-view,
+body.theme-leaf[data-delegate-theme="true"].non-login-bg,
+body.theme-leaf[data-delegate-theme="true"] .dev-theme-root {
+  background-image: none !important;
+  background-attachment: scroll !important;
+}
+
+body.theme-leaf[data-delegate-theme="true"]::before {
+  background-color: var(--delegate-session-background-color, var(--theme-page-bg));
+  background-image:
+    var(--delegate-session-background-image, var(--theme-page-image)),
+    linear-gradient(
+      var(--delegate-session-background-color, var(--theme-page-bg)),
+      var(--delegate-session-background-color, var(--theme-page-bg))
+    );
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+}
+
 .dev-theme-root {
   min-height: var(--viewport-height, 100vh);
   background-color: var(--theme-page-bg);
   background-image: var(--theme-page-image);
   color: var(--theme-text);
   transition: background-color 180ms ease, color 180ms ease;
+}
+
+.dev-theme-root.theme-leaf {
+  background-color: transparent;
+  background-image: none;
 }
 
 .dev-theme-root.theme-biotech {

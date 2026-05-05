@@ -6,6 +6,30 @@ const repoRoot = process.cwd();
 const buildDir = path.join(repoRoot, "build");
 const outputArg = process.argv[2] || "frontend_flattened.zip";
 const outputPath = path.resolve(repoRoot, outputArg);
+const staticSpaHtaccess = [
+  "DirectoryIndex index.html",
+  "",
+  "<IfModule mod_rewrite.c>",
+  "  RewriteEngine On",
+  "  RewriteCond %{REQUEST_FILENAME} -f [OR]",
+  "  RewriteCond %{REQUEST_FILENAME} -d",
+  "  RewriteRule ^ - [L]",
+  "  RewriteRule ^ index.html [L]",
+  "</IfModule>",
+  "",
+].join("\n");
+
+const normalizeBuildPermissions = (targetDir) => {
+  fs.chmodSync(targetDir, 0o755);
+  for (const entry of fs.readdirSync(targetDir, { withFileTypes: true })) {
+    const entryPath = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      normalizeBuildPermissions(entryPath);
+    } else if (entry.isFile()) {
+      fs.chmodSync(entryPath, 0o644);
+    }
+  }
+};
 
 if (!fs.existsSync(buildDir) || !fs.statSync(buildDir).isDirectory()) {
   console.error("[zip-frontend] Missing build/ directory. Run `npm run build` first.");
@@ -15,6 +39,9 @@ if (!fs.existsSync(buildDir) || !fs.statSync(buildDir).isDirectory()) {
 if (fs.existsSync(outputPath)) {
   fs.rmSync(outputPath, { force: true });
 }
+
+fs.writeFileSync(path.join(buildDir, ".htaccess"), staticSpaHtaccess);
+normalizeBuildPermissions(buildDir);
 
 const zipResult = spawnSync(
   "zip",

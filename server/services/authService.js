@@ -315,7 +315,7 @@ const sanitizeUser = (user) => {
       user.delegateSecondaryColor ?? user.delegate_secondary_color,
     ),
     delegateBackgroundImageUrl: normalizeOptionalString(
-      user.delegateBackgroundImageUrl ?? user.delegate_background_image_url,
+      user.delegateBackgroundImageUrl ?? user.delegate_background_url ?? user.delegate_background_image_url,
     ),
     delegateBackgroundColor: normalizeOptionalString(
       user.delegateBackgroundColor ?? user.delegate_background_color,

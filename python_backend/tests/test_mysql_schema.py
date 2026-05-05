@@ -28,6 +28,13 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("UNIQUE KEY uniq_physician_recs_user_model (user_id, model_version)", schema_sql)
         self.assertNotIn("rank_position INT UNSIGNED", schema_sql)
 
+    def test_users_table_stores_delegate_background_in_requested_columns(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("delegate_background_url LONGTEXT NULL", schema_sql)
+        self.assertIn("delegate_background_color VARCHAR(16) NULL", schema_sql)
+        self.assertNotIn("delegate_background_image_url LONGTEXT NULL", schema_sql)
+
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []
 

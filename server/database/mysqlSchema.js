@@ -575,15 +575,15 @@ const ensureUserColumns = async () => {
       `,
     },
     {
-      name: 'delegate_background_image_url',
+      name: 'delegate_background_url',
       ddl: `
         ALTER TABLE users
-        ADD COLUMN delegate_background_image_url LONGTEXT NULL
+        ADD COLUMN delegate_background_url LONGTEXT NULL
       `,
       expectedDataType: 'longtext',
       alter: `
         ALTER TABLE users
-        MODIFY COLUMN delegate_background_image_url LONGTEXT NULL
+        MODIFY COLUMN delegate_background_url LONGTEXT NULL
       `,
     },
     {
@@ -683,6 +683,41 @@ const ensureUserColumns = async () => {
     } catch (error) {
       logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL users table column');
     }
+  }
+  try {
+    const [legacyColumn, targetColumn] = await Promise.all([
+      mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'users'
+            AND COLUMN_NAME = 'delegate_background_image_url'
+        `,
+      ),
+      mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'users'
+            AND COLUMN_NAME = 'delegate_background_url'
+        `,
+      ),
+    ]);
+    if (legacyColumn && targetColumn) {
+      await mysqlClient.execute(
+        `
+          UPDATE users
+          SET delegate_background_url = delegate_background_image_url
+          WHERE (delegate_background_url IS NULL OR TRIM(delegate_background_url) = '')
+            AND delegate_background_image_url IS NOT NULL
+            AND TRIM(delegate_background_image_url) <> ''
+        `,
+      );
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to migrate legacy delegate background image column');
   }
   await ensureIndex(
     'users',
