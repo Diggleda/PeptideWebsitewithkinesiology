@@ -168,7 +168,7 @@ def _shipping_status_email_sent(order: Dict[str, Any], status: str) -> bool:
 
 
 def _notify_shipping_status(order_id: str, status: str, *, tracking_number: Optional[str] = None) -> None:
-    if status not in {"out_for_delivery", "delivered"}:
+    if status not in {"in_transit", "out_for_delivery", "delivered"}:
         return
     try:
         shipping_notification_service.notify_customer_order_shipping_status(order_id, status)

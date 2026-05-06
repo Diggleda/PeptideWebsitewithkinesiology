@@ -1353,7 +1353,7 @@ export function ProductCard({
 	        type="button"
 	        onClick={openDocumentationModal}
           className="line-clamp-2 text-left hover:underline"
-          style={{ color: 'rgb(60, 103, 183)' }}
+          style={{ color: 'var(--brand-color, rgb(60, 103, 183))' }}
         >
           Documentation and Analysis
         </button>
@@ -1521,7 +1521,7 @@ export function ProductCard({
         setBulkOpen(false);
       }}
       className={proposalMode ? 'squircle-sm btn-hover-lighter w-full justify-center border-0 text-white [&_svg]:text-white' : 'squircle-sm glass-brand btn-hover-lighter w-full'}
-      style={proposalMode ? { backgroundColor: 'rgb(60, 103, 183)', borderColor: 'rgb(60, 103, 183)', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
+      style={proposalMode ? { backgroundColor: 'var(--brand-color, rgb(60, 103, 183))', borderColor: 'var(--brand-color, rgb(60, 103, 183))', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
 	    >
 	      {proposalMode ? null : (
 	        <ShoppingCart className="w-4 h-4 mr-2" />
@@ -1539,7 +1539,7 @@ export function ProductCard({
         className={`catalog-product-card group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(60,103,183,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.61)]${personalizedRecommendation ? ' catalog-personalized-product-card' : ''}`}
         style={{
           background:
-            'linear-gradient(to right, rgba(60,103,183,0.08) 0%, rgba(255,255,255,0.47) 8px, rgba(255,255,255,0.47) 100%)',
+            'linear-gradient(to right, rgba(var(--brand-color-rgb, 60, 103, 183), 0.08) 0%, rgba(255,255,255,0.47) 8px, rgba(255,255,255,0.47) 100%)',
           backdropFilter: 'blur(40px) saturate(1.7)',
           WebkitBackdropFilter: 'blur(40px) saturate(1.7)',
         }}

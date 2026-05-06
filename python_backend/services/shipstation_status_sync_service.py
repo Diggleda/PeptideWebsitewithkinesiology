@@ -315,7 +315,7 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
         persisted_order_id = str((persisted or {}).get("id") or local_order.get("id") or "").strip()
         if (
             persisted_order_id
-            and normalized_status in {"shipped", "out_for_delivery", "delivered"}
+            and normalized_status in {"shipped", "in_transit", "out_for_delivery", "delivered"}
         ):
             try:
                 shipping_notification_service.notify_customer_order_shipping_status(

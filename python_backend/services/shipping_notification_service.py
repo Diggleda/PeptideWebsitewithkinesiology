@@ -11,7 +11,7 @@ from . import email_service
 
 logger = logging.getLogger(__name__)
 
-_EMAIL_ELIGIBLE_STATUSES = {"shipped", "out_for_delivery", "delivered"}
+_EMAIL_ELIGIBLE_STATUSES = {"shipped", "in_transit", "out_for_delivery", "delivered"}
 
 
 def _coerce_object(value: Any) -> Dict[str, Any]:
@@ -149,6 +149,8 @@ def _extract_delivery_label(order: Dict[str, Any], status: str) -> Optional[str]
         order.get("delivery_date"),
         order.get("expectedShipmentWindow"),
         order.get("expected_shipment_window"),
+        estimate.get("expectedShipmentWindow"),
+        estimate.get("expected_shipment_window"),
         estimate.get("deliveryDateGuaranteed"),
         estimate.get("delivery_date_guaranteed"),
         estimate.get("estimatedArrivalDate"),

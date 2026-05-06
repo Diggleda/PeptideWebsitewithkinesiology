@@ -161,6 +161,30 @@ class ShipStationStatusSyncServiceTests(unittest.TestCase):
 
         notify_status.assert_called_once_with("local-1505", "shipped")
 
+    def test_persist_local_order_shipping_update_sends_in_transit_notification(self):
+        local_order = {
+            "id": "local-1510",
+            "wooOrderId": "9510",
+            "wooOrderNumber": "1510",
+            "trackingNumber": "1ZSHIP1510",
+            "shippingEstimate": {"status": "shipped"},
+            "integrations": {},
+        }
+        shipstation_info = {
+            "status": "in transit",
+            "trackingNumber": "1ZSHIP1510",
+            "carrierCode": "ups",
+            "serviceCode": "ups_2nd_day_air_am",
+            "shipDate": "2026-04-15T12:00:00Z",
+        }
+
+        with patch.object(self.service.order_repository, "find_by_order_identifier", return_value=local_order), \
+            patch.object(self.service.order_repository, "update", return_value={**local_order, "id": "local-1510"}), \
+            patch.object(self.service.shipping_notification_service, "notify_customer_order_shipping_status") as notify_status:
+            self.service._persist_local_order_shipping_update("9510", shipstation_info)
+
+        notify_status.assert_called_once_with("local-1510", "in_transit")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -80,6 +80,34 @@ class EmailServiceTests(unittest.TestCase):
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertNotIn("cc", dispatch_email.call_args.kwargs)
 
+    def test_shipping_status_email_uses_in_transit_copy(self):
+        from python_backend.services import email_service
+
+        with patch.object(
+            email_service,
+            "get_config",
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com"),
+        ), patch.object(email_service, "_dispatch_email") as dispatch_email:
+            email_service.send_order_shipping_status_email(
+                "holly@example.com",
+                status="in_transit",
+                customer_name="Holly O'Quin",
+                order_number="1505",
+                tracking_number="1ZSHIP1505",
+                carrier_code="ups",
+                delivery_label="Tuesday, April 7, 2026",
+            )
+
+        dispatch_email.assert_called_once()
+        self.assertEqual(dispatch_email.call_args.args[1], "TruFusionLabs order 1505 is in transit")
+        html = dispatch_email.call_args.args[2]
+        plain = dispatch_email.call_args.args[3]
+        self.assertIn("Your TruFusionLabs order is in transit", html)
+        self.assertIn("Your package is moving through the carrier network.", html)
+        self.assertIn("<strong>Estimated delivery: Tuesday, April 7, 2026</strong>", html)
+        self.assertIn("Your TruFusionLabs order is in transit", plain)
+        self.assertIn("Estimated delivery: Tuesday, April 7, 2026", plain)
+
     def test_email_settings_normalizes_trufusionlabs_sender_name(self):
         from python_backend.services import email_service
 

@@ -4438,6 +4438,11 @@ html {
   flex: 0 0 auto;
 }
 
+.sales-doctor-detail-panel {
+  border-color: rgba(148, 163, 184, 0.44) !important;
+  box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.18);
+}
+
 @media (min-width: 640px) {
   .sales-doctor-detail-header {
     padding-right: 11rem;
@@ -7773,18 +7778,50 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 }
 
 .admin-dashboard-link-button {
+  background: transparent !important;
   background-color: transparent !important;
+  background-image: none !important;
   color: rgb(15, 23, 42) !important;
-  border-width: 0 !important;
+  border: 0 !important;
   border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.admin-dashboard-link-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.admin-dashboard-link-row .admin-dashboard-link-button {
+  flex: 1 1 0 !important;
+  min-width: 0;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .admin-dashboard-link-button:hover,
 .admin-dashboard-link-button:focus-visible,
 .admin-dashboard-link-button[data-state="open"],
 .admin-dashboard-link-button[aria-expanded="true"] {
-  color: #ffffff !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color: rgb(15, 23, 42) !important;
   border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .header-search-input {
@@ -7894,13 +7931,13 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 }
 
 .info-header-welcome {
-  color: rgb(60, 103, 183);
+  color: #ffffff;
   text-align: center;
 }
 
 .info-header-welcome__text {
   margin: 0;
-  color: rgb(60, 103, 183);
+  color: #ffffff;
   font-size: clamp(1.35rem, 2.4vw, 2.4rem);
   font-weight: 700;
   line-height: 1;
@@ -8037,6 +8074,28 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   backface-visibility: hidden;
   will-change: transform;
   isolation: isolate;
+}
+
+[data-app-header] {
+  position: fixed !important;
+  inset: 0 0 auto 0 !important;
+  box-sizing: border-box;
+  flex: 0 0 auto !important;
+  max-width: 100vw;
+  overflow: visible !important;
+  transform: none !important;
+  will-change: auto !important;
+}
+
+[data-app-header] .app-header-frame {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+}
+
+html.app-fixed-header-active,
+body.app-fixed-header-active,
+html.app-fixed-header-active #root {
+  overscroll-behavior-y: none;
 }
 
 .app-header-hidden {
@@ -9326,22 +9385,26 @@ a[href^="mailto:"]:hover {
   border-color: var(--delegate-accent) !important;
 }
 
-[data-delegate-theme="true"] [style*="color: rgb(60, 103, 183)"] {
+[data-delegate-theme="true"] [style*="color: rgb(60, 103, 183)"],
+[data-delegate-theme="true"] [style*="color: rgb(60,103,183)"] {
   color: var(--delegate-accent) !important;
 }
 
 [data-delegate-theme="true"] [style*="color: rgb(60, 103, 183)"],
+[data-delegate-theme="true"] [style*="color: rgb(60,103,183)"],
 [data-delegate-theme="true"] [style*="color: rgb(37, 99, 235)"],
 [data-delegate-theme="true"] [style*="color: rgb(58, 142, 214)"],
 [data-delegate-theme="true"] [style*="color: rgb(60, 103, 183)"] {
   color: var(--delegate-accent) !important;
 }
 
-[data-delegate-theme="true"] [style*="text-decoration-color: rgb(60, 103, 183)"] {
+[data-delegate-theme="true"] [style*="text-decoration-color: rgb(60, 103, 183)"],
+[data-delegate-theme="true"] [style*="text-decoration-color: rgb(60,103,183)"] {
   text-decoration-color: var(--delegate-accent) !important;
 }
 
 [data-delegate-theme="true"] [style*="text-decoration-color: rgb(60, 103, 183)"],
+[data-delegate-theme="true"] [style*="text-decoration-color: rgb(60,103,183)"],
 [data-delegate-theme="true"] [style*="text-decoration-color: rgb(37, 99, 235)"] {
   text-decoration-color: var(--delegate-accent) !important;
 }
@@ -9374,7 +9437,8 @@ a[href^="mailto:"]:hover {
   border-color: var(--delegate-accent-18) !important;
 }
 
-[data-delegate-theme="true"] [style*="background-color: rgb(60, 103, 183)"] {
+[data-delegate-theme="true"] [style*="background-color: rgb(60, 103, 183)"],
+[data-delegate-theme="true"] [style*="background-color: rgb(60,103,183)"] {
   background-color: var(--delegate-accent) !important;
 }
 
@@ -9557,13 +9621,13 @@ a[href^="mailto:"]:hover {
 }
 
 .rdp {
-  --rdp-accent-color: rgb(60, 103, 183);
-  --rdp-background-color: rgba(60, 103, 183, 0.18);
-  --rdp-outline: 2px solid rgba(60, 103, 183, 0.35);
+  --rdp-accent-color: var(--delegate-accent, rgb(60, 103, 183));
+  --rdp-background-color: var(--delegate-accent-18, rgba(60, 103, 183, 0.18));
+  --rdp-outline: 2px solid var(--delegate-accent-35, rgba(60, 103, 183, 0.35));
   --rdp-cell-size: 36px;
   --rdp-caption-font-size: 14px;
-  --rdp-accent-color-dark: rgb(60, 103, 183);
-  --rdp-background-color-dark: rgba(60, 103, 183, 0.18);
+  --rdp-accent-color-dark: var(--delegate-accent, rgb(60, 103, 183));
+  --rdp-background-color-dark: var(--delegate-accent-18, rgba(60, 103, 183, 0.18));
   --rdp-selected-color: #ffffff;
 }
 
@@ -9627,7 +9691,7 @@ a[href^="mailto:"]:hover {
 .rdp .rdp-day_selected:not(.rdp-day_disabled) .rdp-button:active,
 .rdp .rdp-day_selected:not(.rdp-day_disabled) .rdp-button:focus-visible,
 .rdp .rdp-day[aria-selected="true"] .rdp-button {
-  background: rgb(60, 103, 183) !important;
+  background: var(--rdp-accent-color, var(--delegate-accent, rgb(60, 103, 183))) !important;
   color: #ffffff !important;
   font-weight: 700;
   transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
@@ -9635,11 +9699,11 @@ a[href^="mailto:"]:hover {
 
 .rdp .rdp-day_range_start:not(.rdp-day_disabled),
 .rdp .rdp-day_range_end:not(.rdp-day_disabled) {
-  background: rgb(60, 103, 183) !important;
+  background: var(--rdp-accent-color, var(--delegate-accent, rgb(60, 103, 183))) !important;
 }
 
 .rdp .rdp-day_range_middle:not(.rdp-day_disabled) {
-  background: rgba(60, 103, 183, 0.22) !important;
+  background: var(--delegate-accent-25, rgba(60, 103, 183, 0.22)) !important;
   transition: background-color 180ms ease;
 }
 
@@ -9656,13 +9720,51 @@ a[href^="mailto:"]:hover {
 }
 
 .rdp .rdp-day_today:not(.rdp-day_selected):not(.rdp-day_range_start):not(.rdp-day_range_end) .rdp-button {
-  outline: 2px solid rgba(60, 103, 183, 0.35);
+  outline: var(--rdp-outline, 2px solid rgba(60, 103, 183, 0.35));
   outline-offset: -2px;
+}
+
+.calendar-popover .rdp {
+  --rdp-accent-color: var(--theme-accent, rgb(60, 103, 183)) !important;
+  --rdp-accent-color-dark: var(--theme-accent, rgb(60, 103, 183)) !important;
+  --rdp-background-color: var(--theme-accent-soft, rgba(60, 103, 183, 0.18)) !important;
+  --rdp-background-color-dark: var(--theme-accent-soft, rgba(60, 103, 183, 0.18)) !important;
+  --rdp-outline: 2px solid var(--theme-border-strong, rgba(60, 103, 183, 0.35)) !important;
+}
+
+.calendar-popover .rdp .rdp-day_selected:not(.rdp-day_disabled),
+.calendar-popover .rdp .rdp-day_range_start:not(.rdp-day_disabled),
+.calendar-popover .rdp .rdp-day_range_end:not(.rdp-day_disabled),
+.calendar-popover .rdp .rdp-day_selected:not(.rdp-day_disabled) .rdp-button,
+.calendar-popover .rdp .rdp-day_range_start:not(.rdp-day_disabled) .rdp-button,
+.calendar-popover .rdp .rdp-day_range_end:not(.rdp-day_disabled) .rdp-button,
+.calendar-popover .rdp .rdp-day[aria-selected="true"] .rdp-button {
+  background: var(--theme-accent, rgb(60, 103, 183)) !important;
+  background-color: var(--theme-accent, rgb(60, 103, 183)) !important;
+  border-color: var(--theme-accent, rgb(60, 103, 183)) !important;
+  color: var(--primary-foreground, #ffffff) !important;
+}
+
+.calendar-popover .rdp .rdp-day_range_middle:not(.rdp-day_disabled) {
+  background: rgba(60, 103, 183, 0.24) !important;
+  background-color: rgba(60, 103, 183, 0.24) !important;
+  border-color: rgba(60, 103, 183, 0.24) !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+}
+
+.calendar-popover .rdp .rdp-day_range_middle:not(.rdp-day_disabled) .rdp-button,
+.calendar-popover .rdp .rdp-day_range_middle[aria-selected="true"] .rdp-button {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+  color: var(--theme-accent, rgb(60, 103, 183)) !important;
 }
 
 .rdp .rdp-day:hover:not(.rdp-day_disabled) .rdp-button,
 .rdp .rdp-day:focus-visible:not(.rdp-day_disabled) .rdp-button {
-  background: rgba(60, 103, 183, 0.18) !important;
+  background: var(--rdp-background-color, var(--delegate-accent-18, rgba(60, 103, 183, 0.18))) !important;
   color: #000000 !important;
   transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
 }
@@ -9768,13 +9870,16 @@ a[href^="mailto:"]:hover {
 }
 
 .calendar-done-button {
-  color: rgb(60, 103, 183) !important;
-  border-color: rgba(60, 103, 183, 0.45) !important;
+  background: var(--theme-accent, rgb(60, 103, 183)) !important;
+  border-color: var(--theme-accent, rgb(60, 103, 183)) !important;
+  color: var(--primary-foreground, #ffffff) !important;
 }
 
-.calendar-done-button:hover {
-  color: rgb(60, 103, 183) !important;
-  border-color: rgba(60, 103, 183, 0.7) !important;
+.calendar-done-button:hover,
+.calendar-done-button:focus-visible {
+  background: var(--theme-accent-hover, rgb(75, 149, 219)) !important;
+  border-color: var(--theme-accent-hover, rgb(75, 149, 219)) !important;
+  color: var(--primary-foreground, #ffffff) !important;
 }
 
 @keyframes calendar-popover-in {
@@ -10297,12 +10402,12 @@ body.theme-leaf[data-delegate-theme="true"]::before {
 }
 
 .dev-theme-root.theme-community .post-login-content-shell .physician-network-card.glass-card.landing-glass {
-  border-color: rgb(60, 103, 183) !important;
-  color: rgb(60, 103, 183) !important;
+  border-color: var(--theme-accent) !important;
+  color: var(--theme-accent) !important;
 }
 
 .dev-theme-root.theme-community .post-login-content-shell .physician-network-card .physician-network-card__intro p {
-  color: rgb(60, 103, 183) !important;
+  color: var(--theme-accent) !important;
 }
 
 .dev-theme-root.theme-biotech :is(.app-header-blur, [data-app-header]) {
@@ -10400,6 +10505,32 @@ body.theme-leaf[data-delegate-theme="true"]::before {
   color: var(--theme-text) !important;
 }
 
+.dev-theme-root.theme-clinical :is(.app-header-blur, [data-app-header], header.glass-strong) {
+  -webkit-backdrop-filter: blur(42px) saturate(1.8) !important;
+  backdrop-filter: blur(55px) saturate(1.8) !important;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(35, 78, 156, 0.72) 0%,
+      rgba(60, 103, 183, 0.54) 42%,
+      rgba(152, 203, 244, 0.34) 100%
+    ) !important;
+  background-color: rgba(60, 103, 183, 0.48) !important;
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(35, 78, 156, 0.72) 0%,
+      rgba(60, 103, 183, 0.54) 42%,
+      rgba(152, 203, 244, 0.34) 100%
+    ) !important;
+  border-color: rgba(255, 255, 255, 0.44) !important;
+  box-shadow:
+    0 24px 58px -42px rgba(15, 23, 42, 0.64),
+    0 10px 24px -22px rgba(60, 103, 183, 0.62),
+    inset 0 1px rgba(255, 255, 255, 0.66),
+    inset 0 -1px rgba(255, 255, 255, 0.24) !important;
+}
+
 .dev-theme-root:not(.theme-biotech) footer {
   background-color: var(--theme-footer-bg) !important;
   border-color: var(--theme-border) !important;
@@ -10489,7 +10620,7 @@ body.theme-leaf[data-delegate-theme="true"]::before {
   color: var(--primary-foreground) !important;
 }
 
-.dev-theme-root:not(.theme-biotech) :is(.text-primary, .legal-inline-link, .header-user-name, .info-header-welcome, .info-header-welcome__text, .shop-filter-count-badge, .delegate-links-beta-chip),
+.dev-theme-root:not(.theme-biotech) :is(.text-primary, .legal-inline-link, .header-user-name, .shop-filter-count-badge, .delegate-links-beta-chip),
 .dev-theme-root:not(.theme-biotech) :is(.legal-richtext h2, .legal-richtext h3, .landing-richtext h4, .manufacturing-standards-card h3),
 .dev-theme-root:not(.theme-biotech) [class*="text-[rgb(60,103,183)]"],
 .dev-theme-root:not(.theme-biotech) [class*="text-[rgb(37,99,235)]"],
@@ -10555,21 +10686,21 @@ body.theme-leaf[data-delegate-theme="true"]::before {
 }
 
 .dev-theme-root:not(.theme-biotech) .header-search-input {
-  border-color: rgb(60, 103, 183) !important;
+  border-color: var(--theme-accent) !important;
   background-color: transparent !important;
   box-shadow: none !important;
 }
 
 .dev-theme-root:not(.theme-biotech) .header-search-input:focus,
 .dev-theme-root:not(.theme-biotech) .header-search-input:focus-visible {
-  border-color: rgb(60, 103, 183) !important;
+  border-color: var(--theme-accent) !important;
   box-shadow: none !important;
 }
 
 .dev-theme-root:not(.theme-biotech) .header-home-button:not(.header-home-button--clear):not(.header-account-button) {
-  border-color: rgb(60, 103, 183) !important;
+  border-color: var(--theme-accent) !important;
   background-color: rgba(255, 255, 255, 0.95) !important;
-  color: rgb(60, 103, 183) !important;
+  color: var(--theme-accent) !important;
   box-shadow: none !important;
 }
 
@@ -10577,9 +10708,9 @@ body.theme-leaf[data-delegate-theme="true"]::before {
 .dev-theme-root:not(.theme-biotech) .shop-home-button,
 .dev-theme-root:not(.theme-biotech) .header-account-button,
 .dev-theme-root:not(.theme-biotech) .header-cart-button:not(.mobile-search-toggle-button) {
-  border-color: rgb(60, 103, 183) !important;
+  border-color: var(--theme-accent) !important;
   background-color: transparent !important;
-  color: rgb(60, 103, 183) !important;
+  color: var(--theme-accent) !important;
   box-shadow: none !important;
 }
 
@@ -10592,11 +10723,73 @@ body.theme-leaf[data-delegate-theme="true"]::before {
 .dev-theme-root:not(.theme-biotech) :is(.header-home-button, .shop-home-button, .header-cart-button:not(.mobile-search-toggle-button)):focus-visible,
 .dev-theme-root:not(.theme-biotech) :is(.header-home-button, .shop-home-button, .header-cart-button:not(.mobile-search-toggle-button))[data-state="open"],
 .dev-theme-root:not(.theme-biotech) :is(.header-home-button, .shop-home-button, .header-cart-button:not(.mobile-search-toggle-button))[aria-expanded="true"] {
-  border-color: rgb(60, 103, 183) !important;
-  background-color: rgb(60, 103, 183) !important;
+  border-color: var(--theme-accent) !important;
+  background-color: var(--theme-accent) !important;
   color: #ffffff !important;
   box-shadow: none !important;
   filter: none !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-search-input,
+  .header-home-button,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+) {
+  -webkit-backdrop-filter: blur(22px) saturate(1.65) !important;
+  backdrop-filter: blur(22px) saturate(1.65) !important;
+  background-color: rgba(255, 255, 255, 0.82) !important;
+  border-color: rgba(255, 255, 255, 0.68) !important;
+  box-shadow:
+    0 12px 28px -24px rgba(15, 23, 42, 0.46),
+    inset 0 1px rgba(255, 255, 255, 0.72) !important;
+  color: var(--theme-accent) !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] .header-search-input:focus,
+.dev-theme-root.theme-clinical [data-app-header] .header-search-input:focus-visible {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.84) !important;
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.18),
+    0 12px 28px -24px rgba(15, 23, 42, 0.46),
+    inset 0 1px rgba(255, 255, 255, 0.76) !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-home-button,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):hover,
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-home-button,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):focus-visible,
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-home-button,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button
+)[data-state="open"],
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-home-button,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button
+)[aria-expanded="true"] {
+  background-color: var(--theme-accent) !important;
+  border-color: rgba(255, 255, 255, 0.62) !important;
+  color: var(--primary-foreground) !important;
+  box-shadow:
+    0 16px 32px -24px rgba(15, 23, 42, 0.54),
+    inset 0 1px rgba(255, 255, 255, 0.46) !important;
 }
 
 .dev-theme-root:not(.theme-biotech) :is(.brand-checkbox, .shop-filter-checkbox) {
@@ -10641,10 +10834,10 @@ body.theme-leaf[data-delegate-theme="true"]::before {
 
 .dev-theme-root .catalog-personalized-product-card[data-slot="card"],
 .catalog-personalized-product-card[data-slot="card"] {
-  border: 2px solid rgb(60, 103, 183) !important;
+  border: 2px solid var(--theme-accent, var(--delegate-accent, rgb(60, 103, 183))) !important;
   box-shadow:
     0 18px 40px -30px rgba(15, 23, 42, 0.5),
-    0 0 0 1px rgba(60, 103, 183, 0.24) !important;
+    0 0 0 1px var(--theme-accent-soft, var(--delegate-accent-25, rgba(60, 103, 183, 0.24))) !important;
 }
 
 .dev-theme-root:is(.theme-clinical, .theme-community) :is(
@@ -10663,6 +10856,147 @@ body.theme-leaf[data-delegate-theme="true"]::before {
     0 27px 56px -25px rgba(15, 23, 42, 0.47),
     0 13px 26px -16px rgba(15, 23, 42, 0.27),
     inset 0 1px rgba(255, 255, 255, 0.86) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard {
+  --dashboard-liquid-surface: rgba(255, 255, 255, 0.48);
+  --dashboard-liquid-surface-strong: rgba(255, 255, 255, 0.58);
+  --dashboard-liquid-surface-muted: rgba(230, 241, 255, 0.36);
+  --dashboard-liquid-border: rgba(255, 255, 255, 0.68);
+  --dashboard-liquid-shadow:
+    0 24px 58px -40px rgba(15, 23, 42, 0.56),
+    0 10px 26px -22px rgba(60, 103, 183, 0.42),
+    inset 0 1px rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: blur(42px) saturate(1.75) !important;
+  backdrop-filter: blur(42px) saturate(1.75) !important;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.3) 48%,
+      rgba(188, 216, 255, 0.24) 100%
+    ) !important;
+  border-color: var(--dashboard-liquid-border) !important;
+  box-shadow: var(--dashboard-liquid-shadow) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard :is(
+  .sales-rep-leads-card,
+  .sales-tracking-card,
+  .lead-panel,
+  .admin-dashboard-list-card,
+  .sales-rep-table-wrapper,
+  .admin-revenue-outlook-summary-card__stat,
+  .sales-metric-pill,
+  .sales-tracking-summary-item,
+  .sales-tracking-row
+) {
+  -webkit-backdrop-filter: blur(34px) saturate(1.85) !important;
+  backdrop-filter: blur(34px) saturate(1.85) !important;
+  background:
+    linear-gradient(
+      145deg,
+      var(--dashboard-liquid-surface-strong) 0%,
+      var(--dashboard-liquid-surface) 52%,
+      var(--dashboard-liquid-surface-muted) 100%
+    ) !important;
+  border-color: var(--dashboard-liquid-border) !important;
+  box-shadow: var(--dashboard-liquid-shadow) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard :is(
+  .sales-rep-table-wrapper,
+  .admin-dashboard-list,
+  .live-users-scroll
+) {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.42) 0%,
+      rgba(255, 255, 255, 0.25) 54%,
+      rgba(205, 225, 255, 0.22) 100%
+    ) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard :is(
+  .admin-todo-list__item,
+  .referrals-table__row,
+  .lead-list-item,
+  .lead-list-item--active-prospect
+),
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-rep-table-wrapper [class*="bg-white/"],
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-rep-table-wrapper [class*="bg-slate-50/"],
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-rep-combined-card > [class*="bg-white/"],
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-rep-combined-card > [class*="bg-slate-50/"] {
+  -webkit-backdrop-filter: blur(28px) saturate(1.7) !important;
+  backdrop-filter: blur(28px) saturate(1.7) !important;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.46) 0%,
+      rgba(255, 255, 255, 0.26) 58%,
+      rgba(222, 236, 255, 0.22) 100%
+    ) !important;
+  border-color: rgba(255, 255, 255, 0.62) !important;
+  box-shadow:
+    0 16px 34px -28px rgba(15, 23, 42, 0.42),
+    inset 0 1px rgba(255, 255, 255, 0.72) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard .admin-report-panel .admin-dashboard-list [class*="bg-[rgba(60,103,183,0.08)]"],
+.dev-theme-root.theme-clinical .sales-rep-dashboard .admin-report-panel .admin-dashboard-list [class*="border-b-4"][class*="bg-white/70"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button) {
+  -webkit-backdrop-filter: blur(28px) saturate(1.7) !important;
+  backdrop-filter: blur(28px) saturate(1.7) !important;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.28) 100%
+    ) !important;
+  border-color: rgba(255, 255, 255, 0.62) !important;
+  box-shadow:
+    0 14px 30px -24px rgba(15, 23, 42, 0.42),
+    inset 0 1px rgba(255, 255, 255, 0.78) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard .admin-dashboard-link-button {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: rgb(15, 23, 42) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button):hover,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button):focus-visible {
+  background: var(--theme-accent) !important;
+  border-color: var(--theme-accent) !important;
+  color: var(--primary-foreground) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard .admin-dashboard-link-button:hover,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .admin-dashboard-link-button:focus-visible {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: rgb(15, 23, 42) !important;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .dev-theme-switcher {

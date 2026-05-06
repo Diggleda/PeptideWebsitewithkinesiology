@@ -11,7 +11,6 @@ import {
   forwardRef,
   type CSSProperties,
 } from "react";
-import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
@@ -2107,21 +2106,27 @@ const normalizeDelegateImageUrl = (value?: string | null) => {
 const toCssUrlValue = (value: string) =>
   `url("${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]/g, '')}")`;
 
-const hexToRgbCss = (hex: string) => {
+const hexToRgbParts = (hex: string) => {
   const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const raw = normalized.slice(1);
   const r = Number.parseInt(raw.slice(0, 2), 16);
   const g = Number.parseInt(raw.slice(2, 4), 16);
   const b = Number.parseInt(raw.slice(4, 6), 16);
-  return `rgb(${r}, ${g}, ${b})`;
+  return {
+    r,
+    g,
+    b,
+    channels: `${r}, ${g}, ${b}`,
+    rgb: `rgb(${r}, ${g}, ${b})`,
+  };
+};
+
+const hexToRgbCss = (hex: string) => {
+  return hexToRgbParts(hex).rgb;
 };
 
 const hexToRgbaCss = (hex: string, alpha: number) => {
-  const normalized = normalizeDelegateSecondaryColor(hex) || DEFAULT_DELEGATE_SECONDARY_COLOR;
-  const raw = normalized.slice(1);
-  const r = Number.parseInt(raw.slice(0, 2), 16);
-  const g = Number.parseInt(raw.slice(2, 4), 16);
-  const b = Number.parseInt(raw.slice(4, 6), 16);
+  const { r, g, b } = hexToRgbParts(hex);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
@@ -5544,6 +5549,7 @@ function MainApp() {
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegateSecondaryColor = hexToRgbCss(delegateSecondaryColorHex);
+  const delegateSecondaryColorChannels = hexToRgbParts(delegateSecondaryColorHex).channels;
   const delegateBackgroundImageUrl = normalizeDelegateImageUrl(delegateContext?.doctorBackgroundImageUrl ?? null);
   const delegateBackgroundColorRaw = normalizeDelegateBackgroundColor(delegateContext?.doctorBackgroundColor ?? null);
   const delegateBackgroundColorHex = delegateBackgroundColorRaw || DEFAULT_DELEGATE_BACKGROUND_COLOR;
@@ -5553,6 +5559,56 @@ function MainApp() {
       ? 'none'
       : 'var(--email-background-image)';
   const isDelegateThemeActive = isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError;
+  const delegateThemeCssVariables = useMemo<Array<[string, string]>>(
+    () => [
+      ['--delegate-accent', delegateSecondaryColor],
+      ['--delegate-accent-rgb', delegateSecondaryColorChannels],
+      ['--delegate-accent-08', hexToRgbaCss(delegateSecondaryColorHex, 0.08)],
+      ['--delegate-accent-10', hexToRgbaCss(delegateSecondaryColorHex, 0.10)],
+      ['--delegate-accent-12', hexToRgbaCss(delegateSecondaryColorHex, 0.12)],
+      ['--delegate-accent-14', hexToRgbaCss(delegateSecondaryColorHex, 0.14)],
+      ['--delegate-accent-18', hexToRgbaCss(delegateSecondaryColorHex, 0.18)],
+      ['--delegate-accent-25', hexToRgbaCss(delegateSecondaryColorHex, 0.25)],
+      ['--delegate-accent-30', hexToRgbaCss(delegateSecondaryColorHex, 0.30)],
+      ['--delegate-accent-35', hexToRgbaCss(delegateSecondaryColorHex, 0.35)],
+      ['--delegate-accent-40', hexToRgbaCss(delegateSecondaryColorHex, 0.40)],
+      ['--delegate-accent-45', hexToRgbaCss(delegateSecondaryColorHex, 0.45)],
+      ['--delegate-accent-55', hexToRgbaCss(delegateSecondaryColorHex, 0.55)],
+      ['--delegate-accent-65', hexToRgbaCss(delegateSecondaryColorHex, 0.65)],
+      ['--delegate-accent-80', hexToRgbaCss(delegateSecondaryColorHex, 0.80)],
+      ['--primary', delegateSecondaryColor],
+      ['--secondary', delegateSecondaryColor],
+      ['--brand-color', delegateSecondaryColor],
+      ['--brand-color-rgb', delegateSecondaryColorChannels],
+      ['--brand-glass-rgb', delegateSecondaryColorChannels],
+      ['--theme-accent', delegateSecondaryColor],
+      ['--theme-accent-rgb', delegateSecondaryColorChannels],
+      ['--theme-accent-hover', delegateSecondaryColor],
+      ['--theme-accent-soft', hexToRgbaCss(delegateSecondaryColorHex, 0.14)],
+      ['--theme-accent-faint', hexToRgbaCss(delegateSecondaryColorHex, 0.08)],
+      ['--theme-border-strong', hexToRgbaCss(delegateSecondaryColorHex, 0.35)],
+      ['--theme-input-border', hexToRgbaCss(delegateSecondaryColorHex, 0.35)],
+      ['--accent', hexToRgbaCss(delegateSecondaryColorHex, 0.14)],
+      ['--input', hexToRgbaCss(delegateSecondaryColorHex, 0.35)],
+      ['--ring', delegateSecondaryColor],
+      ['--shop-filter-checkbox-accent', delegateSecondaryColor],
+      ['--header-search-border-color', delegateSecondaryColor],
+      ['--rdp-accent-color', delegateSecondaryColor],
+      ['--rdp-accent-color-dark', delegateSecondaryColor],
+      ['--rdp-background-color', hexToRgbaCss(delegateSecondaryColorHex, 0.18)],
+      ['--rdp-background-color-dark', hexToRgbaCss(delegateSecondaryColorHex, 0.18)],
+      ['--rdp-outline', `2px solid ${hexToRgbaCss(delegateSecondaryColorHex, 0.35)}`],
+      ['--delegate-session-background-color', delegateBackgroundColorHex],
+      ['--delegate-session-background-image', delegateBackgroundImageCss],
+    ],
+    [
+      delegateBackgroundColorHex,
+      delegateBackgroundImageCss,
+      delegateSecondaryColor,
+      delegateSecondaryColorChannels,
+      delegateSecondaryColorHex,
+    ],
+  );
   const formatDelegateTimeRemaining = useCallback((expiryMs: number | null, nowMs: number) => {
     if (!expiryMs || !Number.isFinite(expiryMs)) return null;
     const diffMs = expiryMs - nowMs;
@@ -6378,44 +6434,19 @@ function MainApp() {
     const body = document.body;
     if (!body) return;
 
-    const styleEntries: Array<[string, string]> = [
-      ['--delegate-accent', delegateSecondaryColor],
-      ['--delegate-accent-08', hexToRgbaCss(delegateSecondaryColorHex, 0.08)],
-      ['--delegate-accent-10', hexToRgbaCss(delegateSecondaryColorHex, 0.10)],
-      ['--delegate-accent-12', hexToRgbaCss(delegateSecondaryColorHex, 0.12)],
-      ['--delegate-accent-14', hexToRgbaCss(delegateSecondaryColorHex, 0.14)],
-      ['--delegate-accent-18', hexToRgbaCss(delegateSecondaryColorHex, 0.18)],
-      ['--delegate-accent-25', hexToRgbaCss(delegateSecondaryColorHex, 0.25)],
-      ['--delegate-accent-30', hexToRgbaCss(delegateSecondaryColorHex, 0.30)],
-      ['--delegate-accent-35', hexToRgbaCss(delegateSecondaryColorHex, 0.35)],
-      ['--delegate-accent-40', hexToRgbaCss(delegateSecondaryColorHex, 0.40)],
-      ['--delegate-accent-45', hexToRgbaCss(delegateSecondaryColorHex, 0.45)],
-      ['--delegate-accent-55', hexToRgbaCss(delegateSecondaryColorHex, 0.55)],
-      ['--delegate-accent-65', hexToRgbaCss(delegateSecondaryColorHex, 0.65)],
-      ['--delegate-accent-80', hexToRgbaCss(delegateSecondaryColorHex, 0.80)],
-      ['--delegate-session-background-color', delegateBackgroundColorHex],
-      ['--delegate-session-background-image', delegateBackgroundImageCss],
-    ];
-
     if (isDelegateThemeActive) {
       body.setAttribute('data-delegate-theme', 'true');
-      styleEntries.forEach(([key, value]) => body.style.setProperty(key, value));
+      delegateThemeCssVariables.forEach(([key, value]) => body.style.setProperty(key, value));
     } else {
       body.setAttribute('data-delegate-theme', 'false');
-      styleEntries.forEach(([key]) => body.style.removeProperty(key));
+      delegateThemeCssVariables.forEach(([key]) => body.style.removeProperty(key));
     }
 
     return () => {
       body.setAttribute('data-delegate-theme', 'false');
-      styleEntries.forEach(([key]) => body.style.removeProperty(key));
+      delegateThemeCssVariables.forEach(([key]) => body.style.removeProperty(key));
     };
-  }, [
-    delegateBackgroundColorHex,
-    delegateBackgroundImageCss,
-    delegateSecondaryColor,
-    delegateSecondaryColorHex,
-    isDelegateThemeActive,
-  ]);
+  }, [delegateThemeCssVariables, isDelegateThemeActive]);
 
   useEffect(() => {
     if (!delegateToken) {
@@ -29205,7 +29236,7 @@ function MainApp() {
 	                type="button"
 	                variant="outline"
 	                size="sm"
-	                className="gap-2 shrink-0 lg:hidden"
+	                className="header-home-button squircle-sm bg-white text-slate-900 gap-2 shrink-0 lg:hidden"
 	                onClick={downloadActivePhysiciansCsv}
 	                disabled={totalCount === 0}
 	                title="Download CSV"
@@ -29236,7 +29267,7 @@ function MainApp() {
 	              type="button"
 	              variant="outline"
 	              size="sm"
-	              className="hidden gap-2 justify-self-end lg:inline-flex"
+	              className="header-home-button squircle-sm bg-white text-slate-900 hidden gap-2 justify-self-end lg:inline-flex"
 	              onClick={downloadActivePhysiciansCsv}
 	              disabled={totalCount === 0}
 	              title="Download CSV"
@@ -30103,12 +30134,12 @@ function MainApp() {
               </p>
 	            </div>
 	            {isAdmin(user?.role) && (
-	              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+	              <div className="admin-dashboard-link-row">
 		                <a
 		                  href="https://shop.trufusionlabs.com/wp-admin/"
 		                  target="_blank"
 		                  rel="noopener noreferrer"
-		                  className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
+		                  className="admin-dashboard-link-button inline-flex w-full min-w-0 items-center justify-center gap-2 text-sm font-semibold leading-none transition-colors"
 		                  title="Open Woocommerce dashboard"
 		                >
 	                    <img
@@ -30119,13 +30150,13 @@ function MainApp() {
 	                      loading="lazy"
 	                      decoding="async"
 	                    />
-		                  <span>Woocommerce dashboard</span>
+		                  <span className="min-w-0 truncate">Woocommerce dashboard</span>
 		                </a>
                   <a
                     href={shipStationDashboardUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
+                    className="admin-dashboard-link-button inline-flex w-full min-w-0 items-center justify-center gap-2 text-sm font-semibold leading-none transition-colors"
                     title="Open ShipStation Dashboard"
                   >
 	                    <img
@@ -30136,13 +30167,13 @@ function MainApp() {
 	                      loading="lazy"
                       decoding="async"
                     />
-                    <span>ShipStation Dashboard</span>
+                    <span className="min-w-0 truncate">ShipStation Dashboard</span>
                   </a>
                   <a
                     href="https://admin.google.com/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="header-home-button admin-dashboard-link-button inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 squircle-sm px-4 text-sm font-semibold leading-none transition-colors sm:w-auto sm:min-w-[220px]"
+                    className="admin-dashboard-link-button inline-flex w-full min-w-0 items-center justify-center gap-2 text-sm font-semibold leading-none transition-colors"
                     title="Open Google Workspace Admin"
                   >
                     <img
@@ -30153,7 +30184,7 @@ function MainApp() {
                       loading="lazy"
                       decoding="async"
                     />
-                    <span>Google Workspace</span>
+                    <span className="min-w-0 truncate">Google Workspace</span>
                   </a>
 	              </div>
 		            )}
@@ -30600,7 +30631,7 @@ function MainApp() {
 			                                      setAdminDashboardPeriodPickerOpen(false);
 			                                    }}
 			                                  >
-			                                    Done
+				                                    Ok
 			                                  </Button>
 			                                </div>
 			                                <Popover.Arrow className="calendar-popover-arrow" />
@@ -30628,7 +30659,7 @@ function MainApp() {
 			                            type="button"
 			                            variant="outline"
 			                            size="sm"
-			                            className="gap-2"
+			                            className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
 			                            onClick={downloadSalesBySalesRepCsv}
 			                            disabled={salesRepSalesSummary.length === 0}
 			                            title="Download CSV"
@@ -30978,11 +31009,14 @@ function MainApp() {
 	                    return Number.isFinite(parsed) ? parsed : 0;
 	                  };
 
-	                  const liveUsers = [...filtered].sort((a: any, b: any) => {
-	                    const aLast = getLastSeenMs(a);
-	                    const bLast = getLastSeenMs(b);
-	                    if (aLast !== bLast) return bLast - aLast;
-	                    const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
+		                  const liveUsers = [...filtered].sort((a: any, b: any) => {
+		                    const aOnline = Boolean(a?.isOnline);
+		                    const bOnline = Boolean(b?.isOnline);
+		                    if (aOnline !== bOnline) return aOnline ? -1 : 1;
+		                    const aLast = getLastSeenMs(a);
+		                    const bLast = getLastSeenMs(b);
+		                    if (aLast !== bLast) return bLast - aLast;
+		                    const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
 	                    const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
 	                    return aName.localeCompare(bName);
 	                  });
@@ -33250,11 +33284,14 @@ function MainApp() {
 	                      return Number.isFinite(parsed) ? parsed : 0;
 	                    };
 
-	                    const liveUsers = [...filtered].sort((a: any, b: any) => {
-	                      const aLast = getLastSeenMs(a);
-	                      const bLast = getLastSeenMs(b);
-	                      if (aLast !== bLast) return bLast - aLast;
-	                      const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
+		                    const liveUsers = [...filtered].sort((a: any, b: any) => {
+		                      const aOnline = Boolean(a?.isOnline);
+		                      const bOnline = Boolean(b?.isOnline);
+		                      if (aOnline !== bOnline) return aOnline ? -1 : 1;
+		                      const aLast = getLastSeenMs(a);
+		                      const bLast = getLastSeenMs(b);
+		                      if (aLast !== bLast) return bLast - aLast;
+		                      const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
 	                      const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
 	                      return aName.localeCompare(bName);
 	                    });
@@ -33707,7 +33744,7 @@ function MainApp() {
 	          )}
 
 					          {isAdmin(user?.role) && adminDashboardTab === "admin_report" && (
-						            <div className="sales-rep-leads-card sales-rep-combined-card admin-tab-panel-enter">
+						            <div className="admin-tab-panel-enter admin-report-panel">
 					              <div className="space-y-6">
                         <div className="admin-revenue-outlook-row">
                           <div className="admin-revenue-outlook-card sales-rep-leads-card sales-rep-combined-card">
@@ -34104,7 +34141,7 @@ function MainApp() {
 						                                  setAdminDashboardPeriodPickerOpen(false);
 						                                }}
 						                              >
-						                                Done
+						                                Ok
 						                              </Button>
 						                            </div>
 						                            <Popover.Arrow className="calendar-popover-arrow" />
@@ -34161,7 +34198,7 @@ function MainApp() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2"
+                        className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
                         onClick={downloadSalesBySalesRepCsv}
                         disabled={salesRepSalesSummary.length === 0}
                         title="Download CSV"
@@ -34352,7 +34389,7 @@ function MainApp() {
 	                        type="button"
 	                        variant="outline"
 	                        size="sm"
-	                        className="gap-2"
+	                        className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
 	                        onClick={() => void downloadAdminTaxesByStateCsv()}
 	                        disabled={adminTaxesByStateRows.length === 0}
 	                        title="Download CSV"
@@ -34969,7 +35006,7 @@ function MainApp() {
 	                        type="button"
 	                        variant="outline"
 	                        size="sm"
-	                        className="gap-2"
+	                        className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
 	                        onClick={() => void downloadAdminProductsCommissionCsv()}
 	                        disabled={
 	                          adminProductSalesRows.length === 0 &&
@@ -37802,24 +37839,7 @@ function MainApp() {
       style={{
         position: "static",
         ...(isDelegateThemeActive
-          ? {
-              ['--delegate-accent' as const]: delegateSecondaryColor,
-              ['--delegate-accent-08' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.08),
-              ['--delegate-accent-10' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.10),
-              ['--delegate-accent-12' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.12),
-              ['--delegate-accent-14' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.14),
-              ['--delegate-accent-18' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.18),
-              ['--delegate-accent-25' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.25),
-              ['--delegate-accent-30' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.30),
-              ['--delegate-accent-35' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.35),
-              ['--delegate-accent-40' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.40),
-              ['--delegate-accent-45' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.45),
-              ['--delegate-accent-55' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.55),
-              ['--delegate-accent-65' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.65),
-              ['--delegate-accent-80' as const]: hexToRgbaCss(delegateSecondaryColorHex, 0.80),
-              ['--delegate-session-background-color' as const]: delegateBackgroundColorHex,
-              ['--delegate-session-background-image' as const]: delegateBackgroundImageCss,
-            }
+          ? (Object.fromEntries(delegateThemeCssVariables) as CSSProperties)
           : {}),
       }}
     >
@@ -41095,7 +41115,7 @@ function MainApp() {
                                   setSalesDoctorCommissionPickerOpen(false);
                                 }}
                               >
-                                Done
+	                                Ok
                               </Button>
                             </div>
                             <Popover.Arrow className="calendar-popover-arrow" />
@@ -41152,7 +41172,7 @@ function MainApp() {
                         phoneRows.push({ value: "", isNew: true });
                       }
                       return (
-                        <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
+                        <div className="sales-doctor-detail-panel min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
                           <div className="space-y-0.5">
                             <div className="min-w-max pl-4 pr-1 space-y-0.5">
                               {emailRows.length > 0 ? emailRows.map((row, index) => (
@@ -41382,7 +41402,7 @@ function MainApp() {
                           },
                         ];
 	                    return (
-	                      <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
+	                      <div className="sales-doctor-detail-panel min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
 	                        <div className="min-w-max pl-4 pr-1 space-y-0.5">
                             {addressRows.map(({ key, label, autoComplete }) => (
                               <InlineEditableValueRow
@@ -41452,7 +41472,7 @@ function MainApp() {
                   );
                   return (
                     <div className="grid grid-cols-1 gap-3">
-                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <div className="sales-doctor-detail-panel rounded-lg border bg-white px-3 py-2">
                         <p className="text-xs uppercase tracking-wide text-slate-500">
                           Avg Order Value
                         </p>
@@ -41468,7 +41488,7 @@ function MainApp() {
 
 			              {canSeeSalesDoctorFullModalDetails &&
                   !hideRepViewerSalesActorCommerceSections && (
-              <div className="space-y-2">
+              <div className="sales-doctor-detail-panel rounded-lg border bg-white/45 p-3 space-y-2">
                     {isDoctorRole(salesDoctorDetail.role) &&
                       (() => {
                         const formatDateObject = (date?: Date | null) => {
@@ -41608,7 +41628,7 @@ function MainApp() {
                                           setSalesDoctorCommissionPickerOpen(false);
                                         }}
                                       >
-                                        Done
+	                                        Ok
                                       </Button>
                                     </div>
                                     <Popover.Arrow className="calendar-popover-arrow" />
@@ -41876,7 +41896,7 @@ function MainApp() {
 				                (isRep(salesDoctorDetail.role) ||
 				                  isSalesLead(salesDoctorDetail.role) ||
 				                  isAdmin(salesDoctorDetail.role)) && (
-				                <div className="mt-4">
+				                <div className="sales-doctor-detail-panel mt-4 rounded-lg border bg-white/45 p-3">
 				                  <div className="flex flex-wrap items-baseline justify-between gap-2">
 				                    <h4 className="text-sm font-semibold text-slate-900">
 				                      Active Prospects
@@ -43444,55 +43464,18 @@ function InlineEditableValueRow({
   );
 }
 
-const DEV_THEME_STORAGE_KEY = "peppro.devTheme";
-const LEAF_TEXTURE_THEME_CLASS_NAME = "theme-leaf" as const;
-const LEAF_TEXTURE_BUILD_ENABLED =
-  import.meta.env.VITE_TFL_LEAF_TEXTURE_BUILD === "true";
-
-const SWITCHABLE_DEV_THEME_CLASS_NAMES = [
+const PERMANENT_DEV_THEME_CLASS_NAME = "theme-clinical" as const;
+const DEV_THEME_CLASS_NAMES = [
   "theme-clinical",
   "theme-biotech",
   "theme-community",
+  "theme-leaf",
 ] as const;
 
-const DEV_THEME_OPTIONS = [
-  { className: "theme-clinical", label: "Clinical" },
-  { className: "theme-biotech", label: "Biotech" },
-  { className: "theme-community", label: "Community" },
-] as const;
-
-type DevThemeOptionClassName = (typeof SWITCHABLE_DEV_THEME_CLASS_NAMES)[number];
-type DevThemeClassName = DevThemeOptionClassName | typeof LEAF_TEXTURE_THEME_CLASS_NAME;
-
-const DEV_THEME_CLASS_NAMES = [
-  ...SWITCHABLE_DEV_THEME_CLASS_NAMES,
-  LEAF_TEXTURE_THEME_CLASS_NAME,
-];
-
-function isDevThemeClassName(value: string | null): value is DevThemeOptionClassName {
-  return DEV_THEME_OPTIONS.some((option) => option.className === value);
-}
-
-function getInitialDevTheme(): DevThemeClassName {
-  if (LEAF_TEXTURE_BUILD_ENABLED) {
-    return LEAF_TEXTURE_THEME_CLASS_NAME;
-  }
-  if (typeof window === "undefined") {
-    return "theme-clinical";
-  }
-
-  try {
-    const stored = window.localStorage.getItem(DEV_THEME_STORAGE_KEY);
-    return isDevThemeClassName(stored) ? stored : "theme-clinical";
-  } catch {
-    return "theme-clinical";
-  }
-}
+type DevThemeClassName = (typeof DEV_THEME_CLASS_NAMES)[number];
 
 function DevThemeShell({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<DevThemeClassName>(getInitialDevTheme);
-  const [switcherPortalTarget, setSwitcherPortalTarget] =
-    useState<HTMLElement | null>(null);
+  const theme: DevThemeClassName = PERMANENT_DEV_THEME_CLASS_NAME;
 
   useLayoutEffect(() => {
     if (typeof document === "undefined") {
@@ -43505,14 +43488,6 @@ function DevThemeShell({ children }: { children: ReactNode }) {
       root.classList.add(theme);
       root.setAttribute("data-dev-theme", theme);
     });
-
-    if (!LEAF_TEXTURE_BUILD_ENABLED) {
-      try {
-        window.localStorage.setItem(DEV_THEME_STORAGE_KEY, theme);
-      } catch {
-        // Theme switching should keep working even when storage is unavailable.
-      }
-    }
 
     const frameId =
       typeof window !== "undefined"
@@ -43532,43 +43507,9 @@ function DevThemeShell({ children }: { children: ReactNode }) {
     };
   }, [theme]);
 
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return;
-    }
-    setSwitcherPortalTarget(document.body);
-  }, []);
-
-  const themeSwitcher = LEAF_TEXTURE_BUILD_ENABLED ? null : (
-    <div
-      className="dev-theme-switcher"
-      aria-label="Development theme switcher"
-      onPointerDownCapture={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-    >
-      {DEV_THEME_OPTIONS.map((option) => (
-        <button
-          key={option.className}
-          type="button"
-          className={clsx(
-            "dev-theme-switcher__button",
-            option.className === theme && "is-active",
-          )}
-          aria-pressed={option.className === theme}
-          onClick={() => setTheme(option.className)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-
   return (
     <div className={clsx("dev-theme-root", theme)} data-dev-theme={theme}>
       {children}
-      {themeSwitcher && switcherPortalTarget
-        ? createPortal(themeSwitcher, switcherPortalTarget)
-        : themeSwitcher}
     </div>
   );
 }

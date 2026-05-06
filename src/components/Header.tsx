@@ -3536,9 +3536,19 @@ export function Header({
       return;
     }
 
+    document.documentElement.classList.add('app-fixed-header-active');
+    document.body.classList.add('app-fixed-header-active');
+
     const updateHeightVariable = () => {
+      const layoutHeight = headerElement.offsetHeight;
       const { height } = headerElement.getBoundingClientRect();
-      document.documentElement.style.setProperty('--app-header-height', `${Math.round(height)}px`);
+      const nextHeight = layoutHeight > 0 ? layoutHeight : height;
+      if (nextHeight > 0) {
+        document.documentElement.style.setProperty(
+          '--app-header-height',
+          `${Math.ceil(nextHeight)}px`,
+        );
+      }
     };
 
     updateHeightVariable();
@@ -3558,6 +3568,8 @@ export function Header({
       } else {
         window.removeEventListener('resize', updateHeightVariable);
       }
+      document.documentElement.classList.remove('app-fixed-header-active');
+      document.body.classList.remove('app-fixed-header-active');
     };
   }, []);
 
@@ -5827,7 +5839,7 @@ export function Header({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="squircle-sm text-xs"
+                    className="header-home-button squircle-sm bg-white text-slate-900 text-xs"
                     onClick={handleCopyReferralCode}
                   >
                     Copy
@@ -7930,7 +7942,7 @@ export function Header({
 	                          typeof localUser?.delegateLogoUrl === 'string' &&
 	                          localUser.delegateLogoUrl.trim().length > 0
 	                            ? localUser.delegateLogoUrl
-	                            : withStaticAssetStamp('/turfusionlabsphysiciansportal.png')
+	                            : withStaticAssetStamp('/TruFusionLabs_PhysicianPortal_White.png')
 	                        }
 	                        alt="Delegate header logo preview"
 	                        className="relative z-[1] flex-shrink-0"
@@ -9537,7 +9549,7 @@ export function Header({
 			        pointerEvents: 'auto',
 			      }}
 			    >
-      <div className="w-full px-4 sm:px-6 py-4">
+      <div className="app-header-frame w-full px-4 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
           <div
             className={clsx(
@@ -9761,7 +9773,7 @@ function EditableRow({
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              className="squircle-sm"
+              className="header-home-button squircle-sm bg-white text-slate-900"
               disabled={saving}
               onClick={saveValue}
             >

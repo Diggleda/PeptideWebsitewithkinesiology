@@ -648,7 +648,7 @@ export function DoctorProfileForm({
         )}
         <Button
           type="button"
-          className="header-home-button min-w-[220px]"
+          className="header-home-button squircle-sm bg-white text-slate-900 min-w-[220px]"
           disabled={saving || avatarUploading}
           onClick={() => void handleSubmit()}
         >

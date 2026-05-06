@@ -13,6 +13,11 @@ const templates = [
     source: 'python_backend/services/email_service.py::_build_shipping_status_email',
   },
   {
+    id: 'shipping-in-transit',
+    label: 'Shipping: In transit',
+    source: 'python_backend/services/email_service.py::_build_shipping_status_email',
+  },
+  {
     id: 'shipping-out-for-delivery',
     label: 'Shipping: Out for delivery',
     source: 'python_backend/services/email_service.py::_build_shipping_status_email',
@@ -92,6 +97,16 @@ elif template == "shipping-out-for-delivery":
         tracking_number="1ZSHIP1505",
         carrier_code="ups",
         delivery_label="Today",
+        base_url=base_url,
+    )
+elif template == "shipping-in-transit":
+    subject, html, plain = email_service._build_shipping_status_email(
+        customer_name="Holly O'Quin",
+        order_number="1505",
+        status="in_transit",
+        tracking_number="1ZSHIP1505",
+        carrier_code="ups",
+        delivery_label="Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
         base_url=base_url,
     )
 elif template == "shipping-delivered":

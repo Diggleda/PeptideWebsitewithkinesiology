@@ -115,6 +115,48 @@ class ShippingNotificationServiceTests(unittest.TestCase):
             sent_payloads[0]["integrations"]["pepProNotifications"]["shippingStatusEmails"],
         )
 
+    def test_notify_customer_order_shipping_status_sends_in_transit_email(self):
+        from python_backend.services import shipping_notification_service as svc
+
+        base_order = {
+            "id": "order-2",
+            "userId": "doctor-2",
+            "wooOrderNumber": "1510",
+            "trackingNumber": "1ZSHIP1510",
+            "shippingCarrier": "ups",
+            "shippingEstimate": {
+                "status": "in_transit",
+                "expectedShipmentWindow": "Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+            },
+            "integrations": {},
+        }
+        sent_payloads = []
+
+        def fake_update(order):
+            sent_payloads.append(dict(order))
+            return dict(order)
+
+        with patch.object(svc.order_repository, "find_by_id", return_value=dict(base_order)), \
+            patch.object(svc.order_repository, "update", side_effect=fake_update), \
+            patch.object(svc.user_repository, "find_by_id", return_value={"id": "doctor-2", "email": "morgan@example.com", "name": "Morgan Ray"}), \
+            patch.object(svc.email_service, "send_order_shipping_status_email") as send_email:
+            result = svc.notify_customer_order_shipping_status("order-2", "In transit")
+
+        self.assertTrue(result)
+        send_email.assert_called_once_with(
+            "morgan@example.com",
+            status="in_transit",
+            customer_name="Morgan Ray",
+            order_number="1510",
+            tracking_number="1ZSHIP1510",
+            carrier_code="ups",
+            delivery_label="Tuesday, April 7, 2026, between 2:00 PM - 6:00 PM",
+        )
+        self.assertIn(
+            "in_transit",
+            sent_payloads[0]["integrations"]["pepProNotifications"]["shippingStatusEmails"],
+        )
+
     def test_notify_customer_order_shipping_status_does_not_mark_sent_when_email_fails(self):
         from python_backend.services import shipping_notification_service as svc
 

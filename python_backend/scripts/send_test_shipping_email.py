@@ -11,7 +11,7 @@ from python_backend.services import configure_services
 from python_backend.services import email_service
 
 DEFAULT_RECIPIENT = "petergibbons7@icloud.com"
-STATUSES = ("shipped", "out_for_delivery", "delivered")
+STATUSES = ("shipped", "in_transit", "out_for_delivery", "delivered")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -32,7 +32,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--all-statuses",
         action="store_true",
-        help="Send one test email for shipped, out_for_delivery, and delivered.",
+        help="Send one test email for shipped, in_transit, out_for_delivery, and delivered.",
     )
     parser.add_argument(
         "--env-file",

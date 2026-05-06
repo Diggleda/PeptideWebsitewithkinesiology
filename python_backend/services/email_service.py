@@ -842,6 +842,12 @@ def _build_shipping_status_email(
         body = "Your package is out for delivery and should arrive soon."
         extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
         cta_label = "Track Package"
+    elif normalized == "in_transit":
+        subject = f"TruFusionLabs order {order_label} is in transit"
+        heading = "Your TruFusionLabs order is in transit"
+        body = "Your package is moving through the carrier network."
+        extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
+        cta_label = "Track Package"
     else:
         subject = f"TruFusionLabs order {order_label} has shipped"
         heading = "Your TruFusionLabs order has shipped"
