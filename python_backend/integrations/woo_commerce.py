@@ -1528,14 +1528,17 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     if is_hand_delivery:
         meta_data.append({"key": "trufusion_delivery_method", "value": HAND_DELIVERY_CODE})
 
-    payment_method = str(order.get("paymentMethod") or "").strip().lower()
-    if payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer"):
+    raw_payment_details = str(order.get("paymentDetails") or "").strip()
+    raw_payment_method = str(order.get("paymentMethod") or "").strip()
+    payment_method = raw_payment_method.lower()
+    if payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer", "zelle"):
         payment_method = "bacs"
     else:
         payment_method = ""
-
-    raw_payment_details = str(order.get("paymentDetails") or "").strip()
-    raw_payment_method = str(order.get("paymentMethod") or "").strip()
+    if payment_method == "bacs":
+        payment_meta_value = raw_payment_details or raw_payment_method
+        if payment_meta_value:
+            meta_data.append({"key": "trufusion_payment_method", "value": payment_meta_value})
 
     status = "on-hold" if payment_method == "bacs" else "pending"
     line_items_source = order.get("items")

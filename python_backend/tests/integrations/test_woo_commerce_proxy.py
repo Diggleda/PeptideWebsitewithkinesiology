@@ -207,6 +207,9 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
         self.assertNotIn("total_tax", payload["line_items"][0])
         self.assertNotIn("taxes", payload["line_items"][0])
         self.assertEqual(payload["total"], "148.44")
+        self.assertEqual(payload["status"], "on-hold")
+        self.assertEqual(payload["payment_method"], "bacs")
+        self.assertEqual(payload["payment_method_title"], "Zelle")
         self.assertTrue(
             any(
                 entry.get("key") == "trufusion_manual_tax_rate_id" and entry.get("value") == 2
@@ -216,6 +219,12 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
         self.assertTrue(
             any(
                 entry.get("key") == "trufusion_tax_total" and entry.get("value") == 11.94
+                for entry in payload["meta_data"]
+            )
+        )
+        self.assertTrue(
+            any(
+                entry.get("key") == "trufusion_payment_method" and entry.get("value") == "Zelle"
                 for entry in payload["meta_data"]
             )
         )

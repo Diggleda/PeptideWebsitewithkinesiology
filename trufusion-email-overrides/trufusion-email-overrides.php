@@ -111,8 +111,13 @@ add_action('plugins_loaded', function () {
 function trufusion_is_zelle_order($order) {
   if (!$order instanceof WC_Order) return false;
   $title = strtolower((string) $order->get_payment_method_title());
+  $method = strtolower((string) $order->get_payment_method());
   $meta  = strtolower((string) $order->get_meta('trufusion_payment_method')); // optional, if present
-  return (strpos($title, 'zelle') !== false) || (strpos($meta, 'zelle') !== false);
+  $details = strtolower((string) $order->get_meta('trufusion_payment_details')); // optional, if present
+  return (strpos($title, 'zelle') !== false)
+    || (strpos($method, 'zelle') !== false)
+    || (strpos($meta, 'zelle') !== false)
+    || (strpos($details, 'zelle') !== false);
 }
 
 function trufusion_email_overrides_shared_users_table() {
