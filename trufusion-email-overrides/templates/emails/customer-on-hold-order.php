@@ -3,7 +3,7 @@
  * Customer on-hold order email (TruFusionLabs override)
  *
  * This template is loaded via the `trufusion-email-overrides` plugin to customize the intro
- * text for Zelle orders (while preserving default behavior for ACH/Direct Bank Transfer).
+ * text for TruFusion/BACS on-hold orders.
  *
  * @package WooCommerce\Templates\Emails
  * @version 10.4.0

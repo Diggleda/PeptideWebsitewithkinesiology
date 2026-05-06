@@ -228,6 +228,12 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
                 for entry in payload["meta_data"]
             )
         )
+        self.assertTrue(
+            any(
+                entry.get("key") == "trufusion_payment_details" and entry.get("value") == "Zelle"
+                for entry in payload["meta_data"]
+            )
+        )
 
 
 if __name__ == "__main__":

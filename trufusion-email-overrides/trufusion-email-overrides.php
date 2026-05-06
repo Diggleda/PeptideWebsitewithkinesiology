@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TruFusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TruFusionLabs mail identity (optional SMTP).
- * Version: 1.1.8
+ * Version: 1.1.10
  */
 
 if (!defined('ABSPATH')) exit;
@@ -86,8 +86,8 @@ add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', 20);
 add_action('plugins_loaded', function () {
   if (!class_exists('WooCommerce')) return;
 
-  // Override the Customer On-hold email template so we can customize the intro text
-  // based on payment method (Zelle vs ACH) without touching the theme.
+  // Override the Customer On-hold email template so TruFusion/BACS hold emails show
+  // the Zelle payment memo without touching the theme.
   add_filter('woocommerce_locate_template', function ($template, $template_name, $template_path) {
     if ($template_name !== 'emails/customer-on-hold-order.php') return $template;
     $custom = plugin_dir_path(__FILE__) . 'templates/emails/customer-on-hold-order.php';
@@ -112,12 +112,18 @@ function trufusion_is_zelle_order($order) {
   if (!$order instanceof WC_Order) return false;
   $title = strtolower((string) $order->get_payment_method_title());
   $method = strtolower((string) $order->get_payment_method());
-  $meta  = strtolower((string) $order->get_meta('trufusion_payment_method')); // optional, if present
-  $details = strtolower((string) $order->get_meta('trufusion_payment_details')); // optional, if present
-  return (strpos($title, 'zelle') !== false)
-    || (strpos($method, 'zelle') !== false)
-    || (strpos($meta, 'zelle') !== false)
-    || (strpos($details, 'zelle') !== false);
+  $meta = strtolower((string) $order->get_meta('trufusion_payment_method'));
+  $details = strtolower((string) $order->get_meta('trufusion_payment_details'));
+  $combined = trim($title . ' ' . $method . ' ' . $meta . ' ' . $details);
+
+  if (strpos($combined, 'zelle') !== false) return true;
+
+  $status = strtolower((string) $order->get_status());
+  $is_on_hold = in_array($status, array('on-hold', 'onhold'), true);
+  $is_bacs = $method === 'bacs';
+  $is_trufusion_order = trim((string) $order->get_meta('trufusion_order_id')) !== '';
+
+  return $is_on_hold && ($is_bacs || $is_trufusion_order);
 }
 
 function trufusion_email_overrides_shared_users_table() {
@@ -722,7 +728,7 @@ function trufusion_bacs_email_instructions($order, $sent_to_admin, $plain_text, 
   // additional payment instructions here (avoids duplicate Zelle messaging).
   if (trufusion_is_zelle_order($order)) return;
 
-  // ACH: keep Woo's normal Direct Bank Transfer instructions + bank details
+  // Non-TruFusion/BACS orders keep Woo's normal Direct Bank Transfer instructions.
   $gateways['bacs']->email_instructions($order, $sent_to_admin, $plain_text);
 }
 
@@ -738,6 +744,6 @@ function trufusion_bacs_thankyou_instructions($order_id) {
     return;
   }
 
-  // ACH: keep Woo's normal thank-you instructions + bank details
+  // Non-TruFusion/BACS orders keep Woo's normal thank-you instructions.
   $gateways['bacs']->thankyou_page($order_id);
 }

@@ -1539,6 +1539,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         payment_meta_value = raw_payment_details or raw_payment_method
         if payment_meta_value:
             meta_data.append({"key": "trufusion_payment_method", "value": payment_meta_value})
+            meta_data.append({"key": "trufusion_payment_details", "value": payment_meta_value})
 
     status = "on-hold" if payment_method == "bacs" else "pending"
     line_items_source = order.get("items")
