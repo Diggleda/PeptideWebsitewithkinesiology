@@ -47,11 +47,11 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("width:360px", html)
         self.assertIn("max-width:70%", html)
         self.assertNotIn("width:100%", html)
-        self.assertIn('background="cid:trufusion-leaf"', html)
-        self.assertIn("url('cid:trufusion-leaf')", html)
-        self.assertIn("linear-gradient(180deg, rgba(237, 247, 251, 0.82), rgba(237, 247, 251, 0.88))", html)
-        self.assertIn("background-size:cover,cover", html)
-        self.assertIn("background-position:center top,center top", html)
+        self.assertIn("background-color:rgb(55,126,186);", html)
+        self.assertIn("background:rgb(55,126,186);", html)
+        self.assertIn("background-image:none;", html)
+        self.assertNotIn('background="cid:trufusion-leaf"', html)
+        self.assertNotIn("url('cid:trufusion-leaf')", html)
         self.assertIn("min-height:100vh", html)
         self.assertIn("height:100vh", html)
         self.assertIn("background:rgba(255,255,255,0.64)", html)
@@ -105,8 +105,21 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("Your TruFusionLabs order is in transit", html)
         self.assertIn("Your package is moving through the carrier network.", html)
         self.assertIn("<strong>Estimated delivery: Tuesday, April 7, 2026</strong>", html)
+        self.assertLess(
+            html.find("<strong>Estimated delivery: Tuesday, April 7, 2026</strong>"),
+            html.find("<strong>Tracking: 1ZSHIP1505</strong>"),
+        )
+        self.assertLess(
+            html.find("<strong>Tracking: 1ZSHIP1505</strong>"),
+            html.find("<strong>Order: 1505</strong>"),
+        )
         self.assertIn("Your TruFusionLabs order is in transit", plain)
         self.assertIn("Estimated delivery: Tuesday, April 7, 2026", plain)
+        self.assertLess(
+            plain.find("Estimated delivery: Tuesday, April 7, 2026"),
+            plain.find("Tracking: 1ZSHIP1505"),
+        )
+        self.assertLess(plain.find("Tracking: 1ZSHIP1505"), plain.find("Order: 1505"))
 
     def test_email_settings_normalizes_trufusionlabs_sender_name(self):
         from python_backend.services import email_service
@@ -116,18 +129,44 @@ class EmailServiceTests(unittest.TestCase):
 
         self.assertEqual(settings["from"], '"TruFusionLabs" <support@trufusionlabs.com>')
 
-    def test_email_background_uses_leaf_texture_asset(self):
+    def test_generated_email_templates_use_shared_solid_background(self):
         from python_backend.services import email_service
 
-        leaf_spec = next(
-            spec for spec in email_service._EMAIL_INLINE_IMAGE_SPECS if spec["content_id"] == "trufusion-leaf"
+        templates = [
+            email_service._build_password_reset_email(
+                "https://trufusionlabs.com/reset-password?token=test",
+                "https://trufusionlabs.com",
+            )[0],
+            email_service._build_delegate_proposal_ready_email(
+                doctor_name="Dr. Test",
+                proposal_label="Proposal",
+                submitted_at_label="Just now",
+                base_url="https://trufusionlabs.com",
+            )[0],
+            email_service._build_delegate_links_beta_info_email(base_url="https://trufusionlabs.com")[0],
+            email_service._build_shipping_status_email(
+                customer_name="Holly",
+                order_number="1505",
+                status="shipped",
+                tracking_number="1ZSHIP1505",
+                carrier_code="ups",
+                delivery_label=None,
+                base_url="https://trufusionlabs.com",
+            )[1],
+        ]
+
+        for html in templates:
+            self.assertIn("background-color:rgb(55,126,186);", html)
+            self.assertIn("background:rgb(55,126,186);", html)
+            self.assertIn("background-image:none;", html)
+            self.assertNotIn("cid:trufusion-leaf", html)
+            self.assertNotIn("leafTexture", html)
+
+        logo_spec = next(
+            spec for spec in email_service._EMAIL_INLINE_IMAGE_SPECS if spec["content_id"] == "trufusion-logo"
         )
 
-        self.assertEqual(leaf_spec["filename"], "leafTexture.jpg")
-        self.assertEqual(leaf_spec["mime_type"], "image/jpeg")
-        self.assertEqual(leaf_spec["paths"][0], "public/leafTexture.jpg")
-        self.assertNotIn("leafTexture-email.jpg", ",".join(leaf_spec["paths"]))
-        self.assertNotIn("blueleafTexture", ",".join(leaf_spec["paths"]))
+        self.assertEqual(logo_spec["filename"], "TruFusionLabs_PhysicianPortal_White.png")
 
     def test_delegate_links_beta_info_email_includes_badge_image(self):
         from python_backend.services import email_service
@@ -212,7 +251,7 @@ class EmailServiceTests(unittest.TestCase):
         inline_images = (
             {
                 "content_id": "trufusion-logo",
-                "filename": "turfusionlabsphysiciansportal.png",
+                "filename": "TruFusionLabs_PhysicianPortal_White.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",
@@ -249,7 +288,7 @@ class EmailServiceTests(unittest.TestCase):
         attachments = post.call_args.kwargs["json"]["attachments"]
         self.assertEqual([attachment["content_id"] for attachment in attachments], ["trufusion-logo", "trufusion-leaf"])
         self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
-        self.assertEqual([attachment["filename"] for attachment in attachments], ["turfusionlabsphysiciansportal.png", "leafTexture.jpg"])
+        self.assertEqual([attachment["filename"] for attachment in attachments], ["TruFusionLabs_PhysicianPortal_White.png", "leafTexture.jpg"])
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
@@ -280,7 +319,7 @@ class EmailServiceTests(unittest.TestCase):
         inline_images = (
             {
                 "content_id": "trufusion-logo",
-                "filename": "turfusionlabsphysiciansportal.png",
+                "filename": "TruFusionLabs_PhysicianPortal_White.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",

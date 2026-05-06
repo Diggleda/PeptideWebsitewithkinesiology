@@ -30,7 +30,7 @@ _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
 _EMAIL_LOGO_WIDTH = 360
 _EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
-_EMAIL_LEAF_OVERLAY_GRADIENT = "linear-gradient(180deg, rgba(237, 247, 251, 0.82), rgba(237, 247, 251, 0.88))"
+_EMAIL_BACKGROUND_COLOR = "rgb(55,126,186)"
 _EMAIL_LOGO_IMAGE_STYLE = (
     f"width:{_EMAIL_LOGO_WIDTH}px;"
     "max-width:70%;"
@@ -106,13 +106,13 @@ _EMAIL_TRACK_BUTTON_HOVER_CSS = (
 _EMAIL_INLINE_IMAGE_SPECS = (
     {
         "content_id": _EMAIL_LOGO_CID,
-        "filename": "turfusionlabsphysiciansportal.png",
+        "filename": "TruFusionLabs_PhysicianPortal_White.png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
-            "public/turfusionlabsphysiciansportal.png",
-            "src/generated/runtime-assets/turfusionlabsphysiciansportal.png",
+            "public/TruFusionLabs_PhysicianPortal_White.png",
+            "src/generated/runtime-assets/TruFusionLabs_PhysicianPortal_White.png",
         ),
     },
     {
@@ -304,30 +304,28 @@ def _sendgrid_inline_attachments(html: str) -> list[Dict[str, str]]:
     return attachments
 
 
-def _email_background_style(leaf_url: str) -> str:
+def _email_background_style() -> str:
     return (
-        "background-color:#edf7fb;"
-        f"background-image:{_EMAIL_LEAF_OVERLAY_GRADIENT},url('{leaf_url}');"
-        "background-size:cover,cover;"
-        "background-position:center top,center top;"
-        "background-repeat:no-repeat,no-repeat;"
+        f"background-color:{_EMAIL_BACKGROUND_COLOR};"
+        f"background:{_EMAIL_BACKGROUND_COLOR};"
+        "background-image:none;"
     )
 
 
-def _email_body_style(leaf_url: str) -> str:
+def _email_body_style() -> str:
     return (
         "margin:0;"
         "padding:0;"
         "min-height:100vh;"
-        f"{_email_background_style(leaf_url)}"
+        f"{_email_background_style()}"
         "font-family:Arial,Helvetica,sans-serif;"
         "color:#111827;"
         "color-scheme:light;"
     )
 
 
-def _email_outer_table_style(leaf_url: str) -> str:
-    return f"{_email_background_style(leaf_url)}min-height:100vh;height:100vh;padding:32px 0;color-scheme:light;"
+def _email_outer_table_style() -> str:
+    return f"{_email_background_style()}min-height:100vh;height:100vh;padding:32px 0;color-scheme:light;"
 
 
 def _email_container_style(max_width: int) -> str:
@@ -477,9 +475,8 @@ def _send_via_smtp(
 def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    leaf_url = _EMAIL_LEAF_SRC
-    body_style = _email_body_style(leaf_url)
-    outer_table_style = _email_outer_table_style(leaf_url)
+    body_style = _email_body_style()
+    outer_table_style = _email_outer_table_style()
     container_style = _email_container_style(520)
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -490,7 +487,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
     <meta name="supported-color-schemes" content="light" />
   </head>
   <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="{leaf_url}" style="{outer_table_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
       <tr>
         <td align="center">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
@@ -624,9 +621,8 @@ def _build_delegate_proposal_ready_email(
 ) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    leaf_url = _EMAIL_LEAF_SRC
-    body_style = _email_body_style(leaf_url)
-    outer_table_style = _email_outer_table_style(leaf_url)
+    body_style = _email_body_style()
+    outer_table_style = _email_outer_table_style()
     container_style = _email_container_style(560)
     physician_label = (str(doctor_name or "").strip() or "Doctor").strip()
     proposal_label_text = str(proposal_label or "").strip() or "Delegate proposal"
@@ -640,7 +636,7 @@ def _build_delegate_proposal_ready_email(
     <meta name="supported-color-schemes" content="light" />
   </head>
   <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="{leaf_url}" style="{outer_table_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
       <tr>
         <td align="center">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
@@ -696,11 +692,10 @@ def _build_delegate_proposal_ready_email(
 def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    leaf_url = _EMAIL_LEAF_SRC
     white_label_sessions_url = _EMAIL_WHITE_LABEL_SESSIONS_SRC
     delegate_font_family = "'Lexend', Arial, Helvetica, sans-serif"
-    body_style = f"{_email_body_style(leaf_url)}font-family:{delegate_font_family};font-weight:300;"
-    outer_table_style = _email_outer_table_style(leaf_url)
+    body_style = f"{_email_body_style()}font-family:{delegate_font_family};font-weight:300;"
+    outer_table_style = _email_outer_table_style()
     container_style = _email_container_style(640)
     title_style = f"margin:0 0 6px;font-family:{delegate_font_family};font-size:30px;font-weight:700;line-height:1.2;color:#0B274B;"
     lead_style = f"margin:0 0 12px;font-family:{delegate_font_family};font-size:21px;font-weight:300;line-height:1.45;color:#111827;"
@@ -720,7 +715,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     <meta name="supported-color-schemes" content="light" />
   </head>
   <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="{leaf_url}" style="{outer_table_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
       <tr>
         <td align="center" style="padding:0 14px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
@@ -731,39 +726,39 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
             </tr>
             <tr>
               <td style="padding:44px 32px 8px;font-family:{delegate_font_family};font-weight:300;">
-                <table role="presentation" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" cellpadding="0" cellspacing="0" align="center" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;margin:0 auto;border-collapse:collapse;">
-                  <tr>
-                    <td style="font-family:{delegate_font_family};font-weight:300;">
-                      <h1 style="{title_style}">Welcome to the Delegate Links Beta</h1>
-                      <p style="{lead_style}">
-                        Create branded, patient-specific order proposals your delegate can submit for your review.
-                      </p>
+                      <table role="presentation" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" cellpadding="0" cellspacing="0" align="center" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;margin:0 auto;border-collapse:collapse;">
+                        <tr>
+                          <td style="font-family:{delegate_font_family};font-weight:300;">
+                            <h1 style="{title_style}">Welcome to the Delegate Links Beta</h1>
+                            <p style="{lead_style}">
+                              Create branded, patient-specific order proposals your delegate can submit for your review.
+                            </p>
 
-                      <div style="margin:22px 0 24px;text-align:center;">
-                        <img src="{white_label_sessions_url}" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" alt="White label your delegate sessions" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid rgba(148,163,184,0.28);border-radius:16px;outline:none;text-decoration:none;" />
-                      </div>
+                            <div style="margin:22px 0 24px;text-align:center;">
+                              <img src="{white_label_sessions_url}" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" alt="White label your delegate sessions" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid rgba(148,163,184,0.28);border-radius:16px;outline:none;text-decoration:none;" />
+                            </div>
 
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-collapse:collapse;">
-                        <tr>
-                          <td style="{step_number_style}">1.</td>
-                          <td style="{step_text_style}">Set up your brand: add your logo and primary color.</td>
-                        </tr>
-                        <tr>
-                          <td style="{step_number_style}">2.</td>
-                          <td style="{step_text_style}">Create and share a link: add details, markup, optional limits, notes, and payment instructions, then copy the link to your delegate.</td>
-                        </tr>
-                        <tr>
-                          <td style="{step_number_style}">3.</td>
-                          <td style="{step_text_style}">Review the proposal: approve the order or reject it with notes. Shipping and delegate payment stay between you and your delegate.</td>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-collapse:collapse;">
+                              <tr>
+                                <td style="{step_number_style}">1.</td>
+                                <td style="{step_text_style}">Set up your brand: add your logo and primary color.</td>
+                              </tr>
+                              <tr>
+                                <td style="{step_number_style}">2.</td>
+                                <td style="{step_text_style}">Create and share a link: add details, markup, optional limits, notes, and payment instructions, then copy the link to your delegate.</td>
+                              </tr>
+                              <tr>
+                                <td style="{step_number_style}">3.</td>
+                                <td style="{step_text_style}">Review the proposal: approve the order or reject it with notes. Shipping and delegate payment stay between you and your delegate.</td>
+                              </tr>
+                            </table>
+
+                            <p style="margin:28px 0 32px;text-align:center;">
+                              <a href="{safe_base_url}" style="{cta_style}">Open Delegate Links Beta</a>
+                            </p>
+                          </td>
                         </tr>
                       </table>
-
-                      <p style="margin:28px 0 32px;text-align:center;">
-                        <a href="{safe_base_url}" style="{cta_style}">Open Delegate Links Beta</a>
-                      </p>
-                    </td>
-                  </tr>
-                </table>
               </td>
             </tr>
             <tr>
@@ -818,9 +813,8 @@ def _build_shipping_status_email(
 ) -> Tuple[str, str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    leaf_url = _EMAIL_LEAF_SRC
-    body_style = _email_body_style(leaf_url)
-    outer_table_style = _email_outer_table_style(leaf_url)
+    body_style = _email_body_style()
+    outer_table_style = _email_outer_table_style()
     container_style = _email_order_container_style(560)
     account_url = safe_base_url or "https://trufusionlabs.com"
     name_label = str(customer_name or "").strip() or "TruFusionLabs Customer"
@@ -866,15 +860,12 @@ def _build_shipping_status_email(
         f'Sign in to your account at <a href="{account_url}" style="color:#3C67B7;text-decoration:none;font-weight:700;">trufusionlabs.com</a>.'
         f"</p>"
     )
-    tracking_html = (
-        f'<p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#0f172a;"><strong>{tracking_line}</strong></p>'
-        if tracking_line
-        else ""
-    )
-    extra_html = (
-        f'<p style="margin:0;font-size:14px;line-height:1.5;color:#0f172a;"><strong>{extra_line}</strong></p>'
-        if extra_line
-        else ""
+    order_line = f"Order: {order_label}"
+    detail_lines = [line for line in (extra_line, tracking_line, order_line) if line]
+    detail_html = "\n".join(
+        f'<p style="margin:0{" 0 8px" if index < len(detail_lines) - 1 else ""};'
+        f'font-size:14px;line-height:1.5;color:#0f172a;"><strong>{line}</strong></p>'
+        for index, line in enumerate(detail_lines)
     )
 
     html = f"""<!DOCTYPE html>
@@ -887,7 +878,7 @@ def _build_shipping_status_email(
     {_EMAIL_TRACK_BUTTON_HOVER_CSS}
   </head>
   <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="{leaf_url}" style="{outer_table_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
       <tr>
         <td align="center" style="{_EMAIL_ORDER_OUTER_CELL_STYLE}">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
@@ -904,9 +895,7 @@ def _build_shipping_status_email(
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f8fbff" style="{_EMAIL_DETAIL_CARD_STYLE}">
                   <tr>
                     <td style="padding:16px 18px;">
-                      <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#0f172a;"><strong>Order: {order_label}</strong></p>
-                      {tracking_html}
-                      {extra_html}
+                      {detail_html}
                     </td>
                   </tr>
                 </table>
@@ -929,12 +918,12 @@ def _build_shipping_status_email(
         heading,
         f"Hi {name_label},",
         body,
-        f"Order: {order_label}",
     ]
-    if tracking_line:
-        plain_parts.append(tracking_line)
     if extra_line:
         plain_parts.append(extra_line)
+    if tracking_line:
+        plain_parts.append(tracking_line)
+    plain_parts.append(order_line)
     if tracking_url:
         plain_parts.append(f"Track package: {tracking_url}")
     plain_parts.append(f"Sign in to your account: {account_url}")

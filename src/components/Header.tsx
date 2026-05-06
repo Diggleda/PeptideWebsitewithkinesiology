@@ -6,7 +6,8 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2 } from 'lucide-react';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2 } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -25,6 +26,13 @@ import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateL
 import {
   buildResearchSupplyLinkUrl,
 } from '../lib/researchSupplyLinks';
+
+const RefreshActionIcon = ({ spinning = false }: { spinning?: boolean }) => (
+  <ArrowPathIcon
+    className={clsx('h-4 w-4 shrink-0', spinning && 'animate-spin')}
+    aria-hidden="true"
+  />
+);
 
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const LOGIN_BACKEND_DOWN_TOAST_ID = 'login-backend-down';
@@ -142,7 +150,7 @@ const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: 
 };
 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
-const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#edf7fb';
+const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#377eba';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
   if (typeof value !== 'string') return null;
@@ -4324,36 +4332,39 @@ export function Header({
       showClearButton?: boolean;
       borderColor?: string | null;
     },
-  ) => (
-    <div
-      className="relative"
-      style={{
-        '--header-search-border-color': options?.borderColor || (delegateMode ? secondaryColor : undefined),
-      } as CSSProperties}
-    >
-      <Search
-        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform !text-slate-500"
-        style={{ color: delegateMode ? secondaryColor : 'rgb(100, 116, 139)' }}
-      />
-      <Input
-        type="text"
-        inputMode="search"
-        enterKeyHint="search"
-        placeholder="Search peptides..."
-        value={options && typeof options.value === 'string' ? options.value : searchQuery}
-        onChange={(e) => {
-          if (options?.readOnly) return;
-          handleSearchChange(e.target.value);
-        }}
-        ref={options?.readOnly ? undefined : searchInputRef}
-        className={`header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0 ${inputClassName}`.trim()}
+  ) => {
+    const searchFieldColor =
+      options?.borderColor || (delegateMode ? secondaryColor : '#ffffff');
+    return (
+      <div
+        className="header-search-field relative"
         style={{
-          minWidth: '100%',
-          color: delegateMode ? secondaryColor : undefined,
-          caretColor: delegateMode ? secondaryColor : undefined,
-        }}
-        readOnly={Boolean(options?.readOnly)}
-      />
+          '--header-search-border-color': options?.borderColor || (delegateMode ? secondaryColor : undefined),
+        } as CSSProperties}
+      >
+        <Search
+          className="header-search-icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform"
+          style={{ color: searchFieldColor }}
+        />
+        <Input
+          type="text"
+          inputMode="search"
+          enterKeyHint="search"
+          placeholder="Search peptides..."
+          value={options && typeof options.value === 'string' ? options.value : searchQuery}
+          onChange={(e) => {
+            if (options?.readOnly) return;
+            handleSearchChange(e.target.value);
+          }}
+          ref={options?.readOnly ? undefined : searchInputRef}
+          className={`header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-12 placeholder:text-white focus-visible:outline-none focus-visible:!ring-0 ${inputClassName}`.trim()}
+          style={{
+            minWidth: '100%',
+            color: searchFieldColor,
+            caretColor: searchFieldColor,
+          }}
+          readOnly={Boolean(options?.readOnly)}
+        />
 		      {(options?.showClearButton ?? true) && searchQuery.trim().length > 0 && (
 		        <button
 		          type="button"
@@ -4364,14 +4375,15 @@ export function Header({
 	              searchInputRef.current?.focus();
 	            });
 	          }}
-	          className="absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)]"
+	          className="header-search-clear-button absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)]"
             style={{ right: '0.75rem', left: 'auto' }}
 	        >
 	          <X className="h-4 w-4" />
 	        </button>
 	      )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   const normalizedRole = String((localUser as any)?.role || '').toLowerCase();
   const normalizedPatientLinksDoctorUserIds = new Set(
@@ -7412,8 +7424,9 @@ export function Header({
 	              onClick={() => Promise.resolve(onRefreshOrders?.({ force: true }))}
 	              disabled={!onRefreshOrders}
 	              title={onRefreshOrders ? 'Refresh orders' : undefined}
-	              className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)] disabled:opacity-70 disabled:cursor-default hover:text-slate-700 hover:border-[var(--brand-glass-border-2)] transition-colors"
+	              className="inline-flex items-center gap-1.5 text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)] disabled:opacity-70 disabled:cursor-default hover:text-slate-700 hover:border-[var(--brand-glass-border-2)] transition-colors"
 	            >
+                <RefreshActionIcon />
 	              {formatRelativeMinutes(ordersLastSyncedAt)}
 	            </button>
 	          )}
@@ -7480,7 +7493,7 @@ export function Header({
 
         {catalogLoading && (
           <div className="glass-card squircle-md p-4 border border-[rgba(60,103,183,0.35)] bg-white/80 flex items-center gap-3">
-            <RefreshCw className="h-4 w-4 text-[rgb(60,103,183)] animate-spin" aria-hidden="true" />
+            <RefreshActionIcon spinning />
             <div>
               <p className="text-sm font-semibold text-slate-900">Loading product and order catelogue…</p>
               <p className="text-xs text-slate-600">Please hold while we sync the catalog data.</p>
@@ -8164,10 +8177,11 @@ export function Header({
 	            size="sm"
 	            onClick={() => requestPatientLinksRefresh({ force: true })}
 	            disabled={!showPatientLinksTab || patientLinksLoading}
-	            className="header-home-button squircle-sm bg-white text-slate-900 self-start"
+	            className="header-home-button squircle-sm bg-white text-slate-900 self-start gap-2"
 	            aria-busy={patientLinksLoading}
 	            title="Refresh"
 	          >
+            <RefreshActionIcon spinning={patientLinksLoading} />
             {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>

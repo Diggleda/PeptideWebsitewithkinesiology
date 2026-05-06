@@ -61,6 +61,7 @@ const DEFAULT_FROM_ADDRESS = '"TruFusionLabs" <support@trufusionlabs.com>';
 const normalizeFromAddress = (value) => String(value || DEFAULT_FROM_ADDRESS)
   .replace(/TruFusion Labs/g, 'TruFusionLabs');
 const FROM_ADDRESS = normalizeFromAddress(process.env.MAIL_FROM);
+const EMAIL_BACKGROUND_COLOR = 'rgb(55,126,186)';
 
 const normalizeEmailAddress = (value) => {
   if (!value) return null;
@@ -214,7 +215,7 @@ const sendOrderPaymentInstructionsEmail = async ({
   const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
   const displayName = String(customerName || 'TruFusionLabs Customer').trim() || 'TruFusionLabs Customer';
   const frontendBaseUrl = String(env.frontendBaseUrl || 'https://www.trufusionlabs.com').replace(/\/+$/, '');
-  const logoUrl = `${frontendBaseUrl}/turfusionlabsphysiciansportal.png`;
+  const logoUrl = `${frontendBaseUrl}/TruFusionLabs_PhysicianPortal_White.png`;
   const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
   const normalizedDiscountCode = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
   const discountDetails = normalizedDiscountCode
@@ -329,24 +330,33 @@ const sendManualRefundReviewEmail = async ({
   const subjectBase = process.env.REFUND_NOTIFICATION_SUBJECT || 'TruFusionLabs manual refund review';
   const subject = displayOrderNumber ? `${subjectBase} — Order ${displayOrderNumber}` : subjectBase;
 
-  const html = `
-    <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.45; color: #0f172a;">
-      <h2 style="margin: 0 0 12px; font-size: 18px;">Manual refund review needed</h2>
-      <p style="margin: 0 0 10px; color: #334155;">
-        A customer cancelled an order that used a manual payment method (Zelle / bank transfer). If payment was already received, please refund manually and record the refund.
-      </p>
-      <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
-        <tr><td style="padding: 6px 0; color: #64748b; width: 160px;">Order</td><td style="padding: 6px 0;"><strong>${escapeHtml(displayOrderNumber || orderId || '')}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #64748b;">Amount</td><td style="padding: 6px 0;">${escapeHtml(formattedTotal)}</td></tr>
-        <tr><td style="padding: 6px 0; color: #64748b;">Payment</td><td style="padding: 6px 0;">${escapeHtml(displayPayment)}</td></tr>
-        <tr><td style="padding: 6px 0; color: #64748b;">Customer</td><td style="padding: 6px 0;">${escapeHtml([displayName, displayEmail].filter(Boolean).join(' — ') || displayEmail || '—')}</td></tr>
-        <tr><td style="padding: 6px 0; color: #64748b;">Reason</td><td style="padding: 6px 0;">${escapeHtml(reason || 'Cancelled via account portal')}</td></tr>
-      </table>
-      <p style="margin: 12px 0 0; color: #64748b; font-size: 12px;">
-        Note: Woo order status was set to <strong>Cancelled</strong>. Refunds for manual payments are handled outside of Stripe.
-      </p>
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Manual refund review needed</title>
+  </head>
+  <body style="margin:0; padding:0; background:${EMAIL_BACKGROUND_COLOR}; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
+    <div style="max-width: 680px; margin: 0 auto; padding: 24px 14px; background:${EMAIL_BACKGROUND_COLOR};">
+      <div style="background:#ffffff; border:1px solid rgba(255,255,255,0.82); border-radius:14px; padding:22px; line-height: 1.45; color: #0f172a;">
+        <h2 style="margin: 0 0 12px; font-size: 18px;">Manual refund review needed</h2>
+        <p style="margin: 0 0 10px; color: #334155;">
+          A customer cancelled an order that used a manual payment method (Zelle / bank transfer). If payment was already received, please refund manually and record the refund.
+        </p>
+        <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
+          <tr><td style="padding: 6px 0; color: #64748b; width: 160px;">Order</td><td style="padding: 6px 0;"><strong>${escapeHtml(displayOrderNumber || orderId || '')}</strong></td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Amount</td><td style="padding: 6px 0;">${escapeHtml(formattedTotal)}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Payment</td><td style="padding: 6px 0;">${escapeHtml(displayPayment)}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Customer</td><td style="padding: 6px 0;">${escapeHtml([displayName, displayEmail].filter(Boolean).join(' — ') || displayEmail || '—')}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Reason</td><td style="padding: 6px 0;">${escapeHtml(reason || 'Cancelled via account portal')}</td></tr>
+        </table>
+        <p style="margin: 12px 0 0; color: #64748b; font-size: 12px;">
+          Note: Woo order status was set to <strong>Cancelled</strong>. Refunds for manual payments are handled outside of Stripe.
+        </p>
+      </div>
     </div>
-  `;
+  </body>
+</html>`;
 
   const mailOptions = {
     from: FROM_ADDRESS,

@@ -11,6 +11,7 @@ import {
   forwardRef,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
@@ -42,7 +43,10 @@ import {
 } from "./components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import {
+  ArrowDownTrayIcon,
+  ArrowPathIcon,
   BeakerIcon,
+  CheckIcon,
   DocumentCurrencyDollarIcon,
   EllipsisVerticalIcon,
   LockOpenIcon,
@@ -57,11 +61,10 @@ import { toast } from "./lib/toast";
 import {
 	  Eye,
 	  EyeOff,
-	  ArrowRight,
+		  ArrowRight,
 	  ArrowLeft,
 		  Search,
 		  ChevronRight,
-		  RefreshCw,
 		  ArrowUpDown,
 		  Fingerprint,
 		  ExternalLink,
@@ -80,7 +83,6 @@ import {
 	        AlertTriangle,
 					XCircle,
 					} from "lucide-react";
-import * as Popover from "@radix-ui/react-popover";
 import { DayPicker, type DateRange } from "react-day-picker";
 import {
   ResponsiveContainer,
@@ -161,6 +163,74 @@ import {
 	requestStoredPasswordCredential,
 	storePasswordCredential,
 } from "./lib/passwordCredential";
+
+const RefreshActionIcon = ({
+  spinning = false,
+}: {
+  spinning?: boolean;
+}) => (
+  <ArrowPathIcon
+    className={clsx("h-4 w-4 shrink-0", spinning && "animate-spin")}
+    aria-hidden="true"
+  />
+);
+
+const CALENDAR_POPOVER_VIEWPORT_PADDING = 8;
+const TIMEFRAME_CALENDAR_WINDOW_WIDTH = 320;
+const TIMEFRAME_CALENDAR_WINDOW_ESTIMATED_HEIGHT = 430;
+
+type AdminDashboardCalendarWindowTitle = "salesByRep" | "dashboard";
+
+type CalendarPopoverDragState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  minDeltaX: number;
+  maxDeltaX: number;
+  minDeltaY: number;
+  maxDeltaY: number;
+};
+
+type CalendarWindowPositionOptions = {
+  boundaryRect?: DOMRectReadOnly | null;
+  preferOutsideBoundary?: boolean;
+};
+
+type SalesDashboardDraggableModalKey = "salesDoctorDetail" | "salesOrderDetail";
+
+type SalesDashboardModalDragState = {
+  key: SalesDashboardDraggableModalKey;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  minDeltaX: number;
+  maxDeltaX: number;
+  minDeltaY: number;
+  maxDeltaY: number;
+};
+
+const clampCalendarPopoverDelta = (value: number, min: number, max: number) => {
+  if (min > max) return (min + max) / 2;
+  return Math.min(Math.max(value, min), max);
+};
+
+const clampCalendarWindowPosition = (value: number, min: number, max: number) => {
+  if (min > max) return min;
+  return Math.min(Math.max(value, min), max);
+};
+
+const isTimeframeCalendarDragBlockedTarget = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      'button, input, select, textarea, a, [role="button"], [role="gridcell"]',
+    ),
+  );
+};
 
 const GlobeAmericasIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -2079,7 +2149,7 @@ const getInitialResetToken = () =>
   isResetPasswordRoute() ? readResetTokenFromLocation() : null;
 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
-const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#edf7fb';
+const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#377eba';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
   if (typeof value !== 'string') return null;
@@ -5634,6 +5704,14 @@ function MainApp() {
   const [loginPromptToken, setLoginPromptToken] = useState(0);
   const apiWarmupInFlight = useRef(false);
   const adminReportsCalendarRef = useRef<HTMLDivElement | null>(null);
+  const adminDashboardCalendarDragRef = useRef<CalendarPopoverDragState | null>(null);
+  const timeframeCalendarWindowRef = useRef<HTMLDivElement | null>(null);
+  const [adminDashboardCalendarWindowTitle, setAdminDashboardCalendarWindowTitle] =
+    useState<AdminDashboardCalendarWindowTitle>("dashboard");
+  const [adminDashboardCalendarOffset, setAdminDashboardCalendarOffset] = useState({
+    x: 0,
+    y: 0,
+  });
   const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
   const [loginContext, setLoginContext] = useState<"checkout" | null>(null);
   const currentSalesActorAllowedRetail = resolveSalesActorAllowedRetail(user);
@@ -9639,14 +9717,15 @@ function MainApp() {
 	      status: "",
 	      expectedShipmentWindow: "",
 	    });
-  const [salesOrderFieldsSaving, setSalesOrderFieldsSaving] = useState(false);
-  const salesOrderFieldsInitializedForRef = useRef<string | null>(null);
-  const [salesOrderDetail, setSalesOrderDetail] =
-    useState<AccountOrderSummary | null>(null);
-  const [salesOrderDetailOpen, setSalesOrderDetailOpen] = useState(false);
-  const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
-  const salesOrderDetailRequestIdRef = useRef(0);
-  const [trackingStatusByNumber, setTrackingStatusByNumber] = useState<Record<string, CarrierTrackingInfo>>({});
+	  const [salesOrderFieldsSaving, setSalesOrderFieldsSaving] = useState(false);
+	  const salesOrderFieldsInitializedForRef = useRef<string | null>(null);
+	  const [salesOrderDetail, setSalesOrderDetail] =
+	    useState<AccountOrderSummary | null>(null);
+	  const [salesOrderDetailOpen, setSalesOrderDetailOpen] = useState(false);
+	  const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
+	  const salesOrderDetailRequestIdRef = useRef(0);
+	  const salesOrderDialogContentRef = useRef<HTMLDivElement | null>(null);
+	  const [trackingStatusByNumber, setTrackingStatusByNumber] = useState<Record<string, CarrierTrackingInfo>>({});
   const trackingStatusByNumberRef = useRef<Record<string, CarrierTrackingInfo>>({});
   useEffect(() => {
     trackingStatusByNumberRef.current = trackingStatusByNumber;
@@ -9954,6 +10033,20 @@ function MainApp() {
         salesDoctorDetailStackRef.current = salesDoctorDetailStack;
       }, [salesDoctorDetailStack]);
 		  const salesDoctorDialogContentRef = useRef<HTMLDivElement | null>(null);
+		  const salesDashboardModalDragRef = useRef<SalesDashboardModalDragState | null>(null);
+		  const salesDashboardModalZIndexRef = useRef(14030);
+		  const [salesDashboardModalOffsets, setSalesDashboardModalOffsets] = useState<
+		    Record<SalesDashboardDraggableModalKey, { x: number; y: number }>
+		  >({
+		    salesDoctorDetail: { x: 0, y: 0 },
+		    salesOrderDetail: { x: 0, y: 0 },
+		  });
+		  const [salesDashboardModalZIndexes, setSalesDashboardModalZIndexes] = useState<
+		    Record<SalesDashboardDraggableModalKey, number>
+		  >({
+		    salesDoctorDetail: 14020,
+		    salesOrderDetail: 14030,
+		  });
 		  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
       const [salesDoctorDetailHydrating, setSalesDoctorDetailHydrating] = useState(false);
       const salesDoctorDetailRequestIdRef = useRef(0);
@@ -10327,12 +10420,258 @@ function MainApp() {
 			      content.scrollTop = 0;
 			    };
 			    scrollToTop();
-			    requestAnimationFrame(scrollToTop);
-			    setTimeout(scrollToTop, 0);
-			  }, [salesDoctorDetail?.doctorId]);
+				    requestAnimationFrame(scrollToTop);
+				    setTimeout(scrollToTop, 0);
+				  }, [salesDoctorDetail?.doctorId]);
 
-				  useEffect(() => {
-				    const canViewProspects = isAdmin(user?.role) || isSalesLead(user?.role);
+		  const bringSalesDashboardModalToFront = useCallback(
+		    (key: SalesDashboardDraggableModalKey) => {
+		      salesDashboardModalZIndexRef.current += 1;
+		      const nextZIndex = salesDashboardModalZIndexRef.current;
+		      setSalesDashboardModalZIndexes((current) => ({
+		        ...current,
+		        [key]: nextZIndex,
+		      }));
+		    },
+		    [],
+		  );
+
+		  const getDefaultSalesOrderModalOffset = useCallback(() => {
+		    if (
+		      typeof window !== "undefined" &&
+		      salesDoctorDetailRef.current &&
+		      window.innerWidth >= 1120
+		    ) {
+		      return {
+		        x: clampCalendarPopoverDelta(Math.round(window.innerWidth * 0.18), 160, 360),
+		        y: 24,
+		      };
+		    }
+		    return { x: 0, y: 0 };
+		  }, []);
+
+		  const getSalesDashboardModalStyle = useCallback(
+		    (key: SalesDashboardDraggableModalKey) =>
+		      ({
+		        "--sales-dashboard-modal-x": `${salesDashboardModalOffsets[key].x}px`,
+		        "--sales-dashboard-modal-y": `${salesDashboardModalOffsets[key].y}px`,
+		      }) as CSSProperties,
+		    [salesDashboardModalOffsets],
+		  );
+
+		  const getSalesDashboardModalContainerStyle = useCallback(
+		    (key: SalesDashboardDraggableModalKey) =>
+		      ({
+		        "--sales-dashboard-window-z-index": salesDashboardModalZIndexes[key],
+		      }) as CSSProperties,
+		    [salesDashboardModalZIndexes],
+		  );
+
+		  const clampSalesDashboardModalToViewport = useCallback(
+		    (key: SalesDashboardDraggableModalKey) => {
+		      if (typeof window === "undefined") return;
+		      const modal =
+		        key === "salesDoctorDetail"
+		          ? salesDoctorDialogContentRef.current
+		          : salesOrderDialogContentRef.current;
+		      if (!modal) return;
+		      const rect = modal.getBoundingClientRect();
+		      const viewportRight = window.innerWidth - CALENDAR_POPOVER_VIEWPORT_PADDING;
+		      const viewportBottom = window.innerHeight - CALENDAR_POPOVER_VIEWPORT_PADDING;
+		      let deltaX = 0;
+		      let deltaY = 0;
+		      if (rect.left < CALENDAR_POPOVER_VIEWPORT_PADDING) {
+		        deltaX = CALENDAR_POPOVER_VIEWPORT_PADDING - rect.left;
+		      } else if (rect.right > viewportRight) {
+		        deltaX = viewportRight - rect.right;
+		      }
+		      if (rect.top < CALENDAR_POPOVER_VIEWPORT_PADDING) {
+		        deltaY = CALENDAR_POPOVER_VIEWPORT_PADDING - rect.top;
+		      } else if (rect.bottom > viewportBottom) {
+		        deltaY = viewportBottom - rect.bottom;
+		      }
+		      if (deltaX === 0 && deltaY === 0) return;
+		      setSalesDashboardModalOffsets((current) => ({
+		        ...current,
+		        [key]: {
+		          x: current[key].x + deltaX,
+		          y: current[key].y + deltaY,
+		        },
+		      }));
+		    },
+		    [],
+		  );
+
+		  const handleSalesDashboardModalDragStart = useCallback(
+		    (
+		      key: SalesDashboardDraggableModalKey,
+		      event: React.PointerEvent<HTMLElement>,
+		    ) => {
+		      if (event.button !== 0) return;
+		      if (isTimeframeCalendarDragBlockedTarget(event.target)) return;
+		      const modal = event.currentTarget.closest<HTMLElement>(
+		        '[data-sales-dashboard-draggable-modal="true"]',
+		      );
+		      if (!modal || typeof window === "undefined") return;
+		      bringSalesDashboardModalToFront(key);
+		      const rect = modal.getBoundingClientRect();
+		      const origin = salesDashboardModalOffsets[key];
+		      salesDashboardModalDragRef.current = {
+		        key,
+		        pointerId: event.pointerId,
+		        startX: event.clientX,
+		        startY: event.clientY,
+		        originX: origin.x,
+		        originY: origin.y,
+		        minDeltaX: CALENDAR_POPOVER_VIEWPORT_PADDING - rect.left,
+		        maxDeltaX: window.innerWidth - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.right,
+		        minDeltaY: CALENDAR_POPOVER_VIEWPORT_PADDING - rect.top,
+		        maxDeltaY: window.innerHeight - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.bottom,
+		      };
+		      try {
+		        event.currentTarget.setPointerCapture(event.pointerId);
+		      } catch {
+		        // Window-level pointer listeners still handle browsers that cannot capture here.
+		      }
+		      event.stopPropagation();
+		      event.preventDefault();
+		    },
+		    [bringSalesDashboardModalToFront, salesDashboardModalOffsets],
+		  );
+
+		  const handleSalesDashboardModalDragMove = useCallback((event: PointerEvent) => {
+		    const drag = salesDashboardModalDragRef.current;
+		    if (!drag || drag.pointerId !== event.pointerId) return;
+		    const deltaX = clampCalendarPopoverDelta(
+		      event.clientX - drag.startX,
+		      drag.minDeltaX,
+		      drag.maxDeltaX,
+		    );
+		    const deltaY = clampCalendarPopoverDelta(
+		      event.clientY - drag.startY,
+		      drag.minDeltaY,
+		      drag.maxDeltaY,
+		    );
+		    setSalesDashboardModalOffsets((current) => ({
+		      ...current,
+		      [drag.key]: {
+		        x: drag.originX + deltaX,
+		        y: drag.originY + deltaY,
+		      },
+		    }));
+		    event.preventDefault();
+		  }, []);
+
+		  const handleSalesDashboardModalDragEnd = useCallback((event: PointerEvent) => {
+		    const drag = salesDashboardModalDragRef.current;
+		    if (!drag || drag.pointerId !== event.pointerId) return;
+		    salesDashboardModalDragRef.current = null;
+		  }, []);
+
+		  const handleSalesDashboardModalCapturedDragMove = useCallback(
+		    (event: React.PointerEvent<HTMLElement>) => {
+		      handleSalesDashboardModalDragMove(event.nativeEvent);
+		    },
+		    [handleSalesDashboardModalDragMove],
+		  );
+
+		  const handleSalesDashboardModalCapturedDragEnd = useCallback(
+		    (event: React.PointerEvent<HTMLElement>) => {
+		      handleSalesDashboardModalDragEnd(event.nativeEvent);
+		      try {
+		        event.currentTarget.releasePointerCapture(event.pointerId);
+		      } catch {
+		        // The pointer may already be released by the browser.
+		      }
+		    },
+		    [handleSalesDashboardModalDragEnd],
+		  );
+
+		  useEffect(() => {
+		    if (!salesDoctorDetail?.doctorId) return;
+		    setSalesDashboardModalOffsets((current) => ({
+		      ...current,
+		      salesDoctorDetail: { x: 0, y: 0 },
+		    }));
+		    bringSalesDashboardModalToFront("salesDoctorDetail");
+		  }, [bringSalesDashboardModalToFront, salesDoctorDetail?.doctorId]);
+
+		  useLayoutEffect(() => {
+		    if (typeof window === "undefined") return;
+		    const frame = window.requestAnimationFrame(() => {
+		      if (salesDoctorDetail?.doctorId) {
+		        clampSalesDashboardModalToViewport("salesDoctorDetail");
+		      }
+		      if (salesOrderDetailOpen) {
+		        clampSalesDashboardModalToViewport("salesOrderDetail");
+		      }
+		    });
+		    return () => window.cancelAnimationFrame(frame);
+		  }, [
+		    clampSalesDashboardModalToViewport,
+		    salesDashboardModalOffsets.salesDoctorDetail.x,
+		    salesDashboardModalOffsets.salesDoctorDetail.y,
+		    salesDashboardModalOffsets.salesOrderDetail.x,
+		    salesDashboardModalOffsets.salesOrderDetail.y,
+		    salesDoctorDetail?.doctorId,
+		    salesOrderDetailOpen,
+		  ]);
+
+		  useEffect(() => {
+		    if (
+		      (!salesDoctorDetail?.doctorId && !salesOrderDetailOpen) ||
+		      typeof window === "undefined"
+		    ) {
+		      return;
+		    }
+		    const handleViewportChange = () => {
+		      if (salesDoctorDetailRef.current?.doctorId) {
+		        clampSalesDashboardModalToViewport("salesDoctorDetail");
+		      }
+		      if (salesOrderDetailOpen) {
+		        clampSalesDashboardModalToViewport("salesOrderDetail");
+		      }
+		    };
+		    window.addEventListener("resize", handleViewportChange);
+		    window.visualViewport?.addEventListener("resize", handleViewportChange);
+		    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+		    return () => {
+		      window.removeEventListener("resize", handleViewportChange);
+		      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+		      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+		    };
+		  }, [
+		    clampSalesDashboardModalToViewport,
+		    salesDoctorDetail?.doctorId,
+		    salesOrderDetailOpen,
+		  ]);
+
+		  useEffect(() => {
+		    if (
+		      (!salesDoctorDetail?.doctorId && !salesOrderDetailOpen) ||
+		      typeof window === "undefined"
+		    ) {
+		      return;
+		    }
+		    window.addEventListener("pointermove", handleSalesDashboardModalDragMove, {
+		      passive: false,
+		    });
+		    window.addEventListener("pointerup", handleSalesDashboardModalDragEnd);
+		    window.addEventListener("pointercancel", handleSalesDashboardModalDragEnd);
+		    return () => {
+		      window.removeEventListener("pointermove", handleSalesDashboardModalDragMove);
+		      window.removeEventListener("pointerup", handleSalesDashboardModalDragEnd);
+		      window.removeEventListener("pointercancel", handleSalesDashboardModalDragEnd);
+		    };
+		  }, [
+		    handleSalesDashboardModalDragEnd,
+		    handleSalesDashboardModalDragMove,
+		    salesDoctorDetail?.doctorId,
+		    salesOrderDetailOpen,
+		  ]);
+
+					  useEffect(() => {
+					    const canViewProspects = isAdmin(user?.role) || isSalesLead(user?.role);
 				    const targetRole = normalizeRole(salesDoctorDetail?.role || "");
 				    const targetIdRaw = String(salesDoctorDetail?.doctorId || "").trim();
 				    const targetSalesRepId = (() => {
@@ -11437,10 +11776,15 @@ function MainApp() {
   useEffect(() => {
     setReferralDataHasSettled(false);
   }, [user?.id, user?.role, shouldReduceMaintenanceBackgroundFetches]);
-	  const openSalesOrderDetails = useCallback(
-	    async (order: AccountOrderSummary) => {
+		  const openSalesOrderDetails = useCallback(
+		    async (order: AccountOrderSummary) => {
         const requestId = salesOrderDetailRequestIdRef.current + 1;
         salesOrderDetailRequestIdRef.current = requestId;
+        setSalesDashboardModalOffsets((current) => ({
+          ...current,
+          salesOrderDetail: getDefaultSalesOrderModalOffset(),
+        }));
+        bringSalesDashboardModalToFront("salesOrderDetail");
         setSalesOrderDetailOpen(true);
         setSalesOrderDetail(null);
 	      salesOrderFieldsInitializedForRef.current = null;
@@ -11522,8 +11866,13 @@ function MainApp() {
         }
       }
 	    },
-	    [deriveSalesOrderEditableFields, mergeSalesOrderDetail],
-	  );
+		    [
+		      bringSalesDashboardModalToFront,
+		      deriveSalesOrderEditableFields,
+		      getDefaultSalesOrderModalOffset,
+		      mergeSalesOrderDetail,
+		    ],
+		  );
 
 	  useEffect(() => {
 	    if (!salesOrderDetail) {
@@ -13993,13 +14342,258 @@ function MainApp() {
   >(undefined);
   const [adminDashboardPeriodPickerOpen, setAdminDashboardPeriodPickerOpen] =
     useState(false);
+  const adminDashboardCalendarPopoverStyle = useMemo(
+    () => ({
+      left: adminDashboardCalendarOffset.x,
+      top: adminDashboardCalendarOffset.y,
+    } satisfies CSSProperties),
+    [adminDashboardCalendarOffset.x, adminDashboardCalendarOffset.y],
+  );
+  const positionTimeframeCalendarWindow = useCallback(
+    (anchor?: HTMLElement | null, options?: CalendarWindowPositionOptions) => {
+      const viewportWidth =
+        typeof window !== "undefined" ? window.innerWidth : TIMEFRAME_CALENDAR_WINDOW_WIDTH;
+      const viewportHeight =
+        typeof window !== "undefined" ? window.innerHeight : TIMEFRAME_CALENDAR_WINDOW_ESTIMATED_HEIGHT;
+      const rect = anchor?.getBoundingClientRect();
+      const calendarWidth = Math.min(
+        TIMEFRAME_CALENDAR_WINDOW_WIDTH,
+        viewportWidth - CALENDAR_POPOVER_VIEWPORT_PADDING * 2,
+      );
+      const calendarHeight = Math.min(
+        TIMEFRAME_CALENDAR_WINDOW_ESTIMATED_HEIGHT,
+        viewportHeight - CALENDAR_POPOVER_VIEWPORT_PADDING * 2,
+      );
+      const maxLeft = viewportWidth - calendarWidth - CALENDAR_POPOVER_VIEWPORT_PADDING;
+      const maxTop = viewportHeight - calendarHeight - CALENDAR_POPOVER_VIEWPORT_PADDING;
+      const boundaryRect = options?.preferOutsideBoundary ? options.boundaryRect : null;
+      const sideGap = 12;
+      const preferredSideTop = rect
+        ? rect.top - 48
+        : boundaryRect
+          ? boundaryRect.top + 16
+          : CALENDAR_POPOVER_VIEWPORT_PADDING + 88;
+      const sideTop = clampCalendarWindowPosition(
+        preferredSideTop,
+        CALENDAR_POPOVER_VIEWPORT_PADDING,
+        maxTop,
+      );
+
+      if (boundaryRect) {
+        const rightLeft = boundaryRect.right + sideGap;
+        const leftLeft = boundaryRect.left - calendarWidth - sideGap;
+        const hasRoomRight = rightLeft + calendarWidth <= viewportWidth - CALENDAR_POPOVER_VIEWPORT_PADDING;
+        const hasRoomLeft = leftLeft >= CALENDAR_POPOVER_VIEWPORT_PADDING;
+
+        if (hasRoomRight || hasRoomLeft) {
+          setAdminDashboardCalendarOffset({
+            x: hasRoomRight ? rightLeft : leftLeft,
+            y: sideTop,
+          });
+          adminDashboardCalendarDragRef.current = null;
+          return;
+        }
+      }
+
+      const preferredLeft = rect
+        ? rect.right - TIMEFRAME_CALENDAR_WINDOW_WIDTH
+        : (viewportWidth - TIMEFRAME_CALENDAR_WINDOW_WIDTH) / 2;
+      const preferredTop = rect
+        ? rect.bottom + 8
+        : CALENDAR_POPOVER_VIEWPORT_PADDING + 88;
+      setAdminDashboardCalendarOffset({
+        x: clampCalendarWindowPosition(
+          preferredLeft,
+          CALENDAR_POPOVER_VIEWPORT_PADDING,
+          maxLeft,
+        ),
+        y: clampCalendarWindowPosition(
+          preferredTop,
+          CALENDAR_POPOVER_VIEWPORT_PADDING,
+          maxTop,
+        ),
+      });
+      adminDashboardCalendarDragRef.current = null;
+    },
+    [],
+  );
+  const openAdminDashboardCalendarWindow = useCallback(
+    (title: AdminDashboardCalendarWindowTitle, anchor?: HTMLElement | null) => {
+      setAdminDashboardCalendarWindowTitle(title);
+      positionTimeframeCalendarWindow(anchor);
+      setSalesDoctorCommissionPickerOpen(false);
+      setAdminDashboardPeriodPickerOpen(true);
+    },
+    [positionTimeframeCalendarWindow],
+  );
+  const timeframeCalendarWindowOpen =
+    adminDashboardPeriodPickerOpen || salesDoctorCommissionPickerOpen;
+  const clampTimeframeCalendarWindowToViewport = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const rect = timeframeCalendarWindowRef.current?.getBoundingClientRect();
+    const fallbackWidth = Math.min(
+      TIMEFRAME_CALENDAR_WINDOW_WIDTH,
+      viewportWidth - CALENDAR_POPOVER_VIEWPORT_PADDING * 2,
+    );
+    const fallbackHeight = Math.min(
+      TIMEFRAME_CALENDAR_WINDOW_ESTIMATED_HEIGHT,
+      viewportHeight - CALENDAR_POPOVER_VIEWPORT_PADDING * 2,
+    );
+    const windowWidth = Math.max(0, rect?.width ?? fallbackWidth);
+    const windowHeight = Math.max(0, rect?.height ?? fallbackHeight);
+    const maxX = viewportWidth - windowWidth - CALENDAR_POPOVER_VIEWPORT_PADDING;
+    const maxY = viewportHeight - windowHeight - CALENDAR_POPOVER_VIEWPORT_PADDING;
+
+    setAdminDashboardCalendarOffset((current) => {
+      const x = clampCalendarWindowPosition(
+        current.x,
+        CALENDAR_POPOVER_VIEWPORT_PADDING,
+        maxX,
+      );
+      const y = clampCalendarWindowPosition(
+        current.y,
+        CALENDAR_POPOVER_VIEWPORT_PADDING,
+        maxY,
+      );
+      if (x === current.x && y === current.y) {
+        return current;
+      }
+      return { x, y };
+    });
+  }, []);
+  useLayoutEffect(() => {
+    if (!timeframeCalendarWindowOpen || typeof window === "undefined") return;
+    const frame = window.requestAnimationFrame(clampTimeframeCalendarWindowToViewport);
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    adminDashboardCalendarOffset.x,
+    adminDashboardCalendarOffset.y,
+    adminDashboardCalendarWindowTitle,
+    adminDashboardPeriodPickerOpen,
+    clampTimeframeCalendarWindowToViewport,
+    salesDoctorCommissionPickerOpen,
+    timeframeCalendarWindowOpen,
+  ]);
+  useEffect(() => {
+    if (!timeframeCalendarWindowOpen || typeof window === "undefined") return;
+    const handleViewportChange = () => {
+      clampTimeframeCalendarWindowToViewport();
+    };
+    window.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+    };
+  }, [
+    clampTimeframeCalendarWindowToViewport,
+    timeframeCalendarWindowOpen,
+  ]);
+  const handleAdminDashboardCalendarDragStart = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return;
+      if (isTimeframeCalendarDragBlockedTarget(event.target)) return;
+      const popover = event.currentTarget.closest<HTMLElement>(
+        '[data-timeframe-calendar-popover="true"]',
+      );
+      if (!popover) return;
+      const rect = popover.getBoundingClientRect();
+	      adminDashboardCalendarDragRef.current = {
+	        pointerId: event.pointerId,
+	        startX: event.clientX,
+        startY: event.clientY,
+        originX: adminDashboardCalendarOffset.x,
+        originY: adminDashboardCalendarOffset.y,
+        minDeltaX: CALENDAR_POPOVER_VIEWPORT_PADDING - rect.left,
+        maxDeltaX: window.innerWidth - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.right,
+	        minDeltaY: CALENDAR_POPOVER_VIEWPORT_PADDING - rect.top,
+	        maxDeltaY: window.innerHeight - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.bottom,
+	      };
+	      try {
+	        event.currentTarget.setPointerCapture(event.pointerId);
+	      } catch {
+	        // Window-level pointer listeners still handle browsers that cannot capture here.
+	      }
+	      event.stopPropagation();
+	      event.preventDefault();
+	    },
+    [adminDashboardCalendarOffset.x, adminDashboardCalendarOffset.y],
+  );
+  const handleAdminDashboardCalendarDragMove = useCallback(
+    (event: PointerEvent) => {
+      const drag = adminDashboardCalendarDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const deltaX = clampCalendarPopoverDelta(
+        event.clientX - drag.startX,
+        drag.minDeltaX,
+        drag.maxDeltaX,
+      );
+      const deltaY = clampCalendarPopoverDelta(
+        event.clientY - drag.startY,
+        drag.minDeltaY,
+        drag.maxDeltaY,
+      );
+      setAdminDashboardCalendarOffset({
+        x: drag.originX + deltaX,
+        y: drag.originY + deltaY,
+      });
+      event.preventDefault();
+    },
+    [],
+  );
+  const handleAdminDashboardCalendarDragEnd = useCallback(
+    (event: PointerEvent) => {
+      const drag = adminDashboardCalendarDragRef.current;
+	      if (!drag || drag.pointerId !== event.pointerId) return;
+	      adminDashboardCalendarDragRef.current = null;
+	    },
+	    [],
+	  );
+	  const handleAdminDashboardCalendarCapturedDragMove = useCallback(
+	    (event: React.PointerEvent<HTMLElement>) => {
+	      handleAdminDashboardCalendarDragMove(event.nativeEvent);
+	    },
+	    [handleAdminDashboardCalendarDragMove],
+	  );
+	  const handleAdminDashboardCalendarCapturedDragEnd = useCallback(
+	    (event: React.PointerEvent<HTMLElement>) => {
+	      handleAdminDashboardCalendarDragEnd(event.nativeEvent);
+	      try {
+	        event.currentTarget.releasePointerCapture(event.pointerId);
+	      } catch {
+	        // The pointer may already be released by the browser.
+	      }
+	    },
+	    [handleAdminDashboardCalendarDragEnd],
+	  );
+  useEffect(() => {
+    if (!timeframeCalendarWindowOpen || typeof window === "undefined") return;
+    window.addEventListener("pointermove", handleAdminDashboardCalendarDragMove, {
+      passive: false,
+    });
+    window.addEventListener("pointerup", handleAdminDashboardCalendarDragEnd);
+    window.addEventListener("pointercancel", handleAdminDashboardCalendarDragEnd);
+    return () => {
+      window.removeEventListener("pointermove", handleAdminDashboardCalendarDragMove);
+      window.removeEventListener("pointerup", handleAdminDashboardCalendarDragEnd);
+      window.removeEventListener("pointercancel", handleAdminDashboardCalendarDragEnd);
+    };
+  }, [
+    handleAdminDashboardCalendarDragEnd,
+    handleAdminDashboardCalendarDragMove,
+    timeframeCalendarWindowOpen,
+  ]);
   const scrollToAdminReportsCalendar = useCallback(() => {
     adminReportsCalendarRef.current?.scrollIntoView({
       behavior: "smooth",
       block: "center",
     });
-    setAdminDashboardPeriodPickerOpen(true);
-  }, []);
+    openAdminDashboardCalendarWindow("dashboard", adminReportsCalendarRef.current);
+  }, [openAdminDashboardCalendarWindow]);
 
   useEffect(() => {
     if (adminDashboardPeriodPickerOpen) return;
@@ -15200,6 +15794,101 @@ function MainApp() {
     void refreshAdminTaxesByState();
     void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
+
+  const openSalesDoctorCommissionCalendarWindow = (anchor?: HTMLElement | null) => {
+    setAdminDashboardPeriodPickerOpen(false);
+    positionTimeframeCalendarWindow(anchor, {
+      boundaryRect: salesDoctorDialogContentRef.current?.getBoundingClientRect() ?? null,
+      preferOutsideBoundary: true,
+    });
+    setSalesDoctorCommissionPickerOpen(true);
+  };
+
+  const renderSalesDoctorCommissionCalendarWindow = () => {
+    if (!salesDoctorCommissionPickerOpen) {
+      return null;
+    }
+    const title = "User modal timeframe";
+    const portalContainer =
+      typeof document !== "undefined"
+        ? document.querySelector<HTMLElement>(".sales-dashboard-detail-modal-layer") ??
+          document.body
+        : null;
+    const calendarWindow = (
+      <div
+        data-timeframe-calendar-popover="true"
+        role="dialog"
+        aria-label={title}
+        className="calendar-popover calendar-popover--window calendar-popover--modal z-[15050] w-[320px] rounded-xl border border-white/60 p-3 shadow-xl"
+        ref={timeframeCalendarWindowRef}
+        style={adminDashboardCalendarPopoverStyle}
+      >
+        <div
+          className="calendar-popover-modal-drag-zone calendar-popover-drag-handle"
+          aria-hidden="true"
+          onPointerDown={handleAdminDashboardCalendarDragStart}
+          onPointerMove={handleAdminDashboardCalendarCapturedDragMove}
+          onPointerUp={handleAdminDashboardCalendarCapturedDragEnd}
+          onPointerCancel={handleAdminDashboardCalendarCapturedDragEnd}
+        >
+          <span />
+        </div>
+        <div>
+          <DayPicker
+            mode="range"
+            numberOfMonths={1}
+            selected={salesDoctorCommissionRange}
+            onSelect={(range) => {
+              setSalesDoctorCommissionRange(range);
+              if (range?.from && range?.to) {
+                setSalesRepPeriodStart(formatDateInputValue(range.from));
+                setSalesRepPeriodEnd(formatDateInputValue(range.to));
+              }
+            }}
+            defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
+          />
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-slate-700"
+            onClick={() => {
+              const cleared = getClearedSalesDoctorCommissionWindow();
+              setSalesDoctorCommissionRange(cleared.range);
+              setSalesRepPeriodStart(cleared.start);
+              setSalesRepPeriodEnd(cleared.end);
+              applyAdminDashboardPeriod();
+            }}
+          >
+            Clear
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
+            onClick={() => {
+              if (salesDoctorCommissionRange?.from && salesDoctorCommissionRange?.to) {
+                setSalesRepPeriodStart(
+                  formatDateInputValue(salesDoctorCommissionRange.from),
+                );
+                setSalesRepPeriodEnd(
+                  formatDateInputValue(salesDoctorCommissionRange.to),
+                );
+              }
+              applyAdminDashboardPeriod();
+              setSalesDoctorCommissionPickerOpen(false);
+            }}
+          >
+            Ok
+          </Button>
+        </div>
+      </div>
+    );
+    return portalContainer ? createPortal(calendarWindow, portalContainer) : calendarWindow;
+  };
 
   const refreshAdminDashboardReports = useCallback(() => {
     void refreshSalesBySalesRepSummary({ force: true });
@@ -28724,7 +29413,7 @@ function MainApp() {
                         className={`filter-chip glass-card${chip.tone ? ` filter-chip--${chip.tone}` : ""}`}
                       >
                         {isSpinner ? (
-                          <RefreshCw
+                          <ArrowPathIcon
                             className="h-3 w-3.1 animate-spin text-[rgb(30,41,59)]"
                             aria-hidden="true"
                           />
@@ -28866,6 +29555,73 @@ function MainApp() {
 	        setSalesRepPeriodEnd(formatDateInputValue(range.to));
 	      }
 	    };
+	    const renderAdminDashboardTimeframeCalendarWindow = () => {
+	      if (!adminDashboardPeriodPickerOpen || typeof document === "undefined") {
+	        return null;
+	      }
+	      const title =
+	        adminDashboardCalendarWindowTitle === "salesByRep"
+	          ? "Sales by Sales Rep timeframe"
+	          : "Dashboard timeframe";
+	      return createPortal(
+	        <div
+	          data-timeframe-calendar-popover="true"
+	          role="dialog"
+	          aria-label={title}
+	          className="calendar-popover calendar-popover--window z-[10000] w-[320px] rounded-xl border border-white/60 p-3 shadow-xl"
+	          ref={timeframeCalendarWindowRef}
+	          style={adminDashboardCalendarPopoverStyle}
+	        >
+	          <div
+	            className="calendar-popover-modal-drag-zone calendar-popover-drag-handle"
+	            aria-hidden="true"
+	            onPointerDown={handleAdminDashboardCalendarDragStart}
+	            onPointerMove={handleAdminDashboardCalendarCapturedDragMove}
+	            onPointerUp={handleAdminDashboardCalendarCapturedDragEnd}
+	            onPointerCancel={handleAdminDashboardCalendarCapturedDragEnd}
+	          >
+	            <span />
+	          </div>
+	          <div>
+	            <DayPicker
+	              mode="range"
+	              numberOfMonths={1}
+	              selected={adminDashboardPeriodRange}
+	              onSelect={handleAdminDashboardPeriodSelect}
+	              defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+	            />
+	          </div>
+	          <div className="mt-3 flex items-center justify-between">
+	            <Button
+	              type="button"
+	              variant="ghost"
+	              size="sm"
+	              className="text-slate-700"
+	              onClick={() => {
+	                const defaults = getDefaultSalesBySalesRepPeriod();
+	                setSalesRepPeriodStart(defaults.start);
+	                setSalesRepPeriodEnd(defaults.end);
+	              }}
+	            >
+	              Default
+	            </Button>
+	            <Button
+	              type="button"
+	              variant="outline"
+	              size="sm"
+	              className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
+	              onClick={() => {
+	                applyAdminDashboardPeriod();
+	                setAdminDashboardPeriodPickerOpen(false);
+	              }}
+	            >
+	              Ok
+	            </Button>
+	          </div>
+	        </div>,
+	        document.body,
+	      );
+	    };
 	    const adminDashboardRefreshing =
 	      salesRepSalesSummaryLoading ||
 	      adminTaxesByStateLoading ||
@@ -28895,12 +29651,13 @@ function MainApp() {
 	            type="button"
 	            variant="outline"
 	            size="sm"
-	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
 	            onClick={() => void refreshSalesOnHoldOrders({ force: true })}
 	            disabled={salesOnHoldLoading || salesOnHoldRefreshing}
 	            aria-busy={salesOnHoldLoading || salesOnHoldRefreshing}
 	            title="Refresh on-hold orders"
 	          >
+              <RefreshActionIcon spinning={salesOnHoldLoading || salesOnHoldRefreshing} />
 	            {salesOnHoldLoading || salesOnHoldRefreshing ? "Refreshing..." : "Refresh"}
 	          </Button>
 	        </div>
@@ -29063,12 +29820,13 @@ function MainApp() {
 	            type="button"
 	            variant="outline"
 	            size="sm"
-	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
 	            onClick={() => void refreshAdminOnHoldOrders({ force: true })}
 	            disabled={adminOnHoldLoading || adminOnHoldRefreshing}
 	            aria-busy={adminOnHoldLoading || adminOnHoldRefreshing}
 	            title="Refresh on-hold orders"
 	          >
+              <RefreshActionIcon spinning={adminOnHoldLoading || adminOnHoldRefreshing} />
 	            {adminOnHoldLoading || adminOnHoldRefreshing ? "Refreshing..." : "Refresh"}
 	          </Button>
 	        </div>
@@ -29221,7 +29979,7 @@ function MainApp() {
 	      const leadCount = activePhysiciansCsvData.leads.length;
 	      const totalCount = networkUserCount + leadCount;
 	      return (
-	        <div className="sales-rep-leads-card sales-rep-combined-card">
+	        <div className="sales-rep-leads-card sales-rep-combined-card active-physicians-csv-card">
 	          <div className="mb-0 grid w-full grid-cols-1 gap-4 lg:grid-cols-[minmax(240px,0.85fr)_minmax(320px,1fr)_auto] lg:items-start">
 	            <div className="flex min-w-0 items-start justify-between gap-3 lg:block">
 	              <div className="min-w-0">
@@ -29302,12 +30060,20 @@ function MainApp() {
             type="button"
             variant="outline"
             size="sm"
-            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
             onClick={() => void refreshPendingResellerPermitApprovals({ force: true })}
             disabled={pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing}
             aria-busy={pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing}
             title="Refresh reseller permit approvals"
           >
+            <ArrowPathIcon
+              className={clsx(
+                "h-4 w-4 shrink-0",
+                (pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing) &&
+                  "animate-spin",
+              )}
+              aria-hidden="true"
+            />
             {pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing
               ? "Refreshing..."
               : "Refresh"}
@@ -29361,19 +30127,27 @@ function MainApp() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="admin-todo-list__button header-home-button squircle-sm bg-white text-slate-900"
+                        className="admin-todo-list__button header-home-button squircle-sm bg-white text-slate-900 gap-2"
                         onClick={() => void handleDownloadPendingResellerPermitApproval(item)}
                         disabled={isDownloading || isApproving}
                       >
+                        <ArrowDownTrayIcon
+                          className={clsx("h-4 w-4 shrink-0", isDownloading && "animate-bounce")}
+                          aria-hidden="true"
+                        />
                         {isDownloading ? "Downloading..." : "Download permit"}
                       </Button>
                       <Button
                         type="button"
                         size="sm"
-                        className="admin-todo-list__button header-home-button squircle-sm"
+                        className="admin-todo-list__button header-home-button squircle-sm gap-2"
                         onClick={() => void handleApprovePendingResellerPermitApproval(item)}
                         disabled={isApproving || isDownloading}
                       >
+                        <CheckIcon
+                          className={clsx("h-4 w-4 shrink-0", isApproving && "animate-pulse")}
+                          aria-hidden="true"
+                        />
                         {isApproving ? "Approving..." : "Approve"}
                       </Button>
                     </div>
@@ -29442,9 +30216,10 @@ function MainApp() {
                 size="sm"
                 onClick={() => void fetchSalesRepHandDeliveryDoctors({ force: true })}
                 disabled={salesRepHandDeliveryLoading}
-                className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
+                className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0 gap-2"
                 title="Refresh hand delivery doctors"
               >
+                <RefreshActionIcon spinning={salesRepHandDeliveryLoading} />
                 {salesRepHandDeliveryLoading ? "Refreshing…" : "Refresh"}
               </Button>
             </div>
@@ -29572,12 +30347,13 @@ function MainApp() {
               type="button"
               variant="outline"
               size="sm"
-              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
               onClick={() => void fetchDatabaseVisualizer({ force: true })}
               disabled={databaseVisualizerLoading}
               aria-busy={databaseVisualizerLoading}
               title="Refresh"
             >
+              <RefreshActionIcon spinning={databaseVisualizerLoading} />
               {databaseVisualizerLoading ? "Refreshing…" : "Refresh"}
             </Button>
           </div>
@@ -30572,72 +31348,22 @@ function MainApp() {
 			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
 			                      <div className="sales-rep-action flex min-w-0 flex-col items-end justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
 			                        <div className="flex flex-wrap items-center justify-end gap-2">
-			                          <Popover.Root
-			                            open={adminDashboardPeriodPickerOpen}
-			                            onOpenChange={setAdminDashboardPeriodPickerOpen}
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="icon"
+			                            className="header-home-button squircle-sm h-9 w-9 shrink-0"
+			                            aria-label="Select sales by rep date range"
+			                            title="Select date range"
+			                            onClick={(event) => {
+			                              openAdminDashboardCalendarWindow("salesByRep", event.currentTarget);
+			                            }}
 			                          >
-			                            <Popover.Trigger asChild>
-			                              <Button
-			                                type="button"
-			                                variant="outline"
-			                                size="icon"
-			                                className="header-home-button squircle-sm h-9 w-9 shrink-0"
-			                                aria-label="Select sales by rep date range"
-			                                title="Select date range"
-			                              >
-			                                <CalendarDays aria-hidden="true" />
-			                              </Button>
-			                            </Popover.Trigger>
-			                            <Popover.Portal>
-			                              <Popover.Content
-			                                side="bottom"
-			                                align="end"
-			                                sideOffset={8}
-			                                className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-			                              >
-			                                <div className="text-sm font-semibold text-slate-800">
-			                                  Sales by Sales Rep timeframe
-			                                </div>
-			                                <div className="mt-2">
-			                                  <DayPicker
-			                                    mode="range"
-			                                    numberOfMonths={1}
-			                                    selected={adminDashboardPeriodRange}
-			                                    onSelect={handleAdminDashboardPeriodSelect}
-			                                    defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
-			                                  />
-			                                </div>
-			                                <div className="mt-3 flex items-center justify-between">
-			                                  <Button
-			                                    type="button"
-			                                    variant="ghost"
-			                                    size="sm"
-			                                    className="text-slate-700"
-			                                    onClick={() => {
-			                                      const defaults = getDefaultSalesBySalesRepPeriod();
-			                                      setSalesRepPeriodStart(defaults.start);
-			                                      setSalesRepPeriodEnd(defaults.end);
-			                                    }}
-			                                  >
-			                                    Default
-			                                  </Button>
-			                                  <Button
-			                                    type="button"
-			                                    variant="outline"
-			                                    size="sm"
-			                                    className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
-			                                    onClick={() => {
-			                                      applyAdminDashboardPeriod();
-			                                      setAdminDashboardPeriodPickerOpen(false);
-			                                    }}
-			                                  >
-				                                    Ok
-			                                  </Button>
-			                                </div>
-			                                <Popover.Arrow className="calendar-popover-arrow" />
-			                              </Popover.Content>
-			                            </Popover.Portal>
-			                          </Popover.Root>
+			                            <CalendarDays aria-hidden="true" />
+			                          </Button>
+			                          {adminDashboardCalendarWindowTitle === "salesByRep"
+			                            ? renderAdminDashboardTimeframeCalendarWindow()
+			                            : null}
 			                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
 			                            {adminDashboardPeriodLabel}
 			                          </span>
@@ -30645,12 +31371,13 @@ function MainApp() {
 			                            type="button"
 			                            variant="outline"
 			                            size="sm"
-			                            className="header-home-button squircle-sm bg-white text-slate-900"
+			                            className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
 			                            onClick={() => void refreshSalesBySalesRepSummary()}
 			                            disabled={salesRepSalesSummaryLoading}
 			                            aria-busy={salesRepSalesSummaryLoading}
 			                            title="Refresh"
 			                          >
+                              <RefreshActionIcon spinning={salesRepSalesSummaryLoading} />
 			                            {salesRepSalesSummaryLoading ? "Refreshing…" : "Refresh"}
 			                          </Button>
 			                        </div>
@@ -30920,7 +31647,7 @@ function MainApp() {
                                 className="h-8 w-8 shrink-0"
                                 style={{
                                   filter:
-                                    "brightness(0) saturate(100%) invert(68%) sepia(40%) saturate(1478%) hue-rotate(178deg) brightness(101%) contrast(95%)",
+                                    "brightness(0) saturate(100%) invert(35%) sepia(72%) saturate(757%) hue-rotate(184deg) brightness(88%) contrast(89%)",
                                 }}
                                 loading="lazy"
                                 decoding="async"
@@ -32398,12 +33125,13 @@ function MainApp() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+                              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
                               onClick={() => void fetchServerHealth({ force: true })}
                               disabled={serverHealthLoading}
                               aria-busy={serverHealthLoading}
                               title="Refresh"
                             >
+                              <RefreshActionIcon spinning={serverHealthLoading} />
                               {serverHealthLoading ? "Refreshing…" : "Refresh"}
                             </Button>
                           </div>
@@ -33011,9 +33739,10 @@ function MainApp() {
 	                        size="sm"
 	                        onClick={() => void fetchAdminHandDeliveryUsers({ force: true })}
 	                        disabled={adminHandDeliveryLoading}
-	                        className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
+	                        className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0 gap-2"
 	                        title="Refresh hand delivery users"
 	                      >
+	                        <RefreshActionIcon spinning={adminHandDeliveryLoading} />
 	                        {adminHandDeliveryLoading ? "Refreshing…" : "Refresh"}
 	                      </Button>
 	                    </div>
@@ -33092,7 +33821,7 @@ function MainApp() {
                           className="h-8 w-8 shrink-0"
                           style={{
                             filter:
-                              "brightness(0) saturate(100%) invert(68%) sepia(40%) saturate(1478%) hue-rotate(178deg) brightness(101%) contrast(95%)",
+                              "brightness(0) saturate(100%) invert(35%) sepia(72%) saturate(757%) hue-rotate(184deg) brightness(88%) contrast(89%)",
                           }}
                           loading="lazy"
                           decoding="async"
@@ -33581,8 +34310,9 @@ function MainApp() {
 		                        <Button
 		                          type="button"
 		                          variant="outline"
+		                          size="sm"
 		                          onClick={() => setCertificateUploadsVisible(true)}
-		                          className="gap-2"
+		                          className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
 		                        >
 		                          Show certificate uploads
 		                        </Button>
@@ -33616,9 +34346,10 @@ function MainApp() {
 			                            void fetchCertificateProducts({ force: true });
 			                          }}
 			                          disabled={missingCertificatesLoading || certificateProductsLoading}
-			                          className="header-home-button squircle-sm bg-white text-slate-900"
+			                          className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
 			                          title="Refresh certificates"
 			                        >
+			                          <RefreshActionIcon spinning={missingCertificatesLoading || certificateProductsLoading} />
 			                          {missingCertificatesLoading || certificateProductsLoading ? "Refreshing…" : "Refresh"}
 			                        </Button>
 		                      </div>
@@ -34082,72 +34813,22 @@ function MainApp() {
                                         ref={adminReportsCalendarRef}
                                         className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1"
                                       >
-						                      <Popover.Root
-						                        open={adminDashboardPeriodPickerOpen}
-						                        onOpenChange={setAdminDashboardPeriodPickerOpen}
+						                      <Button
+						                        type="button"
+						                        variant="outline"
+						                        size="icon"
+						                        className="header-home-button squircle-sm h-9 w-9 shrink-0"
+						                        aria-label="Select dashboard date range"
+						                        title="Select date range"
+						                        onClick={(event) => {
+						                          openAdminDashboardCalendarWindow("dashboard", event.currentTarget);
+						                        }}
 						                      >
-						                        <Popover.Trigger asChild>
-						                          <Button
-						                            type="button"
-						                            variant="outline"
-						                            size="icon"
-						                            className="header-home-button squircle-sm h-9 w-9 shrink-0"
-						                            aria-label="Select dashboard date range"
-						                            title="Select date range"
-						                          >
-						                            <CalendarDays aria-hidden="true" />
-						                          </Button>
-						                        </Popover.Trigger>
-						                        <Popover.Portal>
-						                          <Popover.Content
-						                            side="bottom"
-						                            align="end"
-						                            sideOffset={8}
-						                            className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-						                          >
-						                            <div className="text-sm font-semibold text-slate-800">
-						                              Dashboard timeframe
-						                            </div>
-						                            <div className="mt-2">
-						                              <DayPicker
-						                                mode="range"
-						                                numberOfMonths={1}
-						                                selected={adminDashboardPeriodRange}
-						                                onSelect={handleAdminDashboardPeriodSelect}
-						                                defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
-						                              />
-						                            </div>
-						                            <div className="mt-3 flex items-center justify-between">
-						                              <Button
-						                                type="button"
-						                                variant="ghost"
-						                                size="sm"
-						                                className="text-slate-700"
-						                                onClick={() => {
-						                                  const defaults = getDefaultSalesBySalesRepPeriod();
-						                                  setSalesRepPeriodStart(defaults.start);
-						                                  setSalesRepPeriodEnd(defaults.end);
-						                                }}
-						                              >
-						                                Default
-						                              </Button>
-						                              <Button
-						                                type="button"
-						                                variant="outline"
-						                                size="sm"
-						                                className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
-						                                onClick={() => {
-						                                  applyAdminDashboardPeriod();
-						                                  setAdminDashboardPeriodPickerOpen(false);
-						                                }}
-						                              >
-						                                Ok
-						                              </Button>
-						                            </div>
-						                            <Popover.Arrow className="calendar-popover-arrow" />
-						                          </Popover.Content>
-						                        </Popover.Portal>
-						                      </Popover.Root>
+						                        <CalendarDays aria-hidden="true" />
+						                      </Button>
+						                      {adminDashboardCalendarWindowTitle === "dashboard"
+						                        ? renderAdminDashboardTimeframeCalendarWindow()
+						                        : null}
 						                      <button
                                         type="button"
                                         onClick={scrollToAdminReportsCalendar}
@@ -34160,12 +34841,13 @@ function MainApp() {
 							                        type="button"
 							                        variant="outline"
 							                        size="sm"
-							                        className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1"
+							                        className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1 gap-2"
 							                        onClick={refreshAdminDashboardReports}
 							                        disabled={adminDashboardRefreshing}
 							                        aria-busy={adminDashboardRefreshing}
 							                        title="Refresh"
 							                      >
+                                  <RefreshActionIcon spinning={adminDashboardRefreshing} />
 							                        {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
 							                      </Button>
 						                    </div>
@@ -35524,10 +36206,11 @@ function MainApp() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="header-home-button squircle-sm bg-white text-slate-900"
+                  className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
                   onClick={() => void refreshCrmSeamlessRawEntries()}
                   disabled={crmSeamlessRawLoading}
                 >
+                  <RefreshActionIcon spinning={crmSeamlessRawLoading} />
                   {crmSeamlessRawLoading ? "Refreshing…" : "Refresh"}
                 </Button>
               </div>
@@ -35761,9 +36444,10 @@ function MainApp() {
                           });
                         }}
                         disabled={salesTrackingLoading || salesTrackingRefreshing}
-                        className="sales-metric-refresh-button header-home-button squircle-sm bg-white text-slate-900"
+                        className="sales-metric-refresh-button header-home-button squircle-sm bg-white text-slate-900 gap-2"
                         title="Refresh your sales data"
                       >
+                        <RefreshActionIcon spinning={salesTrackingLoading || salesTrackingRefreshing} />
                         {salesTrackingLoading || salesTrackingRefreshing ? "Refreshing…" : "Refresh"}
                       </Button>
                     </div>
@@ -36200,8 +36884,9 @@ function MainApp() {
 	                          });
 	                        }}
 	                        disabled={referralDataLoading}
-	                        className="header-home-button squircle-sm bg-white text-slate-900"
+	                        className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
 	                      >
+	                        <RefreshActionIcon spinning={referralDataLoading} />
 	                        {referralDataLoading ? "Refreshing…" : "Refresh"}
 	                      </Button>
                           </div>
@@ -36951,8 +37636,9 @@ function MainApp() {
                               });
                             }}
                             disabled={referralDataLoading}
-                            className="header-home-button squircle-sm bg-white text-slate-900"
+                            className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
                           >
+                            <RefreshActionIcon spinning={referralDataLoading} />
                             {referralDataLoading ? "Refreshing…" : "Refresh"}
                           </Button>
 	                      </div>
@@ -38274,11 +38960,12 @@ function MainApp() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="header-home-button squircle-sm bg-white text-slate-900"
+                              className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
                               onClick={handleRefreshNews}
                               disabled={peptideNewsLoading}
                               title="Refresh news"
                             >
+                              <RefreshActionIcon spinning={peptideNewsLoading} />
                               {peptideNewsLoading ? "Refreshing…" : "Refresh"}
                             </Button>
                           </div>
@@ -38508,10 +39195,11 @@ function MainApp() {
 	                                type="button"
 	                                variant="outline"
 	                                size="sm"
-	                                className="header-home-button squircle-sm bg-white text-slate-900"
+	                                className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
 	                                onClick={() => void refreshPeptideForum({ force: true })}
 	                                disabled={peptideForumLoading}
 	                              >
+	                                <RefreshActionIcon spinning={peptideForumLoading} />
 	                                {peptideForumLoading ? "Refreshing…" : "Refresh"}
 	                              </Button>
 	                            </div>
@@ -40213,23 +40901,50 @@ function MainApp() {
                 )}
               </Button>
             </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={Boolean(salesDoctorDetail)}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeTopSalesDoctorDetailModal();
+	          </form>
+	        </DialogContent>
+	      </Dialog>
+	      {(salesDoctorDetail || salesOrderDetailOpen) && typeof document !== "undefined"
+	        ? createPortal(
+	            <div className="sales-dashboard-window-backdrop" aria-hidden="true" />,
+	            document.body,
+	          )
+	        : null}
+	      <Dialog
+	        modal={false}
+	        open={Boolean(salesDoctorDetail)}
+	        onOpenChange={(open) => {
+	          if (!open) {
+	            closeTopSalesDoctorDetailModal();
           }
         }}
-		      >
-		        <DialogContent
-              ref={salesDoctorDialogContentRef}
-              containerClassName={salesDashboardDetailModalContainerClassName}
-              className="sales-doctor-detail-dialog max-w-2xl"
-            >
-	          {salesDoctorDetailLoading && !salesDoctorDetail ? (
+			      >
+			        <DialogContent
+	              ref={salesDoctorDialogContentRef}
+	              containerClassName={`${salesDashboardDetailModalContainerClassName} sales-dashboard-window-layer`}
+	              containerStyle={getSalesDashboardModalContainerStyle("salesDoctorDetail")}
+	              overlayClassName="sales-dashboard-window-overlay"
+	              className="sales-doctor-detail-dialog sales-dashboard-draggable-modal max-w-2xl"
+	              style={getSalesDashboardModalStyle("salesDoctorDetail")}
+	              data-sales-dashboard-draggable-modal="true"
+	              onPointerDownCapture={() => bringSalesDashboardModalToFront("salesDoctorDetail")}
+	              onPointerDownOutside={(event) => event.preventDefault()}
+	              onInteractOutside={(event) => event.preventDefault()}
+	            >
+	              <div
+	                className="sales-dashboard-draggable-modal-grip"
+	                aria-hidden="true"
+	                data-sales-dashboard-modal-drag-handle="true"
+	                onPointerDown={(event) =>
+	                  handleSalesDashboardModalDragStart("salesDoctorDetail", event)
+	                }
+	                onPointerMove={handleSalesDashboardModalCapturedDragMove}
+	                onPointerUp={handleSalesDashboardModalCapturedDragEnd}
+	                onPointerCancel={handleSalesDashboardModalCapturedDragEnd}
+	              >
+	                <span />
+	              </div>
+		          {salesDoctorDetailLoading && !salesDoctorDetail ? (
               <>
                 <VisuallyHidden>
                   <DialogTitle>Loading account details</DialogTitle>
@@ -40239,8 +40954,17 @@ function MainApp() {
               </>
             ) : (
 		              salesDoctorDetail && (
-	            <div className="space-y-4 min-w-0">
-						              <DialogHeader className="sales-doctor-detail-header min-w-0 text-left">
+		            <div className="space-y-4 min-w-0">
+							              <DialogHeader
+			                    className="sales-doctor-detail-header sales-dashboard-draggable-modal-titlebar min-w-0 text-left"
+			                    data-sales-dashboard-modal-drag-handle="true"
+			                    onPointerDown={(event) =>
+			                      handleSalesDashboardModalDragStart("salesDoctorDetail", event)
+			                    }
+			                    onPointerMove={handleSalesDashboardModalCapturedDragMove}
+			                    onPointerUp={handleSalesDashboardModalCapturedDragEnd}
+			                    onPointerCancel={handleSalesDashboardModalCapturedDragEnd}
+			                  >
 				                        <div className="sales-doctor-detail-header-row flex items-start gap-2">
 		                          <div className="sales-doctor-detail-header-content min-w-0">
 					                  <DialogTitle className="space-y-0.5 min-w-0">
@@ -41040,88 +41764,20 @@ function MainApp() {
                           {customRangeLabel || periodLabel}
                         </p>
                       </div>
-                      <Popover.Root
-                        open={salesDoctorCommissionPickerOpen}
-                        onOpenChange={setSalesDoctorCommissionPickerOpen}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="header-home-button squircle-sm h-8 w-8"
+                        aria-label="Select user modal date range"
+                        title="Select date range"
+                        onClick={(event) => {
+                          openSalesDoctorCommissionCalendarWindow(event.currentTarget);
+                        }}
                       >
-                        <Popover.Trigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="header-home-button squircle-sm h-8 w-8"
-                            aria-label="Select user modal date range"
-                            title="Select date range"
-                          >
-                            <CalendarDays aria-hidden="true" />
-                          </Button>
-                        </Popover.Trigger>
-                        <Popover.Portal>
-                          <Popover.Content
-                            side="bottom"
-                            align="start"
-                            sideOffset={8}
-                            className="calendar-popover calendar-popover--modal z-[15050] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-                          >
-                            <div>
-                              <DayPicker
-                                mode="range"
-                                numberOfMonths={1}
-                                selected={salesDoctorCommissionRange}
-                                onSelect={(range) => {
-                                  setSalesDoctorCommissionRange(range);
-                                  if (range?.from && range?.to) {
-                                    setSalesRepPeriodStart(formatDateInputValue(range.from));
-                                    setSalesRepPeriodEnd(formatDateInputValue(range.to));
-                                  }
-                                }}
-                                defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
-                              />
-                            </div>
-                            <div className="mt-3 flex items-center justify-between">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-slate-700"
-                                onClick={() => {
-                                  const cleared = getClearedSalesDoctorCommissionWindow();
-                                  setSalesDoctorCommissionRange(cleared.range);
-                                  setSalesRepPeriodStart(cleared.start);
-                                  setSalesRepPeriodEnd(cleared.end);
-                                  applyAdminDashboardPeriod();
-                                }}
-                              >
-                                Clear
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
-                                onClick={() => {
-                                  if (
-                                    salesDoctorCommissionRange?.from &&
-                                    salesDoctorCommissionRange?.to
-                                  ) {
-                                    setSalesRepPeriodStart(
-                                      formatDateInputValue(salesDoctorCommissionRange.from),
-                                    );
-                                    setSalesRepPeriodEnd(
-                                      formatDateInputValue(salesDoctorCommissionRange.to),
-                                    );
-                                  }
-                                  applyAdminDashboardPeriod();
-                                  setSalesDoctorCommissionPickerOpen(false);
-                                }}
-                              >
-	                                Ok
-                              </Button>
-                            </div>
-                            <Popover.Arrow className="calendar-popover-arrow" />
-                          </Popover.Content>
-                        </Popover.Portal>
-                      </Popover.Root>
+                        <CalendarDays aria-hidden="true" />
+                      </Button>
+                      {renderSalesDoctorCommissionCalendarWindow()}
                     </div>
                   </div>
                 );
@@ -41134,7 +41790,7 @@ function MainApp() {
                     : ""
                 }`}
               >
-                <div className="min-w-0 space-y-2">
+                <div className="min-w-0 space-y-2 flex flex-col">
                   <p className="text-sm font-semibold text-slate-700">
                     Contact
                   </p>
@@ -41172,7 +41828,7 @@ function MainApp() {
                         phoneRows.push({ value: "", isNew: true });
                       }
                       return (
-                        <div className="sales-doctor-detail-panel min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
+                        <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
                           <div className="space-y-0.5">
                             <div className="min-w-max pl-4 pr-1 space-y-0.5">
                               {emailRows.length > 0 ? emailRows.map((row, index) => (
@@ -41354,7 +42010,7 @@ function MainApp() {
                       );
                     })()}
                 </div>
-                <div className="min-w-0 space-y-2">
+                <div className="min-w-0 space-y-2 flex flex-col">
                   <p className="text-sm font-semibold text-slate-700">
                     Address
                   </p>
@@ -41402,7 +42058,7 @@ function MainApp() {
                           },
                         ];
 	                    return (
-	                      <div className="sales-doctor-detail-panel min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
+	                      <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
 	                        <div className="min-w-max pl-4 pr-1 space-y-0.5">
                             {addressRows.map(({ key, label, autoComplete }) => (
                               <InlineEditableValueRow
@@ -41553,88 +42209,20 @@ function MainApp() {
                                   {customRangeLabel || periodLabel}
                                 </p>
                               </div>
-                              <Popover.Root
-                                open={salesDoctorCommissionPickerOpen}
-                                onOpenChange={setSalesDoctorCommissionPickerOpen}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="header-home-button squircle-sm h-8 w-8"
+                                aria-label="Select user modal date range"
+                                title="Select date range"
+                                onClick={(event) => {
+                                  openSalesDoctorCommissionCalendarWindow(event.currentTarget);
+                                }}
                               >
-                                <Popover.Trigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="header-home-button squircle-sm h-8 w-8"
-                                    aria-label="Select user modal date range"
-                                    title="Select date range"
-                                  >
-                                    <CalendarDays aria-hidden="true" />
-                                  </Button>
-                                </Popover.Trigger>
-                                <Popover.Portal>
-                                  <Popover.Content
-                                    side="bottom"
-                                    align="start"
-                                    sideOffset={8}
-                                    className="calendar-popover calendar-popover--modal z-[15050] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-                                  >
-                                    <div>
-                                      <DayPicker
-                                        mode="range"
-                                        numberOfMonths={1}
-                                        selected={salesDoctorCommissionRange}
-                                        onSelect={(range) => {
-                                          setSalesDoctorCommissionRange(range);
-                                          if (range?.from && range?.to) {
-                                            setSalesRepPeriodStart(formatDateInputValue(range.from));
-                                            setSalesRepPeriodEnd(formatDateInputValue(range.to));
-                                          }
-                                        }}
-                                        defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
-                                      />
-                                    </div>
-                                    <div className="mt-3 flex items-center justify-between">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-slate-700"
-                                        onClick={() => {
-                                          const cleared = getClearedSalesDoctorCommissionWindow();
-                                          setSalesDoctorCommissionRange(cleared.range);
-                                          setSalesRepPeriodStart(cleared.start);
-                                          setSalesRepPeriodEnd(cleared.end);
-                                          applyAdminDashboardPeriod();
-                                        }}
-                                      >
-                                        Clear
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
-                                        onClick={() => {
-                                          if (
-                                            salesDoctorCommissionRange?.from &&
-                                            salesDoctorCommissionRange?.to
-                                          ) {
-                                            setSalesRepPeriodStart(
-                                              formatDateInputValue(salesDoctorCommissionRange.from),
-                                            );
-                                            setSalesRepPeriodEnd(
-                                              formatDateInputValue(salesDoctorCommissionRange.to),
-                                            );
-                                          }
-                                          applyAdminDashboardPeriod();
-                                          setSalesDoctorCommissionPickerOpen(false);
-                                        }}
-                                      >
-	                                        Ok
-                                      </Button>
-                                    </div>
-                                    <Popover.Arrow className="calendar-popover-arrow" />
-                                  </Popover.Content>
-                                </Popover.Portal>
-                              </Popover.Root>
+                                <CalendarDays aria-hidden="true" />
+                              </Button>
+                              {renderSalesDoctorCommissionCalendarWindow()}
                             </div>
                           </div>
                         );
@@ -42177,10 +42765,11 @@ function MainApp() {
 	          )}
 	        </DialogContent>
       </Dialog>
-      <Dialog
-        open={salesOrderDetailOpen}
-        onOpenChange={(open) => {
-          if (!open) {
+	      <Dialog
+	        modal={false}
+	        open={salesOrderDetailOpen}
+	        onOpenChange={(open) => {
+	          if (!open) {
             salesOrderDetailRequestIdRef.current += 1;
             setSalesOrderDetailOpen(false);
             setSalesOrderDetail(null);
@@ -42188,12 +42777,33 @@ function MainApp() {
             salesOrderFieldsInitializedForRef.current = null;
           }
         }}
-      >
-        <DialogContent
-          className="sales-order-detail-dialog max-w-4xl"
-          containerClassName={salesDashboardDetailModalContainerClassName}
-        >
-          {salesOrderDetailLoading && !salesOrderDetail && (
+	      >
+	        <DialogContent
+	          ref={salesOrderDialogContentRef}
+	          className="sales-order-detail-dialog sales-dashboard-draggable-modal max-w-4xl"
+	          containerClassName={`${salesDashboardDetailModalContainerClassName} sales-dashboard-window-layer`}
+	          containerStyle={getSalesDashboardModalContainerStyle("salesOrderDetail")}
+	          overlayClassName="sales-dashboard-window-overlay"
+	          style={getSalesDashboardModalStyle("salesOrderDetail")}
+	          data-sales-dashboard-draggable-modal="true"
+	          onPointerDownCapture={() => bringSalesDashboardModalToFront("salesOrderDetail")}
+	          onPointerDownOutside={(event) => event.preventDefault()}
+	          onInteractOutside={(event) => event.preventDefault()}
+	        >
+	          <div
+	            className="sales-dashboard-draggable-modal-grip"
+	            aria-hidden="true"
+	            data-sales-dashboard-modal-drag-handle="true"
+	            onPointerDown={(event) =>
+	              handleSalesDashboardModalDragStart("salesOrderDetail", event)
+	            }
+	            onPointerMove={handleSalesDashboardModalCapturedDragMove}
+	            onPointerUp={handleSalesDashboardModalCapturedDragEnd}
+	            onPointerCancel={handleSalesDashboardModalCapturedDragEnd}
+	          >
+	            <span />
+	          </div>
+	          {salesOrderDetailLoading && !salesOrderDetail && (
             <>
               <VisuallyHidden>
                 <DialogTitle>Loading order details</DialogTitle>
@@ -42204,7 +42814,16 @@ function MainApp() {
           )}
           {salesOrderDetail && (
             <>
-              <DialogHeader>
+	              <DialogHeader
+	                className="sales-dashboard-draggable-modal-titlebar"
+		                data-sales-dashboard-modal-drag-handle="true"
+		                onPointerDown={(event) =>
+		                  handleSalesDashboardModalDragStart("salesOrderDetail", event)
+		                }
+		                onPointerMove={handleSalesDashboardModalCapturedDragMove}
+		                onPointerUp={handleSalesDashboardModalCapturedDragEnd}
+		                onPointerCancel={handleSalesDashboardModalCapturedDragEnd}
+		              >
                 <DialogTitle className="flex flex-wrap items-center gap-2">
                   <span>
                     {salesOrderDetail.number
@@ -43201,6 +43820,7 @@ function InlineEditableValueRow({
       setSaving(false);
     }
   }, [editable, next, onSave, saving]);
+  const saveButtonClassName = "header-home-button squircle-sm bg-white text-slate-900";
 
   if (scrollableDisplay) {
     return (
@@ -43295,8 +43915,10 @@ function InlineEditableValueRow({
           {editing ? (
             <div className="mt-2 flex items-center gap-2">
               <Button
+                type="button"
                 variant="outline"
-                className="squircle-sm"
+                size="sm"
+                className={saveButtonClassName}
                 disabled={saving}
                 onClick={() => void saveValue()}
               >
@@ -43439,8 +44061,10 @@ function InlineEditableValueRow({
         {editing ? (
           <div className="flex items-center gap-2">
             <Button
+              type="button"
               variant="outline"
-              className="squircle-sm"
+              size="sm"
+              className={saveButtonClassName}
               disabled={saving}
               onClick={() => void saveValue()}
             >
