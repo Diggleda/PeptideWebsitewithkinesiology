@@ -194,9 +194,9 @@ test('buildOrderPayload keeps tax as fallback fee even when a manual tax rate ex
       { name: 'Estimated tax', total: '11.94', tax_status: 'none' },
     ]);
     assert.equal(payload.tax_lines, undefined);
-    assert.equal(payload.total_tax, '0.00');
-    assert.equal(payload.cart_tax, '0.00');
-    assert.equal(payload.line_items[0].total_tax, '0.00');
+    assert.equal(payload.total_tax, undefined);
+    assert.equal(payload.cart_tax, undefined);
+    assert.equal(payload.line_items[0].total_tax, undefined);
     assert.equal(payload.line_items[0].taxes, undefined);
     assert.equal(
       payload.meta_data.some((entry) => entry.key === 'trufusion_manual_tax_rate_id' && entry.value === 2),

@@ -460,8 +460,6 @@ const buildLineItems = (items, { taxTotal = 0, taxRateId = null } = {}) => {
       quantity,
       total,
       subtotal: total,
-      total_tax: '0.00',
-      subtotal_tax: '0.00',
       meta_data: [],
       _line_total_value: lineTotalValue,
     };
@@ -491,9 +489,9 @@ const buildLineItems = (items, { taxTotal = 0, taxRateId = null } = {}) => {
       }
     }
 
-    line.total_tax = allocated.toFixed(2);
-    line.subtotal_tax = allocated.toFixed(2);
-    if (taxRateId) {
+    if (taxRateId && normalizedTaxTotal > 0) {
+      line.total_tax = allocated.toFixed(2);
+      line.subtotal_tax = allocated.toFixed(2);
       line.taxes = [{ id: Number(taxRateId), total: allocated.toFixed(2), subtotal: allocated.toFixed(2) }];
     }
     delete line._line_total_value;
@@ -818,9 +816,6 @@ const buildOrderPayload = async ({ order, customer }) => {
     created_via: 'trufusion_app',
     set_paid: false,
     total: finalTotal.toFixed(2),
-    total_tax: '0.00',
-    cart_tax: '0.00',
-    shipping_tax: '0.00',
     line_items: buildLineItems(order.items || []),
     meta_data: metaData,
     billing: buildWooAddress({

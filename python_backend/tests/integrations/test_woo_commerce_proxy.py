@@ -202,9 +202,9 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
             [{"name": "Estimated tax", "total": "11.94", "tax_status": "none"}],
         )
         self.assertNotIn("tax_lines", payload)
-        self.assertEqual(payload["cart_tax"], "0.00")
-        self.assertEqual(payload["total_tax"], "0.00")
-        self.assertEqual(payload["line_items"][0]["total_tax"], "0.00")
+        self.assertNotIn("cart_tax", payload)
+        self.assertNotIn("total_tax", payload)
+        self.assertNotIn("total_tax", payload["line_items"][0])
         self.assertNotIn("taxes", payload["line_items"][0])
         self.assertEqual(payload["total"], "148.44")
         self.assertTrue(

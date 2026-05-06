@@ -1206,8 +1206,6 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
         )
 
     for line in prepared:
-        line["total_tax"] = "0.00"
-        line["subtotal_tax"] = "0.00"
         # Drop helper fields and omit variation_id when not set.
         line.pop("_line_total_value", None)
         if line.get("variation_id") is None:
@@ -1571,9 +1569,6 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     }
     if order_total > 0:
         payload["total"] = f"{order_total:.2f}"
-    payload["cart_tax"] = "0.00"
-    payload["shipping_tax"] = "0.00"
-    payload["total_tax"] = "0.00"
     if payment_method == "bacs":
         payload["payment_method"] = "bacs"
         normalized_details = (raw_payment_details or raw_payment_method).lower().replace("-", "_").replace(" ", "_")
