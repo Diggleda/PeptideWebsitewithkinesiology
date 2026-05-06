@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const Module = require('node:module');
 
 const { buildOrderPayload, mapWooOrderSummary } = require('../integration/wooCommerceClient');
 
@@ -116,6 +117,95 @@ test('buildOrderPayload prefers facility pickup recipient name over fallback act
     ),
     true,
   );
+});
+
+test('buildOrderPayload keeps tax as fallback fee even when a manual tax rate exists', async () => {
+  const originalLoad = Module._load;
+  delete require.cache[require.resolve('../integration/wooCommerceClient')];
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === '../config/env') {
+      return {
+        env: {
+          wooCommerce: {
+            storeUrl: 'https://shop.example.test',
+            consumerKey: 'ck_test',
+            consumerSecret: 'cs_test',
+            apiVersion: 'wc/v3',
+            autoSubmitOrders: false,
+            requestTimeoutMs: 25000,
+          },
+        },
+      };
+    }
+    if (request === 'axios') {
+      return {
+        create: () => ({
+          get: async () => ({
+            data: [{ id: 2, name: 'TruFusionLabs Manual Tax' }],
+          }),
+        }),
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    const { buildOrderPayload: buildOrderPayloadWithTaxRate } = require('../integration/wooCommerceClient');
+    const payload = await buildOrderPayloadWithTaxRate({
+      order: {
+        id: 'order-tax-1',
+        createdAt: '2026-05-06T15:45:41Z',
+        paymentMethod: 'zelle',
+        taxTotal: 11.94,
+        total: 148.44,
+        itemsSubtotal: 136.5,
+        shippingTotal: 0,
+        shippingEstimate: {
+          serviceType: 'Facility pickup',
+          serviceCode: 'facility_pickup',
+          carrierId: 'facility_pickup',
+        },
+        shippingAddress: {
+          name: 'Jennifer Donelson',
+          addressLine1: '640 S Grand Ave',
+          city: 'Santa Ana',
+          state: 'CA',
+          postalCode: '92705',
+          country: 'US',
+        },
+        items: [
+          {
+            productId: '123',
+            sku: 'PH-RETA-10',
+            name: 'Triple Agonist GLP-1, GIP, Glucagon Agonist V - 10mg',
+            quantity: 1,
+            price: 136.5,
+          },
+        ],
+      },
+      customer: {
+        name: 'Jennifer Donelson',
+        email: 'jennifer@example.com',
+      },
+    });
+
+    assert.deepEqual(payload.fee_lines, [
+      { name: 'Estimated tax', total: '11.94', tax_status: 'none' },
+    ]);
+    assert.equal(payload.tax_lines, undefined);
+    assert.equal(payload.total_tax, '0.00');
+    assert.equal(payload.cart_tax, '0.00');
+    assert.equal(payload.line_items[0].total_tax, '0.00');
+    assert.equal(payload.line_items[0].taxes, undefined);
+    assert.equal(
+      payload.meta_data.some((entry) => entry.key === 'trufusion_manual_tax_rate_id' && entry.value === 2),
+      true,
+    );
+  } finally {
+    Module._load = originalLoad;
+    delete require.cache[require.resolve('../integration/wooCommerceClient')];
+  }
 });
 
 test('mapWooOrderSummary restores facility pickup recipient name from metadata', () => {

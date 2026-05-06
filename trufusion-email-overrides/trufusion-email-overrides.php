@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TruFusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TruFusionLabs mail identity (optional SMTP).
- * Version: 1.1.7
+ * Version: 1.1.8
  */
 
 if (!defined('ABSPATH')) exit;
@@ -584,6 +584,101 @@ function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order,
 }
 
 add_filter('woocommerce_email_headers', 'trufusion_email_overrides_add_sales_rep_cc', 20, 4);
+
+function trufusion_email_overrides_normalize_money($value) {
+  if ($value === null || $value === '' || $value === false) return 0.0;
+  $numeric = (float) $value;
+  if (!is_finite($numeric) || $numeric < 0) return 0.0;
+  return round($numeric + 1e-9, 2);
+}
+
+function trufusion_email_overrides_money_matches($left, $right) {
+  return abs(trufusion_email_overrides_normalize_money($left) - trufusion_email_overrides_normalize_money($right)) < 0.01;
+}
+
+function trufusion_email_overrides_price($amount, $order) {
+  $args = array();
+  if ($order instanceof WC_Order) {
+    $currency = $order->get_currency();
+    if ($currency) {
+      $args['currency'] = $currency;
+    }
+  }
+  return function_exists('wc_price')
+    ? wc_price(trufusion_email_overrides_normalize_money($amount), $args)
+    : '$' . number_format(trufusion_email_overrides_normalize_money($amount), 2);
+}
+
+function trufusion_email_overrides_has_estimated_tax_fee($order) {
+  if (!$order instanceof WC_Order) return false;
+  foreach ($order->get_items('fee') as $item) {
+    if (!$item instanceof WC_Order_Item_Fee) continue;
+    if (strcasecmp(trim((string) $item->get_name()), 'Estimated tax') === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function trufusion_email_overrides_apply_manual_tax_totals($total_rows, $order, $tax_display = '') {
+  if (!$order instanceof WC_Order || !is_array($total_rows)) return $total_rows;
+
+  $manual_tax = trufusion_email_overrides_normalize_money($order->get_meta('trufusion_tax_total'));
+  if ($manual_tax <= 0) return $total_rows;
+
+  $current_tax = trufusion_email_overrides_normalize_money($order->get_total_tax());
+  if (trufusion_email_overrides_money_matches($current_tax, $manual_tax)) {
+    return $total_rows;
+  }
+
+  $manual_grand_total = trufusion_email_overrides_normalize_money($order->get_meta('trufusion_grand_total'));
+  $current_total = trufusion_email_overrides_normalize_money($order->get_total());
+  $display_total = $manual_grand_total > 0
+    ? $manual_grand_total
+    : (
+      trufusion_email_overrides_has_estimated_tax_fee($order)
+        ? $current_total
+        : max(0.0, round($current_total + max(0.0, $manual_tax - $current_tax), 2))
+    );
+
+  $tax_row = array(
+    'label' => esc_html__('Tax:', 'woocommerce'),
+    'value' => trufusion_email_overrides_price($manual_tax, $order),
+  );
+
+  $patched_rows = array();
+  $tax_inserted = false;
+
+  foreach ($total_rows as $key => $row) {
+    $label = is_array($row) && isset($row['label']) ? wp_strip_all_tags((string) $row['label']) : '';
+    $is_tax_row = stripos((string) $key, 'tax') !== false || stripos($label, 'tax') !== false;
+    if ($is_tax_row) {
+      if (!$tax_inserted) {
+        $patched_rows['trufusion_manual_tax'] = $tax_row;
+        $tax_inserted = true;
+      }
+      continue;
+    }
+
+    if ((string) $key === 'order_total' && !$tax_inserted) {
+      $patched_rows['trufusion_manual_tax'] = $tax_row;
+      $tax_inserted = true;
+    }
+
+    if ((string) $key === 'order_total' && is_array($row)) {
+      $row['value'] = trufusion_email_overrides_price($display_total, $order);
+    }
+
+    $patched_rows[$key] = $row;
+  }
+
+  if (!$tax_inserted) {
+    $patched_rows['trufusion_manual_tax'] = $tax_row;
+  }
+
+  return $patched_rows;
+}
+add_filter('woocommerce_get_order_item_totals', 'trufusion_email_overrides_apply_manual_tax_totals', 20, 3);
 
 function trufusion_email_overrides_render_discount_summary($order, $sent_to_admin, $plain_text, $email) {
   if (!$order instanceof WC_Order) return;

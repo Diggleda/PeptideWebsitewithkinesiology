@@ -10,6 +10,7 @@ router.post('/login', authController.login);
 router.post('/logout', authController.logout);
 router.get('/check-email', authController.checkEmail);
 router.get('/me', authenticate, authController.getProfile);
+router.get('/session', authenticate, authController.getProfile);
 router.put('/me', authenticate, authController.updateProfile);
 router.post('/me/reseller-permit', authenticate, authController.uploadResellerPermit);
 router.post('/me/reseller-permit/delete', authenticate, authController.deleteResellerPermit);

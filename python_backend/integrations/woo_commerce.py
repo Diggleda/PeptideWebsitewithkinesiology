@@ -1171,8 +1171,8 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
     """
     Build WooCommerce line_items.
 
-    If `tax_total` is provided, allocate it across line items (proportional to their totals) so
-    WooCommerce emails show a non-zero tax total (and can optionally itemize by label).
+    Tax is sent as an order fee fallback instead of line-item tax fields because WooCommerce
+    REST-created ad hoc tax lines may not be visible when the initial notification email renders.
     """
     prepared = []
     for item in items or []:
@@ -1205,30 +1205,9 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
             }
         )
 
-    tax_total = float(tax_total or 0)
-    tax_total = max(tax_total, 0.0)
-    base_total = sum(line.get("_line_total_value", 0.0) for line in prepared) or 0.0
-
-    include_tax_fields = tax_total > 0 and tax_rate_id is not None and base_total > 0
-    remaining_tax = round(tax_total, 2)
-    for idx, line in enumerate(prepared):
-        line_value = float(line.get("_line_total_value") or 0.0)
-        if not include_tax_fields or line_value <= 0:
-            allocated = 0.0
-        elif idx == len(prepared) - 1:
-            allocated = remaining_tax
-        else:
-            allocated = round(tax_total * (line_value / base_total), 2)
-            remaining_tax = round(remaining_tax - allocated, 2)
-
-        allocated = max(allocated, 0.0)
-        if include_tax_fields:
-            line["total_tax"] = f"{allocated:.2f}"
-            line["subtotal_tax"] = f"{allocated:.2f}"
-            line["taxes"] = [
-                {"id": int(tax_rate_id), "total": f"{allocated:.2f}", "subtotal": f"{allocated:.2f}"}
-            ]
-
+    for line in prepared:
+        line["total_tax"] = "0.00"
+        line["subtotal_tax"] = "0.00"
         # Drop helper fields and omit variation_id when not set.
         line.pop("_line_total_value", None)
         if line.get("variation_id") is None:
@@ -1402,9 +1381,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         tax_total = 0.0
     tax_total = max(0.0, tax_total)
     tax_rate_id = _ensure_trufusion_manual_tax_rate_id() if tax_total > 0 else None
-    # Prefer representing tax as a true Woo tax total (tax fields on line_items). Only fall back
-    # to the legacy fee-line approach when we cannot resolve a manual tax rate id.
-    if tax_total > 0 and tax_rate_id is None:
+    if tax_total > 0:
+        # Woo's REST order creation can ignore ad hoc tax lines before notification emails render.
+        # Send tax as a fee first; the Woo Manual Tax Sync plugin/email override converts/displays
+        # it as tax using trufusion_tax_total and trufusion_grand_total.
         fee_lines.append(
             {"name": "Estimated tax", "total": f"{tax_total:.2f}", "tax_status": "none"}
         )
@@ -1573,7 +1553,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     payload = {
         "status": status,
         "set_paid": False,
-        "line_items": build_line_items(line_items_source, tax_total=(0.0 if test_override else tax_total), tax_rate_id=tax_rate_id),
+        "line_items": build_line_items(line_items_source),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
         "discount_total": discount_total,
@@ -1591,19 +1571,9 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     }
     if order_total > 0:
         payload["total"] = f"{order_total:.2f}"
-    if tax_total > 0 and tax_rate_id is not None:
-        payload["cart_tax"] = f"{tax_total:.2f}"
-        payload["shipping_tax"] = "0.00"
-        payload["total_tax"] = f"{tax_total:.2f}"
-        payload["tax_lines"] = [
-            {
-                "rate_id": int(tax_rate_id),
-                "label": _TRUFUSION_MANUAL_TAX_RATE_NAME,
-                "compound": False,
-                "tax_total": f"{tax_total:.2f}",
-                "shipping_tax_total": "0.00",
-            }
-        ]
+    payload["cart_tax"] = "0.00"
+    payload["shipping_tax"] = "0.00"
+    payload["total_tax"] = "0.00"
     if payment_method == "bacs":
         payload["payment_method"] = "bacs"
         normalized_details = (raw_payment_details or raw_payment_method).lower().replace("-", "_").replace(" ", "_")

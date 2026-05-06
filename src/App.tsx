@@ -12236,6 +12236,20 @@ function MainApp() {
       }
       return parsed;
     };
+    const toDateKey = (date: Date | null): string | null =>
+      date && !Number.isNaN(date.getTime()) ? formatDateInputValue(date) : null;
+    const resolveOrderPlacedBusinessDateKey = (rawValue: string | null) => {
+      const raw = String(rawValue || "").trim();
+      if (!raw) return null;
+      const rawDateMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (rawDateMatch) {
+        const year = rawDateMatch[1];
+        const month = rawDateMatch[2].padStart(2, "0");
+        const day = rawDateMatch[3].padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+      return toDateKey(parseOrderPlacedRawToDate(raw));
+    };
     const effectiveStart =
       salesRepPeriodStart ||
       salesRepSalesSummaryMeta?.periodStart ||
@@ -12255,14 +12269,15 @@ function MainApp() {
         ? toBoundDate(range.to, true)
         : toBoundDate(effectiveEnd, true);
     if (!from || !to) return orders;
-    const fromMs = from.getTime();
-    const toMs = to.getTime();
+    const fromKey = toDateKey(from);
+    const toKey = toDateKey(to);
+    if (!fromKey || !toKey) return orders;
     return orders.filter((order) => {
       const placedAt = resolveOrderPlacedAt(order as any);
       if (!placedAt) return false;
-      const ts = parseOrderPlacedRawToDate(placedAt)?.getTime() ?? Number.NaN;
-      if (!Number.isFinite(ts)) return false;
-      return ts >= fromMs && ts <= toMs;
+      const placedDateKey = resolveOrderPlacedBusinessDateKey(placedAt);
+      if (!placedDateKey) return false;
+      return placedDateKey >= fromKey && placedDateKey <= toKey;
     });
   };
 
@@ -42780,7 +42795,7 @@ function MainApp() {
 	      >
 	        <DialogContent
 	          ref={salesOrderDialogContentRef}
-	          className="sales-order-detail-dialog sales-dashboard-draggable-modal max-w-4xl"
+		          className="sales-order-detail-dialog sales-dashboard-draggable-modal max-w-2xl"
 	          containerClassName={`${salesDashboardDetailModalContainerClassName} sales-dashboard-window-layer`}
 	          containerStyle={getSalesDashboardModalContainerStyle("salesOrderDetail")}
 	          overlayClassName="sales-dashboard-window-overlay"

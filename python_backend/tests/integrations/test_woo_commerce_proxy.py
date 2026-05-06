@@ -155,6 +155,71 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["cache"], "MISS")
         self.assertLess(elapsed, 0.1)
 
+    def test_build_order_payload_keeps_manual_tax_as_fee_fallback(self):
+        order = {
+            "id": "1778107541902",
+            "createdAt": "2026-05-06T15:45:41.897501-07:00",
+            "paymentMethod": "Zelle",
+            "paymentDetails": "Zelle",
+            "taxTotal": 11.94,
+            "grandTotal": 148.44,
+            "total": 136.50,
+            "shippingTotal": 0,
+            "shippingEstimate": {
+                "carrierId": "facility_pickup",
+                "serviceCode": "facility_pickup",
+                "serviceType": "Facility pickup",
+            },
+            "facilityPickup": True,
+            "fulfillmentMethod": "facility_pickup",
+            "facilityPickupRecipientName": "Jennifer Donelson",
+            "shippingAddress": {
+                "name": "Jennifer Donelson",
+                "addressLine1": "640 S Grand Ave",
+                "city": "Santa Ana",
+                "state": "CA",
+                "postalCode": "92705",
+                "country": "US",
+            },
+            "items": [
+                {
+                    "productId": "1512",
+                    "variantId": None,
+                    "sku": "PH-RETA-10MG-V",
+                    "name": "Triple Agonist GLP-1, GIP, Glucagon Agonist V - 10mg",
+                    "quantity": 1,
+                    "price": 136.50,
+                }
+            ],
+        }
+        customer = {"name": "Jennifer Donelson", "email": "jennifer@example.com"}
+
+        with patch.object(woo_commerce, "_ensure_trufusion_manual_tax_rate_id", return_value=2):
+            payload = woo_commerce.build_order_payload(order, customer)
+
+        self.assertEqual(
+            payload["fee_lines"],
+            [{"name": "Estimated tax", "total": "11.94", "tax_status": "none"}],
+        )
+        self.assertNotIn("tax_lines", payload)
+        self.assertEqual(payload["cart_tax"], "0.00")
+        self.assertEqual(payload["total_tax"], "0.00")
+        self.assertEqual(payload["line_items"][0]["total_tax"], "0.00")
+        self.assertNotIn("taxes", payload["line_items"][0])
+        self.assertEqual(payload["total"], "148.44")
+        self.assertTrue(
+            any(
+                entry.get("key") == "trufusion_manual_tax_rate_id" and entry.get("value") == 2
+                for entry in payload["meta_data"]
+            )
+        )
+        self.assertTrue(
+            any(
+                entry.get("key") == "trufusion_tax_total" and entry.get("value") == 11.94
+                for entry in payload["meta_data"]
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

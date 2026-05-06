@@ -803,15 +803,14 @@ const buildOrderPayload = async ({ order, customer }) => {
   }
 
   if (taxTotal > 0) {
-    // Prefer representing tax as a true Woo tax total (tax fields on line_items). Only fall back
-    // to the legacy fee-line approach when we cannot resolve a manual tax rate id.
-    if (!manualTaxRateId) {
-      feeLines.push({
-        name: 'Estimated tax',
-        total: taxTotal.toFixed(2),
-        tax_status: 'none',
-      });
-    }
+    // Woo's REST order creation can ignore ad hoc tax lines before notification emails render.
+    // Send the tax as a fee first; the TruFusionLabs Manual Tax Sync plugin converts it into a
+    // real Woo tax line before/after the initial email path.
+    feeLines.push({
+      name: 'Estimated tax',
+      total: taxTotal.toFixed(2),
+      tax_status: 'none',
+    });
   }
 
   const payload = {
@@ -819,10 +818,10 @@ const buildOrderPayload = async ({ order, customer }) => {
     created_via: 'trufusion_app',
     set_paid: false,
     total: finalTotal.toFixed(2),
-    total_tax: manualTaxRateId ? taxTotal.toFixed(2) : '0.00',
-    cart_tax: manualTaxRateId ? taxTotal.toFixed(2) : '0.00',
+    total_tax: '0.00',
+    cart_tax: '0.00',
     shipping_tax: '0.00',
-    line_items: buildLineItems(order.items || [], { taxTotal, taxRateId: manualTaxRateId }),
+    line_items: buildLineItems(order.items || []),
     meta_data: metaData,
     billing: buildWooAddress({
       address: billingAddress,
@@ -830,15 +829,6 @@ const buildOrderPayload = async ({ order, customer }) => {
       fallbackAddress: shippingAddress,
     }),
   };
-  if (manualTaxRateId && taxTotal > 0) {
-    payload.tax_lines = [{
-      rate_id: Number(manualTaxRateId),
-      label: 'TruFusionLabs Manual Tax',
-      compound: false,
-      tax_total: taxTotal.toFixed(2),
-      shipping_tax_total: '0.00',
-    }];
-  }
 
   if (feeLines.length > 0) {
     payload.fee_lines = feeLines;

@@ -3073,18 +3073,22 @@ const getOrdersForUser = async (userId) => {
         }
         wooOrders = enriched;
       }
-    } catch (error) {
-      logger.error(
-        { err: error, userId, email },
-        'Failed to fetch WooCommerce orders for user',
-      );
-      wooError = {
-        message: error.message || 'Unable to load WooCommerce orders.',
-        details: error.response?.data || error.cause || null,
-        status: error.response?.status ?? error.status ?? 502,
-      };
-    }
-  }
+	    } catch (error) {
+	      const hasLocalFallback = Array.isArray(localSummaries) && localSummaries.length > 0;
+	      const logPayload = { err: error, userId, email, localCount: localSummaries.length };
+	      if (hasLocalFallback) {
+	        logger.warn(logPayload, 'WooCommerce orders unavailable; serving local orders for user');
+	        wooError = null;
+	      } else {
+	        logger.error(logPayload, 'Failed to fetch WooCommerce orders for user');
+	        wooError = {
+	          message: error.message || 'Unable to load WooCommerce orders.',
+	          details: error.response?.data || error.cause || null,
+	          status: error.response?.status ?? error.status ?? 502,
+	        };
+	      }
+	    }
+	  }
 
   const sampleWoo = Array.isArray(wooOrders) && wooOrders.length > 0 ? wooOrders[0] : null;
   logger.info(
@@ -4444,6 +4448,60 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
     return null;
   }
   const numericId = normalizeWooOrderId(orderId) || orderId;
+  const normalizeOrderLookupKey = (value) => String(value || '').trim().replace(/^#/, '');
+  const findLocalOrderByOrderIdentifier = (value) => {
+    const lookupKey = normalizeOrderLookupKey(value);
+    if (!lookupKey) return null;
+    const direct = orderRepository.findById(value) || orderRepository.findById(lookupKey);
+    if (direct) return direct;
+    const allOrders = Array.isArray(orderRepository.getAll()) ? orderRepository.getAll() : [];
+    return allOrders.find((order) => {
+      if (!order || typeof order !== 'object') return false;
+      const wooDetails = order.integrationDetails?.wooCommerce || order.integrationDetails?.woocommerce || {};
+      const wooResponse = wooDetails?.response && typeof wooDetails.response === 'object'
+        ? wooDetails.response
+        : {};
+      const candidates = [
+        order.id,
+        order.number,
+        order.wooOrderId,
+        order.wooOrderNumber,
+        wooDetails.orderId,
+        wooDetails.orderNumber,
+        wooDetails.wooOrderId,
+        wooDetails.wooOrderNumber,
+        wooResponse.id,
+        wooResponse.number,
+        wooResponse.orderId,
+        wooResponse.orderNumber,
+      ];
+      return candidates.some((candidate) => normalizeOrderLookupKey(candidate) === lookupKey);
+    }) || null;
+  };
+  const buildLocalOrderDetail = async (localOrder) => {
+    const summary = buildLocalOrderSummary(localOrder);
+    const refreshedLocalOrder = await refreshAuthoritativeUpsStatusForOrderView(summary, { localOrder });
+    applyLocalUpsStateToOrder(summary, refreshedLocalOrder || localOrder);
+    return summary;
+  };
+  const isLocalOnlyOrder = (order) => {
+    if (!order || typeof order !== 'object') return false;
+    const wooDetails = order.integrationDetails?.wooCommerce || order.integrationDetails?.woocommerce || {};
+    const wooResponse = wooDetails?.response && typeof wooDetails.response === 'object'
+      ? wooDetails.response
+      : {};
+    return (
+      order.source === 'demo_seed'
+      || order.integrations?.demo === 'seeded'
+      || wooDetails.reason === 'local_node_dummy_order'
+      || String(wooResponse.order_key || '').startsWith('local_node_')
+    );
+  };
+  const localOnlyOrder = findLocalOrderByOrderIdentifier(orderId)
+    || findLocalOrderByOrderIdentifier(numericId);
+  if (localOnlyOrder && isLocalOnlyOrder(localOnlyOrder)) {
+    return buildLocalOrderDetail(localOnlyOrder);
+  }
   if (wooCommerceClient?.fetchOrderById) {
     try {
       const wooOrder = await wooCommerceClient.fetchOrderById(numericId);
@@ -4498,12 +4556,10 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
   }
 
   // Fallback for non-Woo IDs (e.g. local/MySQL TruFusionLabs order IDs).
-  const localOrder = orderRepository.findById(orderId);
+  const localOrder = findLocalOrderByOrderIdentifier(orderId)
+    || findLocalOrderByOrderIdentifier(numericId);
   if (localOrder) {
-    const summary = buildLocalOrderSummary(localOrder);
-    const refreshedLocalOrder = await refreshAuthoritativeUpsStatusForOrderView(summary, { localOrder });
-    applyLocalUpsStateToOrder(summary, refreshedLocalOrder || localOrder);
-    return summary;
+    return buildLocalOrderDetail(localOrder);
   }
 
   if (typeof orderSqlRepository.fetchById === 'function') {

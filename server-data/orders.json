@@ -6314,5 +6314,149 @@
     "paymentDetails": "Zelle / Bank transfer",
     "asDelegate": "Delegate Order",
     "as_delegate": "Delegate Order"
+  },
+  {
+    "id": "ord_dummy_petergibbons_20260506",
+    "userId": "1764556043938",
+    "items": [
+      {
+        "cartItemId": "demo-pg-bpc157-tb500-1",
+        "productId": 211,
+        "variantId": 217,
+        "sku": "BPC157-TB500-10",
+        "name": "BPC-157 / TB-500 N - 10mg / 10mg",
+        "price": 189.5,
+        "quantity": 1,
+        "note": null,
+        "position": 1,
+        "weightOz": 0.06,
+        "lengthIn": null,
+        "widthIn": 1,
+        "heightIn": 4.1
+      },
+      {
+        "cartItemId": "demo-pg-sema-1",
+        "productId": 310,
+        "variantId": 311,
+        "sku": "SEMA-5",
+        "name": "Semaglutide N - 5mg",
+        "price": 149,
+        "quantity": 1,
+        "note": null,
+        "position": 2,
+        "weightOz": 0.06,
+        "lengthIn": null,
+        "widthIn": 1,
+        "heightIn": 4.1
+      }
+    ],
+    "total": 357.25,
+    "taxTotal": 0,
+    "itemsSubtotal": 338.5,
+    "shippingTotal": 18.75,
+    "shippingEstimate": {
+      "carrierId": "demo_carrier",
+      "serviceCode": "ups_ground",
+      "serviceType": "ups_ground",
+      "estimatedDeliveryDays": 3,
+      "deliveryDateGuaranteed": false,
+      "rate": 18.75,
+      "currency": "USD",
+      "addressFingerprint": "demo-petergibbons-20260506",
+      "packageCode": "package",
+      "weightOz": 0.12,
+      "packageDimensions": null,
+      "meta": {
+        "demo": true
+      },
+      "estimatedArrivalDate": "2026-05-09T12:05:00.000Z"
+    },
+    "shippingAddress": {
+      "name": "Mr. Peter J. Gibbons",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773"
+    },
+    "billingAddress": {
+      "name": "Mr. Peter J. Gibbons",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "petergibbons7@icloud.com"
+    },
+    "referralCode": null,
+    "referrerBonus": null,
+    "status": "processing",
+    "pricingMode": "wholesale",
+    "currency": "USD",
+    "createdAt": "2026-05-06T12:05:00.000Z",
+    "updatedAt": "2026-05-06T12:05:00.000Z",
+    "physicianCertificationAccepted": true,
+    "paymentMethod": "Demo Card 4242",
+    "paymentDetails": "Demo Card 4242",
+    "source": "demo_seed",
+    "integrations": {
+      "demo": "seeded",
+      "wooCommerce": "pending",
+      "stripe": "disabled",
+      "shipEngine": "skipped",
+      "shipStation": "skipped",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "demo": {
+        "status": "seeded",
+        "createdBy": "codex",
+        "note": "Dummy Node order for petergibbons7@icloud.com"
+      },
+      "wooCommerce": {
+        "status": "pending",
+        "reason": "local_node_dummy_order",
+        "response": {
+          "id": 1276,
+          "number": "1276",
+          "status": "processing",
+          "payment_url": null,
+          "order_key": "local_node_dummy_1276",
+          "invoiceUrl": null
+        },
+        "invoiceUrl": null
+      },
+      "stripe": {
+        "status": "disabled",
+        "reason": "local_node_dummy_order",
+        "message": "Local Node dummy order; no Stripe payment intent created."
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "local_node_dummy_order"
+      },
+      "shipStation": {
+        "status": "skipped",
+        "reason": "local_node_dummy_order"
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "local_node_dummy_order"
+      }
+    },
+    "wooOrderId": 1276,
+    "wooOrderNumber": "1276",
+    "shipStationOrderId": null,
+    "paymentIntentId": null,
+    "number": "1276",
+    "isTaxExempt": false,
+    "taxExemptSource": null,
+    "taxExemptReason": null
   }
 ]

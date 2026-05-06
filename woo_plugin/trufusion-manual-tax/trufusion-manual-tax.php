@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TruFusionLabs Manual Tax Sync
  * Description: Converts TruFusionLabs tax metadata/fee lines into a WooCommerce tax line item for REST-created orders.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: TruFusionLabs
  */
 
@@ -24,6 +24,7 @@ final class TruFusion_Labs_Manual_Tax_Sync {
     add_action('woocommerce_rest_insert_shop_order_object', [__CLASS__, 'handle_rest_insert'], 20, 3);
     add_action('updated_post_meta', [__CLASS__, 'handle_meta_update'], 20, 4);
     add_action('woocommerce_after_order_object_save', [__CLASS__, 'handle_order_save'], 20, 2);
+    add_action('woocommerce_email_order_details', [__CLASS__, 'handle_email_order_details'], 1, 4);
   }
 
   public static function handle_rest_insert($order, $request, $creating): void {
@@ -72,6 +73,22 @@ final class TruFusion_Labs_Manual_Tax_Sync {
     self::apply_manual_tax($order);
   }
 
+  public static function handle_email_order_details($order, $sent_to_admin, $plain_text, $email): void {
+    if (!$order instanceof WC_Order) {
+      return;
+    }
+    $taxTotal = self::resolve_tax_total($order);
+    if ($taxTotal <= 0) {
+      return;
+    }
+    self::log('info', 'Email order details hook fired', [
+      'order_id' => $order->get_id(),
+      'tax_total' => $taxTotal,
+      'email_id' => is_object($email) && isset($email->id) ? (string) $email->id : '',
+    ]);
+    self::apply_manual_tax($order);
+  }
+
   private static function log(string $level, string $message, array $context = []): void {
     $context = array_merge([
       'source' => self::LOG_SOURCE,
@@ -101,6 +118,21 @@ final class TruFusion_Labs_Manual_Tax_Sync {
       return 0.0;
     }
     return round($numeric + 1e-9, 2);
+  }
+
+  private static function normalize_signed_money($value): float {
+    if ($value === null || $value === '' || $value === false) {
+      return 0.0;
+    }
+    $numeric = (float) $value;
+    if (!is_finite($numeric)) {
+      return 0.0;
+    }
+    return round($numeric + ($numeric >= 0 ? 1e-9 : -1e-9), 2);
+  }
+
+  private static function money_matches($left, $right): bool {
+    return abs(self::normalize_signed_money($left) - self::normalize_signed_money($right)) < 0.01;
   }
 
   private static function extract_request_meta_value($request, string $key): ?float {
@@ -183,6 +215,20 @@ final class TruFusion_Labs_Manual_Tax_Sync {
     }
   }
 
+  private static function has_matching_fee_lines(WC_Order $order): bool {
+    $feeItems = $order->get_items('fee');
+    foreach ($feeItems as $item) {
+      if (!$item instanceof WC_Order_Item_Fee) {
+        continue;
+      }
+      $name = (string) $item->get_name();
+      if (strcasecmp(trim($name), self::FALLBACK_FEE_NAME) === 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private static function remove_existing_tax_items(WC_Order $order, int $rateId): void {
     $taxItems = $order->get_items('tax');
     foreach ($taxItems as $itemId => $item) {
@@ -198,6 +244,68 @@ final class TruFusion_Labs_Manual_Tax_Sync {
         $order->remove_item($itemId);
       }
     }
+  }
+
+  private static function matching_tax_item_total(WC_Order $order, int $rateId): float {
+    $total = 0.0;
+    $taxItems = $order->get_items('tax');
+    foreach ($taxItems as $item) {
+      if (!$item instanceof WC_Order_Item_Tax) {
+        continue;
+      }
+      $label = (string) $item->get_label();
+      $itemRateId = (int) $item->get_rate_id();
+      $labelMatch =
+        strcasecmp(trim($label), self::DEFAULT_TAX_LABEL) === 0
+        || strcasecmp(trim($label), self::FALLBACK_FEE_NAME) === 0;
+      if ($labelMatch || ($rateId > 0 && $itemRateId === $rateId)) {
+        $total += self::normalize_money($item->get_tax_total());
+      }
+    }
+    return self::normalize_money($total);
+  }
+
+  private static function order_has_synced_tax_state(WC_Order $order, float $taxTotal, int $rateId): bool {
+    if (self::has_matching_fee_lines($order)) {
+      return false;
+    }
+    if (!self::money_matches($order->get_total_tax(), $taxTotal)) {
+      return false;
+    }
+    if (!self::money_matches(self::matching_tax_item_total($order, $rateId), $taxTotal)) {
+      return false;
+    }
+    return true;
+  }
+
+  private static function resolve_target_total(WC_Order $order, float $taxTotal): float {
+    $lineItemsTotal = 0.0;
+    $lineItems = $order->get_items('line_item');
+    foreach ($lineItems as $item) {
+      if (!$item instanceof WC_Order_Item_Product) {
+        continue;
+      }
+      $lineItemsTotal += max(0.0, self::normalize_signed_money($item->get_total()));
+    }
+
+    $shippingTotal = method_exists($order, 'get_shipping_total')
+      ? max(0.0, self::normalize_signed_money($order->get_shipping_total()))
+      : 0.0;
+
+    $feeItemsTotal = 0.0;
+    $feeItems = $order->get_items('fee');
+    foreach ($feeItems as $item) {
+      if (!$item instanceof WC_Order_Item_Fee) {
+        continue;
+      }
+      $name = (string) $item->get_name();
+      if (strcasecmp(trim($name), self::FALLBACK_FEE_NAME) === 0) {
+        continue;
+      }
+      $feeItemsTotal += self::normalize_signed_money($item->get_total());
+    }
+
+    return max(0.0, self::normalize_signed_money($lineItemsTotal + $shippingTotal + $feeItemsTotal + $taxTotal));
   }
 
   private static function allocate_line_item_taxes(WC_Order $order, float $taxTotal, int $rateId): void {
@@ -273,7 +381,7 @@ final class TruFusion_Labs_Manual_Tax_Sync {
       $rateId = self::resolve_tax_rate_id($order);
       $syncHash = self::compute_sync_hash($order, $taxTotal, $rateId);
       $previousHash = (string) $order->get_meta(self::META_SYNCED_HASH, true);
-      if ($previousHash && hash_equals($previousHash, $syncHash)) {
+      if ($previousHash && hash_equals($previousHash, $syncHash) && self::order_has_synced_tax_state($order, $taxTotal, $rateId)) {
         self::log('debug', 'Skipping: already synced', [
           'order_id' => $orderId,
           'sync_hash' => $syncHash,
@@ -281,12 +389,13 @@ final class TruFusion_Labs_Manual_Tax_Sync {
         return;
       }
 
-      $targetTotal = (float) $order->get_total();
+      $targetTotal = self::resolve_target_total($order, $taxTotal);
       self::log('info', 'Applying manual tax', [
         'order_id' => $orderId,
         'tax_total' => $taxTotal,
         'rate_id' => $rateId,
-        'order_total' => $targetTotal,
+        'current_order_total' => (float) $order->get_total(),
+        'target_order_total' => $targetTotal,
       ]);
 
       self::remove_matching_fee_lines($order);

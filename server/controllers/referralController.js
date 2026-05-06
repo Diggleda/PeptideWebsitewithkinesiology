@@ -2153,6 +2153,106 @@ const downloadResellerPermit = async (req, res, next) => {
   }
 };
 
+const getActivePhysiciansCsvData = async (req, res, next) => {
+  try {
+    ensureSalesRepAccess(req.user, 'getActivePhysiciansCsvData');
+
+    const normalizeEmail = (value) => normalizeOptionalText(value)?.toLowerCase() || '';
+    const normalizeDisplayName = (...values) => {
+      for (const value of values) {
+        if (Array.isArray(value)) {
+          const joined = value
+            .map((item) => normalizeOptionalText(item))
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          if (joined) return joined;
+          continue;
+        }
+        const text = normalizeOptionalText(value);
+        if (text) return text;
+      }
+      return '';
+    };
+    const isInactiveStatus = (value) => {
+      const normalized = String(value || 'active').trim().toLowerCase();
+      return ['inactive', 'disabled', 'deleted', 'archived', 'suspended'].includes(normalized);
+    };
+
+    const networkUsers = [];
+    const networkKeys = new Set();
+    const users = typeof userRepository.getAll === 'function' ? userRepository.getAll() : [];
+    (Array.isArray(users) ? users : []).forEach((user) => {
+      if (!user || typeof user !== 'object') return;
+      if (normalizeRole(user.role) !== 'doctor') return;
+      if (isInactiveStatus(user.status)) return;
+      const email = normalizeEmail(user.email || user.userEmail || user.doctorEmail || user.contactEmail);
+      if (email === 'test@doctor.com') return;
+      const id = normalizeOptionalText(user.id || user.userId || user.doctorId);
+      const key = id ? `id:${id}` : email ? `email:${email}` : '';
+      if (!key || networkKeys.has(key)) return;
+      networkKeys.add(key);
+      networkUsers.push({
+        name: normalizeDisplayName(user.name, [user.firstName, user.lastName], user.doctorName, user.displayName, email) || 'Physician',
+        email,
+      });
+    });
+
+    const leads = [];
+    const leadKeys = new Set();
+    const prospects = typeof salesProspectRepository.getAll === 'function'
+      ? await salesProspectRepository.getAll()
+      : [];
+    (Array.isArray(prospects) ? prospects : []).forEach((record, index) => {
+      if (!record || typeof record !== 'object') return;
+      const emails = normalizeEmailList(
+        record.contactEmails
+          || record.contact_emails
+          || record.referredContactEmail
+          || record.contactEmail
+          || record.email
+          || record.doctorEmail
+          || record.userEmail,
+      );
+      if (emails.length === 0) return;
+      const id = normalizeOptionalText(record.id || record.leadId || record.prospectId || record.referralId);
+      const email = emails[0];
+      const key = id ? `id:${id}` : `email:${email}:idx:${index}`;
+      if (leadKeys.has(key)) return;
+      leadKeys.add(key);
+      leads.push({
+        name: normalizeDisplayName(
+          record.referredContactName,
+          record.contactName,
+          record.name,
+          record.doctorName,
+          record.referredContactAccountName,
+          email,
+        ) || email,
+        email,
+      });
+    });
+
+    const compareRows = (left, right) =>
+      String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })
+      || String(left.email || '').localeCompare(String(right.email || ''), undefined, { sensitivity: 'base' });
+
+    return res.json({
+      networkUsers: networkUsers.sort(compareRows),
+      leads: leads.sort(compareRows),
+      ...(req.query?.debug ? {
+        debug: {
+          source: 'node',
+          users: (Array.isArray(users) ? users : []).length,
+          prospects: (Array.isArray(prospects) ? prospects : []).length,
+        },
+      } : {}),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   submitDoctorReferral,
   deleteDoctorReferral,
@@ -2160,6 +2260,7 @@ module.exports = {
   getDoctorLedger,
   getSalesRepDashboard,
   getSalesRepById,
+  getActivePhysiciansCsvData,
   createReferralCode,
   createManualProspect,
   deleteManualProspect,
