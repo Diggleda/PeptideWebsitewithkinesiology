@@ -310,6 +310,52 @@ class DelegationServiceTests(unittest.TestCase):
             service._audit_event = original_audit
             service.settings_service.get_settings = original_get_settings
 
+    def test_resolve_delegate_token_can_skip_page_load_count_for_polling(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_find_user = service.user_repository.find_by_id
+        original_touch_last_used = service.patient_links_repository.touch_last_used
+        original_audit = service._audit_event
+        original_get_settings = service.settings_service.get_settings
+        touched = []
+        audited = []
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
+                "doctorId": "doc-1",
+                "revokedAt": None,
+                "status": "active",
+                "markupPercent": 15,
+                "usageCount": 0,
+                "openCount": 4,
+                "allowedProducts": [],
+            }
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "role": "doctor",
+                "name": "Dr. Test",
+            }
+            service.patient_links_repository.touch_last_used = lambda *args, **kwargs: touched.append((args, kwargs))
+            service._audit_event = lambda *args, **kwargs: audited.append((args, kwargs))
+            service.settings_service.get_settings = lambda: {"patientLinksEnabled": True}
+
+            resolved = service.resolve_delegate_token("tok-1", count_page_load=False)
+
+            self.assertEqual(resolved.get("openCount"), 4)
+            self.assertEqual(touched, [])
+            self.assertEqual(audited, [])
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.user_repository.find_by_id = original_find_user
+            service.patient_links_repository.touch_last_used = original_touch_last_used
+            service._audit_event = original_audit
+            service.settings_service.get_settings = original_get_settings
+
     def test_resolve_delegate_token_includes_white_label_background_settings(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql

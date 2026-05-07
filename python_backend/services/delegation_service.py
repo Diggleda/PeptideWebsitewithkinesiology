@@ -957,7 +957,7 @@ def delete_link(doctor_id: str, token: str) -> Dict[str, Any]:
     return {"deleted": True, "token": token}
 
 
-def resolve_delegate_token(token: str) -> Dict[str, Any]:
+def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[str, Any]:
     token = _normalize_token(token)
     if not token:
         err = ValueError("token is required")
@@ -999,11 +999,19 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             setattr(err, "status", 404)
             raise err
 
-        try:
-            patient_links_repository.touch_last_used(token)
-        except Exception:
-            pass
-        _audit_event("link_opened", token=token, doctor_id=doctor_id, payload={"status": link.get("status")})
+        if count_page_load:
+            try:
+                patient_links_repository.touch_last_used(token)
+            except Exception:
+                pass
+            opened_at = datetime.now(timezone.utc).isoformat()
+            try:
+                link["openCount"] = int(link.get("openCount") or 0) + 1
+            except Exception:
+                link["openCount"] = 1
+            link["lastUsedAt"] = opened_at
+            link["lastOpenedAt"] = opened_at
+            _audit_event("link_opened", token=token, doctor_id=doctor_id, payload={"status": link.get("status")})
 
         doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
 
@@ -1031,11 +1039,14 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             "allowedProducts": link.get("allowedProducts") or [],
             "usageLimit": link.get("usageLimit"),
             "usageCount": link.get("usageCount"),
+            "openCount": link.get("openCount"),
             "status": link.get("status") or "active",
             "paymentMethod": link.get("paymentMethod") if isinstance(link, dict) else None,
             "paymentInstructions": link.get("paymentInstructions") if isinstance(link, dict) else None,
             "createdAt": link.get("createdAt"),
             "expiresAt": link.get("expiresAt"),
+            "lastUsedAt": link.get("lastUsedAt"),
+            "lastOpenedAt": link.get("lastOpenedAt"),
             "delegateSharedAt": link.get("delegateSharedAt"),
             "delegateOrderId": link.get("delegateOrderId"),
             "proposalStatus": review_status,
@@ -1061,9 +1072,15 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
         setattr(err, "status", 404)
         raise err
 
-    now = datetime.now(timezone.utc).isoformat()
-    link["lastUsedAt"] = now
-    _persist_links(doctor_id, links)
+    if count_page_load:
+        now = datetime.now(timezone.utc).isoformat()
+        link["lastUsedAt"] = now
+        link["lastOpenedAt"] = now
+        try:
+            link["openCount"] = int(link.get("openCount") or 0) + 1
+        except Exception:
+            link["openCount"] = 1
+        _persist_links(doctor_id, links)
 
     doctor = user_repository.find_by_id(doctor_id) or None
     if not isinstance(doctor, dict) or not doctor:
@@ -1091,6 +1108,12 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
         "studyLabel": link.get("studyLabel"),
         "patientReference": link.get("patientReference"),
         "instructions": link.get("instructions"),
+        "usageLimit": link.get("usageLimit"),
+        "usageCount": link.get("usageCount"),
+        "openCount": link.get("openCount"),
+        "status": link.get("status") or "active",
+        "lastUsedAt": link.get("lastUsedAt"),
+        "lastOpenedAt": link.get("lastOpenedAt"),
         "disclosures": _research_supply_disclosures(link.get("markupPercent")),
         "compensationDisclosure": _compensation_disclosure(link.get("markupPercent")),
     }

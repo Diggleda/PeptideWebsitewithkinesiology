@@ -8006,8 +8006,8 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 .shop-home-button[data-state="open"],
 .shop-home-button[aria-expanded="true"] {
   border-color: rgb(60, 103, 183) !important;
-  background-color: rgb(60, 103, 183) !important;
-  color: #ffffff !important;
+  background-color: rgba(60, 103, 183, 0.1) !important;
+  color: rgb(60, 103, 183) !important;
   box-shadow: none !important;
   filter: none !important;
 }
@@ -8117,11 +8117,11 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 .header-account-button:focus-visible,
 .header-account-button[data-state="open"],
 .header-account-button[aria-expanded="true"] {
-  background: rgb(60, 103, 183);
+  background: rgba(60, 103, 183, 0.1);
   border-color: rgb(60, 103, 183);
   box-shadow: none;
   filter: none;
-  color: #ffffff;
+  color: rgb(60, 103, 183);
   transform: none;
 }
 
@@ -10637,6 +10637,11 @@ body.theme-leaf[data-delegate-theme="true"]::before {
   background-repeat: no-repeat, no-repeat;
 }
 
+body.theme-clinical[data-delegate-theme="true"] .dev-theme-root,
+body.theme-leaf[data-delegate-theme="true"] .dev-theme-root {
+  background-color: transparent !important;
+}
+
 .dev-theme-root {
   min-height: var(--viewport-height, 100vh);
   background-color: var(--theme-page-bg);
@@ -10810,6 +10815,75 @@ body.theme-leaf[data-delegate-theme="true"]::before {
     0 10px 24px -22px rgba(60, 103, 183, 0.62),
     inset 0 1px rgba(255, 255, 255, 0.66),
     inset 0 -1px rgba(255, 255, 255, 0.24) !important;
+}
+
+.app-header-blur {
+  position: relative;
+}
+
+.app-header-blur::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-color: var(--storefront-background-color);
+  background-image: none;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .app-header-blur::before {
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+    backdrop-filter: blur(18px) saturate(1.35);
+  }
+}
+
+.app-header-blur > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app-header-blur,
+[data-app-header].app-header-blur,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) :is(.app-header-blur, [data-app-header].app-header-blur) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.dev-theme-root.theme-biotech .app-header-blur::before {
+  background: rgba(255, 255, 255, 0.69) !important;
+  background-color: rgba(255, 255, 255, 0.69) !important;
+  background-image: none !important;
+  -webkit-backdrop-filter: blur(38px) saturate(1.6) !important;
+  backdrop-filter: blur(38px) saturate(1.6) !important;
+}
+
+.dev-theme-root:not(.theme-biotech) .app-header-blur::before {
+  background-color: var(--theme-header-bg) !important;
+}
+
+.dev-theme-root.theme-clinical .app-header-blur::before {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.92) 0%,
+      rgba(248, 252, 255, 0.86) 48%,
+      rgba(240, 248, 255, 0.78) 100%
+    ) !important;
+  background-color: rgba(255, 255, 255, 0.82) !important;
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.92) 0%,
+      rgba(248, 252, 255, 0.86) 48%,
+      rgba(240, 248, 255, 0.78) 100%
+    ) !important;
+  -webkit-backdrop-filter: blur(42px) saturate(1.8) !important;
+  backdrop-filter: blur(55px) saturate(1.8) !important;
 }
 
 .dev-theme-root:not(.theme-biotech) footer {
@@ -11623,6 +11697,9 @@ body.theme-leaf[data-delegate-theme="true"]::before {
   position: fixed !important;
   left: calc(50vw + var(--sales-dashboard-modal-x, 0px)) !important;
   top: calc(50dvh + var(--sales-dashboard-modal-y, 0px)) !important;
+  width: min(42rem, calc(100vw - 1rem)) !important;
+  max-width: min(42rem, calc(100vw - 1rem)) !important;
+  max-height: calc(100dvh - 1rem) !important;
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
   translate: none !important;
@@ -11641,7 +11718,7 @@ body.theme-leaf[data-delegate-theme="true"]::before {
 
 .sales-dashboard-draggable-modal-grip {
   position: sticky;
-  top: 10;
+  top: 10px;
   z-index: 10060;
   display: flex;
   flex: 0 0 auto;
@@ -11668,6 +11745,21 @@ body.theme-leaf[data-delegate-theme="true"]::before {
   cursor: grabbing;
 }
 
+@media (max-width: 767px) {
+  .sales-dashboard-detail-modal-layer.sales-dashboard-window-layer {
+    overflow: hidden !important;
+    padding: 0.5rem !important;
+  }
+
+  .sales-dashboard-detail-modal-layer.sales-dashboard-window-layer .sales-dashboard-draggable-modal[data-slot="dialog-content"] {
+    left: calc(50vw + var(--sales-dashboard-modal-x, 0px)) !important;
+    top: calc(50dvh + var(--sales-dashboard-modal-y, 0px)) !important;
+    width: calc(100vw - 1rem) !important;
+    max-width: calc(100vw - 1rem) !important;
+    max-height: calc(100dvh - 1rem) !important;
+  }
+}
+
 [data-app-header] .header-search-field:hover .header-search-input::placeholder,
 [data-app-header] .header-search-field:focus-within .header-search-input::placeholder {
   color: rgba(60, 103, 183, 0.72) !important;
@@ -11679,4 +11771,520 @@ body.theme-leaf[data-delegate-theme="true"]::before {
 [data-app-header] .header-search-field:focus-within .header-search-clear-button {
   color: var(--color-accent-primary, #3c67b7) !important;
   stroke: currentColor;
+}
+
+.dev-theme-root.theme-clinical [data-app-header].app-header-blur {
+  border-color: rgba(60, 103, 183, 0.16) !important;
+  box-shadow:
+    0 22px 48px -40px rgba(15, 23, 42, 0.42),
+    0 8px 22px -20px rgba(60, 103, 183, 0.26),
+    inset 0 1px rgba(255, 255, 255, 0.78) !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-search-input,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  background-image: none !important;
+  border-color: rgba(60, 103, 183, 0.42) !important;
+  color: var(--theme-accent, #3c67b7) !important;
+  box-shadow: none !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] .header-search-input {
+  caret-color: var(--theme-accent, #3c67b7) !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] .header-search-input::placeholder {
+  color: rgba(60, 103, 183, 0.62) !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .shop-home-button svg,
+  .header-cart-button svg,
+  .header-account-button svg,
+  .header-account-button .header-account-name
+) {
+  color: var(--theme-accent, #3c67b7) !important;
+  stroke: currentColor;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] .header-cart-button + .header-count-indicator {
+  border-color: rgba(60, 103, 183, 0.42) !important;
+}
+
+.dev-theme-root.theme-clinical [data-app-header] .header-search-field:hover .header-search-input,
+.dev-theme-root.theme-clinical [data-app-header] .header-search-field:focus-within .header-search-input,
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):hover,
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):focus-visible,
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-account-button,
+  .header-cart-button
+)[data-state="open"],
+.dev-theme-root.theme-clinical [data-app-header] :is(
+  .header-account-button,
+  .header-cart-button
+)[aria-expanded="true"] {
+  background: rgba(60, 103, 183, 0.1) !important;
+  background-color: rgba(60, 103, 183, 0.1) !important;
+  background-image: none !important;
+  border-color: rgba(60, 103, 183, 0.56) !important;
+  color: var(--theme-accent, #3c67b7) !important;
+  box-shadow: none !important;
+}
+
+[data-app-header] {
+  --app-header-brand-blue: rgb(60, 103, 183);
+  --app-header-refresh-bg: transparent;
+  --app-header-refresh-text: var(--app-header-brand-blue);
+  --app-header-refresh-border: var(--app-header-brand-blue);
+  --app-header-refresh-hover-bg: var(--app-header-brand-blue);
+  --app-header-refresh-hover-text: #ffffff;
+  color: var(--app-header-brand-blue) !important;
+}
+
+[data-app-header] :is(
+  .info-header-welcome,
+  .info-header-welcome__text
+) {
+  color: var(--app-header-brand-blue) !important;
+}
+
+[data-app-header] :is(
+  .header-search-input,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .header-search-input,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+),
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .header-search-input,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: var(--app-header-refresh-bg) !important;
+  background-color: var(--app-header-refresh-bg) !important;
+  background-image: none !important;
+  border: 2px solid var(--app-header-refresh-border) !important;
+  box-shadow: none !important;
+  color: var(--app-header-refresh-text) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+[data-app-header] :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg,
+  .shop-home-button svg,
+  .header-account-button svg,
+  .header-account-button .header-account-name,
+  .header-cart-button svg,
+  .mobile-search-toggle-button svg,
+  .mobile-search-icon
+),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg,
+  .shop-home-button svg,
+  .header-account-button svg,
+  .header-account-button .header-account-name,
+  .header-cart-button svg,
+  .mobile-search-toggle-button svg,
+  .mobile-search-icon
+),
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg,
+  .shop-home-button svg,
+  .header-account-button svg,
+  .header-account-button .header-account-name,
+  .header-cart-button svg,
+  .mobile-search-toggle-button svg,
+  .mobile-search-icon
+) {
+  color: var(--app-header-refresh-text) !important;
+  stroke: currentColor !important;
+}
+
+[data-app-header] .header-search-input,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-input,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-input {
+  caret-color: var(--app-header-refresh-text) !important;
+}
+
+[data-app-header] .header-search-input::placeholder,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-input::placeholder,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-input::placeholder {
+  color: rgba(60, 103, 183, 0.64) !important;
+  opacity: 1 !important;
+}
+
+[data-app-header] :is(
+  .header-cart-button + .header-count-indicator,
+  .account-indicator-badge
+),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .header-cart-button + .header-count-indicator,
+  .account-indicator-badge
+),
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .header-cart-button + .header-count-indicator,
+  .account-indicator-badge
+) {
+  background: #ffffff !important;
+  border-color: var(--app-header-refresh-border) !important;
+  color: var(--app-header-refresh-text) !important;
+}
+
+[data-app-header] .header-search-field:hover .header-search-input,
+[data-app-header] .header-search-field:focus-within .header-search-input,
+[data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):hover,
+[data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):focus-visible,
+[data-app-header] :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[data-state="open"],
+[data-app-header] :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[aria-expanded="true"] {
+  background: var(--app-header-refresh-hover-bg) !important;
+  background-color: var(--app-header-refresh-hover-bg) !important;
+  background-image: none !important;
+  border-color: var(--app-header-refresh-hover-bg) !important;
+  box-shadow: none !important;
+  color: var(--app-header-refresh-hover-text) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:hover .header-search-input,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:focus-within .header-search-input,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):hover,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):focus-visible,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[data-state="open"],
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[aria-expanded="true"],
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:hover .header-search-input,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:focus-within .header-search-input,
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):hover,
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):focus-visible,
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[data-state="open"],
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[aria-expanded="true"] {
+  background: var(--app-header-refresh-hover-bg) !important;
+  background-color: var(--app-header-refresh-hover-bg) !important;
+  background-image: none !important;
+  border-color: var(--app-header-refresh-hover-bg) !important;
+  box-shadow: none !important;
+  color: var(--app-header-refresh-hover-text) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+[data-app-header] .header-search-field:hover .header-search-input,
+[data-app-header] .header-search-field:focus-within .header-search-input,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:hover .header-search-input,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:focus-within .header-search-input,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:hover .header-search-input,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:focus-within .header-search-input {
+  caret-color: var(--app-header-refresh-hover-text) !important;
+}
+
+[data-app-header] .header-search-field:hover .header-search-input::placeholder,
+[data-app-header] .header-search-field:focus-within .header-search-input::placeholder,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:hover .header-search-input::placeholder,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:focus-within .header-search-input::placeholder,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:hover .header-search-input::placeholder,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:focus-within .header-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+[data-app-header] .header-search-field:hover :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+[data-app-header] .header-search-field:focus-within :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:hover :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:focus-within :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:hover :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:focus-within :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+[data-app-header] :is(
+  .shop-home-button:hover,
+  .shop-home-button:focus-visible,
+  .header-account-button:hover,
+  .header-account-button:focus-visible,
+  .header-account-button[data-state="open"],
+  .header-account-button[aria-expanded="true"],
+  .header-cart-button:hover,
+  .header-cart-button:focus-visible,
+  .header-cart-button[data-state="open"],
+  .header-cart-button[aria-expanded="true"],
+  .mobile-search-toggle-button:hover,
+  .mobile-search-toggle-button:focus-visible,
+  .mobile-search-toggle-button[data-state="open"],
+  .mobile-search-toggle-button[aria-expanded="true"]
+) :is(svg, .header-account-name, .mobile-search-icon),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] :is(
+  .shop-home-button:hover,
+  .shop-home-button:focus-visible,
+  .header-account-button:hover,
+  .header-account-button:focus-visible,
+  .header-account-button[data-state="open"],
+  .header-account-button[aria-expanded="true"],
+  .header-cart-button:hover,
+  .header-cart-button:focus-visible,
+  .header-cart-button[data-state="open"],
+  .header-cart-button[aria-expanded="true"],
+  .mobile-search-toggle-button:hover,
+  .mobile-search-toggle-button:focus-visible,
+  .mobile-search-toggle-button[data-state="open"],
+  .mobile-search-toggle-button[aria-expanded="true"]
+) :is(svg, .header-account-name, .mobile-search-icon),
+.dev-theme-root:not(.theme-biotech) [data-app-header] :is(
+  .shop-home-button:hover,
+  .shop-home-button:focus-visible,
+  .header-account-button:hover,
+  .header-account-button:focus-visible,
+  .header-account-button[data-state="open"],
+  .header-account-button[aria-expanded="true"],
+  .header-cart-button:hover,
+  .header-cart-button:focus-visible,
+  .header-cart-button[data-state="open"],
+  .header-cart-button[aria-expanded="true"],
+  .mobile-search-toggle-button:hover,
+  .mobile-search-toggle-button:focus-visible,
+  .mobile-search-toggle-button[data-state="open"],
+  .mobile-search-toggle-button[aria-expanded="true"]
+) :is(svg, .header-account-name, .mobile-search-icon) {
+  color: var(--app-header-refresh-hover-text) !important;
+  stroke: currentColor !important;
+}
+
+[data-app-header] .header-search-clear-button:hover,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-clear-button:hover,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-clear-button:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: var(--app-header-refresh-hover-text) !important;
+}
+
+[data-app-header] .header-search-field:hover .header-search-input,
+[data-app-header] .header-search-field:focus-within .header-search-input,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:hover .header-search-input,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:focus-within .header-search-input,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:hover .header-search-input,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:focus-within .header-search-input {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: var(--app-header-refresh-border) !important;
+  color: var(--app-header-refresh-text) !important;
+  caret-color: var(--app-header-refresh-text) !important;
+}
+
+[data-app-header] .header-search-field:hover .header-search-input::placeholder,
+[data-app-header] .header-search-field:focus-within .header-search-input::placeholder,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:hover .header-search-input::placeholder,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:focus-within .header-search-input::placeholder,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:hover .header-search-input::placeholder,
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:focus-within .header-search-input::placeholder {
+  color: rgba(60, 103, 183, 0.64) !important;
+}
+
+[data-app-header] .header-search-field:hover :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+[data-app-header] .header-search-field:focus-within :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:hover :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] .header-search-field:focus-within :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:hover :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+),
+.dev-theme-root:not(.theme-biotech) [data-app-header] .header-search-field:focus-within :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg
+) {
+  color: var(--app-header-refresh-text) !important;
+  stroke: currentColor !important;
+}
+
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button),
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button),
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 2px solid var(--app-header-brand-blue) !important;
+  box-shadow: none !important;
+  color: var(--app-header-brand-blue) !important;
+  filter: none !important;
+  height: 2.4rem !important;
+  min-height: 2.4rem !important;
+  min-width: 2.4rem !important;
+  padding: 0 !important;
+  transform: none !important;
+  width: 2.4rem !important;
+}
+
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button) svg,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button) svg,
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button) svg {
+  color: var(--app-header-brand-blue) !important;
+  height: 1.25rem !important;
+  stroke: currentColor !important;
+  width: 1.25rem !important;
+}
+
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover,
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible,
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"],
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"],
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"],
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"],
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover,
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible,
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"],
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] {
+  background: var(--app-header-refresh-hover-bg) !important;
+  background-color: var(--app-header-refresh-hover-bg) !important;
+  background-image: none !important;
+  border-color: var(--app-header-refresh-hover-bg) !important;
+  color: var(--app-header-refresh-hover-text) !important;
+}
+
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover svg,
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible svg,
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"] svg,
+[data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] svg,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover svg,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible svg,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"] svg,
+.dev-theme-root:is(.theme-biotech, .theme-clinical, .theme-community, .theme-leaf) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] svg,
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover svg,
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible svg,
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"] svg,
+.dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] svg {
+  color: var(--app-header-refresh-hover-text) !important;
+  stroke: currentColor !important;
 }

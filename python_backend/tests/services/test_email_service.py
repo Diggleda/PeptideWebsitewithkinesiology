@@ -166,7 +166,7 @@ class EmailServiceTests(unittest.TestCase):
             spec for spec in email_service._EMAIL_INLINE_IMAGE_SPECS if spec["content_id"] == "trufusion-logo"
         )
 
-        self.assertEqual(logo_spec["filename"], "TruFusionLabs_PhysicianPortal_White.png")
+        self.assertEqual(logo_spec["filename"], "TruFusionLabs_PhysiciansPortal.png")
 
     def test_delegate_links_beta_info_email_includes_badge_image(self):
         from python_backend.services import email_service
@@ -251,7 +251,7 @@ class EmailServiceTests(unittest.TestCase):
         inline_images = (
             {
                 "content_id": "trufusion-logo",
-                "filename": "TruFusionLabs_PhysicianPortal_White.png",
+                "filename": "TruFusionLabs_PhysiciansPortal.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",
@@ -288,7 +288,7 @@ class EmailServiceTests(unittest.TestCase):
         attachments = post.call_args.kwargs["json"]["attachments"]
         self.assertEqual([attachment["content_id"] for attachment in attachments], ["trufusion-logo", "trufusion-leaf"])
         self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
-        self.assertEqual([attachment["filename"] for attachment in attachments], ["TruFusionLabs_PhysicianPortal_White.png", "leafTexture.jpg"])
+        self.assertEqual([attachment["filename"] for attachment in attachments], ["TruFusionLabs_PhysiciansPortal.png", "leafTexture.jpg"])
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
@@ -319,7 +319,7 @@ class EmailServiceTests(unittest.TestCase):
         inline_images = (
             {
                 "content_id": "trufusion-logo",
-                "filename": "TruFusionLabs_PhysicianPortal_White.png",
+                "filename": "TruFusionLabs_PhysiciansPortal.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",

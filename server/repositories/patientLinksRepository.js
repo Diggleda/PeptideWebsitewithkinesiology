@@ -1,0 +1,265 @@
+const crypto = require('crypto');
+const mysqlClient = require('../database/mysqlClient');
+
+const ACTIVE_LINK_SQL = '(expires_at IS NULL OR expires_at > UTC_TIMESTAMP())';
+
+const isEnabled = () => mysqlClient.isEnabled();
+
+const normalizeOptionalString = (value, maxLength = 190) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : null;
+};
+
+const normalizeOptionalInt = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.max(1, Math.min(10_000, Math.floor(parsed)));
+};
+
+const normalizeCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
+};
+
+const normalizeMarkupPercent = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(500, Math.round((parsed + Number.EPSILON) * 100) / 100));
+};
+
+const hashToken = (token) =>
+  crypto.createHash('sha256').update(String(token || '').trim()).digest('hex');
+
+const toMysqlDateTime = (value) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+const toIsoDateTime = (value) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString();
+};
+
+const normalizeAllowedProducts = (value) => {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.replace(/\n/g, ',').split(',')
+      : [];
+  const seen = new Set();
+  const normalized = [];
+  for (const entry of source) {
+    const token = String(entry || '').trim().toUpperCase();
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    normalized.push(token);
+  }
+  return normalized;
+};
+
+const linkSnapshotParams = (link, doctorId) => {
+  const token = normalizeOptionalString(link?.token, 128);
+  if (!token) return null;
+  const subjectLabel = normalizeOptionalString(link?.subjectLabel ?? link?.patientId ?? link?.patient_id);
+  const studyLabel = normalizeOptionalString(link?.studyLabel ?? link?.study_label);
+  const patientReference = normalizeOptionalString(
+    link?.patientReference ?? link?.patient_reference ?? link?.referenceLabel ?? link?.reference_label,
+  );
+  const allowedProducts = normalizeAllowedProducts(link?.allowedProducts ?? link?.allowed_products);
+
+  return {
+    token,
+    doctor_id: String(doctorId || link?.doctorId || link?.doctor_id || '').trim(),
+    patient_id: subjectLabel,
+    reference_label: patientReference || studyLabel,
+    subject_label: subjectLabel,
+    study_label: studyLabel,
+    patient_reference: patientReference,
+    created_at: toMysqlDateTime(link?.createdAt ?? link?.created_at) || toMysqlDateTime(new Date()),
+    expires_at: toMysqlDateTime(link?.expiresAt ?? link?.expires_at),
+    markup_percent: normalizeMarkupPercent(link?.markupPercent ?? link?.markup_percent),
+    instructions: normalizeOptionalString(link?.instructions, 4000),
+    allowed_products_json: JSON.stringify(allowedProducts),
+    usage_limit: normalizeOptionalInt(link?.usageLimit ?? link?.usage_limit),
+    status: normalizeOptionalString(link?.status, 32) || 'active',
+    payment_method: normalizeOptionalString(link?.paymentMethod ?? link?.payment_method, 32),
+    payment_instructions: normalizeOptionalString(
+      link?.paymentInstructions ?? link?.payment_instructions,
+      4000,
+    ),
+    physician_certified: link?.physicianCertified || link?.physician_certified ? 1 : 0,
+  };
+};
+
+const createLinkSnapshot = async (link, doctorId) => {
+  if (!isEnabled()) return false;
+  const params = linkSnapshotParams(link, doctorId);
+  if (!params?.token || !params.doctor_id) return false;
+
+  const result = await mysqlClient.execute(
+    `
+      INSERT INTO patient_links (
+        token,
+        token_version,
+        doctor_id,
+        patient_id,
+        reference_label,
+        subject_label,
+        study_label,
+        patient_reference,
+        created_at,
+        expires_at,
+        markup_percent,
+        instructions,
+        allowed_products_json,
+        usage_limit,
+        usage_count,
+        open_count,
+        status,
+        payment_method,
+        payment_instructions,
+        physician_certified
+      ) VALUES (
+        :token,
+        1,
+        :doctor_id,
+        :patient_id,
+        :reference_label,
+        :subject_label,
+        :study_label,
+        :patient_reference,
+        :created_at,
+        :expires_at,
+        :markup_percent,
+        :instructions,
+        :allowed_products_json,
+        :usage_limit,
+        0,
+        0,
+        :status,
+        :payment_method,
+        :payment_instructions,
+        :physician_certified
+      )
+      ON DUPLICATE KEY UPDATE
+        usage_limit = VALUES(usage_limit),
+        markup_percent = VALUES(markup_percent),
+        payment_method = VALUES(payment_method),
+        payment_instructions = VALUES(payment_instructions)
+    `,
+    params,
+  );
+  return Boolean(result);
+};
+
+const buildTokenLookup = (tokens) => {
+  const normalizedTokens = Array.from(new Set(
+    (tokens || [])
+      .map((token) => String(token || '').trim())
+      .filter(Boolean),
+  ));
+  const params = {};
+  const placeholders = [];
+  const tokenByLookup = new Map();
+
+  normalizedTokens.forEach((token) => {
+    [token, hashToken(token)].forEach((lookupToken) => {
+      if (!lookupToken || tokenByLookup.has(lookupToken)) return;
+      const key = `token${placeholders.length}`;
+      params[key] = lookupToken;
+      placeholders.push(`:${key}`);
+      tokenByLookup.set(lookupToken, token);
+    });
+  });
+
+  return { normalizedTokens, params, placeholders, tokenByLookup };
+};
+
+const fetchMetricsByTokens = async (tokens) => {
+  const empty = new Map();
+  if (!isEnabled()) return empty;
+  const { params, placeholders, tokenByLookup } = buildTokenLookup(tokens);
+  if (placeholders.length === 0) return empty;
+
+  const rows = await mysqlClient.fetchAll(
+    `
+      SELECT
+        token,
+        usage_limit,
+        usage_count,
+        open_count,
+        last_used_at,
+        last_opened_at
+      FROM patient_links
+      WHERE token IN (${placeholders.join(', ')})
+    `,
+    params,
+  );
+
+  const metrics = new Map();
+  for (const row of rows || []) {
+    const ownerToken = tokenByLookup.get(String(row?.token || '').trim());
+    if (!ownerToken) continue;
+    metrics.set(ownerToken, {
+      usageLimit: normalizeOptionalInt(row.usage_limit),
+      usageCount: normalizeCount(row.usage_count),
+      openCount: normalizeCount(row.open_count),
+      lastUsedAt: toIsoDateTime(row.last_used_at),
+      lastOpenedAt: toIsoDateTime(row.last_opened_at),
+    });
+  }
+  return metrics;
+};
+
+const touchLastUsed = async (token) => {
+  if (!isEnabled()) return null;
+  const normalized = String(token || '').trim();
+  if (!normalized) return null;
+  await mysqlClient.execute(
+    `
+      UPDATE patient_links
+      SET
+        last_used_at = UTC_TIMESTAMP(),
+        last_opened_at = UTC_TIMESTAMP(),
+        open_count = COALESCE(open_count, 0) + 1
+      WHERE (token = :rawToken OR token = :hashedToken)
+        AND ${ACTIVE_LINK_SQL}
+    `,
+    {
+      rawToken: normalized,
+      hashedToken: hashToken(normalized),
+    },
+  );
+  return (await fetchMetricsByTokens([normalized])).get(normalized) || null;
+};
+
+const mergeMetricsIntoLinks = async (links) => {
+  if (!Array.isArray(links) || links.length === 0 || !isEnabled()) {
+    return links;
+  }
+  const metricsByToken = await fetchMetricsByTokens(links.map((link) => link?.token));
+  if (metricsByToken.size === 0) return links;
+  return links.map((link) => {
+    const token = String(link?.token || '').trim();
+    const metrics = metricsByToken.get(token);
+    return metrics ? { ...link, ...metrics } : link;
+  });
+};
+
+module.exports = {
+  createLinkSnapshot,
+  fetchMetricsByTokens,
+  hashToken,
+  isEnabled,
+  mergeMetricsIntoLinks,
+  normalizeCount,
+  normalizeOptionalInt,
+  touchLastUsed,
+};

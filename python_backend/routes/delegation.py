@@ -44,6 +44,23 @@ def _resolve_target_doctor_id(role: str) -> str:
     return actor_id
 
 
+def _should_count_resolve_page_load(args: object) -> bool:
+    getter = getattr(args, "get", None)
+    if not callable(getter):
+        return True
+    raw_value = None
+    for key in ("countPageLoad", "countUsage", "trackPageLoad", "track_usage", "trackUsage"):
+        raw_value = getter(key)
+        if raw_value is not None:
+            break
+    if raw_value is None:
+        return True
+    normalized = str(raw_value or "").strip().lower()
+    if not normalized:
+        return True
+    return normalized not in {"0", "false", "no", "off", "read", "readonly", "poll"}
+
+
 @blueprint.get("/links")
 @require_auth
 def list_links():
@@ -262,7 +279,13 @@ def update_config():
 @blueprint.get("/resolve")
 def resolve_token():
     token = (request.args.get("token") or "").strip()
-    return handle_action(lambda: {"success": True, **delegation_service.resolve_delegate_token(token)})
+    count_page_load = _should_count_resolve_page_load(request.args)
+    return handle_action(
+        lambda: {
+            "success": True,
+            **delegation_service.resolve_delegate_token(token, count_page_load=count_page_load),
+        }
+    )
 
 
 @blueprint.get("/links/<token>/proposal")

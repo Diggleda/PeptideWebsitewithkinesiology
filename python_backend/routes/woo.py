@@ -568,7 +568,7 @@ def get_certificate_of_analysis_delegate(product_id: int):
             raise err
 
         # Validate delegate session (expiry, revoked, and settings gating).
-        delegation_service.resolve_delegate_token(token)
+        delegation_service.resolve_delegate_token(token, count_page_load=False)
 
         row = product_document_repository.get_document(
             int(product_id),

@@ -10,6 +10,49 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
   `
+    CREATE TABLE IF NOT EXISTS patient_links (
+      token VARCHAR(128) PRIMARY KEY,
+      token_version SMALLINT NOT NULL DEFAULT 1,
+      token_ciphertext LONGTEXT NULL,
+      token_hint VARCHAR(32) NULL,
+      doctor_id VARCHAR(32) NOT NULL,
+      patient_id LONGTEXT NULL,
+      reference_label LONGTEXT NULL,
+      subject_label LONGTEXT NULL,
+      study_label LONGTEXT NULL,
+      patient_reference LONGTEXT NULL,
+      created_at DATETIME NOT NULL,
+      expires_at DATETIME NULL,
+      markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+      instructions LONGTEXT NULL,
+      allowed_products_json JSON NULL,
+      usage_limit INT NULL,
+      usage_count INT NOT NULL DEFAULT 0,
+      open_count INT NOT NULL DEFAULT 0,
+      status VARCHAR(32) NOT NULL DEFAULT 'active',
+      payment_method VARCHAR(32) NULL,
+      payment_instructions LONGTEXT NULL,
+      physician_certified TINYINT(1) NOT NULL DEFAULT 0,
+      received_payment TINYINT(1) NOT NULL DEFAULT 0,
+      last_used_at DATETIME NULL,
+      last_opened_at DATETIME NULL,
+      last_order_at DATETIME NULL,
+      revoked_at DATETIME NULL,
+      delegate_cart_json LONGTEXT NULL,
+      delegate_shipping_json LONGTEXT NULL,
+      delegate_payment_json LONGTEXT NULL,
+      delegate_shared_at DATETIME NULL,
+      delegate_order_id VARCHAR(32) NULL,
+      delegate_review_status VARCHAR(32) NULL,
+      delegate_reviewed_at DATETIME NULL,
+      delegate_review_order_id VARCHAR(32) NULL,
+      delegate_review_notes LONGTEXT NULL,
+      INDEX idx_patient_links_doctor (doctor_id),
+      INDEX idx_patient_links_expires (expires_at),
+      INDEX idx_patient_links_status (status)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
     CREATE TABLE IF NOT EXISTS user_passkeys (
       id VARCHAR(32) PRIMARY KEY,
       user_id VARCHAR(64) NOT NULL,
@@ -1385,6 +1428,61 @@ const ensurePeptideForumColumns = async () => {
   }
 };
 
+const ensurePatientLinkColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const columns = [
+    { name: 'usage_limit', ddl: 'ALTER TABLE patient_links ADD COLUMN usage_limit INT NULL' },
+    { name: 'usage_count', ddl: 'ALTER TABLE patient_links ADD COLUMN usage_count INT NOT NULL DEFAULT 0' },
+    { name: 'open_count', ddl: 'ALTER TABLE patient_links ADD COLUMN open_count INT NOT NULL DEFAULT 0' },
+    { name: 'last_used_at', ddl: 'ALTER TABLE patient_links ADD COLUMN last_used_at DATETIME NULL' },
+    { name: 'last_opened_at', ddl: 'ALTER TABLE patient_links ADD COLUMN last_opened_at DATETIME NULL' },
+    { name: 'last_order_at', ddl: 'ALTER TABLE patient_links ADD COLUMN last_order_at DATETIME NULL' },
+  ];
+
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'patient_links'
+            AND COLUMN_NAME = :columnName
+          LIMIT 1
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL patient_links column added');
+      }
+    } catch (error) {
+      logger.error(
+        { err: error, column: column.name },
+        'Failed to ensure MySQL patient_links column',
+      );
+    }
+  }
+
+  await ensureIndex(
+    'patient_links',
+    'idx_patient_links_doctor',
+    'ALTER TABLE patient_links ADD INDEX idx_patient_links_doctor (doctor_id)',
+  );
+  await ensureIndex(
+    'patient_links',
+    'idx_patient_links_expires',
+    'ALTER TABLE patient_links ADD INDEX idx_patient_links_expires (expires_at)',
+  );
+  await ensureIndex(
+    'patient_links',
+    'idx_patient_links_status',
+    'ALTER TABLE patient_links ADD INDEX idx_patient_links_status (status)',
+  );
+};
+
 const ensureSchema = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -1400,6 +1498,7 @@ const ensureSchema = async () => {
   await ensureTaxTrackingColumns();
   await ensureContactFormIndexes();
   await ensurePeptideForumColumns();
+  await ensurePatientLinkColumns();
   logger.info('MySQL schema ensured');
 };
 

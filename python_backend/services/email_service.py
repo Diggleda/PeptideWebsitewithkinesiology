@@ -106,13 +106,13 @@ _EMAIL_TRACK_BUTTON_HOVER_CSS = (
 _EMAIL_INLINE_IMAGE_SPECS = (
     {
         "content_id": _EMAIL_LOGO_CID,
-        "filename": "TruFusionLabs_PhysicianPortal_White.png",
+        "filename": "TruFusionLabs_PhysiciansPortal.png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
-            "public/TruFusionLabs_PhysicianPortal_White.png",
-            "src/generated/runtime-assets/TruFusionLabs_PhysicianPortal_White.png",
+            "public/TruFusionLabs_PhysiciansPortal.png",
+            "src/generated/runtime-assets/TruFusionLabs_PhysiciansPortal.png",
         ),
     },
     {

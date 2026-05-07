@@ -3,6 +3,7 @@ const { Router } = require('express');
 const { authenticate, authenticateOptional } = require('../middleware/authenticate');
 const { JsonStore } = require('../storage/jsonStore');
 const { env } = require('../config/env');
+const patientLinksRepository = require('../repositories/patientLinksRepository');
 const userRepository = require('../repositories/userRepository');
 
 const router = Router();
@@ -14,10 +15,6 @@ store.init();
 
 const DEFAULT_MARKUP_PERCENT = 15;
 const LINK_EXPIRY_HOURS = 72;
-const RESOLVE_LAST_USED_WRITE_THROTTLE_MS = Math.max(
-  5_000,
-  Number(process.env.DELEGATION_RESOLVE_WRITE_THROTTLE_MS || 60_000),
-);
 
 const normalizeOptionalString = (value) => {
   if (typeof value !== 'string') return null;
@@ -29,6 +26,90 @@ const normalizeMarkupPercent = (value, fallback = DEFAULT_MARKUP_PERCENT) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, parsed);
+};
+
+const normalizeUsageCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
+};
+
+const normalizeUsageLimit = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.max(1, Math.floor(parsed));
+};
+
+const shouldCountResolvePageLoad = (query = {}) => {
+  const rawValue =
+    query.countPageLoad
+    ?? query.countUsage
+    ?? query.trackPageLoad
+    ?? query.track_usage
+    ?? query.trackUsage;
+  if (rawValue === undefined || rawValue === null) return true;
+  const raw = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  const normalized = String(raw || '').trim().toLowerCase();
+  if (!normalized) return true;
+  return !['0', 'false', 'no', 'off', 'read', 'readonly', 'poll'].includes(normalized);
+};
+
+const recordResolveOpenFallback = (link, nowMs = Date.now()) => {
+  if (!link || typeof link !== 'object') return null;
+  const nextOpenCount = normalizeUsageCount(link.openCount ?? link.open_count) + 1;
+  const timestamp = new Date(nowMs).toISOString();
+  link.openCount = nextOpenCount;
+  link.lastUsedAt = timestamp;
+  link.lastOpenedAt = timestamp;
+  return {
+    openCount: nextOpenCount,
+    lastUsedAt: timestamp,
+    lastOpenedAt: timestamp,
+  };
+};
+
+const normalizeAllowedProducts = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.replace(/\n/g, ',').split(',').map((entry) => entry.trim()).filter(Boolean);
+  }
+  return [];
+};
+
+const syncPatientLinkSnapshot = async (link, doctorId) => {
+  if (!patientLinksRepository.isEnabled()) return false;
+  try {
+    return await patientLinksRepository.createLinkSnapshot(link, doctorId);
+  } catch (_error) {
+    return false;
+  }
+};
+
+const mergePatientLinkSqlMetrics = async (links) => {
+  if (!patientLinksRepository.isEnabled()) return links;
+  try {
+    return await patientLinksRepository.mergeMetricsIntoLinks(links);
+  } catch (_error) {
+    return links;
+  }
+};
+
+const recordResolveOpen = async (token, link, doctorId, nowMs = Date.now()) => {
+  if (patientLinksRepository.isEnabled()) {
+    try {
+      await patientLinksRepository.createLinkSnapshot(link, doctorId);
+      const metrics = await patientLinksRepository.touchLastUsed(token);
+      if (metrics) {
+        Object.assign(link, metrics);
+        return metrics;
+      }
+    } catch (_error) {
+      // Fall back to local JSON counters when MySQL is unavailable during dev.
+    }
+  }
+  return recordResolveOpenFallback(link, nowMs);
 };
 
 const getState = () => {
@@ -125,21 +206,23 @@ const buildNodeDummyResolvePayload = (
   return null;
 };
 
-router.get('/links', authenticate, (req, res) => {
+router.get('/links', authenticate, async (req, res) => {
   const doctorId = String(req.user?.id || '').trim();
   const state = getState();
   const bucket = ensureDoctorBucket(state, doctorId);
   const links = Array.isArray(bucket?.links) ? bucket.links : [];
   const config = bucket?.config || { markupPercent: DEFAULT_MARKUP_PERCENT };
+  const sortedLinks = [...links].sort((a, b) => Date.parse(b?.createdAt || 0) - Date.parse(a?.createdAt || 0));
+  const linksWithMetrics = await mergePatientLinkSqlMetrics(sortedLinks);
   return res.json({
-    links: [...links].sort((a, b) => Date.parse(b?.createdAt || 0) - Date.parse(a?.createdAt || 0)),
+    links: linksWithMetrics,
     config: {
       markupPercent: normalizeMarkupPercent(config.markupPercent, DEFAULT_MARKUP_PERCENT),
     },
   });
 });
 
-router.post('/links', authenticate, (req, res) => {
+router.post('/links', authenticate, async (req, res) => {
   const doctorId = String(req.user?.id || '').trim();
   const state = getState();
   const bucket = ensureDoctorBucket(state, doctorId);
@@ -152,13 +235,22 @@ router.post('/links', authenticate, (req, res) => {
     token: makeToken(),
     referenceLabel: normalizeOptionalString(req.body?.referenceLabel),
     patientId: normalizeOptionalString(req.body?.patientId),
+    subjectLabel: normalizeOptionalString(req.body?.subjectLabel),
+    studyLabel: normalizeOptionalString(req.body?.studyLabel),
+    patientReference: normalizeOptionalString(req.body?.patientReference),
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + LINK_EXPIRY_HOURS * 60 * 60 * 1000).toISOString(),
     markupPercent,
+    instructions: normalizeOptionalString(req.body?.instructions),
+    allowedProducts: normalizeAllowedProducts(req.body?.allowedProducts),
+    usageLimit: normalizeUsageLimit(req.body?.usageLimit),
+    usageCount: 0,
+    openCount: 0,
     paymentMethod: normalizeOptionalString(req.body?.paymentMethod) || 'none',
     paymentInstructions: normalizeOptionalString(req.body?.paymentInstructions) || '',
     receivedPayment: false,
     lastUsedAt: null,
+    lastOpenedAt: null,
     revokedAt: null,
     delegateSharedAt: null,
     delegateOrderId: null,
@@ -167,10 +259,11 @@ router.post('/links', authenticate, (req, res) => {
   bucket.links.push(link);
   bucket.config.markupPercent = markupPercent;
   saveState(state);
+  await syncPatientLinkSnapshot(link, doctorId);
   return res.status(201).json({ link });
 });
 
-router.patch('/links/:token', authenticate, (req, res) => {
+router.patch('/links/:token', authenticate, async (req, res) => {
   const doctorId = String(req.user?.id || '').trim();
   const token = String(req.params?.token || '').trim();
   if (!token) return res.status(400).json({ error: 'token is required' });
@@ -193,8 +286,26 @@ router.patch('/links/:token', authenticate, (req, res) => {
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'patientId')) {
     link.patientId = normalizeOptionalString(req.body.patientId);
   }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'subjectLabel')) {
+    link.subjectLabel = normalizeOptionalString(req.body.subjectLabel);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'studyLabel')) {
+    link.studyLabel = normalizeOptionalString(req.body.studyLabel);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'patientReference')) {
+    link.patientReference = normalizeOptionalString(req.body.patientReference);
+  }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'markupPercent')) {
     link.markupPercent = normalizeMarkupPercent(req.body.markupPercent, link.markupPercent || DEFAULT_MARKUP_PERCENT);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'instructions')) {
+    link.instructions = normalizeOptionalString(req.body.instructions);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'allowedProducts')) {
+    link.allowedProducts = normalizeAllowedProducts(req.body.allowedProducts);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'usageLimit')) {
+    link.usageLimit = normalizeUsageLimit(req.body.usageLimit);
   }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'paymentMethod')) {
     link.paymentMethod = normalizeOptionalString(req.body.paymentMethod) || 'none';
@@ -211,6 +322,7 @@ router.patch('/links/:token', authenticate, (req, res) => {
   }
 
   saveState(state);
+  await syncPatientLinkSnapshot(link, doctorId);
   return res.json({ link });
 });
 
@@ -256,7 +368,7 @@ router.post('/links/:token/proposal/review', authenticate, (req, res) => {
   return res.json({ ok: true, status: link.proposalStatus });
 });
 
-router.get('/resolve', authenticateOptional, (req, res) => {
+router.get('/resolve', authenticateOptional, async (req, res) => {
   const token = String(req.query?.token || '').trim();
   if (!token) return res.status(400).json({ error: 'token is required' });
   if (token.startsWith('node-ui-dummy-link')) {
@@ -274,6 +386,7 @@ router.get('/resolve', authenticateOptional, (req, res) => {
   }
   const state = getState();
   const nowMs = Date.now();
+  const countPageLoad = shouldCountResolvePageLoad(req.query || {});
   const doctorIds = Object.keys(state.byDoctorId || {});
   for (const doctorId of doctorIds) {
     const bucket = ensureDoctorBucket(state, doctorId);
@@ -284,11 +397,8 @@ router.get('/resolve', authenticateOptional, (req, res) => {
     if (Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs) {
       return res.status(404).json({ error: 'Invalid or expired delegation link.' });
     }
-    const lastUsedAtMs = Date.parse(link.lastUsedAt || '');
-    const shouldPersistLastUsedAt = !Number.isFinite(lastUsedAtMs)
-      || (nowMs - lastUsedAtMs) >= RESOLVE_LAST_USED_WRITE_THROTTLE_MS;
-    if (shouldPersistLastUsedAt) {
-      link.lastUsedAt = new Date(nowMs).toISOString();
+    if (countPageLoad) {
+      await recordResolveOpen(token, link, doctorId, nowMs);
       saveState(state);
     }
     const doctor = userRepository.findById(doctorId);
@@ -305,6 +415,11 @@ router.get('/resolve', authenticateOptional, (req, res) => {
       paymentInstructions: link.paymentInstructions || '',
       createdAt: link.createdAt || null,
       expiresAt: link.expiresAt || null,
+      usageLimit: normalizeUsageLimit(link.usageLimit ?? link.usage_limit),
+      usageCount: normalizeUsageCount(link.usageCount ?? link.usage_count),
+      openCount: normalizeUsageCount(link.openCount ?? link.open_count),
+      lastUsedAt: link.lastUsedAt || null,
+      lastOpenedAt: link.lastOpenedAt || null,
       delegateSharedAt: link.delegateSharedAt || null,
       delegateOrderId: link.delegateOrderId || null,
       proposalStatus: link.proposalStatus || null,
@@ -315,6 +430,10 @@ router.get('/resolve', authenticateOptional, (req, res) => {
 
 router.__test__ = {
   buildNodeDummyResolvePayload,
+  normalizeUsageCount,
+  normalizeUsageLimit,
+  shouldCountResolvePageLoad,
+  recordResolveOpenFallback,
 };
 
 module.exports = router;

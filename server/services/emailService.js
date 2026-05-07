@@ -215,7 +215,7 @@ const sendOrderPaymentInstructionsEmail = async ({
   const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
   const displayName = String(customerName || 'TruFusionLabs Customer').trim() || 'TruFusionLabs Customer';
   const frontendBaseUrl = String(env.frontendBaseUrl || 'https://www.trufusionlabs.com').replace(/\/+$/, '');
-  const logoUrl = `${frontendBaseUrl}/TruFusionLabs_PhysicianPortal_White.png`;
+  const logoUrl = `${frontendBaseUrl}/TruFusionLabs_PhysiciansPortal.png`;
   const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
   const normalizedDiscountCode = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
   const discountDetails = normalizedDiscountCode

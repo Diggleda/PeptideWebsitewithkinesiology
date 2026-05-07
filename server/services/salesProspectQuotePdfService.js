@@ -193,8 +193,8 @@ const getTruFusionLogoDataUrl = () => {
   return loadStaticAssetDataUrl({
     cacheKey: 'logo',
     preferredRelativePaths: [
-      '../../public/turfusionlabsphysiciansportal.png',
-      '../../public/turfusionlabsphysiciansportal.png',
+      '../../public/TruFusionLabs_PhysiciansPortal.png',
+      '../../public/TruFusionLabs_PhysiciansPortal.png',
     ],
     matchTokens: ['pep', 'fulllogo'],
     fallbackType: 'image/png',
@@ -234,8 +234,8 @@ const getTruFusionIconDataUrl = () => {
   return loadStaticAssetDataUrl({
     cacheKey: 'icon',
     preferredRelativePaths: [
-      '../../public/turfusionlabsphysiciansportal.png',
-      '../../public/turfusionlabsphysiciansportal.png',
+      '../../public/TruFusionLabs_PhysiciansPortal.png',
+      '../../public/TruFusionLabs_PhysiciansPortal.png',
     ],
     matchTokens: ['pep', 'icon'],
     fallbackType: 'image/png',

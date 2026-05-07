@@ -141,7 +141,7 @@ elif template == "delegate-links-info":
 else:
     raise SystemExit(f"unknown python template: {template}")
 
-html = html.replace("cid:trufusion-logo", "/assets/TruFusionLabs_PhysicianPortal_White.png")
+html = html.replace("cid:trufusion-logo", "/assets/TruFusionLabs_PhysiciansPortal.png")
 html = html.replace("cid:trufusion-leaf", "/assets/leafTexture.jpg")
 html = html.replace("cid:delegate-white-label-sessions", "/assets/delegate-links-white-label-email.png")
 
@@ -194,7 +194,7 @@ const renderPaymentInstructions = () => {
     `;
 
   const html = template
-    .replaceAll('{{logoUrl}}', '/assets/TruFusionLabs_PhysicianPortal_White.png')
+    .replaceAll('{{logoUrl}}', '/assets/TruFusionLabs_PhysiciansPortal.png')
     .replaceAll('{{customerName}}', 'Holly O&#39;Quin')
     .replaceAll('{{orderNumber}}', '1505')
     .replaceAll('{{orderTotal}}', '$372.42')

@@ -821,7 +821,10 @@ def delegate_estimate_order_totals():
     discount_code = payload.get("discountCode") or payload.get("discount_code") or None
 
     def action():
-        delegate_info = delegation_service.resolve_delegate_token(str(delegate_token or ""))
+        delegate_info = delegation_service.resolve_delegate_token(
+            str(delegate_token or ""),
+            count_page_load=False,
+        )
         validated = delegation_service.validate_delegate_items(str(delegate_token or ""), items)
         doctor_id = delegate_info.get("doctorId")
         if not doctor_id:
@@ -854,7 +857,10 @@ def delegate_share_order():
     delegate_token = payload.get("delegateToken") or payload.get("delegate_token") or payload.get("token") or None
 
     def action():
-        delegate_info = delegation_service.resolve_delegate_token(str(delegate_token or ""))
+        delegate_info = delegation_service.resolve_delegate_token(
+            str(delegate_token or ""),
+            count_page_load=False,
+        )
         validated = delegation_service.validate_delegate_items(str(delegate_token or ""), items)
         doctor_id = str(delegate_info.get("doctorId") or "").strip()
         doctor_name = str(delegate_info.get("doctorName") or "Doctor").strip() or "Doctor"

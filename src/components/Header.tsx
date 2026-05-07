@@ -117,12 +117,14 @@ const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: s
     expiresAt: null,
     usageLimit: 5,
     usageCount: 0,
+    openCount: 0,
     status: 'active',
     markupPercent: 15,
     paymentMethod: 'zelle',
     paymentInstructions: buildPatientLinkDefaultInstructions('zelle', zelleContact, doctorName),
     receivedPayment: false,
     lastUsedAt: null,
+    lastOpenedAt: null,
     revokedAt: null,
   };
 };
@@ -151,6 +153,7 @@ const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: 
 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
 const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#377eba';
+const HEADER_BRAND_BLUE = 'rgb(60, 103, 183)';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
   if (typeof value !== 'string') return null;
@@ -4306,7 +4309,7 @@ export function Header({
           variant="outline"
           size="sm"
           onClick={handleCartClick}
-          className="header-cart-button inline-flex glass squircle-sm transition-all duration-300"
+          className="header-cart-button header-home-button inline-flex squircle-sm transition-all duration-300"
         >
           {delegateMode ? (
             <ClipboardDocumentListIcon className="h-4 w-4" />
@@ -4334,12 +4337,12 @@ export function Header({
     },
   ) => {
     const searchFieldColor =
-      options?.borderColor || (delegateMode ? secondaryColor : '#ffffff');
+      options?.borderColor || (delegateMode ? secondaryColor : HEADER_BRAND_BLUE);
     return (
       <div
         className="header-search-field relative"
         style={{
-          '--header-search-border-color': options?.borderColor || (delegateMode ? secondaryColor : undefined),
+          '--header-search-border-color': options?.borderColor || (delegateMode ? secondaryColor : HEADER_BRAND_BLUE),
         } as CSSProperties}
       >
         <Search
@@ -7951,12 +7954,11 @@ export function Header({
 	                      style={{ height: logoSizing.heightPx, maxWidth: logoSizing.maxWidth }}
 	                    >
 	                      <img
-	                        src={
-	                          typeof localUser?.delegateLogoUrl === 'string' &&
-	                          localUser.delegateLogoUrl.trim().length > 0
-	                            ? localUser.delegateLogoUrl
-	                            : withStaticAssetStamp('/TruFusionLabs_PhysicianPortal_White.png')
-	                        }
+		                        src={
+		                          typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
+		                            ? localUser.delegateLogoUrl
+		                            : withStaticAssetStamp('/TruFusionLabs_PhysiciansPortal.png')
+		                        }
 	                        alt="Delegate header logo preview"
 	                        className="relative z-[1] flex-shrink-0"
 	                        style={{
@@ -8279,8 +8281,19 @@ export function Header({
 		                      : typeof (link as any)?.usage_count === 'string'
 		                        ? Number((link as any).usage_count)
 		                        : 0;
+		              const openCountRaw =
+		                typeof (link as any)?.openCount === 'number'
+		                  ? (link as any).openCount
+		                  : typeof (link as any)?.openCount === 'string'
+		                    ? Number((link as any).openCount)
+		                    : typeof (link as any)?.open_count === 'number'
+		                      ? (link as any).open_count
+		                      : typeof (link as any)?.open_count === 'string'
+		                        ? Number((link as any).open_count)
+		                        : 0;
 		              const usageLimitValue = Number.isFinite(usageLimitRaw as number) ? Number(usageLimitRaw) : null;
 		              const usageCountValue = Number.isFinite(usageCountRaw) ? Number(usageCountRaw) : 0;
+		              const openCountValue = Number.isFinite(openCountRaw) ? Number(openCountRaw) : 0;
 	              const delegateSharedAt =
 	                typeof link?.delegateSharedAt === 'string' && link.delegateSharedAt.trim()
 	                  ? link.delegateSharedAt.trim()
@@ -8433,6 +8446,7 @@ export function Header({
 			                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
 			                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
 			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
+			                      <div>Open Count: {openCountValue}</div>
 			                      {usageLimitValue ? <div>Uses: {usageCountValue} / {usageLimitValue}</div> : <div>Uses: {usageCountValue}</div>}
 			                      {allowedProducts.length > 0 && <div>Allowed SKUs: {allowedProducts.join(', ')}</div>}
 			                      <div>Payment: {paymentMethodLabel}</div>
@@ -8816,9 +8830,10 @@ export function Header({
                   "relative overflow-visible squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button justify-start",
                   delegateLinksGuideStep === 'account' && "delegate-links-guide-highlight",
                 )}
-	              aria-haspopup="dialog"
-	              aria-expanded={welcomeOpen}
-	            >
+		              aria-haspopup="dialog"
+		              aria-expanded={welcomeOpen}
+                  style={{ borderColor: HEADER_BRAND_BLUE, color: HEADER_BRAND_BLUE }}
+		            >
 	              <span className="header-account-name text-current">
                   {headerDisplayName}
                 </span>
@@ -9618,8 +9633,9 @@ export function Header({
                     variant="outline"
                     size="sm"
                     onClick={onShowInfo}
-                    className="shop-home-button squircle-sm"
-                    aria-label="Home"
+	                    className="shop-home-button squircle-sm"
+                      style={{ borderColor: HEADER_BRAND_BLUE, color: HEADER_BRAND_BLUE }}
+	                    aria-label="Home"
                     title="Home"
                   >
                     <Home className="h-4 w-4" aria-hidden="true" />

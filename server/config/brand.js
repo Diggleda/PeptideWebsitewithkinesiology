@@ -7,7 +7,7 @@ const BRAND = Object.freeze({
   portUrl: 'https://port.trufusionlabs.com',
   supportEmail: 'support@trufusionlabs.com',
   legacySupportEmail: 'support@peppro.net',
-  logoPath: 'public/turfusionlabsphysiciansportal.png',
+  logoPath: 'public/TruFusionLabs_PhysiciansPortal.png',
 });
 
 const LEGACY_BRAND = Object.freeze({

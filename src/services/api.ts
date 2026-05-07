@@ -2943,12 +2943,13 @@ export const ordersAPI = {
 };
 
 export const delegationAPI = {
-  resolve: async (token: string) => {
+  resolve: async (token: string, options?: { countPageLoad?: boolean }) => {
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) {
       throw new Error('token is required');
     }
     const params = new URLSearchParams({ token: normalized });
+    params.set('countPageLoad', options?.countPageLoad === false ? '0' : '1');
     return fetchWithAuth(`${API_BASE_URL}/delegation/resolve?${params.toString()}`, { method: 'GET' });
   },
 

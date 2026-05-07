@@ -223,6 +223,27 @@ const clampCalendarWindowPosition = (value: number, min: number, max: number) =>
   return Math.min(Math.max(value, min), max);
 };
 
+const clampCenteredViewportOffset = (
+  offset: number,
+  elementSize: number,
+  viewportSize: number,
+) => {
+  const safeViewportSize = Math.max(viewportSize, CALENDAR_POPOVER_VIEWPORT_PADDING * 2);
+  const safeElementSize = Math.max(elementSize, 0);
+  const minCenter = CALENDAR_POPOVER_VIEWPORT_PADDING + safeElementSize / 2;
+  const maxCenter = safeViewportSize - CALENDAR_POPOVER_VIEWPORT_PADDING - safeElementSize / 2;
+  if (minCenter > maxCenter) return 0;
+  const clampedCenter = clampCalendarWindowPosition(
+    safeViewportSize / 2 + offset,
+    minCenter,
+    maxCenter,
+  );
+  return Math.round(clampedCenter - safeViewportSize / 2);
+};
+
+const stabilizeViewportDragBounds = (min: number, max: number) =>
+  min > max ? { min: 0, max: 0 } : { min, max };
+
 const isTimeframeCalendarDragBlockedTarget = (target: EventTarget | null) => {
   if (!(target instanceof Element)) return false;
   return Boolean(
@@ -6560,7 +6581,7 @@ function MainApp() {
 
 	    void (async () => {
 	      try {
-	        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
+	        const resolved = (await delegationAPI.resolve(delegateToken, { countPageLoad: true })) as any;
 	        if (cancelled) return;
 	        const paymentMethod =
 	          typeof resolved?.paymentMethod === 'string'
@@ -6745,7 +6766,7 @@ function MainApp() {
     let cancelled = false;
 	    const poll = async () => {
 	      try {
-	        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
+	        const resolved = (await delegationAPI.resolve(delegateToken, { countPageLoad: false })) as any;
 	        if (cancelled) return;
 	        setDelegateContext((prev) => {
 	          if (!prev) return prev;
@@ -10467,40 +10488,43 @@ function MainApp() {
 		    [salesDashboardModalZIndexes],
 		  );
 
-		  const clampSalesDashboardModalToViewport = useCallback(
-		    (key: SalesDashboardDraggableModalKey) => {
-		      if (typeof window === "undefined") return;
-		      const modal =
-		        key === "salesDoctorDetail"
-		          ? salesDoctorDialogContentRef.current
-		          : salesOrderDialogContentRef.current;
-		      if (!modal) return;
-		      const rect = modal.getBoundingClientRect();
-		      const viewportRight = window.innerWidth - CALENDAR_POPOVER_VIEWPORT_PADDING;
-		      const viewportBottom = window.innerHeight - CALENDAR_POPOVER_VIEWPORT_PADDING;
-		      let deltaX = 0;
-		      let deltaY = 0;
-		      if (rect.left < CALENDAR_POPOVER_VIEWPORT_PADDING) {
-		        deltaX = CALENDAR_POPOVER_VIEWPORT_PADDING - rect.left;
-		      } else if (rect.right > viewportRight) {
-		        deltaX = viewportRight - rect.right;
-		      }
-		      if (rect.top < CALENDAR_POPOVER_VIEWPORT_PADDING) {
-		        deltaY = CALENDAR_POPOVER_VIEWPORT_PADDING - rect.top;
-		      } else if (rect.bottom > viewportBottom) {
-		        deltaY = viewportBottom - rect.bottom;
-		      }
-		      if (deltaX === 0 && deltaY === 0) return;
-		      setSalesDashboardModalOffsets((current) => ({
-		        ...current,
-		        [key]: {
-		          x: current[key].x + deltaX,
-		          y: current[key].y + deltaY,
-		        },
-		      }));
-		    },
-		    [],
-		  );
+			  const clampSalesDashboardModalToViewport = useCallback(
+			    (key: SalesDashboardDraggableModalKey) => {
+			      if (typeof window === "undefined") return;
+			      const modal =
+			        key === "salesDoctorDetail"
+			          ? salesDoctorDialogContentRef.current
+			          : salesOrderDialogContentRef.current;
+			      if (!modal) return;
+			      const rect = modal.getBoundingClientRect();
+			      const viewportWidth = window.innerWidth;
+			      const viewportHeight = window.innerHeight;
+			      setSalesDashboardModalOffsets((current) => {
+			        const currentOffset = current[key];
+			        const nextX = clampCenteredViewportOffset(
+			          currentOffset.x,
+			          rect.width,
+			          viewportWidth,
+			        );
+			        const nextY = clampCenteredViewportOffset(
+			          currentOffset.y,
+			          rect.height,
+			          viewportHeight,
+			        );
+			        if (nextX === currentOffset.x && nextY === currentOffset.y) {
+			          return current;
+			        }
+			        return {
+			          ...current,
+			          [key]: {
+			            x: nextX,
+			            y: nextY,
+			          },
+			        };
+			      });
+			    },
+			    [],
+			  );
 
 		  const handleSalesDashboardModalDragStart = useCallback(
 		    (
@@ -10512,22 +10536,30 @@ function MainApp() {
 		      const modal = event.currentTarget.closest<HTMLElement>(
 		        '[data-sales-dashboard-draggable-modal="true"]',
 		      );
-		      if (!modal || typeof window === "undefined") return;
-		      bringSalesDashboardModalToFront(key);
-		      const rect = modal.getBoundingClientRect();
-		      const origin = salesDashboardModalOffsets[key];
-		      salesDashboardModalDragRef.current = {
-		        key,
-		        pointerId: event.pointerId,
-		        startX: event.clientX,
-		        startY: event.clientY,
-		        originX: origin.x,
-		        originY: origin.y,
-		        minDeltaX: CALENDAR_POPOVER_VIEWPORT_PADDING - rect.left,
-		        maxDeltaX: window.innerWidth - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.right,
-		        minDeltaY: CALENDAR_POPOVER_VIEWPORT_PADDING - rect.top,
-		        maxDeltaY: window.innerHeight - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.bottom,
-		      };
+			      if (!modal || typeof window === "undefined") return;
+			      bringSalesDashboardModalToFront(key);
+			      const rect = modal.getBoundingClientRect();
+			      const origin = salesDashboardModalOffsets[key];
+			      const xBounds = stabilizeViewportDragBounds(
+			        CALENDAR_POPOVER_VIEWPORT_PADDING - rect.left,
+			        window.innerWidth - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.right,
+			      );
+			      const yBounds = stabilizeViewportDragBounds(
+			        CALENDAR_POPOVER_VIEWPORT_PADDING - rect.top,
+			        window.innerHeight - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.bottom,
+			      );
+			      salesDashboardModalDragRef.current = {
+			        key,
+			        pointerId: event.pointerId,
+			        startX: event.clientX,
+			        startY: event.clientY,
+			        originX: origin.x,
+			        originY: origin.y,
+			        minDeltaX: xBounds.min,
+			        maxDeltaX: xBounds.max,
+			        minDeltaY: yBounds.min,
+			        maxDeltaY: yBounds.max,
+			      };
 		      try {
 		        event.currentTarget.setPointerCapture(event.pointerId);
 		      } catch {

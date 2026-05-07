@@ -2,8 +2,8 @@ import type { ImgHTMLAttributes } from 'react';
 import clsx from 'clsx';
 import { withStaticAssetStamp } from '../lib/assetUrl';
 
-const DEFAULT_LOGO_PATH = '/TruFusionLabs_PhysicianPortal_White.png';
-const BIOTECH_LOGO_PATH = '/TruFusionLabs_PhysicianPortal_White.png';
+const DEFAULT_LOGO_PATH = '/TruFusionLabs_PhysiciansPortal.png';
+const BIOTECH_LOGO_PATH = '/TruFusionLabs_PhysiciansPortal.png';
 
 type BrandLogoImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
   defaultSrc?: string;

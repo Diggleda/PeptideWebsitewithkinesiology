@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TruFusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TruFusionLabs mail identity (optional SMTP).
- * Version: 1.1.10
+ * Version: 1.1.12
  */
 
 if (!defined('ABSPATH')) exit;
@@ -34,6 +34,63 @@ function trufusion_email_overrides_get_from_name() {
 function trufusion_email_overrides_get_smtp_setting($name, $fallback = '') {
   $suffix = strtoupper($name);
   return trufusion_email_overrides_get_constant('TRUFUSION_SMTP_' . $suffix, 'PEPPR_SMTP_' . $suffix, $fallback);
+}
+
+function trufusion_email_overrides_get_frontend_url() {
+  $value = trufusion_email_overrides_get_constant('TRUFUSION_APP_URL', 'PEPPR_APP_URL', 'https://www.trufusionlabs.com');
+  $value = rtrim(trim($value), '/');
+  return $value !== '' ? $value : 'https://www.trufusionlabs.com';
+}
+
+function trufusion_email_overrides_get_brand_logo_url($current = '') {
+  $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', 'PEPPR_EMAIL_LOGO_URL', '');
+  if ($value === '') {
+    $value = trufusion_email_overrides_get_frontend_url() . '/TruFusionLabs_PhysiciansPortal.png';
+  }
+  return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
+}
+
+function trufusion_email_overrides_get_brand_color($name, $fallback) {
+  $suffix = strtoupper($name);
+  $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_' . $suffix, 'PEPPR_EMAIL_' . $suffix, $fallback);
+  $value = trim($value);
+  return $value !== '' ? $value : $fallback;
+}
+
+function trufusion_email_overrides_get_email_base_color($current = '') {
+  return trufusion_email_overrides_get_brand_color('BASE_COLOR', '#3C67B7');
+}
+
+function trufusion_email_overrides_get_email_background_color($current = '') {
+  return trufusion_email_overrides_get_brand_color('BACKGROUND_COLOR', '#377EBA');
+}
+
+function trufusion_email_overrides_get_email_body_background_color($current = '') {
+  return trufusion_email_overrides_get_brand_color('BODY_BACKGROUND_COLOR', '#ffffff');
+}
+
+function trufusion_email_overrides_get_email_text_color($current = '') {
+  return trufusion_email_overrides_get_brand_color('TEXT_COLOR', '#0f172a');
+}
+
+function trufusion_email_overrides_email_styles($css) {
+  $base_color = trufusion_email_overrides_get_email_base_color();
+  $background_color = trufusion_email_overrides_get_email_background_color();
+  $body_background_color = trufusion_email_overrides_get_email_body_background_color();
+  $text_color = trufusion_email_overrides_get_email_text_color();
+
+  $css .= "\n"
+    . "#wrapper{background-color:" . $background_color . " !important;}\n"
+    . "#template_container{border-color:rgba(255,255,255,0.82) !important;}\n"
+    . "#template_header{background-color:" . $base_color . " !important;}\n"
+    . "#template_header h1,.wc-email-header__title{color:#ffffff !important;}\n"
+    . "#template_body,#body_content{background-color:" . $body_background_color . " !important;}\n"
+    . "#body_content_inner{color:" . $text_color . " !important;}\n"
+    . "#body_content_inner a,.link{color:" . $base_color . " !important;}\n"
+    . "#template_header_image{padding:24px 0 16px !important;text-align:center !important;background-color:" . $body_background_color . " !important;}\n"
+    . "#template_header_image img,.wc-email-header__image img,.email-header-image img,.email_header img{max-width:220px !important;max-height:72px !important;width:auto !important;height:auto !important;display:block !important;margin:0 auto !important;border:0 !important;outline:none !important;text-decoration:none !important;}\n";
+
+  return $css;
 }
 
 function trufusion_email_overrides_configure_smtp($phpmailer) {
@@ -83,16 +140,27 @@ add_filter('wp_mail_from_name', function ($name) {
 
 add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', 20);
 
+add_filter('woocommerce_email_header_image', 'trufusion_email_overrides_get_brand_logo_url', 1000);
+add_filter('woocommerce_email_base_color', 'trufusion_email_overrides_get_email_base_color', 1000);
+add_filter('woocommerce_email_background_color', 'trufusion_email_overrides_get_email_background_color', 1000);
+add_filter('woocommerce_email_body_background_color', 'trufusion_email_overrides_get_email_body_background_color', 1000);
+add_filter('woocommerce_email_text_color', 'trufusion_email_overrides_get_email_text_color', 1000);
+add_filter('woocommerce_email_styles', 'trufusion_email_overrides_email_styles', 1000);
+
 add_action('plugins_loaded', function () {
   if (!class_exists('WooCommerce')) return;
 
-  // Override the Customer On-hold email template so TruFusion/BACS hold emails show
-  // the Zelle payment memo without touching the theme.
+  // Use the custom template when present, but keep a main-file fallback below so
+  // deployments do not need to add or update customer-on-hold-order.php.
   add_filter('woocommerce_locate_template', function ($template, $template_name, $template_path) {
     if ($template_name !== 'emails/customer-on-hold-order.php') return $template;
     $custom = plugin_dir_path(__FILE__) . 'templates/emails/customer-on-hold-order.php';
     return file_exists($custom) ? $custom : $template;
   }, 10, 3);
+
+  add_action('woocommerce_email_header', 'trufusion_email_overrides_track_zelle_on_hold_email', 1, 2);
+  add_action('woocommerce_email_footer', 'trufusion_email_overrides_clear_zelle_on_hold_email', 999, 1);
+  add_filter('gettext', 'trufusion_email_overrides_translate_zelle_on_hold_intro', 20, 3);
 
   add_action('init', function () {
     if (!function_exists('WC')) return;
@@ -124,6 +192,53 @@ function trufusion_is_zelle_order($order) {
   $is_trufusion_order = trim((string) $order->get_meta('trufusion_order_id')) !== '';
 
   return $is_on_hold && ($is_bacs || $is_trufusion_order);
+}
+
+function trufusion_email_overrides_is_customer_on_hold_email($email) {
+  return is_object($email)
+    && property_exists($email, 'id')
+    && $email->id === 'customer_on_hold_order';
+}
+
+function trufusion_email_overrides_zelle_payment_message($order) {
+  if (!$order instanceof WC_Order) return '';
+  return "We received your order! Please Zelle support@peppro.net with the memo 'Order #{$order->get_order_number()}'.";
+}
+
+function trufusion_email_overrides_track_zelle_on_hold_email($email_heading, $email = null) {
+  unset($GLOBALS['trufusion_email_overrides_zelle_on_hold_order']);
+  if (!trufusion_email_overrides_is_customer_on_hold_email($email)) return;
+
+  $order = is_object($email) && property_exists($email, 'object') ? $email->object : null;
+  if ($order instanceof WC_Order && trufusion_is_zelle_order($order)) {
+    $GLOBALS['trufusion_email_overrides_zelle_on_hold_order'] = $order;
+  }
+}
+
+function trufusion_email_overrides_clear_zelle_on_hold_email($email = null) {
+  unset($GLOBALS['trufusion_email_overrides_zelle_on_hold_order']);
+}
+
+function trufusion_email_overrides_translate_zelle_on_hold_intro($translation, $text, $domain) {
+  if ($domain !== 'woocommerce') return $translation;
+
+  $order = isset($GLOBALS['trufusion_email_overrides_zelle_on_hold_order'])
+    ? $GLOBALS['trufusion_email_overrides_zelle_on_hold_order']
+    : null;
+  if (!$order instanceof WC_Order) return $translation;
+
+  $normalized = str_replace(array('’', '‘'), "'", (string) $text);
+  if ($normalized === 'Hi %s,' || $normalized === 'Hi,') {
+    return trufusion_email_overrides_zelle_payment_message($order);
+  }
+
+  $hide_lines = array(
+    "We've received your order and it's currently on hold until we can confirm your payment has been processed.",
+    "Here's a reminder of what you've ordered:",
+    "Thanks for your order. It's on-hold until we confirm that payment has been received.",
+  );
+
+  return in_array($normalized, $hide_lines, true) ? '' : $translation;
 }
 
 function trufusion_email_overrides_shared_users_table() {

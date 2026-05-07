@@ -18,3 +18,25 @@ test('node delegate dummy resolve payload includes white-label settings', () => 
   assert.equal(payload.doctorBackgroundImageUrl, 'data:image/jpeg;base64,BACKGROUND');
   assert.equal(payload.doctorBackgroundColor, '#abcdef');
 });
+
+test('delegate resolve page-load counter records opens without consuming uses', () => {
+  const { recordResolveOpenFallback, shouldCountResolvePageLoad } = delegationRoutes.__test__;
+  const link = { usageCount: 2, openCount: 5, lastUsedAt: null, lastOpenedAt: null };
+
+  assert.equal(shouldCountResolvePageLoad({}), true);
+  assert.equal(shouldCountResolvePageLoad({ countPageLoad: '1' }), true);
+  assert.equal(shouldCountResolvePageLoad({ countPageLoad: '0' }), false);
+  assert.equal(shouldCountResolvePageLoad({ countPageLoad: 'poll' }), false);
+
+  recordResolveOpenFallback(link, Date.parse('2026-05-07T12:00:00.000Z'));
+  assert.equal(link.usageCount, 2);
+  assert.equal(link.openCount, 6);
+  assert.equal(link.lastUsedAt, '2026-05-07T12:00:00.000Z');
+  assert.equal(link.lastOpenedAt, '2026-05-07T12:00:00.000Z');
+
+  recordResolveOpenFallback(link, Date.parse('2026-05-07T12:05:00.000Z'));
+  assert.equal(link.usageCount, 2);
+  assert.equal(link.openCount, 7);
+  assert.equal(link.lastUsedAt, '2026-05-07T12:05:00.000Z');
+  assert.equal(link.lastOpenedAt, '2026-05-07T12:05:00.000Z');
+});
