@@ -54,24 +54,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default="ups",
         help="Carrier code used for the tracking link.",
     )
-    parser.add_argument(
-        "--smtp-only",
-        action="store_true",
-        help="Ignore SENDGRID_API_KEY/SENDGRID_API_TOKEN for this test and force the SMTP path.",
-    )
     return parser
 
 
-def _configure(env_file: str, *, smtp_only: bool = False) -> None:
+def _configure(env_file: str) -> None:
     if env_file:
         candidate = Path(env_file).expanduser()
         os.environ["DOTENV_CONFIG_PATH"] = str(candidate)
         if not candidate.exists():
             raise FileNotFoundError(f"Env file does not exist: {candidate}")
     config = load_config()
-    if smtp_only:
-        os.environ.pop("SENDGRID_API_KEY", None)
-        os.environ.pop("SENDGRID_API_TOKEN", None)
     configure_services(config)
 
 
@@ -88,7 +80,6 @@ def _provider_summary() -> dict[str, object]:
     return {
         "nodeEnv": os.environ.get("NODE_ENV") or None,
         "mailFrom": os.environ.get("MAIL_FROM") or "TruFusionLabs <support@trufusionlabs.com>",
-        "hasSendGridKey": bool(os.environ.get("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_TOKEN")),
         "smtp": smtp,
     }
 
@@ -99,7 +90,7 @@ def _statuses(args: argparse.Namespace) -> Iterable[str]:
 
 def main() -> int:
     args = _build_parser().parse_args()
-    _configure(args.env_file, smtp_only=args.smtp_only)
+    _configure(args.env_file)
 
     sent: list[str] = []
     for status in _statuses(args):

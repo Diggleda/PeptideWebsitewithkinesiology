@@ -7,7 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2 } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, MailCheck, AlertTriangle } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -1824,7 +1824,7 @@ export function Header({
   const [loginOpen, setLoginOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'verify'>('login');
   const [signupName, setSignupName] = useState('');
   const [signupSuffix, setSignupSuffix] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
@@ -1839,6 +1839,11 @@ export function Header({
   const [verificationResendSent, setVerificationResendSent] = useState(false);
   const [signupError, setSignupError] = useState('');
   const [signupNotice, setSignupNotice] = useState('');
+  const [signupVerificationEmail, setSignupVerificationEmail] = useState('');
+  const [signupVerificationEmailSent, setSignupVerificationEmailSent] = useState(false);
+  const [signupVerificationResendPending, setSignupVerificationResendPending] = useState(false);
+  const [signupVerificationResendSent, setSignupVerificationResendSent] = useState(false);
+  const [signupVerificationResendError, setSignupVerificationResendError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
@@ -2915,6 +2920,14 @@ export function Header({
     return () => clearTimeout(timer);
   }, [welcomeOpen, updateTabIndicator, accountTab]);
 
+  const clearSignupVerificationState = useCallback(() => {
+    setSignupVerificationEmail('');
+    setSignupVerificationEmailSent(false);
+    setSignupVerificationResendPending(false);
+    setSignupVerificationResendSent(false);
+    setSignupVerificationResendError('');
+  }, []);
+
 	  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
 	    event.preventDefault();
 
@@ -3009,6 +3022,7 @@ export function Header({
       setLoginNotice('');
       setSignupError('');
       setSignupNotice('');
+      clearSignupVerificationState();
       if (loginContext !== 'checkout') {
         setWelcomeOpen(true);
       }
@@ -3106,11 +3120,12 @@ export function Header({
     setShowLoginPassword(false);
     setShowSignupPassword(false);
     setShowSignupConfirmPassword(false);
+    clearSignupVerificationState();
     if (!user) {
       setLoginOpen(true);
     }
     setWelcomeOpen(false);
-  }, [loginPromptToken, user]);
+  }, [clearSignupVerificationState, loginPromptToken, user]);
 
   useEffect(() => {
     if (user && loginOpen) {
@@ -3817,14 +3832,21 @@ export function Header({
 
     if (result.status === 'email_verification_required') {
       const destination = result.email || details.email;
-      setSignupNotice(
-        result.emailSent
-          ? `Account created. We sent a verification link to ${destination}. Verify your email, then sign in.`
-          : `Account created, but we could not send the verification email. Try signing in and use the resend verification option for ${destination}.`,
-      );
+      setSignupVerificationEmail(destination);
+      setSignupVerificationEmailSent(Boolean(result.emailSent));
+      setSignupVerificationResendPending(false);
+      setSignupVerificationResendSent(false);
+      setSignupVerificationResendError('');
+      queueLoginPrefill({ email: destination, password: '' });
+      setAuthMode('verify');
       setSignupError('');
+      setSignupNotice('');
+      setSignupName('');
+      setSignupSuffix('');
+      setSignupEmail('');
       setSignupPassword('');
       setSignupConfirmPassword('');
+      setSignupCode('');
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
       return;
@@ -3964,6 +3986,8 @@ export function Header({
       setSignupCode('');
       setLoginError('');
       setSignupError('');
+      setSignupNotice('');
+      clearSignupVerificationState();
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -9246,11 +9270,17 @@ export function Header({
           >
 	            <div className="flex-1 min-w-0 space-y-1">
 	              <DialogTitle className="text-xl font-semibold text-[rgb(60,103,183)]">
-	                {authMode === 'login' ? 'Welcome back' : 'Create Account'}
+	                {authMode === 'login'
+                    ? 'Welcome back'
+                    : authMode === 'verify'
+                      ? 'Verify your email'
+                      : 'Create Account'}
 	              </DialogTitle>
 	              <DialogDescription>
 	                {authMode === 'login'
 	                  ? 'Login to enter your TruFusionLabs account.'
+                    : authMode === 'verify'
+                      ? 'Complete email verification before signing in.'
 	                  : 'Create your TruFusionLabs physician account to access TruFusionLabs.'}
 	              </DialogDescription>
 	              {authMode === 'signup' && (
@@ -9390,13 +9420,108 @@ export function Header({
                 New to TruFusionLabs?{' '}
                 <button
                   type="button"
-                  onClick={() => setAuthMode('signup')}
+                  onClick={() => {
+                    clearSignupVerificationState();
+                    setAuthMode('signup');
+                  }}
                   className="font-semibold btn-hover-lighter"
                   style={{ color: secondaryColor }}
                 >
                   Create an account
                 </button>
               </p>
+            </div>
+          ) : authMode === 'verify' ? (
+            <div className="space-y-5">
+              <div className="space-y-4 text-center">
+                <div
+                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border"
+                  style={{
+                    color: signupVerificationEmailSent ? secondaryColor : '#b45309',
+                    borderColor: signupVerificationEmailSent ? translucentSecondary : 'rgba(180,83,9,0.24)',
+                    backgroundColor: signupVerificationEmailSent ? logoHaloBackground : 'rgba(251,191,36,0.14)',
+                  }}
+                  aria-hidden="true"
+                >
+                  {signupVerificationEmailSent ? (
+                    <MailCheck className="h-7 w-7" />
+                  ) : (
+                    <AlertTriangle className="h-7 w-7" />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {signupVerificationEmailSent ? 'Check your inbox' : 'Verification email was not sent'}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-slate-600">
+                    {signupVerificationEmailSent
+                      ? 'A verification link was sent to'
+                      : 'Your account was created, but the email provider did not confirm delivery to'}{' '}
+                    <span className="font-semibold text-slate-900">
+                      {signupVerificationEmail || 'your email address'}
+                    </span>
+                    . Verify your email before signing in.
+                  </p>
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    Check spam or junk folders. The link expires in 24 hours.
+                  </p>
+                </div>
+              </div>
+              {signupVerificationResendError && (
+                <p className="text-sm text-red-600 text-center" role="alert">
+                  {signupVerificationResendError}
+                </p>
+              )}
+              {signupVerificationResendSent && (
+                <p className="text-sm text-emerald-600 text-center" role="status">
+                  Verification email sent. Check your inbox and spam folder.
+                </p>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  className="squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                  disabled={signupVerificationResendPending || !signupVerificationEmail || !onResendVerificationEmail}
+                  onClick={async () => {
+                    if (!onResendVerificationEmail || !signupVerificationEmail) return;
+                    setSignupVerificationResendPending(true);
+                    setSignupVerificationResendSent(false);
+                    setSignupVerificationResendError('');
+                    try {
+                      await onResendVerificationEmail(signupVerificationEmail);
+                      setSignupVerificationEmailSent(true);
+                      setSignupVerificationResendSent(true);
+                    } catch (error) {
+                      console.warn('[Auth] Verification resend failed', error);
+                      setSignupVerificationResendError('Unable to send a verification email right now. Please try again.');
+                    } finally {
+                      setSignupVerificationResendPending(false);
+                    }
+                  }}
+                >
+                  {signupVerificationResendPending && (
+                    <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
+                  )}
+                  {signupVerificationResendPending
+                    ? 'Sending...'
+                    : signupVerificationEmailSent
+                      ? 'Resend email'
+                      : 'Send verification email'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="squircle-sm bg-white text-slate-900"
+                  onClick={() => {
+                    if (signupVerificationEmail) {
+                      queueLoginPrefill({ email: signupVerificationEmail, password: '' });
+                    }
+                    setAuthMode('login');
+                  }}
+                >
+                  Return to sign in
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-5">
@@ -9568,7 +9693,10 @@ export function Header({
                 Already have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => setAuthMode('login')}
+                  onClick={() => {
+                    clearSignupVerificationState();
+                    setAuthMode('login');
+                  }}
                   className="font-semibold btn-hover-lighter"
                   style={{ color: secondaryColor }}
                 >
@@ -9577,6 +9705,7 @@ export function Header({
               </p>
             </div>
           )}
+          {authMode !== 'verify' && (
           <div className="mt-6 glass squircle-lg p-4 sm:p-5 space-y-4 border border-[var(--brand-glass-border-1)]">
             <div className="flex flex-col gap-1">
               <h3 className="text-base font-semibold text-slate-800">Track an order</h3>
@@ -9632,6 +9761,7 @@ export function Header({
               </div>
             </form>
           </div>
+          )}
         </DialogContent>
       </Dialog>
       {renderCartButton()}

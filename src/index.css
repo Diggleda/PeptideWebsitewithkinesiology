@@ -11312,6 +11312,8 @@ body.theme-leaf[data-delegate-theme="true"] .dev-theme-root {
   .referrals-table-container *,
   .referrals-table__row *,
   .admin-todo-list__item *,
+  .patient-links-doctor-option,
+  .patient-links-doctor-option *,
   .admin-dashboard-link-button,
   .admin-dashboard-link-button *,
   .header-home-button,
@@ -11326,6 +11328,17 @@ body.theme-leaf[data-delegate-theme="true"] .dev-theme-root {
   option
 )) {
   color: #ffffff !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard .patient-links-doctor-option :is(
+  .patient-links-doctor-option-name,
+  .patient-links-doctor-option-email
+),
+.sales-rep-dashboard .patient-links-doctor-option :is(
+  .patient-links-doctor-option-name,
+  .patient-links-doctor-option-email
+) {
+  color: rgb(60, 103, 183) !important;
 }
 
 .dev-theme-root.theme-clinical .sales-rep-dashboard :is(

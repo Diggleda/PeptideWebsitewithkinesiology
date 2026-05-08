@@ -2175,7 +2175,7 @@ const clearDelegateLinksGuideFromLocation = () => {
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
-const getInitialLandingMode = (): "login" | "signup" | "forgot" | "reset" | "verify" =>
+const getInitialLandingMode = (): "login" | "signup" | "forgot" | "reset" | "verify" | "verificationSent" =>
   isVerifyEmailRoute() ? "verify" : isResetPasswordRoute() ? "reset" : "login";
 
 const getInitialResetToken = () =>
@@ -5764,7 +5764,7 @@ function MainApp() {
     : "wholesale";
   const canSeeRetailRevenueInSalesDashboard = canUseRetailPricing;
   const [landingAuthMode, setLandingAuthMode] = useState<
-    "login" | "signup" | "forgot" | "reset" | "verify"
+    "login" | "signup" | "forgot" | "reset" | "verify" | "verificationSent"
   >(getInitialLandingMode);
   const [manufacturingQualityStandardsOpen, setManufacturingQualityStandardsOpen] =
     useState(false);
@@ -5802,6 +5802,22 @@ function MainApp() {
   const doctorProfileMeetsMinimumRequirements = Boolean(
     user && isDoctorRole(user.role) && hasRequiredDoctorProfileFields(user),
   );
+  const shouldPromptForDoctorResellerPermit = Boolean(
+    user &&
+      isDoctorRole(user.role) &&
+      doctorProfileGateReady &&
+      user.researchTermsAgreement === true &&
+      !hasUploadedResellerPermit(user) &&
+      user.resellerPermitOnboardingPresented !== true,
+  );
+  const showDoctorResellerPermitModal = Boolean(
+    user &&
+      isDoctorRole(user.role) &&
+      (doctorResellerPermitPromptOpen ||
+        (shouldPromptForDoctorResellerPermit &&
+          !doctorResellerPermitPromptHandledThisSession &&
+          !showResearchTermsAgreementModal)),
+  );
   const showDoctorProfileBuilderModal = Boolean(
     user &&
       isDoctorRole(user.role) &&
@@ -5809,21 +5825,8 @@ function MainApp() {
       user.researchTermsAgreement === true &&
       doctorProfileGateReady &&
       !doctorProfileMeetsMinimumRequirements &&
-      !doctorProfileBuilderDismissed,
-  );
-  const shouldPromptForDoctorResellerPermit = Boolean(
-    user &&
-      isDoctorRole(user.role) &&
-      doctorProfileGateReady &&
-      user.researchTermsAgreement === true &&
-      doctorProfileMeetsMinimumRequirements &&
-      !user.resellerPermitFilePath &&
-      user.resellerPermitOnboardingPresented !== true,
-  );
-  const showDoctorResellerPermitModal = Boolean(
-    user &&
-      isDoctorRole(user.role) &&
-      doctorResellerPermitPromptOpen,
+      !doctorProfileBuilderDismissed &&
+      !showDoctorResellerPermitModal,
   );
   const isMaintenanceMode = Boolean(user?.shadowContext?.active);
   const maintenanceUsesSalesDashboard = Boolean(
@@ -6245,7 +6248,6 @@ function MainApp() {
     if (
       !shouldPromptForDoctorResellerPermit ||
       showResearchTermsAgreementModal ||
-      showDoctorProfileBuilderModal ||
       doctorResellerPermitPromptHandledThisSession
     ) {
       return;
@@ -6305,7 +6307,6 @@ function MainApp() {
   }, [
     doctorResellerPermitPromptHandledThisSession,
     shouldPromptForDoctorResellerPermit,
-    showDoctorProfileBuilderModal,
     showResearchTermsAgreementModal,
     user,
   ]);
@@ -9031,6 +9032,16 @@ function MainApp() {
     useState(false);
   const [landingSignupError, setLandingSignupError] = useState("");
   const [landingSignupNotice, setLandingSignupNotice] = useState("");
+  const [landingSignupVerificationEmail, setLandingSignupVerificationEmail] =
+    useState("");
+  const [landingSignupVerificationEmailSent, setLandingSignupVerificationEmailSent] =
+    useState(false);
+  const [landingSignupVerificationResendPending, setLandingSignupVerificationResendPending] =
+    useState(false);
+  const [landingSignupVerificationResendSent, setLandingSignupVerificationResendSent] =
+    useState(false);
+  const [landingSignupVerificationResendError, setLandingSignupVerificationResendError] =
+    useState("");
   const [landingNpiStatus, setLandingNpiStatus] = useState<
     "idle" | "checking" | "verified" | "rejected"
   >("idle");
@@ -26258,8 +26269,16 @@ function MainApp() {
       });
   }, []);
 
+  const clearLandingSignupVerificationState = useCallback(() => {
+    setLandingSignupVerificationEmail("");
+    setLandingSignupVerificationEmailSent(false);
+    setLandingSignupVerificationResendPending(false);
+    setLandingSignupVerificationResendSent(false);
+    setLandingSignupVerificationResendError("");
+  }, []);
+
   const updateLandingAuthMode = useCallback(
-    (mode: "login" | "signup" | "forgot" | "reset" | "verify") => {
+    (mode: "login" | "signup" | "forgot" | "reset" | "verify" | "verificationSent") => {
       setLandingAuthMode((previous) => {
         if (previous === mode) {
           return previous;
@@ -26277,6 +26296,7 @@ function MainApp() {
         if (mode === "signup") {
           resetLandingNpiState();
           setLandingSignupNotice("");
+          clearLandingSignupVerificationState();
         } else {
           setLandingSignupError("");
         }
@@ -26284,6 +26304,7 @@ function MainApp() {
           setLandingLoginError("");
           setLandingUnverifiedEmail("");
           setLandingVerificationResendSent(false);
+          clearLandingSignupVerificationState();
           setShowLandingLoginPassword(false);
           setShowLandingSignupPassword(false);
           setShowLandingSignupConfirm(false);
@@ -26316,10 +26337,18 @@ function MainApp() {
           setLandingLoginNotice("");
           setVerifyEmailToken((current) => current ?? readVerifyEmailTokenFromLocation());
         }
+        if (mode === "verificationSent") {
+          setLandingLoginError("");
+          setLandingLoginNotice("");
+          setLandingSignupError("");
+          setLandingSignupNotice("");
+          setShowLandingSignupPassword(false);
+          setShowLandingSignupConfirm(false);
+        }
         return mode;
       });
     },
-    [clearResetRoute, resetLandingNpiState],
+    [clearLandingSignupVerificationState, clearResetRoute, resetLandingNpiState],
   );
 
   const handleLogin = (
@@ -33618,10 +33647,10 @@ function MainApp() {
                                   filteredPatientLinksDoctorOptions.map((doctor) => {
                                     const checked = patientLinksDoctorUserIds.includes(doctor.userId);
                                     return (
-                                      <div
-                                        key={doctor.userId}
-                                        className="flex min-h-[3.5rem] items-start gap-3 rounded-xl border border-slate-200/70 bg-white px-3 py-2"
-                                      >
+	                                      <div
+	                                        key={doctor.userId}
+	                                        className="patient-links-doctor-option flex min-h-[3.5rem] items-start gap-3 rounded-xl border border-slate-200/70 bg-white px-3 py-2"
+	                                      >
                                         <input
                                           type="checkbox"
                                           checked={checked}
@@ -33637,14 +33666,14 @@ function MainApp() {
                                           className="brand-checkbox mt-0.5"
                                         />
                                         <span className="min-w-0">
-                                          <span className="block text-sm font-medium text-slate-800">
-                                            {doctor.name || doctor.email || doctor.userId}
-                                          </span>
-                                          {doctor.email ? (
-                                            <span className="block text-xs text-slate-500">
-                                              {doctor.email}
-                                            </span>
-                                          ) : null}
+	                                          <span className="patient-links-doctor-option-name block text-sm font-medium text-[rgb(60,103,183)]">
+	                                            {doctor.name || doctor.email || doctor.userId}
+	                                          </span>
+	                                          {doctor.email ? (
+	                                            <span className="patient-links-doctor-option-email block text-xs text-[rgb(60,103,183)]">
+	                                              {doctor.email}
+	                                            </span>
+	                                          ) : null}
                                         </span>
                                       </div>
                                     );
@@ -40182,6 +40211,99 @@ function MainApp() {
                           </div>
                         </>
                       )}
+                      {landingAuthMode === "verificationSent" && (
+                        <>
+                          <div className="space-y-4 text-center">
+                            <div
+                              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border ${
+                                landingSignupVerificationEmailSent
+                                  ? "border-[rgba(60,103,183,0.22)] bg-[rgba(60,103,183,0.08)] text-[rgb(60,103,183)]"
+                                  : "border-amber-300/60 bg-amber-100/70 text-amber-700"
+                              }`}
+                              aria-hidden="true"
+                            >
+                              {landingSignupVerificationEmailSent ? (
+                                <CheckCircle2 className="h-7 w-7" />
+                              ) : (
+                                <AlertTriangle className="h-7 w-7" />
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <h1 className="text-2xl font-semibold">
+                                {landingSignupVerificationEmailSent
+                                  ? "Check your email"
+                                  : "Verification email was not sent"}
+                              </h1>
+                              <p className="text-sm leading-relaxed text-gray-600">
+                                {landingSignupVerificationEmailSent
+                                  ? "A verification link was sent to"
+                                  : "Your account was created, but the email provider did not confirm delivery to"}{" "}
+                                <span className="font-semibold text-slate-900">
+                                  {landingSignupVerificationEmail || "your email address"}
+                                </span>
+                                . Verify your email before signing in.
+                              </p>
+                              <p className="text-xs leading-relaxed text-gray-500">
+                                Check spam or junk folders. The link expires in 24 hours.
+                              </p>
+                            </div>
+                          </div>
+                          {landingSignupVerificationResendError && (
+                            <p className="text-sm text-red-600 text-center" role="alert">
+                              {landingSignupVerificationResendError}
+                            </p>
+                          )}
+                          {landingSignupVerificationResendSent && (
+                            <p className="text-sm text-emerald-600 text-center" role="status">
+                              Verification email sent. Check your inbox and spam folder.
+                            </p>
+                          )}
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Button
+                              type="button"
+                              size="lg"
+                              className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                              disabled={landingSignupVerificationResendPending || !landingSignupVerificationEmail}
+                              onClick={async () => {
+                                if (!landingSignupVerificationEmail) return;
+                                setLandingSignupVerificationResendPending(true);
+                                setLandingSignupVerificationResendSent(false);
+                                setLandingSignupVerificationResendError("");
+                                try {
+                                  await handleResendVerificationEmail(landingSignupVerificationEmail);
+                                  setLandingSignupVerificationEmailSent(true);
+                                  setLandingSignupVerificationResendSent(true);
+                                } catch (error) {
+                                  console.warn("[Auth] Verification resend failed", error);
+                                  setLandingSignupVerificationResendError(
+                                    "Unable to send a verification email right now. Please try again.",
+                                  );
+                                } finally {
+                                  setLandingSignupVerificationResendPending(false);
+                                }
+                              }}
+                            >
+                              {landingSignupVerificationResendPending && (
+                                <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
+                              )}
+                              {landingSignupVerificationResendPending
+                                ? "Sending..."
+                                : landingSignupVerificationEmailSent
+                                  ? "Resend email"
+                                  : "Send verification email"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="lg"
+                              variant="outline"
+                              className="w-full squircle-sm bg-white text-slate-900"
+                              onClick={() => updateLandingAuthMode("login")}
+                            >
+                              Return to sign in
+                            </Button>
+                          </div>
+                        </>
+                      )}
                       {landingAuthMode === "verify" && (
                         <>
                           <div className="text-center space-y-2">
@@ -40243,11 +40365,13 @@ function MainApp() {
                               const res = await handleCreateAccount(details);
                               if (res.status === "email_verification_required") {
                                 const destination = res.email || details.email;
-                                setLandingSignupNotice(
-                                  res.emailSent
-                                    ? `Account created. We sent a verification link to ${destination}. Verify your email, then sign in.`
-                                    : `Account created, but we could not send the verification email. Try signing in and use the resend verification option for ${destination}.`,
-                                );
+                                setLandingSignupVerificationEmail(destination);
+                                setLandingSignupVerificationEmailSent(Boolean(res.emailSent));
+                                setLandingSignupVerificationResendPending(false);
+                                setLandingSignupVerificationResendSent(false);
+                                setLandingSignupVerificationResendError("");
+                                setLandingSignupNotice("");
+                                updateLandingAuthMode("verificationSent");
                               } else if (res.status === "success") {
                                 updateLandingAuthMode("login");
                               } else if (res.status === "email_exists") {
@@ -41512,8 +41636,9 @@ function MainApp() {
 		                    <Button
 		                      type="button"
 		                      variant="outline"
+		                      size="sm"
 		                      onClick={() => void saveSalesDoctorNotes()}
-		                      className="h-8 px-3 text-xs"
+		                      className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
 		                      disabled={salesDoctorNotesLoading}
 		                    >
 		                      Save

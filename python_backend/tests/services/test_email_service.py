@@ -1,24 +1,6 @@
-import sys
-import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-
-if "requests" not in sys.modules:
-    requests = types.ModuleType("requests")
-    requests_auth = types.ModuleType("requests.auth")
-
-    class HTTPBasicAuth:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-    requests.RequestException = Exception
-    requests.HTTPError = Exception
-    requests.Timeout = TimeoutError
-    requests.auth = requests_auth
-    requests_auth.HTTPBasicAuth = HTTPBasicAuth
-    sys.modules["requests"] = requests
-    sys.modules["requests.auth"] = requests_auth
 
 
 class EmailServiceTests(unittest.TestCase):
@@ -189,11 +171,13 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_args.args[0], "doctor@example.com")
         self.assertEqual(dispatch_email.call_args.args[1], "Verify your TruFusionLabs account")
         self.assertIn("Verify your TruFusionLabs account", dispatch_email.call_args.args[2])
+        self.assertNotIn("cid:trufusion-logo", dispatch_email.call_args.args[2])
         self.assertIn("https://trufusionlabs.com/verify-email?token=test", dispatch_email.call_args.args[3])
         self.assertEqual(
             dispatch_email.call_args.kwargs["from_address"],
             "TruFusionLabs <support@trufusionlabs.com>",
         )
+        self.assertEqual(dispatch_email.call_args.kwargs["reply_to"], "support@trufusionlabs.com")
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
 
     def test_delegate_links_beta_info_email_includes_badge_image(self):
@@ -219,104 +203,6 @@ class EmailServiceTests(unittest.TestCase):
         self.assertNotIn("Managing Delegate Links", html)
         self.assertIn("Open Delegate Links Beta", html)
         self.assertIn("1. Set up your brand", plain)
-
-    def test_sendgrid_payload_includes_cc_recipients(self):
-        from python_backend.services import email_service
-
-        response = SimpleNamespace(status_code=202, text="", raise_for_status=lambda: None)
-
-        with patch.object(email_service.http_client, "post", return_value=response) as post:
-            email_service._send_via_sendgrid(
-                "holly@example.com",
-                "TruFusionLabs order 1505 has shipped",
-                "<p>Shipped</p>",
-                {
-                    "sendgrid_api_key": "sendgrid-key",
-                    "sendgrid_endpoint": "https://sendgrid.example.test/send",
-                    "from": "TruFusionLabs <support@trufusionlabs.com>",
-                    "timeout": 15,
-                },
-                plain_text="Shipped",
-                cc=("petergibbons7@icloud.com",),
-            )
-
-        payload = post.call_args.kwargs["json"]
-        personalization = payload["personalizations"][0]
-        self.assertEqual(personalization["to"], [{"email": "holly@example.com"}])
-        self.assertEqual(personalization["cc"], [{"email": "petergibbons7@icloud.com"}])
-        self.assertNotIn("bcc", personalization)
-
-    def test_sendgrid_payload_includes_bcc_recipients(self):
-        from python_backend.services import email_service
-
-        response = SimpleNamespace(status_code=202, text="", raise_for_status=lambda: None)
-
-        with patch.object(email_service.http_client, "post", return_value=response) as post:
-            email_service._send_via_sendgrid(
-                "holly@example.com",
-                "TruFusionLabs order 1505 has shipped",
-                "<p>Shipped</p>",
-                {
-                    "sendgrid_api_key": "sendgrid-key",
-                    "sendgrid_endpoint": "https://sendgrid.example.test/send",
-                    "from": "TruFusionLabs <support@trufusionlabs.com>",
-                    "timeout": 15,
-                },
-                plain_text="Shipped",
-                bcc=("petergibbons7@icloud.com",),
-            )
-
-        payload = post.call_args.kwargs["json"]
-        personalization = payload["personalizations"][0]
-        self.assertEqual(personalization["to"], [{"email": "holly@example.com"}])
-        self.assertEqual(personalization["bcc"], [{"email": "petergibbons7@icloud.com"}])
-        self.assertNotIn("cc", personalization)
-
-    def test_sendgrid_payload_includes_inline_images_when_referenced(self):
-        from python_backend.services import email_service
-
-        response = SimpleNamespace(status_code=202, text="", raise_for_status=lambda: None)
-        inline_images = (
-            {
-                "content_id": "trufusion-logo",
-                "filename": "TruFusionLabs_PhysiciansPortal.png",
-                "mime_type": "image/png",
-                "maintype": "image",
-                "subtype": "png",
-                "data": b"logo",
-            },
-            {
-                "content_id": "trufusion-leaf",
-                "filename": "leafTexture.jpg",
-                "mime_type": "image/jpeg",
-                "maintype": "image",
-                "subtype": "jpeg",
-                "data": b"leaf",
-            },
-        )
-
-        with patch.object(email_service, "_load_inline_email_images", return_value=inline_images), patch.object(
-            email_service.http_client,
-            "post",
-            return_value=response,
-        ) as post:
-            email_service._send_via_sendgrid(
-                "holly@example.com",
-                "TruFusionLabs order 1505 has shipped",
-                '<img src="cid:trufusion-logo" /><table background="cid:trufusion-leaf"></table>',
-                {
-                    "sendgrid_api_key": "sendgrid-key",
-                    "sendgrid_endpoint": "https://sendgrid.example.test/send",
-                    "from": "TruFusionLabs <support@trufusionlabs.com>",
-                    "timeout": 15,
-                },
-                plain_text="Shipped",
-            )
-
-        attachments = post.call_args.kwargs["json"]["attachments"]
-        self.assertEqual([attachment["content_id"] for attachment in attachments], ["trufusion-logo", "trufusion-leaf"])
-        self.assertEqual([attachment["disposition"] for attachment in attachments], ["inline", "inline"])
-        self.assertEqual([attachment["filename"] for attachment in attachments], ["TruFusionLabs_PhysiciansPortal.png", "leafTexture.jpg"])
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
@@ -385,15 +271,24 @@ class EmailServiceTests(unittest.TestCase):
                 },
                 plain_text="Shipped",
                 cc=("petergibbons7@icloud.com",),
+                bcc=("finance@example.com",),
+                reply_to="support@trufusionlabs.com",
             )
 
         self.assertIn(("connect", "smtp-relay.gmail.com", 587, 15), events)
         self.assertIn(("starttls",), events)
         self.assertNotIn(("login", "support@trufusionlabs.com", ""), events)
         self.assertIn(
-            ("send_message", "holly@example.com", "petergibbons7@icloud.com", ("holly@example.com", "petergibbons7@icloud.com")),
+            (
+                "send_message",
+                "holly@example.com",
+                "petergibbons7@icloud.com",
+                ("holly@example.com", "petergibbons7@icloud.com", "finance@example.com"),
+            ),
             events,
         )
+        self.assertEqual(messages[0]["Reply-To"], "support@trufusionlabs.com")
+        self.assertNotIn("finance@example.com", messages[0].as_string())
         content_ids = [part["Content-ID"] for part in messages[0].walk() if part["Content-ID"]]
         self.assertEqual(content_ids, ["<trufusion-logo>", "<trufusion-leaf>"])
 
@@ -410,8 +305,6 @@ class EmailServiceTests(unittest.TestCase):
             return_value={
                 "from": "TruFusionLabs <support@trufusionlabs.com>",
                 "timeout": 15,
-                "sendgrid_api_key": None,
-                "sendgrid_endpoint": "https://sendgrid.example.test/send",
                 "smtp": {"host": None, "pass": None},
             },
         ):

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import smtplib
-import base64
 import html as _html
 from datetime import datetime
 from email.message import EmailMessage
@@ -12,17 +11,14 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import logging
 from urllib.parse import quote
 
-import requests
-
 from . import get_config
-from ..utils import http_client
 
 logger = logging.getLogger(__name__)
 
-SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
 # Visibility requirement for shipping lifecycle emails only.
 _SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
 _EMAIL_DEFAULT_FROM = "TruFusionLabs <support@trufusionlabs.com>"
+_EMAIL_DEFAULT_REPLY_TO = "support@trufusionlabs.com"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
@@ -174,7 +170,6 @@ def _email_settings() -> Dict[str, Any]:
             return True
         return fallback
 
-    sendgrid_key = os.environ.get("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_TOKEN")
     smtp_host = os.environ.get("SMTP_HOST") or os.environ.get("EMAIL_HOST")
     smtp_user = os.environ.get("SMTP_USER") or os.environ.get("EMAIL_USER")
     smtp_pass = os.environ.get("SMTP_PASS") or os.environ.get("EMAIL_PASS")
@@ -185,9 +180,7 @@ def _email_settings() -> Dict[str, Any]:
 
     settings = {
         "from": _normalize_from_brand(os.environ.get("MAIL_FROM")),
-        "timeout": _to_int(os.environ.get("SENDGRID_TIMEOUT") or os.environ.get("SMTP_TIMEOUT"), 15),
-        "sendgrid_api_key": sendgrid_key,
-        "sendgrid_endpoint": os.environ.get("SENDGRID_API_URL") or SENDGRID_ENDPOINT,
+        "timeout": _to_int(os.environ.get("SMTP_TIMEOUT"), 15),
         "smtp": {
             "host": smtp_host,
             "user": smtp_user,
@@ -202,8 +195,6 @@ def _email_settings() -> Dict[str, Any]:
         "Loaded email settings",
         extra={
             "from": settings["from"],
-            "hasSendGridKey": bool(settings["sendgrid_api_key"]),
-            "sendgridEndpoint": settings["sendgrid_endpoint"],
             "hasSmtpHost": bool(smtp_host),
             "hasSmtpUser": bool(smtp_user),
             "hasSmtpPass": bool(smtp_pass),
@@ -290,21 +281,6 @@ def _attach_inline_images_to_message(msg: EmailMessage, html: str) -> None:
         )
 
 
-def _sendgrid_inline_attachments(html: str) -> list[Dict[str, str]]:
-    attachments: list[Dict[str, str]] = []
-    for image in _inline_images_for_html(html):
-        attachments.append(
-            {
-                "content": base64.b64encode(image["data"]).decode("ascii"),
-                "type": image["mime_type"],
-                "filename": image["filename"],
-                "disposition": "inline",
-                "content_id": image["content_id"],
-            }
-        )
-    return attachments
-
-
 def _email_background_style() -> str:
     return (
         f"background-color:{_EMAIL_BACKGROUND_COLOR};"
@@ -348,64 +324,6 @@ def _normalize_extra_recipients(recipients: Optional[Iterable[str] | str]) -> li
     return normalized
 
 
-def _send_via_sendgrid(
-    recipient: str,
-    subject: str,
-    html: str,
-    settings: Dict[str, Any],
-    plain_text: Optional[str] = None,
-    cc: Optional[Iterable[str] | str] = None,
-    bcc: Optional[Iterable[str]] = None,
-) -> None:
-    api_key = settings.get("sendgrid_api_key")
-    if not api_key:
-        logger.warning("SendGrid API key missing")
-        raise RuntimeError("SendGrid API key is not configured")
-
-    content_blocks = []
-    if plain_text:
-        content_blocks.append({"type": "text/plain", "value": plain_text})
-    else:
-        content_blocks.append({"type": "text/plain", "value": html.replace("<p>", "").replace("</p>", "\n")})
-    content_blocks.append({"type": "text/html", "value": html})
-
-    personalization = {
-        "to": [{"email": recipient}],
-        "subject": subject,
-    }
-    cc_recipients = _normalize_extra_recipients(cc)
-    if cc_recipients:
-        personalization["cc"] = [{"email": email} for email in cc_recipients]
-    bcc_recipients = _normalize_extra_recipients(bcc)
-    if bcc_recipients:
-        personalization["bcc"] = [{"email": email} for email in bcc_recipients]
-
-    payload = {
-        "personalizations": [
-            personalization
-        ],
-        "from": _format_from_address(settings["from"]),
-        "content": content_blocks,
-    }
-    inline_attachments = _sendgrid_inline_attachments(html)
-    if inline_attachments:
-        payload["attachments"] = inline_attachments
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    timeout = settings.get("timeout") or 15
-    response = http_client.post(settings["sendgrid_endpoint"], json=payload, headers=headers, timeout=timeout)
-    if response.status_code >= 400:
-        logger.error(
-            "SendGrid API call failed",
-            extra={"status": response.status_code, "body": response.text[:512]},
-        )
-        response.raise_for_status()
-    logger.info("Password reset email dispatched via SendGrid", extra={"recipient": recipient})
-
 def _send_via_smtp(
     recipient: str,
     subject: str,
@@ -414,6 +332,7 @@ def _send_via_smtp(
     plain_text: Optional[str] = None,
     cc: Optional[Iterable[str] | str] = None,
     bcc: Optional[Iterable[str]] = None,
+    reply_to: Optional[str] = None,
 ) -> None:
     smtp = settings.get("smtp") or {}
     host = (smtp.get("host") or "").strip()
@@ -437,6 +356,8 @@ def _send_via_smtp(
     msg["From"] = (
         f"{from_addr.get('name')} <{from_addr.get('email')}>" if from_addr.get("name") else from_addr.get("email")
     )
+    if reply_to:
+        msg["Reply-To"] = reply_to
 
     cc_recipients = _normalize_extra_recipients(cc)
     if cc_recipients:
@@ -541,7 +462,6 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
 def _build_email_verification_email(verification_url: str, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     safe_url = _html.escape(str(verification_url or ""), quote=True)
-    logo_url = _EMAIL_LOGO_SRC
     body_style = _email_body_style()
     outer_table_style = _email_outer_table_style()
     container_style = _email_container_style(520)
@@ -559,12 +479,12 @@ def _build_email_verification_email(verification_url: str, base_url: str) -> Tup
         <td align="center">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
-              <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+              <td style="padding:28px 28px 0;text-align:center;" align="center">
+                <p style="margin:0;font-size:18px;font-weight:700;letter-spacing:0;color:#0B274B;">TruFusionLabs</p>
               </td>
             </tr>
             <tr>
-              <td style="padding:44px 28px 8px;">
+              <td style="padding:32px 28px 8px;">
                 <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Verify your TruFusionLabs account</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
                   Thanks for creating your TruFusionLabs account. Confirm this email address to finish setting up your account.
@@ -613,6 +533,7 @@ def _dispatch_email(
     cc: Optional[Iterable[str] | str] = None,
     bcc: Optional[Iterable[str]] = None,
     from_address: Optional[str] = None,
+    reply_to: Optional[str] = None,
     raise_on_failure: bool = False,
 ) -> None:
     cc_recipients = _normalize_extra_recipients(cc)
@@ -633,21 +554,6 @@ def _dispatch_email(
 
     if config.is_production:
         failures: list[str] = []
-        if settings.get("sendgrid_api_key"):
-            try:
-                _send_via_sendgrid(
-                    recipient,
-                    subject,
-                    html,
-                    settings,
-                    plain_text=plain_text,
-                    cc=cc_recipients,
-                    bcc=bcc_recipients,
-                )
-                return
-            except Exception as exc:
-                failures.append(f"SendGrid: {exc}")
-                logger.error("Failed to send email via SendGrid", exc_info=True)
         smtp_cfg = (settings.get("smtp") or {}) if isinstance(settings.get("smtp"), dict) else {}
         smtp_auth_enabled = bool(smtp_cfg.get("auth", True))
         if smtp_cfg.get("host") and ((smtp_cfg.get("pass") or "") or not smtp_auth_enabled):
@@ -660,13 +566,14 @@ def _dispatch_email(
                     plain_text=plain_text,
                     cc=cc_recipients,
                     bcc=bcc_recipients,
+                    reply_to=reply_to,
                 )
                 return
             except Exception as exc:
                 failures.append(f"SMTP: {exc}")
                 logger.error("Failed to send email via SMTP", exc_info=True)
 
-        message = "No email provider succeeded; set SENDGRID_API_KEY, SMTP_HOST/SMTP_PASS, or SMTP_AUTH=false for an IP-authorized relay"
+        message = "No email provider succeeded; set SMTP_HOST/SMTP_PASS, or SMTP_AUTH=false for an IP-authorized relay"
         logger.error(message, extra={"recipient": recipient, "subject": subject, "failures": failures})
         if raise_on_failure:
             detail = f" ({'; '.join(failures)})" if failures else ""
@@ -1029,6 +936,7 @@ def send_email_verification_email(recipient: str, verification_url: str) -> None
         html,
         plain_text,
         from_address=_EMAIL_DEFAULT_FROM,
+        reply_to=_EMAIL_DEFAULT_REPLY_TO,
         raise_on_failure=True,
     )
 
