@@ -546,13 +546,23 @@ class DelegationServiceTests(unittest.TestCase):
         try:
             service._using_mysql = lambda: True
             service._migrate_legacy_links_to_table = lambda: None
-            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
-                "doctorId": "doc-1",
-                "referenceLabel": "Study Alpha",
-                "allowedProducts": ["BPC-157-5MG"],
-                "delegateSharedAt": None,
-            }
-            service.patient_links_repository.store_delegate_payload = lambda *_args, **_kwargs: True
+            find_state = {"stored": False}
+
+            def fake_find_by_token(*_args, **_kwargs):
+                return {
+                    "doctorId": "doc-1",
+                    "referenceLabel": "Study Alpha",
+                    "allowedProducts": ["BPC-157-5MG"],
+                    "delegateSharedAt": "2026-03-12T15:30:00+00:00" if find_state["stored"] else None,
+                    "delegateReviewStatus": "pending" if find_state["stored"] else None,
+                }
+
+            def fake_store_delegate_payload(*_args, **_kwargs):
+                find_state["stored"] = True
+                return True
+
+            service.patient_links_repository.find_by_token = fake_find_by_token
+            service.patient_links_repository.store_delegate_payload = fake_store_delegate_payload
             service._audit_event = lambda *_args, **_kwargs: None
             service.user_repository.find_by_id = lambda doctor_id: {
                 "id": doctor_id,
@@ -582,6 +592,73 @@ class DelegationServiceTests(unittest.TestCase):
             self.assertEqual(recipient, "doctor@example.com")
             self.assertEqual(payload.get("doctor_name"), "Dr. Test")
             self.assertEqual(payload.get("proposal_label"), "Study Alpha")
+            self.assertEqual(payload.get("submitted_at"), submitted_at)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.patient_links_repository.store_delegate_payload = original_store
+            service._audit_event = original_audit
+            service.user_repository.find_by_id = original_find_user
+            service.email_service.send_delegate_proposal_ready_email = original_send_email
+
+    def test_store_delegate_submission_sends_email_from_persisted_pending_state(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_store = service.patient_links_repository.store_delegate_payload
+        original_audit = service._audit_event
+        original_find_user = service.user_repository.find_by_id
+        original_send_email = service.email_service.send_delegate_proposal_ready_email
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            find_state = {"stored": False}
+
+            def fake_find_by_token(*_args, **_kwargs):
+                if not find_state["stored"]:
+                    return {}
+                return {
+                    "doctorId": "doc-1",
+                    "subjectLabel": "Subject A",
+                    "delegateSharedAt": "2026-03-12T15:30:00+00:00",
+                    "delegateReviewStatus": "pending",
+                }
+
+            def fake_store_delegate_payload(*_args, **_kwargs):
+                find_state["stored"] = True
+                return True
+
+            service.patient_links_repository.find_by_token = fake_find_by_token
+            service.patient_links_repository.store_delegate_payload = fake_store_delegate_payload
+            service._audit_event = lambda *_args, **_kwargs: None
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "name": "Dr. Test",
+                "email": "doctor@example.com",
+            }
+
+            email_calls = []
+            service.email_service.send_delegate_proposal_ready_email = (
+                lambda recipient, **kwargs: email_calls.append((recipient, kwargs))
+            )
+
+            submitted_at = datetime(2026, 3, 12, 15, 30, tzinfo=timezone.utc)
+            service.store_delegate_submission(
+                "tok-1",
+                cart={"items": [{"name": "BPC-157", "quantity": 1}]},
+                shipping={"shippingAddress": {"country": "US"}},
+                payment={"paymentMethod": "zelle"},
+                order_id="order-1",
+                shared_at=submitted_at,
+            )
+
+            self.assertEqual(len(email_calls), 1)
+            recipient, payload = email_calls[0]
+            self.assertEqual(recipient, "doctor@example.com")
+            self.assertEqual(payload.get("doctor_name"), "Dr. Test")
+            self.assertEqual(payload.get("proposal_label"), "Subject A")
             self.assertEqual(payload.get("submitted_at"), submitted_at)
         finally:
             service._using_mysql = original_using_mysql

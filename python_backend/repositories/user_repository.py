@@ -94,6 +94,11 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized = dict(user)
     normalized.setdefault("role", "doctor")
     normalized.setdefault("status", "active")
+    normalized.setdefault("emailVerifiedAt", normalized.get("emailVerifiedAt") or normalized.get("email_verified_at") or None)
+    normalized.setdefault(
+        "emailVerificationSentAt",
+        normalized.get("emailVerificationSentAt") or normalized.get("email_verification_sent_at") or None,
+    )
     normalized.setdefault("isOnline", bool(normalized.get("isOnline", False)))
     normalized.setdefault("sessionId", normalized.get("sessionId") or None)
     normalized.setdefault("lastSeenAt", normalized.get("lastSeenAt") or None)
@@ -275,6 +280,8 @@ _PROFILE_SELECT_FIELDS = """
     email,
     role,
     status,
+    email_verified_at,
+    email_verification_sent_at,
     hand_delivered,
     is_online,
     sales_rep_id,
@@ -335,6 +342,9 @@ _AUTH_SELECT_FIELDS = """
     email,
     password,
     role,
+    status,
+    email_verified_at,
+    email_verification_sent_at,
     visits,
     session_id
 """
@@ -345,6 +355,8 @@ _SESSION_SELECT_FIELDS = """
     email,
     role,
     status,
+    email_verified_at,
+    email_verification_sent_at,
     hand_delivered,
     is_online,
     sales_rep_id,
@@ -1052,6 +1064,7 @@ def _mysql_insert(user: Dict) -> Dict:
         """
         INSERT INTO users (
             id, name, email, password, role, status, is_online, sales_rep_id, referrer_doctor_id,
+            email_verified_at, email_verification_sent_at,
             hand_delivered,
             session_id,
             last_seen_at, last_interaction_at,
@@ -1073,7 +1086,8 @@ def _mysql_insert(user: Dict) -> Dict:
             reseller_permit_approved_by_rep
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(is_online)s, %(sales_rep_id)s,
-            %(referrer_doctor_id)s, %(hand_delivered)s, %(session_id)s, %(last_seen_at)s, %(last_interaction_at)s,
+            %(referrer_doctor_id)s, %(email_verified_at)s, %(email_verification_sent_at)s,
+            %(hand_delivered)s, %(session_id)s, %(last_seen_at)s, %(last_interaction_at)s,
             %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
@@ -1094,6 +1108,8 @@ def _mysql_insert(user: Dict) -> Dict:
             password = VALUES(password),
             role = VALUES(role),
             status = VALUES(status),
+            email_verified_at = COALESCE(VALUES(email_verified_at), email_verified_at),
+            email_verification_sent_at = COALESCE(VALUES(email_verification_sent_at), email_verification_sent_at),
             is_online = VALUES(is_online),
             hand_delivered = VALUES(hand_delivered),
             sales_rep_id = CASE
@@ -1176,6 +1192,8 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             password = %(password)s,
             role = %(role)s,
             status = %(status)s,
+            email_verified_at = %(email_verified_at)s,
+            email_verification_sent_at = %(email_verification_sent_at)s,
             is_online = %(is_online)s,
             hand_delivered = %(hand_delivered)s,
             sales_rep_id = %(sales_rep_id)s,
@@ -1271,6 +1289,8 @@ def _row_to_user(row: Dict) -> Dict:
             "password": row.get("password"),
             "role": row.get("role"),
             "status": row.get("status"),
+            "emailVerifiedAt": fmt_datetime(row.get("email_verified_at")),
+            "emailVerificationSentAt": fmt_datetime(row.get("email_verification_sent_at")),
             "handDelivered": _normalize_bool(row.get("hand_delivered")),
             "isOnline": bool(row.get("is_online")),
             "salesRepId": row.get("sales_rep_id"),
@@ -1349,6 +1369,8 @@ def _to_db_params(user: Dict) -> Dict:
         "password": user.get("password"),
         "role": user.get("role"),
         "status": user.get("status"),
+        "email_verified_at": parse_dt(user.get("emailVerifiedAt")),
+        "email_verification_sent_at": parse_dt(user.get("emailVerificationSentAt")),
         "is_online": 1 if user.get("isOnline") else 0,
         "hand_delivered": 1 if _normalize_bool(user.get("handDelivered")) else 0,
         "sales_rep_id": user.get("salesRepId"),

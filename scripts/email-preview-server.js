@@ -10,47 +10,32 @@ const templates = [
   {
     id: 'shipping-shipped',
     label: 'Shipping: Shipped',
-    source: 'python_backend/services/email_service.py::_build_shipping_status_email',
+    source: 'python_backend/services/email_service.py::send_order_shipping_status_email',
   },
   {
     id: 'shipping-in-transit',
     label: 'Shipping: In transit',
-    source: 'python_backend/services/email_service.py::_build_shipping_status_email',
+    source: 'python_backend/services/email_service.py::send_order_shipping_status_email',
   },
   {
     id: 'shipping-out-for-delivery',
     label: 'Shipping: Out for delivery',
-    source: 'python_backend/services/email_service.py::_build_shipping_status_email',
+    source: 'python_backend/services/email_service.py::send_order_shipping_status_email',
   },
   {
     id: 'shipping-delivered',
     label: 'Shipping: Delivered',
-    source: 'python_backend/services/email_service.py::_build_shipping_status_email',
+    source: 'python_backend/services/email_service.py::send_order_shipping_status_email',
   },
   {
     id: 'password-reset-python',
-    label: 'Password reset: Python backend',
-    source: 'python_backend/services/email_service.py::_build_password_reset_email',
+    label: 'Password reset',
+    source: 'python_backend/services/email_service.py::send_password_reset_email',
   },
   {
     id: 'delegate-proposal',
     label: 'Delegate proposal ready',
-    source: 'python_backend/services/email_service.py::_build_delegate_proposal_ready_email',
-  },
-  {
-    id: 'delegate-links-info',
-    label: 'Delegate Links Beta info',
-    source: 'python_backend/services/email_service.py::_build_delegate_links_beta_info_email',
-  },
-  {
-    id: 'payment-instructions-node',
-    label: 'Payment instructions: Node backend',
-    source: 'server/templates/paymentInstructions.html',
-  },
-  {
-    id: 'password-reset-node',
-    label: 'Password reset: Node backend',
-    source: 'server/templates/passwordReset.html',
+    source: 'python_backend/services/email_service.py::send_delegate_proposal_ready_email',
   },
 ];
 
@@ -124,7 +109,7 @@ elif template == "password-reset-python":
         reset_url="https://trufusionlabs.com/reset-password?token=preview-token",
         base_url=base_url,
     )
-    subject = "Reset your TruFusionLabs password"
+    subject = "Password Reset Request"
 elif template == "delegate-proposal":
     html, plain = email_service._build_delegate_proposal_ready_email(
         doctor_name="Dr. Holly O'Quin",
@@ -132,12 +117,7 @@ elif template == "delegate-proposal":
         submitted_at_label="May 3, 2026 at 2:15 PM",
         base_url=base_url,
     )
-    subject = "Delegate proposal ready for review"
-elif template == "delegate-links-info":
-    html, plain = email_service._build_delegate_links_beta_info_email(
-        base_url=base_url,
-    )
-    subject = "Welcome to the Delegate Links Beta"
+    subject = "Delegate Proposal Ready for Review"
 else:
     raise SystemExit(f"unknown python template: {template}")
 
@@ -155,8 +135,6 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-const readTemplate = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
-
 const renderPythonTemplate = (templateId) => {
   const result = spawnSync('python3', ['-c', pythonPreviewCode, templateId], {
     cwd: repoRoot,
@@ -170,62 +148,9 @@ const renderPythonTemplate = (templateId) => {
   return JSON.parse(result.stdout);
 };
 
-const renderPaymentInstructions = () => {
-  const template = readTemplate('server/templates/paymentInstructions.html');
-  const zelleSection = `
-      <h3 style="margin: 18px 0 8px; font-size: 16px; color: #0f172a;">Option A: Pay with Zelle</h3>
-      <p style="margin: 8px 0 0; color: #334155; line-height: 1.6;">
-        Use Zelle in your bank app and send the <strong>Amount to send</strong> shown above to:
-      </p>
-      <ul style="margin: 8px 0 0 18px; padding: 0; color: #334155; line-height: 1.6;">
-        <li><strong>Zelle email</strong>: support@peppro.net</li>
-      </ul>
-      <ol style="margin: 10px 0 0 18px; padding: 0; color: #334155; line-height: 1.6;">
-        <li>Send the exact amount shown above.</li>
-        <li>Set the memo/notes to the exact value shown above.</li>
-        <li>Once received, we'll begin processing your order.</li>
-      </ol>
-    `;
-  const bankSection = `
-      <h3 style="margin: 18px 0 8px; font-size: 16px; color: #0f172a;">Option B: Direct Bank Transfer</h3>
-      <p style="margin: 8px 0 0; color: #334155; line-height: 1.6;">
-        Reply to this email or contact <a href="mailto:support@trufusionlabs.com">support@trufusionlabs.com</a> for bank transfer instructions.
-      </p>
-    `;
-
-  const html = template
-    .replaceAll('{{logoUrl}}', '/assets/TruFusionLabs_PhysiciansPortal.png')
-    .replaceAll('{{customerName}}', 'Holly O&#39;Quin')
-    .replaceAll('{{orderNumber}}', '1505')
-    .replaceAll('{{orderTotal}}', '$372.42')
-    .replaceAll('{{discountDetails}}', '<br /><strong>Discount code used</strong>: PREVIEW10')
-    .replaceAll('{{supportEmail}}', 'support@trufusionlabs.com')
-    .replaceAll('{{zelleSection}}', zelleSection)
-    .replaceAll('{{bankTransferSection}}', bankSection);
-
-  return {
-    subject: 'TruFusionLabs payment instructions - Order 1505',
-    html,
-    plain: 'Payment instructions preview',
-  };
-};
-
-const renderNodePasswordReset = () => {
-  const html = readTemplate('server/templates/passwordReset.html')
-    .replaceAll('{{resetUrl}}', 'https://trufusionlabs.com/reset-password?token=preview-token');
-  return {
-    subject: 'Password Reset Request',
-    html,
-    plain: 'Password reset preview',
-  };
-};
-
 const renderTemplate = (templateId) => {
-  if (templateId === 'payment-instructions-node') {
-    return renderPaymentInstructions();
-  }
-  if (templateId === 'password-reset-node') {
-    return renderNodePasswordReset();
+  if (!templates.some((template) => template.id === templateId)) {
+    throw new Error(`unknown preview template: ${templateId}`);
   }
   return renderPythonTemplate(templateId);
 };

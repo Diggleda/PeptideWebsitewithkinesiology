@@ -65,6 +65,8 @@ CREATE_TABLE_STATEMENTS = [
         password VARCHAR(255) NOT NULL,
         role VARCHAR(32) NOT NULL DEFAULT 'doctor',
         status VARCHAR(32) NOT NULL DEFAULT 'active',
+        email_verified_at DATETIME NULL,
+        email_verification_sent_at DATETIME NULL,
         hand_delivered TINYINT(1) NOT NULL DEFAULT 0,
         is_online TINYINT(1) NOT NULL DEFAULT 0,
         session_id VARCHAR(64) NULL,
@@ -543,6 +545,20 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+        token_sha256 CHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        recipient_email VARCHAR(190) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        consumed_at DATETIME NULL,
+        created_at DATETIME NOT NULL,
+        KEY idx_email_verification_tokens_user (user_id),
+        KEY idx_email_verification_tokens_email (recipient_email),
+        KEY idx_email_verification_tokens_expires (expires_at),
+        KEY idx_email_verification_tokens_consumed (consumed_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS admin_shadow_sessions (
         id VARCHAR(64) PRIMARY KEY,
         launch_token_sha256 CHAR(64) NOT NULL UNIQUE,
@@ -670,6 +686,8 @@ def ensure_schema() -> None:
     # Apply lightweight schema evolutions without breaking existing tables
     migrations = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_delivered TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_sent_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
         "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS downloads LONGTEXT NULL",
@@ -861,6 +879,14 @@ def ensure_schema() -> None:
         )
     except Exception:
         # Best effort; do not fail app startup on migration issues.
+        pass
+
+    try:
+        if not _column_exists("users", "email_verified_at"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN email_verified_at DATETIME NULL")
+        if not _column_exists("users", "email_verification_sent_at"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN email_verification_sent_at DATETIME NULL")
+    except Exception:
         pass
 
     _backfill_network_presence_agreement_once(table_exists=_table_exists)

@@ -14,7 +14,12 @@ import html as _html
 import jwt
 import requests
 
-from ..repositories import password_reset_token_repository, sales_rep_repository, user_repository
+from ..repositories import (
+    email_verification_token_repository,
+    password_reset_token_repository,
+    sales_rep_repository,
+    user_repository,
+)
 from ..repositories import sales_prospect_repository
 from ..repositories import referral_repository
 from ..utils import http_client
@@ -250,6 +255,12 @@ def _build_reset_url(token: str) -> str:
     return f"{base}/reset-password?token={token}"
 
 
+def _build_email_verification_url(token: str) -> str:
+    config = get_config()
+    base = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
+    return f"{base}/verify-email?token={token}"
+
+
 def _create_auth_token(payload: Dict, *, expires_in_seconds: int = 24 * 60 * 60) -> str:
     config = get_config()
     now = datetime.now(timezone.utc)
@@ -268,6 +279,7 @@ _BCRYPT_PREFIX = re.compile(r"^\$2[abxy]\$")
 logger = logging.getLogger(__name__)
 audit_logger = logging.getLogger("trufusion.auth_audit")
 _PASSWORD_RESET_TOKENS: Dict[str, Dict[str, Any]] = {}
+_EMAIL_VERIFICATION_TOKENS: Dict[str, Dict[str, Any]] = {}
 
 def _audit_enabled() -> bool:
     return str(os.environ.get("AUTH_AUDIT_LOGS") or "").strip().lower() in ("1", "true", "yes", "on")
@@ -299,6 +311,58 @@ def _is_multi_session_exempt(email: Optional[str]) -> bool:
     # Shared demo account: allow concurrent sessions across devices/users.
     # This disables single-session enforcement (session id rotation) for this one email.
     return (email or "").strip().lower() == "test@doctor.com"
+
+
+def _requires_email_verification(user: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(user, dict):
+        return False
+    # Only accounts created into this explicit pending state participate in
+    # signup verification. Legacy active accounts may not have emailVerifiedAt.
+    status = _normalize_role(user.get("status"))
+    return status == "pending_email_verification" and not user.get("emailVerifiedAt")
+
+
+def _create_email_verification_token(user: Dict[str, Any]) -> str:
+    user_id = str(user.get("id") or "").strip()
+    recipient = _normalize_email(user.get("email"))
+    if not user_id or not recipient:
+        raise _bad_request("EMAIL_VERIFICATION_UNAVAILABLE")
+    config = get_config()
+    if config.mysql.get("enabled"):
+        return email_verification_token_repository.create_token(
+            user_id=user_id,
+            recipient_email=recipient,
+        )
+
+    token = secrets.token_hex(32)
+    now = datetime.now(timezone.utc)
+    for existing_token, token_data in list(_EMAIL_VERIFICATION_TOKENS.items()):
+        if str(token_data.get("user_id") or "") == user_id:
+            _EMAIL_VERIFICATION_TOKENS.pop(existing_token, None)
+    _EMAIL_VERIFICATION_TOKENS[token] = {
+        "user_id": user_id,
+        "recipient_email": recipient,
+        "expires": now + timedelta(seconds=email_verification_token_repository.DEFAULT_TTL_SECONDS),
+    }
+    return token
+
+
+def _send_email_verification(user: Dict[str, Any]) -> bool:
+    recipient = _normalize_email(user.get("email"))
+    if not recipient:
+        return False
+    try:
+        token = _create_email_verification_token(user)
+        email_service.send_email_verification_email(recipient, _build_email_verification_url(token))
+        sent_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        try:
+            user_repository.update({**user, "emailVerificationSentAt": sent_at})
+        except Exception as exc:
+            logger.warning("Failed to record email verification sent timestamp", exc_info=exc)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to dispatch email verification email", exc_info=exc)
+        return False
 
 def _resolve_sales_rep_id_for_prospect(identifier: Optional[str]) -> Optional[str]:
     candidate = str(identifier or "").strip()
@@ -604,17 +668,20 @@ def register(data: Dict) -> Dict:
             "phone": phone,
             "password": hashed_password,
             "role": "doctor",
+            "status": "pending_email_verification",
             "salesRepId": sales_rep_id,
             "referrerDoctorId": referrer_doctor_id,
             "referralCredits": 0,
             "totalReferrals": 0,
-            "visits": 1,
+            "visits": 0,
             "createdAt": now,
-            "lastLoginAt": now,
-            "lastSeenAt": now,
-            "lastInteractionAt": now,
-            "isOnline": True,
+            "lastLoginAt": None,
+            "lastSeenAt": None,
+            "lastInteractionAt": None,
+            "isOnline": False,
             "mustResetPassword": False,
+            "emailVerifiedAt": None,
+            "emailVerificationSentAt": None,
             "npiNumber": normalized_npi,
             "npiLastVerifiedAt": npi_last_verified_at,
             "npiVerification": npi_verification,
@@ -628,7 +695,7 @@ def register(data: Dict) -> Dict:
             "greaterArea": None,
             "studyFocus": None,
             "bio": None,
-            "sessionId": _new_session_id(),
+            "sessionId": None,
         }
     )
 
@@ -646,23 +713,21 @@ def register(data: Dict) -> Dict:
     _ensure_converted_sales_prospect_for_doctor(user)
 
     token_role = (user.get("role") or "doctor").lower()
-    token = _create_auth_token(
-        {"id": user["id"], "email": user["email"], "role": token_role, "sid": user.get("sessionId")}
-    )
+    email_sent = _send_email_verification(user)
 
     _audit(
-        "REGISTER_SUCCESS",
+        "REGISTER_PENDING_EMAIL_VERIFICATION",
         {
             "userId": user.get("id"),
             "role": token_role,
             "email": user.get("email"),
             "salesRepId": user.get("salesRepId"),
+            "emailSent": email_sent,
             "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         },
     )
 
-    _record_local_presence_login(user.get("id"))
-    return {"token": token, "user": _sanitize_user(user)}
+    return {"status": "verification_required", "email": user.get("email"), "emailSent": email_sent}
 
 def _register_sales_rep_account(
     sales_rep: Dict,
@@ -686,28 +751,28 @@ def _register_sales_rep_account(
         raise _conflict("EMAIL_EXISTS")
 
     if user_record:
-        new_session_id = _new_session_id()
         updated_user = user_repository.update(
             {
                 **user_record,
                 "name": name,
                 "password": hashed_password,
                 "role": resolved_user_role,
-                "status": "active",
+                "status": "pending_email_verification",
                 "phone": phone or user_record.get("phone"),
                 "salesRepId": sales_rep.get("id"),
-                "visits": int(user_record.get("visits") or 0) + 1,
-                "lastLoginAt": now,
-                "lastSeenAt": now,
-                "lastInteractionAt": now,
-                "isOnline": True,
+                "visits": int(user_record.get("visits") or 0),
+                "lastLoginAt": user_record.get("lastLoginAt"),
+                "lastSeenAt": user_record.get("lastSeenAt"),
+                "lastInteractionAt": user_record.get("lastInteractionAt"),
+                "isOnline": False,
                 "mustResetPassword": False,
-                "sessionId": new_session_id,
+                "emailVerifiedAt": None,
+                "emailVerificationSentAt": None,
+                "sessionId": None,
             }
         )
         user_record = updated_user or user_record
     else:
-        new_session_id = _new_session_id()
         user_record = user_repository.insert(
             {
                 "name": name,
@@ -715,18 +780,20 @@ def _register_sales_rep_account(
                 "phone": phone or sales_rep.get("phone"),
                 "password": hashed_password,
                 "role": resolved_user_role,
-                "status": "active",
+                "status": "pending_email_verification",
                 "salesRepId": sales_rep.get("id"),
                 "referralCredits": sales_rep.get("referralCredits") or 0,
                 "totalReferrals": sales_rep.get("totalReferrals") or 0,
-                "visits": 1,
+                "visits": 0,
                 "createdAt": now,
-                "lastLoginAt": now,
-                "lastSeenAt": now,
-                "lastInteractionAt": now,
-                "isOnline": True,
+                "lastLoginAt": None,
+                "lastSeenAt": None,
+                "lastInteractionAt": None,
+                "isOnline": False,
                 "mustResetPassword": False,
-                "sessionId": new_session_id,
+                "emailVerifiedAt": None,
+                "emailVerificationSentAt": None,
+                "sessionId": None,
             }
         )
 
@@ -750,28 +817,21 @@ def _register_sales_rep_account(
             {**updated_sales_rep, "legacyUserId": user_record.get("id")}
         ) or updated_sales_rep
 
-    token = _create_auth_token(
-        {
-            "id": user_record["id"],
-            "email": user_record.get("email"),
-            "role": resolved_user_role,
-            "sid": user_record.get("sessionId"),
-        }
-    )
+    email_sent = _send_email_verification(user_record)
 
     _audit(
-        "REGISTER_SALES_REP_SUCCESS",
+        "REGISTER_SALES_REP_PENDING_EMAIL_VERIFICATION",
         {
             "salesRepId": updated_sales_rep.get("id"),
             "legacyUserId": updated_sales_rep.get("legacyUserId"),
             "email": updated_sales_rep.get("email"),
             "role": resolved_user_role,
+            "emailSent": email_sent,
             "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         },
     )
 
-    _record_local_presence_login(user_record.get("id"))
-    return {"token": token, "user": _sanitize_user(user_record)}
+    return {"status": "verification_required", "email": user_record.get("email"), "emailSent": email_sent}
 
 
 def login(data: Dict) -> Dict:
@@ -784,6 +844,8 @@ def login(data: Dict) -> Dict:
     if user:
         if not _safe_check_password(password, str(user.get("password", ""))):
             raise _unauthorized("INVALID_PASSWORD")
+        if _requires_email_verification(user):
+            raise _forbidden("EMAIL_NOT_VERIFIED")
 
         # Rotate session id to invalidate other devices/sessions. For the shared demo
         # account, keep the existing session id so multiple reps can stay logged in.
@@ -917,6 +979,66 @@ def check_email(email: str) -> Dict:
         raise _bad_request("EMAIL_REQUIRED")
     exists = user_repository.find_by_email(normalized) is not None or sales_rep_repository.find_by_email(normalized) is not None
     return {"exists": exists}
+
+
+def verify_email(data: Dict) -> Dict:
+    token = str((data or {}).get("token") or "").strip()
+    if not token:
+        raise _bad_request("TOKEN_REQUIRED")
+
+    config = get_config()
+    token_details: Optional[Dict[str, Any]] = None
+
+    if config.mysql.get("enabled"):
+        token_details = email_verification_token_repository.get_valid_token(token)
+    else:
+        token_details = _EMAIL_VERIFICATION_TOKENS.get(token)
+        if token_details:
+            expires = token_details.get("expires")
+            if not isinstance(expires, datetime) or expires <= datetime.now(timezone.utc):
+                token_details = None
+
+    if not token_details:
+        raise _bad_request("TOKEN_INVALID")
+
+    user_id = str(token_details.get("user_id") or "").strip()
+    recipient_email = _normalize_email(token_details.get("recipient_email"))
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _bad_request("TOKEN_INVALID")
+    if recipient_email and _normalize_email(user.get("email")) != recipient_email:
+        raise _bad_request("TOKEN_INVALID")
+
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    user_repository.update(
+        {
+            **user,
+            "status": "active",
+            "emailVerifiedAt": user.get("emailVerifiedAt") or now_iso,
+            "isOnline": False,
+        }
+    )
+
+    if config.mysql.get("enabled"):
+        try:
+            email_verification_token_repository.consume_token(token)
+        except Exception as exc:
+            logger.warning("Failed to consume email verification token", exc_info=exc)
+    else:
+        _EMAIL_VERIFICATION_TOKENS.pop(token, None)
+
+    return {"status": "verified"}
+
+
+def resend_email_verification(email: Optional[str]) -> Dict:
+    normalized = _normalize_email(email or "")
+    if not normalized:
+        raise _bad_request("EMAIL_REQUIRED")
+
+    user = user_repository.find_by_email(normalized)
+    if user and _requires_email_verification(user):
+        _send_email_verification(user)
+    return {"status": "ok"}
 
 
 def get_profile(user_id: str, role: Optional[str] = None) -> Dict:
@@ -1948,4 +2070,10 @@ def _not_found(message: str) -> Exception:
 def _unauthorized(message: str) -> Exception:
     err = ValueError(message)
     setattr(err, "status", 401)
+    return err
+
+
+def _forbidden(message: str) -> Exception:
+    err = ValueError(message)
+    setattr(err, "status", 403)
     return err

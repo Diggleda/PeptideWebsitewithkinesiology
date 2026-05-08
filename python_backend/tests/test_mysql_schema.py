@@ -35,6 +35,16 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("delegate_background_color VARCHAR(16) NULL", schema_sql)
         self.assertNotIn("delegate_background_image_url LONGTEXT NULL", schema_sql)
 
+    def test_email_verification_schema_exists(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("email_verified_at DATETIME NULL", schema_sql)
+        self.assertIn("email_verification_sent_at DATETIME NULL", schema_sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS email_verification_tokens", schema_sql)
+        self.assertIn("token_sha256 CHAR(64) PRIMARY KEY", schema_sql)
+        self.assertIn("user_id VARCHAR(64) NOT NULL", schema_sql)
+        self.assertIn("KEY idx_email_verification_tokens_expires (expires_at)", schema_sql)
+
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []
 

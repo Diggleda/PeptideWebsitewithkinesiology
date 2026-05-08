@@ -133,6 +133,10 @@ class EmailServiceTests(unittest.TestCase):
         from python_backend.services import email_service
 
         templates = [
+            email_service._build_email_verification_email(
+                "https://trufusionlabs.com/verify-email?token=test",
+                "https://trufusionlabs.com",
+            )[0],
             email_service._build_password_reset_email(
                 "https://trufusionlabs.com/reset-password?token=test",
                 "https://trufusionlabs.com",
@@ -167,6 +171,30 @@ class EmailServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(logo_spec["filename"], "TruFusionLabs_PhysiciansPortal.png")
+
+    def test_email_verification_email_forces_support_sender(self):
+        from python_backend.services import email_service
+
+        with patch.object(
+            email_service,
+            "get_config",
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com"),
+        ), patch.object(email_service, "_dispatch_email") as dispatch_email:
+            email_service.send_email_verification_email(
+                "doctor@example.com",
+                "https://trufusionlabs.com/verify-email?token=test",
+            )
+
+        dispatch_email.assert_called_once()
+        self.assertEqual(dispatch_email.call_args.args[0], "doctor@example.com")
+        self.assertEqual(dispatch_email.call_args.args[1], "Verify your TruFusionLabs account")
+        self.assertIn("Verify your TruFusionLabs account", dispatch_email.call_args.args[2])
+        self.assertIn("https://trufusionlabs.com/verify-email?token=test", dispatch_email.call_args.args[3])
+        self.assertEqual(
+            dispatch_email.call_args.kwargs["from_address"],
+            "TruFusionLabs <support@trufusionlabs.com>",
+        )
+        self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
 
     def test_delegate_links_beta_info_email_includes_badge_image(self):
         from python_backend.services import email_service

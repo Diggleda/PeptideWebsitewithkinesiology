@@ -32,7 +32,7 @@ def _audit(event: str, details: dict) -> None:
         pass
 
 
-_QUIET_LOGIN_FAILURE_STATUSES = {400, 401, 404, 409}
+_QUIET_LOGIN_FAILURE_STATUSES = {400, 401, 403, 404, 409}
 
 
 def _wants_quiet_login_failure() -> bool:
@@ -57,6 +57,19 @@ def register():
     payload = request.get_json(force=True, silent=True) or {}
     response = handle_action(lambda: auth_service.register(payload))
     return _attach_media_auth_cookie(response)
+
+
+@blueprint.post("/verify-email")
+def verify_email():
+    payload = request.get_json(force=True, silent=True) or {}
+    return handle_action(lambda: auth_service.verify_email(payload))
+
+
+@blueprint.post("/resend-verification")
+def resend_verification():
+    payload = request.get_json(force=True, silent=True) or {}
+    email = payload.get("email")
+    return handle_action(lambda: auth_service.resend_email_verification(email))
 
 
 @blueprint.post("/login")

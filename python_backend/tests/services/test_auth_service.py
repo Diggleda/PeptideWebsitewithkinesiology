@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import types
 import unittest
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
@@ -208,6 +209,170 @@ class AuthServiceTests(unittest.TestCase):
         self.assertEqual(result["token"], "token-123")
         self.assertEqual(result["user"]["id"], "doctor-1")
         self.assertEqual(result["user"]["sessionId"], "session-new")
+
+    def test_register_creates_pending_user_and_sends_verification_email(self) -> None:
+        inserted_payloads = []
+
+        def fake_insert(payload):
+            inserted_payloads.append(payload)
+            return {**payload, "id": payload.get("id") or "doctor-1"}
+
+        with patch.object(auth_service.sales_rep_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "find_by_npi_number", return_value=None), \
+            patch.object(auth_service.npi_service, "normalize_npi", return_value="1234567890"), \
+            patch.object(auth_service.npi_service, "verify_npi", return_value={"npiNumber": "1234567890"}), \
+            patch.object(auth_service.sales_rep_repository, "find_by_sales_code", return_value={"id": "rep-1"}), \
+            patch.object(auth_service.referral_service, "backfill_lead_types_for_doctors", side_effect=lambda users: users), \
+            patch.object(auth_service.user_repository, "insert", side_effect=fake_insert), \
+            patch.object(auth_service, "_ensure_converted_sales_prospect_for_doctor"), \
+            patch.object(auth_service, "_send_email_verification", return_value=True) as send_verification, \
+            patch.object(auth_service.bcrypt, "gensalt", return_value=b"salt", create=True), \
+            patch.object(auth_service.bcrypt, "hashpw", return_value=b"hashed", create=True):
+            result = auth_service.register(
+                {
+                    "name": "Doctor One",
+                    "email": "doctor@example.com",
+                    "password": "secret",
+                    "code": "AB123",
+                    "npiNumber": "1234567890",
+                }
+            )
+
+        self.assertEqual(result, {"status": "verification_required", "email": "doctor@example.com", "emailSent": True})
+        self.assertEqual(inserted_payloads[0]["status"], "pending_email_verification")
+        self.assertIsNone(inserted_payloads[0]["sessionId"])
+        self.assertIsNone(inserted_payloads[0]["lastLoginAt"])
+        self.assertFalse(inserted_payloads[0]["isOnline"])
+        send_verification.assert_called_once()
+
+    def test_pending_email_verification_login_is_blocked_after_password_check(self) -> None:
+        auth_record = {
+            "id": "doctor-1",
+            "email": "doctor@example.com",
+            "password": "hashed",
+            "role": "doctor",
+            "status": "pending_email_verification",
+            "emailVerifiedAt": None,
+        }
+
+        with patch.object(auth_service.user_repository, "find_auth_by_email", return_value=auth_record), \
+            patch.object(auth_service, "_safe_check_password", return_value=True), \
+            patch.object(auth_service.user_repository, "record_successful_login") as record_login:
+            with self.assertRaises(Exception) as ctx:
+                auth_service.login({"email": "doctor@example.com", "password": "secret"})
+
+        self.assertEqual(str(ctx.exception), "EMAIL_NOT_VERIFIED")
+        self.assertEqual(getattr(ctx.exception, "status", None), 403)
+        record_login.assert_not_called()
+
+    def test_active_account_without_email_verified_at_can_login(self) -> None:
+        auth_record = {
+            "id": "doctor-1",
+            "email": "legacy@example.com",
+            "password": "hashed",
+            "role": "doctor",
+            "status": "active",
+            "emailVerifiedAt": None,
+            "visits": 2,
+            "sessionId": "session-old",
+        }
+        updated_record = {
+            **auth_record,
+            "visits": 3,
+            "sessionId": "session-new",
+            "isOnline": True,
+        }
+
+        with patch.object(auth_service.user_repository, "find_auth_by_email", return_value=auth_record), \
+            patch.object(auth_service.user_repository, "record_successful_login", return_value=updated_record) as record_login, \
+            patch.object(auth_service, "_safe_check_password", return_value=True), \
+            patch.object(auth_service, "_create_auth_token", return_value="token-123"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value), \
+            patch.object(auth_service.presence_service, "record_ping"):
+            result = auth_service.login({"email": "legacy@example.com", "password": "secret"})
+
+        record_login.assert_called_once()
+        self.assertEqual(result["token"], "token-123")
+        self.assertEqual(result["user"]["email"], "legacy@example.com")
+
+    def test_verify_email_activates_user_and_consumes_memory_token(self) -> None:
+        token = "verify-token"
+        auth_service._EMAIL_VERIFICATION_TOKENS.clear()
+        auth_service._EMAIL_VERIFICATION_TOKENS[token] = {
+            "user_id": "doctor-1",
+            "recipient_email": "doctor@example.com",
+            "expires": datetime.now(timezone.utc) + timedelta(hours=1),
+        }
+        saved_payloads = []
+        user = {
+            "id": "doctor-1",
+            "email": "doctor@example.com",
+            "status": "pending_email_verification",
+            "emailVerifiedAt": None,
+        }
+
+        with patch.object(auth_service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": False})), \
+            patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "update", side_effect=lambda payload: saved_payloads.append(payload) or payload):
+            result = auth_service.verify_email({"token": token})
+
+        self.assertEqual(result, {"status": "verified"})
+        self.assertNotIn(token, auth_service._EMAIL_VERIFICATION_TOKENS)
+        self.assertEqual(saved_payloads[0]["status"], "active")
+        self.assertTrue(saved_payloads[0]["emailVerifiedAt"])
+        self.assertFalse(saved_payloads[0]["isOnline"])
+
+    def test_verify_email_rejects_expired_memory_token(self) -> None:
+        token = "expired-token"
+        auth_service._EMAIL_VERIFICATION_TOKENS.clear()
+        auth_service._EMAIL_VERIFICATION_TOKENS[token] = {
+            "user_id": "doctor-1",
+            "recipient_email": "doctor@example.com",
+            "expires": datetime.now(timezone.utc) - timedelta(seconds=1),
+        }
+
+        with patch.object(auth_service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": False})), \
+            patch.object(auth_service.user_repository, "update") as update:
+            with self.assertRaises(Exception) as ctx:
+                auth_service.verify_email({"token": token})
+
+        self.assertEqual(str(ctx.exception), "TOKEN_INVALID")
+        update.assert_not_called()
+
+    def test_resend_email_verification_is_non_enumerating(self) -> None:
+        with patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service, "_send_email_verification") as send_verification:
+            result = auth_service.resend_email_verification("missing@example.com")
+
+        self.assertEqual(result, {"status": "ok"})
+        send_verification.assert_not_called()
+
+        active_user = {
+            "id": "doctor-1",
+            "email": "legacy@example.com",
+            "status": "active",
+            "emailVerifiedAt": None,
+        }
+        with patch.object(auth_service.user_repository, "find_by_email", return_value=active_user), \
+            patch.object(auth_service, "_send_email_verification") as send_verification:
+            result = auth_service.resend_email_verification("legacy@example.com")
+
+        self.assertEqual(result, {"status": "ok"})
+        send_verification.assert_not_called()
+
+        pending_user = {
+            "id": "doctor-1",
+            "email": "doctor@example.com",
+            "status": "pending_email_verification",
+            "emailVerifiedAt": None,
+        }
+        with patch.object(auth_service.user_repository, "find_by_email", return_value=pending_user), \
+            patch.object(auth_service, "_send_email_verification", return_value=True) as send_verification:
+            result = auth_service.resend_email_verification("doctor@example.com")
+
+        self.assertEqual(result, {"status": "ok"})
+        send_verification.assert_called_once_with(pending_user)
 
     def test_update_profile_clears_explicit_office_address_fields(self) -> None:
         user = {

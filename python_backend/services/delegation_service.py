@@ -211,6 +211,80 @@ def _compensation_disclosure(markup_percent: object) -> str:
     return "Your physician does not receive compensation from this TruFusionLabs transaction."
 
 
+def _delegate_proposal_review_status(link: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(link, dict):
+        return None
+    review_status = (
+        str(link.get("delegateReviewStatus") or "").strip().lower()
+        if isinstance(link.get("delegateReviewStatus"), str)
+        else None
+    )
+    if review_status:
+        return review_status
+    return "pending" if str(link.get("delegateSharedAt") or "").strip() else None
+
+
+def _delegate_proposal_label(link: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(link, dict):
+        return "Delegate proposal"
+    return (
+        str(link.get("referenceLabel") or "").strip()
+        or str(link.get("patientReference") or "").strip()
+        or str(link.get("studyLabel") or "").strip()
+        or str(link.get("subjectLabel") or "").strip()
+        or "Delegate proposal"
+    )
+
+
+def _send_delegate_proposal_ready_email_for_link(
+    token: str,
+    link: Optional[Dict[str, Any]],
+    *,
+    submitted_at: Optional[datetime] = None,
+) -> bool:
+    token = _normalize_token(token)
+    candidate = link if isinstance(link, dict) else None
+    if _delegate_proposal_review_status(candidate) != "pending" and token:
+        candidate = patient_links_repository.find_by_token(token, include_inactive=True) or candidate
+
+    if _delegate_proposal_review_status(candidate) != "pending":
+        return False
+
+    doctor_id = str((candidate or {}).get("doctorId") or "").strip()
+    if not doctor_id:
+        return False
+
+    try:
+        doctor = user_repository.find_by_id(doctor_id) or {}
+        recipient = str(doctor.get("email") or "").strip()
+        if not recipient:
+            logger.warning(
+                "[Delegation] Delegate proposal awaiting review has no physician email",
+                extra={"token": token, "doctorId": doctor_id},
+            )
+            return False
+
+        email_service.send_delegate_proposal_ready_email(
+            recipient,
+            doctor_name=str(doctor.get("name") or "").strip() or None,
+            proposal_label=_delegate_proposal_label(candidate),
+            submitted_at=submitted_at,
+        )
+        _audit_event(
+            "proposal_ready_email_sent",
+            token=token,
+            doctor_id=doctor_id,
+            payload={"proposalStatus": "pending"},
+        )
+        return True
+    except Exception:
+        logger.exception(
+            "[Delegation] Failed to send delegate proposal ready email",
+            extra={"token": token, "doctorId": doctor_id},
+        )
+        return False
+
+
 def _research_supply_disclosures(markup_percent: object) -> List[str]:
     return [
         "TruFusionLabs provides research materials only. Products are not intended for human consumption.",
@@ -1015,13 +1089,7 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
 
         doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
 
-        review_status = (
-            str(link.get("delegateReviewStatus") or "").strip().lower()
-            if isinstance(link.get("delegateReviewStatus"), str)
-            else None
-        )
-        if not review_status:
-            review_status = "pending" if str(link.get("delegateSharedAt") or "").strip() else None
+        review_status = _delegate_proposal_review_status(link)
 
         return {
             "token": token,
@@ -1172,30 +1240,8 @@ def store_delegate_submission(
                 "allowedProducts": link.get("allowedProducts") or [],
             },
         )
-        doctor_id = str(link.get("doctorId") or "").strip()
-        if doctor_id:
-            try:
-                doctor = user_repository.find_by_id(doctor_id) or {}
-                recipient = str(doctor.get("email") or "").strip()
-                if recipient:
-                    proposal_label = (
-                        str(link.get("referenceLabel") or "").strip()
-                        or str(link.get("patientReference") or "").strip()
-                        or str(link.get("studyLabel") or "").strip()
-                        or str(link.get("subjectLabel") or "").strip()
-                        or "Delegate proposal"
-                    )
-                    email_service.send_delegate_proposal_ready_email(
-                        recipient,
-                        doctor_name=str(doctor.get("name") or "").strip() or None,
-                        proposal_label=proposal_label,
-                        submitted_at=submitted_at,
-                    )
-            except Exception:
-                logger.exception(
-                    "[Delegation] Failed to send delegate proposal ready email",
-                    extra={"token": token, "doctorId": doctor_id},
-                )
+        updated_link = patient_links_repository.find_by_token(token, include_inactive=True) or link
+        _send_delegate_proposal_ready_email_for_link(token, updated_link, submitted_at=submitted_at)
         return
     err = RuntimeError("Unable to persist delegate payload")
     setattr(err, "status", 502)
@@ -1229,13 +1275,7 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         setattr(err, "status", 404)
         raise err
 
-    review_status = (
-        str(link.get("delegateReviewStatus") or "").strip().lower()
-        if isinstance(link.get("delegateReviewStatus"), str)
-        else None
-    )
-    if not review_status:
-        review_status = "pending" if str(link.get("delegateSharedAt") or "").strip() else None
+    review_status = _delegate_proposal_review_status(link)
 
     return {
         "token": token,

@@ -1558,7 +1558,7 @@ export const authAPI = {
     code: string;
     npiNumber?: string;
     phone?: string;
-  }) => {
+  }): Promise<{ status: 'verification_required'; email: string; emailSent: boolean }> => {
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       credentials: 'include',
@@ -1572,10 +1572,29 @@ export const authAPI = {
       }),
     });
 
-    setAuthUserId(data?.user?.id);
-    setAuthEmail(data?.user?.email ?? input.email);
-    persistAuthToken(data.token, { mode: 'standard' });
-    return data.user;
+    if (!data || typeof data !== 'object' || (data as any).status !== 'verification_required') {
+      throw buildServiceUnavailableError('AUTH_REGISTER_INVALID_RESPONSE');
+    }
+    setAuthEmail((data as any).email ?? input.email);
+    return {
+      status: 'verification_required',
+      email: String((data as any).email || input.email),
+      emailSent: Boolean((data as any).emailSent),
+    };
+  },
+
+  verifyEmail: async (token: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/auth/verify-email`, {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  },
+
+  resendVerification: async (email: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/auth/resend-verification`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
   },
 
   verifyNpi: async (npiNumber: string) => {

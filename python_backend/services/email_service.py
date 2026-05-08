@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import smtplib
 import base64
+import html as _html
 from datetime import datetime
 from email.message import EmailMessage
 from functools import lru_cache
@@ -537,6 +538,72 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
     return html, plain
 
 
+def _build_email_verification_email(verification_url: str, base_url: str) -> Tuple[str, str]:
+    safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
+    safe_url = _html.escape(str(verification_url or ""), quote=True)
+    logo_url = _EMAIL_LOGO_SRC
+    body_style = _email_body_style()
+    outer_table_style = _email_outer_table_style()
+    container_style = _email_container_style(520)
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Verify your TruFusionLabs account</title>
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+  </head>
+  <body style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+            <tr>
+              <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:44px 28px 8px;">
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Verify your TruFusionLabs account</h1>
+                <p style="margin:0 0 12px;line-height:1.6;">
+                  Thanks for creating your TruFusionLabs account. Confirm this email address to finish setting up your account.
+                </p>
+                <p style="margin:0 0 24px;line-height:1.6;">
+                  If you did not create this account, you can safely ignore this email.
+                </p>
+                <p style="margin:0 0 32px;text-align:center;">
+                  <a href="{safe_url}" style="display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Verify Email</a>
+                </p>
+                <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#6b7280;">
+                  Or copy and paste this link into your browser:
+                </p>
+                <p style="margin:0;font-size:14px;line-height:1.5;color:#3C67B7;word-break:break-all;">
+                  {safe_url}
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
+                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
+                <p style="margin:0;">This link will expire in 24 hours to keep your account secure.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
+    plain = (
+        "Thanks for creating your TruFusionLabs account.\n"
+        f"Verify your email using this link: {verification_url}\n"
+        "If you did not create this account, you can ignore this email.\n"
+        f"Need help? Contact support@trufusionlabs.com or visit {safe_base_url}."
+    )
+    return html, plain
+
+
 def _dispatch_email(
     recipient: str,
     subject: str,
@@ -545,6 +612,7 @@ def _dispatch_email(
     *,
     cc: Optional[Iterable[str] | str] = None,
     bcc: Optional[Iterable[str]] = None,
+    from_address: Optional[str] = None,
     raise_on_failure: bool = False,
 ) -> None:
     cc_recipients = _normalize_extra_recipients(cc)
@@ -559,7 +627,9 @@ def _dispatch_email(
         },
     )
     config = get_config()
-    settings = _email_settings()
+    settings = dict(_email_settings())
+    if from_address:
+        settings["from"] = _normalize_from_brand(from_address)
 
     if config.is_production:
         failures: list[str] = []
@@ -942,6 +1012,25 @@ def send_password_reset_email(recipient: str, reset_url: str) -> None:
     base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
     html, plain_text = _build_password_reset_email(reset_url, base_url)
     _dispatch_email(recipient, subject, html, plain_text)
+
+
+def send_email_verification_email(recipient: str, verification_url: str) -> None:
+    recipient_email = str(recipient or "").strip()
+    if not recipient_email:
+        raise ValueError("recipient is required")
+    logger.info("Dispatching email verification email", extra={"recipient": recipient_email})
+    config = get_config()
+    subject = "Verify your TruFusionLabs account"
+    base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
+    html, plain_text = _build_email_verification_email(verification_url, base_url)
+    _dispatch_email(
+        recipient_email,
+        subject,
+        html,
+        plain_text,
+        from_address=_EMAIL_DEFAULT_FROM,
+        raise_on_failure=True,
+    )
 
 
 def send_delegate_proposal_ready_email(

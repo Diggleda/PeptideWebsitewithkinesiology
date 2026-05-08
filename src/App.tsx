@@ -2118,6 +2118,7 @@ const normalizeProfileAvatarUrl = (value: unknown): string | null => {
 };
 
 const RESET_PASSWORD_ROUTE = "/reset-password";
+const VERIFY_EMAIL_ROUTE = "/verify-email";
 
 const normalizePathname = (pathname?: string | null) => {
   if (!pathname) {
@@ -2131,7 +2132,18 @@ const isResetPasswordRoute = () =>
   typeof window !== "undefined" &&
   normalizePathname(window.location.pathname) === RESET_PASSWORD_ROUTE;
 
+const isVerifyEmailRoute = () =>
+  typeof window !== "undefined" &&
+  normalizePathname(window.location.pathname) === VERIFY_EMAIL_ROUTE;
+
 const readResetTokenFromLocation = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return new URLSearchParams(window.location.search).get("token");
+};
+
+const readVerifyEmailTokenFromLocation = () => {
   if (typeof window === "undefined") {
     return null;
   }
@@ -2163,11 +2175,14 @@ const clearDelegateLinksGuideFromLocation = () => {
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
-const getInitialLandingMode = (): "login" | "signup" | "forgot" | "reset" =>
-  isResetPasswordRoute() ? "reset" : "login";
+const getInitialLandingMode = (): "login" | "signup" | "forgot" | "reset" | "verify" =>
+  isVerifyEmailRoute() ? "verify" : isResetPasswordRoute() ? "reset" : "login";
 
 const getInitialResetToken = () =>
   isResetPasswordRoute() ? readResetTokenFromLocation() : null;
+
+const getInitialVerifyEmailToken = () =>
+  isVerifyEmailRoute() ? readVerifyEmailTokenFromLocation() : null;
 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
 const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#377eba';
@@ -5749,7 +5764,7 @@ function MainApp() {
     : "wholesale";
   const canSeeRetailRevenueInSalesDashboard = canUseRetailPricing;
   const [landingAuthMode, setLandingAuthMode] = useState<
-    "login" | "signup" | "forgot" | "reset"
+    "login" | "signup" | "forgot" | "reset" | "verify"
   >(getInitialLandingMode);
   const [manufacturingQualityStandardsOpen, setManufacturingQualityStandardsOpen] =
     useState(false);
@@ -7483,6 +7498,11 @@ function MainApp() {
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(
     getInitialResetToken,
   );
+  const [verifyEmailToken, setVerifyEmailToken] = useState<string | null>(
+    getInitialVerifyEmailToken,
+  );
+  const [verifyEmailPending, setVerifyEmailPending] = useState(false);
+  const [verifyEmailError, setVerifyEmailError] = useState("");
   const [resetPasswordPending, setResetPasswordPending] = useState(false);
   const [resetPasswordError, setResetPasswordError] = useState("");
   const [resetPasswordSuccess, setResetPasswordSuccess] = useState("");
@@ -7653,7 +7673,10 @@ function MainApp() {
       return;
     }
     const handleLocationSync = () => {
-      if (isResetPasswordRoute()) {
+      if (isVerifyEmailRoute()) {
+        setLandingAuthMode("verify");
+        setVerifyEmailToken(readVerifyEmailTokenFromLocation());
+      } else if (isResetPasswordRoute()) {
         setLandingAuthMode("reset");
         setResetPasswordToken(readResetTokenFromLocation());
       }
@@ -7706,7 +7729,7 @@ function MainApp() {
     if (typeof window === "undefined") {
       return;
     }
-    if (isResetPasswordRoute()) {
+    if (isResetPasswordRoute() || isVerifyEmailRoute()) {
       window.history.replaceState({}, "", "/");
     }
   }, []);
@@ -9000,7 +9023,14 @@ function MainApp() {
 
   // (handled directly in handleLogin/handleCreateAccount to avoid flicker)
   const [landingLoginError, setLandingLoginError] = useState("");
+  const [landingLoginNotice, setLandingLoginNotice] = useState("");
+  const [landingUnverifiedEmail, setLandingUnverifiedEmail] = useState("");
+  const [landingVerificationResendPending, setLandingVerificationResendPending] =
+    useState(false);
+  const [landingVerificationResendSent, setLandingVerificationResendSent] =
+    useState(false);
   const [landingSignupError, setLandingSignupError] = useState("");
+  const [landingSignupNotice, setLandingSignupNotice] = useState("");
   const [landingNpiStatus, setLandingNpiStatus] = useState<
     "idle" | "checking" | "verified" | "rejected"
   >("idle");
@@ -9010,6 +9040,48 @@ function MainApp() {
     verifiedNpiNumber?: string;
   } | null>(null);
   const landingNpiCheckIdRef = useRef(0);
+  useEffect(() => {
+    if (landingAuthMode !== "verify") {
+      return;
+    }
+    const token = (verifyEmailToken || "").trim();
+    setVerifyEmailError("");
+    setLandingLoginNotice("");
+    if (!token) {
+      setVerifyEmailError("This verification link is missing a token. Please request a new verification email.");
+      return;
+    }
+
+    let cancelled = false;
+    setVerifyEmailPending(true);
+    authAPI
+      .verifyEmail(token)
+      .then(() => {
+        if (cancelled) return;
+        clearResetRoute();
+        setVerifyEmailToken(null);
+        setVerifyEmailError("");
+        setLandingLoginError("");
+        setLandingLoginNotice("Email verified. Sign in to continue.");
+        setLandingAuthMode("login");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("[Auth] Email verification failed", error);
+        setVerifyEmailError(
+          "This verification link is invalid or has expired. Sign in with your email and password to request a new verification email.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setVerifyEmailPending(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clearResetRoute, landingAuthMode, verifyEmailToken]);
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
     types: [],
@@ -25979,6 +26051,7 @@ function MainApp() {
         isLikelyAuthLifecycleError(error) ||
         message === "EMAIL_NOT_FOUND" ||
         message === "INVALID_PASSWORD" ||
+        message === "EMAIL_NOT_VERIFIED" ||
         message === "Invalid credentials" ||
         normalizedMessage === "INVALID_CREDENTIALS" ||
         message === "SALES_REP_ACCOUNT_REQUIRED" ||
@@ -25995,6 +26068,10 @@ function MainApp() {
 
       if (message === "INVALID_PASSWORD") {
         return { status: "invalid_password" };
+      }
+
+      if (message === "EMAIL_NOT_VERIFIED") {
+        return { status: "email_not_verified", email };
       }
 
       if (message === "SALES_REP_ACCOUNT_REQUIRED") {
@@ -26182,14 +26259,16 @@ function MainApp() {
   }, []);
 
   const updateLandingAuthMode = useCallback(
-    (mode: "login" | "signup" | "forgot" | "reset") => {
+    (mode: "login" | "signup" | "forgot" | "reset" | "verify") => {
       setLandingAuthMode((previous) => {
         if (previous === mode) {
           return previous;
         }
-        if (mode !== "reset") {
+        if (mode !== "reset" && mode !== "verify") {
           clearResetRoute();
           setResetPasswordToken(null);
+          setVerifyEmailToken(null);
+          setVerifyEmailError("");
           setResetPasswordValue("");
           setResetPasswordConfirmValue("");
           setResetPasswordSuccess("");
@@ -26197,11 +26276,14 @@ function MainApp() {
         }
         if (mode === "signup") {
           resetLandingNpiState();
+          setLandingSignupNotice("");
         } else {
           setLandingSignupError("");
         }
         if (mode === "login") {
           setLandingLoginError("");
+          setLandingUnverifiedEmail("");
+          setLandingVerificationResendSent(false);
           setShowLandingLoginPassword(false);
           setShowLandingSignupPassword(false);
           setShowLandingSignupConfirm(false);
@@ -26211,6 +26293,7 @@ function MainApp() {
         }
         if (mode === "forgot") {
           setLandingLoginError("");
+          setLandingLoginNotice("");
           setPasswordResetRequestError("");
           setPasswordResetRequestSuccess(false);
           const fallbackEmail =
@@ -26219,6 +26302,7 @@ function MainApp() {
         }
         if (mode === "reset") {
           setLandingLoginError("");
+          setLandingLoginNotice("");
           setPasswordResetRequestError("");
           setPasswordResetRequestSuccess(false);
           setResetPasswordError("");
@@ -26226,6 +26310,11 @@ function MainApp() {
           setResetPasswordToken(
             (current) => current ?? readResetTokenFromLocation(),
           );
+        }
+        if (mode === "verify") {
+          setLandingLoginError("");
+          setLandingLoginNotice("");
+          setVerifyEmailToken((current) => current ?? readVerifyEmailTokenFromLocation());
         }
         return mode;
       });
@@ -26247,7 +26336,7 @@ function MainApp() {
     password: string;
     confirmPassword: string;
     code: string;
-    npiNumber: string;
+    npiNumber?: string;
   }): Promise<AuthActionResult> => {
     console.debug("[Auth] Create account attempt", { email: details.email });
     try {
@@ -26296,17 +26385,22 @@ function MainApp() {
         }
       }
 
-      const user = await authAPI.register({
+      const result = await authAPI.register({
         name: details.name,
         email: details.email,
         password,
         code: normalizedCode,
         npiNumber: normalizedNpi || undefined,
       });
-      applyLoginSuccessState(user);
-      // toast.success(`Welcome to TruFusionLabs, ${user.name}!`);
-      console.debug("[Auth] Create account success", { userId: user.id });
-      return { status: "success" };
+      console.debug("[Auth] Create account pending email verification", {
+        email: result.email,
+        emailSent: result.emailSent,
+      });
+      return {
+        status: "email_verification_required",
+        email: result.email,
+        emailSent: result.emailSent,
+      };
     } catch (error: any) {
       const status = error?.status ?? "unknown";
       const detailsPayload = error?.details ?? null;
@@ -26363,6 +26457,14 @@ function MainApp() {
       return { status: "error", message };
     }
   };
+
+  const handleResendVerificationEmail = useCallback(async (email: string) => {
+    const normalized = String(email || "").trim();
+    if (!normalized) {
+      throw new Error("EMAIL_REQUIRED");
+    }
+    await authAPI.resendVerification(normalized);
+  }, []);
 
   const handlePasswordResetRequestSubmit = async (
     event: FormEvent<HTMLFormElement>,
@@ -38826,6 +38928,7 @@ function MainApp() {
                       patientLinksDoctorUserIds={patientLinksDoctorUserIds}
                       betaServices={betaServices}
 				              onLogin={handleLogin}
+				              onResendVerificationEmail={handleResendVerificationEmail}
 		              onLogout={handleLogout}
 		              cartItems={totalCartItems}
 		              onSearch={handleSearch}
@@ -39536,6 +39639,9 @@ function MainApp() {
 	                                return null;
 	                              };
 	                              setLandingLoginError("");
+	                              setLandingLoginNotice("");
+	                              setLandingUnverifiedEmail("");
+	                              setLandingVerificationResendSent(false);
 	                              setLandingLoginPending(true);
 	                              try {
 	                                const fd = new FormData(e.currentTarget);
@@ -39562,6 +39668,11 @@ function MainApp() {
 	                                  } else if (res.status === "email_not_found") {
 	                                    setLandingLoginError(
 	                                      "We could not find that email.",
+	                                    );
+	                                  } else if (res.status === "email_not_verified") {
+	                                    setLandingUnverifiedEmail((res as any).email || loginEmail);
+	                                    setLandingLoginError(
+	                                      "Please verify your email before signing in.",
 	                                    );
 	                                  } else {
 	                                    const issue = classifyNetworkIssue(
@@ -39712,6 +39823,43 @@ function MainApp() {
                               {landingLoginError && (
                                 <p className="text-sm text-red-600" role="alert">
                                   {landingLoginError}
+                                </p>
+                              )}
+                              {landingLoginError && landingUnverifiedEmail && (
+                                <div className="text-sm text-gray-600">
+                                  <button
+                                    type="button"
+                                    disabled={landingVerificationResendPending}
+                                    onClick={async () => {
+                                      setLandingVerificationResendPending(true);
+                                      setLandingVerificationResendSent(false);
+                                      try {
+                                        await handleResendVerificationEmail(landingUnverifiedEmail);
+                                        setLandingVerificationResendSent(true);
+                                      } catch (error) {
+                                        console.warn("[Auth] Verification resend failed", error);
+                                        setLandingLoginError("Unable to send a new verification email. Please try again.");
+                                      } finally {
+                                        setLandingVerificationResendPending(false);
+                                      }
+                                    }}
+                                    className="font-semibold hover:underline btn-hover-lighter disabled:opacity-60"
+                                    style={{ color: "rgb(60, 103, 183)" }}
+                                  >
+                                    {landingVerificationResendPending
+                                      ? "Sending verification email..."
+                                      : "Resend verification email"}
+                                  </button>
+                                  {landingVerificationResendSent && (
+                                    <p className="mt-1 text-emerald-600" role="status">
+                                      Verification email sent. Check your inbox and spam folder.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              {landingLoginNotice && (
+                                <p className="text-sm text-emerald-600" role="status">
+                                  {landingLoginNotice}
                                 </p>
                               )}
                               <div className="space-y-2">
@@ -40034,6 +40182,34 @@ function MainApp() {
                           </div>
                         </>
                       )}
+                      {landingAuthMode === "verify" && (
+                        <>
+                          <div className="text-center space-y-2">
+                            <h1 className="text-2xl font-semibold">
+                              Verifying your email
+                            </h1>
+                            <p className="text-sm text-gray-600">
+                              {verifyEmailPending
+                                ? "Confirming your TruFusionLabs account..."
+                                : verifyEmailError || "Email verified. Sign in to continue."}
+                            </p>
+                          </div>
+                          {verifyEmailError && (
+                            <p className="text-sm text-red-600 text-center" role="alert">
+                              {verifyEmailError}
+                            </p>
+                          )}
+                          <Button
+                            type="button"
+                            size="lg"
+                            className="w-full squircle-sm glass-brand btn-hover-lighter"
+                            disabled={verifyEmailPending}
+                            onClick={() => updateLandingAuthMode("login")}
+                          >
+                            {verifyEmailPending ? "Verifying..." : "Return to sign in"}
+                          </Button>
+                        </>
+                      )}
 	                      {landingAuthMode === "signup" && (
 	                        <>
 	                          <div className="text-center space-y-2">
@@ -40045,6 +40221,7 @@ function MainApp() {
                             onSubmit={async (e) => {
                               e.preventDefault();
                               setLandingSignupError("");
+                              setLandingSignupNotice("");
                               const fd = new FormData(e.currentTarget);
                               const suffix = (fd.get("suffix") as string) || "";
                               const nameOnly = (fd.get("name") as string) || "";
@@ -40064,7 +40241,14 @@ function MainApp() {
                                   (fd.get("npiNumber") as string) || "",
                               };
                               const res = await handleCreateAccount(details);
-                              if (res.status === "success") {
+                              if (res.status === "email_verification_required") {
+                                const destination = res.email || details.email;
+                                setLandingSignupNotice(
+                                  res.emailSent
+                                    ? `Account created. We sent a verification link to ${destination}. Verify your email, then sign in.`
+                                    : `Account created, but we could not send the verification email. Try signing in and use the resend verification option for ${destination}.`,
+                                );
+                              } else if (res.status === "success") {
                                 updateLandingAuthMode("login");
                               } else if (res.status === "email_exists") {
                                 setLandingSignupError(
@@ -40367,6 +40551,11 @@ function MainApp() {
                             {landingSignupError && (
                               <p className="text-sm text-red-600" role="alert">
                                 {landingSignupError}
+                              </p>
+                            )}
+                            {landingSignupNotice && (
+                              <p className="text-sm text-emerald-600" role="status">
+                                {landingSignupNotice}
                               </p>
                             )}
                             <div className="space-y-2">

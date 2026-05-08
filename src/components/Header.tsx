@@ -529,6 +529,7 @@ interface HeaderProps {
   patientLinksDoctorUserIds?: string[];
   betaServices?: string[];
   onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
+  onResendVerificationEmail?: (email: string) => Promise<void> | void;
   onLogout?: () => void;
   cartItems: number;
   onSearch: (query: string, options?: { submitted?: boolean }) => void;
@@ -1777,6 +1778,7 @@ export function Header({
   patientLinksDoctorUserIds = [],
   betaServices = [],
   onLogin,
+  onResendVerificationEmail,
   onLogout,
   cartItems,
   onSearch,
@@ -1831,7 +1833,12 @@ export function Header({
   const [signupCode, setSignupCode] = useState('');
   const lastLoginPromptToken = useRef<number | null>(null);
   const [loginError, setLoginError] = useState('');
+  const [loginNotice, setLoginNotice] = useState('');
+  const [unverifiedLoginEmail, setUnverifiedLoginEmail] = useState('');
+  const [verificationResendPending, setVerificationResendPending] = useState(false);
+  const [verificationResendSent, setVerificationResendSent] = useState(false);
   const [signupError, setSignupError] = useState('');
+  const [signupNotice, setSignupNotice] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
@@ -2916,7 +2923,11 @@ export function Header({
 	    }
 
 	    setLoginError('');
+	    setLoginNotice('');
+	    setUnverifiedLoginEmail('');
+	    setVerificationResendSent(false);
 	    setSignupError('');
+	    setSignupNotice('');
 	    setLoginSubmitting(true);
 
 	    const formElement = event.currentTarget;
@@ -2995,7 +3006,9 @@ export function Header({
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
       setLoginError('');
+      setLoginNotice('');
       setSignupError('');
+      setSignupNotice('');
       if (loginContext !== 'checkout') {
         setWelcomeOpen(true);
       }
@@ -3005,6 +3018,16 @@ export function Header({
 
     if (result.status === 'sales_rep_signup_required') {
       setLoginError('Your sales rep profile needs to be activated before you can sign in. Please finish setting up your account or contact support for help.');
+      setShowLoginPassword(false);
+      setShowSignupPassword(false);
+      setShowSignupConfirmPassword(false);
+      setLoginSubmitting(false);
+      return;
+    }
+
+    if (result.status === 'email_not_verified') {
+      setLoginError('Please verify your email before signing in.');
+      setUnverifiedLoginEmail(result.email || emailValue);
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -3760,7 +3783,9 @@ export function Header({
     };
 
     setSignupError('');
+    setSignupNotice('');
     setLoginError('');
+    setLoginNotice('');
 
     const result = onCreateAccount
       ? await onCreateAccount(details)
@@ -3781,10 +3806,27 @@ export function Header({
       setAuthMode('login');
       setLoginOpen(false);
       setSignupError('');
+      setSignupNotice('');
       setLoginError('');
+      setLoginNotice('');
       if (loginContext !== 'checkout') {
         setWelcomeOpen(true);
       }
+      return;
+    }
+
+    if (result.status === 'email_verification_required') {
+      const destination = result.email || details.email;
+      setSignupNotice(
+        result.emailSent
+          ? `Account created. We sent a verification link to ${destination}. Verify your email, then sign in.`
+          : `Account created, but we could not send the verification email. Try signing in and use the resend verification option for ${destination}.`,
+      );
+      setSignupError('');
+      setSignupPassword('');
+      setSignupConfirmPassword('');
+      setShowSignupPassword(false);
+      setShowSignupConfirmPassword(false);
       return;
     }
 
@@ -9296,6 +9338,38 @@ export function Header({
                 {loginError && (
                   <p className="text-sm text-red-600">{loginError}</p>
                 )}
+                {loginError && unverifiedLoginEmail && (
+                  <div className="text-sm text-gray-600">
+                    <button
+                      type="button"
+                      disabled={verificationResendPending || !onResendVerificationEmail}
+                      onClick={async () => {
+                        if (!onResendVerificationEmail) return;
+                        setVerificationResendPending(true);
+                        setVerificationResendSent(false);
+                        try {
+                          await onResendVerificationEmail(unverifiedLoginEmail);
+                          setVerificationResendSent(true);
+                        } catch (error) {
+                          console.warn('[Auth] Verification resend failed', error);
+                          setLoginError('Unable to send a new verification email. Please try again.');
+                        } finally {
+                          setVerificationResendPending(false);
+                        }
+                      }}
+                      className="font-semibold btn-hover-lighter disabled:opacity-60"
+                      style={{ color: secondaryColor }}
+                    >
+                      {verificationResendPending ? 'Sending verification email...' : 'Resend verification email'}
+                    </button>
+                    {verificationResendSent && (
+                      <p className="mt-1 text-emerald-600">Verification email sent. Check your inbox and spam folder.</p>
+                    )}
+                  </div>
+                )}
+                {loginNotice && (
+                  <p className="text-sm text-emerald-600">{loginNotice}</p>
+                )}
                 <Button
                   type="submit"
                   size="lg"
@@ -9478,6 +9552,9 @@ export function Header({
                 </div>
                 {signupError && (
                   <p className="text-sm text-red-600">{signupError}</p>
+                )}
+                {signupNotice && (
+                  <p className="text-sm text-emerald-600">{signupNotice}</p>
                 )}
                 <Button
                   type="submit"

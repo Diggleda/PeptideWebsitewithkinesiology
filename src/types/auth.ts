@@ -4,6 +4,8 @@ export type AuthActionResult =
   | { status: 'email_not_found' }
   | { status: 'invalid_password' }
   | { status: 'email_exists' }
+  | { status: 'email_verification_required'; email?: string; emailSent?: boolean }
+  | { status: 'email_not_verified'; email?: string }
   | { status: 'password_mismatch' }
   | { status: 'invalid_referral_code' }
   | { status: 'referral_code_not_found' }
