@@ -32,12 +32,12 @@ const PublicTopNav = () => (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <a href="/" className="flex items-center gap-3 min-w-0">
           <BrandLogoImage
-            alt="TruFusionLabs"
+            alt="TrufusionLabs"
             className="h-10 w-auto object-contain"
             loading="eager"
             decoding="async"
           />
-          <span className="sr-only">TruFusionLabs home</span>
+          <span className="sr-only">TrufusionLabs home</span>
         </a>
         <nav className="flex flex-wrap items-center gap-2 text-sm font-medium text-[rgb(60,103,183)]">
           <a className="rounded-full px-3 py-1.5 btn-hover-lighter" href="/pricing">Pricing</a>
@@ -55,7 +55,7 @@ const ContactPage = () => (
       <div className="space-y-2">
         <p className="font-semibold text-slate-900">Merchant identity</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
-          <p><span className="font-semibold">TruFusionLabs</span></p>
+          <p><span className="font-semibold">TrufusionLabs</span></p>
           <p><span className="font-semibold">DBA:</span> {MERCHANT_IDENTITY.dba}</p>
           <p><span className="font-semibold">Legal Entity:</span> {MERCHANT_IDENTITY.legalEntity}</p>
           <p><span className="font-semibold">Address:</span> {MERCHANT_IDENTITY.address}</p>
@@ -73,7 +73,7 @@ const ContactPage = () => (
       </div>
 
       <p className="text-xs text-slate-600">
-        TruFusionLabs peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
+        TrufusionLabs peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
       </p>
     </div>
   </PageContainer>

@@ -81,10 +81,10 @@ class EmailServiceTests(unittest.TestCase):
             )
 
         dispatch_email.assert_called_once()
-        self.assertEqual(dispatch_email.call_args.args[1], "TruFusionLabs order 1505 is in transit")
+        self.assertEqual(dispatch_email.call_args.args[1], "TrufusionLabs order 1505 is in transit")
         html = dispatch_email.call_args.args[2]
         plain = dispatch_email.call_args.args[3]
-        self.assertIn("Your TruFusionLabs order is in transit", html)
+        self.assertIn("Your TrufusionLabs order is in transit", html)
         self.assertIn("Your package is moving through the carrier network.", html)
         self.assertIn("<strong>Estimated delivery: Tuesday, April 7, 2026</strong>", html)
         self.assertLess(
@@ -95,7 +95,7 @@ class EmailServiceTests(unittest.TestCase):
             html.find("<strong>Tracking: 1ZSHIP1505</strong>"),
             html.find("<strong>Order: 1505</strong>"),
         )
-        self.assertIn("Your TruFusionLabs order is in transit", plain)
+        self.assertIn("Your TrufusionLabs order is in transit", plain)
         self.assertIn("Estimated delivery: Tuesday, April 7, 2026", plain)
         self.assertLess(
             plain.find("Estimated delivery: Tuesday, April 7, 2026"),
@@ -106,10 +106,10 @@ class EmailServiceTests(unittest.TestCase):
     def test_email_settings_normalizes_trufusionlabs_sender_name(self):
         from python_backend.services import email_service
 
-        with patch.dict("os.environ", {"MAIL_FROM": '"TruFusion Labs" <support@trufusionlabs.com>'}):
+        with patch.dict("os.environ", {"MAIL_FROM": '"TrufusionLabs" <support@trufusionlabs.com>'}):
             settings = email_service._email_settings()
 
-        self.assertEqual(settings["from"], '"TruFusionLabs" <support@trufusionlabs.com>')
+        self.assertEqual(settings["from"], '"TrufusionLabs" <support@trufusionlabs.com>')
 
     def test_email_settings_replaces_legacy_peppro_support_sender(self):
         from python_backend.services import email_service
@@ -117,7 +117,7 @@ class EmailServiceTests(unittest.TestCase):
         with patch.dict("os.environ", {"MAIL_FROM": "PepPro <support@peppro.net>"}):
             settings = email_service._email_settings()
 
-        self.assertEqual(settings["from"], "TruFusionLabs <support@trufusionlabs.com>")
+        self.assertEqual(settings["from"], "TrufusionLabs <support@trufusionlabs.com>")
 
     def test_generated_email_templates_use_shared_solid_background(self):
         from python_backend.services import email_service
@@ -160,7 +160,7 @@ class EmailServiceTests(unittest.TestCase):
             spec for spec in email_service._EMAIL_INLINE_IMAGE_SPECS if spec["content_id"] == "trufusion-logo"
         )
 
-        self.assertEqual(logo_spec["filename"], "TruFusionLabs_PhysiciansPortal.png")
+        self.assertEqual(logo_spec["filename"], "TrufusionLabs_PhysiciansPortal.png")
 
     def test_email_verification_email_forces_support_sender(self):
         from python_backend.services import email_service
@@ -177,14 +177,14 @@ class EmailServiceTests(unittest.TestCase):
 
         dispatch_email.assert_called_once()
         self.assertEqual(dispatch_email.call_args.args[0], "doctor@example.com")
-        self.assertEqual(dispatch_email.call_args.args[1], "Verify your TruFusionLabs account")
-        self.assertIn("Verify your TruFusionLabs account", dispatch_email.call_args.args[2])
+        self.assertEqual(dispatch_email.call_args.args[1], "Verify your TrufusionLabs account")
+        self.assertIn("Verify your TrufusionLabs account", dispatch_email.call_args.args[2])
         self.assertIn("123456", dispatch_email.call_args.args[2])
         self.assertIn('src="cid:trufusion-logo"', dispatch_email.call_args.args[2])
         self.assertIn("Your verification code is: 123456", dispatch_email.call_args.args[3])
         self.assertEqual(
             dispatch_email.call_args.kwargs["from_address"],
-            "TruFusionLabs <support@trufusionlabs.com>",
+            "TrufusionLabs <support@trufusionlabs.com>",
         )
         self.assertEqual(dispatch_email.call_args.kwargs["reply_to"], "support@trufusionlabs.com")
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
@@ -243,7 +243,7 @@ class EmailServiceTests(unittest.TestCase):
         inline_images = (
             {
                 "content_id": "trufusion-logo",
-                "filename": "TruFusionLabs_PhysiciansPortal.png",
+                "filename": "TrufusionLabs_PhysiciansPortal.png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",
@@ -266,10 +266,10 @@ class EmailServiceTests(unittest.TestCase):
         ):
             email_service._send_via_smtp(
                 "holly@example.com",
-                "TruFusionLabs order 1505 has shipped",
+                "TrufusionLabs order 1505 has shipped",
                 '<img src="cid:trufusion-logo" /><table background="cid:trufusion-leaf"></table>',
                 {
-                    "from": "TruFusionLabs <support@trufusionlabs.com>",
+                    "from": "TrufusionLabs <support@trufusionlabs.com>",
                     "timeout": 15,
                     "smtp": {
                         "host": "smtp-relay.gmail.com",
@@ -332,6 +332,33 @@ class EmailServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "legacy PepPro SMTP user"):
                 email_service.send_email_verification_email("doctor@example.com", "123456")
 
+    def test_email_verification_requires_google_smtp_for_domain_alignment(self):
+        from python_backend.services import email_service
+
+        with patch.object(
+            email_service,
+            "get_config",
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com", is_production=True),
+        ), patch.object(
+            email_service,
+            "_email_settings",
+            return_value={
+                "from": "TrufusionLabs <support@trufusionlabs.com>",
+                "timeout": 15,
+                "smtp": {
+                    "host": "mail.trufusionlabs.com",
+                    "user": "support@trufusionlabs.com",
+                    "pass": "secret",
+                    "port": 587,
+                    "ssl": False,
+                    "starttls": True,
+                    "auth": True,
+                },
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Google SMTP"):
+                email_service.send_email_verification_email("doctor@example.com", "123456")
+
     def test_shipping_status_email_raises_when_production_dispatch_has_no_provider(self):
         from python_backend.services import email_service
 
@@ -343,7 +370,7 @@ class EmailServiceTests(unittest.TestCase):
             email_service,
             "_email_settings",
             return_value={
-                "from": "TruFusionLabs <support@trufusionlabs.com>",
+                "from": "TrufusionLabs <support@trufusionlabs.com>",
                 "timeout": 15,
                 "smtp": {"host": None, "pass": None},
             },

@@ -119,7 +119,7 @@ test('generateProspectQuotePdf embeds a recovered product image as a data URL in
       assert.match(renderedHtml, /data:image\/jpeg;base64,/);
       assert.doesNotMatch(renderedHtml, /\/api\/woo\/media\?src=/);
       assert.match(renderedHtml, /<img class="brand-logo" src="data:image\/png;base64,/);
-      assert.doesNotMatch(renderedHtml, /<div class="brand">TruFusionLabs<\/div>/);
+      assert.doesNotMatch(renderedHtml, /<div class="brand">TrufusionLabs<\/div>/);
       assert.match(renderedHtml, /class="summary-row"/);
       assert.doesNotMatch(renderedHtml, /class="summary"/);
       assert.match(renderedHtml, /<div class="summary-row">\s*<span>Subtotal:<\/span>\s*<span>\$93\.91<\/span>\s*<\/div>/);

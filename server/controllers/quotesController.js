@@ -139,7 +139,7 @@ exports.getDaily = async (_req, res, next) => {
     const list = await getQuotesList();
 
     if (list.length === 0) {
-      return res.status(200).json({ text: 'Excellence is an attitude.', author: 'TruFusionLabs' });
+      return res.status(200).json({ text: 'Excellence is an attitude.', author: 'TrufusionLabs' });
     }
 
     if (cached && cached.date === key) {
@@ -154,7 +154,7 @@ exports.getDaily = async (_req, res, next) => {
     try { fs.writeFileSync(p, JSON.stringify(toStore), 'utf8'); } catch (_) {}
     return res.status(200).json({ text: pick.text, author: pick.author });
   } catch (_err) {
-    return res.status(200).json({ text: 'Excellence is an attitude.', author: 'TruFusionLabs' });
+    return res.status(200).json({ text: 'Excellence is an attitude.', author: 'TrufusionLabs' });
   }
 };
 

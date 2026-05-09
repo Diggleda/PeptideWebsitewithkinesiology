@@ -1,6 +1,6 @@
 <?php
 /**
- * Customer on-hold order email (TruFusionLabs override)
+ * Customer on-hold order email (TrufusionLabs override)
  *
  * This template is loaded via the `trufusion-email-overrides` plugin to customize the intro
  * text for TruFusion/BACS on-hold orders.

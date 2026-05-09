@@ -121,7 +121,7 @@ function normalizeBrandTerms(html) {
     .replace(/port\.peppro\.net/gi, 'port.trufusionlabs.com')
     .replace(/www\.peppro\.net/gi, 'www.trufusionlabs.com')
     .replace(/peppro\.net/gi, 'trufusionlabs.com')
-    .replace(/PepPro/g, 'TruFusionLabs')
+    .replace(/PepPro/g, 'TrufusionLabs')
     .replace(/PEPPRO/g, 'TRUFUSION')
     .replace(/Peppro/g, 'Trufusion')
     .replace(/peppro/g, 'trufusion');

@@ -1,5 +1,5 @@
 export const BRAND = {
-  name: "TruFusionLabs",
+  name: "TrufusionLabs",
   appUrl: "https://www.trufusionlabs.com",
   apexUrl: "https://trufusionlabs.com",
   apiUrl: "https://api.trufusionlabs.com",
@@ -7,7 +7,7 @@ export const BRAND = {
   portUrl: "https://port.trufusionlabs.com",
   supportEmail: "support@trufusionlabs.com",
   legacySupportEmail: "support@trufusionlabs.com",
-  logoPath: "/TruFusionLabs_PhysiciansPortal.png",
+  logoPath: "/TrufusionLabs_PhysiciansPortal.png",
   faviconPath: "/favicon.ico",
 } as const;
 

@@ -302,7 +302,7 @@ def diagnose_log_window(lines: Sequence[str]) -> list[str]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Summarize TruFusionLabs backend request bandwidth from journald logs."
+        description="Summarize TrufusionLabs backend request bandwidth from journald logs."
     )
     parser.add_argument(
         "--since",
@@ -352,7 +352,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     avg_response = totals.avg_resp_bytes if totals.count > 0 else 0.0
     print(
-        f"TruFusionLabs bandwidth summary | window {args.since} | requests {totals.count} | "
+        f"TrufusionLabs bandwidth summary | window {args.since} | requests {totals.count} | "
         f"ingress {_human_bytes(totals.req_bytes)} | egress {_human_bytes(totals.resp_bytes)} | "
         f"avg response {_human_bytes(avg_response)}"
     )

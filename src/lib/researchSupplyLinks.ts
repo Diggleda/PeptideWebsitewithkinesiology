@@ -1,8 +1,8 @@
 export const RESEARCH_SUPPLY_DISCLOSURES = [
-  'TruFusionLabs provides research materials only. Products are not intended for human consumption.',
-  'TruFusionLabs does not provide prescriptions, treatment, dosing, therapy, or patient instructions.',
+  'TrufusionLabs provides research materials only. Products are not intended for human consumption.',
+  'TrufusionLabs does not provide prescriptions, treatment, dosing, therapy, or patient instructions.',
   'Physicians are responsible for any independent research protocols.',
-  'TruFusionLabs does not direct or control physician activities.',
+  'TrufusionLabs does not direct or control physician activities.',
 ];
 
 const normalizeToken = (value?: string | null) => {
@@ -89,4 +89,4 @@ export const productMatchesAllowedSku = (
 export const physicianCompensationDisclosure = (markupPercent?: number | null) =>
   Number(markupPercent || 0) > 0
     ? 'Your physician receives compensation from this transaction.'
-    : 'Your physician does not receive compensation from this TruFusionLabs transaction.';
+    : 'Your physician does not receive compensation from this TrufusionLabs transaction.';

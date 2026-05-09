@@ -1,5 +1,5 @@
 [Unit]
-Description=TruFusionLabs API watchdog (consecutive failures)
+Description=TrufusionLabs API watchdog (consecutive failures)
 After=network-online.target
 Wants=network-online.target
 

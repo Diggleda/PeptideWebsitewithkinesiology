@@ -1109,7 +1109,7 @@ const downloadInvoice = async (req, res, next) => {
       maxRedirects: 5,
       headers: {
         Accept: 'application/pdf',
-        'User-Agent': 'TruFusionLabs Invoice Proxy',
+        'User-Agent': 'TrufusionLabs Invoice Proxy',
       },
       validateStatus: (status) => status >= 200 && status < 400,
     });

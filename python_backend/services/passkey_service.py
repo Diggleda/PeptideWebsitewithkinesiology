@@ -48,9 +48,9 @@ def generate_registration_options_for_user(
     options = generate_registration_options(
         rp_id=rp_id_value,
         rp_name=_rp_name(),
-        user_name=user.get("email") or user.get("name") or "TruFusionLabs User",
+        user_name=user.get("email") or user.get("name") or "TrufusionLabs User",
         user_id=str(user.get("id") or "").encode("utf-8"),
-        user_display_name=user.get("name") or user.get("email") or "TruFusionLabs User",
+        user_display_name=user.get("name") or user.get("email") or "TrufusionLabs User",
         attestation=AttestationConveyancePreference.NONE,
         authenticator_selection=AuthenticatorSelectionCriteria(
             authenticator_attachment=AuthenticatorAttachment.PLATFORM,
@@ -316,7 +316,7 @@ def _resolve_rp_id(rp_id_hint: Optional[str]) -> str:
 
 def _rp_name() -> str:
     config = get_config()
-    return (config.passkeys.get("rp_name") or "TruFusionLabs").strip() or "TruFusionLabs"
+    return (config.passkeys.get("rp_name") or "TrufusionLabs").strip() or "TrufusionLabs"
 
 
 def _expected_origin(pending_origin: Optional[str], request_origin: Optional[str]) -> List[str]:

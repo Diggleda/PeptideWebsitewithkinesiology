@@ -151,8 +151,8 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
         if normalized_woo_number:
             description_parts.append(f"Woo Order #{normalized_woo_number}")
         if order.get("id"):
-            description_parts.append(f"TruFusionLabs Order {order.get('id')}")
-        description = " · ".join(description_parts) if description_parts else "TruFusionLabs Order"
+            description_parts.append(f"TrufusionLabs Order {order.get('id')}")
+        description = " · ".join(description_parts) if description_parts else "TrufusionLabs Order"
         intent = stripe.PaymentIntent.create(
             amount=amount,
             currency=currency,

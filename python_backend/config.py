@@ -215,8 +215,8 @@ def load_config() -> AppConfig:
             "webhook_secret": _s(os.environ.get("WC_WEBHOOK_SECRET")),
             "api_version": _s(os.environ.get("WC_API_VERSION") or "wc/v3"),
             "auto_submit_orders": os.environ.get("WC_AUTO_SUBMIT_ORDERS", "").lower() == "true",
-            # Optional: send TruFusionLabs emails using WooCommerce's mailer via a small WP plugin endpoint.
-            # This works even when the user only exists in TruFusionLabs (not as a WP/Woo customer).
+            # Optional: send TrufusionLabs emails using WooCommerce's mailer via a small WP plugin endpoint.
+            # This works even when the user only exists in TrufusionLabs (not as a WP/Woo customer).
             "mailer_url": _s(os.environ.get("WC_MAILER_URL") or os.environ.get("WC_EMAIL_SERVICE_URL") or ""),
             "mailer_secret": _s(os.environ.get("WC_MAILER_SECRET") or os.environ.get("WC_EMAIL_SERVICE_SECRET") or ""),
         },

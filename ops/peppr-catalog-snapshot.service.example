@@ -1,5 +1,5 @@
 [Unit]
-Description=TruFusionLabs catalog snapshot sync
+Description=TrufusionLabs catalog snapshot sync
 After=network-online.target
 Wants=network-online.target
 

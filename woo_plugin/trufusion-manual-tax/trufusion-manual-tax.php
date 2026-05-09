@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: TruFusionLabs Manual Tax Sync
- * Description: Converts TruFusionLabs tax metadata/fee lines into a WooCommerce tax line item for REST-created orders.
+ * Plugin Name: TrufusionLabs Manual Tax Sync
+ * Description: Converts TrufusionLabs tax metadata/fee lines into a WooCommerce tax line item for REST-created orders.
  * Version: 1.0.3
- * Author: TruFusionLabs
+ * Author: TrufusionLabs
  */
 
 defined('ABSPATH') || exit;
@@ -15,7 +15,7 @@ final class TruFusion_Labs_Manual_Tax_Sync {
   private const META_SYNCED_HASH = 'trufusion_tax_synced_hash';
   private const LOG_SOURCE = 'trufusion-manual-tax';
 
-  private const DEFAULT_TAX_LABEL = 'TruFusionLabs Manual Tax';
+  private const DEFAULT_TAX_LABEL = 'TrufusionLabs Manual Tax';
   private const FALLBACK_FEE_NAME = 'Estimated tax';
 
   private static array $inProgress = [];
@@ -425,7 +425,7 @@ final class TruFusion_Labs_Manual_Tax_Sync {
 
       $order->add_order_note(
         sprintf(
-          'TruFusionLabs Manual Tax Sync applied: tax=%s, rate_id=%d',
+          'TrufusionLabs Manual Tax Sync applied: tax=%s, rate_id=%d',
           wc_format_decimal($taxTotal, 2),
           (int) $rateId,
         ),
@@ -437,7 +437,7 @@ final class TruFusion_Labs_Manual_Tax_Sync {
         'sync_hash' => $syncHash,
       ]);
     } catch (Throwable $e) {
-      self::log('error', 'TruFusionLabs Manual Tax Sync failed', [
+      self::log('error', 'TrufusionLabs Manual Tax Sync failed', [
         'order_id' => $orderId,
         'error' => $e->getMessage(),
       ]);

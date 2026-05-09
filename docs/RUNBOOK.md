@@ -1,4 +1,4 @@
-# TruFusionLabs Runbook
+# TrufusionLabs Runbook
 
 ## Incident tracking
 

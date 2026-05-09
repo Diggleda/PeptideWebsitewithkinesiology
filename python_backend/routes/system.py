@@ -733,7 +733,7 @@ def _health_password_form_response(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TruFusionLabs Server Health</title>
+    <title>TrufusionLabs Server Health</title>
     <style>
       :root {{
         color-scheme: light;
@@ -1030,7 +1030,7 @@ def help_endpoint():
         config = get_config()
         return {
             "ok": True,
-            "service": "TruFusionLabs Backend",
+            "service": "TrufusionLabs Backend",
             "build": config.backend_build,
             "mysql": {"enabled": bool(getattr(config, "mysql", {}).get("enabled"))},
             "integrations": {

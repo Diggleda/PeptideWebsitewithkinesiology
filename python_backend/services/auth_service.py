@@ -1693,7 +1693,7 @@ def _dispatch_woo_password_reset(email: str) -> bool:
     """
     Trigger WordPress/WooCommerce's native password reset email.
 
-    This avoids relying on TruFusionLabs's email transport for customer accounts.
+    This avoids relying on TrufusionLabs's email transport for customer accounts.
     """
     config = get_config()
     store_url = (config.woo_commerce or {}).get("store_url") or ""
@@ -1701,14 +1701,14 @@ def _dispatch_woo_password_reset(email: str) -> bool:
     if not store_url:
         if (config.woo_commerce or {}).get("consumer_key"):
             logger.warning(
-                "Woo password reset requested but WC_STORE_URL is not configured; falling back to TruFusionLabs email",
+                "Woo password reset requested but WC_STORE_URL is not configured; falling back to TrufusionLabs email",
                 extra={"email": email},
             )
         return False
 
     url = f"{store_url.rstrip('/')}/wp-login.php?action=lostpassword"
     headers = {
-        "User-Agent": "TruFusionLabs-API/1.0 (+https://trufusionlabs.com)",
+        "User-Agent": "TrufusionLabs-API/1.0 (+https://trufusionlabs.com)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
@@ -1771,7 +1771,7 @@ def _dispatch_woo_password_reset(email: str) -> bool:
 
     if "<form" not in lowered_html:
         logger.warning(
-            "Woo password reset form not detected; falling back to TruFusionLabs email",
+            "Woo password reset form not detected; falling back to TrufusionLabs email",
             extra={
                 "email": email,
                 "status": get_response.status_code,
@@ -1825,18 +1825,18 @@ def _dispatch_woo_password_reset(email: str) -> bool:
     if "invalid username" in lowered or "invalid email" in lowered or "unknown email" in lowered:
         # WP does not reveal whether an account exists, but some themes/plugins do; don't treat this as success.
         logger.warning(
-            "Woo password reset returned an error response; falling back to TruFusionLabs email",
+            "Woo password reset returned an error response; falling back to TrufusionLabs email",
             extra={"status": response.status_code, "email": email, "finalUrl": final_url[:250]},
         )
         return False
 
     # WordPress typically redirects to `checkemail=confirm`. If we don't see that (or a similar
     # confirmation hint), assume the request didn't actually trigger the email (e.g. security
-    # plugins / WAF / captcha / nonces) and fall back to TruFusionLabs email.
+    # plugins / WAF / captcha / nonces) and fall back to TrufusionLabs email.
     looks_confirmed = ("checkemail=confirm" in final_url) or ("checkemail=confirm" in lowered)
     if not looks_confirmed:
         logger.warning(
-            "Woo password reset response did not look confirmed; falling back to TruFusionLabs email",
+            "Woo password reset response did not look confirmed; falling back to TrufusionLabs email",
             extra={"status": response.status_code, "email": email, "finalUrl": final_url[:250]},
         )
         return False
@@ -1847,9 +1847,9 @@ def _dispatch_woo_password_reset(email: str) -> bool:
 
 def _dispatch_woo_mailer_password_reset(email: str, reset_url: str, display_name: str = "") -> bool:
     """
-    Send a TruFusionLabs password reset email using WooCommerce/WordPress's mail system via a small bridge plugin.
+    Send a TrufusionLabs password reset email using WooCommerce/WordPress's mail system via a small bridge plugin.
 
-    This supports TruFusionLabs-only accounts (not necessarily WordPress/Woo customers) and avoids scraping
+    This supports TrufusionLabs-only accounts (not necessarily WordPress/Woo customers) and avoids scraping
     `wp-login.php?action=lostpassword`, which can be blocked by WAF/Cloudflare challenges.
     """
     config = get_config()
@@ -1860,7 +1860,7 @@ def _dispatch_woo_mailer_password_reset(email: str, reset_url: str, display_name
 
     if not mailer_url or not mailer_secret:
         logger.warning(
-            "Woo mailer not configured; falling back to TruFusionLabs email",
+            "Woo mailer not configured; falling back to TrufusionLabs email",
             extra={"hasUrl": bool(mailer_url), "hasSecret": bool(mailer_secret), "email": email},
         )
         return False
@@ -1871,7 +1871,7 @@ def _dispatch_woo_mailer_password_reset(email: str, reset_url: str, display_name
         payload["displayName"] = safe_name
 
     headers = {
-        "User-Agent": "TruFusionLabs-API/1.0 (+https://trufusionlabs.com)",
+        "User-Agent": "TrufusionLabs-API/1.0 (+https://trufusionlabs.com)",
         "Content-Type": "application/json",
         "Accept": "application/json",
         "X-TRUFUSION-SECRET": mailer_secret,
@@ -1984,7 +1984,7 @@ def request_password_reset(email: Optional[str]) -> Dict:
         }
         reset_url = _build_reset_url(token)
 
-    # Prefer Woo/WordPress mailer (via plugin endpoint) so TruFusionLabs-only users still get emails
+    # Prefer Woo/WordPress mailer (via plugin endpoint) so TrufusionLabs-only users still get emails
     # from the same system as WooCommerce.
     display_name = str(account.get("name") or "") if account else ""
     if not _dispatch_woo_mailer_password_reset(recipient, reset_url, display_name):

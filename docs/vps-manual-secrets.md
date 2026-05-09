@@ -1,6 +1,6 @@
 # VPS Manual Secrets Runbook
 
-TruFusionLabs production secrets are stored manually on the VPS in
+TrufusionLabs production secrets are stored manually on the VPS in
 `/etc/peppr-api.env` and loaded by `peppr-api.service`.
 
 ## Create the runtime env file

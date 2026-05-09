@@ -99,11 +99,11 @@ const createPaymentIntent = async ({ order, wooOrderId, wooOrderNumber, customer
     descriptionParts.push(`Woo Order #${normalizedWooOrderNumber}`);
   }
   if (order?.id) {
-    descriptionParts.push(`TruFusionLabs Order ${order.id}`);
+    descriptionParts.push(`TrufusionLabs Order ${order.id}`);
   }
   const description = descriptionParts.length > 0
     ? descriptionParts.join(' · ')
-    : 'TruFusionLabs Order';
+    : 'TrufusionLabs Order';
 
   try {
     const intent = await stripe.paymentIntents.create({

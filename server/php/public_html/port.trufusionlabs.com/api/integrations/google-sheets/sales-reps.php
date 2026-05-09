@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Google Sheets → TruFusionLabs Sales Reps Webhook (port.trufusionlabs.com)
+ * Google Sheets → TrufusionLabs Sales Reps Webhook (port.trufusionlabs.com)
  * Always returns JSON and converts fatals/warnings into JSON so debugging is easy.
  * Includes guardrails so existing admins/test_doctors in the users table are not overwritten as sales_rep.
  */

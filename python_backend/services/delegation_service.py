@@ -208,7 +208,7 @@ def _validate_delegate_review_notes(value: Optional[str]) -> Optional[str]:
 def _compensation_disclosure(markup_percent: object) -> str:
     if _normalize_markup_percent(markup_percent) > 0:
         return "Your physician receives compensation from this transaction."
-    return "Your physician does not receive compensation from this TruFusionLabs transaction."
+    return "Your physician does not receive compensation from this TrufusionLabs transaction."
 
 
 def _delegate_proposal_review_status(link: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -287,10 +287,10 @@ def _send_delegate_proposal_ready_email_for_link(
 
 def _research_supply_disclosures(markup_percent: object) -> List[str]:
     return [
-        "TruFusionLabs provides research materials only. Products are not intended for human consumption.",
-        "TruFusionLabs does not provide prescriptions, treatment, dosing, therapy, or patient instructions.",
+        "TrufusionLabs provides research materials only. Products are not intended for human consumption.",
+        "TrufusionLabs does not provide prescriptions, treatment, dosing, therapy, or patient instructions.",
         "Physicians are responsible for any independent research protocols.",
-        "TruFusionLabs does not direct or control physician activities.",
+        "TrufusionLabs does not direct or control physician activities.",
         _compensation_disclosure(markup_percent),
     ]
 

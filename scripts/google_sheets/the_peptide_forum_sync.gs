@@ -3,7 +3,7 @@ const TIMEZONE = 'GMT-08:00';
 // Keep this in sync with the backend env var: GOOGLE_SHEETS_WEBHOOK_SECRET
 const WEBHOOK_SECRET = 'REPLACE_ME';
 
-// TruFusionLabs Forum webhook endpoint (Flask backend)
+// TrufusionLabs Forum webhook endpoint (Flask backend)
 const FORUM_WEBHOOK_URL = 'https://api.trufusionlabs.com/api/integrations/google-sheets/the-peptide-forum';
 
 function onOpen() {

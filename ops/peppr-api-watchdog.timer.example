@@ -1,5 +1,5 @@
 [Unit]
-Description=TruFusionLabs API watchdog timer
+Description=TrufusionLabs API watchdog timer
 
 [Timer]
 OnBootSec=2m

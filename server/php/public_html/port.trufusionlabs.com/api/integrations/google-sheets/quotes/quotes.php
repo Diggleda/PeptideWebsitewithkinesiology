@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Google Sheets → TruFusionLabs Quotes Webhook (port.trufusionlabs.com)
+ * Google Sheets → TrufusionLabs Quotes Webhook (port.trufusionlabs.com)
  * Mirrors the structure and hardening used by sales_rep.php
  * - Consistent JSON responses
  * - Robust error/exception handling

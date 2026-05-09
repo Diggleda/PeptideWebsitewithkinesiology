@@ -858,7 +858,7 @@ def _enrich_referral(referral: Dict) -> Dict:
             pass
 
     # Promote prospect status to nurturing once the referred contact has placed an order.
-    # This is derived from the `orders` table (TruFusionLabs checkout), not Woo.
+    # This is derived from the `orders` table (TrufusionLabs checkout), not Woo.
     if contact_account and contact_account.get("id") and contact_order_count > 0:
         current = (enriched.get("status") or "").lower()
         if current in ("pending", "contact_form", "contacted", "account_created"):

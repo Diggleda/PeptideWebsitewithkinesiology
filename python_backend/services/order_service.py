@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 _PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
 FACILITY_PICKUP_LOCATION = {
-    "name": "TruFusionLabs Facility Pickup",
+    "name": "TrufusionLabs Facility Pickup",
     "addressLine1": "640 S Grand Ave",
     "addressLine2": "Unit #107",
     "city": "Santa Ana",
@@ -2677,7 +2677,7 @@ def _find_order_by_woo_id(woo_order_id: str) -> Optional[Dict]:
 
 def sync_order_status_from_woo_webhook(order_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Mirror Woo order status into the local TruFusionLabs `orders` table (best-effort).
+    Mirror Woo order status into the local TrufusionLabs `orders` table (best-effort).
 
     This enables near-real-time status updates (e.g., on-hold -> processing) without relying on polling.
     """
@@ -2901,7 +2901,7 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
                 woo_refund = woo_commerce.create_refund(
                     woo_order_id=str(woo_order_id),
                     amount=float(refund_amount),
-                    reason=reason or "Refunded via TruFusionLabs (Stripe)",
+                    reason=reason or "Refunded via TrufusionLabs (Stripe)",
                     metadata={
                         "stripe_payment_intent": payment_intent_id,
                         "trufusion_order_id": local_order.get("id") if local_order else None,
@@ -3254,7 +3254,7 @@ def update_order_fields(
     expected_shipment_window: Optional[str] = None,
 ) -> Dict:
     """
-    Update local order fields for display in the app (TruFusionLabs-local metadata).
+    Update local order fields for display in the app (TrufusionLabs-local metadata).
 
     Allowed:
     - admin
@@ -3591,7 +3591,7 @@ def get_orders_for_sales_rep(
                 return entry.get("value")
         return None
 
-    # Pull local TruFusionLabs orders to support:
+    # Pull local TrufusionLabs orders to support:
     # - reps seeing orders even when billing email doesn't match the doctor email
     # - resolving doctorId via Woo meta `trufusion_order_id`
     local_by_id: Dict[str, Dict] = {}
@@ -4586,7 +4586,7 @@ def _enrich_with_shipstation(order: Dict) -> None:
 
 def _normalize_shipstation_delivery_status(shipstation_info: Dict) -> Optional[str]:
     """
-    Best-effort mapping from ShipStation shipment/order status fields to a TruFusionLabs-friendly token.
+    Best-effort mapping from ShipStation shipment/order status fields to a TrufusionLabs-friendly token.
 
     ShipStation frequently reports orderStatus='shipped' even after delivery; the shipments payload
     may include additional delivery/tracking status strings. We normalize these into:
@@ -5007,7 +5007,7 @@ def get_sales_rep_order_detail(
             shipstation_info,
         )
 
-    # Pull local TruFusionLabs order fields for fallback detail hydration and display-only metadata.
+    # Pull local TrufusionLabs order fields for fallback detail hydration and display-only metadata.
     # This keeps the detail modal usable when Woo returns sparse billing/shipping data or when
     # the order was authored before the current Woo payload shape.
     try:

@@ -67,8 +67,8 @@ class SalesProspectQuotePdfServiceTests(unittest.TestCase):
         with patch.object(service, "_get_logo_data_url", return_value="data:image/png;base64,abc123"):
             html = service._render_quote_html(quote)
 
-        self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="TruFusionLabs" />', html)
-        self.assertNotIn('<div class="brand">TruFusionLabs</div>', html)
+        self.assertIn('<img class="brand-logo" src="data:image/png;base64,abc123" alt="TrufusionLabs" />', html)
+        self.assertNotIn('<div class="brand">TrufusionLabs</div>', html)
         self.assertIn('<div class="meta-label">Physician</div>', html)
         self.assertNotIn('<div class="meta-label">Prospect</div>', html)
         self.assertIn("317-555-0101", html)

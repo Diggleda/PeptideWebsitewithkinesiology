@@ -12,7 +12,7 @@ const hasCarrierForRates = () => Boolean(env.shipEngine.defaultCarrierId || env.
 const hasShippingAddress = (order) => Boolean(order?.shippingAddress?.postalCode);
 
 const buildShipFromAddress = () => ({
-  name: env.shipEngine.shipFromName || 'TruFusionLabs Fulfillment',
+  name: env.shipEngine.shipFromName || 'TrufusionLabs Fulfillment',
   address_line1: env.shipEngine.shipFromAddress1 || '',
   address_line2: env.shipEngine.shipFromAddress2 || '',
   city_locality: env.shipEngine.shipFromCity || '',
@@ -62,7 +62,7 @@ const buildShipmentPayload = ({ order, customer }) => {
   return {
     service_code: env.shipEngine.defaultServiceCode || 'usps_priority_mail',
     ship_to: {
-      name: customer.name || 'TruFusionLabs Customer',
+      name: customer.name || 'TrufusionLabs Customer',
       phone: customer.phone || '',
       email: customer.email || '',
       address_line1: order.shippingAddress.addressLine1,
@@ -161,7 +161,7 @@ const estimateRates = async ({ shippingAddress, items, totalWeightOz }) => {
     carrier_ids: env.shipEngine.defaultCarrierId ? [env.shipEngine.defaultCarrierId] : undefined,
     service_code: env.shipEngine.defaultServiceCode || undefined,
     ship_to: {
-      name: shippingAddress.name || 'TruFusionLabs Customer',
+      name: shippingAddress.name || 'TrufusionLabs Customer',
       address_line1: shippingAddress.addressLine1,
       address_line2: shippingAddress.addressLine2 || '',
       city_locality: shippingAddress.city,

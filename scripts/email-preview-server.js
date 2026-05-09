@@ -121,7 +121,7 @@ elif template == "delegate-proposal":
 else:
     raise SystemExit(f"unknown python template: {template}")
 
-html = html.replace("cid:trufusion-logo", "/assets/TruFusionLabs_PhysiciansPortal.png")
+html = html.replace("cid:trufusion-logo", "/assets/TrufusionLabs_PhysiciansPortal.png")
 html = html.replace("cid:trufusion-leaf", "/assets/leafTexture.jpg")
 html = html.replace("cid:delegate-white-label-sessions", "/assets/delegate-links-white-label-email.png")
 

@@ -126,7 +126,7 @@ type ShippingAddress = {
 
 const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup';
 const FACILITY_PICKUP_ADDRESS: ShippingAddress = {
-  name: 'TruFusionLabs Facility Pickup',
+  name: 'TrufusionLabs Facility Pickup',
   addressLine1: '640 S Grand Ave',
   addressLine2: 'Unit #107',
   city: 'Santa Ana',
@@ -1878,7 +1878,7 @@ export function CheckoutModal({
                                 Facility Pickup
                               </label>
                               <span className="text-xs text-slate-600">
-                                Use TruFusionLabs&apos;s facility address and skip shipping rates
+                                Use TrufusionLabs&apos;s facility address and skip shipping rates
                               </span>
                             </div>
                           </div>
@@ -2611,15 +2611,15 @@ export function CheckoutModal({
 	                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
 	                  {isDelegateFlow ? (
 	                    <>
-	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Physician'}), and I agree to TruFusionLabs&apos;s{' '}
+	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Physician'}), and I agree to TrufusionLabs&apos;s{' '}
 	                    </>
 	                  ) : typeof agreementTextPrefix === 'string' && agreementTextPrefix.trim().length > 0 ? (
 	                    <>
-	                      {agreementTextPrefix.trim()}, and I agree to TruFusionLabs&apos;s{' '}
+	                      {agreementTextPrefix.trim()}, and I agree to TrufusionLabs&apos;s{' '}
 	                    </>
 	                  ) : (
 	                    <>
-	                      I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to TruFusionLabs&apos;s{' '}
+	                      I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to TrufusionLabs&apos;s{' '}
 	                    </>
 	                  )}
 	                  <button

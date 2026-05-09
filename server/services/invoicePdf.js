@@ -114,7 +114,7 @@ const buildInvoicePdf = (wooOrder, { orderToken } = {}) => {
 
   const lineItems = Array.isArray(wooOrder?.line_items) ? wooOrder.line_items : [];
   const lines = [];
-  lines.push(`TruFusionLabs Invoice`);
+  lines.push(`TrufusionLabs Invoice`);
   lines.push(`Order: #${number}`);
   if (createdAt) lines.push(`Date: ${createdAt}`);
   if (email) lines.push(`Customer: ${email}`);

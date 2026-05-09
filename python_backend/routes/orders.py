@@ -1144,7 +1144,7 @@ def download_invoice(order_id: str) -> Response:
                     },
                     timeout=25,
                     allow_redirects=True,
-                    headers={"Accept": "application/pdf", "User-Agent": "TruFusionLabs Invoice Proxy"},
+                    headers={"Accept": "application/pdf", "User-Agent": "TrufusionLabs Invoice Proxy"},
                 )
                 resp.raise_for_status()
                 body = resp.content or b""

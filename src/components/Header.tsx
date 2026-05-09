@@ -36,7 +36,7 @@ const RefreshActionIcon = ({ spinning = false }: { spinning?: boolean }) => (
 
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const LOGIN_BACKEND_DOWN_TOAST_ID = 'login-backend-down';
-const LOGIN_BACKEND_DOWN_MESSAGE = 'TruFusionLabs is unavailable right now. Please try again in a minute.';
+const LOGIN_BACKEND_DOWN_MESSAGE = 'TrufusionLabs is unavailable right now. Please try again in a minute.';
 const EMAIL_VERIFICATION_BROADCAST_CHANNEL = 'trufusion-email-verification';
 const EMAIL_VERIFICATION_STORAGE_KEY = 'trufusion:email-verification';
 const EMAIL_VERIFICATION_BROADCAST_TYPE = 'email_verified';
@@ -6218,7 +6218,7 @@ export function Header({
     >
       <h3 className="text-base font-semibold text-slate-800">Research</h3>
       <p className="text-sm text-slate-600">
-        This section is currently in development. Soon you&apos;ll be able to access research tools and resources here to share your findings securely and anonymously with the TruFusionLabs network of physicians.
+        This section is currently in development. Soon you&apos;ll be able to access research tools and resources here to share your findings securely and anonymously with the TrufusionLabs network of physicians.
       </p>
     </div>
   );
@@ -7607,7 +7607,7 @@ export function Header({
 		            {typeof selectedOrder.notes === 'string' && selectedOrder.notes.trim().length > 0 && (
 		              <div className="space-y-2">
 		                <h4 className="text-base font-semibold text-slate-900">
-		                  Notes <span className="label-paren">(from TruFusionLabs)</span>
+		                  Notes <span className="label-paren">(from TrufusionLabs)</span>
 		                </h4>
 		                <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
 		                  <p className="text-sm text-slate-700 whitespace-pre-wrap">
@@ -8091,7 +8091,7 @@ export function Header({
 	                onChange={(event) => setPatientLinkTermsAccepted(event.target.checked)}
 	              />
 	              <label htmlFor="delegate-link-terms" className="text-sm text-slate-700 leading-snug flex-1 min-w-0">
-	                I certify that I am {localUser?.name || user?.name || 'the licensed physician for this account'}, and I agree to TruFusionLabs&apos;s{' '}
+	                I certify that I am {localUser?.name || user?.name || 'the licensed physician for this account'}, and I agree to TrufusionLabs&apos;s{' '}
 	                <button
 	                  type="button"
 	                  className="legal-inline-link"
@@ -8164,7 +8164,7 @@ export function Header({
 		                        src={
 		                          typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
 		                            ? localUser.delegateLogoUrl
-		                            : withStaticAssetStamp('/TruFusionLabs_PhysiciansPortal.png')
+		                            : withStaticAssetStamp('/TrufusionLabs_PhysiciansPortal.png')
 		                        }
 	                        alt="Delegate header logo preview"
 	                        className="relative z-[1] flex-shrink-0"
@@ -8251,7 +8251,7 @@ export function Header({
 	              <p className="text-sm font-semibold text-slate-900 truncate">
 	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
 	                  ? 'Custom logo set'
-	                  : 'Using TruFusionLabs logo'}
+	                  : 'Using TrufusionLabs logo'}
 	              </p>
 	              <p className="text-xs text-slate-600">Max ~5MB. Stored on your account (we resize to fit the header).</p>
 	            </div>
@@ -8289,7 +8289,7 @@ export function Header({
 	          <div className="delegate-logo-summary-row rounded-xl bg-white/55 px-4 py-4">
 	            <div className="delegate-logo-summary-copy">
 	              <p className="text-sm font-semibold text-slate-900 truncate">
-	                {delegatePreviewBackgroundImageUrl ? 'Custom background image set' : 'Using TruFusionLabs background'}
+	                {delegatePreviewBackgroundImageUrl ? 'Custom background image set' : 'Using TrufusionLabs background'}
 	              </p>
 	              <p className="text-xs text-slate-600">Images appear over the selected background color.</p>
 	            </div>
@@ -9297,7 +9297,7 @@ export function Header({
           </DialogHeader>
 	          <div className="space-y-4 px-6 py-5">
 	            <p className="text-sm leading-6 text-slate-700">
-	              By deleting your account, you understand that all of your data stored within TruFusionLabs databases will be lost except anything publically available to the network on TruFusionLabs&apos;s research services or otherwise. For those publications, it is your responsibility to fascilitate closure, and if you need further assistance after account suspension contact support@trufusionlabs.com.
+	              By deleting your account, you understand that all of your data stored within TrufusionLabs databases will be lost except anything publically available to the network on TrufusionLabs&apos;s research services or otherwise. For those publications, it is your responsibility to fascilitate closure, and if you need further assistance after account suspension contact support@trufusionlabs.com.
 	            </p>
 	            <div className="flex justify-end gap-3">
 	              <Button
@@ -9372,7 +9372,7 @@ export function Header({
           </VisuallyHidden>
           <div className="px-8 py-10 text-center sm:px-10 sm:py-16">
             <p className="text-base leading-relaxed" style={{ color: secondaryColor }}>
-              Thank you for being a partner of ours and a joy to those around you. We at TruFusionLabs wish you a great rest
+              Thank you for being a partner of ours and a joy to those around you. We at TrufusionLabs wish you a great rest
               of your day and will be here when you need us!
 	            </p>
 	          </div>
@@ -9419,10 +9419,10 @@ export function Header({
 	              </DialogTitle>
 	              <DialogDescription>
 	                {authMode === 'login'
-	                  ? 'Login to enter your TruFusionLabs account.'
+	                  ? 'Login to enter your TrufusionLabs account.'
                     : authMode === 'verify'
                       ? 'Complete email verification before signing in.'
-	                  : 'Create your TruFusionLabs physician account to access TruFusionLabs.'}
+	                  : 'Create your TrufusionLabs physician account to access TrufusionLabs.'}
 	              </DialogDescription>
 	              {authMode === 'signup' && (
 	                <p className="text-base leading-snug" style={{ color: secondaryColor }}>
@@ -9568,7 +9568,7 @@ export function Header({
                 </Button>
               </form>
               <p className="text-center text-sm text-gray-600">
-                New to TruFusionLabs?{' '}
+                New to TrufusionLabs?{' '}
                 <button
                   type="button"
                   onClick={() => {
@@ -9962,7 +9962,7 @@ export function Header({
             <div className="flex flex-col gap-1">
               <h3 className="text-base font-semibold text-slate-800">Track an order</h3>
               <p className="text-sm text-slate-600">
-                Enter your TruFusionLabs order ID and email. We&apos;ll email you the latest fulfillment update.
+                Enter your TrufusionLabs order ID and email. We&apos;ll email you the latest fulfillment update.
               </p>
             </div>
             <form autoComplete="off" className="grid gap-3 sm:grid-cols-2" onSubmit={handleTrackOrder}>
@@ -10070,7 +10070,7 @@ export function Header({
                     />
                   ) : (
                     <BrandLogoImage
-                      alt={delegateMode ? 'Physician logo' : 'TruFusionLabs logo'}
+                      alt={delegateMode ? 'Physician logo' : 'TrufusionLabs logo'}
                       className="relative z-[1] flex-shrink-0"
                       style={{
                         display: 'block',

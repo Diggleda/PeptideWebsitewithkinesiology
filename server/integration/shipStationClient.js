@@ -100,7 +100,7 @@ const buildShipTo = (shippingAddress = {}, customer = {}) => ({
 });
 
 const buildShipFrom = () => ({
-  name: env.shipStation.shipFrom.name || env.shipStation.shipFrom.company || 'TruFusionLabs',
+  name: env.shipStation.shipFrom.name || env.shipStation.shipFrom.company || 'TrufusionLabs',
   company: env.shipStation.shipFrom.company || '',
   street1: env.shipStation.shipFrom.addressLine1 || '',
   street2: env.shipStation.shipFrom.addressLine2 || '',
@@ -199,7 +199,7 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
   const payload = {
     orderNumber: wooOrderNumber || order.id,
     orderKey: wooOrderId ? `woo-${wooOrderId}` : order.id,
-    orderSource: 'TruFusionLabs Checkout',
+    orderSource: 'TrufusionLabs Checkout',
     orderStatus: isAwaitingPayment ? 'awaiting_payment' : 'awaiting_shipment',
     orderDate: order.createdAt,
     ...(isAwaitingPayment ? {} : { paymentDate: order.createdAt }),
@@ -215,7 +215,7 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     shippingPaid: shippingTotal,
     taxAmount: Number(order.taxTotal) || 0,
     billTo: {
-      name: customer.name || 'TruFusionLabs Customer',
+      name: customer.name || 'TrufusionLabs Customer',
       company: customer.company || '',
       street1: order.shippingAddress.addressLine1,
       street2: order.shippingAddress.addressLine2 || '',

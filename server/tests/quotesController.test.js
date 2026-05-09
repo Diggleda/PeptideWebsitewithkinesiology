@@ -62,7 +62,7 @@ test('getDaily reads quotes from MySQL and stores the full daily cache payload',
             {
               id: 165,
               text: 'Database quote',
-              author: 'TruFusionLabs',
+              author: 'TrufusionLabs',
             },
           ],
         },
@@ -92,11 +92,11 @@ test('getDaily reads quotes from MySQL and stores the full daily cache payload',
     assert.equal(statusCode, 200);
     assert.deepEqual(jsonPayload, {
       text: 'Database quote',
-      author: 'TruFusionLabs',
+      author: 'TrufusionLabs',
     });
     assert.equal(stored.id, 165);
     assert.equal(stored.text, 'Database quote');
-    assert.equal(stored.author, 'TruFusionLabs');
+    assert.equal(stored.author, 'TrufusionLabs');
   } finally {
     fs.rmSync(dataDir, { recursive: true, force: true });
   }

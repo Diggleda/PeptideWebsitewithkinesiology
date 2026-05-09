@@ -1,5 +1,5 @@
 const BRAND = Object.freeze({
-  name: 'TruFusionLabs',
+  name: 'TrufusionLabs',
   appUrl: 'https://www.trufusionlabs.com',
   apexUrl: 'https://trufusionlabs.com',
   apiUrl: 'https://api.trufusionlabs.com',
@@ -7,7 +7,7 @@ const BRAND = Object.freeze({
   portUrl: 'https://port.trufusionlabs.com',
   supportEmail: 'support@trufusionlabs.com',
   legacySupportEmail: 'support@trufusionlabs.com',
-  logoPath: 'public/TruFusionLabs_PhysiciansPortal.png',
+  logoPath: 'public/TrufusionLabs_PhysiciansPortal.png',
 });
 
 const LEGACY_BRAND = Object.freeze({

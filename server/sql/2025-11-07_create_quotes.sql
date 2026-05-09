@@ -1,4 +1,4 @@
--- Quotes table for TruFusionLabs
+-- Quotes table for TrufusionLabs
 CREATE TABLE IF NOT EXISTS quotes (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   text VARCHAR(1024) NOT NULL,

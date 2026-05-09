@@ -1,6 +1,6 @@
-# TruFusionLabs
+# TrufusionLabs
 
-TruFusionLabs is a Vite + React front end paired with a Python backend in production (`python_backend/`) and a legacy Express backend (`server/`) retained for migration and local compatibility.
+TrufusionLabs is a Vite + React front end paired with a Python backend in production (`python_backend/`) and a legacy Express backend (`server/`) retained for migration and local compatibility.
 
 ## Project Layout
 

@@ -904,7 +904,7 @@ const appendWooRefundNote = async ({
     `Stripe refund ${stripeRefund.id} issued`,
     amountLabel ? `amount: ${amountLabel}` : null,
     wooOrderNumber ? `Woo order #${String(wooOrderNumber).replace(/^#/, '')}` : null,
-    trufusionOrderId ? `TruFusionLabs order ${trufusionOrderId}` : null,
+    trufusionOrderId ? `TrufusionLabs order ${trufusionOrderId}` : null,
   ].filter(Boolean);
   const note = noteParts.join(' — ') || `Stripe refund ${stripeRefund.id} processed`;
   try {
@@ -1691,7 +1691,7 @@ const HAND_DELIVERY_SERVICE_CODE = 'hand_delivery';
 const FACILITY_PICKUP_LABEL = 'Facility pickup';
 const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup';
 const FACILITY_PICKUP_LOCATION = {
-  name: 'TruFusionLabs Facility Pickup',
+  name: 'TrufusionLabs Facility Pickup',
   addressLine1: '640 S Grand Ave',
   addressLine2: 'Unit #107',
   city: 'Santa Ana',
@@ -4555,7 +4555,7 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
     }
   }
 
-  // Fallback for non-Woo IDs (e.g. local/MySQL TruFusionLabs order IDs).
+  // Fallback for non-Woo IDs (e.g. local/MySQL TrufusionLabs order IDs).
   const localOrder = findLocalOrderByOrderIdentifier(orderId)
     || findLocalOrderByOrderIdentifier(numericId);
   if (localOrder) {

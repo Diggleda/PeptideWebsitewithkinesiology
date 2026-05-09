@@ -79,7 +79,7 @@ foreach ($all as $q) {
 }
 
 if (count($list) === 0) {
-  $respond(200, ['text' => 'Excellence is an attitude.', 'author' => 'TruFusionLabs']);
+  $respond(200, ['text' => 'Excellence is an attitude.', 'author' => 'TrufusionLabs']);
 }
 
 // Cache file to keep the same quote each day and avoid repeating yesterday

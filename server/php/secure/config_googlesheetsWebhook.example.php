@@ -13,7 +13,7 @@ declare(strict_types=1);
  */
 
 return [
-    'db_dsn' => 'mysql:host=127.0.0.1;port=3306;dbname=TruFusionLabs;charset=utf8mb4',
+    'db_dsn' => 'mysql:host=127.0.0.1;port=3306;dbname=TrufusionLabs;charset=utf8mb4',
     'db_user' => 'trufusion_api',
     'db_password' => 'replace-with-vps-db-password',
 

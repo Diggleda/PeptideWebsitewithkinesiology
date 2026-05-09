@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: TruFusionLabs Email Overrides
- * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TruFusionLabs mail identity (optional SMTP).
- * Version: 1.1.13
+ * Plugin Name: TrufusionLabs Email Overrides
+ * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
+ * Version: 1.1.14
  */
 
 if (!defined('ABSPATH')) exit;
@@ -27,6 +27,17 @@ function trufusion_email_overrides_is_peppro_address($value) {
   return $email !== '' && (substr($email, -11) === '@peppro.net' || substr($email, -11) === '@peppro.com');
 }
 
+function trufusion_email_overrides_trufusion_address($value) {
+  $email = strtolower(trim((string) $value));
+  if (preg_match('/<([^>]+)>/', $email, $matches)) {
+    $email = strtolower(trim((string) $matches[1]));
+  }
+  if (substr($email, -11) === '@peppro.net' || substr($email, -11) === '@peppro.com') {
+    return substr($email, 0, strrpos($email, '@')) . '@trufusionlabs.com';
+  }
+  return $email;
+}
+
 function trufusion_email_overrides_get_from_email() {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_MAIL_FROM_EMAIL', 'PEPPR_MAIL_FROM_EMAIL', '');
   $value = trim($value);
@@ -37,9 +48,7 @@ function trufusion_email_overrides_get_from_email() {
 }
 
 function trufusion_email_overrides_get_from_name() {
-  $value = trufusion_email_overrides_get_constant('TRUFUSION_MAIL_FROM_NAME', 'PEPPR_MAIL_FROM_NAME', '');
-  $value = trim($value);
-  return $value !== '' ? $value : 'TruFusionLabs';
+  return 'TrufusionLabs';
 }
 
 function trufusion_email_overrides_get_smtp_setting($name, $fallback = '') {
@@ -54,9 +63,9 @@ function trufusion_email_overrides_get_frontend_url() {
 }
 
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
-  $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', 'PEPPR_EMAIL_LOGO_URL', '');
-  if ($value === '') {
-    $value = trufusion_email_overrides_get_frontend_url() . '/TruFusionLabs_PhysiciansPortal.png';
+  $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
+  if ($value === '' || stripos($value, 'peppro') !== false) {
+    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.14';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -69,11 +78,11 @@ function trufusion_email_overrides_get_brand_color($name, $fallback) {
 }
 
 function trufusion_email_overrides_get_email_base_color($current = '') {
-  return trufusion_email_overrides_get_brand_color('BASE_COLOR', '#3C67B7');
+  return trufusion_email_overrides_get_brand_color('BASE_COLOR', '#0B274B');
 }
 
 function trufusion_email_overrides_get_email_background_color($current = '') {
-  return trufusion_email_overrides_get_brand_color('BACKGROUND_COLOR', '#377EBA');
+  return trufusion_email_overrides_get_brand_color('BACKGROUND_COLOR', '#f6f8fb');
 }
 
 function trufusion_email_overrides_get_email_body_background_color($current = '') {
@@ -92,9 +101,9 @@ function trufusion_email_overrides_email_styles($css) {
 
   $css .= "\n"
     . "#wrapper{background-color:" . $background_color . " !important;}\n"
-    . "#template_container{border-color:rgba(255,255,255,0.82) !important;}\n"
-    . "#template_header{background-color:" . $base_color . " !important;}\n"
-    . "#template_header h1,.wc-email-header__title{color:#ffffff !important;}\n"
+    . "#template_container{border-color:rgba(15,39,75,0.12) !important;box-shadow:none !important;}\n"
+    . "#template_header{background-color:" . $body_background_color . " !important;border-bottom:1px solid rgba(15,39,75,0.10) !important;}\n"
+    . "#template_header h1,.wc-email-header__title{color:" . $base_color . " !important;background:transparent !important;}\n"
     . "#template_body,#body_content{background-color:" . $body_background_color . " !important;}\n"
     . "#body_content_inner{color:" . $text_color . " !important;}\n"
     . "#body_content_inner a,.link{color:" . $base_color . " !important;}\n"
@@ -309,7 +318,7 @@ function trufusion_email_overrides_log($event, $context = array()) {
     'event' => (string) $event,
     'context' => is_array($context) ? $context : array(),
   );
-  error_log('[TruFusionLabs Email Overrides] ' . wp_json_encode($payload));
+  error_log('[TrufusionLabs Email Overrides] ' . wp_json_encode($payload));
 }
 
 function trufusion_email_overrides_cc_fail_open() {
@@ -596,6 +605,7 @@ function trufusion_email_overrides_resolve_rep_email($order) {
 
   $rep_email = sanitize_email((string) $order->get_meta('trufusion_sales_rep_email'));
   if ($rep_email !== '') {
+    $rep_email = trufusion_email_overrides_trufusion_address($rep_email);
     trufusion_email_overrides_log('resolve_rep_email.meta_email', array(
       'order_id' => (int) $order->get_id(),
       'rep_email' => $rep_email,
@@ -607,6 +617,7 @@ function trufusion_email_overrides_resolve_rep_email($order) {
   if ($rep_id !== '') {
     $by_id = trufusion_email_overrides_lookup_rep_email_by_id($rep_id);
     if ($by_id !== '') {
+      $by_id = trufusion_email_overrides_trufusion_address($by_id);
       trufusion_email_overrides_log('resolve_rep_email.by_id', array(
         'order_id' => (int) $order->get_id(),
         'rep_id' => $rep_id,
@@ -620,6 +631,7 @@ function trufusion_email_overrides_resolve_rep_email($order) {
   if ($customer_email !== '') {
     $by_customer = trufusion_email_overrides_lookup_rep_email_by_customer_email($customer_email);
     if ($by_customer !== '') {
+      $by_customer = trufusion_email_overrides_trufusion_address($by_customer);
       trufusion_email_overrides_log('resolve_rep_email.by_customer', array(
         'order_id' => (int) $order->get_id(),
         'customer_email' => $customer_email,

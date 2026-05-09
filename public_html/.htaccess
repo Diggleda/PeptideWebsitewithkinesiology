@@ -7,7 +7,7 @@ PassengerAppLogFile "/home/oz0fsscenn2m/logs/passenger.log"
 Options -MultiViews
 DirectoryIndex index.html index.php
 RewriteEngine On
-# Canonical TruFusion Labs public host. Preserve path/query during legacy redirects.
+# Canonical TrufusionLabs public host. Preserve path/query during legacy redirects.
 RewriteCond %{HTTP_HOST} ^(www\.)?peppro\.net$ [NC,OR]
 RewriteCond %{HTTP_HOST} ^trufusionlabs\.com$ [NC]
 RewriteRule ^ https://www.trufusionlabs.com%{REQUEST_URI} [L,R=301]
@@ -54,7 +54,7 @@ SetEnv DOTENV_CONFIG_PATH /home/oz0fsscenn2m/PepPro/.env
 SetEnv GOOGLE_SHEETS_WEBHOOK_SECRET wqEpTQeBJzrDBZV6Ao5CIU7EQZV5KJUD+kd1gdI1Stw=
 SetEnv JWT_SECRET fniaxMM6E5tyhbjCqYaTonj/khRnjjIN/+v8GBGzRx8=
 SetEnv LOG_LEVEL info
-SetEnv MAIL_FROM "TruFusion Labs <support@trufusionlabs.com>"
+SetEnv MAIL_FROM "TrufusionLabs <support@trufusionlabs.com>"
 SetEnv MYSQL_DATABASE PepPro
 SetEnv MYSQL_ENABLED true
 SetEnv MYSQL_HOST localhost
@@ -86,7 +86,7 @@ SetEnv SHIPSTATION_PACKAGE_CODE package
 SetEnv SHIPSTATION_SHIP_FROM_ADDRESS1 640 S. Grand Ave
 SetEnv SHIPSTATION_SHIP_FROM_ADDRESS2 107
 SetEnv SHIPSTATION_SHIP_FROM_CITY Santa Ana
-SetEnv SHIPSTATION_SHIP_FROM_COMPANY TruFusion Labs
+SetEnv SHIPSTATION_SHIP_FROM_COMPANY TrufusionLabs
 SetEnv SHIPSTATION_SHIP_FROM_COUNTRY US
 SetEnv SHIPSTATION_SHIP_FROM_NAME Peptra
 SetEnv SHIPSTATION_SHIP_FROM_PHONE 7149320232

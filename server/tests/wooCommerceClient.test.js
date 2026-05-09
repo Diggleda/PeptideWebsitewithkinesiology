@@ -142,7 +142,7 @@ test('buildOrderPayload keeps tax as fallback fee even when a manual tax rate ex
       return {
         create: () => ({
           get: async () => ({
-            data: [{ id: 2, name: 'TruFusionLabs Manual Tax' }],
+            data: [{ id: 2, name: 'TrufusionLabs Manual Tax' }],
           }),
         }),
       };

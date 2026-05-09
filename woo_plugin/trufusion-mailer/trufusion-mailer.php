@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: TruFusionLabs Mailer Bridge
- * Description: Allows TruFusionLabs to send password reset emails via WooCommerce's email system.
+ * Plugin Name: TrufusionLabs Mailer Bridge
+ * Description: Allows TrufusionLabs to send password reset emails via WooCommerce's email system.
  * Version: 1.1.0
- * Author: TruFusionLabs
+ * Author: TrufusionLabs
  */
 
 if (!defined('ABSPATH')) {
@@ -29,6 +29,20 @@ function trufusion_mailer_bridge_get_constant($primary, $legacy = '', $fallback 
         }
     }
     return $fallback;
+}
+
+function trufusion_mailer_bridge_get_frontend_url() {
+    $value = trufusion_mailer_bridge_get_constant('TRUFUSION_APP_URL', 'PEPPR_APP_URL', 'https://www.trufusionlabs.com');
+    $value = rtrim(trim((string) $value), '/');
+    return $value !== '' ? $value : 'https://www.trufusionlabs.com';
+}
+
+function trufusion_mailer_bridge_get_brand_logo_url($current = '') {
+    $value = trufusion_mailer_bridge_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
+    if ($value === '' || stripos($value, 'peppro') !== false) {
+        $value = trufusion_mailer_bridge_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.14';
+    }
+    return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
 
 function trufusion_mailer_bridge_authorize() {
@@ -118,11 +132,11 @@ function trufusion_mailer_bridge_send_password_reset_email(WP_REST_Request $requ
         return new WP_Error('trufusion_bad_request', 'resetUrl is not allowed', array('status' => 400));
     }
 
-    $from_email = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_FROM_EMAIL', 'PEPPR_MAIL_FROM_EMAIL', 'support@trufusionlabs.com');
-    $from_name = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_FROM_NAME', 'PEPPR_MAIL_FROM_NAME', 'TruFusionLabs');
+    $from_email = trufusion_mailer_bridge_get_from_email();
+    $from_name = trufusion_mailer_bridge_get_from_name();
     $reply_to = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_REPLY_TO', 'PEPPR_MAIL_REPLY_TO', 'support@trufusionlabs.com');
 
-    $subject = 'Reset your TruFusionLabs password';
+    $subject = 'Reset your TrufusionLabs password';
     $greeting = $display_name !== '' ? 'Hi ' . esc_html($display_name) . ',' : 'Hi,';
 
     $reset_button = '<a href="' . esc_url($reset_url) . '"'
@@ -134,7 +148,7 @@ function trufusion_mailer_bridge_send_password_reset_email(WP_REST_Request $requ
     $body = ''
       . '<div style="margin:0;padding:0;">'
       . '<p style="margin:0 0 12px 0;font-size:16px;line-height:1.4;color:#111827;">' . $greeting . '</p>'
-      . '<p style="margin:0 0 18px 0;font-size:15px;line-height:1.5;color:#334155;">We received a request to reset your TruFusionLabs password.</p>'
+      . '<p style="margin:0 0 18px 0;font-size:15px;line-height:1.5;color:#334155;">We received a request to reset your TrufusionLabs password.</p>'
       . '<div style="margin:0 0 18px 0;">' . $reset_button . '</div>'
       . '<p style="margin:0 0 10px 0;font-size:13px;line-height:1.5;color:#64748b;">If you didn’t request this, you can safely ignore this email.</p>'
       . '<p style="margin:0;font-size:13px;line-height:1.5;color:#64748b;">Need help? Contact <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">support@trufusionlabs.com</span>.</p>'
@@ -159,13 +173,14 @@ function trufusion_mailer_bridge_send_password_reset_email(WP_REST_Request $requ
 function trufusion_mailer_bridge_get_from_email() {
     $value = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_FROM_EMAIL', 'PEPPR_MAIL_FROM_EMAIL', '');
     $value = trim($value);
+    if (preg_match('/support@peppro\.(net|com)/i', $value)) {
+        return 'support@trufusionlabs.com';
+    }
     return $value !== '' ? $value : 'support@trufusionlabs.com';
 }
 
 function trufusion_mailer_bridge_get_from_name() {
-    $value = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_FROM_NAME', 'PEPPR_MAIL_FROM_NAME', '');
-    $value = trim($value);
-    return $value !== '' ? $value : 'TruFusionLabs';
+    return 'TrufusionLabs';
 }
 
 function trufusion_mailer_bridge_get_smtp_setting($name, $fallback = '') {
@@ -187,6 +202,9 @@ function trufusion_mailer_bridge_configure_smtp($phpmailer) {
     $port = (int) trufusion_mailer_bridge_get_smtp_setting('PORT', '587');
     $user = trufusion_mailer_bridge_get_smtp_setting('USER', '');
     $secure = strtolower(trufusion_mailer_bridge_get_smtp_setting('SECURE', 'tls'));
+    if (preg_match('/@peppro\.(net|com)$/i', trim((string) $user))) {
+        return;
+    }
 
     $phpmailer->isSMTP();
     $phpmailer->Host = $host;
@@ -213,9 +231,13 @@ function trufusion_mailer_bridge_configure_smtp($phpmailer) {
     }
 }
 
-// Reduce WooCommerce email header logo size for TruFusionLabs-branded emails.
+// Reduce WooCommerce email header logo size for TrufusionLabs-branded emails.
 add_filter('woocommerce_email_styles', function ($css) {
     $css .= "\n"
+        . "#wrapper{background-color:#f6f8fb !important;}\n"
+        . "#template_container{border-color:rgba(15,39,75,0.12) !important;box-shadow:none !important;}\n"
+        . "#template_header{background-color:#ffffff !important;border-bottom:1px solid rgba(15,39,75,0.10) !important;}\n"
+        . "#template_header h1,.wc-email-header__title{color:#0B274B !important;background:transparent !important;}\n"
         . "#template_header_image img,"
         . ".wc-email-header__image img,"
         . ".email-header-image img,"
@@ -229,6 +251,8 @@ add_filter('woocommerce_email_styles', function ($css) {
         . "}\n";
     return $css;
 }, 100);
+
+add_filter('woocommerce_email_header_image', 'trufusion_mailer_bridge_get_brand_logo_url', 1000);
 
 // Force a consistent From identity across WooCommerce/WordPress email sending.
 add_filter('wp_mail_from', function ($from) {

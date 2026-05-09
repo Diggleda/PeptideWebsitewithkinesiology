@@ -16,7 +16,7 @@ STATUSES = ("shipped", "in_transit", "out_for_delivery", "delivered")
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Send TruFusionLabs shipping lifecycle test emails through the backend mailer.",
+        description="Send TrufusionLabs shipping lifecycle test emails through the backend mailer.",
     )
     parser.add_argument(
         "--recipient",
@@ -79,7 +79,7 @@ def _provider_summary() -> dict[str, object]:
     }
     return {
         "nodeEnv": os.environ.get("NODE_ENV") or None,
-        "mailFrom": os.environ.get("MAIL_FROM") or "TruFusionLabs <support@trufusionlabs.com>",
+        "mailFrom": os.environ.get("MAIL_FROM") or "TrufusionLabs <support@trufusionlabs.com>",
         "smtp": smtp,
     }
 
@@ -97,7 +97,7 @@ def main() -> int:
         email_service.send_order_shipping_status_email(
             args.recipient,
             status=status,
-            customer_name="TruFusionLabs Test",
+            customer_name="TrufusionLabs Test",
             order_number=args.order_number,
             tracking_number=args.tracking_number,
             carrier_code=args.carrier,

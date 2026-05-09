@@ -139,7 +139,7 @@ def _resolve_sales_rep_snapshot(prospect: Optional[Dict], actor: Optional[Dict])
         "name": _normalize_optional_text((rep_record or {}).get("name"))
         or _normalize_optional_text((linked_user or {}).get("name"))
         or _normalize_optional_text((actor or {}).get("name"))
-        or "TruFusionLabs",
+        or "TrufusionLabs",
         "email": _normalize_optional_text((rep_record or {}).get("email"))
         or _normalize_optional_text((linked_user or {}).get("email"))
         or _normalize_optional_text((actor or {}).get("email")),
@@ -508,7 +508,7 @@ def export_prospect_quote(
                 or _normalize_optional_text(resolved_sales_rep.get("id")),
                 "name": _normalize_optional_text(quote_payload_sales_rep.get("name"))
                 or _normalize_optional_text(resolved_sales_rep.get("name"))
-                or "TruFusionLabs",
+                or "TrufusionLabs",
                 "email": _normalize_optional_text(quote_payload_sales_rep.get("email"))
                 or _normalize_optional_text(resolved_sales_rep.get("email")),
                 "phone": _normalize_optional_text(quote_payload_sales_rep.get("phone"))

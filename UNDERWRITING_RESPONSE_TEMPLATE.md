@@ -1,11 +1,11 @@
-# TruFusionLabs — Underwriting Response Template (Fill-in)
+# TrufusionLabs — Underwriting Response Template (Fill-in)
 
 Use this as a checklist + copy/paste response. Replace bracketed placeholders with exact values from your merchant application.
 
 ## 1) Merchant identity (visible on website)
 
-- TruFusionLabs  
-- DBA: TruFusionLabs  
+- TrufusionLabs
+- DBA: TrufusionLabs
 - Legal Entity: **[EXACT LEGAL ENTITY NAME FROM MERCHANT APP]**  
 - Address: **[FULL PHYSICAL ADDRESS — MUST MATCH MERCHANT APP]**  
 - Phone: **[LIVE PHONE NUMBER]**  
@@ -50,7 +50,7 @@ Footer includes links to:
 - Pricing
 
 Footer includes:
-- © 2026 TruFusionLabs. All Rights Reserved.
+- © 2026 TrufusionLabs. All Rights Reserved.
 
 ## 7) Peptides enhanced due diligence (EDD) consistency
 
@@ -71,7 +71,7 @@ Create a temporary reviewer account with read-only permissions:
 
 ## 10) Suggested response email structure
 
-Subject: TruFusionLabs — Underwriting requested items
+Subject: TrufusionLabs — Underwriting requested items
 
 Body:
 
@@ -81,4 +81,3 @@ Body:
 - ✔ EDD questionnaire attached
 - ✔ Login credentials provided (temporary reviewer account)
 - ✔ IP explanation included
-

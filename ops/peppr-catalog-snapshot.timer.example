@@ -1,5 +1,5 @@
 [Unit]
-Description=Run TruFusionLabs catalog snapshot sync on a schedule
+Description=Run TrufusionLabs catalog snapshot sync on a schedule
 
 [Timer]
 OnBootSec=10m

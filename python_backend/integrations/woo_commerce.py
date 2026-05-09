@@ -1214,7 +1214,7 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
     return prepared
 
 
-_TRUFUSION_MANUAL_TAX_RATE_NAME = "TruFusionLabs Manual Tax"
+_TRUFUSION_MANUAL_TAX_RATE_NAME = "TrufusionLabs Manual Tax"
 _trufusion_manual_tax_rate_id: Optional[int] = None
 _trufusion_manual_tax_rate_lock = threading.Lock()
 
@@ -1222,7 +1222,7 @@ _trufusion_manual_tax_rate_lock = threading.Lock()
 def _ensure_trufusion_manual_tax_rate_id() -> Optional[int]:
     """
     WooCommerce taxes must reference an existing tax rate id to register totals that surface in
-    admin + emails. We create (once) a 0% "TruFusionLabs Manual Tax" rate and then attach explicit tax
+    admin + emails. We create (once) a 0% "TrufusionLabs Manual Tax" rate and then attach explicit tax
     amounts to the order/line items.
     """
     global _trufusion_manual_tax_rate_id
@@ -1310,7 +1310,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             override_amount = 0.01
         override_amount = max(0.01, round(override_amount, 2))
 
-    # Discounts (referral credits + discount codes) are tracked in TruFusionLabs + stored as Woo meta fields.
+    # Discounts (referral credits + discount codes) are tracked in TrufusionLabs + stored as Woo meta fields.
     # Do not send Woo "discount lines"/negative fees; instead, reduce line item totals so Woo total matches.
     applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
     discount_code_amount = float(order.get("discountCodeAmount") or 0) or 0.0
@@ -1742,7 +1742,7 @@ def update_order_metadata(details: Dict[str, Any]) -> Dict[str, Any]:
     """
     Update WooCommerce order fields/meta without marking it as paid.
 
-    Useful for attaching `stripe_payment_intent`, `order_key`, or other TruFusionLabs metadata
+    Useful for attaching `stripe_payment_intent`, `order_key`, or other TrufusionLabs metadata
     immediately after order creation (even before payment succeeds).
     """
     if not is_configured():
@@ -1907,7 +1907,7 @@ def create_refund(
 
     payload: Dict[str, Any] = {
         "amount": f"{amount_value:.2f}",
-        "reason": reason or "Refunded via TruFusionLabs",
+        "reason": reason or "Refunded via TrufusionLabs",
         "api_refund": False,
     }
     if isinstance(metadata, dict) and metadata:
@@ -2741,7 +2741,7 @@ def fetch_order(woo_order_id: str) -> Optional[Dict[str, Any]]:
 
 def fetch_order_summary(woo_order_id: str) -> Dict[str, Any]:
     """
-    Fetch a single Woo order by id and map to TruFusionLabs order summary.
+    Fetch a single Woo order by id and map to TrufusionLabs order summary.
 
     Unlike `fetch_order()`, this returns a structured status that differentiates 404/not_found
     from transient errors so callers can safely reconcile local records.

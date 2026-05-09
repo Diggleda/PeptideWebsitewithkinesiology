@@ -1,5 +1,5 @@
 BRAND = {
-    "name": "TruFusionLabs",
+    "name": "TrufusionLabs",
     "app_url": "https://www.trufusionlabs.com",
     "apex_url": "https://trufusionlabs.com",
     "api_url": "https://api.trufusionlabs.com",

@@ -164,7 +164,7 @@ const env = {
   },
   passkeys: {
     rpId: process.env.PASSKEY_RP_ID || '',
-    rpName: process.env.PASSKEY_RP_NAME || 'TruFusionLabs',
+    rpName: process.env.PASSKEY_RP_NAME || 'TrufusionLabs',
     origins: parseList(process.env.PASSKEY_ALLOWED_ORIGINS || ''),
   },
   quotes: {

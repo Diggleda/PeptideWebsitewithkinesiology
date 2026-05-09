@@ -852,7 +852,7 @@ const getDatabaseVisualizerMockPayload = ({
   if (!selectedSource) {
     return {
       mysqlEnabled: false,
-      databaseName: 'TruFusionLabs Mock',
+      databaseName: 'TrufusionLabs Mock',
       hostScope: 'local',
       refreshedAt: new Date().toISOString(),
       tables,
@@ -892,7 +892,7 @@ const getDatabaseVisualizerMockPayload = ({
 
   return {
     mysqlEnabled: false,
-    databaseName: 'TruFusionLabs Mock',
+    databaseName: 'TrufusionLabs Mock',
     hostScope: 'local',
     refreshedAt: new Date().toISOString(),
     tables,

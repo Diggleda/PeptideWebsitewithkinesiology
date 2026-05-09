@@ -18,7 +18,7 @@ const RETRIABLE_NETWORK_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'EAI_AGAIN
 const MAX_WOO_REQUEST_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 750;
 
-const TRUFUSION_MANUAL_TAX_RATE_NAME = 'TruFusionLabs Manual Tax';
+const TRUFUSION_MANUAL_TAX_RATE_NAME = 'TrufusionLabs Manual Tax';
 
 const KEEP_ALIVE_MAX_SOCKETS = (() => {
   return 30;
@@ -570,7 +570,7 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
       : (shippingEstimate.serviceType
         || shippingEstimate.serviceCode
         || shippingEstimate.carrierId
-        || 'TruFusionLabs Shipping');
+        || 'TrufusionLabs Shipping');
     const deliveryAddress = normalizeDeliveryAddress(shippingAddress);
     const metaData = [
       shippingEstimate.carrierId ? { key: 'trufusion_carrier_id', value: shippingEstimate.carrierId } : null,
@@ -768,7 +768,7 @@ const buildOrderPayload = async ({ order, customer }) => {
     ...(providedTotal !== null ? [{ key: 'trufusion_client_total', value: providedTotal }] : []),
     ...(taxTotal > 0 ? [{ key: 'trufusion_tax_total', value: taxTotal }] : []),
     { key: 'trufusion_created_at', value: order.createdAt },
-    { key: 'trufusion_origin', value: 'TruFusionLabs Web Checkout' },
+    { key: 'trufusion_origin', value: 'TrufusionLabs Web Checkout' },
     ...(fulfillmentMethod
       ? [{ key: 'trufusion_fulfillment_method', value: fulfillmentMethod }]
       : []),
@@ -802,7 +802,7 @@ const buildOrderPayload = async ({ order, customer }) => {
 
   if (taxTotal > 0) {
     // Woo's REST order creation can ignore ad hoc tax lines before notification emails render.
-    // Send the tax as a fee first; the TruFusionLabs Manual Tax Sync plugin converts it into a
+    // Send the tax as a fee first; the TrufusionLabs Manual Tax Sync plugin converts it into a
     // real Woo tax line before/after the initial email path.
     feeLines.push({
       name: 'Estimated tax',

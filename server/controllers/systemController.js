@@ -71,7 +71,7 @@ const getHealth = (_req, res) => {
 const getHelp = (_req, res) => {
   const payload = {
     ok: true,
-    service: 'TruFusionLabs Backend',
+    service: 'TrufusionLabs Backend',
     build: env.backendBuild,
     integrations: {
       wooCommerce: {

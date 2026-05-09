@@ -527,7 +527,7 @@ const MAINTENANCE_ALREADY_ACTIVE_TOAST =
   "A maintenance is active. Please coordinate with yout admin team.";
 const LOGIN_BACKEND_DOWN_TOAST_ID = "login-backend-down";
 const LOGIN_BACKEND_DOWN_MESSAGE =
-  "TruFusionLabs is unavailable right now. Please try again in a minute.";
+  "TrufusionLabs is unavailable right now. Please try again in a minute.";
 const MAINTENANCE_OPENER_PING_INTERVAL_MS = 30_000;
 
 const getErrorStatusCode = (error: any): number | null =>
@@ -3405,8 +3405,8 @@ const mergeWooSummaryIntoLocal = (
       normalizeStringField(wooOrder.asDelegate) ||
       normalizeStringField(localOrder.asDelegate);
   }
-  // Prefer TruFusionLabs's computed grand total when present; don't overwrite with Woo totals
-  // (Woo totals can omit TruFusionLabs-side discounts).
+  // Prefer TrufusionLabs's computed grand total when present; don't overwrite with Woo totals
+  // (Woo totals can omit TrufusionLabs-side discounts).
   if (!localTotalCandidate && wooTotalCandidate) {
     localOrder.total = wooTotalCandidate;
     localOrder.grandTotal = wooTotalCandidate;
@@ -5925,7 +5925,7 @@ function MainApp() {
     <div className="mb-6 flex justify-center">
       <div className="brand-logo">
         <BrandLogoImage
-          alt="TruFusionLabs"
+          alt="TrufusionLabs"
           style={{
             display: "block",
             width: "auto",
@@ -30774,7 +30774,7 @@ function MainApp() {
                 <div className="flex min-w-0 max-w-full flex-col items-stretch">
                   <div className="border-b border-[#c9c9c9] px-3 py-3">
                     <p className="max-w-full truncate text-xs text-slate-600">
-                      {payload.hostScope === "local" ? "localhost:3306" : "remote"} • {payload.databaseName || "TruFusionLabs"}
+                      {payload.hostScope === "local" ? "localhost:3306" : "remote"} • {payload.databaseName || "TrufusionLabs"}
                     </p>
                     <p className="mt-1 max-w-full truncate text-[11px] text-slate-500">
                       {payload.refreshedAt ? `Refreshed ${formatDateTime(payload.refreshedAt)}` : "Live snapshot"} • {totalRows.toLocaleString()} rows tracked
@@ -30791,7 +30791,7 @@ function MainApp() {
                   </div>
                   <div className="max-h-[48rem] overflow-x-auto overflow-y-auto px-2 py-2">
                     <div className="mb-2 text-sm font-semibold italic text-slate-600">
-                      {payload.databaseName || "TruFusionLabs"}
+                      {payload.databaseName || "TrufusionLabs"}
                     </div>
                     <div className="flex flex-col items-start gap-1">
                       {tableCards.map((table) => {
@@ -30834,7 +30834,7 @@ function MainApp() {
                     <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-[rgb(60,103,183)]">
                       Server: {payload.databaseHost || (payload.hostScope === "local" ? "localhost" : "remote")}
                       {payload.databasePort ? `:${payload.databasePort}` : ""}
-                      {" "}» Database: {payload.databaseName || "TruFusionLabs"} » Table: {selectedTable.name}
+                      {" "}» Database: {payload.databaseName || "TrufusionLabs"} » Table: {selectedTable.name}
                     </div>
 
                     <div className="border-b border-slate-200/60 bg-white/70 px-3">
@@ -31290,7 +31290,7 @@ function MainApp() {
 		              </h2>
               <p className="text-sm text-slate-600">
                 {isAdmin(user?.role)
-                  ? "Monitor TruFusionLabs business activities, sales reps, and keep track of your sales."
+                  ? "Monitor TrufusionLabs business activities, sales reps, and keep track of your sales."
                   : isSalesLead(user?.role)
                     ? "Keep track of your team and develop your sales."
                     : "Develop your leads and sales."}
@@ -32009,9 +32009,9 @@ function MainApp() {
 		                  <h4 className="text-lg font-semibold text-slate-900">Network</h4>
 		                  <p className="text-sm text-slate-600">
 		                    {isAdmin(user?.role)
-		                      ? "Everyone in the TruFusionLabs network."
+		                      ? "Everyone in the TrufusionLabs network."
 		                      : isSalesLead(user?.role)
-		                        ? "The TruFusionLabs team and your clients."
+		                        ? "The TrufusionLabs team and your clients."
 		                        : `Your clients, ${
 		                            scopedLiveClients.filter((entry: any) =>
 		                              isSalesLead(entry?.role),
@@ -33078,7 +33078,7 @@ function MainApp() {
                       return reasons;
                     })();
                     const healthDiagnosticLines = [
-                      `TruFusionLabs API health: ${overallStatusLabel}`,
+                      `TrufusionLabs API health: ${overallStatusLabel}`,
                       snapshotFullLabel ? `Snapshot: ${snapshotFullLabel}` : null,
                       ...healthAlertReasons.map((reason) => `Issue: ${reason}`),
                       ...workerPoolLines,
@@ -34116,7 +34116,7 @@ function MainApp() {
 	                          Hand Delivery
 	                        </h4>
 	                        <p className="text-sm text-slate-600">
-	                          Sales reps who have a local jurisdiction to the TruFusionLabs facility.
+	                          Sales reps who have a local jurisdiction to the TrufusionLabs facility.
 	                        </p>
 	                      </div>
                         </button>
@@ -34192,7 +34192,7 @@ function MainApp() {
                       Network
                     </h4>
                     <p className="text-sm text-slate-600">
-                      Everyone in the TruFusionLabs network.
+                      Everyone in the TrufusionLabs network.
                     </p>
                   </div>
 
@@ -37742,7 +37742,7 @@ function MainApp() {
 				                                      nextValue === "account_created" &&
 				                                      !hasContactAccount &&
 				                                      !window.confirm(
-				                                        "They have not yet created a TruFusionLabs account, are you sure you want to promote them to Account Created?",
+				                                        "They have not yet created a TrufusionLabs account, are you sure you want to promote them to Account Created?",
 				                                      )
 				                                    ) {
 				                                      return;
@@ -38243,7 +38243,7 @@ function MainApp() {
 	                                            nextValue === "account_created" &&
 	                                            !referral.referredContactHasAccount &&
 	                                            !window.confirm(
-	                                              "They have not created a TruFusionLabs account, yet are you sure you want to promote them?",
+	                                              "They have not created a TrufusionLabs account, yet are you sure you want to promote them?",
 	                                            )
 	                                          ) {
 	                                            return;
@@ -38338,7 +38338,7 @@ function MainApp() {
                       </p>
                     ) : contactFormQueue.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
-                        Nobody has submitted their details to the TruFusionLabs contact form yet.
+                        Nobody has submitted their details to the TrufusionLabs contact form yet.
                       </p>
                     ) : (
                     <div className="sales-rep-table-wrapper admin-dashboard-list">
@@ -38350,7 +38350,7 @@ function MainApp() {
                             <th className="px-4 py-3">Email</th>
                             <th className="px-4 py-3">Phone</th>
                             <th className="px-4 py-3">
-                              How did you get introduced to TruFusionLabs?
+                              How did you get introduced to TrufusionLabs?
                             </th>
                             <th className="px-4 py-3">Received</th>
                             <th className="px-4 py-3">Status</th>
@@ -38505,7 +38505,7 @@ function MainApp() {
           Send dashboard recommendations and ideas to{" "}
           <a
             className="text-[rgb(60,103,183)] underline-offset-2 hover:underline"
-            href="mailto:pgibbons@trufusionlabs.com?subject=Dashboard%20Recommendation%20(TruFusionLabs)"
+            href="mailto:pgibbons@trufusionlabs.com?subject=Dashboard%20Recommendation%20(TrufusionLabs)"
           >
             pgibbons@trufusionlabs.com
           </a>
@@ -38953,7 +38953,7 @@ function MainApp() {
           </DialogHeader>
           <div className="space-y-4 text-sm leading-relaxed text-slate-700">
             <p>
-              By proceeding, you agree to join the TruFusionLabs research network
+              By proceeding, you agree to join the TrufusionLabs research network
               where, at your discretion, you contribute your time,
               expertise, and de-identified, anonymized patient outcome data
               constructively, and with integrity, to advance healthcare. You
@@ -38961,7 +38961,7 @@ function MainApp() {
               and professional obligations.
             </p>
             <div className="text-sm leading-snug text-slate-700">
-              Continuing also confirms your acceptance of TruFusionLabs&apos;s{" "}
+              Continuing also confirms your acceptance of TrufusionLabs&apos;s{" "}
               <button
                 type="button"
                 className="legal-inline-link"
@@ -39061,7 +39061,7 @@ function MainApp() {
             requireGreaterArea
             requireStudyFocus
             allowIncompleteSubmit
-            preActionsNote={'Use the network toggle above to control whether your profile will appear in the TruFusionLabs physician network. These details can be updated anytime in your account settings.'}
+            preActionsNote={'Use the network toggle above to control whether your profile will appear in the TrufusionLabs physician network. These details can be updated anytime in your account settings.'}
             submitLabel="Save and Continue"
             submittingLabel="Saving profile…"
             skipLabel="Skip for now"
@@ -39268,7 +39268,7 @@ function MainApp() {
                 >
                   <div className="brand-logo brand-logo--landing">
 	                    <BrandLogoImage
-	                      alt="TruFusionLabs"
+	                      alt="TrufusionLabs"
 	                      style={{
                         display: "block",
                         width: "auto",
@@ -39820,7 +39820,7 @@ function MainApp() {
 	                            <div className="flex justify-center">
 	                              <div className="brand-logo brand-logo--landing landing-login-logo">
 	                                <BrandLogoImage
-	                                  alt="TruFusionLabs"
+	                                  alt="TrufusionLabs"
 	                                  style={{
 	                                    display: "block",
 	                                    width: "auto",
@@ -39921,7 +39921,7 @@ function MainApp() {
 	                                      issue === "offline"
 	                                        ? "No internet connection detected. Please turn on Wi‑Fi or cellular data and try again."
 	                                        : issue === "network"
-	                                          ? "Can't reach TruFusionLabs right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	                                          ? "Can't reach TrufusionLabs right now. This usually means your internet is offline or very slow. Please check your connection and try again."
 	                                          : "Unable to log in. Please try again.",
 	                                    );
 	                                  }
@@ -39935,7 +39935,7 @@ function MainApp() {
 	                                  issue === "offline"
 	                                    ? "No internet connection detected. Please turn on Wi‑Fi or cellular data and try again."
 	                                    : issue === "network"
-	                                      ? "We cannot reach the TruFusionLabs serverright now. Please check your connection and try again in a minute."
+	                                      ? "We cannot reach the TrufusionLabs serverright now. Please check your connection and try again in a minute."
 	                                      : "Unable to log in. Please try again.",
 	                                );
 	                              } finally {
@@ -40630,7 +40630,7 @@ function MainApp() {
                             </h1>
                             <p className="text-sm text-gray-600">
                               {verifyEmailPending
-                                ? "Confirming your TruFusionLabs account..."
+                                ? "Confirming your TrufusionLabs account..."
                                 : verifyEmailError || "Email verified. Sign in to continue."}
                             </p>
                           </div>
@@ -40654,7 +40654,7 @@ function MainApp() {
 	                        <>
 	                          <div className="text-center space-y-2">
 	                            <h1 className="text-2xl font-semibold">
-	                              Join the TruFusionLabs Network
+	                              Join the TrufusionLabs Network
 	                            </h1>
 	                          </div>
                           <form
@@ -41298,7 +41298,7 @@ function MainApp() {
               : isSalesPartner(user?.role, coerceOptionalBoolean(user?.salesRep?.isPartner))
                 ? `I acknowledge that I am placing this order as a ${getSalesPartnerLabel(coerceOptionalBoolean(user?.salesRep?.allowedRetail))}`
                 : user?.role && (isRep(user.role) || isAdmin(user.role))
-                  ? 'I acknowledge that I am placing this order under my TruFusionLabs account'
+                  ? 'I acknowledge that I am placing this order under my TrufusionLabs account'
                   : null
         }
         customerEmail={isDelegateMode ? null : user?.email || null}
@@ -43942,7 +43942,7 @@ function MainApp() {
 	                            <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
 	                              <div className="flex items-center justify-between gap-3">
 	                                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
-	                                  Edit (TruFusionLabs)
+	                                  Edit (TrufusionLabs)
 	                                </p>
 	                                <p className="text-[11px] text-slate-500">
 	                                  {dirty ? "Unsaved changes" : "Saved"}
@@ -44065,7 +44065,7 @@ function MainApp() {
 	                                <option value="dhl" />
 	                              </datalist>
 	                              <p className="text-[11px] text-slate-500">
-	                                Updates are saved in TruFusionLabs for display; this does not push changes to WooCommerce/ShipStation.
+	                                Updates are saved in TrufusionLabs for display; this does not push changes to WooCommerce/ShipStation.
 	                              </p>
 	                            </div>
 	                          );
@@ -44245,7 +44245,7 @@ function MainApp() {
                   Manufacturing &amp; Quality Standards
                 </DialogTitle>
                 <DialogDescription className="leading-snug" style={{ marginTop: 0 }}>
-                  TruFusionLabs manufacturing, testing, delivery, and compliance standards.
+                  TrufusionLabs manufacturing, testing, delivery, and compliance standards.
                 </DialogDescription>
               </DialogHeader>
               <DialogClose
@@ -44284,7 +44284,7 @@ function MainApp() {
                   <span>Clinical Research-Grade Manufacturing</span>
                 </h3>
                 <p className="font-semibold" style={{ color: "#ffffff" }}>
-                  TruFusionLabs partners exclusively with FDA-registered and NSF-certified
+                  TrufusionLabs partners exclusively with FDA-registered and NSF-certified
                   manufacturing facilities to ensure clinical research-grade quality and
                   consistency. All peptide formulations are produced in GMP-compliant
                   facilities.
@@ -44326,7 +44326,7 @@ function MainApp() {
                     <span>Proprietary Delivery Technology</span>
                   </h3>
                   <p>
-                    TruFusionLabs utilizes the{" "}
+                    TrufusionLabs utilizes the{" "}
                     <span className="manufacturing-certification-label">
                       cGMP Certified Lab
                     </span>{" "}
@@ -44365,7 +44365,7 @@ function MainApp() {
                     <span>Batch Testing &amp; COA Transparency</span>
                   </h3>
                   <p>
-                    Each TruFusionLabs peptide is backed by a Certificate of Analysis as well as
+                    Each TrufusionLabs peptide is backed by a Certificate of Analysis as well as
                     third party testing to verify:
                   </p>
                   <ul className="space-y-1">
@@ -44425,7 +44425,7 @@ function MainApp() {
                   Every formula is designed by a cross-disciplinary team of experts in
                   pharmaceutical R&amp;D, biochemistry, and regulatory compliance. From
                   clinical research-grade peptides to white-label consumer products,
-                  TruFusionLabs bridges science and accessibility with full transparency and
+                  TrufusionLabs bridges science and accessibility with full transparency and
                   safety.
                 </p>
               </section>

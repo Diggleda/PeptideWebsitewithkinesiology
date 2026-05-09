@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Visibility requirement for shipping lifecycle emails only.
 _SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
-_EMAIL_DEFAULT_FROM = "TruFusionLabs <support@trufusionlabs.com>"
+_EMAIL_DEFAULT_FROM = "TrufusionLabs <support@trufusionlabs.com>"
 _EMAIL_DEFAULT_REPLY_TO = "support@trufusionlabs.com"
 _EMAIL_DEFAULT_DOMAIN = "trufusionlabs.com"
 _EMAIL_LOGO_CID = "trufusion-logo"
@@ -105,13 +105,13 @@ _EMAIL_TRACK_BUTTON_HOVER_CSS = (
 _EMAIL_INLINE_IMAGE_SPECS = (
     {
         "content_id": _EMAIL_LOGO_CID,
-        "filename": "TruFusionLabs_PhysiciansPortal.png",
+        "filename": "TrufusionLabs_PhysiciansPortal.png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
-            "public/TruFusionLabs_PhysiciansPortal.png",
-            "src/generated/runtime-assets/TruFusionLabs_PhysiciansPortal.png",
+            "public/TrufusionLabs_PhysiciansPortal.png",
+            "src/generated/runtime-assets/TrufusionLabs_PhysiciansPortal.png",
         ),
     },
     {
@@ -238,7 +238,9 @@ def _is_peppro_domain_address(raw: Optional[str]) -> bool:
 def _normalize_from_brand(raw: Optional[str]) -> str:
     if _is_legacy_support_address(raw):
         return _EMAIL_DEFAULT_FROM
-    return str(raw or _EMAIL_DEFAULT_FROM).replace("TruFusion Labs", "TruFusionLabs")
+    normalized = str(raw or _EMAIL_DEFAULT_FROM)
+    normalized = normalized.replace("Trufusion Labs", "TrufusionLabs")
+    return normalized
 
 
 def _assert_trufusion_sender_settings(settings: Dict[str, Any]) -> None:
@@ -253,7 +255,19 @@ def _assert_trufusion_sender_settings(settings: Dict[str, Any]) -> None:
     if _is_peppro_domain_address(smtp_user):
         raise RuntimeError(
             "Email verification is configured with a legacy PepPro SMTP user/domain. "
-            "Set SMTP_USER/EMAIL_USER to support@trufusionlabs.com or use an authenticated TruFusionLabs relay."
+            "Set SMTP_USER/EMAIL_USER to support@trufusionlabs.com or use an authenticated TrufusionLabs relay."
+        )
+    smtp_host = str((smtp or {}).get("host") or "").strip().lower()
+    smtp_auth_enabled = bool((smtp or {}).get("auth", True))
+    google_relay = "gmail.com" in smtp_host or "google.com" in smtp_host
+    if not google_relay:
+        raise RuntimeError(
+            "Email verification must send through Google SMTP for trufusionlabs.com SPF/DMARC alignment. "
+            "Set SMTP_HOST to smtp.gmail.com or smtp-relay.gmail.com with support@trufusionlabs.com credentials."
+        )
+    if smtp_auth_enabled and smtp_user and smtp_user != _EMAIL_DEFAULT_REPLY_TO:
+        raise RuntimeError(
+            f"Email verification must authenticate as {_EMAIL_DEFAULT_REPLY_TO}; got {smtp_user}"
         )
 
 
@@ -443,7 +457,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>TruFusionLabs Password Reset</title>
+    <title>TrufusionLabs Password Reset</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
   </head>
@@ -454,12 +468,12 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
               <td style="padding:44px 28px 8px;">
-                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Reset your TruFusionLabs password</h1>
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Reset your TrufusionLabs password</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
                   We received a request to reset your account password. Click the button below to choose a new password.
                 </p>
@@ -479,7 +493,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TrufusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
                 <p style="margin:0;">This link will expire in 60 minutes to keep your account secure.</p>
               </td>
             </tr>
@@ -490,7 +504,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
   </body>
 </html>"""
     plain = (
-        "You requested a password reset for your TruFusionLabs account.\n"
+        "You requested a password reset for your TrufusionLabs account.\n"
         f"Reset your password using this link: {reset_url}\n"
         "If you did not request this, you can ignore this email.\n"
         f"Need help? Contact support@trufusionlabs.com or visit {safe_base_url}."
@@ -509,7 +523,7 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Verify your TruFusionLabs account</title>
+    <title>Verify your TrufusionLabs account</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
   </head>
@@ -520,14 +534,14 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
               <td style="padding:32px 28px 8px;">
-                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Verify your TruFusionLabs account</h1>
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Verify your TrufusionLabs account</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
-                  Thanks for creating your TruFusionLabs account. Confirm this email address to finish setting up your account.
+                  Thanks for creating your TrufusionLabs account. Confirm this email address to finish setting up your account.
                 </p>
                 <p style="margin:0 0 24px;line-height:1.6;">
                   If you did not create this account, you can safely ignore this email.
@@ -542,7 +556,7 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TrufusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
                 <p style="margin:0;">This code will expire in 10 minutes to keep your account secure.</p>
               </td>
             </tr>
@@ -553,7 +567,7 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
   </body>
 </html>"""
     plain = (
-        "Thanks for creating your TruFusionLabs account.\n"
+        "Thanks for creating your TrufusionLabs account.\n"
         f"Your verification code is: {verification_code}\n"
         "This code will expire in 10 minutes to keep your account secure.\n"
         "If you did not create this account, you can ignore this email.\n"
@@ -592,9 +606,10 @@ def _dispatch_email(
         settings["from"] = _normalize_from_brand(from_address)
     if enforce_trufusion_sender:
         settings["from"] = _EMAIL_DEFAULT_FROM
-        _assert_trufusion_sender_settings(settings)
 
     if config.is_production:
+        if enforce_trufusion_sender:
+            _assert_trufusion_sender_settings(settings)
         failures: list[str] = []
         smtp_cfg = (settings.get("smtp") or {}) if isinstance(settings.get("smtp"), dict) else {}
         smtp_auth_enabled = bool(smtp_cfg.get("auth", True))
@@ -650,7 +665,7 @@ def _build_delegate_proposal_ready_email(
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>TruFusionLabs Delegate Proposal Ready for Review</title>
+    <title>TrufusionLabs Delegate Proposal Ready for Review</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
   </head>
@@ -661,7 +676,7 @@ def _build_delegate_proposal_ready_email(
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -679,16 +694,16 @@ def _build_delegate_proposal_ready_email(
                   </tr>
                 </table>
                 <p style="margin:0 0 24px;line-height:1.6;">
-                  Sign in to your TruFusionLabs account and open Account, then Delegate Links, to review or reject the proposal.
+                  Sign in to your TrufusionLabs account and open Account, then Delegate Links, to review or reject the proposal.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in TruFusionLabs</a>
+                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in TrufusionLabs</a>
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TrufusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
           </table>
@@ -698,11 +713,11 @@ def _build_delegate_proposal_ready_email(
   </body>
 </html>"""
     plain = (
-        "A delegate proposal is ready for review in TruFusionLabs.\n"
+        "A delegate proposal is ready for review in TrufusionLabs.\n"
         f"Proposal: {proposal_label_text}\n"
         f"Submitted: {submitted_line}\n"
-        "Sign in to TruFusionLabs and open Account > Delegate Links to review it.\n"
-        f"Open TruFusionLabs: {safe_base_url}\n"
+        "Sign in to TrufusionLabs and open Account > Delegate Links to review it.\n"
+        f"Open TrufusionLabs: {safe_base_url}\n"
         "Need help? Contact support@trufusionlabs.com."
     )
     return html, plain
@@ -740,7 +755,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -782,7 +797,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
             </tr>
             <tr>
               <td style="{footer_style}">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TrufusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
           </table>
@@ -836,7 +851,7 @@ def _build_shipping_status_email(
     outer_table_style = _email_outer_table_style()
     container_style = _email_order_container_style(560)
     account_url = safe_base_url or "https://trufusionlabs.com"
-    name_label = str(customer_name or "").strip() or "TruFusionLabs Customer"
+    name_label = str(customer_name or "").strip() or "TrufusionLabs Customer"
     order_label = str(order_number or "").strip() or "your order"
     tracking_label = str(tracking_number or "").strip() or None
     carrier_label = str(carrier_code or "").strip().upper() or None
@@ -844,26 +859,26 @@ def _build_shipping_status_email(
 
     normalized = str(status or "").strip().lower()
     if normalized == "delivered":
-        subject = f"TruFusionLabs order {order_label} delivered"
-        heading = "Your TruFusionLabs order was delivered"
+        subject = f"TrufusionLabs order {order_label} delivered"
+        heading = "Your TrufusionLabs order was delivered"
         body = "Your package has been marked as delivered."
         extra_line = f"Delivered: {delivery_label}" if delivery_label else None
         cta_label = "View Tracking"
     elif normalized == "out_for_delivery":
-        subject = f"TruFusionLabs order {order_label} is out for delivery"
-        heading = "Your TruFusionLabs order is out for delivery"
+        subject = f"TrufusionLabs order {order_label} is out for delivery"
+        heading = "Your TrufusionLabs order is out for delivery"
         body = "Your package is out for delivery and should arrive soon."
         extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
         cta_label = "Track Package"
     elif normalized == "in_transit":
-        subject = f"TruFusionLabs order {order_label} is in transit"
-        heading = "Your TruFusionLabs order is in transit"
+        subject = f"TrufusionLabs order {order_label} is in transit"
+        heading = "Your TrufusionLabs order is in transit"
         body = "Your package is moving through the carrier network."
         extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
         cta_label = "Track Package"
     else:
-        subject = f"TruFusionLabs order {order_label} has shipped"
-        heading = "Your TruFusionLabs order has shipped"
+        subject = f"TrufusionLabs order {order_label} has shipped"
+        heading = "Your TrufusionLabs order has shipped"
         body = "Your package is on the way."
         extra_line = f"Estimated delivery: {delivery_label}" if delivery_label else None
         cta_label = "Track Package"
@@ -903,7 +918,7 @@ def _build_shipping_status_email(
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
-                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -924,7 +939,7 @@ def _build_shipping_status_email(
             </tr>
             <tr>
               <td style="padding:8px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact TrufusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.</p>
               </td>
             </tr>
           </table>
@@ -969,7 +984,7 @@ def send_email_verification_email(recipient: str, verification_code: str) -> Non
         raise ValueError("recipient is required")
     logger.info("Dispatching email verification email", extra={"recipient": recipient_email})
     config = get_config()
-    subject = "Verify your TruFusionLabs account"
+    subject = "Verify your TrufusionLabs account"
     base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
     html, plain_text = _build_email_verification_email(verification_code, base_url)
     _dispatch_email(

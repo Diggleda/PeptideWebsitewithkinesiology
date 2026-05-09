@@ -399,7 +399,7 @@ export function LegalFooter({
 
                 <div className="w-full max-w-5xl mx-auto flex flex-col items-center gap-3 text-center">
                   <div className="text-xs text-slate-600 space-y-1">
-                    <p className="font-semibold text-slate-900">TruFusionLabs</p>
+                    <p className="font-semibold text-slate-900">TrufusionLabs</p>
                     <p>DBA: {MERCHANT_IDENTITY.dba}</p>
                     <p>Legal Entity: {MERCHANT_IDENTITY.legalEntity}</p>
                     <p>Address: {MERCHANT_IDENTITY.address}</p>
@@ -483,14 +483,14 @@ export function LegalFooter({
             {/* Disclaimer - left column on desktop, middle stack on mobile */}
             <div className="legal-disclaimer flex items-start justify-start w-full lg:w-auto lg:pr-10 lg:mr-auto lg:ml-0 lg:place-self-start lg:justify-self-start">
               <p className="text-xs text-slate-500 leading-relaxed pt-4 text-center lg:text-left w-full">
-                TruFusionLabs peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
+                TrufusionLabs peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
               </p>
             </div>
 
             {/* Legal text + links - middle column on desktop, bottom on mobile */}
             <div className="legal-links flex flex-col items-center text-center gap-1 w-full lg:items-start lg:text-left">
               <div className="space-y-1 text-sm text-slate-600 w-full">
-                <p className="text-xs text-slate-500">© {new Date().getFullYear()} TruFusionLabs. All rights reserved.</p>
+                <p className="text-xs text-slate-500">© {new Date().getFullYear()} TrufusionLabs. All rights reserved.</p>
                 <p className="text-xs text-slate-500"> This website design is guided by consciousness calibration.</p>
               </div>
               <nav className="mt-2 mb-2 flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
@@ -693,7 +693,7 @@ export function LegalFooter({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700" htmlFor="contact-source">How did you get introduced to TruFusionLabs?</label>
+                <label className="text-sm font-medium text-slate-700" htmlFor="contact-source">How did you get introduced to TrufusionLabs?</label>
                 <input
                   id="contact-source"
                   type="text"
