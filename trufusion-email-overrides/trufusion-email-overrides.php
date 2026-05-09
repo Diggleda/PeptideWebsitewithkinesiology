@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.15
+ * Version: 1.1.16
  */
 
 if (!defined('ABSPATH')) exit;
@@ -38,6 +38,38 @@ function trufusion_email_overrides_trufusion_address($value) {
   return $email;
 }
 
+function trufusion_email_overrides_normalize_reply_to_header($header) {
+  if (!is_string($header) || stripos($header, 'reply-to:') !== 0) {
+    return $header;
+  }
+
+  if (!trufusion_email_overrides_is_peppro_address($header)) {
+    return $header;
+  }
+
+  return 'Reply-To: ' . trufusion_email_overrides_get_from_name() . ' <' . trufusion_email_overrides_get_from_email() . '>';
+}
+
+function trufusion_email_overrides_sanitize_mail_headers($args) {
+  if (!is_array($args) || !array_key_exists('headers', $args)) {
+    return $args;
+  }
+
+  $headers = $args['headers'];
+  if (is_array($headers)) {
+    $args['headers'] = array_map('trufusion_email_overrides_normalize_reply_to_header', $headers);
+    return $args;
+  }
+
+  if (is_string($headers) && stripos($headers, 'reply-to:') !== false && preg_match('/support@peppro\.(net|com)/i', $headers)) {
+    $lines = preg_split('/\r\n|\r|\n/', $headers);
+    $lines = array_map('trufusion_email_overrides_normalize_reply_to_header', $lines);
+    $args['headers'] = implode("\r\n", $lines);
+  }
+
+  return $args;
+}
+
 function trufusion_email_overrides_get_from_email() {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_MAIL_FROM_EMAIL', 'PEPPR_MAIL_FROM_EMAIL', '');
   $value = trim($value);
@@ -65,7 +97,7 @@ function trufusion_email_overrides_get_frontend_url() {
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
   if ($value === '' || stripos($value, 'peppro') !== false) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.15';
+    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.16';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -169,6 +201,7 @@ add_filter('wp_mail_from_name', function ($name) {
   return $forced ? $forced : $name;
 }, PHP_INT_MAX);
 
+add_filter('wp_mail', 'trufusion_email_overrides_sanitize_mail_headers', PHP_INT_MAX);
 add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', 20);
 add_action('phpmailer_init', 'trufusion_email_overrides_apply_mail_identity', PHP_INT_MAX);
 
