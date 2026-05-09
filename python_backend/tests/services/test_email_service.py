@@ -116,7 +116,7 @@ class EmailServiceTests(unittest.TestCase):
 
         templates = [
             email_service._build_email_verification_email(
-                "https://trufusionlabs.com/verify-email?token=test",
+                "123456",
                 "https://trufusionlabs.com",
             )[0],
             email_service._build_password_reset_email(
@@ -164,15 +164,16 @@ class EmailServiceTests(unittest.TestCase):
         ), patch.object(email_service, "_dispatch_email") as dispatch_email:
             email_service.send_email_verification_email(
                 "doctor@example.com",
-                "https://trufusionlabs.com/verify-email?token=test",
+                "123456",
             )
 
         dispatch_email.assert_called_once()
         self.assertEqual(dispatch_email.call_args.args[0], "doctor@example.com")
         self.assertEqual(dispatch_email.call_args.args[1], "Verify your TruFusionLabs account")
         self.assertIn("Verify your TruFusionLabs account", dispatch_email.call_args.args[2])
+        self.assertIn("123456", dispatch_email.call_args.args[2])
         self.assertNotIn("cid:trufusion-logo", dispatch_email.call_args.args[2])
-        self.assertIn("https://trufusionlabs.com/verify-email?token=test", dispatch_email.call_args.args[3])
+        self.assertIn("Your verification code is: 123456", dispatch_email.call_args.args[3])
         self.assertEqual(
             dispatch_email.call_args.kwargs["from_address"],
             "TruFusionLabs <support@trufusionlabs.com>",

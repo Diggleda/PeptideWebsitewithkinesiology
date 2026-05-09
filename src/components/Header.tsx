@@ -7,7 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCircle2, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -561,6 +561,7 @@ interface HeaderProps {
   betaServices?: string[];
   onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onResendVerificationEmail?: (email: string) => Promise<void> | void;
+  onVerifyEmailCode?: (email: string, code: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout?: () => void;
   cartItems: number;
   onSearch: (query: string, options?: { submitted?: boolean }) => void;
@@ -1810,6 +1811,7 @@ export function Header({
   betaServices = [],
   onLogin,
   onResendVerificationEmail,
+  onVerifyEmailCode,
   onLogout,
   cartItems,
   onSearch,
@@ -1876,6 +1878,10 @@ export function Header({
   const [signupVerificationResendSent, setSignupVerificationResendSent] = useState(false);
   const [signupVerificationResendError, setSignupVerificationResendError] = useState('');
   const [signupVerificationStartedAt, setSignupVerificationStartedAt] = useState(0);
+  const [signupVerificationCode, setSignupVerificationCode] = useState('');
+  const [signupVerificationPending, setSignupVerificationPending] = useState(false);
+  const [signupVerificationError, setSignupVerificationError] = useState('');
+  const [signupVerificationSuccess, setSignupVerificationSuccess] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
@@ -2959,6 +2965,10 @@ export function Header({
     setSignupVerificationResendSent(false);
     setSignupVerificationResendError('');
     setSignupVerificationStartedAt(0);
+    setSignupVerificationCode('');
+    setSignupVerificationPending(false);
+    setSignupVerificationError('');
+    setSignupVerificationSuccess(false);
   }, []);
 
   useEffect(() => {
@@ -3152,7 +3162,7 @@ export function Header({
     }
 
     if (result.status === 'email_not_verified') {
-      setLoginError('Please verify your email before signing in.');
+      setLoginError('Please verify your email before signing in. Send a new code to continue.');
       setUnverifiedLoginEmail(result.email || emailValue);
       setShowLoginPassword(false);
       setShowSignupPassword(false);
@@ -3950,6 +3960,10 @@ export function Header({
       setSignupVerificationResendSent(false);
       setSignupVerificationResendError('');
       setSignupVerificationStartedAt(Date.now());
+      setSignupVerificationCode('');
+      setSignupVerificationPending(false);
+      setSignupVerificationError('');
+      setSignupVerificationSuccess(false);
       queueLoginPrefill({ email: destination, password: '' });
       setAuthMode('verify');
       setSignupError('');
@@ -9491,11 +9505,21 @@ export function Header({
                         setVerificationResendPending(true);
                         setVerificationResendSent(false);
                         try {
-                          await onResendVerificationEmail(unverifiedLoginEmail);
-                          setVerificationResendSent(true);
-                        } catch (error) {
-                          console.warn('[Auth] Verification resend failed', error);
-                          setLoginError('Unable to send a new verification email. Please try again.');
+	                          await onResendVerificationEmail(unverifiedLoginEmail);
+	                          setVerificationResendSent(true);
+                            setSignupVerificationEmail(unverifiedLoginEmail);
+                            setSignupVerificationEmailSent(true);
+                            setSignupVerificationResendSent(true);
+                            setSignupVerificationResendError('');
+                            setSignupVerificationStartedAt(Date.now());
+                            setSignupVerificationCode('');
+                            setSignupVerificationPending(false);
+                            setSignupVerificationError('');
+                            setSignupVerificationSuccess(false);
+                            setAuthMode('verify');
+	                        } catch (error) {
+	                          console.warn('[Auth] Verification resend failed', error);
+	                          setLoginError('Unable to send a new verification code. Please try again.');
                         } finally {
                           setVerificationResendPending(false);
                         }
@@ -9503,10 +9527,10 @@ export function Header({
                       className="font-semibold btn-hover-lighter disabled:opacity-60"
                       style={{ color: secondaryColor }}
                     >
-                      {verificationResendPending ? 'Sending verification email...' : 'Resend verification email'}
+	                      {verificationResendPending ? 'Sending verification code...' : 'Send verification code'}
                     </button>
                     {verificationResendSent && (
-                      <p className="mt-1 text-emerald-600">Verification email sent. Check your inbox and spam folder.</p>
+	                      <p className="mt-1 text-emerald-600">Verification code sent. Check your inbox and spam folder.</p>
                     )}
                   </div>
                 )}
@@ -9544,52 +9568,146 @@ export function Header({
                 </button>
               </p>
             </div>
-          ) : authMode === 'verify' ? (
-            <div className="space-y-5">
-              <div className="space-y-4 text-center">
-                <div
-                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border"
-                  style={{
-                    color: signupVerificationEmailSent ? secondaryColor : '#b45309',
-                    borderColor: signupVerificationEmailSent ? translucentSecondary : 'rgba(180,83,9,0.24)',
-                    backgroundColor: signupVerificationEmailSent ? logoHaloBackground : 'rgba(251,191,36,0.14)',
-                  }}
-                  aria-hidden="true"
-                >
-                  {signupVerificationEmailSent ? (
-                    <Mail className="h-7 w-7" />
-                  ) : (
-                    <AlertTriangle className="h-7 w-7" />
+	          ) : authMode === 'verify' ? (
+	            <div className="space-y-5">
+	              <div className="space-y-4 text-center">
+	                <div
+	                  className={clsx(
+	                    'mx-auto flex h-14 w-14 items-center justify-center rounded-full border',
+	                    signupVerificationSuccess && 'verification-success-badge',
+	                  )}
+	                  style={{
+	                    color: signupVerificationSuccess ? '#059669' : signupVerificationEmailSent ? secondaryColor : '#b45309',
+	                    borderColor: signupVerificationSuccess ? 'rgba(5,150,105,0.32)' : signupVerificationEmailSent ? translucentSecondary : 'rgba(180,83,9,0.24)',
+	                    backgroundColor: signupVerificationSuccess ? 'rgba(236,253,245,0.92)' : signupVerificationEmailSent ? logoHaloBackground : 'rgba(251,191,36,0.14)',
+	                  }}
+	                  aria-hidden="true"
+	                >
+	                  {signupVerificationSuccess ? (
+	                    <CheckCircle2 className="verification-success-check h-7 w-7" />
+	                  ) : signupVerificationEmailSent ? (
+	                    <Mail className="h-7 w-7" />
+	                  ) : (
+	                    <AlertTriangle className="h-7 w-7" />
                   )}
                 </div>
-                <div className="space-y-2">
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    {signupVerificationEmailSent ? 'Check your inbox' : 'Verification email was not sent'}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-slate-600">
-                    {signupVerificationEmailSent
-                      ? 'A verification link was sent to'
-                      : 'Your account was created, but the email provider did not confirm delivery to'}{' '}
-                    <span className="font-semibold text-slate-900">
-                      {signupVerificationEmail || 'your email address'}
-                    </span>
-                    . Verify your email before signing in.
-                  </p>
-                  <p className="text-xs leading-relaxed text-slate-500">
-                    Check spam or junk folders. The link expires in 10 minutes.
-                  </p>
-                </div>
-              </div>
-              {signupVerificationResendError && (
-                <p className="text-sm text-red-600 text-center" role="alert">
-                  {signupVerificationResendError}
+	                <div className="space-y-2">
+	                  <h3 className="text-lg font-semibold text-slate-900">
+	                    {signupVerificationSuccess
+	                      ? 'Email verified'
+	                      : signupVerificationEmailSent
+	                        ? 'Enter verification code'
+	                        : 'Verification email was not sent'}
+	                  </h3>
+	                  <p className="text-sm leading-relaxed text-slate-600">
+	                    {signupVerificationSuccess ? (
+	                      'Signing you in now.'
+	                    ) : (
+	                      <>
+	                        {signupVerificationEmailSent
+	                          ? 'A 6-digit code was sent to'
+	                          : 'Your account was created, but the email provider did not confirm delivery to'}{' '}
+	                        <span className="font-semibold text-slate-900">
+	                          {signupVerificationEmail || 'your email address'}
+	                        </span>
+	                        .
+	                      </>
+	                    )}
+	                  </p>
+	                  {!signupVerificationSuccess && (
+	                    <p className="text-xs leading-relaxed text-slate-500">
+	                      Check spam or junk folders. The code expires in 10 minutes.
+	                    </p>
+	                  )}
+	                </div>
+	              </div>
+	              {signupVerificationEmailSent && (
+	                <form
+	                  className="space-y-3"
+	                  onSubmit={async (event) => {
+	                    event.preventDefault();
+	                    if (
+	                      signupVerificationPending ||
+	                      signupVerificationSuccess ||
+	                      !signupVerificationEmail
+	                    ) {
+	                      return;
+	                    }
+	                    if (!onVerifyEmailCode) {
+	                      setSignupVerificationError('Email verification is unavailable right now. Please try again.');
+	                      return;
+	                    }
+	                    setSignupVerificationPending(true);
+	                    setSignupVerificationError('');
+	                    const result = await onVerifyEmailCode(
+	                      signupVerificationEmail,
+	                      signupVerificationCode,
+	                    );
+	                    if (result.status === 'success') {
+	                      setSignupVerificationSuccess(true);
+	                    } else {
+	                      setSignupVerificationError(
+	                        (result as any).message ||
+	                          'That code is incorrect or expired. Request a new code and try again.',
+	                      );
+	                    }
+	                    setSignupVerificationPending(false);
+	                  }}
+	                >
+	                  <Label htmlFor="signup-verification-code">Verification code</Label>
+	                  <Input
+	                    id="signup-verification-code"
+	                    type="text"
+	                    inputMode="numeric"
+	                    autoComplete="one-time-code"
+	                    pattern="[0-9]{6}"
+	                    maxLength={6}
+	                    value={signupVerificationCode}
+	                    disabled={signupVerificationPending || signupVerificationSuccess}
+	                    onChange={(event) => {
+	                      setSignupVerificationCode(
+	                        event.currentTarget.value.replace(/\D/g, '').slice(0, 6),
+	                      );
+	                      setSignupVerificationError('');
+	                    }}
+	                    className="glass squircle-sm text-center text-xl font-semibold tracking-[0.38em] focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)] disabled:opacity-70"
+	                    style={{ borderColor: translucentSecondary }}
+	                  />
+	                  {signupVerificationError && (
+	                    <p className="text-sm text-red-600 text-center" role="alert">
+	                      {signupVerificationError}
+	                    </p>
+	                  )}
+	                  <Button
+	                    type="submit"
+	                    className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+	                    disabled={
+	                      signupVerificationPending ||
+	                      signupVerificationSuccess ||
+	                      signupVerificationCode.length !== 6
+	                    }
+	                  >
+	                    {signupVerificationPending && (
+	                      <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
+	                    )}
+	                    {signupVerificationSuccess
+	                      ? 'Verified'
+	                      : signupVerificationPending
+	                        ? 'Verifying...'
+	                        : 'Verify code'}
+	                  </Button>
+	                </form>
+	              )}
+	              {signupVerificationResendError && (
+	                <p className="text-sm text-red-600 text-center" role="alert">
+	                  {signupVerificationResendError}
                 </p>
               )}
-              {signupVerificationResendSent && (
-                <p className="text-sm text-emerald-600 text-center" role="status">
-                  Verification email sent. Check your inbox and spam folder.
-                </p>
-              )}
+	              {signupVerificationResendSent && (
+	                <p className="text-sm text-emerald-600 text-center" role="status">
+	                  Verification code sent. Check your inbox and spam folder.
+	                </p>
+	              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <Button
                   type="button"
@@ -9597,16 +9715,19 @@ export function Header({
                   disabled={signupVerificationResendPending || !signupVerificationEmail || !onResendVerificationEmail}
                   onClick={async () => {
                     if (!onResendVerificationEmail || !signupVerificationEmail) return;
-                    setSignupVerificationResendPending(true);
-                    setSignupVerificationResendSent(false);
-                    setSignupVerificationResendError('');
-                    try {
-                      await onResendVerificationEmail(signupVerificationEmail);
-                      setSignupVerificationEmailSent(true);
-                      setSignupVerificationResendSent(true);
-                    } catch (error) {
-                      console.warn('[Auth] Verification resend failed', error);
-                      setSignupVerificationResendError('Unable to send a verification email right now. Please try again.');
+	                    setSignupVerificationResendPending(true);
+	                    setSignupVerificationResendSent(false);
+	                    setSignupVerificationResendError('');
+	                    setSignupVerificationError('');
+	                    setSignupVerificationSuccess(false);
+	                    try {
+	                      await onResendVerificationEmail(signupVerificationEmail);
+	                      setSignupVerificationEmailSent(true);
+	                      setSignupVerificationResendSent(true);
+	                      setSignupVerificationCode('');
+	                    } catch (error) {
+	                      console.warn('[Auth] Verification resend failed', error);
+	                      setSignupVerificationResendError('Unable to send a verification code right now. Please try again.');
                     } finally {
                       setSignupVerificationResendPending(false);
                     }
@@ -9615,11 +9736,11 @@ export function Header({
                   {signupVerificationResendPending && (
                     <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
                   )}
-                  {signupVerificationResendPending
-                    ? 'Sending...'
-                    : signupVerificationEmailSent
-                      ? 'Resend email'
-                      : 'Send verification email'}
+	                  {signupVerificationResendPending
+	                    ? 'Sending...'
+	                    : signupVerificationEmailSent
+	                      ? 'Resend code'
+	                      : 'Send verification code'}
                 </Button>
                 <Button
                   type="button"

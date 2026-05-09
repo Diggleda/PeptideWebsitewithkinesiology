@@ -62,7 +62,8 @@ def register():
 @blueprint.post("/verify-email")
 def verify_email():
     payload = request.get_json(force=True, silent=True) or {}
-    return handle_action(lambda: auth_service.verify_email(payload))
+    response = handle_action(lambda: auth_service.verify_email(payload))
+    return _attach_media_auth_cookie(response)
 
 
 @blueprint.post("/resend-verification")

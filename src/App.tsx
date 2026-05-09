@@ -9099,6 +9099,14 @@ function MainApp() {
     useState("");
   const [landingSignupVerificationStartedAt, setLandingSignupVerificationStartedAt] =
     useState(0);
+  const [landingSignupVerificationCode, setLandingSignupVerificationCode] =
+    useState("");
+  const [landingSignupVerificationPending, setLandingSignupVerificationPending] =
+    useState(false);
+  const [landingSignupVerificationError, setLandingSignupVerificationError] =
+    useState("");
+  const [landingSignupVerificationSuccess, setLandingSignupVerificationSuccess] =
+    useState(false);
   const [landingNpiStatus, setLandingNpiStatus] = useState<
     "idle" | "checking" | "verified" | "rejected"
   >("idle");
@@ -9131,6 +9139,10 @@ function MainApp() {
         setVerifyEmailToken(null);
         setVerifyEmailError("");
         setLandingLoginError("");
+        if (result.user) {
+          applyLoginSuccessState(result.user as User);
+          return;
+        }
         setLandingLoginNotice("Email verified. Sign in to continue.");
         setLandingAuthMode("login");
       })
@@ -9150,7 +9162,7 @@ function MainApp() {
     return () => {
       cancelled = true;
     };
-  }, [clearResetRoute, landingAuthMode, verifyEmailToken]);
+  }, [applyLoginSuccessState, clearResetRoute, landingAuthMode, verifyEmailToken]);
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
     types: [],
@@ -26334,6 +26346,10 @@ function MainApp() {
     setLandingSignupVerificationResendSent(false);
     setLandingSignupVerificationResendError("");
     setLandingSignupVerificationStartedAt(0);
+    setLandingSignupVerificationCode("");
+    setLandingSignupVerificationPending(false);
+    setLandingSignupVerificationError("");
+    setLandingSignupVerificationSuccess(false);
   }, []);
 
   const updateLandingAuthMode = useCallback(
@@ -26401,6 +26417,8 @@ function MainApp() {
           setLandingLoginNotice("");
           setLandingSignupError("");
           setLandingSignupNotice("");
+          setLandingSignupVerificationError("");
+          setLandingSignupVerificationSuccess(false);
           setShowLandingSignupPassword(false);
           setShowLandingSignupConfirm(false);
         }
@@ -26640,6 +26658,50 @@ function MainApp() {
     }
     await authAPI.resendVerification(normalized);
   }, []);
+
+  const handleVerifyEmailCode = useCallback(
+    async (email: string, code: string): Promise<AuthActionResult> => {
+      const normalizedEmail = String(email || "").trim();
+      const normalizedCode = String(code || "").replace(/\D/g, "").slice(0, 6);
+      if (!normalizedEmail) {
+        return { status: "error", message: "EMAIL_REQUIRED" };
+      }
+      if (!/^\d{6}$/.test(normalizedCode)) {
+        return { status: "error", message: "CODE_REQUIRED" };
+      }
+      try {
+        const result = await authAPI.verifyEmail({
+          email: normalizedEmail,
+          code: normalizedCode,
+        });
+        if (result.user) {
+          window.setTimeout(() => {
+            applyLoginSuccessState(result.user as User);
+          }, 700);
+        }
+        return { status: "success" };
+      } catch (error: any) {
+        const message =
+          typeof error?.message === "string" && error.message.trim()
+            ? error.message.trim()
+            : "CODE_INVALID";
+        if (message === "CODE_REQUIRED" || message === "TOKEN_REQUIRED") {
+          return { status: "error", message: "Enter the 6-digit verification code." };
+        }
+        if (message === "CODE_INVALID" || message === "TOKEN_INVALID") {
+          return {
+            status: "error",
+            message: "That code is incorrect or expired. Request a new code and try again.",
+          };
+        }
+        return {
+          status: "error",
+          message: "Unable to verify that code right now. Please try again.",
+        };
+      }
+    },
+    [applyLoginSuccessState],
+  );
 
   const handlePasswordResetRequestSubmit = async (
     event: FormEvent<HTMLFormElement>,
@@ -39102,9 +39164,10 @@ function MainApp() {
                       patientLinksEnabled={patientLinksEnabled}
                       patientLinksDoctorUserIds={patientLinksDoctorUserIds}
                       betaServices={betaServices}
-				              onLogin={handleLogin}
-				              onResendVerificationEmail={handleResendVerificationEmail}
-		              onLogout={handleLogout}
+					              onLogin={handleLogin}
+					              onResendVerificationEmail={handleResendVerificationEmail}
+                        onVerifyEmailCode={handleVerifyEmailCode}
+			              onLogout={handleLogout}
 		              cartItems={totalCartItems}
 		              onSearch={handleSearch}
 		              onCreateAccount={handleCreateAccount}
@@ -39844,11 +39907,11 @@ function MainApp() {
 	                                    setLandingLoginError(
 	                                      "We could not find that email.",
 	                                    );
-	                                  } else if (res.status === "email_not_verified") {
-	                                    setLandingUnverifiedEmail((res as any).email || loginEmail);
-	                                    setLandingLoginError(
-	                                      "Please verify your email before signing in.",
-	                                    );
+		                                  } else if (res.status === "email_not_verified") {
+		                                    setLandingUnverifiedEmail((res as any).email || loginEmail);
+		                                    setLandingLoginError(
+		                                      "Please verify your email before signing in. Send a new code to continue.",
+		                                    );
 	                                  } else {
 	                                    const issue = classifyNetworkIssue(
 	                                      (res as any)?.message ?? null,
@@ -40008,12 +40071,22 @@ function MainApp() {
                                     onClick={async () => {
                                       setLandingVerificationResendPending(true);
                                       setLandingVerificationResendSent(false);
-                                      try {
-                                        await handleResendVerificationEmail(landingUnverifiedEmail);
-                                        setLandingVerificationResendSent(true);
-                                      } catch (error) {
-                                        console.warn("[Auth] Verification resend failed", error);
-                                        setLandingLoginError("Unable to send a new verification email. Please try again.");
+	                                      try {
+	                                        await handleResendVerificationEmail(landingUnverifiedEmail);
+	                                        setLandingVerificationResendSent(true);
+	                                        setLandingSignupVerificationEmail(landingUnverifiedEmail);
+	                                        setLandingSignupVerificationEmailSent(true);
+	                                        setLandingSignupVerificationResendSent(true);
+	                                        setLandingSignupVerificationResendError("");
+	                                        setLandingSignupVerificationStartedAt(Date.now());
+	                                        setLandingSignupVerificationCode("");
+	                                        setLandingSignupVerificationPending(false);
+	                                        setLandingSignupVerificationError("");
+	                                        setLandingSignupVerificationSuccess(false);
+	                                        updateLandingAuthMode("verificationSent");
+	                                      } catch (error) {
+	                                        console.warn("[Auth] Verification resend failed", error);
+	                                        setLandingLoginError("Unable to send a new verification code. Please try again.");
                                       } finally {
                                         setLandingVerificationResendPending(false);
                                       }
@@ -40021,13 +40094,13 @@ function MainApp() {
                                     className="font-semibold hover:underline btn-hover-lighter disabled:opacity-60"
                                     style={{ color: "rgb(60, 103, 183)" }}
                                   >
-                                    {landingVerificationResendPending
-                                      ? "Sending verification email..."
-                                      : "Resend verification email"}
+	                                    {landingVerificationResendPending
+	                                      ? "Sending verification code..."
+	                                      : "Send verification code"}
                                   </button>
                                   {landingVerificationResendSent && (
                                     <p className="mt-1 text-emerald-600" role="status">
-                                      Verification email sent. Check your inbox and spam folder.
+	                                      Verification code sent. Check your inbox and spam folder.
                                     </p>
                                   )}
                                 </div>
@@ -40357,54 +40430,149 @@ function MainApp() {
                           </div>
                         </>
                       )}
-                      {landingAuthMode === "verificationSent" && (
-                        <>
-                          <div className="space-y-4 text-center">
-                            <div
-                              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border ${
-                                landingSignupVerificationEmailSent
-                                  ? "border-[rgba(60,103,183,0.22)] bg-[rgba(60,103,183,0.08)] text-[rgb(60,103,183)]"
-                                  : "border-amber-300/60 bg-amber-100/70 text-amber-700"
-                              }`}
-                              aria-hidden="true"
-                            >
-                              {landingSignupVerificationEmailSent ? (
-                                <Mail className="h-7 w-7" />
-                              ) : (
-                                <AlertTriangle className="h-7 w-7" />
-                              )}
-                            </div>
-                            <div className="space-y-2">
-                              <h1 className="text-2xl font-semibold">
-                                {landingSignupVerificationEmailSent
-                                  ? "Check your email"
-                                  : "Verification email was not sent"}
-                              </h1>
-                              <p className="text-sm leading-relaxed text-gray-600">
-                                {landingSignupVerificationEmailSent
-                                  ? "A verification link was sent to"
-                                  : "Your account was created, but the email provider did not confirm delivery to"}{" "}
-                                <span className="font-semibold text-slate-900">
-                                  {landingSignupVerificationEmail || "your email address"}
-                                </span>
-                                . Verify your email before signing in.
-                              </p>
-                              <p className="text-xs leading-relaxed text-gray-500">
-                                Check spam or junk folders. The link expires in 10 minutes.
-                              </p>
-                            </div>
-                          </div>
-                          {landingSignupVerificationResendError && (
-                            <p className="text-sm text-red-600 text-center" role="alert">
-                              {landingSignupVerificationResendError}
+	                      {landingAuthMode === "verificationSent" && (
+	                        <>
+	                          <div className="space-y-4 text-center">
+	                            <div
+	                              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border ${
+	                                landingSignupVerificationSuccess
+	                                  ? "verification-success-badge border-emerald-300 bg-emerald-50 text-emerald-600"
+	                                  : landingSignupVerificationEmailSent
+	                                  ? "border-[rgba(60,103,183,0.22)] bg-[rgba(60,103,183,0.08)] text-[rgb(60,103,183)]"
+	                                  : "border-amber-300/60 bg-amber-100/70 text-amber-700"
+	                              }`}
+	                              aria-hidden="true"
+	                            >
+	                              {landingSignupVerificationSuccess ? (
+	                                <CheckCircle2 className="verification-success-check h-7 w-7" />
+	                              ) : landingSignupVerificationEmailSent ? (
+	                                <Mail className="h-7 w-7" />
+	                              ) : (
+	                                <AlertTriangle className="h-7 w-7" />
+	                              )}
+	                            </div>
+	                            <div className="space-y-2">
+	                              <h1 className="text-2xl font-semibold">
+	                                {landingSignupVerificationSuccess
+	                                  ? "Email verified"
+	                                  : landingSignupVerificationEmailSent
+	                                    ? "Enter verification code"
+	                                  : "Verification email was not sent"}
+	                              </h1>
+	                              <p className="text-sm leading-relaxed text-gray-600">
+	                                {landingSignupVerificationSuccess ? (
+	                                  "Signing you in now."
+	                                ) : (
+	                                  <>
+	                                    {landingSignupVerificationEmailSent
+	                                      ? "A 6-digit code was sent to"
+	                                      : "Your account was created, but the email provider did not confirm delivery to"}{" "}
+	                                    <span className="font-semibold text-slate-900">
+	                                      {landingSignupVerificationEmail || "your email address"}
+	                                    </span>
+	                                    .
+	                                  </>
+	                                )}
+	                              </p>
+	                              {!landingSignupVerificationSuccess && (
+	                                <p className="text-xs leading-relaxed text-gray-500">
+	                                  Check spam or junk folders. The code expires in 10 minutes.
+	                                </p>
+	                              )}
+	                            </div>
+	                          </div>
+	                          {landingSignupVerificationEmailSent && (
+	                            <form
+	                              className="space-y-3"
+	                              onSubmit={async (event) => {
+	                                event.preventDefault();
+	                                if (
+	                                  landingSignupVerificationPending ||
+	                                  landingSignupVerificationSuccess ||
+	                                  !landingSignupVerificationEmail
+	                                ) {
+	                                  return;
+	                                }
+	                                setLandingSignupVerificationPending(true);
+	                                setLandingSignupVerificationError("");
+	                                const result = await handleVerifyEmailCode(
+	                                  landingSignupVerificationEmail,
+	                                  landingSignupVerificationCode,
+	                                );
+	                                if (result.status === "success") {
+	                                  setLandingSignupVerificationSuccess(true);
+	                                } else {
+	                                  setLandingSignupVerificationError(
+	                                    (result as any).message ||
+	                                      "That code is incorrect or expired. Request a new code and try again.",
+	                                  );
+	                                }
+	                                setLandingSignupVerificationPending(false);
+	                              }}
+	                            >
+	                              <label
+	                                htmlFor="landing-verification-code"
+	                                className="text-sm font-medium text-slate-700"
+	                              >
+	                                Verification code
+	                              </label>
+	                              <input
+	                                id="landing-verification-code"
+	                                type="text"
+	                                inputMode="numeric"
+	                                autoComplete="one-time-code"
+	                                pattern="[0-9]{6}"
+	                                maxLength={6}
+	                                value={landingSignupVerificationCode}
+	                                disabled={
+	                                  landingSignupVerificationPending ||
+	                                  landingSignupVerificationSuccess
+	                                }
+	                                onChange={(event) => {
+	                                  setLandingSignupVerificationCode(
+	                                    event.currentTarget.value.replace(/\D/g, "").slice(0, 6),
+	                                  );
+	                                  setLandingSignupVerificationError("");
+	                                }}
+	                                className="h-12 w-full squircle-sm border border-slate-200/70 bg-white/96 px-4 text-center text-xl font-semibold tracking-[0.38em] text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-70"
+	                              />
+	                              {landingSignupVerificationError && (
+	                                <p className="text-sm text-red-600 text-center" role="alert">
+	                                  {landingSignupVerificationError}
+	                                </p>
+	                              )}
+	                              <Button
+	                                type="submit"
+	                                size="lg"
+	                                className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+	                                disabled={
+	                                  landingSignupVerificationPending ||
+	                                  landingSignupVerificationSuccess ||
+	                                  landingSignupVerificationCode.length !== 6
+	                                }
+	                              >
+	                                {landingSignupVerificationPending && (
+	                                  <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
+	                                )}
+	                                {landingSignupVerificationSuccess
+	                                  ? "Verified"
+	                                  : landingSignupVerificationPending
+	                                    ? "Verifying..."
+	                                    : "Verify code"}
+	                              </Button>
+	                            </form>
+	                          )}
+	                          {landingSignupVerificationResendError && (
+	                            <p className="text-sm text-red-600 text-center" role="alert">
+	                              {landingSignupVerificationResendError}
                             </p>
                           )}
-                          {landingSignupVerificationResendSent && (
-                            <p className="text-sm text-emerald-600 text-center" role="status">
-                              Verification email sent. Check your inbox and spam folder.
-                            </p>
-                          )}
-                          <div className="grid gap-3 sm:grid-cols-2">
+	                          {landingSignupVerificationResendSent && (
+	                            <p className="text-sm text-emerald-600 text-center" role="status">
+	                              Verification code sent. Check your inbox and spam folder.
+	                            </p>
+	                          )}
+	                          <div className="grid gap-3 sm:grid-cols-2">
                             <Button
                               type="button"
                               size="lg"
@@ -40412,19 +40580,22 @@ function MainApp() {
                               disabled={landingSignupVerificationResendPending || !landingSignupVerificationEmail}
                               onClick={async () => {
                                 if (!landingSignupVerificationEmail) return;
-                                setLandingSignupVerificationResendPending(true);
-                                setLandingSignupVerificationResendSent(false);
-                                setLandingSignupVerificationResendError("");
-                                try {
-                                  await handleResendVerificationEmail(landingSignupVerificationEmail);
-                                  setLandingSignupVerificationEmailSent(true);
-                                  setLandingSignupVerificationResendSent(true);
-                                } catch (error) {
-                                  console.warn("[Auth] Verification resend failed", error);
-                                  setLandingSignupVerificationResendError(
-                                    "Unable to send a verification email right now. Please try again.",
-                                  );
-                                } finally {
+	                                setLandingSignupVerificationResendPending(true);
+	                                setLandingSignupVerificationResendSent(false);
+	                                setLandingSignupVerificationResendError("");
+	                                setLandingSignupVerificationError("");
+	                                setLandingSignupVerificationSuccess(false);
+	                                try {
+	                                  await handleResendVerificationEmail(landingSignupVerificationEmail);
+	                                  setLandingSignupVerificationEmailSent(true);
+	                                  setLandingSignupVerificationResendSent(true);
+	                                  setLandingSignupVerificationCode("");
+	                                } catch (error) {
+	                                  console.warn("[Auth] Verification resend failed", error);
+	                                  setLandingSignupVerificationResendError(
+	                                    "Unable to send a verification code right now. Please try again.",
+	                                  );
+	                                } finally {
                                   setLandingSignupVerificationResendPending(false);
                                 }
                               }}
@@ -40432,11 +40603,11 @@ function MainApp() {
                               {landingSignupVerificationResendPending && (
                                 <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
                               )}
-                              {landingSignupVerificationResendPending
-                                ? "Sending..."
-                                : landingSignupVerificationEmailSent
-                                  ? "Resend email"
-                                  : "Send verification email"}
+	                              {landingSignupVerificationResendPending
+	                                ? "Sending..."
+	                                : landingSignupVerificationEmailSent
+	                                  ? "Resend code"
+	                                  : "Send verification code"}
                             </Button>
                             <Button
                               type="button"
@@ -40514,11 +40685,15 @@ function MainApp() {
                                 setLandingSignupVerificationEmail(destination);
                                 setLandingSignupVerificationEmailSent(Boolean(res.emailSent));
                                 setLandingSignupVerificationResendPending(false);
-                                setLandingSignupVerificationResendSent(false);
-                                setLandingSignupVerificationResendError("");
-                                setLandingSignupVerificationStartedAt(Date.now());
-                                setLandingSignupNotice("");
-                                updateLandingAuthMode("verificationSent");
+	                                setLandingSignupVerificationResendSent(false);
+	                                setLandingSignupVerificationResendError("");
+	                                setLandingSignupVerificationStartedAt(Date.now());
+	                                setLandingSignupVerificationCode("");
+	                                setLandingSignupVerificationPending(false);
+	                                setLandingSignupVerificationError("");
+	                                setLandingSignupVerificationSuccess(false);
+	                                setLandingSignupNotice("");
+	                                updateLandingAuthMode("verificationSent");
                               } else if (res.status === "success") {
                                 updateLandingAuthMode("login");
                               } else if (res.status === "email_exists") {

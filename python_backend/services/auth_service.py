@@ -255,12 +255,6 @@ def _build_reset_url(token: str) -> str:
     return f"{base}/reset-password?token={token}"
 
 
-def _build_email_verification_url(token: str) -> str:
-    config = get_config()
-    base = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
-    return f"{base}/verify-email?token={token}"
-
-
 def _create_auth_token(payload: Dict, *, expires_in_seconds: int = 24 * 60 * 60) -> str:
     config = get_config()
     now = datetime.now(timezone.utc)
@@ -274,6 +268,7 @@ def _create_auth_token(payload: Dict, *, expires_in_seconds: int = 24 * 60 * 60)
 
 
 _CODE_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}$")
+_EMAIL_VERIFICATION_CODE_PATTERN = re.compile(r"^\d{6}$")
 _BCRYPT_PREFIX = re.compile(r"^\$2[abxy]\$")
 
 logger = logging.getLogger(__name__)
@@ -307,6 +302,50 @@ def _record_local_presence_login(user_id: object) -> None:
         pass
 
 
+def _issue_user_login_response(user: Dict[str, Any], *, audit_event: str = "LOGIN_SUCCESS") -> Dict:
+    new_session_id = (
+        user.get("sessionId") if _is_multi_session_exempt(user.get("email")) else _new_session_id()
+    )
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    updated = user_repository.record_successful_login(
+        str(user.get("id") or ""),
+        session_id=new_session_id,
+        at=now_iso,
+    ) or {
+        **user,
+        "visits": int(user.get("visits") or 0) + 1,
+        "lastLoginAt": now_iso,
+        "lastSeenAt": now_iso,
+        "lastInteractionAt": now_iso,
+        "isOnline": True,
+        "mustResetPassword": False,
+        "sessionId": new_session_id,
+    }
+
+    token_role = (updated.get("role") or "doctor").lower()
+    token = _create_auth_token(
+        {
+            "id": updated["id"],
+            "email": updated.get("email") or user.get("email"),
+            "role": token_role,
+            "sid": updated.get("sessionId") or new_session_id,
+        }
+    )
+    _audit(
+        audit_event,
+        {
+            "userId": updated.get("id"),
+            "role": token_role,
+            "email": updated.get("email"),
+            "sessionId": updated.get("sessionId"),
+            "isOnline": bool(updated.get("isOnline")),
+            "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        },
+    )
+    _record_local_presence_login(updated.get("id") or user.get("id"))
+    return {"token": token, "user": _sanitize_user(updated)}
+
+
 def _is_multi_session_exempt(email: Optional[str]) -> bool:
     # Shared demo account: allow concurrent sessions across devices/users.
     # This disables single-session enforcement (session id rotation) for this one email.
@@ -322,29 +361,42 @@ def _requires_email_verification(user: Optional[Dict[str, Any]]) -> bool:
     return status == "pending_email_verification" and not user.get("emailVerifiedAt")
 
 
-def _create_email_verification_token(user: Dict[str, Any]) -> str:
+def _normalize_email_verification_code(value: Any) -> str:
+    return re.sub(r"\D+", "", str(value or "").strip())[:6]
+
+
+def _email_verification_lookup_token(email: str, code: str) -> str:
+    config = get_config()
+    pepper = str(getattr(config, "jwt_secret", "") or "").strip()
+    return f"{_normalize_email(email)}:{_normalize_email_verification_code(code)}:{pepper}"
+
+
+def _create_email_verification_code(user: Dict[str, Any]) -> str:
     user_id = str(user.get("id") or "").strip()
     recipient = _normalize_email(user.get("email"))
     if not user_id or not recipient:
         raise _bad_request("EMAIL_VERIFICATION_UNAVAILABLE")
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    lookup_token = _email_verification_lookup_token(recipient, code)
     config = get_config()
     if config.mysql.get("enabled"):
-        return email_verification_token_repository.create_token(
+        email_verification_token_repository.create_token(
             user_id=user_id,
             recipient_email=recipient,
+            raw_token=lookup_token,
         )
+        return code
 
-    token = secrets.token_hex(32)
     now = datetime.now(timezone.utc)
     for existing_token, token_data in list(_EMAIL_VERIFICATION_TOKENS.items()):
         if str(token_data.get("user_id") or "") == user_id:
             _EMAIL_VERIFICATION_TOKENS.pop(existing_token, None)
-    _EMAIL_VERIFICATION_TOKENS[token] = {
+    _EMAIL_VERIFICATION_TOKENS[lookup_token] = {
         "user_id": user_id,
         "recipient_email": recipient,
         "expires": now + timedelta(seconds=email_verification_token_repository.DEFAULT_TTL_SECONDS),
     }
-    return token
+    return code
 
 
 def _send_email_verification(user: Dict[str, Any]) -> bool:
@@ -352,8 +404,8 @@ def _send_email_verification(user: Dict[str, Any]) -> bool:
     if not recipient:
         return False
     try:
-        token = _create_email_verification_token(user)
-        email_service.send_email_verification_email(recipient, _build_email_verification_url(token))
+        code = _create_email_verification_code(user)
+        email_service.send_email_verification_email(recipient, code)
         sent_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         try:
             user_repository.update({**user, "emailVerificationSentAt": sent_at})
@@ -847,49 +899,7 @@ def login(data: Dict) -> Dict:
         if _requires_email_verification(user):
             raise _forbidden("EMAIL_NOT_VERIFIED")
 
-        # Rotate session id to invalidate other devices/sessions. For the shared demo
-        # account, keep the existing session id so multiple reps can stay logged in.
-        new_session_id = (
-            user.get("sessionId") if _is_multi_session_exempt(user.get("email")) else _new_session_id()
-        )
-        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        updated = user_repository.record_successful_login(
-            str(user.get("id") or ""),
-            session_id=new_session_id,
-            at=now_iso,
-        ) or {
-            **user,
-            "visits": int(user.get("visits") or 0) + 1,
-            "lastLoginAt": now_iso,
-            "lastSeenAt": now_iso,
-            "lastInteractionAt": now_iso,
-            "isOnline": True,
-            "mustResetPassword": False,
-            "sessionId": new_session_id,
-        }
-
-        token_role = (updated.get("role") or "doctor").lower()
-        token = _create_auth_token(
-            {
-                "id": updated["id"],
-                "email": updated.get("email") or user.get("email"),
-                "role": token_role,
-                "sid": updated.get("sessionId") or new_session_id,
-            }
-        )
-        _audit(
-            "LOGIN_SUCCESS",
-            {
-                "userId": updated.get("id"),
-                "role": token_role,
-                "email": updated.get("email"),
-                "sessionId": updated.get("sessionId"),
-                "isOnline": bool(updated.get("isOnline")),
-                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            },
-        )
-        _record_local_presence_login(updated.get("id") or user.get("id"))
-        return {"token": token, "user": _sanitize_user(updated)}
+        return _issue_user_login_response(user)
 
     sales_rep = sales_rep_repository.find_by_email(email)
     if not sales_rep:
@@ -982,52 +992,82 @@ def check_email(email: str) -> Dict:
 
 
 def verify_email(data: Dict) -> Dict:
-    token = str((data or {}).get("token") or "").strip()
-    if not token:
-        raise _bad_request("TOKEN_REQUIRED")
+    payload = data or {}
+    email = _normalize_email(payload.get("email") or payload.get("recipientEmail"))
+    code = _normalize_email_verification_code(
+        payload.get("code") or payload.get("verificationCode")
+    )
+    token = str(payload.get("token") or "").strip()
+    using_code = bool(email or code)
+
+    if using_code:
+        if not email:
+            raise _bad_request("EMAIL_REQUIRED")
+        if not _EMAIL_VERIFICATION_CODE_PATTERN.fullmatch(code):
+            raise _bad_request("CODE_REQUIRED")
+        lookup_token = _email_verification_lookup_token(email, code)
+    else:
+        if not token:
+            raise _bad_request("CODE_REQUIRED")
+        lookup_token = token
 
     config = get_config()
     token_details: Optional[Dict[str, Any]] = None
 
     if config.mysql.get("enabled"):
-        token_details = email_verification_token_repository.get_valid_token(token)
+        token_details = email_verification_token_repository.get_valid_token(lookup_token)
     else:
-        token_details = _EMAIL_VERIFICATION_TOKENS.get(token)
+        token_details = _EMAIL_VERIFICATION_TOKENS.get(lookup_token)
         if token_details:
             expires = token_details.get("expires")
             if not isinstance(expires, datetime) or expires <= datetime.now(timezone.utc):
                 token_details = None
 
     if not token_details:
-        raise _bad_request("TOKEN_INVALID")
+        raise _bad_request("CODE_INVALID" if using_code else "TOKEN_INVALID")
 
     user_id = str(token_details.get("user_id") or "").strip()
     recipient_email = _normalize_email(token_details.get("recipient_email"))
     user = user_repository.find_by_id(user_id)
     if not user:
-        raise _bad_request("TOKEN_INVALID")
+        raise _bad_request("CODE_INVALID" if using_code else "TOKEN_INVALID")
     if recipient_email and _normalize_email(user.get("email")) != recipient_email:
-        raise _bad_request("TOKEN_INVALID")
+        raise _bad_request("CODE_INVALID" if using_code else "TOKEN_INVALID")
+    if email and recipient_email and email != recipient_email:
+        raise _bad_request("CODE_INVALID")
 
     now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    user_repository.update(
+    updated_user = user_repository.update(
         {
             **user,
             "status": "active",
             "emailVerifiedAt": user.get("emailVerifiedAt") or now_iso,
             "isOnline": False,
         }
-    )
+    ) or {
+        **user,
+        "status": "active",
+        "emailVerifiedAt": user.get("emailVerifiedAt") or now_iso,
+        "isOnline": False,
+    }
 
     if config.mysql.get("enabled"):
         try:
-            email_verification_token_repository.consume_token(token)
+            email_verification_token_repository.consume_token(lookup_token)
         except Exception as exc:
             logger.warning("Failed to consume email verification token", exc_info=exc)
     else:
-        _EMAIL_VERIFICATION_TOKENS.pop(token, None)
+        _EMAIL_VERIFICATION_TOKENS.pop(lookup_token, None)
 
-    return {"status": "verified", "email": user.get("email")}
+    login_response = _issue_user_login_response(
+        updated_user,
+        audit_event="EMAIL_VERIFICATION_LOGIN_SUCCESS",
+    )
+    return {
+        "status": "verified",
+        "email": updated_user.get("email") or user.get("email"),
+        **login_response,
+    }
 
 
 def resend_email_verification(email: Optional[str]) -> Dict:

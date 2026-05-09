@@ -459,9 +459,9 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
     return html, plain
 
 
-def _build_email_verification_email(verification_url: str, base_url: str) -> Tuple[str, str]:
+def _build_email_verification_email(verification_code: str, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
-    safe_url = _html.escape(str(verification_url or ""), quote=True)
+    safe_code = _html.escape(str(verification_code or "").strip(), quote=True)
     body_style = _email_body_style()
     outer_table_style = _email_outer_table_style()
     container_style = _email_container_style(520)
@@ -492,21 +492,18 @@ def _build_email_verification_email(verification_url: str, base_url: str) -> Tup
                 <p style="margin:0 0 24px;line-height:1.6;">
                   If you did not create this account, you can safely ignore this email.
                 </p>
-                <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{safe_url}" style="display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Verify Email</a>
+                <p style="margin:0 0 10px;font-size:14px;line-height:1.5;color:#6b7280;text-align:center;">
+                  Enter this verification code in the account window:
                 </p>
-                <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#6b7280;">
-                  Or copy and paste this link into your browser:
-                </p>
-                <p style="margin:0;font-size:14px;line-height:1.5;color:#3C67B7;word-break:break-all;">
-                  {safe_url}
+                <p style="margin:0 0 28px;padding:16px 18px;border:1px solid rgba(60,103,183,0.18);border-radius:14px;background:#f3f7ff;color:#0B274B;font-size:32px;font-weight:800;letter-spacing:8px;text-align:center;">
+                  {safe_code}
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
                 <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
-                <p style="margin:0;">This link will expire in 10 minutes to keep your account secure.</p>
+                <p style="margin:0;">This code will expire in 10 minutes to keep your account secure.</p>
               </td>
             </tr>
           </table>
@@ -517,8 +514,8 @@ def _build_email_verification_email(verification_url: str, base_url: str) -> Tup
 </html>"""
     plain = (
         "Thanks for creating your TruFusionLabs account.\n"
-        f"Verify your email using this link: {verification_url}\n"
-        "This link will expire in 10 minutes to keep your account secure.\n"
+        f"Your verification code is: {verification_code}\n"
+        "This code will expire in 10 minutes to keep your account secure.\n"
         "If you did not create this account, you can ignore this email.\n"
         f"Need help? Contact support@trufusionlabs.com or visit {safe_base_url}."
     )
@@ -922,7 +919,7 @@ def send_password_reset_email(recipient: str, reset_url: str) -> None:
     _dispatch_email(recipient, subject, html, plain_text)
 
 
-def send_email_verification_email(recipient: str, verification_url: str) -> None:
+def send_email_verification_email(recipient: str, verification_code: str) -> None:
     recipient_email = str(recipient or "").strip()
     if not recipient_email:
         raise ValueError("recipient is required")
@@ -930,7 +927,7 @@ def send_email_verification_email(recipient: str, verification_url: str) -> None
     config = get_config()
     subject = "Verify your TruFusionLabs account"
     base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
-    html, plain_text = _build_email_verification_email(verification_url, base_url)
+    html, plain_text = _build_email_verification_email(verification_code, base_url)
     _dispatch_email(
         recipient_email,
         subject,

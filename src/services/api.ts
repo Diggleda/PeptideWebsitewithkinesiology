@@ -1583,17 +1583,31 @@ export const authAPI = {
     };
   },
 
-  verifyEmail: async (token: string): Promise<{ status: 'verified'; email?: string }> => {
+  verifyEmail: async (
+    input: string | { email: string; code: string },
+  ): Promise<{ status: 'verified'; email?: string; user?: any }> => {
+    const body =
+      typeof input === 'string'
+        ? { token: input }
+        : { email: input.email, code: input.code };
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/verify-email`, {
       method: 'POST',
-      body: JSON.stringify({ token }),
+      credentials: 'include',
+      body: JSON.stringify(body),
     });
     if (!data || typeof data !== 'object' || (data as any).status !== 'verified') {
       throw buildServiceUnavailableError('AUTH_VERIFY_EMAIL_INVALID_RESPONSE');
     }
+    if (typeof (data as any).token === 'string' && (data as any).user && typeof (data as any).user === 'object') {
+      setAuthUserId((data as any).user?.id);
+      setAuthEmail((data as any).user?.email ?? (data as any).email ?? null);
+      syncShadowSessionMetadata((data as any).user);
+      persistAuthToken((data as any).token, { mode: 'standard' });
+    }
     return {
       status: 'verified',
       email: typeof (data as any).email === 'string' ? (data as any).email : undefined,
+      user: (data as any).user && typeof (data as any).user === 'object' ? (data as any).user : undefined,
     };
   },
 

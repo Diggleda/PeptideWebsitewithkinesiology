@@ -29,6 +29,7 @@ def create_token(
     user_id: str,
     recipient_email: str,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    raw_token: Optional[str] = None,
 ) -> str:
     normalized_user_id = str(user_id or "").strip()
     normalized_email = str(recipient_email or "").strip().lower()
@@ -38,8 +39,8 @@ def create_token(
         raise ValueError("recipient_email is required")
 
     now = _now_utc()
-    raw_token = secrets.token_hex(32)
-    token_sha256 = _sha256_hex(raw_token)
+    token_value = str(raw_token or "").strip() or secrets.token_hex(32)
+    token_sha256 = _sha256_hex(token_value)
     expires_at = now + timedelta(seconds=int(ttl_seconds or DEFAULT_TTL_SECONDS))
 
     mysql_client.execute(
@@ -75,7 +76,7 @@ def create_token(
             "created_at": _dt_to_sql(now),
         },
     )
-    return raw_token
+    return token_value
 
 
 def get_valid_token(raw_token: str) -> Optional[Dict]:

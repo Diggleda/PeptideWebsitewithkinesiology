@@ -300,10 +300,13 @@ class AuthServiceTests(unittest.TestCase):
         self.assertEqual(result["token"], "token-123")
         self.assertEqual(result["user"]["email"], "legacy@example.com")
 
-    def test_verify_email_activates_user_and_consumes_memory_token(self) -> None:
-        token = "verify-token"
+    def test_verify_email_code_activates_user_consumes_token_and_logs_in(self) -> None:
+        code = "123456"
+        config = types.SimpleNamespace(mysql={"enabled": False}, jwt_secret="test-secret")
+        with patch.object(auth_service, "get_config", return_value=config):
+            lookup_token = auth_service._email_verification_lookup_token("doctor@example.com", code)
         auth_service._EMAIL_VERIFICATION_TOKENS.clear()
-        auth_service._EMAIL_VERIFICATION_TOKENS[token] = {
+        auth_service._EMAIL_VERIFICATION_TOKENS[lookup_token] = {
             "user_id": "doctor-1",
             "recipient_email": "doctor@example.com",
             "expires": datetime.now(timezone.utc) + timedelta(hours=1),
@@ -312,36 +315,56 @@ class AuthServiceTests(unittest.TestCase):
         user = {
             "id": "doctor-1",
             "email": "doctor@example.com",
+            "role": "doctor",
             "status": "pending_email_verification",
             "emailVerifiedAt": None,
         }
+        logged_in_user = {
+            **user,
+            "status": "active",
+            "emailVerifiedAt": "verified-at",
+            "sessionId": "session-new",
+            "isOnline": True,
+        }
 
-        with patch.object(auth_service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": False})), \
+        with patch.object(auth_service, "get_config", return_value=config), \
             patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
-            patch.object(auth_service.user_repository, "update", side_effect=lambda payload: saved_payloads.append(payload) or payload):
-            result = auth_service.verify_email({"token": token})
+            patch.object(auth_service.user_repository, "update", side_effect=lambda payload: saved_payloads.append(payload) or payload), \
+            patch.object(auth_service.user_repository, "record_successful_login", return_value=logged_in_user) as record_login, \
+            patch.object(auth_service, "_create_auth_token", return_value="token-123"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value), \
+            patch.object(auth_service.presence_service, "record_ping") as record_ping:
+            result = auth_service.verify_email({"email": "doctor@example.com", "code": code})
 
-        self.assertEqual(result, {"status": "verified", "email": "doctor@example.com"})
-        self.assertNotIn(token, auth_service._EMAIL_VERIFICATION_TOKENS)
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(result["email"], "doctor@example.com")
+        self.assertEqual(result["token"], "token-123")
+        self.assertEqual(result["user"]["sessionId"], "session-new")
+        self.assertNotIn(lookup_token, auth_service._EMAIL_VERIFICATION_TOKENS)
         self.assertEqual(saved_payloads[0]["status"], "active")
         self.assertTrue(saved_payloads[0]["emailVerifiedAt"])
         self.assertFalse(saved_payloads[0]["isOnline"])
+        record_login.assert_called_once()
+        record_ping.assert_called_once_with("doctor-1", kind="interaction", is_idle=False)
 
     def test_verify_email_rejects_expired_memory_token(self) -> None:
-        token = "expired-token"
+        code = "123456"
+        config = types.SimpleNamespace(mysql={"enabled": False}, jwt_secret="test-secret")
+        with patch.object(auth_service, "get_config", return_value=config):
+            lookup_token = auth_service._email_verification_lookup_token("doctor@example.com", code)
         auth_service._EMAIL_VERIFICATION_TOKENS.clear()
-        auth_service._EMAIL_VERIFICATION_TOKENS[token] = {
+        auth_service._EMAIL_VERIFICATION_TOKENS[lookup_token] = {
             "user_id": "doctor-1",
             "recipient_email": "doctor@example.com",
             "expires": datetime.now(timezone.utc) - timedelta(seconds=1),
         }
 
-        with patch.object(auth_service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": False})), \
+        with patch.object(auth_service, "get_config", return_value=config), \
             patch.object(auth_service.user_repository, "update") as update:
             with self.assertRaises(Exception) as ctx:
-                auth_service.verify_email({"token": token})
+                auth_service.verify_email({"email": "doctor@example.com", "code": code})
 
-        self.assertEqual(str(ctx.exception), "TOKEN_INVALID")
+        self.assertEqual(str(ctx.exception), "CODE_INVALID")
         update.assert_not_called()
 
     def test_resend_email_verification_is_non_enumerating(self) -> None:
