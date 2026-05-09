@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.14
+ * Version: 1.1.15
  */
 
 if (!defined('ABSPATH')) exit;
@@ -65,7 +65,7 @@ function trufusion_email_overrides_get_frontend_url() {
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
   if ($value === '' || stripos($value, 'peppro') !== false) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.14';
+    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.15';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -113,6 +113,21 @@ function trufusion_email_overrides_email_styles($css) {
   return $css;
 }
 
+function trufusion_email_overrides_apply_mail_identity($phpmailer) {
+  if (!is_object($phpmailer)) return;
+
+  $from_email = trufusion_email_overrides_get_from_email();
+  $from_name = trufusion_email_overrides_get_from_name();
+  if (is_string($from_email) && $from_email !== '' && method_exists($phpmailer, 'setFrom')) {
+    $phpmailer->setFrom($from_email, $from_name, false);
+  }
+  if (is_string($from_email) && $from_email !== '') {
+    $phpmailer->From = $from_email;
+    $phpmailer->FromName = $from_name;
+    $phpmailer->Sender = $from_email;
+  }
+}
+
 function trufusion_email_overrides_configure_smtp($phpmailer) {
   $host = trufusion_email_overrides_get_smtp_setting('HOST', '');
   $pass = trufusion_email_overrides_get_smtp_setting('PASS', '');
@@ -141,32 +156,28 @@ function trufusion_email_overrides_configure_smtp($phpmailer) {
     $phpmailer->SMTPSecure = '';
   }
 
-  $from_email = trufusion_email_overrides_get_from_email();
-  $from_name = trufusion_email_overrides_get_from_name();
-  if (is_string($from_email) && $from_email !== '') {
-    $phpmailer->setFrom($from_email, $from_name, false);
-    $phpmailer->Sender = $from_email;
-  }
+  trufusion_email_overrides_apply_mail_identity($phpmailer);
 }
 
 add_filter('wp_mail_from', function ($from) {
   $forced = trufusion_email_overrides_get_from_email();
   return $forced ? $forced : $from;
-}, 1000);
+}, PHP_INT_MAX);
 
 add_filter('wp_mail_from_name', function ($name) {
   $forced = trufusion_email_overrides_get_from_name();
   return $forced ? $forced : $name;
-}, 1000);
+}, PHP_INT_MAX);
 
 add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', 20);
+add_action('phpmailer_init', 'trufusion_email_overrides_apply_mail_identity', PHP_INT_MAX);
 
-add_filter('woocommerce_email_header_image', 'trufusion_email_overrides_get_brand_logo_url', 1000);
-add_filter('woocommerce_email_base_color', 'trufusion_email_overrides_get_email_base_color', 1000);
-add_filter('woocommerce_email_background_color', 'trufusion_email_overrides_get_email_background_color', 1000);
-add_filter('woocommerce_email_body_background_color', 'trufusion_email_overrides_get_email_body_background_color', 1000);
-add_filter('woocommerce_email_text_color', 'trufusion_email_overrides_get_email_text_color', 1000);
-add_filter('woocommerce_email_styles', 'trufusion_email_overrides_email_styles', 1000);
+add_filter('woocommerce_email_header_image', 'trufusion_email_overrides_get_brand_logo_url', PHP_INT_MAX);
+add_filter('woocommerce_email_base_color', 'trufusion_email_overrides_get_email_base_color', PHP_INT_MAX);
+add_filter('woocommerce_email_background_color', 'trufusion_email_overrides_get_email_background_color', PHP_INT_MAX);
+add_filter('woocommerce_email_body_background_color', 'trufusion_email_overrides_get_email_body_background_color', PHP_INT_MAX);
+add_filter('woocommerce_email_text_color', 'trufusion_email_overrides_get_email_text_color', PHP_INT_MAX);
+add_filter('woocommerce_email_styles', 'trufusion_email_overrides_email_styles', PHP_INT_MAX);
 
 add_action('plugins_loaded', function () {
   if (!class_exists('WooCommerce')) return;

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Mailer Bridge
  * Description: Allows TrufusionLabs to send password reset emails via WooCommerce's email system.
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: TrufusionLabs
  */
 
@@ -40,7 +40,7 @@ function trufusion_mailer_bridge_get_frontend_url() {
 function trufusion_mailer_bridge_get_brand_logo_url($current = '') {
     $value = trufusion_mailer_bridge_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
     if ($value === '' || stripos($value, 'peppro') !== false) {
-        $value = trufusion_mailer_bridge_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.14';
+        $value = trufusion_mailer_bridge_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.15';
     }
     return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -188,6 +188,23 @@ function trufusion_mailer_bridge_get_smtp_setting($name, $fallback = '') {
     return trufusion_mailer_bridge_get_constant('TRUFUSION_SMTP_' . $suffix, 'PEPPR_SMTP_' . $suffix, $fallback);
 }
 
+function trufusion_mailer_bridge_apply_mail_identity($phpmailer) {
+    if (!is_object($phpmailer)) {
+        return;
+    }
+
+    $from_email = trufusion_mailer_bridge_get_from_email();
+    $from_name = trufusion_mailer_bridge_get_from_name();
+    if (is_string($from_email) && $from_email !== '' && method_exists($phpmailer, 'setFrom')) {
+        $phpmailer->setFrom($from_email, $from_name, false);
+    }
+    if (is_string($from_email) && $from_email !== '') {
+        $phpmailer->From = $from_email;
+        $phpmailer->FromName = $from_name;
+        $phpmailer->Sender = $from_email;
+    }
+}
+
 function trufusion_mailer_bridge_configure_smtp($phpmailer) {
     $host = trufusion_mailer_bridge_get_smtp_setting('HOST', '');
     $pass = trufusion_mailer_bridge_get_smtp_setting('PASS', '');
@@ -222,13 +239,7 @@ function trufusion_mailer_bridge_configure_smtp($phpmailer) {
         $phpmailer->SMTPSecure = '';
     }
 
-    // Improve alignment and consistency across WooCommerce emails.
-    $from_email = trufusion_mailer_bridge_get_from_email();
-    $from_name = trufusion_mailer_bridge_get_from_name();
-    if (is_string($from_email) && $from_email !== '') {
-        $phpmailer->setFrom($from_email, $from_name, false);
-        $phpmailer->Sender = $from_email;
-    }
+    trufusion_mailer_bridge_apply_mail_identity($phpmailer);
 }
 
 // Reduce WooCommerce email header logo size for TrufusionLabs-branded emails.
@@ -250,23 +261,24 @@ add_filter('woocommerce_email_styles', function ($css) {
         . "margin: 0 auto !important;"
         . "}\n";
     return $css;
-}, 100);
+}, PHP_INT_MAX);
 
-add_filter('woocommerce_email_header_image', 'trufusion_mailer_bridge_get_brand_logo_url', 1000);
+add_filter('woocommerce_email_header_image', 'trufusion_mailer_bridge_get_brand_logo_url', PHP_INT_MAX);
 
 // Force a consistent From identity across WooCommerce/WordPress email sending.
 add_filter('wp_mail_from', function ($from) {
     $forced = trufusion_mailer_bridge_get_from_email();
     return $forced ? $forced : $from;
-}, 1000);
+}, PHP_INT_MAX);
 
 add_filter('wp_mail_from_name', function ($name) {
     $forced = trufusion_mailer_bridge_get_from_name();
     return $forced ? $forced : $name;
-}, 1000);
+}, PHP_INT_MAX);
 
 // Ensure wp_mail uses SMTP when configured.
 add_action('phpmailer_init', 'trufusion_mailer_bridge_configure_smtp', 20);
+add_action('phpmailer_init', 'trufusion_mailer_bridge_apply_mail_identity', PHP_INT_MAX);
 
 add_action('rest_api_init', function () {
     register_rest_route('trufusion/v1', '/email/password-reset', array(
