@@ -173,6 +173,7 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
             "facilityPickup": True,
             "fulfillmentMethod": "facility_pickup",
             "facilityPickupRecipientName": "Jennifer Donelson",
+            "salesRepEmail": "pgibbons@trufusionlabs.com",
             "shippingAddress": {
                 "name": "Jennifer Donelson",
                 "addressLine1": "640 S Grand Ave",
@@ -231,6 +232,12 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
         self.assertTrue(
             any(
                 entry.get("key") == "trufusion_payment_details" and entry.get("value") == "Zelle"
+                for entry in payload["meta_data"]
+            )
+        )
+        self.assertTrue(
+            any(
+                entry.get("key") == "trufusion_sales_rep_email" and entry.get("value") == "pgibbons@trufusionlabs.com"
                 for entry in payload["meta_data"]
             )
         )

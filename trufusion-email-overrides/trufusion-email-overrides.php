@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.16
+ * Version: 1.1.17
  */
 
 if (!defined('ABSPATH')) exit;
@@ -36,6 +36,62 @@ function trufusion_email_overrides_trufusion_address($value) {
     return substr($email, 0, strrpos($email, '@')) . '@trufusionlabs.com';
   }
   return $email;
+}
+
+function trufusion_email_overrides_email_list($value) {
+  if (is_array($value)) {
+    $value = implode(',', $value);
+  }
+
+  $parts = preg_split('/[,;\r\n]+/', (string) $value);
+  $emails = array();
+  foreach ($parts as $part) {
+    $email = trim((string) $part);
+    if ($email === '') continue;
+    if (preg_match('/<([^>]+)>/', $email, $matches)) {
+      $email = trim((string) $matches[1]);
+    }
+    $email = sanitize_email(trufusion_email_overrides_trufusion_address($email));
+    if ($email === '' || !is_email($email)) continue;
+    $key = strtolower($email);
+    $emails[$key] = $email;
+  }
+
+  return array_values($emails);
+}
+
+function trufusion_email_overrides_order_admin_emails() {
+  $configured = trufusion_email_overrides_get_constant(
+    'TRUFUSION_ORDER_ADMIN_EMAILS',
+    'PEPPR_ORDER_ADMIN_EMAILS',
+    'support@trufusionlabs.com'
+  );
+  $emails = trufusion_email_overrides_email_list($configured);
+  return !empty($emails) ? $emails : array('support@trufusionlabs.com');
+}
+
+function trufusion_email_overrides_route_new_order_recipient($recipient, $order = null, $email = null) {
+  $emails = array();
+  foreach (trufusion_email_overrides_email_list($recipient) as $recipient_email) {
+    $emails[strtolower($recipient_email)] = $recipient_email;
+  }
+
+  foreach (trufusion_email_overrides_order_admin_emails() as $admin_email) {
+    $emails[strtolower($admin_email)] = $admin_email;
+  }
+
+  if (empty($emails)) {
+    $emails['support@trufusionlabs.com'] = 'support@trufusionlabs.com';
+  }
+
+  $routed = implode(',', array_values($emails));
+  trufusion_email_overrides_log('new_order.recipient.routed', array(
+    'order_id' => $order instanceof WC_Order ? (int) $order->get_id() : null,
+    'original' => (string) $recipient,
+    'routed' => $routed,
+  ));
+
+  return $routed;
 }
 
 function trufusion_email_overrides_normalize_reply_to_header($header) {
@@ -97,7 +153,7 @@ function trufusion_email_overrides_get_frontend_url() {
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
   if ($value === '' || stripos($value, 'peppro') !== false) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.16';
+    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.17';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -205,6 +261,7 @@ add_filter('wp_mail', 'trufusion_email_overrides_sanitize_mail_headers', PHP_INT
 add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', 20);
 add_action('phpmailer_init', 'trufusion_email_overrides_apply_mail_identity', PHP_INT_MAX);
 
+add_filter('woocommerce_email_recipient_new_order', 'trufusion_email_overrides_route_new_order_recipient', PHP_INT_MAX, 3);
 add_filter('woocommerce_email_header_image', 'trufusion_email_overrides_get_brand_logo_url', PHP_INT_MAX);
 add_filter('woocommerce_email_base_color', 'trufusion_email_overrides_get_email_base_color', PHP_INT_MAX);
 add_filter('woocommerce_email_background_color', 'trufusion_email_overrides_get_email_background_color', PHP_INT_MAX);
@@ -703,8 +760,9 @@ function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order,
   } elseif (is_object($email) && isset($email->id)) {
     $resolved_email_id = (string) $email->id;
   }
-  if ($resolved_email_id === '' || strpos($resolved_email_id, 'customer_') !== 0) {
-    trufusion_email_overrides_log('add_cc.skip.not_customer_email', array(
+  $should_add_cc = strpos($resolved_email_id, 'customer_') === 0 || $resolved_email_id === 'new_order';
+  if ($resolved_email_id === '' || !$should_add_cc) {
+    trufusion_email_overrides_log('add_cc.skip.unsupported_email', array(
       'order_id' => (int) $order->get_id(),
       'email_id' => $resolved_email_id,
     ));

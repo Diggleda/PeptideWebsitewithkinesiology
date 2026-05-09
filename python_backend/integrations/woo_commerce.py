@@ -1472,6 +1472,16 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         or customer.get("sales_rep_id")
     )
     sales_rep_code = order.get("doctorSalesRepCode") or order.get("salesRepCode")
+    sales_rep_email = _first_non_empty_text(
+        order.get("doctorSalesRepEmail"),
+        order.get("doctor_sales_rep_email"),
+        order.get("salesRepEmail"),
+        order.get("sales_rep_email"),
+        customer.get("doctorSalesRepEmail") if isinstance(customer, dict) else None,
+        customer.get("doctor_sales_rep_email") if isinstance(customer, dict) else None,
+        customer.get("salesRepEmail") if isinstance(customer, dict) else None,
+        customer.get("sales_rep_email") if isinstance(customer, dict) else None,
+    )
     method_code = HAND_DELIVERY_CODE if is_hand_delivery else (shipping_estimate.get("serviceCode") or shipping_estimate.get("serviceType") or "flat_rate")
     method_title = HAND_DELIVERY_LABEL if is_hand_delivery else (shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode") or "Shipping")
     shipping_lines.append(
@@ -1518,6 +1528,8 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         meta_data.append({"key": "trufusion_sales_rep_id", "value": sales_rep_id})
     if sales_rep_code:
         meta_data.append({"key": "trufusion_sales_rep_code", "value": sales_rep_code})
+    if sales_rep_email:
+        meta_data.append({"key": "trufusion_sales_rep_email", "value": sales_rep_email})
     if is_facility_pickup and pickup_recipient_name:
         meta_data.append(
             {
@@ -1768,6 +1780,8 @@ def update_order_metadata(details: Dict[str, Any]) -> Dict[str, Any]:
         meta.append({"key": "trufusion_sales_rep_id", "value": details.get("sales_rep_id")})
     if details.get("sales_rep_code"):
         meta.append({"key": "trufusion_sales_rep_code", "value": details.get("sales_rep_code")})
+    if details.get("sales_rep_email"):
+        meta.append({"key": "trufusion_sales_rep_email", "value": details.get("sales_rep_email")})
     if details.get("refunded") is not None:
         meta.append({"key": "trufusion_refunded", "value": "true" if details.get("refunded") else "false"})
     if details.get("stripe_refund_id"):
