@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.17
+ * Version: 1.1.18
  */
 
 if (!defined('ABSPATH')) exit;
@@ -153,7 +153,7 @@ function trufusion_email_overrides_get_frontend_url() {
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
   if ($value === '' || stripos($value, 'peppro') !== false) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.17';
+    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.18';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -750,16 +750,62 @@ function trufusion_email_overrides_resolve_rep_email($order) {
   return '';
 }
 
+function trufusion_email_overrides_resolve_email_id($email_id, $email) {
+  if (is_string($email_id) && $email_id !== '') {
+    return $email_id;
+  }
+
+  if (is_object($email) && isset($email->id)) {
+    return (string) $email->id;
+  }
+
+  return '';
+}
+
+function trufusion_email_overrides_append_mail_header($headers, $header_name, $recipient) {
+  $recipient = sanitize_email((string) $recipient);
+  if ($recipient === '' || !is_email($recipient)) return $headers;
+
+  $needle = strtolower($recipient);
+  if (is_array($headers)) {
+    $joined = strtolower(implode("\n", $headers));
+    if (strpos($joined, $needle) !== false) return $headers;
+    $headers[] = $header_name . ': ' . $recipient;
+    return $headers;
+  }
+
+  $header_str = (string) $headers;
+  if (strpos(strtolower($header_str), $needle) !== false) return $headers;
+  if ($header_str !== '' && !preg_match('/\r\n|\r|\n$/', $header_str)) {
+    $header_str .= "\r\n";
+  }
+  return $header_str . $header_name . ': ' . $recipient . "\r\n";
+}
+
+function trufusion_email_overrides_add_order_observer_bcc($headers, $email_id, $order, $email) {
+  if (!$order instanceof WC_Order) return $headers;
+
+  $resolved_email_id = trufusion_email_overrides_resolve_email_id($email_id, $email);
+  $is_customer_order_email = strpos($resolved_email_id, 'customer_') === 0;
+  if (!$is_customer_order_email) return $headers;
+
+  foreach (trufusion_email_overrides_order_admin_emails() as $admin_email) {
+    $headers = trufusion_email_overrides_append_mail_header($headers, 'Bcc', $admin_email);
+  }
+
+  trufusion_email_overrides_log('observer_bcc.added', array(
+    'order_id' => (int) $order->get_id(),
+    'email_id' => $resolved_email_id,
+    'recipients' => trufusion_email_overrides_order_admin_emails(),
+  ));
+
+  return $headers;
+}
+
 function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order, $email) {
   if (!$order instanceof WC_Order) return $headers;
 
-  // Only apply to customer-facing Woo emails.
-  $resolved_email_id = '';
-  if (is_string($email_id) && $email_id !== '') {
-    $resolved_email_id = $email_id;
-  } elseif (is_object($email) && isset($email->id)) {
-    $resolved_email_id = (string) $email->id;
-  }
+  $resolved_email_id = trufusion_email_overrides_resolve_email_id($email_id, $email);
   $should_add_cc = strpos($resolved_email_id, 'customer_') === 0 || $resolved_email_id === 'new_order';
   if ($resolved_email_id === '' || !$should_add_cc) {
     trufusion_email_overrides_log('add_cc.skip.unsupported_email', array(
@@ -798,43 +844,16 @@ function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order,
   }
 
   // Avoid duplicate CC if another plugin already added it.
-  if (is_array($headers)) {
-    $joined = implode("\n", $headers);
-    if (stripos($joined, $rep_email) !== false) {
-      trufusion_email_overrides_log('add_cc.skip.already_present', array(
-        'order_id' => (int) $order->get_id(),
-        'rep_email' => $rep_email,
-        'headers_type' => 'array',
-      ));
-      return $headers;
-    }
-    $headers[] = 'Cc: ' . $rep_email;
-    trufusion_email_overrides_log('add_cc.added', array(
-      'order_id' => (int) $order->get_id(),
-      'rep_email' => $rep_email,
-      'headers_type' => 'array',
-    ));
-    return $headers;
-  }
-
-  $header_str = (string) $headers;
-  if (stripos($header_str, $rep_email) !== false) {
-    trufusion_email_overrides_log('add_cc.skip.already_present', array(
-      'order_id' => (int) $order->get_id(),
-      'rep_email' => $rep_email,
-      'headers_type' => 'string',
-    ));
-    return $headers;
-  }
-  $header_str .= "Cc: {$rep_email}\r\n";
+  $headers = trufusion_email_overrides_append_mail_header($headers, 'Cc', $rep_email);
   trufusion_email_overrides_log('add_cc.added', array(
     'order_id' => (int) $order->get_id(),
     'rep_email' => $rep_email,
-    'headers_type' => 'string',
+    'headers_type' => is_array($headers) ? 'array' : 'string',
   ));
-  return $header_str;
+  return $headers;
 }
 
+add_filter('woocommerce_email_headers', 'trufusion_email_overrides_add_order_observer_bcc', 10, 4);
 add_filter('woocommerce_email_headers', 'trufusion_email_overrides_add_sales_rep_cc', 20, 4);
 
 function trufusion_email_overrides_normalize_money($value) {
