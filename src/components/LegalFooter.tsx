@@ -661,14 +661,14 @@ export function LegalFooter({
             </div>
             <form className="px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleContactSubmit}>
               <div className="space-y-1">
-                <label className="text-sm font-mediumtext-slate-700" htmlFor="contact-name">Name</label>
+                <label className="text-sm font-medium text-slate-700" htmlFor="contact-name">Name</label>
                 <input
                   id="contact-name"
                   type="text"
                   value={contactForm.name}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, name: e.target.value }))}
                   required
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="space-y-1">
@@ -679,7 +679,7 @@ export function LegalFooter({
                   value={contactForm.email}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, email: e.target.value }))}
                   required
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="space-y-1">
@@ -689,7 +689,7 @@ export function LegalFooter({
                   type="tel"
                   value={contactForm.phone}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="space-y-1">
@@ -699,7 +699,7 @@ export function LegalFooter({
                   type="text"
                   value={contactForm.source}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, source: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
+                  className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="flex w-full items-center justify-between pt-3 mb-4">
@@ -784,7 +784,7 @@ export function LegalFooter({
                   onChange={(e) => setBugReport(e.target.value)}
                   required
                   rows={6}
-                  className="w-full px-3 py-2 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
+                  className="w-full px-3 py-2 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                   placeholder="Describe what happened and how to reproduce it."
                 />
               </div>
