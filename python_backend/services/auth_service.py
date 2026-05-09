@@ -1027,7 +1027,7 @@ def verify_email(data: Dict) -> Dict:
     else:
         _EMAIL_VERIFICATION_TOKENS.pop(token, None)
 
-    return {"status": "verified"}
+    return {"status": "verified", "email": user.get("email")}
 
 
 def resend_email_verification(email: Optional[str]) -> Dict:

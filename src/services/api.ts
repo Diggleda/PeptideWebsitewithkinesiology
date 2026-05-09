@@ -1583,11 +1583,18 @@ export const authAPI = {
     };
   },
 
-  verifyEmail: async (token: string) => {
-    return fetchWithAuth(`${API_BASE_URL}/auth/verify-email`, {
+  verifyEmail: async (token: string): Promise<{ status: 'verified'; email?: string }> => {
+    const data = await fetchWithAuth(`${API_BASE_URL}/auth/verify-email`, {
       method: 'POST',
       body: JSON.stringify({ token }),
     });
+    if (!data || typeof data !== 'object' || (data as any).status !== 'verified') {
+      throw buildServiceUnavailableError('AUTH_VERIFY_EMAIL_INVALID_RESPONSE');
+    }
+    return {
+      status: 'verified',
+      email: typeof (data as any).email === 'string' ? (data as any).email : undefined,
+    };
   },
 
   resendVerification: async (email: string) => {

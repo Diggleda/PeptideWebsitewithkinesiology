@@ -86,9 +86,13 @@ except ModuleNotFoundError:
     sys.modules.setdefault("werkzeug.exceptions", fake_werkzeug_exceptions)
 
 from python_backend.services import auth_service
+from python_backend.repositories import email_verification_token_repository
 
 
 class AuthServiceTests(unittest.TestCase):
+    def test_email_verification_token_ttl_is_ten_minutes(self) -> None:
+        self.assertEqual(email_verification_token_repository.DEFAULT_TTL_SECONDS, 10 * 60)
+
     def test_resolve_sales_user_role_preserves_sales_lead_role(self) -> None:
         self.assertEqual(
             auth_service._resolve_sales_user_role({"role": "sales_lead", "isPartner": False}),
@@ -317,7 +321,7 @@ class AuthServiceTests(unittest.TestCase):
             patch.object(auth_service.user_repository, "update", side_effect=lambda payload: saved_payloads.append(payload) or payload):
             result = auth_service.verify_email({"token": token})
 
-        self.assertEqual(result, {"status": "verified"})
+        self.assertEqual(result, {"status": "verified", "email": "doctor@example.com"})
         self.assertNotIn(token, auth_service._EMAIL_VERIFICATION_TOKENS)
         self.assertEqual(saved_payloads[0]["status"], "active")
         self.assertTrue(saved_payloads[0]["emailVerifiedAt"])

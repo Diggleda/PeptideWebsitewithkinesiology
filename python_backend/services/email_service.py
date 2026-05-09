@@ -506,7 +506,7 @@ def _build_email_verification_email(verification_url: str, base_url: str) -> Tup
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
                 <p style="margin:0 0 4px;">Need help? Contact TruFusionLabs support at <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a> or visit <a href="{safe_base_url}" style="color:#3C67B7;text-decoration:none;">{safe_base_url}</a>.</p>
-                <p style="margin:0;">This link will expire in 24 hours to keep your account secure.</p>
+                <p style="margin:0;">This link will expire in 10 minutes to keep your account secure.</p>
               </td>
             </tr>
           </table>
@@ -518,6 +518,7 @@ def _build_email_verification_email(verification_url: str, base_url: str) -> Tup
     plain = (
         "Thanks for creating your TruFusionLabs account.\n"
         f"Verify your email using this link: {verification_url}\n"
+        "This link will expire in 10 minutes to keep your account secure.\n"
         "If you did not create this account, you can ignore this email.\n"
         f"Need help? Contact support@trufusionlabs.com or visit {safe_base_url}."
     )

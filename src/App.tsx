@@ -81,6 +81,7 @@ import {
 					Clock,
 					CheckCircle2,
 	        AlertTriangle,
+          Mail,
 					XCircle,
 					} from "lucide-react";
 import { DayPicker, type DateRange } from "react-day-picker";
@@ -2119,6 +2120,60 @@ const normalizeProfileAvatarUrl = (value: unknown): string | null => {
 
 const RESET_PASSWORD_ROUTE = "/reset-password";
 const VERIFY_EMAIL_ROUTE = "/verify-email";
+const EMAIL_VERIFICATION_BROADCAST_CHANNEL = "trufusion-email-verification";
+const EMAIL_VERIFICATION_STORAGE_KEY = "trufusion:email-verification";
+const EMAIL_VERIFICATION_BROADCAST_TYPE = "email_verified";
+const EMAIL_VERIFICATION_EVENT_MAX_AGE_MS = 10 * 60 * 1000;
+
+type EmailVerificationBroadcastPayload = {
+  type: typeof EMAIL_VERIFICATION_BROADCAST_TYPE;
+  email?: string;
+  at: number;
+};
+
+const normalizeVerificationEmail = (value: unknown) =>
+  String(value ?? "").trim().toLowerCase();
+
+const parseEmailVerificationBroadcastPayload = (
+  value: unknown,
+): EmailVerificationBroadcastPayload | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const payload = value as Record<string, unknown>;
+  if (payload.type !== EMAIL_VERIFICATION_BROADCAST_TYPE) {
+    return null;
+  }
+  const at = Number(payload.at);
+  return {
+    type: EMAIL_VERIFICATION_BROADCAST_TYPE,
+    email: typeof payload.email === "string" ? payload.email : undefined,
+    at: Number.isFinite(at) ? at : Date.now(),
+  };
+};
+
+const publishEmailVerificationBroadcast = (email?: string) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const payload: EmailVerificationBroadcastPayload = {
+    type: EMAIL_VERIFICATION_BROADCAST_TYPE,
+    email: email ? String(email).trim() : undefined,
+    at: Date.now(),
+  };
+  try {
+    const channel = new BroadcastChannel(EMAIL_VERIFICATION_BROADCAST_CHANNEL);
+    channel.postMessage(payload);
+    channel.close();
+  } catch {
+    // BroadcastChannel is not available in every browser context.
+  }
+  try {
+    window.localStorage.setItem(EMAIL_VERIFICATION_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage fallback failures.
+  }
+};
 
 const normalizePathname = (pathname?: string | null) => {
   if (!pathname) {
@@ -9042,6 +9097,8 @@ function MainApp() {
     useState(false);
   const [landingSignupVerificationResendError, setLandingSignupVerificationResendError] =
     useState("");
+  const [landingSignupVerificationStartedAt, setLandingSignupVerificationStartedAt] =
+    useState(0);
   const [landingNpiStatus, setLandingNpiStatus] = useState<
     "idle" | "checking" | "verified" | "rejected"
   >("idle");
@@ -9067,8 +9124,9 @@ function MainApp() {
     setVerifyEmailPending(true);
     authAPI
       .verifyEmail(token)
-      .then(() => {
+      .then((result) => {
         if (cancelled) return;
+        publishEmailVerificationBroadcast(result.email);
         clearResetRoute();
         setVerifyEmailToken(null);
         setVerifyEmailError("");
@@ -26275,6 +26333,7 @@ function MainApp() {
     setLandingSignupVerificationResendPending(false);
     setLandingSignupVerificationResendSent(false);
     setLandingSignupVerificationResendError("");
+    setLandingSignupVerificationStartedAt(0);
   }, []);
 
   const updateLandingAuthMode = useCallback(
@@ -26350,6 +26409,93 @@ function MainApp() {
     },
     [clearLandingSignupVerificationState, clearResetRoute, resetLandingNpiState],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const applyVerificationBroadcast = (rawPayload: unknown) => {
+      const payload = parseEmailVerificationBroadcastPayload(rawPayload);
+      if (!payload || landingAuthMode !== "verificationSent") {
+        return;
+      }
+      if (Date.now() - payload.at > EMAIL_VERIFICATION_EVENT_MAX_AGE_MS) {
+        return;
+      }
+      if (
+        landingSignupVerificationStartedAt &&
+        payload.at < landingSignupVerificationStartedAt - 1000
+      ) {
+        return;
+      }
+      const waitingEmail = normalizeVerificationEmail(landingSignupVerificationEmail);
+      const verifiedEmail = normalizeVerificationEmail(payload.email);
+      if (waitingEmail && verifiedEmail && waitingEmail !== verifiedEmail) {
+        return;
+      }
+
+      const emailForLogin = verifiedEmail || waitingEmail;
+      setLandingSignupVerificationEmailSent(true);
+      setLandingSignupVerificationResendSent(false);
+      setLandingSignupVerificationResendError("");
+      setLandingLoginError("");
+      setLandingLoginNotice("Email verified. Sign in to continue.");
+      updateLandingAuthMode("login");
+      if (emailForLogin) {
+        window.setTimeout(() => {
+          if (landingLoginEmailRef.current) {
+            landingLoginEmailRef.current.value = emailForLogin;
+          }
+        }, 0);
+      }
+    };
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(EMAIL_VERIFICATION_BROADCAST_CHANNEL);
+      channel.addEventListener("message", (event) => {
+        applyVerificationBroadcast(event.data);
+      });
+    } catch {
+      channel = null;
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== EMAIL_VERIFICATION_STORAGE_KEY || !event.newValue) {
+        return;
+      }
+      try {
+        applyVerificationBroadcast(JSON.parse(event.newValue));
+      } catch {
+        // Ignore malformed cross-tab messages.
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    try {
+      const latest = window.localStorage.getItem(EMAIL_VERIFICATION_STORAGE_KEY);
+      if (latest) {
+        applyVerificationBroadcast(JSON.parse(latest));
+      }
+    } catch {
+      // Ignore localStorage access failures.
+    }
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      try {
+        channel?.close();
+      } catch {
+        // Ignore close failures.
+      }
+    };
+  }, [
+    landingAuthMode,
+    landingSignupVerificationEmail,
+    landingSignupVerificationStartedAt,
+    updateLandingAuthMode,
+  ]);
 
   const handleLogin = (
     email: string,
@@ -40223,7 +40369,7 @@ function MainApp() {
                               aria-hidden="true"
                             >
                               {landingSignupVerificationEmailSent ? (
-                                <CheckCircle2 className="h-7 w-7" />
+                                <Mail className="h-7 w-7" />
                               ) : (
                                 <AlertTriangle className="h-7 w-7" />
                               )}
@@ -40244,7 +40390,7 @@ function MainApp() {
                                 . Verify your email before signing in.
                               </p>
                               <p className="text-xs leading-relaxed text-gray-500">
-                                Check spam or junk folders. The link expires in 24 hours.
+                                Check spam or junk folders. The link expires in 10 minutes.
                               </p>
                             </div>
                           </div>
@@ -40370,6 +40516,7 @@ function MainApp() {
                                 setLandingSignupVerificationResendPending(false);
                                 setLandingSignupVerificationResendSent(false);
                                 setLandingSignupVerificationResendError("");
+                                setLandingSignupVerificationStartedAt(Date.now());
                                 setLandingSignupNotice("");
                                 updateLandingAuthMode("verificationSent");
                               } else if (res.status === "success") {

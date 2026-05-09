@@ -7,7 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, MailCheck, AlertTriangle } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -37,6 +37,37 @@ const RefreshActionIcon = ({ spinning = false }: { spinning?: boolean }) => (
 const normalizeRole = (role?: string | null) => (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 const LOGIN_BACKEND_DOWN_TOAST_ID = 'login-backend-down';
 const LOGIN_BACKEND_DOWN_MESSAGE = 'TruFusionLabs is unavailable right now. Please try again in a minute.';
+const EMAIL_VERIFICATION_BROADCAST_CHANNEL = 'trufusion-email-verification';
+const EMAIL_VERIFICATION_STORAGE_KEY = 'trufusion:email-verification';
+const EMAIL_VERIFICATION_BROADCAST_TYPE = 'email_verified';
+const EMAIL_VERIFICATION_EVENT_MAX_AGE_MS = 10 * 60 * 1000;
+
+type EmailVerificationBroadcastPayload = {
+  type: typeof EMAIL_VERIFICATION_BROADCAST_TYPE;
+  email?: string;
+  at: number;
+};
+
+const normalizeVerificationEmail = (value: unknown) =>
+  String(value ?? '').trim().toLowerCase();
+
+const parseEmailVerificationBroadcastPayload = (
+  value: unknown,
+): EmailVerificationBroadcastPayload | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const payload = value as Record<string, unknown>;
+  if (payload.type !== EMAIL_VERIFICATION_BROADCAST_TYPE) {
+    return null;
+  }
+  const at = Number(payload.at);
+  return {
+    type: EMAIL_VERIFICATION_BROADCAST_TYPE,
+    email: typeof payload.email === 'string' ? payload.email : undefined,
+    at: Number.isFinite(at) ? at : Date.now(),
+  };
+};
 const coerceOptionalBoolean = (value: unknown): boolean | null => {
   if (value === true || value === false) return value;
   if (value == null) return null;
@@ -1844,6 +1875,7 @@ export function Header({
   const [signupVerificationResendPending, setSignupVerificationResendPending] = useState(false);
   const [signupVerificationResendSent, setSignupVerificationResendSent] = useState(false);
   const [signupVerificationResendError, setSignupVerificationResendError] = useState('');
+  const [signupVerificationStartedAt, setSignupVerificationStartedAt] = useState(0);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
@@ -2926,7 +2958,87 @@ export function Header({
     setSignupVerificationResendPending(false);
     setSignupVerificationResendSent(false);
     setSignupVerificationResendError('');
+    setSignupVerificationStartedAt(0);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const applyVerificationBroadcast = (rawPayload: unknown) => {
+      const payload = parseEmailVerificationBroadcastPayload(rawPayload);
+      if (!payload || authMode !== 'verify') {
+        return;
+      }
+      if (Date.now() - payload.at > EMAIL_VERIFICATION_EVENT_MAX_AGE_MS) {
+        return;
+      }
+      if (signupVerificationStartedAt && payload.at < signupVerificationStartedAt - 1000) {
+        return;
+      }
+      const waitingEmail = normalizeVerificationEmail(signupVerificationEmail);
+      const verifiedEmail = normalizeVerificationEmail(payload.email);
+      if (waitingEmail && verifiedEmail && waitingEmail !== verifiedEmail) {
+        return;
+      }
+
+      const emailForLogin = verifiedEmail || waitingEmail;
+      if (emailForLogin) {
+        queueLoginPrefill({ email: emailForLogin, password: '' });
+      }
+      clearSignupVerificationState();
+      setLoginError('');
+      setLoginNotice('Email verified. Sign in to continue.');
+      setAuthMode('login');
+    };
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(EMAIL_VERIFICATION_BROADCAST_CHANNEL);
+      channel.addEventListener('message', (event) => {
+        applyVerificationBroadcast(event.data);
+      });
+    } catch {
+      channel = null;
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== EMAIL_VERIFICATION_STORAGE_KEY || !event.newValue) {
+        return;
+      }
+      try {
+        applyVerificationBroadcast(JSON.parse(event.newValue));
+      } catch {
+        // Ignore malformed cross-tab messages.
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    try {
+      const latest = window.localStorage.getItem(EMAIL_VERIFICATION_STORAGE_KEY);
+      if (latest) {
+        applyVerificationBroadcast(JSON.parse(latest));
+      }
+    } catch {
+      // Ignore localStorage access failures.
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      try {
+        channel?.close();
+      } catch {
+        // Ignore close failures.
+      }
+    };
+  }, [
+    authMode,
+    clearSignupVerificationState,
+    queueLoginPrefill,
+    signupVerificationEmail,
+    signupVerificationStartedAt,
+  ]);
 
 	  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
 	    event.preventDefault();
@@ -3837,6 +3949,7 @@ export function Header({
       setSignupVerificationResendPending(false);
       setSignupVerificationResendSent(false);
       setSignupVerificationResendError('');
+      setSignupVerificationStartedAt(Date.now());
       queueLoginPrefill({ email: destination, password: '' });
       setAuthMode('verify');
       setSignupError('');
@@ -9444,7 +9557,7 @@ export function Header({
                   aria-hidden="true"
                 >
                   {signupVerificationEmailSent ? (
-                    <MailCheck className="h-7 w-7" />
+                    <Mail className="h-7 w-7" />
                   ) : (
                     <AlertTriangle className="h-7 w-7" />
                   )}
@@ -9463,7 +9576,7 @@ export function Header({
                     . Verify your email before signing in.
                   </p>
                   <p className="text-xs leading-relaxed text-slate-500">
-                    Check spam or junk folders. The link expires in 24 hours.
+                    Check spam or junk folders. The link expires in 10 minutes.
                   </p>
                 </div>
               </div>

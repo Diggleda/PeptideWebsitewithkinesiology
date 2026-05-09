@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from ..database import mysql_client
 
 
-DEFAULT_TTL_SECONDS = 24 * 60 * 60
+DEFAULT_TTL_SECONDS = 10 * 60
 
 
 def _now_utc() -> datetime:
