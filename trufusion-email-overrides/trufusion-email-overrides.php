@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.19
+ * Version: 1.1.20
  */
 
 if (!defined('ABSPATH')) exit;
@@ -64,10 +64,10 @@ function trufusion_email_overrides_order_admin_emails() {
   $configured = trufusion_email_overrides_get_constant(
     'TRUFUSION_ORDER_ADMIN_EMAILS',
     'PEPPR_ORDER_ADMIN_EMAILS',
-    'support@trufusionlabs.com,pgibbons@trufusionlabs.com'
+    'support@trufusionlabs.com'
   );
   $emails = trufusion_email_overrides_email_list($configured);
-  return !empty($emails) ? $emails : array('support@trufusionlabs.com', 'pgibbons@trufusionlabs.com');
+  return !empty($emails) ? $emails : array('support@trufusionlabs.com');
 }
 
 function trufusion_email_overrides_route_new_order_recipient($recipient, $order = null, $email = null) {
@@ -153,7 +153,7 @@ function trufusion_email_overrides_get_frontend_url() {
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
   if ($value === '' || stripos($value, 'peppro') !== false) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.19';
+    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.20';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -283,11 +283,6 @@ add_action('plugins_loaded', function () {
   add_action('woocommerce_email_header', 'trufusion_email_overrides_track_zelle_on_hold_email', 1, 2);
   add_action('woocommerce_email_footer', 'trufusion_email_overrides_clear_zelle_on_hold_email', 999, 1);
   add_filter('gettext', 'trufusion_email_overrides_translate_zelle_on_hold_intro', 20, 3);
-  add_action('woocommerce_new_order', 'trufusion_email_overrides_handle_new_order', 1000, 2);
-  add_action('woocommerce_rest_insert_shop_order_object', 'trufusion_email_overrides_handle_rest_insert_order', 1000, 3);
-  add_action('woocommerce_order_status_on-hold', 'trufusion_email_overrides_handle_order_status_notice', 1000, 2);
-  add_action('woocommerce_order_status_pending', 'trufusion_email_overrides_handle_order_status_notice', 1000, 2);
-  add_action('woocommerce_order_status_processing', 'trufusion_email_overrides_handle_order_status_notice', 1000, 2);
 
   add_action('init', function () {
     if (!function_exists('WC')) return;
@@ -330,144 +325,6 @@ function trufusion_email_overrides_is_customer_on_hold_email($email) {
 function trufusion_email_overrides_zelle_payment_message($order) {
   if (!$order instanceof WC_Order) return '';
   return "We received your order! Please Zelle support@peppro.net with the memo 'Order #{$order->get_order_number()}'.";
-}
-
-function trufusion_email_overrides_rest_meta_value($request, $key) {
-  if (!is_object($request) || !method_exists($request, 'get_json_params')) return '';
-  $params = $request->get_json_params();
-  if (!is_array($params) || empty($params['meta_data']) || !is_array($params['meta_data'])) return '';
-
-  foreach ($params['meta_data'] as $entry) {
-    if (!is_array($entry)) continue;
-    if ((string) ($entry['key'] ?? '') !== $key) continue;
-    return trim((string) ($entry['value'] ?? ''));
-  }
-
-  return '';
-}
-
-function trufusion_email_overrides_is_website_order($order, $request = null) {
-  if ($order instanceof WC_Order && trim((string) $order->get_meta('trufusion_order_id')) !== '') return true;
-  return trufusion_email_overrides_rest_meta_value($request, 'trufusion_order_id') !== '';
-}
-
-function trufusion_email_overrides_direct_order_notice_recipients($order, $request = null) {
-  $emails = array();
-  foreach (trufusion_email_overrides_order_admin_emails() as $email) {
-    $emails[strtolower($email)] = $email;
-  }
-
-  $rep_email = '';
-  if ($order instanceof WC_Order) {
-    $rep_email = trufusion_email_overrides_resolve_rep_email($order);
-  }
-  if ($rep_email === '') {
-    $rep_email = trufusion_email_overrides_rest_meta_value($request, 'trufusion_sales_rep_email');
-  }
-  foreach (trufusion_email_overrides_email_list($rep_email) as $email) {
-    $emails[strtolower($email)] = $email;
-  }
-
-  return array_values($emails);
-}
-
-function trufusion_email_overrides_direct_order_notice_html($order, $source = '') {
-  $order_number = $order instanceof WC_Order ? $order->get_order_number() : '';
-  $customer_name = $order instanceof WC_Order ? trim((string) $order->get_formatted_billing_full_name()) : '';
-  $customer_email = $order instanceof WC_Order ? sanitize_email((string) $order->get_billing_email()) : '';
-  $status = $order instanceof WC_Order ? wc_get_order_status_name($order->get_status()) : '';
-  $total = $order instanceof WC_Order ? $order->get_formatted_order_total() : '';
-  $payment = $order instanceof WC_Order ? trim((string) $order->get_payment_method_title()) : '';
-  $admin_url = $order instanceof WC_Order ? admin_url('post.php?post=' . (int) $order->get_id() . '&action=edit') : admin_url('edit.php?post_type=shop_order');
-
-  $rows = array(
-    'Order' => '#' . $order_number,
-    'Customer' => $customer_name !== '' ? $customer_name : 'Unknown',
-    'Customer email' => $customer_email !== '' ? $customer_email : 'Unknown',
-    'Status' => $status !== '' ? $status : 'Unknown',
-    'Total' => $total !== '' ? $total : 'Unknown',
-    'Payment' => $payment !== '' ? $payment : 'Unknown',
-  );
-
-  $html = '<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;">';
-  $html .= '<h1 style="font-size:22px;margin:0 0 16px;">New TrufusionLabs order received</h1>';
-  $html .= '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px;">';
-  foreach ($rows as $label => $value) {
-    $html .= '<tr>';
-    $html .= '<td style="padding:5px 14px 5px 0;color:#64748b;font-weight:700;">' . esc_html($label) . '</td>';
-    $html .= '<td style="padding:5px 0;">' . wp_kses_post($value) . '</td>';
-    $html .= '</tr>';
-  }
-  $html .= '</table>';
-  $html .= '<p style="margin:0 0 16px;"><a href="' . esc_url($admin_url) . '" style="color:#3C67B7;font-weight:700;">Open order in WooCommerce</a></p>';
-  if ($source !== '') {
-    $html .= '<p style="font-size:12px;color:#64748b;margin:0;">Notification source: ' . esc_html($source) . '</p>';
-  }
-  $html .= '</div>';
-
-  return $html;
-}
-
-function trufusion_email_overrides_send_direct_order_notice($order, $source = '', $request = null) {
-  if (!$order instanceof WC_Order) return;
-  if (!trufusion_email_overrides_is_website_order($order, $request)) return;
-
-  $sent_at = trim((string) $order->get_meta('_trufusion_direct_order_notice_sent_at'));
-  if ($sent_at !== '') {
-    trufusion_email_overrides_log('direct_notice.skip.already_sent', array(
-      'order_id' => (int) $order->get_id(),
-      'sent_at' => $sent_at,
-      'source' => $source,
-    ));
-    return;
-  }
-
-  $recipients = trufusion_email_overrides_direct_order_notice_recipients($order, $request);
-  if (empty($recipients)) {
-    trufusion_email_overrides_log('direct_notice.skip.no_recipients', array(
-      'order_id' => (int) $order->get_id(),
-      'source' => $source,
-    ));
-    return;
-  }
-
-  $subject = '[TrufusionLabs] New website order #' . $order->get_order_number();
-  $headers = array(
-    'Content-Type: text/html; charset=UTF-8',
-    'Reply-To: ' . trufusion_email_overrides_get_from_name() . ' <' . trufusion_email_overrides_get_from_email() . '>',
-  );
-  $ok = wp_mail($recipients, $subject, trufusion_email_overrides_direct_order_notice_html($order, $source), $headers);
-
-  trufusion_email_overrides_log('direct_notice.sent', array(
-    'order_id' => (int) $order->get_id(),
-    'source' => $source,
-    'ok' => (bool) $ok,
-    'recipients' => $recipients,
-  ));
-
-  if ($ok) {
-    $order->update_meta_data('_trufusion_direct_order_notice_sent_at', current_time('mysql'));
-    $order->save();
-  }
-}
-
-function trufusion_email_overrides_handle_new_order($order_id, $order = null) {
-  if (!$order instanceof WC_Order && function_exists('wc_get_order')) {
-    $order = wc_get_order($order_id);
-  }
-  trufusion_email_overrides_send_direct_order_notice($order, 'woocommerce_new_order');
-}
-
-function trufusion_email_overrides_handle_rest_insert_order($order, $request, $creating) {
-  if (!$creating || !$order instanceof WC_Order) return;
-  trufusion_email_overrides_send_direct_order_notice($order, 'woocommerce_rest_insert_shop_order_object', $request);
-}
-
-function trufusion_email_overrides_handle_order_status_notice($order_id, $order = null) {
-  if (!$order instanceof WC_Order && function_exists('wc_get_order')) {
-    $order = wc_get_order($order_id);
-  }
-  trufusion_email_overrides_send_direct_order_notice($order, 'woocommerce_order_status');
 }
 
 function trufusion_email_overrides_track_zelle_on_hold_email($email_heading, $email = null) {
@@ -925,26 +782,6 @@ function trufusion_email_overrides_append_mail_header($headers, $header_name, $r
   return $header_str . $header_name . ': ' . $recipient . "\r\n";
 }
 
-function trufusion_email_overrides_add_order_observer_bcc($headers, $email_id, $order, $email) {
-  if (!$order instanceof WC_Order) return $headers;
-
-  $resolved_email_id = trufusion_email_overrides_resolve_email_id($email_id, $email);
-  $is_customer_order_email = strpos($resolved_email_id, 'customer_') === 0;
-  if (!$is_customer_order_email) return $headers;
-
-  foreach (trufusion_email_overrides_order_admin_emails() as $admin_email) {
-    $headers = trufusion_email_overrides_append_mail_header($headers, 'Bcc', $admin_email);
-  }
-
-  trufusion_email_overrides_log('observer_bcc.added', array(
-    'order_id' => (int) $order->get_id(),
-    'email_id' => $resolved_email_id,
-    'recipients' => trufusion_email_overrides_order_admin_emails(),
-  ));
-
-  return $headers;
-}
-
 function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order, $email) {
   if (!$order instanceof WC_Order) return $headers;
 
@@ -963,6 +800,15 @@ function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order,
     trufusion_email_overrides_log('add_cc.skip.rep_not_found', array(
       'order_id' => (int) $order->get_id(),
       'email_id' => $resolved_email_id,
+    ));
+    return $headers;
+  }
+
+  if (strtolower($rep_email) === 'pgibbons@trufusionlabs.com') {
+    trufusion_email_overrides_log('add_cc.skip.pgibbons', array(
+      'order_id' => (int) $order->get_id(),
+      'email_id' => $resolved_email_id,
+      'rep_email' => $rep_email,
     ));
     return $headers;
   }
@@ -996,7 +842,6 @@ function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order,
   return $headers;
 }
 
-add_filter('woocommerce_email_headers', 'trufusion_email_overrides_add_order_observer_bcc', 10, 4);
 add_filter('woocommerce_email_headers', 'trufusion_email_overrides_add_sales_rep_cc', 20, 4);
 
 function trufusion_email_overrides_normalize_money($value) {
