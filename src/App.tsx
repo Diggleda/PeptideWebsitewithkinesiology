@@ -9087,6 +9087,7 @@ function MainApp() {
     useState(false);
   const [landingSignupError, setLandingSignupError] = useState("");
   const [landingSignupNotice, setLandingSignupNotice] = useState("");
+  const [landingSignupSubmitting, setLandingSignupSubmitting] = useState(false);
   const [landingSignupVerificationEmail, setLandingSignupVerificationEmail] =
     useState("");
   const [landingSignupVerificationEmailSent, setLandingSignupVerificationEmailSent] =
@@ -40656,9 +40657,12 @@ function MainApp() {
 	                              Join the TruFusionLabs Network
 	                            </h1>
 	                          </div>
-	                          <form
+                          <form
                             onSubmit={async (e) => {
                               e.preventDefault();
+                              if (landingSignupSubmitting) {
+                                return;
+                              }
                               setLandingSignupError("");
                               setLandingSignupNotice("");
                               const fd = new FormData(e.currentTarget);
@@ -40679,7 +40683,13 @@ function MainApp() {
                                 npiNumber:
                                   (fd.get("npiNumber") as string) || "",
                               };
-                              const res = await handleCreateAccount(details);
+                              let res: AuthActionResult;
+                              setLandingSignupSubmitting(true);
+                              try {
+                                res = await handleCreateAccount(details);
+                              } finally {
+                                setLandingSignupSubmitting(false);
+                              }
                               if (res.status === "email_verification_required") {
                                 const destination = res.email || details.email;
                                 setLandingSignupVerificationEmail(destination);
@@ -41008,9 +41018,16 @@ function MainApp() {
                               <Button
                                 type="submit"
                                 size="lg"
-                                className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter"
+                                className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                                disabled={landingSignupSubmitting}
                               >
-                                Create Account
+                                {landingSignupSubmitting && (
+                                  <Loader2
+                                    className="h-4 w-4 animate-spin-slow text-white shrink-0"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                {landingSignupSubmitting ? "Submitting..." : "Submit"}
                               </Button>
                               <p className="text-center text-sm text-gray-600">
                                 Already have an account?{" "}

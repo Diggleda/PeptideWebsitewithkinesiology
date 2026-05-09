@@ -6,7 +6,7 @@ const BRAND = Object.freeze({
   shopUrl: 'https://shop.trufusionlabs.com',
   portUrl: 'https://port.trufusionlabs.com',
   supportEmail: 'support@trufusionlabs.com',
-  legacySupportEmail: 'support@peppro.net',
+  legacySupportEmail: 'support@trufusionlabs.com',
   logoPath: 'public/TruFusionLabs_PhysiciansPortal.png',
 });
 
@@ -14,7 +14,7 @@ const LEGACY_BRAND = Object.freeze({
   name: 'PepPro',
   orderTable: 'peppro_orders',
   orderMetaPrefix: 'peppro',
-  supportEmail: 'support@peppro.net',
+  supportEmail: 'support@trufusionlabs.com',
 });
 
 const legacyMetaKey = (key) => {

@@ -6,7 +6,7 @@ export const BRAND = {
   shopUrl: "https://shop.trufusionlabs.com",
   portUrl: "https://port.trufusionlabs.com",
   supportEmail: "support@trufusionlabs.com",
-  legacySupportEmail: "support@peppro.net",
+  legacySupportEmail: "support@trufusionlabs.com",
   logoPath: "/TruFusionLabs_PhysiciansPortal.png",
   faviconPath: "/favicon.ico",
 } as const;

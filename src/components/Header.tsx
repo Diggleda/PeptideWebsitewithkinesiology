@@ -1938,6 +1938,7 @@ export function Header({
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [signupSubmitting, setSignupSubmitting] = useState(false);
   const [logoutThanksOpen, setLogoutThanksOpen] = useState(false);
   const [logoutThanksOpacity, setLogoutThanksOpacity] = useState(0);
 
@@ -3909,6 +3910,9 @@ export function Header({
 
   const handleSignup = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (signupSubmitting) {
+      return;
+    }
     const fullName = signupSuffix ? `${signupSuffix} ${signupName}`.trim() : signupName;
 
     const details = {
@@ -3924,11 +3928,21 @@ export function Header({
     setLoginError('');
     setLoginNotice('');
 
-    const result = onCreateAccount
-      ? await onCreateAccount(details)
-      : onLogin
-        ? await onLogin(signupEmail, signupPassword)
-        : ({ status: 'error', message: 'LOGIN_UNAVAILABLE' } as any);
+    let result: AuthActionResult;
+    setSignupSubmitting(true);
+    try {
+      result = onCreateAccount
+        ? await onCreateAccount(details)
+        : onLogin
+          ? await onLogin(signupEmail, signupPassword)
+          : ({ status: 'error', message: 'LOGIN_UNAVAILABLE' } as AuthActionResult);
+    } catch (error) {
+      console.warn('[Auth] Signup submit failed', error);
+      setSignupError('Unable to submit your account right now. Please try again.');
+      setSignupSubmitting(false);
+      return;
+    }
+    setSignupSubmitting(false);
 
     if (result.status === 'success') {
       setSignupName('');
@@ -9918,9 +9932,13 @@ export function Header({
                 <Button
                   type="submit"
                   size="lg"
-                  className="w-full squircle-sm glass-brand btn-hover-lighter"
+                  className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                  disabled={signupSubmitting}
                 >
-                  Create Account
+                  {signupSubmitting && (
+                    <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
+                  )}
+                  {signupSubmitting ? 'Submitting...' : 'Submit'}
                 </Button>
               </form>
               <p className="text-center text-sm text-gray-600">

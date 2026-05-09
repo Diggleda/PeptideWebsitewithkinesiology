@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TruFusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TruFusionLabs mail identity (optional SMTP).
- * Version: 1.1.12
+ * Version: 1.1.13
  */
 
 if (!defined('ABSPATH')) exit;
@@ -19,9 +19,20 @@ function trufusion_email_overrides_get_constant($primary, $legacy = '', $fallbac
   return $fallback;
 }
 
+function trufusion_email_overrides_is_peppro_address($value) {
+  $email = strtolower(trim((string) $value));
+  if (preg_match('/<([^>]+)>/', $email, $matches)) {
+    $email = strtolower(trim((string) $matches[1]));
+  }
+  return $email !== '' && (substr($email, -11) === '@peppro.net' || substr($email, -11) === '@peppro.com');
+}
+
 function trufusion_email_overrides_get_from_email() {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_MAIL_FROM_EMAIL', 'PEPPR_MAIL_FROM_EMAIL', '');
   $value = trim($value);
+  if (trufusion_email_overrides_is_peppro_address($value)) {
+    return 'support@trufusionlabs.com';
+  }
   return $value !== '' ? $value : 'support@trufusionlabs.com';
 }
 
@@ -103,6 +114,7 @@ function trufusion_email_overrides_configure_smtp($phpmailer) {
   $port = (int) trufusion_email_overrides_get_smtp_setting('PORT', '587');
   $user = trufusion_email_overrides_get_smtp_setting('USER', '');
   $secure = strtolower(trufusion_email_overrides_get_smtp_setting('SECURE', 'tls'));
+  if (trufusion_email_overrides_is_peppro_address($user)) return;
 
   $phpmailer->isSMTP();
   $phpmailer->Host = $host;

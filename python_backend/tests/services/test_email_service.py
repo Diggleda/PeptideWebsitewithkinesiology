@@ -111,6 +111,14 @@ class EmailServiceTests(unittest.TestCase):
 
         self.assertEqual(settings["from"], '"TruFusionLabs" <support@trufusionlabs.com>')
 
+    def test_email_settings_replaces_legacy_peppro_support_sender(self):
+        from python_backend.services import email_service
+
+        with patch.dict("os.environ", {"MAIL_FROM": "PepPro <support@peppro.net>"}):
+            settings = email_service._email_settings()
+
+        self.assertEqual(settings["from"], "TruFusionLabs <support@trufusionlabs.com>")
+
     def test_generated_email_templates_use_shared_solid_background(self):
         from python_backend.services import email_service
 
@@ -172,7 +180,7 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_args.args[1], "Verify your TruFusionLabs account")
         self.assertIn("Verify your TruFusionLabs account", dispatch_email.call_args.args[2])
         self.assertIn("123456", dispatch_email.call_args.args[2])
-        self.assertNotIn("cid:trufusion-logo", dispatch_email.call_args.args[2])
+        self.assertIn('src="cid:trufusion-logo"', dispatch_email.call_args.args[2])
         self.assertIn("Your verification code is: 123456", dispatch_email.call_args.args[3])
         self.assertEqual(
             dispatch_email.call_args.kwargs["from_address"],
@@ -180,6 +188,7 @@ class EmailServiceTests(unittest.TestCase):
         )
         self.assertEqual(dispatch_email.call_args.kwargs["reply_to"], "support@trufusionlabs.com")
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
+        self.assertTrue(dispatch_email.call_args.kwargs["enforce_trufusion_sender"])
 
     def test_delegate_links_beta_info_email_includes_badge_image(self):
         from python_backend.services import email_service
@@ -224,9 +233,9 @@ class EmailServiceTests(unittest.TestCase):
             def login(self, user, password):
                 events.append(("login", user, password))
 
-            def send_message(self, msg, to_addrs=None):
+            def send_message(self, msg, from_addr=None, to_addrs=None):
                 messages.append(msg)
-                events.append(("send_message", msg["To"], msg["Cc"], tuple(to_addrs or ())))
+                events.append(("send_message", from_addr, msg["To"], msg["Cc"], tuple(to_addrs or ())))
 
             def quit(self):
                 events.append(("quit",))
@@ -282,6 +291,7 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn(
             (
                 "send_message",
+                "support@trufusionlabs.com",
                 "holly@example.com",
                 "petergibbons7@icloud.com",
                 ("holly@example.com", "petergibbons7@icloud.com", "finance@example.com"),
@@ -289,9 +299,38 @@ class EmailServiceTests(unittest.TestCase):
             events,
         )
         self.assertEqual(messages[0]["Reply-To"], "support@trufusionlabs.com")
+        self.assertEqual(messages[0]["Auto-Submitted"], "auto-generated")
+        self.assertTrue(messages[0]["Message-ID"].endswith("@trufusionlabs.com>"))
         self.assertNotIn("finance@example.com", messages[0].as_string())
         content_ids = [part["Content-ID"] for part in messages[0].walk() if part["Content-ID"]]
         self.assertEqual(content_ids, ["<trufusion-logo>", "<trufusion-leaf>"])
+
+    def test_email_verification_refuses_legacy_peppro_smtp_user(self):
+        from python_backend.services import email_service
+
+        with patch.object(
+            email_service,
+            "get_config",
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com", is_production=True),
+        ), patch.object(
+            email_service,
+            "_email_settings",
+            return_value={
+                "from": "PepPro <support@peppro.net>",
+                "timeout": 15,
+                "smtp": {
+                    "host": "smtp.example.com",
+                    "user": "support@peppro.net",
+                    "pass": "secret",
+                    "port": 587,
+                    "ssl": False,
+                    "starttls": True,
+                    "auth": True,
+                },
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "legacy PepPro SMTP user"):
+                email_service.send_email_verification_email("doctor@example.com", "123456")
 
     def test_shipping_status_email_raises_when_production_dispatch_has_no_provider(self):
         from python_backend.services import email_service

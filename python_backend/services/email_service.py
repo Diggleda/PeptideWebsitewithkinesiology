@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 import logging
+from email.utils import formatdate, make_msgid, parseaddr
 from urllib.parse import quote
 
 from . import get_config
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 _SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
 _EMAIL_DEFAULT_FROM = "TruFusionLabs <support@trufusionlabs.com>"
 _EMAIL_DEFAULT_REPLY_TO = "support@trufusionlabs.com"
+_EMAIL_DEFAULT_DOMAIN = "trufusionlabs.com"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
@@ -219,8 +221,40 @@ def _format_from_address(raw: str) -> Dict[str, str]:
     return {"email": raw.strip()}
 
 
+def _extract_email_address(raw: Optional[str]) -> str:
+    return parseaddr(str(raw or ""))[1].strip().lower()
+
+
+def _is_legacy_support_address(raw: Optional[str]) -> bool:
+    email = _extract_email_address(raw)
+    return email in {"support@peppro.net", "support@peppro.com"}
+
+
+def _is_peppro_domain_address(raw: Optional[str]) -> bool:
+    email = _extract_email_address(raw)
+    return email.endswith("@peppro.net") or email.endswith("@peppro.com")
+
+
 def _normalize_from_brand(raw: Optional[str]) -> str:
+    if _is_legacy_support_address(raw):
+        return _EMAIL_DEFAULT_FROM
     return str(raw or _EMAIL_DEFAULT_FROM).replace("TruFusion Labs", "TruFusionLabs")
+
+
+def _assert_trufusion_sender_settings(settings: Dict[str, Any]) -> None:
+    from_email = _extract_email_address(settings.get("from"))
+    if from_email != _EMAIL_DEFAULT_REPLY_TO:
+        raise RuntimeError(
+            f"Email verification must send from {_EMAIL_DEFAULT_REPLY_TO}; got {from_email or 'unconfigured'}"
+        )
+
+    smtp = settings.get("smtp") if isinstance(settings.get("smtp"), dict) else {}
+    smtp_user = _extract_email_address((smtp or {}).get("user"))
+    if _is_peppro_domain_address(smtp_user):
+        raise RuntimeError(
+            "Email verification is configured with a legacy PepPro SMTP user/domain. "
+            "Set SMTP_USER/EMAIL_USER to support@trufusionlabs.com or use an authenticated TruFusionLabs relay."
+        )
 
 
 @lru_cache(maxsize=1)
@@ -350,12 +384,17 @@ def _send_via_smtp(
         raise RuntimeError("SMTP password is not configured")
 
     from_addr = _format_from_address(settings["from"])
+    from_email = from_addr.get("email") or ""
+    from_domain = from_email.rsplit("@", 1)[1] if "@" in from_email else _EMAIL_DEFAULT_DOMAIN
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["To"] = recipient
     msg["From"] = (
         f"{from_addr.get('name')} <{from_addr.get('email')}>" if from_addr.get("name") else from_addr.get("email")
     )
+    msg["Date"] = formatdate(localtime=False)
+    msg["Message-ID"] = make_msgid(domain=from_domain)
+    msg["Auto-Submitted"] = "auto-generated"
     if reply_to:
         msg["Reply-To"] = reply_to
 
@@ -385,7 +424,7 @@ def _send_via_smtp(
                 server.login(user, password)
             else:
                 server.login(from_addr.get("email") or "", password)
-        server.send_message(msg, to_addrs=[recipient, *cc_recipients, *bcc_recipients])
+        server.send_message(msg, from_addr=from_email, to_addrs=[recipient, *cc_recipients, *bcc_recipients])
     finally:
         try:
             server.quit()
@@ -462,6 +501,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
 def _build_email_verification_email(verification_code: str, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     safe_code = _html.escape(str(verification_code or "").strip(), quote=True)
+    logo_url = _EMAIL_LOGO_SRC
     body_style = _email_body_style()
     outer_table_style = _email_outer_table_style()
     container_style = _email_container_style(520)
@@ -479,8 +519,8 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
         <td align="center">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
             <tr>
-              <td style="padding:28px 28px 0;text-align:center;" align="center">
-                <p style="margin:0;font-size:18px;font-weight:700;letter-spacing:0;color:#0B274B;">TruFusionLabs</p>
+              <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TruFusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
@@ -533,6 +573,7 @@ def _dispatch_email(
     from_address: Optional[str] = None,
     reply_to: Optional[str] = None,
     raise_on_failure: bool = False,
+    enforce_trufusion_sender: bool = False,
 ) -> None:
     cc_recipients = _normalize_extra_recipients(cc)
     bcc_recipients = _normalize_extra_recipients(bcc)
@@ -549,6 +590,9 @@ def _dispatch_email(
     settings = dict(_email_settings())
     if from_address:
         settings["from"] = _normalize_from_brand(from_address)
+    if enforce_trufusion_sender:
+        settings["from"] = _EMAIL_DEFAULT_FROM
+        _assert_trufusion_sender_settings(settings)
 
     if config.is_production:
         failures: list[str] = []
@@ -936,6 +980,7 @@ def send_email_verification_email(recipient: str, verification_code: str) -> Non
         from_address=_EMAIL_DEFAULT_FROM,
         reply_to=_EMAIL_DEFAULT_REPLY_TO,
         raise_on_failure=True,
+        enforce_trufusion_sender=True,
     )
 
 
