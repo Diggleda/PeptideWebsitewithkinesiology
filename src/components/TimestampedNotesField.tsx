@@ -340,12 +340,22 @@ export function TimestampedNotesField({
               <Popover.Trigger asChild disabled={disabled}>
                 <button
                   type="button"
+                  disabled={disabled}
                   className={cn(
-                    "timestamp-chip inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold tracking-tight",
+                    "timestamp-chip relative z-10 inline-flex min-h-6 shrink-0 items-center justify-center whitespace-nowrap rounded-sm px-1 text-[11px] font-semibold tracking-tight",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.3)]",
                     disabled ? "cursor-not-allowed opacity-60" : "",
                   )}
                   aria-label="Edit timestamp"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!disabled) {
+                      setTimestampEditorIndex(isEditorOpen ? null : index);
+                    }
+                  }}
                 >
                   <span className="timestamp-chip__label">[{formatted}]</span>
                   <span className="timestamp-chip__edit pointer-events-none">
@@ -363,7 +373,10 @@ export function TimestampedNotesField({
                   side="bottom"
                   align="start"
                   sideOffset={8}
-                  className="timestamp-editor-popover z-[10000] w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-xl p-3 shadow-xl"
+                  className="timestamp-editor-popover pointer-events-auto z-[20000] w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-xl p-3 shadow-xl"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
                 >
                   <div className="timestamp-editor-popover__grid-wrap">
                     <button
@@ -419,7 +432,7 @@ export function TimestampedNotesField({
               value={entry.text}
               onChange={(event) => handleEntryTextChange(index, event.target.value)}
               onKeyDown={(event) => handleEntryKeyDown(index, event)}
-              className="min-h-7 w-full flex-1 resize-none overflow-hidden bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              className="relative z-0 min-h-7 w-full flex-1 resize-none overflow-hidden bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
               rows={1}
               disabled={disabled}
             />

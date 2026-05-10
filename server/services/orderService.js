@@ -134,6 +134,9 @@ const fetchHouseLeadUsersFromSql = async () => {
           email,
           phone,
           profile_image_url,
+          greater_area,
+          study_focus,
+          bio,
           sales_rep_id,
           lead_type
         FROM users
@@ -3179,6 +3182,9 @@ const getOrdersForSalesRep = async (
           name: doctor.name || doctor.email || getDoctorFallbackName(id),
           email: doctor.email || null,
           profileImageUrl: doctor.profileImageUrl || null,
+          greaterArea: doctor.greaterArea || doctor.greater_area || null,
+          studyFocus: doctor.studyFocus || doctor.study_focus || null,
+          bio: doctor.bio || null,
           phone: doctor.phone || null,
           leadType: doctor.leadType || doctor.lead_type || null,
           leadTypeSource: doctor.leadTypeSource || doctor.lead_type_source || null,
@@ -3213,6 +3219,9 @@ const getOrdersForSalesRep = async (
           name: row?.name || row?.email || getDoctorFallbackName(doctorId),
           email: row?.email || null,
           profileImageUrl: row?.profile_image_url || null,
+          greaterArea: row?.greater_area || row?.greaterArea || null,
+          studyFocus: row?.study_focus || row?.studyFocus || null,
+          bio: row?.bio || null,
           phone: row?.phone || null,
           leadType: 'house',
           leadTypeSource: 'users.lead_type',
@@ -3279,12 +3288,18 @@ const getOrdersForSalesRep = async (
         const name = user?.name || user?.email || getDoctorFallbackName(doctorId);
         const email = user?.email || null;
         const profileImageUrl = user?.profileImageUrl || null;
+        const greaterArea = user?.greaterArea || user?.greater_area || null;
+        const studyFocus = user?.studyFocus || user?.study_focus || null;
+        const bio = user?.bio || null;
         const rep = salesRepId ? repDirectory.get(salesRepId) : null;
         doctorLookup.set(doctorId, {
           id: doctorId,
           name,
           email,
           profileImageUrl,
+          greaterArea,
+          studyFocus,
+          bio,
           salesRepId: salesRepId || null,
           salesRepName: rep?.name || null,
           salesRepEmail: rep?.email || null,

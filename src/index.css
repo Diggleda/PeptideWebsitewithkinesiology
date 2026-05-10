@@ -6043,6 +6043,7 @@ html {
   position: relative;
   background: transparent;
   color: rgb(51, 65, 85);
+  cursor: pointer;
   transition: color 150ms ease;
 }
 
@@ -6060,6 +6061,11 @@ html {
   contain: paint;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+.timestamp-editor-popover[role="dialog"] {
+  z-index: 20000 !important;
+  pointer-events: auto !important;
 }
 
 .timestamp-editor-popover::before {
@@ -7815,12 +7821,6 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   white-space: nowrap;
 }
 
-.manufacturing-certification-label {
-  color: rgb(60, 103, 183);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
 .partnered-protixa-cta {
   appearance: none;
   border: 0;
@@ -9290,40 +9290,45 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
 
 @keyframes verification-success-pop {
   0% {
-    transform: scale(0.72);
     opacity: 0.35;
   }
   62% {
-    transform: scale(1.12);
     opacity: 1;
   }
   100% {
-    transform: scale(1);
     opacity: 1;
   }
 }
 
 @keyframes verification-success-check {
   0% {
-    transform: scale(0.42) rotate(-16deg);
+    transform: rotate(-16deg);
     opacity: 0;
   }
   68% {
-    transform: scale(1.12) rotate(4deg);
+    transform: rotate(4deg);
     opacity: 1;
   }
   100% {
-    transform: scale(1) rotate(0deg);
+    transform: rotate(0deg);
     opacity: 1;
   }
 }
 
 .verification-success-badge {
   animation: verification-success-pop 430ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
 }
 
 .verification-success-check {
   animation: verification-success-check 520ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+  max-width: 1.75rem !important;
+  max-height: 1.75rem !important;
+  flex: 0 0 1.75rem;
   transform-origin: center;
 }
 
@@ -10077,14 +10082,14 @@ a[href^="mailto:"]:hover {
 
 .calendar-popover-modal-drag-zone {
   position: sticky;
-  top: 10;
+  top: -7px;
   z-index: 10060;
   display: flex;
   flex: 0 0 auto;
   height: 2rem;
   width: min(12rem, 36%);
   min-width: 5rem;
-  margin: -1.5rem auto -0.5rem;
+  margin: -1.2rem auto -0.8rem;
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -11769,15 +11774,17 @@ body.theme-leaf[data-delegate-theme="true"] .dev-theme-root {
 }
 
 .sales-dashboard-draggable-modal-grip {
-  position: sticky;
-  top: 10px;
+  position: absolute;
+  top: 0.625rem;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 10060;
   display: flex;
   flex: 0 0 auto;
   height: 2rem;
   width: min(12rem, 36%);
   min-width: 5rem;
-  margin: -1.5rem auto -0.5rem;
+  margin: 0;
   cursor: grab;
   touch-action: none;
   user-select: none;

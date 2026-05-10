@@ -10,6 +10,9 @@ import {
   Fragment,
   forwardRef,
   type CSSProperties,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
@@ -76,6 +79,7 @@ import {
 					  Upload,
 					  Download,
 					  NotebookPen,
+            Check,
 					  CheckSquare,
 					  Trash2,
 					Clock,
@@ -2517,6 +2521,53 @@ const isHouseLeadTypeValue = (value: unknown) => {
   );
 };
 
+const getLeadSourceSystem = (record: any) =>
+  normalizeLeadTypeValue(
+    record?.sourceSystem ||
+      record?.source_system ||
+      record?.source ||
+      record?.leadSource ||
+      record?.lead_source,
+  );
+
+const isAccountLeadRecord = (record: any) => {
+  const source = getLeadSourceSystem(record);
+  return (
+    record?.syntheticAccountProspect === true ||
+    source === "account" ||
+    source === "doctor" ||
+    source === "user"
+  );
+};
+
+const isManualLeadRecord = (record: any) => {
+  const id = String(record?.id || "");
+  return id.startsWith("manual:") || getLeadSourceSystem(record) === "manual";
+};
+
+const isReferralCreditLeadRecord = (record: any) => {
+  if (!record || typeof record !== "object") {
+    return false;
+  }
+  if (
+    isAccountLeadRecord(record) ||
+    isManualLeadRecord(record) ||
+    isHouseContactProspectRow(record)
+  ) {
+    return false;
+  }
+
+  const source = getLeadSourceSystem(record);
+  if (source && source !== "referral") {
+    return false;
+  }
+
+  const referrerDoctorId = String(
+    record?.referrerDoctorId || record?.referrer_doctor_id || "",
+  ).trim();
+  return Boolean(referrerDoctorId);
+};
+
 const isHouseContactProspectRow = (row: any) => {
   if (!row || typeof row !== "object") {
     return false;
@@ -3906,6 +3957,258 @@ const normalizeAccountOrdersResponse = (
     return tsB - tsA;
   });
 };
+
+const ON_HOLD_ORDERS_LIMIT = 1200;
+const ON_HOLD_REFRESH_TTL_MS = 25_000;
+const ON_HOLD_POLL_INTERVAL_MS = 25_000;
+const ON_HOLD_POLL_LEADER_TTL_MS = Math.max(45_000, ON_HOLD_POLL_INTERVAL_MS * 2);
+const ON_HOLD_ORDERS_GRID_TEMPLATE =
+  "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)";
+
+type OnHoldOrdersRefreshOptions = { force?: boolean };
+
+type OnHoldOrdersResourceConfig = {
+  options?: OnHoldOrdersRefreshOptions;
+  allowed: boolean;
+  paused?: boolean;
+  ordersRef: MutableRefObject<AccountOrderSummary[]>;
+  lastFetchAtRef: MutableRefObject<number>;
+  inFlightRef: MutableRefObject<boolean>;
+  endpointUnavailableRef?: MutableRefObject<boolean>;
+  setOrders: Dispatch<SetStateAction<AccountOrderSummary[]>>;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+  setRefreshing: Dispatch<SetStateAction<boolean>>;
+  setHasSettled: Dispatch<SetStateAction<boolean>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+  loadOrders: () => Promise<unknown>;
+  fallbackOrders?: () => AccountOrderSummary[];
+};
+
+const isOrderOnHoldStatus = (status?: string | null) => {
+  const normalized = String(status || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s_]+/g, "-");
+  return normalized === "on-hold" || normalized === "onhold";
+};
+
+const sortOrdersNewestFirst = <T extends AccountOrderSummary>(orders: T[]): T[] =>
+  [...orders].sort((a, b) => {
+    const aTime = resolveOrderSortTimeMs(a as any);
+    const bTime = resolveOrderSortTimeMs(b as any);
+    const safeA = Number.isFinite(aTime) ? aTime : 0;
+    const safeB = Number.isFinite(bTime) ? bTime : 0;
+    return safeB - safeA;
+  });
+
+const normalizeOnHoldOrdersResponse = (response: unknown): AccountOrderSummary[] => {
+  const rawOrders = Array.isArray((response as any)?.orders)
+    ? ((response as any).orders as any[])
+    : Array.isArray(response)
+      ? (response as any[])
+      : [];
+  const normalized = normalizeAccountOrdersResponse(
+    { woo: rawOrders },
+    { includeCanceled: true },
+  );
+  const sourceOrders =
+    normalized.length > 0 ? normalized : (rawOrders as AccountOrderSummary[]);
+  return sortOrdersNewestFirst(sourceOrders);
+};
+
+const resetOnHoldOrdersResource = (config: OnHoldOrdersResourceConfig) => {
+  config.setOrders([]);
+  config.setError(null);
+  config.setLoading(false);
+  config.setRefreshing(false);
+  config.setHasSettled(false);
+};
+
+const isOnHoldOrdersAuthFailure = (error: any) => {
+  const status = typeof error?.status === "number" ? error.status : null;
+  const code = typeof error?.code === "string" ? error.code : null;
+  const authCode = typeof error?.authCode === "string" ? error.authCode : null;
+  return (
+    code === "AUTH_REQUIRED" ||
+    status === 401 ||
+    (status === 403 && typeof authCode === "string" && authCode.startsWith("TOKEN_"))
+  );
+};
+
+const isOnHoldOrdersEndpointUnavailable = (error: any) => {
+  const status = typeof error?.status === "number" ? error.status : null;
+  const messageText = typeof error?.message === "string" ? error.message : "";
+  const lower = messageText.toLowerCase();
+  return (
+    status === 404 ||
+    lower.includes("load failed") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror") ||
+    lower.includes("preflight") ||
+    lower.includes("cors")
+  );
+};
+
+const getOnHoldOrdersErrorMessage = (error: any) =>
+  typeof error?.message === "string" && error.message
+    ? error.message
+    : "Unable to load on-hold orders.";
+
+const applyOnHoldOrdersFallback = (
+  config: OnHoldOrdersResourceConfig,
+  existingOrders: AccountOrderSummary[],
+) => {
+  const fallbackOrders = config.fallbackOrders?.() ?? [];
+  config.setOrders(fallbackOrders.length > 0 ? fallbackOrders : existingOrders);
+  config.setError(null);
+};
+
+const refreshOnHoldOrdersResource = async (config: OnHoldOrdersResourceConfig) => {
+  if (config.paused) {
+    return;
+  }
+  if (!config.allowed || !hasAuthToken()) {
+    resetOnHoldOrdersResource(config);
+    return;
+  }
+
+  const now = Date.now();
+  if (
+    !config.options?.force &&
+    now - config.lastFetchAtRef.current < ON_HOLD_REFRESH_TTL_MS
+  ) {
+    return;
+  }
+  if (config.inFlightRef.current) {
+    return;
+  }
+
+  config.inFlightRef.current = true;
+  config.lastFetchAtRef.current = now;
+  const existingOrders = config.ordersRef.current;
+  const hasExisting = existingOrders.length > 0;
+  config.setLoading(!hasExisting);
+  config.setRefreshing(Boolean(config.options?.force && hasExisting));
+  config.setError(null);
+
+  try {
+    if (config.endpointUnavailableRef?.current && config.fallbackOrders) {
+      applyOnHoldOrdersFallback(config, existingOrders);
+      return;
+    }
+
+    const response = await config.loadOrders();
+    const orders = normalizeOnHoldOrdersResponse(response);
+    if (!(hasExisting && orders.length === 0)) {
+      config.setOrders(orders);
+    }
+    config.setError(null);
+  } catch (error: any) {
+    if (isOnHoldOrdersAuthFailure(error)) {
+      config.setError(null);
+      return;
+    }
+
+    if (config.fallbackOrders && isOnHoldOrdersEndpointUnavailable(error)) {
+      if (config.endpointUnavailableRef) {
+        config.endpointUnavailableRef.current = true;
+      }
+      applyOnHoldOrdersFallback(config, existingOrders);
+      return;
+    }
+
+    config.setError(getOnHoldOrdersErrorMessage(error));
+    if (!hasExisting) {
+      config.setOrders([]);
+    }
+  } finally {
+    config.setLoading(false);
+    config.setRefreshing(false);
+    config.setHasSettled(true);
+    config.inFlightRef.current = false;
+  }
+};
+
+const startOnHoldOrdersPolling = (
+  leaderKey: string,
+  refreshOrders: () => Promise<void> | void,
+) => {
+  const runRefresh = () => {
+    void Promise.resolve(refreshOrders()).catch((error) => {
+      console.debug("[On Hold Orders] Refresh skipped", { leaderKey, error });
+    });
+  };
+
+  runRefresh();
+
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const pollHandle = window.setInterval(() => {
+    if (!isPageVisible() || !isTabLeader(leaderKey, ON_HOLD_POLL_LEADER_TTL_MS)) {
+      return;
+    }
+    runRefresh();
+  }, ON_HOLD_POLL_INTERVAL_MS);
+
+  return () => {
+    releaseTabLeadership(leaderKey);
+    window.clearInterval(pollHandle);
+  };
+};
+
+const getOnHoldOrderDisplayTotal = (order: AccountOrderSummary) => {
+  const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
+  return Number.isFinite(totalRaw) ? totalRaw : 0;
+};
+
+const getOnHoldOrdersTotal = (orders: AccountOrderSummary[]) =>
+  orders.reduce((sum, order) => sum + getOnHoldOrderDisplayTotal(order), 0);
+
+const resolveOnHoldOrderAddressName = (address: any) => {
+  const firstName = normalizeStringField(address?.firstName ?? address?.first_name);
+  const lastName = normalizeStringField(address?.lastName ?? address?.last_name);
+  return (
+    normalizeStringField([firstName, lastName].filter(Boolean).join(" ")) ||
+    normalizeStringField(address?.name) ||
+    null
+  );
+};
+
+const resolveOnHoldOrderDoctorFallbackLabel = (order: AccountOrderSummary) => {
+  const orderAny = order as any;
+  const shippingAddress =
+    (orderAny?.shippingAddress ?? orderAny?.shipping_address ?? {}) as any;
+  const billingAddress =
+    (orderAny?.billingAddress ?? orderAny?.billing_address ?? {}) as any;
+  const validDoctorName = [order.doctorName, orderAny?.doctor_name]
+    .map((value) => normalizeStringField(value) || "")
+    .find((value) => {
+      const normalized = value.toLowerCase();
+      return value && normalized !== "unknown doctor" && normalized !== "unknown";
+    });
+
+  return (
+    validDoctorName ||
+    resolveOnHoldOrderAddressName(shippingAddress) ||
+    resolveOnHoldOrderAddressName(billingAddress) ||
+    normalizeStringField(order.doctorEmail) ||
+    normalizeStringField(orderAny?.doctor_email) ||
+    normalizeStringField(shippingAddress?.email) ||
+    normalizeStringField(billingAddress?.email) ||
+    "Unknown physician"
+  );
+};
+
+const buildOnHoldOrderListKey = (
+  order: AccountOrderSummary,
+  index: number,
+  prefix: string,
+) =>
+  String(order.id || "").trim() ||
+  String(order.number || "").trim() ||
+  `${prefix}-${index}`;
 
 const normalizeHumanName = (value: string) =>
   (value || "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -8763,7 +9066,7 @@ function MainApp() {
 	        }
 	      } catch (error) {
 	        console.warn("[Shop] Failed to update shop toggle", error);
-	        toast.error("Unable to update Explore Peptides view setting right now.");
+	        toast.error("Unable to update Enter Dashboard view setting right now.");
 	        setShopEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
@@ -12285,15 +12588,7 @@ function MainApp() {
     ].includes(normalized);
   };
 
-  const isOrderOnHoldStatus = (status?: string | null) => {
-    const normalized = String(status || "")
-      .toLowerCase()
-      .trim()
-      .replace(/[\s_]+/g, "-");
-    return normalized === "on-hold" || normalized === "onhold";
-  };
-
-  const PORTAL_BETA_SERVICE_KEYS = [
+	  const PORTAL_BETA_SERVICE_KEYS = [
     "shop",
     "patientLinks",
     "crm",
@@ -12305,7 +12600,7 @@ function MainApp() {
 
   type PortalBetaServiceKey = (typeof PORTAL_BETA_SERVICE_KEYS)[number];
   const PORTAL_BETA_SERVICE_LABELS: Record<PortalBetaServiceKey, string> = {
-    shop: "Explore Peptides",
+	    shop: "Enter Dashboard",
     patientLinks: "Delegate Links",
     crm: "CRM",
     forum: "The Peptide Forum",
@@ -14226,12 +14521,13 @@ function MainApp() {
   const enrichMissingOrderDetails = useCallback(
     async (
       ordersToEnrich: AccountOrderSummary[],
-      options?: { onlyIds?: Set<string>; force?: boolean },
+      options?: { onlyIds?: Set<string>; force?: boolean; refreshStatus?: boolean },
     ) => {
       const DETAIL_TTL_MS = 10 * 60 * 1000;
       const now = Date.now();
       const onlyIds = options?.onlyIds;
       const force = options?.force === true;
+      const refreshStatus = options?.refreshStatus === true;
 
       const needsDetail = ordersToEnrich.filter((order) => {
         const key = String(order.id || order.number || "");
@@ -14247,7 +14543,7 @@ function MainApp() {
             (order as any)?.shipping?.estimatedArrivalDate ||
             (order as any)?.shipping?.estimated_delivery_date,
         );
-        if (hasPlaced && hasEta) return false;
+        if (!refreshStatus && hasPlaced && hasEta) return false;
 
         if (!force) {
           const lastFetchedAt = salesOrderDetailFetchedAtRef.current.get(key) || 0;
@@ -14299,6 +14595,7 @@ function MainApp() {
               (order as any)?.doctorEmail ||
                 (order as any)?.doctor_email ||
                 (order as any)?.doctorId ||
+                resolveOrderDoctorId(order as any) ||
                 null,
             );
             const normalized = normalizeAccountOrdersResponse(
@@ -14306,9 +14603,13 @@ function MainApp() {
               { includeCanceled: true },
             );
             if (normalized && normalized.length > 0) {
-              mergeSalesOrderDetail(normalized[0]);
+              mergeSalesOrderDetail(
+                mergeAccountOrderSummaryPreservingSeed(order, normalized[0]),
+              );
             } else if (detail && typeof detail === "object") {
-              mergeSalesOrderDetail(detail as AccountOrderSummary);
+              mergeSalesOrderDetail(
+                mergeAccountOrderSummaryPreservingSeed(order, detail as AccountOrderSummary),
+              );
             }
           } catch (error) {
             console.debug("[Sales Tracking] detail enrichment skipped", {
@@ -14332,6 +14633,51 @@ function MainApp() {
     },
     [mergeSalesOrderDetail],
   );
+  const salesDoctorOrderStatusHydrationKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!salesDoctorDetail) {
+      salesDoctorOrderStatusHydrationKeyRef.current = null;
+      return;
+    }
+
+    const orderMap = new Map<string, AccountOrderSummary>();
+    const addOrders = (orders?: AccountOrderSummary[] | null) => {
+      if (!Array.isArray(orders)) return;
+      orders.forEach((order) => {
+        const key = String(order?.id || order?.number || "");
+        if (!key) return;
+        orderMap.set(key, order);
+      });
+    };
+
+    addOrders(salesDoctorDetail.orders);
+    addOrders(salesDoctorDetail.personalOrders);
+    addOrders(salesDoctorDetail.salesOrders);
+
+    const orders = [...orderMap.values()];
+    if (orders.length === 0) return;
+
+    const hydrationKey = [
+      String(salesDoctorDetail.doctorId || "").trim(),
+      ...orders.map((order) => String(order.id || order.number || "")).sort(),
+    ].join("|");
+
+    if (salesDoctorOrderStatusHydrationKeyRef.current === hydrationKey) {
+      return;
+    }
+    salesDoctorOrderStatusHydrationKeyRef.current = hydrationKey;
+
+    void enrichMissingOrderDetails(orders, {
+      force: true,
+      refreshStatus: true,
+    });
+  }, [
+    enrichMissingOrderDetails,
+    salesDoctorDetail?.doctorId,
+    salesDoctorDetail?.orders,
+    salesDoctorDetail?.personalOrders,
+    salesDoctorDetail?.salesOrders,
+  ]);
 	  const [salesRepSalesSummary, setSalesRepSalesSummary] = useState<
 	    {
 	      salesRepId: string;
@@ -18085,7 +18431,7 @@ function MainApp() {
 
   const hydrateLivePresenceSqlProfiles = useCallback((entries: any[]) => {
     const canFetchSqlProfiles =
-      Boolean(user?.role) && (isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role));
+      Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
     if (!canFetchSqlProfiles || !Array.isArray(entries) || entries.length === 0) {
       return;
     }
@@ -18410,11 +18756,12 @@ function MainApp() {
             response && typeof response === "object"
               ? ((response as any).user || response)
               : null;
-        } else {
-          const response = (await settingsAPI.getAdminUserProfiles([doctorId])) as any;
-          profile = Array.isArray(response?.users)
-            ? response.users.find((candidate: any) => String(candidate?.id || "").trim() === doctorId) || null
-            : null;
+        } else if (isRep(user?.role)) {
+          const response = (await ordersAPI.getSalesModalDetail(doctorId)) as any;
+          profile =
+            response && typeof response === "object"
+              ? ((response as any).user || response)
+              : null;
         }
         if (!profile || cancelled) {
           return;
@@ -18976,6 +19323,8 @@ function MainApp() {
   }, [salesDoctorDetail?.role, salesDoctorDetail?.summaryOnly, user?.role]);
   const canSeeSalesDoctorFullModalDetails =
     isAdmin(user?.role) || isSalesLead(user?.role);
+  const canSeeSalesDoctorProfileModalDetails =
+    canSeeSalesDoctorFullModalDetails || isRep(user?.role);
   const canSeeSalesActorCommerceBreakdown =
     isAdmin(user?.role) || isRep(user?.role) || isSalesLead(user?.role);
 
@@ -20594,21 +20943,25 @@ function MainApp() {
     [],
   );
 
-  const isManualEntry = useCallback((referral?: ReferralRecord | null) => {
-    if (!referral) {
-      return false;
-    }
-    const id = String(referral.id || "");
-    return id.startsWith("manual:");
-  }, []);
+	  const isManualEntry = useCallback((referral?: ReferralRecord | null) => {
+	    if (!referral) {
+	      return false;
+	    }
+	    const id = String(referral.id || "");
+	    return id.startsWith("manual:");
+	  }, []);
 
-  const formatProspectLeadType = useCallback(
-    (kind: "referral" | "contact_form", record: ReferralRecord) => {
-      if (kind === "contact_form") return "House / Contact Form";
-      return isManualEntry(record) ? "Manual" : "Referral";
-    },
-    [isManualEntry],
-  );
+	  const formatProspectLeadType = useCallback(
+	    (kind: "referral" | "contact_form", record: ReferralRecord) => {
+	      if (kind === "contact_form") return "House / Contact Form";
+	      if (isAccountLeadRecord(record)) return "Account";
+	      if (isManualEntry(record) || isManualLeadRecord(record)) return "Manual";
+	      const source = getLeadSourceSystem(record);
+	      if (source === "seamless") return "Seamless.ai";
+	      return "Referral";
+	    },
+	    [isManualEntry],
+	  );
 
   const isLeadStatus = useCallback((status?: string | null) => {
     const normalized = (status || "").toLowerCase();
@@ -20899,12 +21252,16 @@ function MainApp() {
 	            ? sanitizeReferralStatus(persistedProspect.status)
 	            : null;
 
-	        const record: ReferralRecord & { syntheticAccountProspect?: boolean } = {
-	          id: `acct-prospect-${accountId || email || phone || idx}`,
-	          referrerDoctorId: user?.id || user?.salesRepId || "rep",
-	          salesRepId: user?.salesRepId || user?.id || null,
-          referredContactName: name,
-          referredContactEmail: email,
+		        const record: ReferralRecord & {
+		          syntheticAccountProspect?: boolean;
+		          source?: string;
+		          sourceSystem?: string;
+		        } = {
+		          id: `acct-prospect-${accountId || email || phone || idx}`,
+		          referrerDoctorId: user?.id || user?.salesRepId || "rep",
+		          salesRepId: user?.salesRepId || user?.id || null,
+	          referredContactName: name,
+	          referredContactEmail: email,
           referredContactPhone: phone,
           referralCodeId: null,
 	          status: persistedStatus || "account_created",
@@ -20929,11 +21286,13 @@ function MainApp() {
           referredContactAccountId: accountId ? String(accountId) : null,
           referredContactAccountName: name,
           referredContactAccountEmail: email,
-          referredContactAccountCreatedAt: created,
-          referredContactTotalOrders: acct.totalOrders || 0,
-          referredContactEligibleForCredit: false,
-          syntheticAccountProspect: true,
-        };
+	          referredContactAccountCreatedAt: created,
+	          referredContactTotalOrders: acct.totalOrders || 0,
+	          referredContactEligibleForCredit: false,
+	          source: "account",
+	          sourceSystem: "account",
+	          syntheticAccountProspect: true,
+	        };
 
 	        return { kind: "referral" as const, record };
 	      })
@@ -22720,6 +23079,9 @@ function MainApp() {
 	          name: string;
 	          email?: string | null;
 	          profileImageUrl?: string | null;
+	          greaterArea?: string | null;
+	          studyFocus?: string | null;
+	          bio?: string | null;
 	          phone?: string | null;
 	          salesRepId?: string | null;
 	          salesRepName?: string | null;
@@ -22778,6 +23140,9 @@ function MainApp() {
 	            email: doc.email || doc.doctorEmail || doc.userEmail || null,
 	            profileImageUrl:
 	              doc.profileImageUrl || doc.profile_image_url || null,
+	            greaterArea: doc.greaterArea || doc.greater_area || null,
+	            studyFocus: doc.studyFocus || doc.study_focus || null,
+	            bio: doc.bio || null,
 	            phone:
 	              doc.phone ||
 	              doc.phoneNumber ||
@@ -23223,231 +23588,66 @@ function MainApp() {
 		    }
 		  }, [fetchSalesTrackingOrders]);
 
-	  const refreshAdminOnHoldOrders = useCallback(
-	    async (options?: { force?: boolean }) => {
-	      const buildLocalFallbackOrders = () => {
-	        return salesTrackingOrders
-	          .filter((order) => isOrderOnHoldStatus((order as any)?.status || null))
-	          .sort((a, b) => {
-	            const aTime = resolveOrderSortTimeMs(a as any);
-	            const bTime = resolveOrderSortTimeMs(b as any);
-	            const safeA = Number.isFinite(aTime) ? aTime : 0;
-	            const safeB = Number.isFinite(bTime) ? bTime : 0;
-	            return safeB - safeA;
-	          });
-	      };
-	      const role = user?.role || null;
-	      if (!role || !isAdmin(role)) {
-	        setAdminOnHoldOrders([]);
-	        setAdminOnHoldError(null);
-	        setAdminOnHoldLoading(false);
-	        setAdminOnHoldRefreshing(false);
-          setAdminOnHoldHasSettled(false);
-	        return;
-	      }
-	      if (postLoginHold) {
-	        return;
-	      }
-        if (!hasAuthToken()) {
-          setAdminOnHoldOrders([]);
-          setAdminOnHoldError(null);
-          setAdminOnHoldLoading(false);
-          setAdminOnHoldRefreshing(false);
-          setAdminOnHoldHasSettled(false);
-          return;
-        }
-	      const now = Date.now();
-	      const ttlMs = 25_000;
-	      if (!options?.force && now - adminOnHoldLastFetchAtRef.current < ttlMs) {
-	        return;
-	      }
-	      if (adminOnHoldInFlightRef.current) {
-	        return;
-	      }
-	      adminOnHoldInFlightRef.current = true;
-	      adminOnHoldLastFetchAtRef.current = now;
-	      const existingOrders = adminOnHoldOrdersRef.current;
-	      const hasExisting = existingOrders.length > 0;
-	      setAdminOnHoldLoading(!hasExisting);
-	      setAdminOnHoldRefreshing(Boolean(options?.force && hasExisting));
-	      setAdminOnHoldError(null);
-	      try {
-	        if (adminOnHoldEndpointUnavailableRef.current) {
-            const fallbackOrders = buildLocalFallbackOrders();
-	          setAdminOnHoldOrders(
-              fallbackOrders.length > 0 ? fallbackOrders : existingOrders,
-            );
-	          setAdminOnHoldError(null);
-	          return;
-	        }
-	        const response = await ordersAPI.getAdminOnHoldOrders({ limit: 1200 });
-	        const rawOrders = Array.isArray((response as any)?.orders)
-	          ? ((response as any).orders as any[])
-	          : Array.isArray(response)
-	            ? (response as any[])
-	            : [];
-	        const normalized = normalizeAccountOrdersResponse(
-	          { woo: rawOrders },
-	          { includeCanceled: true },
-	        );
-	        const sourceOrders = normalized.length > 0 ? normalized : (rawOrders as AccountOrderSummary[]);
-	        const sorted = sourceOrders
-	          .sort((a, b) => {
-	            const aTime = resolveOrderSortTimeMs(a as any);
-	            const bTime = resolveOrderSortTimeMs(b as any);
-	            const safeA = Number.isFinite(aTime) ? aTime : 0;
-	            const safeB = Number.isFinite(bTime) ? bTime : 0;
-	            return safeB - safeA;
-	          });
-          if (!(hasExisting && sorted.length === 0)) {
-	          setAdminOnHoldOrders(sorted as AccountOrderSummary[]);
-          }
-	        setAdminOnHoldError(null);
-	      } catch (error: any) {
-            const authStatus = typeof error?.status === "number" ? error.status : null;
-            const authCode = typeof error?.code === "string" ? error.code : null;
-            const authFailureCode =
-              typeof error?.authCode === "string" ? error.authCode : null;
-            const isAuthFailure =
-              authCode === "AUTH_REQUIRED" ||
-              authStatus === 401 ||
-              (authStatus === 403 &&
-                typeof authFailureCode === "string" &&
-                authFailureCode.startsWith("TOKEN_"));
-            if (isAuthFailure) {
-              setAdminOnHoldError(null);
-              return;
-            }
-	        const status = typeof error?.status === "number" ? error.status : null;
-	        const messageText = typeof error?.message === "string" ? error.message : "";
-	        const lower = messageText.toLowerCase();
-	        const isEndpointUnavailable =
-	          status === 404 ||
-	          lower.includes("load failed") ||
-	          lower.includes("failed to fetch") ||
-	          lower.includes("networkerror") ||
-	          lower.includes("preflight") ||
-	          lower.includes("cors");
-	        if (isEndpointUnavailable) {
-	          adminOnHoldEndpointUnavailableRef.current = true;
-            const fallbackOrders = buildLocalFallbackOrders();
-	          setAdminOnHoldOrders(
-              fallbackOrders.length > 0 ? fallbackOrders : existingOrders,
-            );
-	          setAdminOnHoldError(null);
-	          return;
-	        }
-	        const message =
-	          typeof error?.message === "string" && error.message
-	            ? error.message
-	            : "Unable to load on-hold orders.";
-	        setAdminOnHoldError(message);
-	        if (!hasExisting) {
-	          setAdminOnHoldOrders([]);
-	        }
-	      } finally {
-	        setAdminOnHoldLoading(false);
-	        setAdminOnHoldRefreshing(false);
-          setAdminOnHoldHasSettled(true);
-	        adminOnHoldInFlightRef.current = false;
-	      }
-	    },
-	    [adminOnHoldOrders.length, postLoginHold, salesTrackingOrders, user?.role],
-	  );
+		  const buildAdminOnHoldFallbackOrders = useCallback(
+		    () =>
+		      sortOrdersNewestFirst(
+		        salesTrackingOrders.filter((order) =>
+		          isOrderOnHoldStatus((order as any)?.status || null),
+		        ),
+		      ),
+		    [salesTrackingOrders],
+		  );
 
-	  const refreshSalesOnHoldOrders = useCallback(
-	    async (options?: { force?: boolean }) => {
-	      const role = user?.role || null;
-	      if (!role || (!isRep(role) && !isSalesLead(role) && !isAdmin(role))) {
-	        setSalesOnHoldOrders([]);
-	        setSalesOnHoldError(null);
-	        setSalesOnHoldLoading(false);
-	        setSalesOnHoldRefreshing(false);
-          setSalesOnHoldHasSettled(false);
-	        return;
-	      }
-	      if (postLoginHold) {
-	        return;
-	      }
-        if (!hasAuthToken()) {
-          setSalesOnHoldOrders([]);
-          setSalesOnHoldError(null);
-          setSalesOnHoldLoading(false);
-          setSalesOnHoldRefreshing(false);
-          setSalesOnHoldHasSettled(false);
-          return;
-        }
-	      const scope: "mine" | "all" = isAdmin(role) || isSalesLead(role) ? "all" : "mine";
-	      const now = Date.now();
-	      const ttlMs = 25_000;
-	      if (!options?.force && now - salesOnHoldLastFetchAtRef.current < ttlMs) {
-	        return;
-	      }
-	      if (salesOnHoldInFlightRef.current) {
-	        return;
-	      }
-	      salesOnHoldInFlightRef.current = true;
-	      salesOnHoldLastFetchAtRef.current = now;
-	      const existingOrders = salesOnHoldOrdersRef.current;
-	      const hasExisting = existingOrders.length > 0;
-	      setSalesOnHoldLoading(!hasExisting);
-	      setSalesOnHoldRefreshing(Boolean(options?.force && hasExisting));
-	      setSalesOnHoldError(null);
-	      try {
-	        const response = await ordersAPI.getOnHoldForSalesRep({ scope, limit: 1200 });
-	        const rawOrders = Array.isArray((response as any)?.orders)
-	          ? ((response as any).orders as any[])
-	          : Array.isArray(response)
-	            ? (response as any[])
-	            : [];
-	        const normalized = normalizeAccountOrdersResponse(
-	          { woo: rawOrders },
-	          { includeCanceled: true },
-	        );
-	        const sourceOrders = normalized.length > 0 ? normalized : (rawOrders as AccountOrderSummary[]);
-	        const sorted = sourceOrders.sort((a, b) => {
-	          const aTime = resolveOrderSortTimeMs(a as any);
-	          const bTime = resolveOrderSortTimeMs(b as any);
-	          const safeA = Number.isFinite(aTime) ? aTime : 0;
-	          const safeB = Number.isFinite(bTime) ? bTime : 0;
-	          return safeB - safeA;
-	        });
-          if (!(hasExisting && sorted.length === 0)) {
-	        setSalesOnHoldOrders(sorted as AccountOrderSummary[]);
-          }
-	        setSalesOnHoldError(null);
-	      } catch (error: any) {
-            const status = typeof error?.status === "number" ? error.status : null;
-            const code = typeof error?.code === "string" ? error.code : null;
-            const authCode =
-              typeof error?.authCode === "string" ? error.authCode : null;
-            const isAuthFailure =
-              code === "AUTH_REQUIRED" ||
-              status === 401 ||
-              (status === 403 &&
-                typeof authCode === "string" &&
-                authCode.startsWith("TOKEN_"));
-            if (isAuthFailure) {
-              setSalesOnHoldError(null);
-              return;
-            }
-	        const message =
-	          typeof error?.message === "string" && error.message
-	            ? error.message
-	            : "Unable to load on-hold orders.";
-	        setSalesOnHoldError(message);
-	        if (!hasExisting) {
-	          setSalesOnHoldOrders([]);
-	        }
-	      } finally {
-	        setSalesOnHoldLoading(false);
-	        setSalesOnHoldRefreshing(false);
-          setSalesOnHoldHasSettled(true);
-	        salesOnHoldInFlightRef.current = false;
-	      }
-	    },
-	    [postLoginHold, salesOnHoldOrders.length, user?.role],
-	  );
+		  const refreshAdminOnHoldOrders = useCallback(
+		    async (options?: OnHoldOrdersRefreshOptions) => {
+		      const role = user?.role || null;
+		      await refreshOnHoldOrdersResource({
+		        options,
+		        allowed: Boolean(role && isAdmin(role)),
+		        paused: postLoginHold,
+		        ordersRef: adminOnHoldOrdersRef,
+		        lastFetchAtRef: adminOnHoldLastFetchAtRef,
+		        inFlightRef: adminOnHoldInFlightRef,
+		        endpointUnavailableRef: adminOnHoldEndpointUnavailableRef,
+		        setOrders: setAdminOnHoldOrders,
+		        setLoading: setAdminOnHoldLoading,
+		        setRefreshing: setAdminOnHoldRefreshing,
+		        setHasSettled: setAdminOnHoldHasSettled,
+		        setError: setAdminOnHoldError,
+		        loadOrders: () =>
+		          ordersAPI.getAdminOnHoldOrders({ limit: ON_HOLD_ORDERS_LIMIT }),
+		        fallbackOrders: buildAdminOnHoldFallbackOrders,
+		      });
+		    },
+		    [buildAdminOnHoldFallbackOrders, postLoginHold, user?.role],
+		  );
+
+		  const refreshSalesOnHoldOrders = useCallback(
+		    async (options?: OnHoldOrdersRefreshOptions) => {
+		      const role = user?.role || null;
+		      const scope: "mine" | "all" =
+		        role && (isAdmin(role) || isSalesLead(role)) ? "all" : "mine";
+		      await refreshOnHoldOrdersResource({
+		        options,
+		        allowed: Boolean(role && (isRep(role) || isSalesLead(role) || isAdmin(role))),
+		        paused: postLoginHold,
+		        ordersRef: salesOnHoldOrdersRef,
+		        lastFetchAtRef: salesOnHoldLastFetchAtRef,
+		        inFlightRef: salesOnHoldInFlightRef,
+		        setOrders: setSalesOnHoldOrders,
+		        setLoading: setSalesOnHoldLoading,
+		        setRefreshing: setSalesOnHoldRefreshing,
+		        setHasSettled: setSalesOnHoldHasSettled,
+		        setError: setSalesOnHoldError,
+		        loadOrders: () =>
+		          ordersAPI.getOnHoldForSalesRep({
+		            scope,
+		            limit: ON_HOLD_ORDERS_LIMIT,
+		          }),
+		      });
+		    },
+		    [postLoginHold, user?.role],
+		  );
 
   const refreshPendingResellerPermitApprovals = useCallback(
     async (options?: { force?: boolean }) => {
@@ -23656,28 +23856,15 @@ function MainApp() {
 	    });
   }, [fetchSalesTrackingOrders, userRole, postLoginHold, shouldPauseAdminBackgroundSync]);
 
-		  useEffect(() => {
-		    if (shouldPauseAdminBackgroundSync || postLoginHold || !user || !isAdmin(user.role)) {
-		      return;
-		    }
-	    void refreshAdminOnHoldOrders();
-	    const leaderKey = "admin-on-hold-poll";
-	    const pollIntervalMs = 25_000;
-	    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
-	    const pollHandle = window.setInterval(() => {
-	      if (!isPageVisible()) {
-	        return;
-	      }
-	      if (!isTabLeader(leaderKey, leaderTtlMs)) {
-	        return;
-	      }
-	      void refreshAdminOnHoldOrders();
-	    }, pollIntervalMs);
-	    return () => {
-	      releaseTabLeadership(leaderKey);
-	      window.clearInterval(pollHandle);
-	    };
-		  }, [postLoginHold, refreshAdminOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
+			  useEffect(() => {
+			    if (shouldPauseAdminBackgroundSync || postLoginHold || !user || !isAdmin(user.role)) {
+			      return;
+			    }
+		    return startOnHoldOrdersPolling(
+		      "admin-on-hold-poll",
+		      refreshAdminOnHoldOrders,
+		    );
+			  }, [postLoginHold, refreshAdminOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
 
 		  useEffect(() => {
 		    if (
@@ -23685,27 +23872,14 @@ function MainApp() {
 		      !user ||
 		      (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
 		      (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))
-		    ) {
-		      return;
-		    }
-	    void refreshSalesOnHoldOrders();
-	    const leaderKey = "sales-on-hold-poll";
-	    const pollIntervalMs = 25_000;
-	    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
-	    const pollHandle = window.setInterval(() => {
-	      if (!isPageVisible()) {
-	        return;
-	      }
-	      if (!isTabLeader(leaderKey, leaderTtlMs)) {
-	        return;
-	      }
-	      void refreshSalesOnHoldOrders();
-	    }, pollIntervalMs);
-	    return () => {
-	      releaseTabLeadership(leaderKey);
-	      window.clearInterval(pollHandle);
-	    };
-		  }, [postLoginHold, refreshSalesOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
+			    ) {
+			      return;
+			    }
+		    return startOnHoldOrdersPolling(
+		      "sales-on-hold-poll",
+		      refreshSalesOnHoldOrders,
+		    );
+			  }, [postLoginHold, refreshSalesOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
 
   useEffect(() => {
     if (
@@ -23992,6 +24166,9 @@ function MainApp() {
 	        doctorName: string;
 	        doctorEmail?: string | null;
 	        doctorAvatar?: string | null;
+	        greaterArea?: string | null;
+	        studyFocus?: string | null;
+	        bio?: string | null;
 	        doctorPhone?: string | null;
 	        ownerSalesRepId?: string | null;
 	        ownerSalesRepName?: string | null;
@@ -24021,6 +24198,9 @@ function MainApp() {
         doctorInfo?.profileImageUrl ||
         (order as any).doctorProfileImageUrl ||
         null;
+      const greaterArea = doctorInfo?.greaterArea || null;
+      const studyFocus = doctorInfo?.studyFocus || null;
+      const bio = doctorInfo?.bio || null;
       const leadType = doctorInfo?.leadType || orderAny?.leadType || orderAny?.lead_type || null;
       const leadTypeSource = doctorInfo?.leadTypeSource || null;
       const leadTypeLockedAt = doctorInfo?.leadTypeLockedAt || null;
@@ -24081,6 +24261,9 @@ function MainApp() {
             doctorName: doctorNameFromOrder,
             doctorEmail: doctorEmailFromOrder,
             doctorAvatar,
+            greaterArea,
+            studyFocus,
+            bio,
 	            doctorPhone,
 	            ownerSalesRepId: ownerSalesRepId
 	              ? String(ownerSalesRepId)
@@ -30013,354 +30196,177 @@ function MainApp() {
 	      salesRepSalesSummaryLoading ||
 	      adminTaxesByStateLoading ||
 	      adminProductsCommissionLoading;
-	    const adminOnHoldOrderTotal = adminOnHoldOrders.reduce((sum, order) => {
-	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
-	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
-	    }, 0);
-	    const salesScopedOnHoldOrderTotal = salesOnHoldOrders.reduce((sum, order) => {
-	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
-	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
-	    }, 0);
-	    const renderSalesScopedOnHoldOrdersCard = () => (
-	      <div className="sales-rep-leads-card sales-rep-combined-card">
-	        <div className="mb-0 flex w-full items-start justify-between gap-3">
-	          <div className="min-w-0">
-	            <h3 className="text-lg font-semibold text-slate-900">
-	              Orders On-Hold
-	            </h3>
-	            <p className="text-sm text-slate-600">
-	              {isSalesLead(user?.role)
-	                ? "All client orders currently awaiting reception from our system."
-	                : "Your clients' orders currently awaiting reception from our system."}
-	            </p>
-	          </div>
-	          <Button
-	            type="button"
-	            variant="outline"
-	            size="sm"
-	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
-	            onClick={() => void refreshSalesOnHoldOrders({ force: true })}
-	            disabled={salesOnHoldLoading || salesOnHoldRefreshing}
-	            aria-busy={salesOnHoldLoading || salesOnHoldRefreshing}
-	            title="Refresh on-hold orders"
-	          >
-              <RefreshActionIcon spinning={salesOnHoldLoading || salesOnHoldRefreshing} />
-	            {salesOnHoldLoading || salesOnHoldRefreshing ? "Refreshing..." : "Refresh"}
-	          </Button>
-	        </div>
-	        <div
-	          className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
-	          role="region"
-	          aria-label="Orders on-hold list"
-	        >
-	          {!salesOnHoldHasSettled || (salesOnHoldLoading && salesOnHoldOrders.length === 0) ? (
-	            <div className="px-4 py-3 text-sm text-slate-500">
-	              Loading orders…
-	            </div>
-	          ) : salesOnHoldError && salesOnHoldOrders.length === 0 ? (
-	            <div className="px-4 py-3 text-sm text-slate-500">
-	              No orders on-hold yet.
-	            </div>
-	          ) : salesOnHoldOrders.length === 0 ? (
-	            <div className="px-4 py-3 text-sm text-slate-500">
-	              No orders on-hold yet.
-	            </div>
-	          ) : (
-	            <div className="w-full" style={{ minWidth: 980 }}>
-	              <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-	                <span>Orders: {salesOnHoldOrders.length}</span>
-	                <span>Total: {formatCurrency(salesScopedOnHoldOrderTotal)}</span>
-	              </div>
-	              <div className="w-full">
-	                <div
-	                  className="grid w-full items-center gap-3 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700"
-	                  style={{
-	                    gridTemplateColumns:
-	                      "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
-	                  }}
-	                >
-	                  <div className="whitespace-nowrap">Order</div>
-	                  <div className="whitespace-nowrap text-center">Ordered by</div>
-	                  <div className="whitespace-nowrap text-right">Placed</div>
-	                  <div className="whitespace-nowrap text-right">Total</div>
-	                </div>
-	                <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-	                  {salesOnHoldOrders.map((order, index) => {
-	                    const orderNumber = order.number || order.id || "Order";
-	                    const orderAny = order as any;
-	                    const shippingAddress = (orderAny?.shippingAddress ?? orderAny?.shipping_address ?? {}) as any;
-	                    const billingAddress = (orderAny?.billingAddress ?? orderAny?.billing_address ?? {}) as any;
-	                    const shippingName = `${String(shippingAddress?.firstName ?? shippingAddress?.first_name ?? "").trim()} ${String(shippingAddress?.lastName ?? shippingAddress?.last_name ?? "").trim()}`.trim();
-	                    const billingName = `${String(billingAddress?.firstName ?? billingAddress?.first_name ?? "").trim()} ${String(billingAddress?.lastName ?? billingAddress?.last_name ?? "").trim()}`.trim();
-	                    const rawDoctorName = String(order.doctorName ?? "").trim();
-	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
-                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
-                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
-                    const doctorNameFromApi =
-	                      (rawDoctorName &&
-	                      normalizedDoctorName !== "unknown doctor" &&
-	                      normalizedDoctorName !== "unknown"
-	                        ? rawDoctorName
-	                        : "") ||
-	                      (rawDoctorNameSnake &&
-	                      normalizedDoctorNameSnake !== "unknown doctor" &&
-	                      normalizedDoctorNameSnake !== "unknown"
-	                        ? rawDoctorNameSnake
-	                        : "");
-                    const doctorLabelFallback =
-                      doctorNameFromApi ||
-	                      shippingName ||
-	                      billingName ||
-	                      shippingAddress?.name ||
-	                      billingAddress?.name ||
-	                      order.doctorEmail ||
-	                      orderAny?.doctor_email ||
-	                      shippingAddress?.email ||
-	                      billingAddress?.email ||
-	                      "Unknown physician";
-                      const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabelFallback);
-                      const doctorLabel =
-                        normalizeStringField(
-                          (doctorModalEntry as any)?.name ??
-                            (doctorModalEntry as any)?.displayName ??
-                            (doctorModalEntry as any)?.fullName ??
-                            (doctorModalEntry as any)?.email,
-                        ) ||
-                        doctorLabelFallback;
-                      const canOpenDoctorModal = Boolean(doctorModalEntry);
-	                    const orderPlacedAt =
-	                      formatOrderPlacedAtForLocalDisplay(order as any);
-	                    const total = Number(
-	                      (order as any)?.grandTotal ?? order.total ?? 0,
-	                    );
-	                    const key =
-	                      String(order.id || "").trim() ||
-	                      String(order.number || "").trim() ||
-	                      `sales-on-hold-${index}`;
-	                    return (
-	                      <li
-	                        key={key}
-	                        className="grid w-full items-center gap-3 px-3 py-1.5 border-b border-slate-200/70 last:border-b-0"
-	                        style={{
-	                          gridTemplateColumns:
-	                            "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
-	                        }}
-	                      >
-	                        <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
-	                          <button
-	                            type="button"
-	                            className="min-w-0 text-left hover:underline"
-	                            onClick={() => openSalesOrderDetails(order)}
-	                            title="Open order details"
-	                          >
-	                            {`Order #${orderNumber}`}
-	                          </button>
-	                        </div>
-	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
-                            {canOpenDoctorModal ? (
-                              <button
-                                type="button"
-                                className="min-w-0 truncate text-center hover:underline"
-                                title={`Open ${doctorLabel}`}
-                                onClick={() => {
-                                  if (doctorModalEntry) {
-                                    openLiveUserDetail(doctorModalEntry);
-                                  }
-                                }}
-                              >
-                                {doctorLabel}
-                              </button>
-                            ) : (
-	                            doctorLabel
-                            )}
-	                        </div>
-	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">
-	                          {orderPlacedAt
-	                            ? orderPlacedAt
-	                            : "Date unavailable"}
-	                        </div>
-	                        <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-	                          {formatCurrency(total)}
-	                        </div>
-	                      </li>
-	                    );
-	                  })}
-	                </ul>
-	              </div>
-	            </div>
-	          )}
-	        </div>
-	      </div>
-	    );
-	    const renderAdminOnHoldOrdersCard = () => (
-	      <div className="sales-rep-leads-card sales-rep-combined-card">
-	        <div className="mb-0 flex w-full items-start justify-between gap-3">
-	          <div className="min-w-0">
-	            <h3 className="text-lg font-semibold text-slate-900">
-	              Order On-Hold
-	            </h3>
-	            <p className="text-sm text-slate-600">
-	              All orders currently on-hold.
-	            </p>
-	          </div>
-	          <Button
-	            type="button"
-	            variant="outline"
-	            size="sm"
-	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
-	            onClick={() => void refreshAdminOnHoldOrders({ force: true })}
-	            disabled={adminOnHoldLoading || adminOnHoldRefreshing}
-	            aria-busy={adminOnHoldLoading || adminOnHoldRefreshing}
-	            title="Refresh on-hold orders"
-	          >
-              <RefreshActionIcon spinning={adminOnHoldLoading || adminOnHoldRefreshing} />
-	            {adminOnHoldLoading || adminOnHoldRefreshing ? "Refreshing..." : "Refresh"}
-	          </Button>
-	        </div>
-	        <div
-	          className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
-	          role="region"
-	          aria-label="Order on-hold list"
-	        >
-	          {!adminOnHoldHasSettled || (adminOnHoldLoading && adminOnHoldOrders.length === 0) ? (
-	            <div className="px-4 py-3 text-sm text-slate-500">
-	              Loading orders…
-	            </div>
-	          ) : adminOnHoldError && adminOnHoldOrders.length === 0 ? (
-	            <div className="px-4 py-3 text-sm text-slate-500">
-	              No orders on-hold yet.
-	            </div>
-	          ) : adminOnHoldOrders.length === 0 ? (
-	            <div className="px-4 py-3 text-sm text-slate-500">
-	              No orders on-hold yet.
-	            </div>
-	          ) : (
-	            <div className="w-full" style={{ minWidth: 980 }}>
-	              <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-	                <span>Orders: {adminOnHoldOrders.length}</span>
-	                <span>Total: {formatCurrency(adminOnHoldOrderTotal)}</span>
-	              </div>
-	              <div className="w-full">
-	                <div
-	                  className="grid w-full items-center gap-3 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700"
-	                  style={{
-	                    gridTemplateColumns:
-	                      "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
-	                  }}
-	                >
-	                  <div className="whitespace-nowrap">Order</div>
-		                  <div className="whitespace-nowrap text-center">Ordered by</div>
-	                  <div className="whitespace-nowrap text-right">Placed</div>
-	                  <div className="whitespace-nowrap text-right">Total</div>
-	                </div>
-	                <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-	                  {adminOnHoldOrders.map((order, index) => {
-	                    const orderNumber = order.number || order.id || "Order";
-	                    const orderAny = order as any;
-	                    const shippingAddress = (orderAny?.shippingAddress ?? orderAny?.shipping_address ?? {}) as any;
-	                    const billingAddress = (orderAny?.billingAddress ?? orderAny?.billing_address ?? {}) as any;
-	                    const shippingName = `${String(shippingAddress?.firstName ?? shippingAddress?.first_name ?? "").trim()} ${String(shippingAddress?.lastName ?? shippingAddress?.last_name ?? "").trim()}`.trim();
-	                    const billingName = `${String(billingAddress?.firstName ?? billingAddress?.first_name ?? "").trim()} ${String(billingAddress?.lastName ?? billingAddress?.last_name ?? "").trim()}`.trim();
-	                    const rawDoctorName = String(order.doctorName ?? "").trim();
-	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
-                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
-                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
-                    const doctorNameFromApi =
-	                      (rawDoctorName &&
-	                      normalizedDoctorName !== "unknown doctor" &&
-	                      normalizedDoctorName !== "unknown"
-	                        ? rawDoctorName
-	                        : "") ||
-	                      (rawDoctorNameSnake &&
-	                      normalizedDoctorNameSnake !== "unknown doctor" &&
-	                      normalizedDoctorNameSnake !== "unknown"
-	                        ? rawDoctorNameSnake
-	                        : "");
-                    const doctorLabelFallback =
-                      doctorNameFromApi ||
-	                      shippingName ||
-	                      billingName ||
-	                      shippingAddress?.name ||
-	                      billingAddress?.name ||
-	                      order.doctorEmail ||
-	                      orderAny?.doctor_email ||
-	                      shippingAddress?.email ||
-	                      billingAddress?.email ||
-	                      "Unknown physician";
-                    const doctorModalEntry = resolveOrderUserModalEntry(order, doctorLabelFallback);
-                    const doctorLabel =
-                      normalizeStringField(
-                        (doctorModalEntry as any)?.name ??
-                          (doctorModalEntry as any)?.displayName ??
-                          (doctorModalEntry as any)?.fullName ??
-                          (doctorModalEntry as any)?.email,
-                      ) ||
-                      doctorLabelFallback;
-                    const canOpenDoctorModal = Boolean(doctorModalEntry);
-                    const orderPlacedAt =
-                      formatOrderPlacedAtForLocalDisplay(order as any);
-	                    const total = Number(
-	                      (order as any)?.grandTotal ?? order.total ?? 0,
-	                    );
-	                    const key =
-	                      String(order.id || "").trim() ||
-	                      String(order.number || "").trim() ||
-	                      `on-hold-${index}`;
-	                    return (
-	                      <li
-	                        key={key}
-	                        className="grid w-full items-center gap-3 px-3 py-1.5 border-b border-slate-200/70 last:border-b-0"
-	                        style={{
-	                          gridTemplateColumns:
-	                            "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
-	                        }}
-	                      >
-	                        <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
-	                          <button
-	                            type="button"
-	                            className="min-w-0 text-left hover:underline"
-	                            onClick={() => openSalesOrderDetails(order)}
-	                            title="Open order details"
-	                          >
-	                            {`Order #${orderNumber}`}
-	                          </button>
-	                        </div>
-	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
-                            {canOpenDoctorModal ? (
-                              <button
-                                type="button"
-                                className="min-w-0 truncate text-center hover:underline"
-                                title={`Open ${doctorLabel}`}
-                                onClick={() => {
-                                  if (doctorModalEntry) {
-                                    openLiveUserDetail(doctorModalEntry);
-                                  }
-                                }}
-                              >
-                                {doctorLabel}
-                              </button>
-                            ) : (
-	                            doctorLabel
-                            )}
-	                        </div>
-	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">
-	                          {orderPlacedAt
-	                            ? orderPlacedAt
-	                            : "Date unavailable"}
-	                        </div>
-	                        <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-	                          {formatCurrency(total)}
-	                        </div>
-	                      </li>
-	                    );
-	                  })}
-	                </ul>
-	              </div>
-	            </div>
-	          )}
-	        </div>
-	      </div>
-	    );
+		    const renderOnHoldOrdersCard = ({
+		      title,
+		      description,
+		      orders,
+		      loading,
+		      refreshing,
+		      hasSettled,
+		      error,
+		      onRefresh,
+		      ariaLabel,
+		      keyPrefix,
+		    }: {
+		      title: string;
+		      description: ReactNode;
+		      orders: AccountOrderSummary[];
+		      loading: boolean;
+		      refreshing: boolean;
+		      hasSettled: boolean;
+		      error?: string | null;
+		      onRefresh: () => void;
+		      ariaLabel: string;
+		      keyPrefix: string;
+		    }) => {
+		      const busy = loading || refreshing;
+		      return (
+		        <div className="sales-rep-leads-card sales-rep-combined-card">
+		          <div className="mb-0 flex w-full items-start justify-between gap-3">
+		            <div className="min-w-0">
+		              <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+		              <p className="text-sm text-slate-600">{description}</p>
+		            </div>
+		            <Button
+		              type="button"
+		              variant="outline"
+		              size="sm"
+		              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
+		              onClick={onRefresh}
+		              disabled={busy}
+		              aria-busy={busy}
+		              title="Refresh on-hold orders"
+		            >
+		              <RefreshActionIcon spinning={busy} />
+		              {busy ? "Refreshing..." : "Refresh"}
+		            </Button>
+		          </div>
+		          <div
+		            className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+		            role="region"
+		            aria-label={ariaLabel}
+		          >
+		            {!hasSettled || (loading && orders.length === 0) ? (
+		              <div className="px-4 py-3 text-sm text-slate-500">
+		                Loading orders…
+		              </div>
+		            ) : orders.length === 0 ? (
+		              <div
+		                className="px-4 py-3 text-sm text-slate-500"
+		                title={error || undefined}
+		              >
+		                No orders on-hold yet.
+		              </div>
+		            ) : (
+		              <div className="w-full" style={{ minWidth: 980 }}>
+		                <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                  <span>Orders: {orders.length}</span>
+		                  <span>Total: {formatCurrency(getOnHoldOrdersTotal(orders))}</span>
+		                </div>
+		                <div className="w-full">
+		                  <div
+		                    className="grid w-full items-center gap-3 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                    style={{ gridTemplateColumns: ON_HOLD_ORDERS_GRID_TEMPLATE }}
+		                  >
+		                    <div className="whitespace-nowrap">Order</div>
+		                    <div className="whitespace-nowrap text-center">Ordered by</div>
+		                    <div className="whitespace-nowrap text-right">Placed</div>
+		                    <div className="whitespace-nowrap text-right">Total</div>
+		                  </div>
+		                  <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+		                    {orders.map((order, index) => {
+		                      const orderNumber = order.number || order.id || "Order";
+		                      const doctorLabelFallback =
+		                        resolveOnHoldOrderDoctorFallbackLabel(order);
+		                      const doctorModalEntry = resolveOrderUserModalEntry(
+		                        order,
+		                        doctorLabelFallback,
+		                      );
+		                      const doctorLabel =
+		                        normalizeStringField(
+		                          (doctorModalEntry as any)?.name ??
+		                            (doctorModalEntry as any)?.displayName ??
+		                            (doctorModalEntry as any)?.fullName ??
+		                            (doctorModalEntry as any)?.email,
+		                        ) || doctorLabelFallback;
+		                      const orderPlacedAt =
+		                        formatOrderPlacedAtForLocalDisplay(order as any);
+		                      const key = buildOnHoldOrderListKey(order, index, keyPrefix);
+		                      return (
+		                        <li
+		                          key={key}
+		                          className="grid w-full items-center gap-3 px-3 py-1.5 border-b border-slate-200/70 last:border-b-0"
+		                          style={{ gridTemplateColumns: ON_HOLD_ORDERS_GRID_TEMPLATE }}
+		                        >
+		                          <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
+		                            <button
+		                              type="button"
+		                              className="min-w-0 text-left hover:underline"
+		                              onClick={() => openSalesOrderDetails(order)}
+		                              title="Open order details"
+		                            >
+		                              {`Order #${orderNumber}`}
+		                            </button>
+		                          </div>
+		                          <div className="text-sm text-slate-700 min-w-0 truncate text-center">
+		                            {doctorModalEntry ? (
+		                              <button
+		                                type="button"
+		                                className="min-w-0 truncate text-center hover:underline"
+		                                title={`Open ${doctorLabel}`}
+		                                onClick={() => openLiveUserDetail(doctorModalEntry)}
+		                              >
+		                                {doctorLabel}
+		                              </button>
+		                            ) : (
+		                              doctorLabel
+		                            )}
+		                          </div>
+		                          <div className="text-sm text-right text-slate-800 whitespace-nowrap">
+		                            {orderPlacedAt || "Date unavailable"}
+		                          </div>
+		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+		                            {formatCurrency(getOnHoldOrderDisplayTotal(order))}
+		                          </div>
+		                        </li>
+		                      );
+		                    })}
+		                  </ul>
+		                </div>
+		              </div>
+		            )}
+		          </div>
+		        </div>
+		      );
+		    };
+		    const renderSalesScopedOnHoldOrdersCard = () =>
+		      renderOnHoldOrdersCard({
+		        title: "Orders On-Hold",
+		        description: isSalesLead(user?.role)
+		          ? "All client orders currently awaiting reception from our system."
+		          : "Your clients' orders currently awaiting reception from our system.",
+		        orders: salesOnHoldOrders,
+		        loading: salesOnHoldLoading,
+		        refreshing: salesOnHoldRefreshing,
+		        hasSettled: salesOnHoldHasSettled,
+		        error: salesOnHoldError,
+		        onRefresh: () => void refreshSalesOnHoldOrders({ force: true }),
+		        ariaLabel: "Orders on-hold list",
+		        keyPrefix: "sales-on-hold",
+		      });
+		    const renderAdminOnHoldOrdersCard = () =>
+		      renderOnHoldOrdersCard({
+		        title: "Orders On-Hold",
+		        description: "All orders currently on-hold.",
+		        orders: adminOnHoldOrders,
+		        loading: adminOnHoldLoading,
+		        refreshing: adminOnHoldRefreshing,
+		        hasSettled: adminOnHoldHasSettled,
+		        error: adminOnHoldError,
+		        onRefresh: () => void refreshAdminOnHoldOrders({ force: true }),
+		        ariaLabel: "Orders on-hold list",
+		        keyPrefix: "admin-on-hold",
+		      });
 	    const renderActivePhysiciansCsvCard = () => {
 	      const networkUserCount = activePhysiciansCsvData.networkUsers.length;
 	      const leadCount = activePhysiciansCsvData.leads.length;
@@ -33659,7 +33665,7 @@ function MainApp() {
                           <div className="flex min-w-0 items-start gap-3">
 			                        <input
 			                          type="checkbox"
-			                          aria-label="Enable Explore Peptides view for users"
+				                          aria-label="Enable Enter Dashboard view for users"
 			                          checked={shopEnabled}
 			                          onChange={(e) => handleShopToggle(e.target.checked)}
 			                          className="brand-checkbox mt-0.5"
@@ -33667,7 +33673,7 @@ function MainApp() {
 			                        />
 			                        <span className="min-w-0">
 			                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-			                            <span>Explore Peptides view for users</span>
+				                            <span>Enter Dashboard view for users</span>
 			                            <span className="text-xs font-semibold text-slate-500">
 			                              {"\u00A0"}(
 			                              {settingsSaving.shop
@@ -33679,7 +33685,7 @@ function MainApp() {
 			                            </span>
 			                          </span>
 			                          <span className="block text-xs text-slate-600">
-			                            Controls whether physicians see the Explore Peptides view.
+				                            Controls whether physicians see the Enter Dashboard view.
 			                          </span>
 			                        </span>
                           </div>
@@ -37362,27 +37368,27 @@ function MainApp() {
                             record.creditIssuedAmount != null
                               ? record.creditIssuedAmount
                               : referralCreditAmount;
-                          const isManualLead =
-                            kind === "referral" && isManualEntry(record);
-                          const leadTypeLabel = formatProspectLeadType(kind, record as ReferralRecord);
+	                          const leadTypeLabel = formatProspectLeadType(kind, record as ReferralRecord);
 	                          const hasContactAccount =
 	                            typeof record.referredContactHasAccount === "boolean"
 	                              ? record.referredContactHasAccount
 	                              : false;
-	                          const hasReferrerDoctorId = Boolean(
-	                            String((record as any)?.referrerDoctorId || "").trim(),
-	                          );
-	                          const creditEligible =
-	                            kind === "referral"
-	                              ? Boolean(record.referredContactEligibleForCredit) &&
-	                                hasReferrerDoctorId &&
-	                                !isContactFormEntry(record as ReferralRecord)
-	                              : false;
-		                          const awaitingFirstPurchase =
-		                            selectedStatusValue === "converted" &&
-		                            !hasLeadPlacedOrder(record);
-			                          const isSyntheticAccount =
-			                            (record as any).syntheticAccountProspect === true;
+		                          const hasReferrerDoctorId = Boolean(
+		                            String((record as any)?.referrerDoctorId || "").trim(),
+		                          );
+		                          const isReferralCreditLead =
+		                            kind === "referral" &&
+		                            isReferralCreditLeadRecord(record);
+		                          const creditEligible =
+		                            isReferralCreditLead &&
+		                            Boolean(record.referredContactEligibleForCredit) &&
+		                            hasReferrerDoctorId;
+			                          const awaitingFirstPurchase =
+			                            isReferralCreditLead &&
+			                            selectedStatusValue === "converted" &&
+			                            !hasLeadPlacedOrder(record);
+				                          const isSyntheticAccount =
+				                            (record as any).syntheticAccountProspect === true;
 			                          const resellerPermitExempt = Boolean(
 			                            (record as any).resellerPermitExempt,
 			                          );
@@ -37809,12 +37815,11 @@ function MainApp() {
 	                                    Awaiting their first purchase
 	                                  </div>
 	                                )}
-		                                {kind === "referral" &&
-		                                  !isManualLead &&
-		                                  normalizedStatus === "converted" &&
-		                                  !referralCreditTimestamp &&
-		                                  creditEligible && (
-		                                    <Button
+			                                {isReferralCreditLead &&
+			                                  normalizedStatus === "converted" &&
+			                                  !referralCreditTimestamp &&
+			                                  creditEligible && (
+			                                    <Button
 	                                      type="button"
                                         variant="outline"
                                         size="sm"
@@ -37831,11 +37836,10 @@ function MainApp() {
 	                                        : `Credit ${referralDisplayName} ${formatCurrency(referralCreditAmountForLead)}`}
 	                                    </Button>
 	                                  )}
-			                                {kind === "referral" &&
-			                                  !isManualLead &&
-			                                  normalizedStatus === "converted" &&
-			                                  !referralCreditTimestamp &&
-			                                  !creditEligible && (
+				                                {isReferralCreditLead &&
+				                                  normalizedStatus === "converted" &&
+				                                  !referralCreditTimestamp &&
+				                                  !creditEligible && (
 			                                    <div className="text-xs text-slate-500 text-center mt-1">
 			                                      Awaiting first order to credit
 			                                    </div>
@@ -38082,15 +38086,16 @@ function MainApp() {
                             referral.referrerDoctorName || "User";
                           const referralCreditTimestamp =
                             referral.creditIssuedAt || null;
-	                          const referralCreditAmountForLead =
-	                            referral.creditIssuedAmount != null
-	                              ? referral.creditIssuedAmount
-	                              : referralCreditAmount;
-	                          const referralEligibleForCredit = Boolean(
-	                            referral.referredContactEligibleForCredit &&
-	                              !isContactFormEntry(referral) &&
-	                              String(referral.referrerDoctorId || "").trim(),
-	                          );
+		                          const referralCreditAmountForLead =
+		                            referral.creditIssuedAmount != null
+		                              ? referral.creditIssuedAmount
+		                              : referralCreditAmount;
+		                          const isReferralCreditLead =
+		                            isReferralCreditLeadRecord(referral);
+		                          const referralEligibleForCredit = Boolean(
+		                            isReferralCreditLead &&
+		                              referral.referredContactEligibleForCredit,
+		                          );
 	                          const isCollapsed = collapsedReferralIds.has(referral.id);
 	                          const capitalizeName = (value?: string | null) => {
 	                            if (!value) return value;
@@ -38271,10 +38276,10 @@ function MainApp() {
 	                                          </option>
 	                                        ))}
 	                                      </select>
-	                                      {normalizedStatus === "converted" &&
-	                                        !manualLead &&
-	                                        !referralCreditTimestamp &&
-	                                        referralEligibleForCredit && (
+		                                      {normalizedStatus === "converted" &&
+		                                        isReferralCreditLead &&
+		                                        !referralCreditTimestamp &&
+		                                        referralEligibleForCredit && (
 	                                          <Button
                                             type="button"
                                             variant="outline"
@@ -38290,10 +38295,10 @@ function MainApp() {
                                               : `Credit ${referralDisplayName} ${formatCurrency(referralCreditAmountForLead)}`}
                                           </Button>
                                         )}
-	                                      {normalizedStatus === "converted" &&
-	                                        !manualLead &&
-	                                        !referralCreditTimestamp &&
-	                                        !referralEligibleForCredit && (
+		                                      {normalizedStatus === "converted" &&
+		                                        isReferralCreditLead &&
+		                                        !referralCreditTimestamp &&
+		                                        !referralEligibleForCredit && (
 	                                          <div className="text-xs text-slate-500 text-right w-full">
 	                                            Awaiting first order to credit
 	                                          </div>
@@ -39517,7 +39522,7 @@ function MainApp() {
                               className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(60,103,183,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(60,103,183,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                               style={{ backgroundColor: "rgb(60, 103, 183)" }}
                             >
-                              <span className="mr-2">Explore Peptides</span>
+	                              <span className="mr-2">Enter Dashboard</span>
                               <ArrowRight
                                 className="h-4 w-4"
                                 aria-hidden="true"
@@ -39526,7 +39531,7 @@ function MainApp() {
                           </div>
 	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
 	                            <span className="block w-full text-right text-[11px] text-slate-600 italic">
-	                              Explore Peptides view for physicians:{" "}
+		                              Enter Dashboard view for physicians:{" "}
 	                              {shopEnabled ? "Enabled" : "Disabled"}
 	                            </span>
 	                          )}
@@ -40434,18 +40439,19 @@ function MainApp() {
 	                      {landingAuthMode === "verificationSent" && (
 	                        <>
 	                          <div className="space-y-4 text-center">
-	                            <div
-	                              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border ${
-	                                landingSignupVerificationSuccess
-	                                  ? "verification-success-badge border-emerald-300 bg-emerald-50 text-emerald-600"
-	                                  : landingSignupVerificationEmailSent
-	                                  ? "border-[rgba(60,103,183,0.22)] bg-[rgba(60,103,183,0.08)] text-[rgb(60,103,183)]"
-	                                  : "border-amber-300/60 bg-amber-100/70 text-amber-700"
-	                              }`}
-	                              aria-hidden="true"
-	                            >
+		                            <div
+		                              className={clsx(
+		                                "mx-auto flex items-center justify-center",
+		                                landingSignupVerificationSuccess
+			                                  ? "verification-success-badge text-emerald-600"
+		                                  : landingSignupVerificationEmailSent
+		                                    ? "text-[rgb(60,103,183)]"
+		                                    : "h-14 w-14 rounded-full border border-amber-300/60 bg-amber-100/70 text-amber-700",
+		                              )}
+		                              aria-hidden="true"
+		                            >
 	                              {landingSignupVerificationSuccess ? (
-	                                <CheckCircle2 className="verification-success-check h-7 w-7" />
+	                                <Check className="verification-success-check h-7 w-7" />
 	                              ) : landingSignupVerificationEmailSent ? (
 	                                <Mail className="h-7 w-7" />
 	                              ) : (
@@ -42485,7 +42491,7 @@ function MainApp() {
 
               <div
                 className={`grid grid-cols-1 gap-4 sm:grid-cols-2${
-                  canSeeSalesDoctorFullModalDetails && isDoctorRole(salesDoctorDetail.role)
+                  canSeeSalesDoctorProfileModalDetails && isDoctorRole(salesDoctorDetail.role)
                     ? " xl:grid-cols-3"
                     : ""
                 }`}
@@ -42787,7 +42793,7 @@ function MainApp() {
 	                    );
 	                  })()}
 	                </div>
-                {canSeeSalesDoctorFullModalDetails && isDoctorRole(salesDoctorDetail.role) ? (
+                {canSeeSalesDoctorProfileModalDetails && isDoctorRole(salesDoctorDetail.role) ? (
                   <div className="min-w-0 space-y-2 sm:col-span-2 xl:col-span-1">
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
@@ -43006,8 +43012,18 @@ function MainApp() {
                         typeof salesDoctorDetail.salesRevenue === "number" ||
                         typeof salesDoctorDetail.salesOrderCount === "number" ||
                         typeof salesDoctorDetail.orderQuantity === "number";
-                      const personalOrdersLoaded = salesDoctorDetail.personalOrdersLoaded === true;
-                      const salesOrdersLoaded = salesDoctorDetail.salesOrdersLoaded === true;
+                      const hasPersonalOrdersPayload = Array.isArray(salesDoctorDetail.personalOrders);
+                      const hasSalesOrdersPayload = Array.isArray(salesDoctorDetail.salesOrders);
+                      const personalOrdersLoaded =
+                        salesDoctorDetail.personalOrdersLoaded === true ||
+                        (salesDoctorDetail.personalOrdersLoaded !== false &&
+                          hasPersonalOrdersPayload) ||
+                        !salesDoctorDetailHydrating;
+                      const salesOrdersLoaded =
+                        salesDoctorDetail.salesOrdersLoaded === true ||
+                        (salesDoctorDetail.salesOrdersLoaded !== false &&
+                          hasSalesOrdersPayload) ||
+                        !salesDoctorDetailHydrating;
                       const showOrdersSkeleton =
                         salesDoctorDetailHydrating &&
                         salesDoctorDetail.orders.length === 0 &&
@@ -43128,11 +43144,13 @@ function MainApp() {
 		                  const personalCount = personalOrdersInRange.filter((order) =>
 		                    shouldCountRevenueForStatus(order.status),
 		                  ).length;
+		                  const salesOrderCountFallback =
+		                    typeof salesDoctorDetail.salesOrderCount === "number" &&
+		                    Number.isFinite(salesDoctorDetail.salesOrderCount)
+		                      ? Math.max(0, salesDoctorDetail.salesOrderCount)
+		                      : null;
 		                  const salesCount = salesOrdersLoading
-                          ? Math.max(
-                              0,
-                              Number(salesDoctorDetail.salesOrderCount ?? salesDoctorDetail.orderQuantity ?? 0),
-                            )
+                          ? (salesOrderCountFallback ?? 0)
                           : salesOrdersInRange.filter((order) =>
 		                        shouldCountRevenueForStatus(order.status),
 		                      ).length;
@@ -44028,22 +44046,26 @@ function MainApp() {
 	                                </label>
 	                              </div>
 	                              <div className="flex items-center justify-end gap-3">
-	                                <Button
-	                                  type="button"
-	                                  variant="outline"
-	                                  onClick={() => {
-	                                    setSalesOrderFieldsDraft(salesOrderFieldsSaved);
-	                                  }}
+		                                <Button
+		                                  type="button"
+		                                  variant="outline"
+		                                  size="sm"
+		                                  className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
+		                                  onClick={() => {
+		                                    setSalesOrderFieldsDraft(salesOrderFieldsSaved);
+		                                  }}
 	                                  disabled={salesOrderFieldsSaving || !dirty}
 	                                >
 	                                  Reset
 	                                </Button>
-	                                <Button
-	                                  type="button"
-	                                  onClick={handleSaveSalesOrderFields}
-	                                  disabled={salesOrderFieldsSaving || !dirty}
-	                                  className="gap-2"
-	                                >
+		                                <Button
+		                                  type="button"
+		                                  variant="outline"
+		                                  size="sm"
+		                                  onClick={handleSaveSalesOrderFields}
+		                                  disabled={salesOrderFieldsSaving || !dirty}
+		                                  className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
+		                                >
 	                                  {salesOrderFieldsSaving ? "Saving…" : "Save"}
 	                                </Button>
 	                              </div>
@@ -44327,9 +44349,16 @@ function MainApp() {
                   </h3>
                   <p>
                     TrufusionLabs utilizes the{" "}
-                    <span className="manufacturing-certification-label">
-                      cGMP Certified Lab
-                    </span>{" "}
+                    <img
+                      src={withStaticAssetStamp("/protixa.png")}
+                      alt="Protixa"
+                      style={{
+                        display: "inline-block",
+                        height: "0.95em",
+                        width: "auto",
+                        verticalAlign: "-0.18em",
+                      }}
+                    />{" "}
                     ION System&trade;, an advanced ionic liquid delivery platform designed for
                     needle-free peptide administration. This
                     proprietary system enhances bioavailability through five mechanisms:

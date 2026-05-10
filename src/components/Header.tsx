@@ -1853,7 +1853,6 @@ export function Header({
   const elevatedShadow = delegateMode
     ? `0 32px 60px -28px ${hexToRgbaCss(delegateSessionSecondaryHex, 0.55)}`
     : '0 32px 60px -28px rgba(60, 103, 183, 0.55)';
-  const logoHaloBackground = delegateMode ? hexToRgbaCss(delegateSessionSecondaryHex, 0.08) : 'rgba(60, 103, 183, 0.08)';
   const [loginOpen, setLoginOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
@@ -9585,20 +9584,24 @@ export function Header({
 	          ) : authMode === 'verify' ? (
 	            <div className="space-y-5">
 	              <div className="space-y-4 text-center">
-	                <div
-	                  className={clsx(
-	                    'mx-auto flex h-14 w-14 items-center justify-center rounded-full border',
-	                    signupVerificationSuccess && 'verification-success-badge',
-	                  )}
-	                  style={{
-	                    color: signupVerificationSuccess ? '#059669' : signupVerificationEmailSent ? secondaryColor : '#b45309',
-	                    borderColor: signupVerificationSuccess ? 'rgba(5,150,105,0.32)' : signupVerificationEmailSent ? translucentSecondary : 'rgba(180,83,9,0.24)',
-	                    backgroundColor: signupVerificationSuccess ? 'rgba(236,253,245,0.92)' : signupVerificationEmailSent ? logoHaloBackground : 'rgba(251,191,36,0.14)',
-	                  }}
-	                  aria-hidden="true"
-	                >
+		                <div
+		                  className={clsx(
+		                    'mx-auto flex items-center justify-center',
+		                    signupVerificationSuccess
+		                      ? 'verification-success-badge'
+		                      : signupVerificationEmailSent
+		                        ? null
+		                        : 'h-14 w-14 rounded-full border',
+		                  )}
+		                  style={{
+		                    color: signupVerificationSuccess ? '#059669' : signupVerificationEmailSent ? secondaryColor : '#b45309',
+		                    borderColor: signupVerificationSuccess || signupVerificationEmailSent ? 'transparent' : 'rgba(180,83,9,0.24)',
+		                    backgroundColor: signupVerificationSuccess || signupVerificationEmailSent ? 'transparent' : 'rgba(251,191,36,0.14)',
+		                  }}
+		                  aria-hidden="true"
+		                >
 	                  {signupVerificationSuccess ? (
-	                    <CheckCircle2 className="verification-success-check h-7 w-7" />
+	                    <Check className="verification-success-check h-7 w-7" />
 	                  ) : signupVerificationEmailSent ? (
 	                    <Mail className="h-7 w-7" />
 	                  ) : (

@@ -555,7 +555,10 @@ def _list_house_lead_users_for_sales_tracking() -> List[Dict]:
                 office_state,
                 office_postal_code,
                 office_country,
-                profile_image_url
+                profile_image_url,
+                greater_area,
+                study_focus,
+                bio
             FROM users
             WHERE LOWER(TRIM(COALESCE(lead_type, ''))) = 'house'
             """,
@@ -590,6 +593,9 @@ def _list_house_lead_users_for_sales_tracking() -> List[Dict]:
                 "officePostalCode": row.get("office_postal_code"),
                 "officeCountry": row.get("office_country"),
                 "profileImageUrl": row.get("profile_image_url"),
+                "greaterArea": row.get("greater_area"),
+                "studyFocus": row.get("study_focus"),
+                "bio": row.get("bio"),
             }
         )
     return house_users
@@ -3427,6 +3433,9 @@ def get_orders_for_sales_rep(
             "email": doc.get("email"),
             "phone": doc.get("phone"),
             "profileImageUrl": doc.get("profileImageUrl"),
+            "greaterArea": doc.get("greaterArea") or doc.get("greater_area"),
+            "studyFocus": doc.get("studyFocus") or doc.get("study_focus"),
+            "bio": doc.get("bio"),
             "salesRepId": str(doc.get("salesRepId") or doc.get("sales_rep_id") or "").strip() or None,
             "leadType": doc.get("leadType"),
             "leadTypeSource": doc.get("leadTypeSource"),
@@ -3456,6 +3465,9 @@ def get_orders_for_sales_rep(
                     "email": existing.get("email") or house_user.get("email"),
                     "phone": existing.get("phone") or house_user.get("phone"),
                     "profileImageUrl": existing.get("profileImageUrl") or house_user.get("profileImageUrl"),
+                    "greaterArea": existing.get("greaterArea") or house_user.get("greaterArea"),
+                    "studyFocus": existing.get("studyFocus") or house_user.get("studyFocus"),
+                    "bio": existing.get("bio") or house_user.get("bio"),
                     "salesRepId": existing.get("salesRepId") or house_user.get("salesRepId"),
                     "leadType": existing.get("leadType") or house_user.get("leadType") or "house",
                     "leadTypeSource": existing.get("leadTypeSource") or house_user.get("leadTypeSource") or "users.lead_type",
@@ -3531,6 +3543,9 @@ def get_orders_for_sales_rep(
                 "email": email,
                 "phone": prospect.get("contactPhone") or None,
                 "profileImageUrl": None,
+                "greaterArea": None,
+                "studyFocus": None,
+                "bio": None,
                 "salesRepId": prospect_sales_rep_id or None,
                 "leadType": "contact_form",
                 "leadTypeSource": "contact_form",
@@ -3687,6 +3702,9 @@ def get_orders_for_sales_rep(
                 "email": local_user.get("email"),
                 "phone": local_user.get("phone"),
                 "profileImageUrl": local_user.get("profileImageUrl"),
+                "greaterArea": local_user.get("greaterArea") or local_user.get("greater_area"),
+                "studyFocus": local_user.get("studyFocus") or local_user.get("study_focus"),
+                "bio": local_user.get("bio"),
                 "leadType": local_user.get("leadType"),
                 "leadTypeSource": local_user.get("leadTypeSource"),
                 "leadTypeLockedAt": local_user.get("leadTypeLockedAt"),

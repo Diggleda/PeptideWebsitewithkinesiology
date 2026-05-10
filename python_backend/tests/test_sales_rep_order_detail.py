@@ -16,6 +16,7 @@ def _install_test_stubs() -> None:
         flask.request = types.SimpleNamespace(method="GET", path="/")
         flask.g = types.SimpleNamespace(current_user=None)
         flask.jsonify = lambda payload=None, *args, **kwargs: payload
+        flask.has_request_context = lambda: False
         sys.modules["flask"] = flask
 
     if "werkzeug" not in sys.modules:
@@ -101,10 +102,28 @@ def _install_test_stubs() -> None:
         def _blocked(*_args, **_kwargs):
             raise RuntimeError("requests used during unit test")
 
+        class RequestException(Exception):
+            pass
+
+        class Timeout(RequestException):
+            pass
+
+        class HTTPError(RequestException):
+            def __init__(self, *args, response=None, **kwargs):
+                super().__init__(*args)
+                self.response = response
+
+        class Response:
+            pass
+
         class HTTPBasicAuth:
             def __init__(self, *_args, **_kwargs):
                 pass
 
+        requests.RequestException = RequestException
+        requests.Timeout = Timeout
+        requests.HTTPError = HTTPError
+        requests.Response = Response
         requests.get = _blocked
         requests.post = _blocked
         requests.put = _blocked
@@ -653,6 +672,86 @@ class SalesRepOrderDetailTests(unittest.TestCase):
             service.order_repository.find_by_id = original_find_by_id
             service.user_repository.find_by_email = original_find_email
             service.user_repository.find_by_id = original_find_user_by_id
+
+    def test_sales_rep_feed_includes_physician_profile_fields_for_python_modal(self):
+        service = self.order_service
+        doctor = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "phone": "317-555-0102",
+            "salesRepId": "rep-1",
+            "profileImageUrl": "https://cdn.example.com/doctor.png",
+            "greaterArea": "Midwest",
+            "studyFocus": "Longevity",
+            "bio": "Focused on peptide protocols.",
+        }
+        order = {
+            "id": "local-1601",
+            "userId": "doctor-1",
+            "wooOrderId": "9601",
+            "wooOrderNumber": "1601",
+            "status": "processing",
+            "grandTotal": 125.0,
+            "createdAt": "2026-04-01T12:00:00+00:00",
+        }
+
+        with service._sales_rep_orders_cache_lock:
+            service._sales_rep_orders_cache.clear()
+
+        with patch.object(service.user_repository, "list_sales_tracking_users_for_admin", return_value=[doctor]), \
+            patch.object(service.sales_rep_repository, "get_all", return_value=[{"id": "rep-1", "name": "Rep One"}]), \
+            patch.object(service.order_repository, "find_sales_tracking_by_user_ids", return_value=[order]), \
+            patch.object(service.sales_prospect_repository, "mark_doctor_as_nurturing_if_purchased", return_value=None):
+            result = service.get_orders_for_sales_rep(
+                "rep-1",
+                include_doctors=True,
+                local_only=True,
+            )
+
+        self.assertEqual(result["orders"][0]["doctorId"], "doctor-1")
+        self.assertEqual(result["doctors"][0]["profileImageUrl"], "https://cdn.example.com/doctor.png")
+        self.assertEqual(result["doctors"][0]["greaterArea"], "Midwest")
+        self.assertEqual(result["doctors"][0]["studyFocus"], "Longevity")
+        self.assertEqual(result["doctors"][0]["bio"], "Focused on peptide protocols.")
+
+    def test_sales_rep_modal_detail_includes_assigned_physician_profile_fields(self):
+        service = self.order_service
+        actor = {
+            "id": "rep-user-1",
+            "role": "sales_rep",
+            "email": "rep@example.com",
+        }
+        target = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "phone": "317-555-0102",
+            "salesRepId": "rep-1",
+            "profileImageUrl": "https://cdn.example.com/doctor.png",
+            "greaterArea": "Midwest",
+            "studyFocus": "Longevity",
+            "bio": "Focused on peptide protocols.",
+        }
+        rep_record = {
+            "id": "rep-1",
+            "legacyUserId": "rep-user-1",
+            "email": "rep@example.com",
+        }
+
+        with patch.object(service.user_repository, "list_sales_modal_lookup_users", return_value=[actor, target]), \
+            patch.object(service.sales_rep_repository, "get_all", return_value=[rep_record]), \
+            patch.object(service.order_repository, "list_user_overlay_fields", return_value=[]), \
+            patch.object(service.order_repository, "find_sales_tracking_by_user_ids", return_value=[]):
+            result = service.get_sales_modal_detail(actor=actor, target_user_id="doctor-1")
+
+        self.assertEqual(result["user"]["id"], "doctor-1")
+        self.assertEqual(result["user"]["profileImageUrl"], "https://cdn.example.com/doctor.png")
+        self.assertEqual(result["user"]["greaterArea"], "Midwest")
+        self.assertEqual(result["user"]["studyFocus"], "Longevity")
+        self.assertEqual(result["user"]["bio"], "Focused on peptide protocols.")
 
     def test_modal_detail_uses_sales_rep_phone_fallback_for_summary_profiles(self):
         service = self.order_service

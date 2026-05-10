@@ -551,7 +551,10 @@ def list_sales_tracking_users_for_admin() -> List[Dict]:
             office_state,
             office_postal_code,
             office_country,
-            profile_image_url
+            profile_image_url,
+            greater_area,
+            study_focus,
+            bio
         FROM users
         WHERE LOWER(COALESCE(role, '')) IN ('doctor', 'test_doctor', 'sales_rep', 'sales_partner', 'rep')
         """
