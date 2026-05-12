@@ -7,6 +7,7 @@ const targetRoot = path.join(repoRoot, "src", "generated", "runtime-assets");
 
 const assetsToSync = [
   "FullLogo_Transparent_NoBuffer (18).png",
+  "TrufusionLabs_Share.jpg",
   "TrufusionLabs_PhysiciansPortal.png",
   "Trufusionpeptides_icon.png",
   "protixa.png",

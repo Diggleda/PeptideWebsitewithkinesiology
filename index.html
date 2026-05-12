@@ -3,32 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Physician Portal</title>
+    <title>Trufusion Labs</title>
 
     <!-- Share / link previews -->
-    <meta property="og:site_name" content="TrufusionLabs" />
+    <meta property="og:site_name" content="Trufusion Labs" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="TrufusionLabs — Physician Portal" />
+    <meta property="og:url" content="https://trufusionlabs.com/" />
+    <meta property="og:title" content="Trufusion Labs" />
     <meta
       property="og:description"
-      content="TrufusionLabs Physician Portal for research, current events, and products."
+      content="Research-focused products, current events, and resources from Trufusion Labs."
     />
-    <meta property="og:image" content="/TrufusionLabs_PhysiciansPortal.png" />
-    <meta property="og:image:alt" content="TrufusionLabs" />
-    <meta property="og:image:width" content="1280" />
-    <meta property="og:image:height" content="262" />
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:title" content="TrufusionLabs — Physician Portal" />
+    <meta property="og:image" content="https://trufusionlabs.com/TrufusionLabs_Share.jpg" />
+    <meta property="og:image:secure_url" content="https://trufusionlabs.com/TrufusionLabs_Share.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:alt" content="Trufusion Labs" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Trufusion Labs" />
     <meta
-      property="twitter:description"
-      content="TrufusionLabs Physician Portal for research, current events, and products."
+      name="twitter:description"
+      content="Research-focused products, current events, and resources from Trufusion Labs."
     />
-    <meta property="twitter:image" content="/TrufusionLabs_PhysiciansPortal.png" />
+    <meta name="twitter:image" content="https://trufusionlabs.com/TrufusionLabs_Share.jpg" />
+    <meta name="twitter:image:alt" content="Trufusion Labs" />
 
     <!-- iOS / PWA -->
-    <meta name="application-name" content="Physician Portal" />
-    <meta name="apple-mobile-web-app-title" content="Physician Portal" />
-    <meta name="theme-color" content="#3C67B7" />
+    <meta name="application-name" content="Trufusion Labs" />
+    <meta name="apple-mobile-web-app-title" content="Trufusion Labs" />
+    <meta name="theme-color" content="#0B0679" />
 
     <script>
       (() => {
@@ -46,20 +50,18 @@
             });
           };
 
-          const params = new URLSearchParams(window.location.search);
           const themeColor = document.querySelector('meta[name="theme-color"]');
-          if (themeColor) themeColor.setAttribute("content", "#3C67B7");
+          if (themeColor) themeColor.setAttribute("content", "#0B0679");
           document.documentElement.dataset.brandColor = "blue";
-          document.documentElement.style.setProperty("--primary", "rgb(60, 103, 183)");
+          document.documentElement.style.setProperty("--primary", "rgb(11, 6, 121)");
           document.documentElement.style.setProperty("--primary-foreground", "#ffffff");
-          document.documentElement.style.setProperty("--brand-color", "rgb(60, 103, 183)");
-          document.documentElement.style.setProperty("--brand-color-rgb", "60, 103, 183");
-          document.documentElement.style.setProperty("--brand-glass-rgb", "60, 103, 183");
-          document.documentElement.style.setProperty("--secondary", "rgb(60, 103, 183)");
+          document.documentElement.style.setProperty("--brand-color", "rgb(11, 6, 121)");
+          document.documentElement.style.setProperty("--brand-color-rgb", "11, 6, 121");
+          document.documentElement.style.setProperty("--brand-glass-rgb", "11, 6, 121");
+          document.documentElement.style.setProperty("--secondary", "rgb(11, 6, 121)");
           document.documentElement.style.setProperty("--secondary-foreground", "#ffffff");
 
-          const hasDelegateToken = Boolean((params.get("delegate") || "").trim());
-          const title = hasDelegateToken ? "Physician Delegate" : "Physician Portal";
+          const title = "Trufusion Labs";
           document.title = title;
 
           const appName = document.querySelector('meta[name="application-name"]');
@@ -68,9 +70,9 @@
           if (appleTitle) appleTitle.setAttribute("content", title);
 
           const ogTitle = document.querySelector('meta[property="og:title"]');
-          const twTitle = document.querySelector('meta[property="twitter:title"]');
-          if (ogTitle) ogTitle.setAttribute("content", hasDelegateToken ? "TrufusionLabs — Physician Delegate" : "TrufusionLabs — Physician Portal");
-          if (twTitle) twTitle.setAttribute("content", hasDelegateToken ? "TrufusionLabs — Physician Delegate" : "TrufusionLabs — Physician Portal");
+          const twTitle = document.querySelector('meta[name="twitter:title"], meta[property="twitter:title"]');
+          if (ogTitle) ogTitle.setAttribute("content", title);
+          if (twTitle) twTitle.setAttribute("content", title);
         } catch (e) {
           // ignore
         }

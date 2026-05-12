@@ -1,10 +1,10 @@
 {
-  "name": "TrufusionLabs",
-  "short_name": "TrufusionLabs",
+  "name": "Trufusion Labs",
+  "short_name": "Trufusion Labs",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#3C67B7",
+  "theme_color": "#0B0679",
   "icons": [
     {
       "src": "/Trufusionpeptides_icon.png",

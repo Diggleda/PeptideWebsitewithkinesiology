@@ -47,6 +47,9 @@ export default defineConfig(({ command }) => ({
     'process.env.NODE_ENV': JSON.stringify(command === 'build' ? 'production' : 'development'),
   },
   esbuild: {
+    // The build path does not use the React plugin, so make esbuild emit
+    // react/jsx-runtime imports instead of bare React.createElement globals.
+    jsx: 'automatic',
     // Ensure production builds never emit `jsxDEV` calls (which rely on react/jsx-dev-runtime).
     jsxDev: command !== 'build',
   },

@@ -75,7 +75,7 @@ export function FeaturedSection({ featuredProducts, onAddToCart, proposalMode = 
 	                    variant="outline"
 	                    onClick={() => onAddToCart(mainFeatured.id)}
 	                    className={proposalMode ? 'squircle-sm btn-hover-lighter border-0 text-white' : 'glass-brand squircle-sm btn-hover-lighter'}
-                      style={proposalMode ? { backgroundColor: 'rgb(60, 103, 183)', borderColor: 'rgb(60, 103, 183)' } : undefined}
+                      style={proposalMode ? { backgroundColor: 'rgb(11, 6, 121)', borderColor: 'rgb(11, 6, 121)' } : undefined}
 	                  >
 	                    {proposalMode ? 'Add to Proposal' : 'Add to cart'}
 	                    <ArrowRight className="w-4 h-4 ml-2" />

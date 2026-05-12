@@ -182,9 +182,9 @@ const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: 
   ];
 };
 
-const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
+const DEFAULT_DELEGATE_SECONDARY_COLOR = '#0b0679';
 const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#377eba';
-const HEADER_BRAND_BLUE = 'rgb(60, 103, 183)';
+const HEADER_BRAND_BLUE = 'rgb(11, 6, 121)';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
   if (typeof value !== 'string') return null;
@@ -1848,11 +1848,11 @@ export function Header({
 	}: HeaderProps) {
   const delegateSessionSecondaryHex =
     normalizeDelegateSecondaryColor(delegateSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
-  const secondaryColor = delegateMode ? hexToRgbCss(delegateSessionSecondaryHex) : 'rgb(60, 103, 183)';
-  const translucentSecondary = delegateMode ? hexToRgbaCss(delegateSessionSecondaryHex, 0.18) : 'rgba(60, 103, 183, 0.18)';
+  const secondaryColor = delegateMode ? hexToRgbCss(delegateSessionSecondaryHex) : 'rgb(11, 6, 121)';
+  const translucentSecondary = delegateMode ? hexToRgbaCss(delegateSessionSecondaryHex, 0.18) : 'rgba(11, 6, 121, 0.18)';
   const elevatedShadow = delegateMode
     ? `0 32px 60px -28px ${hexToRgbaCss(delegateSessionSecondaryHex, 0.55)}`
-    : '0 32px 60px -28px rgba(60, 103, 183, 0.55)';
+    : '0 32px 60px -28px rgba(11, 6, 121, 0.55)';
   const [loginOpen, setLoginOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
@@ -4525,7 +4525,7 @@ export function Header({
         </Button>
         <Badge
           variant="outline"
-          className="absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(60,103,183)]"
+          className="absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(11,6,121)]"
         >
           {cartItems}
         </Badge>
@@ -4584,7 +4584,7 @@ export function Header({
 	              searchInputRef.current?.focus();
 	            });
 	          }}
-	          className="header-search-clear-button absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)]"
+	          className="header-search-clear-button absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
             style={{ right: '0.75rem', left: 'auto' }}
 	        >
 	          <X className="h-4 w-4" />
@@ -6201,8 +6201,8 @@ export function Header({
 	        <button
 	          type="button"
 	          onClick={() => setDeleteAccountModalOpen(true)}
-	          className="text-sm font-medium !text-[rgb(60,103,183)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.35)] focus-visible:ring-offset-2"
-	          style={{ color: 'rgb(60, 103, 183)', marginLeft: '16px' }}
+	          className="text-sm font-medium !text-[rgb(11,6,121)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2"
+	          style={{ color: 'rgb(11, 6, 121)', marginLeft: '16px' }}
 	        >
 	          Need to delete your account?
 	        </button>
@@ -6234,7 +6234,7 @@ export function Header({
       <div className="flex">
         <button
           type="button"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-[rgb(60,103,183)] shadow-[0_10px_18px_-12px_rgba(15,23,42,0.35)] transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.35)]"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-[rgb(11,6,121)] shadow-[0_10px_18px_-12px_rgba(15,23,42,0.35)] transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)]"
           aria-label={
             researchDashboardExpanded
               ? 'Exit full screen Research dashboard'
@@ -6845,7 +6845,7 @@ export function Header({
                           <>
                             <button
                               type="button"
-                              className="text-[rgb(60,103,183)] font-semibold hover:underline"
+                              className="text-[rgb(11,6,121)] font-semibold hover:underline"
                               onClick={() => void downloadInvoiceForOrder(order)}
                             >
                               Download invoice
@@ -6856,7 +6856,7 @@ export function Header({
                       })()}
                       <button
                         type="button"
-                        className="text-[rgb(60,103,183)] font-semibold hover:underline"
+                        className="text-[rgb(11,6,121)] font-semibold hover:underline"
                         onClick={() => setSelectedOrder(order)}
                       >
                         View order details
@@ -6949,7 +6949,7 @@ export function Header({
                                 )}
                               </div>
                               <div className="flex-1 space-y-1">
-                                <p className="text-[rgb(60,103,183)] font-semibold leading-snug">
+                                <p className="text-[rgb(11,6,121)] font-semibold leading-snug">
                                   {line.name || 'Item'}
                                 </p>
                                 <p className="text-sm text-slate-700">
@@ -7026,7 +7026,7 @@ export function Header({
 		                  Sales rep:{' '}
 	                  <a
 	                    href={`mailto:${salesRepEmail}`}
-	                    className="underline hover:text-[rgb(60,103,183)]"
+	                    className="underline hover:text-[rgb(11,6,121)]"
 	                  >
 	                    {salesRepEmail}
 	                  </a>
@@ -7036,7 +7036,7 @@ export function Header({
 	                Support:{' '}
 	                <a
 	                  href="mailto:support@trufusionlabs.com"
-	                  className="underline hover:text-[rgb(60,103,183)]"
+	                  className="underline hover:text-[rgb(11,6,121)]"
 	                >
 	                  support@trufusionlabs.com
 	                </a>
@@ -7435,7 +7435,7 @@ export function Header({
 	                            href={trackingHref}
 	                            target="_blank"
 	                            rel="noreferrer"
-	                            className="text-[rgb(60,103,183)] hover:underline"
+	                            className="text-[rgb(11,6,121)] hover:underline"
 	                          >
 	                            {trackingNumber}
 	                          </a>
@@ -7557,19 +7557,19 @@ export function Header({
 	                  <span>{formatCurrency(subtotalForSummary, selectedOrder.currency || 'USD')}</span>
 	                </div>
                   {resolvedHasExplicitDiscounts && resolvedDiscountCodeAmount > 0 && (
-                    <div className="flex justify-between text-[rgb(60,103,183)]">
+                    <div className="flex justify-between text-[rgb(11,6,121)]">
                       <span>{discountCode ? `Discount (${discountCode})` : 'Discount'}</span>
                       <span>-{formatCurrency(resolvedDiscountCodeAmount, selectedOrder.currency || 'USD')}</span>
                     </div>
                   )}
                   {hasDiscountCode && resolvedDiscountCodeAmount <= 0 && (
-                    <div className="flex justify-between text-[rgb(60,103,183)]">
+                    <div className="flex justify-between text-[rgb(11,6,121)]">
                       <span>{`Discount code used (${discountCode})`}</span>
                       <span>Applied</span>
                     </div>
                   )}
                   {resolvedHasExplicitDiscounts && appliedReferralCredit > 0 && (
-                    <div className="flex justify-between text-[rgb(60,103,183)]">
+                    <div className="flex justify-between text-[rgb(11,6,121)]">
                       <span>Referral Credit</span>
                       <span>-{formatCurrency(appliedReferralCredit, selectedOrder.currency || 'USD')}</span>
                     </div>
@@ -7585,7 +7585,7 @@ export function Header({
 	                  </div>
 	                )}
 	                {!resolvedHasExplicitDiscounts && discountTotal > 0 && (
-	                  <div className="flex justify-between text-[rgb(60,103,183)]">
+	                  <div className="flex justify-between text-[rgb(11,6,121)]">
 	                    <span>Credits & Discounts</span>
 	                    <span>-{formatCurrency(discountTotal, selectedOrder.currency || 'USD')}</span>
 	                  </div>
@@ -7664,7 +7664,7 @@ export function Header({
                 type="button"
                 aria-label="Clear order search"
                 onClick={() => setOrdersSearchQuery('')}
-                className="absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.4)]"
+                className="absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -7677,7 +7677,7 @@ export function Header({
               variant="outline"
               size="sm"
               onClick={() => onToggleShowCanceled?.()}
-              className="glass squircle-sm btn-hover-lighter border border-[rgb(60,103,183)] bg-white text-slate-900 shadow-[0_8px_18px_rgba(60,103,183,0.14)] my-0 h-7 py-0 leading-none gap-1"
+              className="glass squircle-sm btn-hover-lighter border border-[rgb(11,6,121)] bg-white text-slate-900 shadow-[0_8px_18px_rgba(11,6,121,0.14)] my-0 h-7 py-0 leading-none gap-1"
             >
               {showCanceledOrders ? (
                 <>
@@ -7701,7 +7701,7 @@ export function Header({
         )}
 
         {catalogLoading && (
-          <div className="glass-card squircle-md p-4 border border-[rgba(60,103,183,0.35)] bg-white/80 flex items-center gap-3">
+          <div className="glass-card squircle-md p-4 border border-[rgba(11,6,121,0.35)] bg-white/80 flex items-center gap-3">
             <RefreshActionIcon spinning />
             <div>
               <p className="text-sm font-semibold text-slate-900">Loading product and order catelogue…</p>
@@ -7795,7 +7795,7 @@ export function Header({
                     your rep at{' '}
                     <a
                       href={`mailto:${delegateSalesRepEmail}`}
-                      className="font-semibold text-[rgb(60,103,183)] underline decoration-[rgb(60,103,183)] underline-offset-2 hover:opacity-80"
+                      className="font-semibold text-[rgb(11,6,121)] underline decoration-[rgb(11,6,121)] underline-offset-2 hover:opacity-80"
                     >
                       {delegateSalesRepEmail}
                     </a>
@@ -7806,7 +7806,7 @@ export function Header({
                 )}
                 <a
                   href={`mailto:${delegateSupportEmail}`}
-                  className="font-semibold text-[rgb(60,103,183)] underline decoration-[rgb(60,103,183)] underline-offset-2 hover:opacity-80"
+                  className="font-semibold text-[rgb(11,6,121)] underline decoration-[rgb(11,6,121)] underline-offset-2 hover:opacity-80"
                 >
                   {delegateSupportEmail}
                 </a>
@@ -7841,11 +7841,11 @@ export function Header({
         This tool is in early access. Please{' '}
         <button
           type="button"
-          className="font-bold hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.35)] focus-visible:ring-offset-2"
+          className="font-bold hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2"
           style={{
-            color: 'rgb(60,103,183)',
+            color: 'rgb(11,6,121)',
             textDecorationLine: 'underline',
-            textDecorationColor: 'rgb(60,103,183)',
+            textDecorationColor: 'rgb(11,6,121)',
             textUnderlineOffset: '2px',
           }}
           onClick={() => window.dispatchEvent(new CustomEvent('trufusion:open-bug-report', {
@@ -7864,7 +7864,7 @@ export function Header({
 	        <div className="mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
             <div className="patient-link-group rounded-xl bg-white/55 px-4 py-4 sm:px-5">
             <div className="pt-1">
-              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(60,103,183)]">
+              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(11,6,121)]">
                 Subject & Access
               </p>
               <p className="mt-1 text-xs text-slate-500">
@@ -7885,7 +7885,7 @@ export function Header({
                 trackPatientLinkFieldEntry('subject_label', event.target.value);
               }}
 	            placeholder="e.g., Subject 042"
-            className="patient-link-form__patient-id-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+            className="patient-link-form__patient-id-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
 	          <Label
 	            htmlFor="patient-link-study-label"
@@ -7901,7 +7901,7 @@ export function Header({
                 trackPatientLinkFieldEntry('study_label', event.target.value);
               }}
 	            placeholder="e.g., GH response pilot"
-            className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+            className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
 	          <Label
 	            htmlFor="patient-link-reference"
@@ -7917,12 +7917,12 @@ export function Header({
                 trackPatientLinkFieldEntry('internal_reference', event.target.value);
               }}
 	            placeholder="e.g., A104"
-            className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+            className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
             </div>
             <div className="patient-link-group rounded-xl bg-white/55 px-4 py-4 sm:px-5">
             <div className="pt-2">
-              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(60,103,183)]">
+              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(11,6,121)]">
                 Pricing & Limits
               </p>
             </div>
@@ -7946,7 +7946,7 @@ export function Header({
                   trackPatientLinkFieldEntry('markup_percent', event.target.value);
                 }}
 	              placeholder="0"
-	              className="!h-11 w-full text-left tabular-nums squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+	              className="!h-11 w-full text-left tabular-nums squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	              style={{ direction: 'ltr' }}
 	            />
 	          </div>
@@ -7967,7 +7967,7 @@ export function Header({
                 trackPatientLinkFieldEntry('expiration_hours', next);
               }}
 	            placeholder="No expiration by default"
-            className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+            className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
 	          <Label
 	            htmlFor="patient-link-usage-limit"
@@ -7986,7 +7986,7 @@ export function Header({
                 trackPatientLinkFieldEntry('usage_limit', next);
               }}
 	            placeholder="e.g., 5"
-            className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+            className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
 	          <Label
 	            htmlFor="patient-link-payment-method"
@@ -8014,7 +8014,7 @@ export function Header({
                   );
 	              }
 	            }}
-	            className="patient-link-form__select h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+	            className="patient-link-form__select h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          >
 	            {patientLinkPaymentMethodOptions.map((opt) => (
 	              <option key={opt.value} value={opt.value}>
@@ -8036,12 +8036,12 @@ export function Header({
                 trackPatientLinkFieldEntry('zelle_contact', event.target.value);
               }}
 	            placeholder="e.g., billing@clinic.com or +1 (444) 444-4444"
-	            className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+	            className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
             </div>
             <div className="patient-link-group rounded-xl bg-white/55 px-4 py-4 sm:px-5">
             <div className="pt-2">
-              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(60,103,183)]">
+              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(11,6,121)]">
                 Notes & Instructions
               </p>
             </div>
@@ -8060,7 +8060,7 @@ export function Header({
               }}
 	            placeholder="e.g., Restricted to approved protocol materials only."
 	            rows={2}
-	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
 	          <Label
 	            htmlFor="patient-link-instructions"
@@ -8077,7 +8077,7 @@ export function Header({
               }}
 	            placeholder="Enter instructions that the delegate will see in their proposal modal…"
 	            rows={2}
-	            className="patient-link-form__instructions !mb-0 min-h-[56px] squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+	            className="patient-link-form__instructions !mb-0 min-h-[56px] squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
             </div>
 	          <div className="patient-link-submit-row mt-2 pt-3 pb-3">
@@ -8637,11 +8637,11 @@ export function Header({
                             }
                           }}
                           data-patient-link-token={token || undefined}
-				                  className="patient-link-item glass-liquid squircle-lg border border-[rgba(60,103,183,0.35)] transition-colors hover:border-[rgba(60,103,183,0.55)] p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
+				                  className="patient-link-item glass-liquid squircle-lg border border-[rgba(11,6,121,0.35)] transition-colors hover:border-[rgba(11,6,121,0.55)] p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
 				                >
 			                  <div className="min-w-0 flex-1">
 				                    <div className="flex items-center gap-2">
-				                      <Link2 className="h-4 w-4 text-[rgb(60,103,183)] shrink-0" aria-hidden="true" />
+				                      <Link2 className="h-4 w-4 text-[rgb(11,6,121)] shrink-0" aria-hidden="true" />
 				                      <span className="font-semibold text-slate-900 truncate">{label}</span>
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
@@ -8815,7 +8815,7 @@ export function Header({
                                   }}
                                   rows={3}
                                   placeholder="Add notes for the delegate here."
-                                  className="min-h-[72px] resize-y squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+                                  className="min-h-[72px] resize-y squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
                                 />
                                 <div className="flex items-center mb-1 justify-between gap-2">
                                   <span className="text-xs text-slate-500">
@@ -8900,7 +8900,7 @@ export function Header({
 	                                };
 	                              });
 	                            }}
-		                            className="patient-link-payment-method-select h-10 w-full squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+		                            className="patient-link-payment-method-select h-10 w-full squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 		                          >
 	                            {patientLinkPaymentMethodOptions.map((opt) => (
 	                              <option key={opt.value} value={opt.value}>
@@ -8923,7 +8923,7 @@ export function Header({
 	                              setPatientLinkInstructionsDraftByToken((prev) => ({ ...prev, [token]: event.target.value }))
 	                            }
 	                            rows={2}
-	                            className="min-h-[56px] resize-y squircle-sm glass focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.25)]"
+	                            className="min-h-[56px] resize-y squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	                          />
 	                        </div>
 	                        <div className="flex items-center justify-end">
@@ -9048,7 +9048,7 @@ export function Header({
                   {accountButtonIndicatorTotal > 0 && (
                     <Badge
                       variant="outline"
-                      className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(60,103,183)]"
+                      className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(11,6,121)]"
                       aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
                       title={`Notifications: ${accountButtonIndicatorTotal}`}
                     >
@@ -9124,7 +9124,7 @@ export function Header({
                       }}
                     >
                       <Home
-                        className="h-5 w-5 text-[rgb(60,103,183)]"
+                        className="h-5 w-5 text-[rgb(11,6,121)]"
                         aria-hidden="true"
                       />
                     </Button>
@@ -9204,13 +9204,13 @@ export function Header({
                               <Badge
                                 variant="outline"
                                 className={clsx(
-                                  "ml-2 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(60,103,183)] font-semibold leading-none shadow-sm pointer-events-none transition-opacity duration-150",
+                                  "ml-2 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(11,6,121)] font-semibold leading-none shadow-sm pointer-events-none transition-opacity duration-150",
                                   showIndicator ? "opacity-100" : "opacity-0",
                                 )}
                                 title={`${tab.label} notifications`}
                                 aria-label={showIndicator ? `${tab.label} notifications: ${indicatorCount}` : undefined}
                                 aria-hidden={showIndicator ? undefined : true}
-                                style={{ color: 'rgb(60,103,183)' }}
+                                style={{ color: 'rgb(11,6,121)' }}
                               >
                                 {showIndicator ? (indicatorCount > 9 ? '9+' : indicatorCount) : ''}
                               </Badge>
@@ -9327,7 +9327,7 @@ export function Header({
 	                type="button"
 	                variant="outline"
 	                size="sm"
-	                className="squircle-sm border-[rgba(60,103,183,0.35)] text-[rgb(60,103,183)] hover:bg-[rgb(60,103,183)] hover:text-white"
+	                className="squircle-sm border-[rgba(11,6,121,0.35)] text-[rgb(11,6,121)] hover:bg-[rgb(11,6,121)] hover:text-white"
 	                onClick={() => handleDeleteAccountModalOpenChange(false)}
 	              >
 	                Close
@@ -9409,7 +9409,7 @@ export function Header({
             }}
           >
 	            <div className="flex-1 min-w-0 space-y-1">
-	              <DialogTitle className="text-xl font-semibold text-[rgb(60,103,183)]">
+	              <DialogTitle className="text-xl font-semibold text-[rgb(11,6,121)]">
 	                {authMode === 'login'
                     ? 'Welcome back'
                     : authMode === 'verify'
@@ -9432,7 +9432,7 @@ export function Header({
             <DialogClose
               className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
               style={{
-                backgroundColor: 'rgb(60, 103, 183)',
+                backgroundColor: 'rgb(11, 6, 121)',
                 borderRadius: '50%',
               }}
               aria-label="Close account modal"
@@ -9463,7 +9463,7 @@ export function Header({
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
-                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
                   />
@@ -9480,14 +9480,14 @@ export function Header({
                       type={showLoginPassword ? 'text' : 'password'}
                       autoCorrect="off"
                       spellCheck={false}
-                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword((prev) => !prev)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.12)] btn-hover-lighter"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.12)] btn-hover-lighter"
                       aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
                       aria-pressed={showLoginPassword}
                     >
@@ -9687,7 +9687,7 @@ export function Header({
 	                      );
 	                      setSignupVerificationError('');
 	                    }}
-	                    className="glass squircle-sm text-center text-xl font-semibold tracking-[0.38em] focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)] disabled:opacity-70"
+	                    className="glass squircle-sm text-center text-xl font-semibold tracking-[0.38em] focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)] disabled:opacity-70"
 	                    style={{ borderColor: translucentSecondary }}
 	                  />
 	                  {signupVerificationError && (
@@ -9789,7 +9789,7 @@ export function Header({
                       id="suffix"
                       value={signupSuffix}
                       onChange={(e) => setSignupSuffix(e.target.value)}
-                      className="auth-prefix-select glass squircle-sm mt-1 flex h-10 w-full min-w-0 border border-input bg-input-background px-3 py-1 text-sm transition-[color,box-shadow] outline-none focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[3px] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                      className="auth-prefix-select glass squircle-sm mt-1 flex h-10 w-full min-w-0 border border-input bg-input-background px-3 py-1 text-sm transition-[color,box-shadow] outline-none focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[3px] focus-visible:ring-[rgba(11,6,121,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                     >
                       <option value="">None</option>
@@ -9812,7 +9812,7 @@ export function Header({
                     type="text"
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
-                    className="glass squircle-sm mt-1 h-10 focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                    className="glass squircle-sm mt-1 h-10 focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
                   />
@@ -9831,7 +9831,7 @@ export function Header({
                     spellCheck={false}
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
-                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
                   />
@@ -9847,14 +9847,14 @@ export function Header({
                       type={showSignupPassword ? 'text' : 'password'}
                       value={signupPassword}
                       onChange={(e) => setSignupPassword(e.target.value)}
-                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowSignupPassword((prev) => !prev)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.12)] btn-hover-lighter"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.12)] btn-hover-lighter"
                       aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
                       aria-pressed={showSignupPassword}
                     >
@@ -9883,14 +9883,14 @@ export function Header({
                       type={showSignupConfirmPassword ? 'text' : 'password'}
                       value={signupConfirmPassword}
                       onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowSignupConfirmPassword((prev) => !prev)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.12)] btn-hover-lighter"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.12)] btn-hover-lighter"
                       aria-label={showSignupConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                       aria-pressed={showSignupConfirmPassword}
                     >
@@ -9920,7 +9920,7 @@ export function Header({
                     maxLength={5}
                     inputMode="text"
                     pattern="[A-Z0-9]*"
-                    className="glass squircle-sm focus-visible:border-[rgb(60,103,183)] focus-visible:ring-[rgba(60,103,183,0.3)]"
+                    className="glass squircle-sm focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.3)]"
                     style={{ borderColor: translucentSecondary, textTransform: 'uppercase' }}
                     required
                   />

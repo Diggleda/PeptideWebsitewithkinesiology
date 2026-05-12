@@ -10,10 +10,10 @@ type SwitchProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onChange
   onCheckedChange?: (checked: boolean) => void;
 };
 
-const BRAND_BLUE = "rgb(60, 103, 183)";
+const BRAND_BLUE = "rgb(11, 6, 121)";
 const TRACK_OFF = "rgb(203, 213, 225)";
 const TRACK_OFF_BORDER = "rgba(148, 163, 184, 0.55)";
-const TRACK_ON_BORDER = "rgba(60, 103, 183, 0.42)";
+const TRACK_ON_BORDER = "rgba(11, 6, 121, 0.42)";
 const THUMB_BORDER = "rgba(148, 163, 184, 0.4)";
 const THUMB_FILL = "#ffffff";
 
@@ -60,7 +60,7 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         data-slot="switch"
         data-state={isChecked ? "checked" : "unchecked"}
         className={cn(
-          "relative inline-flex shrink-0 items-center rounded-full border-0 p-0 align-middle outline-none transition-[transform,box-shadow] duration-200 focus-visible:ring-4 focus-visible:ring-[rgba(60,103,183,0.3)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50",
+          "relative inline-flex shrink-0 items-center rounded-full border-0 p-0 align-middle outline-none transition-[transform,box-shadow] duration-200 focus-visible:ring-4 focus-visible:ring-[rgba(11,6,121,0.3)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50",
           className,
         )}
         style={{

@@ -745,7 +745,7 @@ def _health_password_form_response(
         display: grid;
         place-items: center;
         background:
-          radial-gradient(circle at top, rgba(60, 103, 183, 0.22), transparent 38%),
+          radial-gradient(circle at top, rgba(11, 6, 121, 0.22), transparent 38%),
           linear-gradient(180deg, #f7fafc 0%, #e2e8f0 100%);
         color: #0f172a;
       }}
@@ -790,9 +790,9 @@ def _health_password_form_response(
         background: rgba(248, 250, 252, 0.95);
       }}
       input:focus {{
-        outline: 2px solid rgba(60, 103, 183, 0.3);
+        outline: 2px solid rgba(11, 6, 121, 0.3);
         outline-offset: 1px;
-        border-color: #3c67b7;
+        border-color: #0b0679;
       }}
       button {{
         appearance: none;

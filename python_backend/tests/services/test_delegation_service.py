@@ -380,7 +380,7 @@ class DelegationServiceTests(unittest.TestCase):
                 "role": "doctor",
                 "name": "Dr. Test",
                 "delegateLogoUrl": "data:image/png;base64,LOGO",
-                "delegateSecondaryColor": "#3c67b7",
+                "delegateSecondaryColor": "#0b0679",
                 "delegateBackgroundImageUrl": "data:image/jpeg;base64,BACKGROUND",
                 "delegateBackgroundColor": "#edf7fb",
             }
@@ -391,7 +391,7 @@ class DelegationServiceTests(unittest.TestCase):
             resolved = service.resolve_delegate_token("tok-1")
 
             self.assertEqual(resolved.get("doctorLogoUrl"), "data:image/png;base64,LOGO")
-            self.assertEqual(resolved.get("doctorSecondaryColor"), "#3c67b7")
+            self.assertEqual(resolved.get("doctorSecondaryColor"), "#0b0679")
             self.assertEqual(resolved.get("doctorBackgroundImageUrl"), "data:image/jpeg;base64,BACKGROUND")
             self.assertEqual(resolved.get("doctorBackgroundColor"), "#edf7fb")
         finally:

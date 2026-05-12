@@ -56,7 +56,7 @@ export function ManufacturingStandardsModal({
           margin: 0,
           overflow: "hidden",
           backgroundColor: "rgba(248, 252, 255, 0.995)",
-          borderColor: "rgba(60, 103, 183, 0.6)",
+          borderColor: "rgba(11, 6, 121, 0.6)",
           backdropFilter: "none",
           WebkitBackdropFilter: "none",
           isolation: "isolate",
@@ -76,7 +76,7 @@ export function ManufacturingStandardsModal({
               aria-label="Close manufacturing standards modal"
               className="dialog-close-btn ml-auto inline-flex shrink-0 items-center justify-center self-start text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
               style={{
-                backgroundColor: "rgb(60, 103, 183)",
+                backgroundColor: "rgb(11, 6, 121)",
                 width: "38px",
                 height: "38px",
                 minWidth: "38px",

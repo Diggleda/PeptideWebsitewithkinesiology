@@ -1353,7 +1353,7 @@ export function ProductCard({
 	        type="button"
 	        onClick={openDocumentationModal}
           className="line-clamp-2 text-left hover:underline"
-          style={{ color: 'var(--brand-color, rgb(60, 103, 183))' }}
+          style={{ color: 'var(--brand-color, rgb(11, 6, 121))' }}
         >
           Documentation and Analysis
         </button>
@@ -1389,7 +1389,7 @@ export function ProductCard({
             onFocus={handleVariationFieldIntent}
             onMouseDown={handleVariationFieldIntent}
             disabled={variantsLoading}
-            className={`w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.4)] focus:border-[rgba(60,103,183,0.6)] product-card-select${showVariationChevron ? '' : ' pr-3'}`}
+            className={`w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.4)] focus:border-[rgba(11,6,121,0.6)] product-card-select${showVariationChevron ? '' : ' pr-3'}`}
             >
             {(needsVariants || !uiVariationId || selectableVariations.length === 0) && (
               <option value="" disabled>
@@ -1447,7 +1447,7 @@ export function ProductCard({
               setQuantityInput('1');
             }
           }}
-          className="h-8 flex-1 squircle-sm border border-[var(--brand-glass-border-2)] bg-white/70 text-center text-base font-semibold shadow-sm focus-visible:border-[rgba(60,103,183,0.45)] focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.22)]"
+          className="h-8 flex-1 squircle-sm border border-[var(--brand-glass-border-2)] bg-white/70 text-center text-base font-semibold shadow-sm focus-visible:border-[rgba(11,6,121,0.45)] focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.22)]"
         />
         <Button variant="outline" size="icon" className={quantityButtonClasses} onClick={() => handleQuantityChange(1)}>
           <Plus className="h-3 w-3" />
@@ -1478,7 +1478,7 @@ export function ProductCard({
           className="flex w-full items-center justify-between text-xs font-semibold text-slate-700 focus-visible:outline-none"
         >
           <span className="tracking-wide uppercase text-[0.65rem]">Bulk Pricing</span>
-          <span className="text-[rgb(60,103,183)] text-[0.65rem] font-medium">{bulkOpen ? 'Hide' : 'Show'}</span>
+          <span className="text-[rgb(11,6,121)] text-[0.65rem] font-medium">{bulkOpen ? 'Hide' : 'Show'}</span>
         </button>
         {bulkOpen && (
           <>
@@ -1488,13 +1488,13 @@ export function ProductCard({
                   key={`${tier.minQuantity}-${tier.discountPercentage}`}
                   className="flex items-center justify-between rounded-md px-2 py-1 text-[0.8rem]"
                 >
-                  <span className={quantity >= tier.minQuantity ? 'text-[rgb(60,103,183)] font-semibold' : 'text-slate-600'}>
+                  <span className={quantity >= tier.minQuantity ? 'text-[rgb(11,6,121)] font-semibold' : 'text-slate-600'}>
                     Buy {tier.minQuantity}+
                   </span>
                   <span
                     className={
                       quantity >= tier.minQuantity
-                        ? 'text-[rgb(60,103,183)] font-semibold tabular-nums'
+                        ? 'text-[rgb(11,6,121)] font-semibold tabular-nums'
                         : 'text-slate-600 tabular-nums'
                     }
                   >
@@ -1521,7 +1521,7 @@ export function ProductCard({
         setBulkOpen(false);
       }}
       className={proposalMode ? 'squircle-sm btn-hover-lighter w-full justify-center border-0 text-white [&_svg]:text-white' : 'squircle-sm glass-brand btn-hover-lighter w-full'}
-      style={proposalMode ? { backgroundColor: 'var(--brand-color, rgb(60, 103, 183))', borderColor: 'var(--brand-color, rgb(60, 103, 183))', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
+      style={proposalMode ? { backgroundColor: 'var(--brand-color, rgb(11, 6, 121))', borderColor: 'var(--brand-color, rgb(11, 6, 121))', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
 	    >
 	      {proposalMode ? null : (
 	        <ShoppingCart className="w-4 h-4 mr-2" />
@@ -1536,10 +1536,10 @@ export function ProductCard({
     <>
       <Card
         ref={cardRef}
-        className={`catalog-product-card group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(60,103,183,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.61)]${personalizedRecommendation ? ' catalog-personalized-product-card' : ''}`}
+        className={`catalog-product-card group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(11,6,121,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.61)]${personalizedRecommendation ? ' catalog-personalized-product-card' : ''}`}
         style={{
           background:
-            'linear-gradient(to right, rgba(var(--brand-color-rgb, 60, 103, 183), 0.08) 0%, rgba(255,255,255,0.47) 8px, rgba(255,255,255,0.47) 100%)',
+            'linear-gradient(to right, rgba(var(--brand-color-rgb, 11, 6, 121), 0.08) 0%, rgba(255,255,255,0.47) 8px, rgba(255,255,255,0.47) 100%)',
           backdropFilter: 'blur(40px) saturate(1.7)',
           WebkitBackdropFilter: 'blur(40px) saturate(1.7)',
         }}
@@ -1610,7 +1610,7 @@ export function ProductCard({
                 <div className="flex flex-col gap-0">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1 text-left">
-                      <DialogTitle className="text-left text-xl font-semibold text-[rgb(60,103,183)]">
+                      <DialogTitle className="text-left text-xl font-semibold text-[rgb(11,6,121)]">
                         Documentation and Analysis
                       </DialogTitle>
                       <DialogDescription className="truncate text-left">{product.name}</DialogDescription>
@@ -1619,7 +1619,7 @@ export function ProductCard({
                       <DialogClose
                         className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
                         style={{
-                          backgroundColor: 'rgb(60, 103, 183)',
+                          backgroundColor: 'rgb(11, 6, 121)',
                           borderRadius: '50%',
                         }}
                         aria-label="Close"

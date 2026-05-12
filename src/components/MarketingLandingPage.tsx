@@ -7,12 +7,14 @@ import {
   type SVGProps,
 } from "react";
 import {
+  Bars3BottomLeftIcon,
   BeakerIcon,
   EllipsisVerticalIcon,
   ScaleIcon,
   ShieldCheckIcon,
   SwatchIcon,
 } from "@heroicons/react/24/outline";
+import { X } from "lucide-react@0.487.0";
 import { BrandLogoImage } from "./BrandLogoImage";
 
 type MarketingLandingPageProps = {
@@ -134,6 +136,20 @@ export function MarketingLandingPage({
   const headerRef = useRef<HTMLElement | null>(null);
   const heroLogoRef = useRef<HTMLDivElement | null>(null);
   const [showHeaderIcon, setShowHeaderIcon] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    document.documentElement.classList.add("marketing-landing-active");
+    document.body.classList.add("marketing-landing-active");
+    return () => {
+      document.documentElement.classList.remove("marketing-landing-active");
+      document.body.classList.remove("marketing-landing-active");
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -152,8 +168,8 @@ export function MarketingLandingPage({
       }
 
       const heroLogoRect = heroLogo.getBoundingClientRect();
-      const headerRect = header.getBoundingClientRect();
-      const shouldShow = heroLogoRect.bottom <= headerRect.bottom;
+      const headerHeight = header.offsetHeight || 64;
+      const shouldShow = heroLogoRect.bottom <= headerHeight;
       setShowHeaderIcon((current) =>
         current === shouldShow ? current : shouldShow,
       );
@@ -177,6 +193,49 @@ export function MarketingLandingPage({
       window.removeEventListener("resize", scheduleUpdate);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !isMobileMenuOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMobileMenuOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isMobileMenuOpen) {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = () => {
+      if (mediaQuery.matches) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    closeOnDesktop();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", closeOnDesktop);
+      return () => mediaQuery.removeEventListener("change", closeOnDesktop);
+    }
+
+    mediaQuery.addListener(closeOnDesktop);
+    return () => mediaQuery.removeListener(closeOnDesktop);
+  }, [isMobileMenuOpen]);
 
   return (
     <div
@@ -207,6 +266,16 @@ export function MarketingLandingPage({
             />
           </a>
           <div className="marketing-landing__header-right">
+            <button
+              type="button"
+              className="marketing-landing__mobile-menu-trigger"
+              aria-label={isMobileMenuOpen ? "Close navigation" : "Open navigation"}
+              aria-controls="marketing-landing-mobile-menu"
+              aria-expanded={isMobileMenuOpen}
+              onClick={() => setIsMobileMenuOpen((current) => !current)}
+            >
+              <Bars3BottomLeftIcon aria-hidden="true" />
+            </button>
             <nav className="marketing-landing__nav">
               {navLinks.map((link) => (
                 <a
@@ -237,6 +306,69 @@ export function MarketingLandingPage({
           </div>
         </div>
       </header>
+
+      <div
+        id="marketing-landing-mobile-menu"
+        className={`marketing-landing__mobile-menu${isMobileMenuOpen ? " is-open" : ""}`}
+        aria-hidden={!isMobileMenuOpen}
+      >
+        <div className="marketing-landing__mobile-menu-top">
+          <img
+            src={TRUFUSION_PEPTIDES_ICON_PATH}
+            alt=""
+            className="marketing-landing__mobile-menu-logo"
+            loading="eager"
+            decoding="async"
+          />
+          <button
+            type="button"
+            className="marketing-landing__mobile-menu-close dialog-close-btn"
+            aria-label="Close navigation"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            <X className="h-4 w-4 text-white" aria-hidden="true" />
+          </button>
+        </div>
+
+        <nav className="marketing-landing__mobile-menu-list" aria-label="Mobile navigation">
+          {navLinks.map((link, index) => (
+            <a
+              key={link.label}
+              href={link.href}
+              className="marketing-landing__mobile-menu-link"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <span>{link.label}</span>
+              <span className="marketing-landing__mobile-menu-number">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+            </a>
+          ))}
+        </nav>
+
+        <div className="marketing-landing__mobile-menu-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setIsMobileMenuOpen(false);
+              onSignIn();
+            }}
+            className="marketing-landing__mobile-menu-secondary"
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsMobileMenuOpen(false);
+              onJoinNetwork();
+            }}
+            className="marketing-landing__mobile-menu-primary"
+          >
+            Join network
+          </button>
+        </div>
+      </div>
 
       <main>
         <section className="marketing-landing__section marketing-landing__section--hero">
@@ -275,7 +407,7 @@ export function MarketingLandingPage({
                 onClick={onReferralCode}
                 className="marketing-landing__text-button marketing-landing__text-button--large"
               >
-                I have a referral code
+                I already have a referral code
               </button>
             </div>
           </div>

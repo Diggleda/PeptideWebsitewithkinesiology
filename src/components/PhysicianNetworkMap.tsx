@@ -41,7 +41,7 @@ type ClusterEntry = {
   kind: "precise" | "state";
 };
 
-const BRAND_BLUE = "rgb(60, 103, 183)";
+const BRAND_BLUE = "rgb(11, 6, 121)";
 const MAP_WIDTH = 960;
 const MAP_HEIGHT = 585;
 const CLUSTER_RADIUS_PX = 30;
@@ -563,27 +563,27 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                               default: {
                                 fill: hasDoctors
                                   ? isActive
-                                    ? "rgba(60, 103, 183, 0.28)"
-                                    : "rgba(60, 103, 183, 0.14)"
+                                    ? "rgba(11, 6, 121, 0.28)"
+                                    : "rgba(11, 6, 121, 0.14)"
                                   : "rgba(255,255,255,0.7)",
                                 outline: "none",
-                                stroke: hasDoctors ? "rgba(60,103,183,0.9)" : "rgba(60,103,183,0.44)",
+                                stroke: hasDoctors ? "rgba(11,6,121,0.9)" : "rgba(11,6,121,0.44)",
                                 strokeWidth: isActive ? 1.8 : 1.1,
                               },
                               hover: {
                                 fill: hasDoctors
-                                  ? "rgba(60, 103, 183, 0.28)"
-                                  : "rgba(60, 103, 183, 0.08)",
+                                  ? "rgba(11, 6, 121, 0.28)"
+                                  : "rgba(11, 6, 121, 0.08)",
                                 outline: "none",
-                                stroke: "rgba(60,103,183,0.92)",
+                                stroke: "rgba(11,6,121,0.92)",
                                 strokeWidth: 1.5,
                               },
                               pressed: {
                                 fill: hasDoctors
-                                  ? "rgba(60, 103, 183, 0.32)"
-                                  : "rgba(60, 103, 183, 0.10)",
+                                  ? "rgba(11, 6, 121, 0.32)"
+                                  : "rgba(11, 6, 121, 0.10)",
                                 outline: "none",
-                                stroke: "rgba(60,103,183,0.92)",
+                                stroke: "rgba(11,6,121,0.92)",
                                 strokeWidth: 1.5,
                               },
                             }}
@@ -640,7 +640,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                                 <>
                                   <circle
                                     r={isActive ? 17.5 : 15}
-                                    fill="rgba(60,103,183,0.18)"
+                                    fill="rgba(11,6,121,0.18)"
                                     stroke="white"
                                     strokeWidth={isActive ? 3 : 2}
                                   />
@@ -648,7 +648,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                                     r={isActive ? 13 : 11}
                                     fill={BRAND_BLUE}
                                     fillOpacity={isActive ? 1 : 0.96}
-                                    stroke="rgba(60,103,183,0.18)"
+                                    stroke="rgba(11,6,121,0.18)"
                                     strokeWidth={1}
                                   />
                                   <text
@@ -664,8 +664,8 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                                   {cluster.kind === "state" ? (
                                     <circle
                                       r={isActive ? 14 : 11.5}
-                                      fill="rgba(60,103,183,0.12)"
-                                      stroke="rgba(60,103,183,0.18)"
+                                      fill="rgba(11,6,121,0.12)"
+                                      stroke="rgba(11,6,121,0.18)"
                                       strokeWidth={1}
                                     />
                                   ) : null}

@@ -2265,7 +2265,7 @@ const getInitialResetToken = () =>
 const getInitialVerifyEmailToken = () =>
   isVerifyEmailRoute() ? readVerifyEmailTokenFromLocation() : null;
 
-const DEFAULT_DELEGATE_SECONDARY_COLOR = '#3c67b7';
+const DEFAULT_DELEGATE_SECONDARY_COLOR = '#0b0679';
 const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#377eba';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
@@ -4902,7 +4902,7 @@ const PipelineTooltip = ({
                 {canOpen ? (
 	                                <button
 	                                  type="button"
-                    className="max-w-full truncate text-left text-[rgb(60,103,183)] hover:underline"
+                    className="max-w-full truncate text-left text-[rgb(11,6,121)] hover:underline"
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -16479,7 +16479,7 @@ function MainApp() {
             type="button"
             variant="outline"
             size="sm"
-            className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
+            className="calendar-done-button text-[rgb(11,6,121)] border-[rgba(11,6,121,0.45)] hover:border-[rgba(11,6,121,0.7)] hover:text-[rgb(11,6,121)]"
             onClick={() => {
               if (salesDoctorCommissionRange?.from && salesDoctorCommissionRange?.to) {
                 setSalesRepPeriodStart(
@@ -24684,7 +24684,7 @@ function MainApp() {
             There is an issue in loading your referral data. Please refresh the
             page or contact{" "}
             <a
-              className="text-[rgb(60,103,183)] underline"
+              className="text-[rgb(11,6,121)] underline"
               href="mailto:support@trufusionlabs.com"
             >
               support@trufusionlabs.com
@@ -29352,7 +29352,7 @@ function MainApp() {
         "group glass-card referral-pill squircle-xl flex w-full items-center justify-between gap-4 pr-5 py-4 text-left transition-all";
       const triggerClasses = expanded
         ? `${baseTriggerClasses} shadow-md`
-        : `${baseTriggerClasses} shadow-[0_18px_48px_-28px_rgba(60,103,183,0.8)] hover:shadow-[0_20px_52px_-24px_rgba(60,103,183,0.85)]`;
+        : `${baseTriggerClasses} shadow-[0_18px_48px_-28px_rgba(11,6,121,0.8)] hover:shadow-[0_20px_52px_-24px_rgba(11,6,121,0.85)]`;
 
       return (
         <button
@@ -29654,7 +29654,7 @@ function MainApp() {
                     <div
                       className="referral-toolbar__search relative"
                       style={{
-                        "--header-search-border-color": "rgb(60, 103, 183)",
+                        "--header-search-border-color": "rgb(11, 6, 121)",
                       } as CSSProperties}
                     >
                       <Search
@@ -29869,7 +29869,7 @@ function MainApp() {
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
                       Available Credits
                     </p>
-                    <p className="text-lg font-bold text-[rgb(60,103,183)]">
+                    <p className="text-lg font-bold text-[rgb(11,6,121)]">
                       ${availableCreditsDisplay.toFixed(2)}
                     </p>
                   </div>
@@ -29984,8 +29984,8 @@ function MainApp() {
         <div
           className={`glass-card squircle-xl referral-pill-wrapper transition-all duration-500 ${
             isReferralSectionExpanded
-              ? "pb-8 shadow-[0_30px_80px_-65px_rgba(60,103,183,0.8)]"
-              : "shadow-[0_18px_48px_-28px_rgba(60,103,183,0.8)] hover:shadow-[0_20px_52px_-24px_rgba(60,103,183,0.85)]"
+              ? "pb-8 shadow-[0_30px_80px_-65px_rgba(11,6,121,0.8)]"
+              : "shadow-[0_18px_48px_-28px_rgba(11,6,121,0.8)] hover:shadow-[0_20px_52px_-24px_rgba(11,6,121,0.85)]"
           }`}
 	          style={{ borderRadius: "var(--squircle-xl)" }}
 	        >
@@ -30283,7 +30283,7 @@ function MainApp() {
 	              type="button"
 	              variant="outline"
 	              size="sm"
-	              className="calendar-done-button text-[rgb(60,103,183)] border-[rgba(60,103,183,0.45)] hover:border-[rgba(60,103,183,0.7)] hover:text-[rgb(60,103,183)]"
+	              className="calendar-done-button text-[rgb(11,6,121)] border-[rgba(11,6,121,0.45)] hover:border-[rgba(11,6,121,0.7)] hover:text-[rgb(11,6,121)]"
 	              onClick={() => {
 	                applyAdminDashboardPeriod();
 	                setAdminDashboardPeriodPickerOpen(false);
@@ -30369,7 +30369,7 @@ function MainApp() {
 		                </div>
 		                <div className="w-full">
 		                  <div
-		                    className="grid w-full items-center gap-3 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                    className="grid w-full items-center gap-3 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700"
 		                    style={{ gridTemplateColumns: ON_HOLD_ORDERS_GRID_TEMPLATE }}
 		                  >
 		                    <div className="whitespace-nowrap">Order</div>
@@ -31022,7 +31022,7 @@ function MainApp() {
               >
                 {selectedTable ? (
                   <>
-                    <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-[rgb(60,103,183)]">
+                    <div className="border-b border-[#b7b7b7] bg-gradient-to-b from-[#6d6d6d] to-[#565656] px-4 py-2 text-xs font-semibold text-[rgb(11,6,121)]">
                       Server: {payload.databaseHost || (payload.hostScope === "local" ? "localhost" : "remote")}
                       {payload.databasePort ? `:${payload.databasePort}` : ""}
                       {" "}» Database: {payload.databaseName || "TrufusionLabs"} » Table: {selectedTable.name}
@@ -31468,7 +31468,7 @@ function MainApp() {
 				
 				    return (
 	          <div className="w-full space-y-3">
-			      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(60,103,183,0.6)] w-full sales-rep-dashboard">
+			      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(11,6,121,0.6)] w-full sales-rep-dashboard">
 		        <div className="flex flex-col gap-4">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 		            <div>
@@ -31644,7 +31644,7 @@ function MainApp() {
                                       x2="1"
                                       y2="0"
                                     >
-                                      <stop offset="0%" stopColor="#3C67B7" />
+                                      <stop offset="0%" stopColor="#0B0679" />
                                       <stop offset="100%" stopColor="#1D4ED8" />
                                     </linearGradient>
                                     <linearGradient
@@ -31705,7 +31705,7 @@ function MainApp() {
                                   />
                                   <Tooltip
                                     cursor={{
-                                      stroke: "rgba(60, 103, 183, 0.55)",
+                                      stroke: "rgba(11, 6, 121, 0.55)",
                                       strokeDasharray: "4 4",
                                       strokeWidth: 1,
                                     }}
@@ -31783,7 +31783,7 @@ function MainApp() {
                                         ? {
                                             r: 3.5,
                                             strokeWidth: 2,
-                                            fill: "#3C67B7",
+                                            fill: "#0B0679",
                                             stroke: "#ffffff",
                                           }
                                         : false
@@ -32053,7 +32053,7 @@ function MainApp() {
 		                      })()}
 		                      <div className="w-max">
 		                        <div
-		                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 		                          style={{
 		                            gridTemplateColumns:
 		                              "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
@@ -32372,7 +32372,7 @@ function MainApp() {
 	                            }
 	                          }}
 		                            placeholder="Search clients…"
-		                            className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+		                            className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 		                          />
 		                        </div>
 		                          {isSalesLead(user?.role) && (
@@ -32380,7 +32380,7 @@ function MainApp() {
 		                              <select
 		                                value={salesLeadLiveUsersRoleFilter}
 		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
-		                                className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+		                                className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 		                              >
 		                                <option value="all">All</option>
 		                                <option value="admin">Admin</option>
@@ -32485,7 +32485,7 @@ function MainApp() {
 		                            return {
 		                              label: "Physician",
 		                              style: {
-		                                backgroundColor: "rgb(60,103,183)",
+		                                backgroundColor: "rgb(11,6,121)",
 		                                color: "#ffffff",
 		                              } as CSSProperties,
 		                            };
@@ -32494,7 +32494,7 @@ function MainApp() {
 		                            return {
 		                              label: "Test Physician",
 		                              style: {
-		                                backgroundColor: "rgb(60,103,183)",
+		                                backgroundColor: "rgb(11,6,121)",
 		                                color: "#ffffff",
 		                              } as CSSProperties,
 		                            };
@@ -32538,7 +32538,7 @@ function MainApp() {
 		                                      ? undefined
 		                                      : showIdle
 		                                        ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
-		                                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(60,103,183,1)",
+		                                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(11,6,121,1)",
 		                                  }}
 		                                >
 		                                  <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
@@ -32659,7 +32659,7 @@ function MainApp() {
                                       value={adminDelegateFunnelActorFilter}
                                       onChange={(e) => setAdminDelegateFunnelActorFilter(e.target.value)}
                                       disabled={adminDelegateFunnelLoading}
-                                      className="product-card-select squircle-sm h-10 min-w-0 w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                      className="product-card-select squircle-sm h-10 min-w-0 w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                       aria-label="Filter delegate conversion funnel by user"
                                     >
                                       <option value="all">All users</option>
@@ -32701,7 +32701,7 @@ function MainApp() {
                                       >
                                         <stop
                                           offset="0%"
-                                          stopColor="#3C67B7"
+                                          stopColor="#0B0679"
                                           stopOpacity={0.9}
                                         />
                                         <stop
@@ -33924,12 +33924,12 @@ function MainApp() {
                                 onClick={() => {
                                   setPatientLinksDoctorsOpen((current) => !current);
                                 }}
-                                className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(60,103,183,0.10)] transition-colors hover:bg-[rgba(60,103,183,0.16)] sm:hidden"
+                                className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(11,6,121,0.10)] transition-colors hover:bg-[rgba(11,6,121,0.16)] sm:hidden"
                               >
                                 <ChevronRight
                                   className="h-5 w-5 transition-transform duration-200"
                                   style={{
-                                    color: "rgb(60, 103, 183)",
+                                    color: "rgb(11, 6, 121)",
                                     transform: patientLinksDoctorsOpen
                                       ? "rotate(90deg)"
                                       : "rotate(0deg)",
@@ -33944,7 +33944,7 @@ function MainApp() {
                                       void handlePatientLinksBulkToggle();
                                     }}
                                     disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
-                                    className="shrink-0 text-sm font-medium text-[rgb(60,103,183)] transition-colors hover:text-[rgb(60,103,183)] disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="shrink-0 text-sm font-medium text-[rgb(11,6,121)] transition-colors hover:text-[rgb(11,6,121)] disabled:cursor-not-allowed disabled:text-slate-400"
                                   >
                                     {allFilteredPatientLinksDoctorsSelected
                                       ? "Disable All"
@@ -33978,12 +33978,12 @@ function MainApp() {
                                   onClick={() => {
                                     setPatientLinksDoctorsOpen((current) => !current);
                                   }}
-                                  className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(60,103,183,0.10)] transition-colors hover:bg-[rgba(60,103,183,0.16)]"
+                                  className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(11,6,121,0.10)] transition-colors hover:bg-[rgba(11,6,121,0.16)]"
                                 >
                                   <ChevronRight
                                     className="h-5 w-5 transition-transform duration-200"
                                     style={{
-                                      color: "rgb(60, 103, 183)",
+                                      color: "rgb(11, 6, 121)",
                                       transform: patientLinksDoctorsOpen
                                         ? "rotate(90deg)"
                                         : "rotate(0deg)",
@@ -33998,7 +33998,7 @@ function MainApp() {
 	                        </div>
                         {patientLinksEnabled && patientLinksDoctorsOpen && (
                           <div className="mt-3 pl-8">
-                            <div className="rounded-2xl bg-[rgba(60,103,183,0.06)] px-4 py-3">
+                            <div className="rounded-2xl bg-[rgba(11,6,121,0.06)] px-4 py-3">
                               <div className="mb-3 mt-2 sm:hidden">
                                 <div className="relative w-full">
                                   <Search
@@ -34027,7 +34027,7 @@ function MainApp() {
                                       void handlePatientLinksBulkToggle();
                                     }}
                                     disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
-                                    className="inline-flex text-sm font-medium text-[rgb(60,103,183)] transition-colors hover:text-[rgb(60,103,183)] disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="inline-flex text-sm font-medium text-[rgb(11,6,121)] transition-colors hover:text-[rgb(11,6,121)] disabled:cursor-not-allowed disabled:text-slate-400"
                                   >
                                     {allFilteredPatientLinksDoctorsSelected
                                       ? "Disable All"
@@ -34066,11 +34066,11 @@ function MainApp() {
                                           className="brand-checkbox mt-0.5"
                                         />
                                         <span className="min-w-0">
-	                                          <span className="patient-links-doctor-option-name block text-sm font-medium text-[rgb(60,103,183)]">
+	                                          <span className="patient-links-doctor-option-name block text-sm font-medium text-[rgb(11,6,121)]">
 	                                            {doctor.name || doctor.email || doctor.userId}
 	                                          </span>
 	                                          {doctor.email ? (
-	                                            <span className="patient-links-doctor-option-email block text-xs text-[rgb(60,103,183)]">
+	                                            <span className="patient-links-doctor-option-email block text-xs text-[rgb(11,6,121)]">
 	                                              {doctor.email}
 	                                            </span>
 	                                          ) : null}
@@ -34644,14 +34644,14 @@ function MainApp() {
                                 }
                               }}
                               placeholder="Search clients…"
-                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
                             />
                           </div>
                           <label className="clients-controls-filter relative flex min-w-0 w-full items-center text-xs text-slate-600 sm:w-[220px] sm:flex-none">
                             <select
                               value={adminLiveUsersRoleFilter}
                               onChange={(e) => setAdminLiveUsersRoleFilter(e.target.value)}
-                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
@@ -34725,7 +34725,7 @@ function MainApp() {
 				                                  return {
 				                                    label: "Physician",
 				                                    style: {
-				                                      backgroundColor: "rgb(60,103,183)",
+				                                      backgroundColor: "rgb(11,6,121)",
 			                                      color: "#ffffff",
 			                                    } as CSSProperties,
 			                                  };
@@ -34734,7 +34734,7 @@ function MainApp() {
 			                                  return {
 			                                    label: "Test Physician",
 			                                    style: {
-			                                      backgroundColor: "rgb(60,103,183)",
+			                                      backgroundColor: "rgb(11,6,121)",
 			                                      color: "#ffffff",
 			                                    } as CSSProperties,
 			                                  };
@@ -34808,7 +34808,7 @@ function MainApp() {
 				                                              ? undefined
 				                                              : showIdle
 				                                                ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
-				                                                : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(60,103,183,1)",
+				                                                : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(11,6,121,1)",
 				                                          }}
 				                                        >
 				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
@@ -35098,7 +35098,7 @@ function MainApp() {
                                           x2="1"
                                           y2="0"
                                         >
-                                          <stop offset="0%" stopColor="#3C67B7" />
+                                          <stop offset="0%" stopColor="#0B0679" />
                                           <stop offset="100%" stopColor="#1D4ED8" />
                                         </linearGradient>
                                         <linearGradient
@@ -35159,7 +35159,7 @@ function MainApp() {
                                       />
                                       <Tooltip
                                         cursor={{
-                                          stroke: "rgba(60, 103, 183, 0.55)",
+                                          stroke: "rgba(11, 6, 121, 0.55)",
                                           strokeDasharray: "4 4",
                                           strokeWidth: 1,
                                         }}
@@ -35241,7 +35241,7 @@ function MainApp() {
                                         ? {
                                                 r: 3.5,
                                                 strokeWidth: 2,
-                                                fill: "#3C67B7",
+                                                fill: "#0B0679",
                                                 stroke: "#ffffff",
                                               }
                                             : false
@@ -35549,7 +35549,7 @@ function MainApp() {
 		                        })()}
 			                      <div className="w-max">
 			                        <div
-			                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+			                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 			                          style={{
 			                            gridTemplateColumns:
 			                              "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
@@ -35737,11 +35737,11 @@ function MainApp() {
                                         ? "Collapse"
                                         : "Expand"}
                                     </span>
-                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(60,103,183,0.10)]">
+                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(11,6,121,0.10)]">
                                       <ChevronRight
                                         className="h-3.5 w-3.5 transition-transform duration-200"
                                         style={{
-                                          color: "rgb(60, 103, 183)",
+                                          color: "rgb(11, 6, 121)",
                                           transform: adminTaxTrackingNotificationsOpen
                                             ? "rotate(90deg)"
                                             : "rotate(0deg)",
@@ -35898,7 +35898,7 @@ function MainApp() {
                                 <div className="w-full" style={{ minWidth: 1260 }}>
                                   <div className="w-full">
                                     <div
-                                      className="grid w-full items-center gap-4 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+                                      className="grid w-full items-center gap-4 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
                                       style={{
                                         gridTemplateColumns:
                                           "minmax(190px,1.15fr) minmax(240px,1.4fr) minmax(88px,0.55fr) minmax(150px,0.9fr) minmax(150px,0.9fr) minmax(130px,0.75fr) minmax(130px,0.75fr)",
@@ -36087,7 +36087,7 @@ function MainApp() {
 			                      )}
 			                      <div className="w-full">
 			                        <div
-			                          className="grid w-full items-center gap-4 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+			                          className="grid w-full items-center gap-4 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
 			                          style={{
 			                            gridTemplateColumns:
                                         "minmax(190px,1.2fr) minmax(190px,1.1fr) minmax(120px,0.7fr) minmax(150px,0.8fr)",
@@ -36191,7 +36191,7 @@ function MainApp() {
 					                      <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 					                      <div className="w-max">
 					                        <div
-					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 					                          style={{
 					                            gridTemplateColumns: "minmax(120px,1fr) max-content",
 					                          }}
@@ -36339,7 +36339,7 @@ function MainApp() {
 					                    <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 					                      <div className="w-max">
 					                        <div
-					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 					                          style={{ gridTemplateColumns: "minmax(0,1fr) max-content" }}
 					                        >
 					                          <div className="whitespace-nowrap">Product</div>
@@ -36475,7 +36475,7 @@ function MainApp() {
 							                    <div className="mx-auto" style={{ minWidth: 920, width: "fit-content" }}>
 							                      <div className="w-max">
 							                        <div
-							                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(60,103,183,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+							                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(11,6,121,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 						                          style={{
 						                            gridTemplateColumns: "minmax(0,1fr) max-content",
 						                          }}
@@ -36863,7 +36863,7 @@ function MainApp() {
                       >
                         <stop
                           offset="0%"
-                          stopColor="#3C67B7"
+                          stopColor="#0B0679"
                           stopOpacity={0.9}
                         />
                         <stop
@@ -37337,7 +37337,7 @@ function MainApp() {
 	                            return (
 	                              <li
 	                                key={order.id}
-	                                className="lead-list-item sales-order-card cursor-pointer transition hover:shadow-sm hover:border-[rgb(60,103,183)]"
+	                                className="lead-list-item sales-order-card cursor-pointer transition hover:shadow-sm hover:border-[rgb(11,6,121)]"
                                 onClick={() => openSalesOrderDetails(order)}
                                 aria-busy={showShimmer}
                               >
@@ -37393,7 +37393,7 @@ function MainApp() {
                                                 href={trackingHref}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                className="text-[rgb(60,103,183)] hover:underline"
+                                                className="text-[rgb(11,6,121)] hover:underline"
                                                 onClick={(event) => event.stopPropagation()}
                                               >
                                                 {trackingLabel}
@@ -37485,7 +37485,7 @@ function MainApp() {
                                 }
                               }}
                               placeholder="Search leads…"
-                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
                             />
                           </div>
                           <label className="relative flex min-w-0 w-full items-center text-xs text-slate-600">
@@ -37494,7 +37494,7 @@ function MainApp() {
                               onChange={(e) =>
                                 setActiveProspectFilter(e.target.value)
                               }
-                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
                             >
                               {activeProspectFilterOptions.map((option) => (
                                 <option key={option} value={option}>
@@ -37860,7 +37860,7 @@ function MainApp() {
                                     ) : null}
                                     <button
                                       type="button"
-                                      className="min-w-0 text-left text-[rgb(60,103,183)] hover:underline"
+                                      className="min-w-0 text-left text-[rgb(11,6,121)] hover:underline"
                                       onClick={openProspectDetail}
                                       onKeyDown={(e) => {
                                         if (e.key === "Enter" || e.key === " ") {
@@ -37885,7 +37885,7 @@ function MainApp() {
 	                                  <div className="lead-list-detail">
 	                                    <a
 	                                      href={`mailto:${record.referredContactEmail}`}
-                                      className="text-[rgb(60,103,183)] hover:underline"
+                                      className="text-[rgb(11,6,121)] hover:underline"
                                     >
                                       {record.referredContactEmail}
                                     </a>
@@ -38393,7 +38393,7 @@ function MainApp() {
                                         {refereeEmail && refereeEmail !== "—" ? (
                                           <a
                                             href={`mailto:${refereeEmail}`}
-                                            className="text-[rgb(60,103,183)] hover:underline"
+                                            className="text-[rgb(11,6,121)] hover:underline"
                                           >
                                             {refereeEmail}
                                           </a>
@@ -38407,7 +38407,7 @@ function MainApp() {
                                         {referrerEmail && referrerEmail !== "—" ? (
                                           <a
                                             href={`mailto:${referrerEmail}`}
-                                            className="text-[rgb(60,103,183)] hover:underline"
+                                            className="text-[rgb(11,6,121)] hover:underline"
                                           >
                                             {referrerEmail}
                                           </a>
@@ -38444,7 +38444,7 @@ function MainApp() {
 	                                          );
 	                                        }}
                                         disabled={isUpdating}
-                                        className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+                                        className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
                                       >
 	                                        {manualLead && (
 	                                          <option value={MANUAL_PROSPECT_DELETE_VALUE}>
@@ -38585,7 +38585,7 @@ function MainApp() {
                                       {lead.referredContactEmail ? (
                                         <a
                                           href={`mailto:${lead.referredContactEmail}`}
-                                          className="text-[rgb(60,103,183)] hover:underline"
+                                          className="text-[rgb(11,6,121)] hover:underline"
                                         >
                                           {lead.referredContactEmail}
                                         </a>
@@ -38634,7 +38634,7 @@ function MainApp() {
 		                                        }
 		                                        handleUpdateReferralStatus(lead.id, nextValue);
 		                                      }}
-		                                      className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+		                                      className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 		                                    >
 		                                      {(() => {
 		                                        const base = ["pending", "contacted"];
@@ -38681,7 +38681,7 @@ function MainApp() {
 	                                      <button
 	                                        type="button"
 	                                        onClick={openAccountDetailsTab}
-	                                        className="block text-[rgb(60,103,183)] text-xs font-semibold hover:underline mt-1"
+	                                        className="block text-[rgb(11,6,121)] text-xs font-semibold hover:underline mt-1"
 	                                      >
 	                                        Share Referral Code
 	                                      </button>
@@ -38716,7 +38716,7 @@ function MainApp() {
 	        <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
           Send dashboard recommendations and ideas to{" "}
           <a
-            className="text-[rgb(60,103,183)] underline-offset-2 hover:underline"
+            className="text-[rgb(11,6,121)] underline-offset-2 hover:underline"
             href="mailto:pgibbons@trufusionlabs.com?subject=Dashboard%20Recommendation%20(TrufusionLabs)"
           >
             pgibbons@trufusionlabs.com
@@ -39073,7 +39073,7 @@ function MainApp() {
 		          {normalized}{" "}
 		          <button
 		            type="button"
-		            className="text-xs font-semibold text-[rgb(60,103,183)] bg-transparent p-0 whitespace-nowrap"
+		            className="text-xs font-semibold text-[rgb(11,6,121)] bg-transparent p-0 whitespace-nowrap"
 		            onClick={() =>
 		              setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: false }))
 		            }
@@ -39106,7 +39106,7 @@ function MainApp() {
 		        {"\u00A0"}
 			        <button
 			          type="button"
-			          className="text-xs text-[rgb(60,103,183)] bg-transparent p-0 whitespace-nowrap"
+			          className="text-xs text-[rgb(11,6,121)] bg-transparent p-0 whitespace-nowrap"
 			          onClick={() =>
 			            setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: true }))
 			          }
@@ -39563,14 +39563,14 @@ function MainApp() {
                         <div className="physician-network-card__intro">
                           <p
                             className="physician-network-card__intro-primary font-medium"
-                            style={{ color: "rgb(60, 103, 183)" }}
+                            style={{ color: "rgb(11, 6, 121)" }}
                           >
                             Thank you for helping us promote integrity and endogenous healing across the healthcare system. Our products and services exist to empower your ability to cure, relieve and comfort others.
                           </p>
                           <div className="physician-network-card__divider" aria-hidden="true" />
                           <p
                             className="physician-network-card__intro-secondary"
-                            style={{ color: "rgb(60, 103, 183)" }}
+                            style={{ color: "rgb(11, 6, 121)" }}
                           >
                             Connect with your peers, build relationships, and collaborate on research.
                           </p>
@@ -39592,7 +39592,7 @@ function MainApp() {
                         <p
                           className="px-1 sm:px-1 italic text-left leading-snug break-words"
                           style={{
-                            color: "rgb(60,103,183)",
+                            color: "rgb(11,6,121)",
                             fontSize: "clamp(1.3rem, 2vw, 1.1rem)",
                           }}
                         >
@@ -39605,7 +39605,7 @@ function MainApp() {
                       >
                         <div className="space-y-5">
                         <div className="flex items-center justify-between gap-3 mb-4">
-                          <h2 className="text-lg sm:text-xl font-semibold text-[rgb(60,103,183)]">
+                          <h2 className="text-lg sm:text-xl font-semibold text-[rgb(11,6,121)]">
                             Peptide News
                           </h2>
                           <div className="flex items-center gap-2">
@@ -39613,7 +39613,7 @@ function MainApp() {
                               href="https://www.nature.com/subjects/peptides"
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-xs font-semibold uppercase tracking-wide text-[rgb(60,103,183)] hover:underline underline-offset-4"
+                              className="text-xs font-semibold uppercase tracking-wide text-[rgb(11,6,121)] hover:underline underline-offset-4"
                             >
                               View All
                             </a>
@@ -39703,7 +39703,7 @@ function MainApp() {
                                             href={item.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-[rgb(60,103,183)] font-semibold hover:underline underline-offset-4"
+                                            className="text-[rgb(11,6,121)] font-semibold hover:underline underline-offset-4"
                                             aria-label={`${item.date ? formatNewsDate(item.date) + " — " : ""}${item.title}`}
                                           >
                                             {item.date && (
@@ -39731,7 +39731,7 @@ function MainApp() {
                                     href="https://www.nature.com/subjects/peptides"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="font-semibold text-[rgb(60,103,183)] hover:underline underline-offset-4"
+                                    className="font-semibold text-[rgb(11,6,121)] hover:underline underline-offset-4"
                                   >
                                     Nature.com – Peptide Subject
                                   </a>
@@ -39765,8 +39765,8 @@ function MainApp() {
                                   handleLogout();
                                 }
                               }}
-                              className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(60,103,183,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(60,103,183,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
-                              style={{ backgroundColor: "rgb(60, 103, 183)" }}
+                              className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(11,6,121,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                              style={{ backgroundColor: "rgb(11, 6, 121)" }}
                             >
                               <ArrowLeft
                                 className="h-4 w-4 mr-2"
@@ -39786,8 +39786,8 @@ function MainApp() {
                                   isTestDoctor(user?.role)
                                 )
                               }
-                              className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(60,103,183,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(60,103,183,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
-                              style={{ backgroundColor: "rgb(60, 103, 183)" }}
+                              className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(11,6,121,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                              style={{ backgroundColor: "rgb(11, 6, 121)" }}
                             >
 	                              <span className="mr-2">Enter Dashboard</span>
                               <ArrowRight
@@ -39813,7 +39813,7 @@ function MainApp() {
                                 <div className="flex w-full items-center justify-center">
                                   <p
                                     className="text-sm font-semibold text-center shimmer-text is-shimmering"
-                                    style={{ color: "rgb(60,103,183)" }}
+                                    style={{ color: "rgb(11,6,121)" }}
                                   >
                                     Loading today&apos;s quote…
                                   </p>
@@ -39821,9 +39821,9 @@ function MainApp() {
                               )}
                               {quoteReady && quoteOfTheDay && (
                                 <p
-                                  className="px-4 sm:px-6 italic text-[rgb(60,103,183)] text-center leading-snug break-words"
+                                  className="px-4 sm:px-6 italic text-[rgb(11,6,121)] text-center leading-snug break-words"
                                   style={{
-                                    color: "rgb(60,103,183)",
+                                    color: "rgb(11,6,121)",
                                     fontSize: quoteFontSize,
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
@@ -39841,7 +39841,7 @@ function MainApp() {
 			                        <div className={`glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)] ${peptideForumLoading ? "forum-container-shimmer" : ""}`}>
 		                          <div className="flex items-start justify-between gap-3">
 		                            <div className="space-y-1">
-	                              <h2 className="text-lg sm:text-xl font-semibold text-[rgb(60,103,183)]">
+	                              <h2 className="text-lg sm:text-xl font-semibold text-[rgb(11,6,121)]">
 	                                The Peptide Forum
 	                              </h2>
 	                              {!peptideForumEnabled &&
@@ -39874,10 +39874,10 @@ function MainApp() {
 		                                  className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm min-h-[108px] forum-container-shimmer"
 		                                >
 	                                  <div className="space-y-2">
-	                                    <div className="h-4 w-4/5 rounded bg-[rgba(60,103,183,0.14)]" />
-	                                    <div className="h-3 w-full rounded bg-[rgba(60,103,183,0.10)]" />
-	                                    <div className="h-3 w-11/12 rounded bg-[rgba(60,103,183,0.10)]" />
-	                                    <div className="h-3 w-1/3 rounded bg-[rgba(60,103,183,0.12)]" />
+	                                    <div className="h-4 w-4/5 rounded bg-[rgba(11,6,121,0.14)]" />
+	                                    <div className="h-3 w-full rounded bg-[rgba(11,6,121,0.10)]" />
+	                                    <div className="h-3 w-11/12 rounded bg-[rgba(11,6,121,0.10)]" />
+	                                    <div className="h-3 w-1/3 rounded bg-[rgba(11,6,121,0.12)]" />
 	                                  </div>
 	                                </li>
 	                              ))}
@@ -39930,7 +39930,7 @@ function MainApp() {
 	                                    href="https://www.linkedin.com/company/trufusion/posts/?feedView=all"
 	                                    target="_blank"
 	                                    rel="noreferrer"
-	                                    className="text-[rgb(60,103,183)] hover:underline"
+	                                    className="text-[rgb(11,6,121)] hover:underline"
 	                                  >
 	                                    LinkedIn
 	                                  </a>
@@ -39979,8 +39979,8 @@ function MainApp() {
 	                                                href={href}
 	                                                target="_blank"
 	                                                rel="noopener noreferrer"
-	                                                className="font-semibold !text-[rgb(60,103,183)] hover:underline underline-offset-4"
-	                                                style={{ color: "rgb(60, 103, 183)" }}
+	                                                className="font-semibold !text-[rgb(11,6,121)] hover:underline underline-offset-4"
+	                                                style={{ color: "rgb(11, 6, 121)" }}
 	                                              >
 	                                                <span className="inline-flex items-center gap-1">
 	                                                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -40032,7 +40032,7 @@ function MainApp() {
                                 {user.salesRep?.email ? (
                                   <a
                                     href={`mailto:${user.salesRep.email}`}
-                                    className="text-[rgb(60,103,183)] hover:underline"
+                                    className="text-[rgb(11,6,121)] hover:underline"
                                   >
                                     {user.salesRep.email}
                                   </a>
@@ -40075,7 +40075,11 @@ function MainApp() {
                       landingAuthMode === "signup" &&
                         "landing-auth-dialog-content--signup",
                     )}
-                    containerClassName="landing-auth-dialog-layer"
+                    containerClassName={clsx(
+                      "landing-auth-dialog-layer",
+                      landingAuthMode === "login" &&
+                        "landing-auth-dialog-layer--login",
+                    )}
                     overlayClassName="landing-auth-dialog-overlay"
                     style={{
                       backgroundColor: "transparent",
@@ -40301,7 +40305,7 @@ function MainApp() {
                                     onClick={() =>
                                       setShowLandingLoginPassword((p) => !p)
                                     }
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(60,103,183,0.3)] btn-hover-lighter"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(11,6,121,0.3)] btn-hover-lighter"
                                     aria-label={
                                       showLandingLoginPassword
                                         ? "Hide password"
@@ -40325,7 +40329,7 @@ function MainApp() {
                                         updateLandingAuthMode("forgot")
                                       }
                                       className="font-semibold hover:underline btn-hover-lighter"
-                                      style={{ color: "rgb(60, 103, 183)" }}
+                                      style={{ color: "rgb(11, 6, 121)" }}
                                     >
                                       Reset it
                                     </button>
@@ -40335,7 +40339,7 @@ function MainApp() {
                                       type="button"
                                       onClick={handleManualPasskeyLogin}
                                       disabled={passkeyLoginPending}
-                                      className="inline-flex items-center gap-1 font-semibold text-transparent hover:text-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(60,103,183,0.3)] btn-hover-lighter disabled:opacity-50 disabled:cursor-not-allowed"
+                                      className="inline-flex items-center gap-1 font-semibold text-transparent hover:text-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(11,6,121,0.3)] btn-hover-lighter disabled:opacity-50 disabled:cursor-not-allowed"
                                       aria-label="Sign in with a passkey (biometrics)"
                                       style={{
                                         backgroundColor: "transparent",
@@ -40394,7 +40398,7 @@ function MainApp() {
                                       }
                                     }}
                                     className="font-semibold hover:underline btn-hover-lighter disabled:opacity-60"
-                                    style={{ color: "rgb(60, 103, 183)" }}
+                                    style={{ color: "rgb(11, 6, 121)" }}
                                   >
 	                                    {landingVerificationResendPending
 	                                      ? "Sending verification code..."
@@ -40441,7 +40445,7 @@ function MainApp() {
                                       updateLandingAuthMode("signup")
                                     }
                                     className="font-semibold hover:underline btn-hover-lighter"
-                                    style={{ color: "rgb(60, 103, 183)" }}
+                                    style={{ color: "rgb(11, 6, 121)" }}
                                   >
                                     Create an account
                                   </button>
@@ -40521,7 +40525,7 @@ function MainApp() {
 	                              type="button"
 	                              onClick={handleReturnToSignIn}
 	                              className="font-semibold hover:underline btn-hover-lighter"
-	                              style={{ color: "rgb(60, 103, 183)" }}
+	                              style={{ color: "rgb(11, 6, 121)" }}
 	                            >
                               Return to sign in
                             </button>
@@ -40571,7 +40575,7 @@ function MainApp() {
                                     onClick={() =>
                                       setShowResetPassword((prev) => !prev)
                                     }
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(60,103,183,0.3)] btn-hover-lighter"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(11,6,121,0.3)] btn-hover-lighter"
                                     aria-label={
                                       showResetPassword
                                         ? "Hide new password"
@@ -40619,7 +40623,7 @@ function MainApp() {
                                         (prev) => !prev,
                                       )
                                     }
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(60,103,183,0.3)] btn-hover-lighter"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(11,6,121,0.3)] btn-hover-lighter"
                                     aria-label={
                                       showResetPasswordConfirm
                                         ? "Hide confirm password"
@@ -40681,7 +40685,7 @@ function MainApp() {
                                 type="button"
                                 onClick={() => updateLandingAuthMode("forgot")}
                                 className="font-semibold hover:underline btn-hover-lighter"
-                                style={{ color: "rgb(60, 103, 183)" }}
+                                style={{ color: "rgb(11, 6, 121)" }}
                               >
                                 Request a new reset link
                               </button>
@@ -40692,7 +40696,7 @@ function MainApp() {
                               type="button"
                               onClick={() => updateLandingAuthMode("login")}
                               className="font-semibold hover:underline btn-hover-lighter"
-                              style={{ color: "rgb(60, 103, 183)" }}
+                              style={{ color: "rgb(11, 6, 121)" }}
                             >
                               Back to sign in
                             </button>
@@ -40708,7 +40712,7 @@ function MainApp() {
 		                                landingSignupVerificationSuccess
 			                                  ? "verification-success-badge text-emerald-600"
 		                                  : landingSignupVerificationEmailSent
-		                                    ? "text-[rgb(60,103,183)]"
+		                                    ? "text-[rgb(11,6,121)]"
 		                                    : "h-14 w-14 rounded-full border border-amber-300/60 bg-amber-100/70 text-amber-700",
 		                              )}
 		                              aria-hidden="true"
@@ -41130,7 +41134,7 @@ function MainApp() {
                                   onClick={() =>
                                     setShowLandingSignupPassword((p) => !p)
                                   }
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(60,103,183,0.3)] btn-hover-lighter"
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(11,6,121,0.3)] btn-hover-lighter"
                                   aria-label={
                                     showLandingSignupPassword
                                       ? "Hide password"
@@ -41171,7 +41175,7 @@ function MainApp() {
                                   onClick={() =>
                                     setShowLandingSignupConfirm((p) => !p)
                                   }
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(60,103,183,0.3)] btn-hover-lighter"
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(11,6,121,0.3)] btn-hover-lighter"
                                   aria-label={
                                     showLandingSignupConfirm
                                       ? "Hide confirm password"
@@ -41304,7 +41308,7 @@ function MainApp() {
                                   type="button"
                                   onClick={() => updateLandingAuthMode("login")}
                                   className="font-semibold hover:underline btn-hover-lighter"
-                                  style={{ color: "rgb(60, 103, 183)" }}
+                                  style={{ color: "rgb(11, 6, 121)" }}
                             >
                               Sign in
                             </button>
@@ -41840,7 +41844,7 @@ function MainApp() {
                     status: event.target.value,
                   }))
                 }
-                className="w-full rounded-md border border-slate-300/90 bg-transparent px-3 py-2 text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+                className="w-full rounded-md border border-slate-300/90 bg-transparent px-3 py-2 text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
               >
                 {REFERRAL_STATUS_FLOW_SELECT.map((stage) => (
                   <option key={stage.key} value={stage.key}>
@@ -42294,7 +42298,7 @@ function MainApp() {
 			                        (minutesSinceLastSeen != null && minutesSinceLastSeen >= 2);
 			                      return showIdle
 			                        ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
-			                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(60,103,183,1)";
+			                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(11,6,121,1)";
 			                    })(),
 			                  }}
 			                >
@@ -42873,7 +42877,7 @@ function MainApp() {
                                     disabled={salesDoctorAddingEmailRow}
                                     className={clsx(
                                       "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
-                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.3)]",
+                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.3)]",
                                       salesDoctorAddingEmailRow ? "cursor-not-allowed opacity-60" : "",
                                     )}
                                     aria-label="Add email line"
@@ -42967,7 +42971,7 @@ function MainApp() {
                                     disabled={salesDoctorAddingPhoneRow}
                                     className={clsx(
                                       "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
-                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(60,103,183,0.3)]",
+                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.3)]",
                                       salesDoctorAddingPhoneRow ? "cursor-not-allowed opacity-60" : "",
                                     )}
                                     aria-label="Add phone line"
@@ -43357,7 +43361,7 @@ function MainApp() {
 	                          key={order.id}
 	                          type="button"
 	                          onClick={() => openSalesOrderDetails(order)}
-	                          className="w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer transition hover:shadow-sm hover:border-[rgb(60,103,183)]"
+	                          className="w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer transition hover:shadow-sm hover:border-[rgb(11,6,121)]"
 	                        >
 	                          <div className="min-w-0 text-sm text-slate-700">
 	                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
@@ -43661,7 +43665,7 @@ function MainApp() {
 						                                  "doctor",
 						                                );
 					                              }}
-					                              className="w-full text-left flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white/70 px-4 py-3 transition cursor-pointer hover:shadow-sm hover:border-[rgb(60,103,183)] hover:bg-white"
+					                              className="w-full text-left flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white/70 px-4 py-3 transition cursor-pointer hover:shadow-sm hover:border-[rgb(11,6,121)] hover:bg-white"
 				                            >
 				                              <div className="flex items-start mt-2 gap-4 min-w-0">
 				                                <div
@@ -44190,7 +44194,7 @@ function MainApp() {
                                   href={trackingHref}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-[rgb(60,103,183)] hover:underline"
+                                  className="text-[rgb(11,6,121)] hover:underline"
                                 >
                                   {trackingLabel}
                                 </a>
@@ -44245,7 +44249,7 @@ function MainApp() {
 	                                      }))
 	                                    }
 	                                    placeholder="Enter tracking…"
-	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 	                                    disabled={salesOrderFieldsSaving}
 	                                  />
 	                                </label>
@@ -44261,7 +44265,7 @@ function MainApp() {
 	                                      }))
 	                                    }
 	                                    placeholder="processing / shipped / delivered…"
-	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 	                                    disabled={salesOrderFieldsSaving}
 	                                  />
 	                                </label>
@@ -44277,7 +44281,7 @@ function MainApp() {
 	                                      }))
 	                                    }
 	                                    placeholder="UPS / USPS / FedEx…"
-	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 	                                    disabled={salesOrderFieldsSaving}
 	                                  />
 	                                </label>
@@ -44292,7 +44296,7 @@ function MainApp() {
 	                                      }))
 	                                    }
 	                                    placeholder="Ground / 2 Day…"
-	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 	                                    disabled={salesOrderFieldsSaving}
 	                                  />
 	                                </label>
@@ -44307,7 +44311,7 @@ function MainApp() {
 	                                      }))
 	                                    }
 	                                    placeholder="e.g., Ships in 1–2 business days"
-	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.3)]"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.3)]"
 	                                    disabled={salesOrderFieldsSaving}
 	                                  />
 	                                </label>
@@ -44442,7 +44446,7 @@ function MainApp() {
                           </span>
                         </div>
                         {hasExplicitDiscounts && discountCodeAmount > 0 && (
-                          <div className="flex justify-between text-[rgb(60,103,183)]">
+                          <div className="flex justify-between text-[rgb(11,6,121)]">
                             <span>{discountCode ? `Discount (${discountCode})` : "Discount"}</span>
                             <span>
                               -{formatCurrency(discountCodeAmount, salesOrderDetail.currency || "USD")}
@@ -44450,13 +44454,13 @@ function MainApp() {
                           </div>
                         )}
                         {hasDiscountCode && discountCodeAmount <= 0 && (
-                          <div className="flex justify-between text-[rgb(60,103,183)]">
+                          <div className="flex justify-between text-[rgb(11,6,121)]">
                             <span>{`Discount code used (${discountCode})`}</span>
                             <span>Applied</span>
                           </div>
                         )}
                         {hasExplicitDiscounts && appliedReferralCredit > 0 && (
-                          <div className="flex justify-between text-[rgb(60,103,183)]">
+                          <div className="flex justify-between text-[rgb(11,6,121)]">
                             <span>Referral Credit</span>
                             <span>
                               -{formatCurrency(appliedReferralCredit, salesOrderDetail.currency || "USD")}
