@@ -132,7 +132,7 @@ elif template == "delegate-proposal":
 else:
     raise SystemExit(f"unknown python template: {template}")
 
-html = html.replace("cid:trufusion-logo", "/assets/TrufusionLabs_PhysiciansPortal.png")
+html = html.replace("cid:trufusion-logo", "/assets/FullLogo_Transparent_NoBuffer%20(18).png")
 html = html.replace("cid:trufusion-leaf", "/assets/leafTexture.jpg")
 html = html.replace("cid:delegate-white-label-sessions", "/assets/delegate-links-white-label-email.png")
 
@@ -260,7 +260,12 @@ const contentTypes = {
 };
 
 const serveAsset = (requestPath, res) => {
-  const fileName = path.basename(requestPath);
+  let fileName = path.basename(requestPath);
+  try {
+    fileName = path.basename(decodeURIComponent(requestPath));
+  } catch {
+    // Keep the raw basename if the URL contains malformed escape sequences.
+  }
   const filePath = path.join(repoRoot, 'public', fileName);
   if (!fs.existsSync(filePath)) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

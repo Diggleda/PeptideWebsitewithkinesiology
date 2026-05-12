@@ -96,7 +96,7 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual(result[0]["id"], "prospect-1")
         self.assertEqual(result[0]["referredContactAccountId"], "doctor-1")
 
-    def test_admin_mine_scope_returns_only_owned_sales_prospects(self) -> None:
+    def test_admin_mine_scope_includes_house_contact_forms(self) -> None:
         admin_user = {
             "id": "admin-1",
             "role": "admin",
@@ -113,11 +113,11 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
             "updatedAt": "2026-04-10T00:00:00Z",
         }
         house_prospect = {
-            "id": "prospect-house",
-            "salesRepId": "house",
-            "contactName": "House Lead",
-            "contactEmail": "house-lead@example.com",
-            "status": "pending",
+            "id": "contact_form:42",
+            "salesRepId": None,
+            "referredContactName": "House Lead",
+            "referredContactEmail": "house-lead@example.com",
+            "status": "contact_form",
             "createdAt": "2026-04-11T00:00:00Z",
             "updatedAt": "2026-04-11T00:00:00Z",
         }
@@ -155,8 +155,8 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
                 token_role="admin",
             )
 
-        self.assertEqual([row["id"] for row in result], ["prospect-own"])
-        load_contact_forms.assert_not_called()
+        self.assertEqual([row["id"] for row in result], ["contact_form:42", "prospect-own"])
+        load_contact_forms.assert_called_once_with(sales_rep_id=None)
 
     def test_scope_all_keeps_all_leads_visible_for_sales_lead_overview(self) -> None:
         sales_lead_user = {

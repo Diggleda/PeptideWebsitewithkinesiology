@@ -360,6 +360,20 @@ def admin_dashboard():
             str(request.args.get("debug") or "").strip().lower()
             in ("active_physicians", "active-physicians", "activephysicians")
         )
+        requested_sales_rep_id_raw = str(request.args.get("salesRepId") or "").strip()
+        own_sales_rep_ids = {
+            str(user.get("id") or "").strip(),
+            str(user.get("salesRepId") or "").strip(),
+            str(user.get("sales_rep_id") or "").strip(),
+        }
+        include_house_contact_forms = (
+            role == "admin"
+            and not scope_all
+            and (
+                not requested_sales_rep_id_raw
+                or requested_sales_rep_id_raw in {value for value in own_sales_rep_ids if value}
+            )
+        )
 
         def wants(*names: str) -> bool:
             if not includes:
@@ -376,6 +390,7 @@ def admin_dashboard():
                 target_sales_rep_id,
                 scope_all=scope_all and can_scope_all,
                 token_role=token_role,
+                include_house_contact_forms=include_house_contact_forms,
             )
 
         if wants("codes"):

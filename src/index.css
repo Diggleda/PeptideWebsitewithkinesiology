@@ -1,5 +1,6 @@
 :root {
-  --app-page-background-color: rgb(55, 126, 186);
+  --app-page-background-color: #ffffff;
+  --account-modal-border: 2px solid rgba(148, 163, 184, 0.88);
   --email-background-image: none;
   --email-background-color: var(--app-page-background-color);
   --storefront-background-color: rgb(242, 247, 255);
@@ -8434,7 +8435,7 @@ body.manufacturing-standards-modal-open .header-account-avatar-shell {
 .account-modal[data-slot="dialog-content"],
 .sales-doctor-detail-dialog[data-slot="dialog-content"],
 .sales-order-detail-dialog[data-slot="dialog-content"] {
-  border: 2px solid rgba(148, 163, 184, 0.88) !important;
+  border: var(--account-modal-border) !important;
 }
 
 .account-modal[data-slot="dialog-content"] > .dialog-close-btn {
@@ -10904,12 +10905,12 @@ body.login-view .dev-theme-root {
 }
 
 .dev-theme-root:is(.theme-biotech, .theme-clinical) .post-login-content-shell .physician-network-card.glass-card.landing-glass {
-  border-color: rgba(255, 255, 255, 0.92) !important;
-  color: #ffffff !important;
+  border-color: rgba(var(--theme-accent-rgb), 0.22) !important;
+  color: var(--theme-accent) !important;
 }
 
 .dev-theme-root:is(.theme-biotech, .theme-clinical) .post-login-content-shell .physician-network-card .physician-network-card__intro p {
-  color: #ffffff !important;
+  color: var(--theme-accent) !important;
 }
 
 .dev-theme-root.theme-community .post-login-content-shell .physician-network-card.glass-card.landing-glass {
@@ -12527,6 +12528,135 @@ body.login-view .dev-theme-root {
 .dev-theme-root:not(.theme-biotech) [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] svg {
   color: var(--app-header-refresh-hover-text) !important;
   stroke: currentColor !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid {
+  border-color: var(--theme-border) !important;
+  box-shadow: var(--theme-shadow-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid::before {
+  -webkit-backdrop-filter: var(--theme-backdrop-filter) !important;
+  backdrop-filter: var(--theme-backdrop-filter) !important;
+  background: var(--theme-surface-liquid) !important;
+  background-color: var(--theme-surface-liquid) !important;
+  background-image: none !important;
+  border-color: var(--theme-border) !important;
+  box-shadow:
+    0 10px 26px -18px rgba(15, 23, 42, 0.55),
+    0 6px 14px -10px rgba(15, 23, 42, 0.35),
+    inset 0 1px rgba(255, 255, 255, 0.92) !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .header-search-input,
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+) {
+  -webkit-backdrop-filter: var(--theme-backdrop-filter) !important;
+  backdrop-filter: var(--theme-backdrop-filter) !important;
+  background: var(--theme-surface-liquid) !important;
+  background-color: var(--theme-surface-liquid) !important;
+  background-image: none !important;
+  border-color: var(--theme-border) !important;
+  box-shadow: var(--theme-shadow-soft) !important;
+  color: var(--theme-accent) !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg,
+  .shop-home-button svg,
+  .header-account-button svg,
+  .header-account-button .header-account-name,
+  .header-cart-button svg,
+  .mobile-search-toggle-button svg,
+  .mobile-search-icon
+) {
+  color: var(--theme-accent) !important;
+  stroke: currentColor !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-input {
+  caret-color: var(--theme-accent) !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-input::placeholder {
+  color: rgba(11, 6, 121, 0.64) !important;
+  opacity: 1 !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .header-cart-button + .header-count-indicator,
+  .account-indicator-badge
+) {
+  background: var(--theme-surface-strong) !important;
+  border-color: var(--theme-border-strong) !important;
+  color: var(--theme-accent) !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):hover,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .shop-home-button,
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+):focus-visible,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[data-state="open"],
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .header-account-button,
+  .header-cart-button,
+  .mobile-search-toggle-button
+)[aria-expanded="true"] {
+  background: var(--theme-surface-strong) !important;
+  background-color: var(--theme-surface-strong) !important;
+  background-image: none !important;
+  border-color: var(--theme-border-strong) !important;
+  box-shadow: var(--theme-shadow-soft) !important;
+  color: var(--theme-accent) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-input::placeholder,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input::placeholder {
+  color: rgba(11, 6, 121, 0.64) !important;
+}
+
+.dev-theme-root.theme-clinical :is(
+  .sales-rep-dashboard,
+  .referral-pill-wrapper
+) {
+  border: var(--account-modal-border) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard :is(
+  .sales-rep-leads-card,
+  .sales-tracking-card,
+  .admin-dashboard-list-card,
+  .sales-tracking-summary-item
+),
+.dev-theme-root.theme-clinical .referral-pill-wrapper :is(
+  .referral-pill,
+  .landing-glass,
+  .referrals-table-container
+) {
+  border: var(--account-modal-border) !important;
 }
 
 .marketing-landing {

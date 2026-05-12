@@ -30,14 +30,26 @@ _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
 _EMAIL_LOGO_WIDTH = 360
 _EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
-_EMAIL_BACKGROUND_COLOR = "rgb(55,126,186)"
-_EMAIL_BACKGROUND_HEX = "#377EBA"
-_EMAIL_CONTACT_CARD_COLOR = "#A9D4F8"
-_EMAIL_CONTACT_CARD_BORDER = "#E8F5FF"
+_EMAIL_BACKGROUND_COLOR = "#ffffff"
+_EMAIL_BACKGROUND_HEX = "#ffffff"
+_EMAIL_CONTACT_CARD_COLOR = "#ffffff"
+_EMAIL_CONTACT_CARD_BORDER = "#E5E7EB"
 _EMAIL_TEXT_COLOR = "#111827"
 _EMAIL_HEADING_COLOR = "#0B274B"
 _EMAIL_MUTED_COLOR = "#64748B"
 _EMAIL_BRAND_BLUE = "#0B0679"
+_EMAIL_BUTTON_BORDER_RADIUS = "12px"
+_EMAIL_PRIMARY_BUTTON_STYLE = (
+    "display:inline-block;"
+    "padding:14px 28px;"
+    f"background-color:{_EMAIL_BRAND_BLUE};"
+    f"background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE});"
+    "color:#ffffff;"
+    "-webkit-text-fill-color:#ffffff;"
+    "font-weight:700;"
+    f"border-radius:{_EMAIL_BUTTON_BORDER_RADIUS};"
+    "text-decoration:none;"
+)
 _EMAIL_LOGO_IMAGE_STYLE = (
     f"width:{_EMAIL_LOGO_WIDTH}px;"
     "max-width:70%;"
@@ -49,28 +61,24 @@ _EMAIL_LOGO_IMAGE_STYLE = (
 )
 _EMAIL_GLASS_CONTAINER_STYLE = (
     "background-color:#ffffff;"
-    "background:rgba(255,255,255,0.64);"
-    "border:1px solid rgba(255,255,255,0.82);"
+    "background:#ffffff;"
+    "background-image:linear-gradient(#ffffff,#ffffff);"
+    "border:1px solid #E5E7EB;"
     "border-radius:28px;"
     "overflow:hidden;"
     "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
-    "0 6px 14px -10px rgba(15,23,42,0.35),"
-    "inset 0 1px rgba(255,255,255,0.85);"
-    "-webkit-backdrop-filter:blur(52px) saturate(1.9);"
-    "backdrop-filter:blur(52px) saturate(1.9);"
+    "0 6px 14px -10px rgba(15,23,42,0.35);"
     "color-scheme:light;"
 )
 _EMAIL_ORDER_GLASS_CONTAINER_STYLE = (
     "background-color:#ffffff;"
-    "background:rgba(255,255,255,0.64);"
-    "border:1px solid rgba(255,255,255,0.82);"
+    "background:#ffffff;"
+    "background-image:linear-gradient(#ffffff,#ffffff);"
+    "border:1px solid #E5E7EB;"
     "border-radius:28px;"
     "overflow:hidden;"
     "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
-    "0 6px 14px -10px rgba(15,23,42,0.35),"
-    "inset 0 1px rgba(255,255,255,0.85);"
-    "-webkit-backdrop-filter:blur(52px) saturate(1.9);"
-    "backdrop-filter:blur(52px) saturate(1.9);"
+    "0 6px 14px -10px rgba(15,23,42,0.35);"
     "color-scheme:light;"
 )
 _EMAIL_LOGO_CELL_STYLE = "padding:24px 24px 0;"
@@ -80,21 +88,22 @@ _EMAIL_DETAIL_CARD_STYLE = (
     "border:1px solid rgba(11,6,121,0.26);"
     "border-radius:16px;"
     "background-color:#f8fbff;"
-    "background:rgba(255,255,255,0.66);"
+    "background:#f8fbff;"
     "box-shadow:inset 0 1px rgba(255,255,255,0.72);"
 )
 _EMAIL_ADMIN_REFRESH_BUTTON_STYLE = (
     "display:inline-block;"
-    "padding:10px 18px;"
-    "background-color:#ffffff;"
-    "background-color:rgba(255,255,255,0.95);"
-    "color:rgb(11,6,121);"
-    "border:2px solid rgb(11,6,121);"
-    "border-radius:12px;"
+    "padding:14px 28px;"
+    f"background-color:{_EMAIL_BRAND_BLUE};"
+    f"background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE});"
+    "color:#ffffff;"
+    "-webkit-text-fill-color:#ffffff;"
+    f"border:0 solid {_EMAIL_BRAND_BLUE};"
+    f"border-radius:{_EMAIL_BUTTON_BORDER_RADIUS};"
     "box-shadow:none;"
     "font-size:14px;"
-    "font-weight:600;"
-    "line-height:1;"
+    "font-weight:700;"
+    "line-height:1.1;"
     "text-decoration:none;"
 )
 _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
@@ -107,7 +116,8 @@ _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
         background-color: {_EMAIL_BACKGROUND_COLOR} !important;
         background-image: linear-gradient({_EMAIL_BACKGROUND_COLOR},{_EMAIL_BACKGROUND_COLOR}) !important;
       }}
-      .trufusion-contact-card {{
+      .trufusion-contact-card,
+      .trufusion-email-card {{
         background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
         background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
         border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
@@ -128,18 +138,27 @@ _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
         color: {_EMAIL_BRAND_BLUE} !important;
         -webkit-text-fill-color: {_EMAIL_BRAND_BLUE} !important;
       }}
-      .trufusion-button {{
+      .trufusion-button,
+      .trufusion-track-button {{
         background-color: {_EMAIL_BRAND_BLUE} !important;
         background-image: linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE}) !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
+        border-radius: {_EMAIL_BUTTON_BORDER_RADIUS} !important;
+      }}
+      @media only screen and (max-width: 600px) {{
+        .trufusion-email-shell {{
+          padding-left: 8px !important;
+          padding-right: 8px !important;
+        }}
       }}
       @media (prefers-color-scheme: dark) {{
         .trufusion-email-bg {{
           background-color: {_EMAIL_BACKGROUND_COLOR} !important;
           background-image: linear-gradient({_EMAIL_BACKGROUND_COLOR},{_EMAIL_BACKGROUND_COLOR}) !important;
         }}
-        .trufusion-contact-card {{
+        .trufusion-contact-card,
+        .trufusion-email-card {{
           background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
           background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
           border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
@@ -160,18 +179,21 @@ _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
           color: {_EMAIL_BRAND_BLUE} !important;
           -webkit-text-fill-color: {_EMAIL_BRAND_BLUE} !important;
         }}
-        .trufusion-button {{
+        .trufusion-button,
+        .trufusion-track-button {{
           background-color: {_EMAIL_BRAND_BLUE} !important;
           background-image: linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE}) !important;
           color: #ffffff !important;
           -webkit-text-fill-color: #ffffff !important;
+          border-radius: {_EMAIL_BUTTON_BORDER_RADIUS} !important;
         }}
       }}
       [data-ogsc] .trufusion-email-bg {{
         background-color: {_EMAIL_BACKGROUND_COLOR} !important;
         background-image: linear-gradient({_EMAIL_BACKGROUND_COLOR},{_EMAIL_BACKGROUND_COLOR}) !important;
       }}
-      [data-ogsc] .trufusion-contact-card {{
+      [data-ogsc] .trufusion-contact-card,
+      [data-ogsc] .trufusion-email-card {{
         background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
         background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
         border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
@@ -192,11 +214,13 @@ _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
         color: {_EMAIL_BRAND_BLUE} !important;
         -webkit-text-fill-color: {_EMAIL_BRAND_BLUE} !important;
       }}
-      [data-ogsc] .trufusion-button {{
+      [data-ogsc] .trufusion-button,
+      [data-ogsc] .trufusion-track-button {{
         background-color: {_EMAIL_BRAND_BLUE} !important;
         background-image: linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE}) !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
+        border-radius: {_EMAIL_BUTTON_BORDER_RADIUS} !important;
       }}
     </style>
 """
@@ -204,9 +228,11 @@ _EMAIL_TRACK_BUTTON_HOVER_CSS = (
     "<style>"
     ".trufusion-track-button:hover,"
     ".trufusion-track-button:focus{"
-    "background-color:rgb(11,6,121) !important;"
+    f"background-color:{_EMAIL_BRAND_BLUE} !important;"
+    f"background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE}) !important;"
     "color:#ffffff !important;"
-    "border-color:rgb(11,6,121) !important;"
+    "-webkit-text-fill-color:#ffffff !important;"
+    f"border-color:{_EMAIL_BRAND_BLUE} !important;"
     "text-decoration:none !important;"
     "box-shadow:none !important;"
     "filter:none !important;"
@@ -216,13 +242,13 @@ _EMAIL_TRACK_BUTTON_HOVER_CSS = (
 _EMAIL_INLINE_IMAGE_SPECS = (
     {
         "content_id": _EMAIL_LOGO_CID,
-        "filename": "TrufusionLabs_PhysiciansPortal.png",
+        "filename": "FullLogo_Transparent_NoBuffer (18).png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
-            "public/TrufusionLabs_PhysiciansPortal.png",
-            "src/generated/runtime-assets/TrufusionLabs_PhysiciansPortal.png",
+            "public/FullLogo_Transparent_NoBuffer (18).png",
+            "src/generated/runtime-assets/FullLogo_Transparent_NoBuffer (18).png",
         ),
     },
     {
@@ -461,7 +487,7 @@ def _email_body_style() -> str:
 
 
 def _email_outer_table_style() -> str:
-    return f"{_email_background_style()}min-height:100vh;height:100vh;padding:32px 0;color-scheme:light;"
+    return f"{_email_background_style()}min-height:100vh;height:100vh;padding:32px 16px;color-scheme:light;"
 
 
 def _email_container_style(max_width: int) -> str:
@@ -586,12 +612,13 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
     <title>TrufusionLabs Password Reset</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
+{_EMAIL_LIGHT_MODE_LOCK_CSS}
   </head>
-  <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+  <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="trufusion-email-card" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
                 <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
@@ -607,7 +634,7 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
                   If you did not request this, you can safely ignore this email—your password will remain unchanged.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{reset_url}" style="display:inline-block;padding:14px 28px;background-color:#0B0679;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Reset Password</a>
+                  <a class="trufusion-button" href="{reset_url}" style="{_EMAIL_PRIMARY_BUTTON_STYLE}">Reset Password</a>
                 </p>
                 <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#6b7280;">
                   Or copy and paste this link into your browser:
@@ -652,12 +679,13 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
     <title>Verify your TrufusionLabs account</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
+{_EMAIL_LIGHT_MODE_LOCK_CSS}
   </head>
-  <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+  <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="trufusion-email-card" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
                 <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
@@ -719,7 +747,7 @@ def _build_contact_form_received_email(*, name: Optional[str], base_url: str) ->
         f"color:{_EMAIL_TEXT_COLOR};"
         "color-scheme:light;"
     )
-    outer_table_style = f"{locked_background_style}min-height:100vh;height:100vh;padding:32px 0;color-scheme:light;"
+    outer_table_style = f"{locked_background_style}min-height:100vh;height:100vh;padding:32px 16px;color-scheme:light;"
     container_style = _email_contact_container_style(520)
     name_label = str(name or "").strip() or "there"
     safe_name_label = _html.escape(name_label, quote=True)
@@ -735,7 +763,7 @@ def _build_contact_form_received_email(*, name: Optional[str], base_url: str) ->
   <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
-        <td align="center" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{locked_background_style}">
+        <td align="center" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg trufusion-email-shell" style="{locked_background_style}padding-left:16px;padding-right:16px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_CONTACT_CARD_COLOR}" class="trufusion-contact-card" style="{container_style}">
             <tr>
               <td bgcolor="{_EMAIL_CONTACT_CARD_COLOR}" class="trufusion-contact-card" style="{_EMAIL_LOGO_CELL_STYLE}background-color:{_EMAIL_CONTACT_CARD_COLOR};background-image:linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR});" align="center">
@@ -754,7 +782,7 @@ def _build_contact_form_received_email(*, name: Optional[str], base_url: str) ->
                   <a class="trufusion-link" href="mailto:support@trufusionlabs.com" style="color:{_EMAIL_BRAND_BLUE};-webkit-text-fill-color:{_EMAIL_BRAND_BLUE};text-decoration:none;">support@trufusionlabs.com</a>.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a class="trufusion-button" href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:{_EMAIL_BRAND_BLUE};background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE});color:#ffffff;-webkit-text-fill-color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Visit TrufusionLabs</a>
+                  <a class="trufusion-button" href="{safe_base_url}" style="{_EMAIL_PRIMARY_BUTTON_STYLE}">Visit TrufusionLabs</a>
                 </p>
               </td>
             </tr>
@@ -870,12 +898,13 @@ def _build_delegate_proposal_ready_email(
     <title>TrufusionLabs Delegate Proposal Ready for Review</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
+{_EMAIL_LIGHT_MODE_LOCK_CSS}
   </head>
-  <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+  <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="trufusion-email-card" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
                 <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
@@ -899,7 +928,7 @@ def _build_delegate_proposal_ready_email(
                   Sign in to your TrufusionLabs account and open Account, then Delegate Links, to review or reject the proposal.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#0B0679;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in TrufusionLabs</a>
+                  <a class="trufusion-button" href="{safe_base_url}" style="{_EMAIL_PRIMARY_BUTTON_STYLE}">Review in TrufusionLabs</a>
                 </p>
               </td>
             </tr>
@@ -937,7 +966,19 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     lead_style = f"margin:0 0 12px;font-family:{delegate_font_family};font-size:21px;font-weight:300;line-height:1.45;color:#111827;"
     step_number_style = f"padding:0 16px 14px 0;font-family:{delegate_font_family};font-size:30px;font-weight:700;line-height:1.05;color:#0B274B;vertical-align:top;white-space:nowrap;"
     step_text_style = f"padding:2px 0 14px;font-family:{delegate_font_family};font-size:15px;font-weight:300;color:#111827;line-height:1.62;vertical-align:top;"
-    cta_style = f"display:inline-block;padding:14px 28px;background-color:#0B0679;color:#ffffff;font-family:{delegate_font_family};font-size:15px;font-weight:300;border-radius:999px;text-decoration:none;"
+    cta_style = (
+        "display:inline-block;"
+        "padding:14px 28px;"
+        f"background-color:{_EMAIL_BRAND_BLUE};"
+        f"background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE});"
+        "color:#ffffff;"
+        "-webkit-text-fill-color:#ffffff;"
+        f"font-family:{delegate_font_family};"
+        "font-size:15px;"
+        "font-weight:300;"
+        f"border-radius:{_EMAIL_BUTTON_BORDER_RADIUS};"
+        "text-decoration:none;"
+    )
     footer_style = f"padding:24px 32px 32px;font-family:{delegate_font_family};font-size:12px;font-weight:300;color:#6b7280;line-height:1.5;text-align:center;"
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -949,12 +990,13 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300&display=swap" rel="stylesheet" />
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
+{_EMAIL_LIGHT_MODE_LOCK_CSS}
   </head>
-  <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+  <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
         <td align="center" style="padding:0 14px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="trufusion-email-card" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
                 <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
@@ -990,7 +1032,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
                             </table>
 
                             <p style="margin:28px 0 32px;text-align:center;">
-                              <a href="{safe_base_url}" style="{cta_style}">Open Delegate Links Beta</a>
+                              <a class="trufusion-button" href="{safe_base_url}" style="{cta_style}">Open Delegate Links Beta</a>
                             </p>
                           </td>
                         </tr>
@@ -1088,7 +1130,7 @@ def _build_shipping_status_email(
     tracking_line = f"Tracking: {tracking_label}" if tracking_label else None
     cta_block = (
         f'<p style="margin:0 0 32px;text-align:center;">'
-        f'<a href="{tracking_url}" class="trufusion-track-button" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
+        f'<a href="{tracking_url}" class="trufusion-button trufusion-track-button" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
         f"</p>"
     ) if tracking_url else ""
     account_link_html = (
@@ -1111,13 +1153,14 @@ def _build_shipping_status_email(
     <title>{heading}</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
+    {_EMAIL_LIGHT_MODE_LOCK_CSS}
     {_EMAIL_TRACK_BUTTON_HOVER_CSS}
   </head>
-  <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+  <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
         <td align="center" style="{_EMAIL_ORDER_OUTER_CELL_STYLE}">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="trufusion-email-card" style="{container_style}">
             <tr>
               <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
                 <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />

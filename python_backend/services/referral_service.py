@@ -1899,7 +1899,12 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
     return records
 
 
-def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = False, token_role: Optional[str] = None):
+def list_referrals_for_sales_rep(
+    sales_rep_identifier: str,
+    scope_all: bool = False,
+    token_role: Optional[str] = None,
+    include_house_contact_forms: bool = False,
+):
     """
     Fetch lead records visible to the given sales rep.
 
@@ -2240,9 +2245,9 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
 
     manual_leads = [_make_manual_lead(p) for p in normalized_prospects if _is_manual_prospect(p)]
 
-    # All-scope dashboards include house contact-form leads; scoped "mine"
-    # views only show contact forms already assigned through sales_prospects.
-    if scope_all:
+    # All-scope dashboards and an admin's own scoped dashboard include house
+    # contact-form leads so the To-Do panel can surface inbound site requests.
+    if scope_all or is_admin or include_house_contact_forms:
         contact_form_leads = _load_contact_form_referrals(sales_rep_id=None)
     else:
         contact_form_leads = [_make_contact_form_lead(p) for p in normalized_prospects if _is_contact_form_prospect(p)]

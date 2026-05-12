@@ -39,8 +39,8 @@ function trufusion_mailer_bridge_get_frontend_url() {
 
 function trufusion_mailer_bridge_get_brand_logo_url($current = '') {
     $value = trufusion_mailer_bridge_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
-    if ($value === '' || stripos($value, 'peppro') !== false) {
-        $value = trufusion_mailer_bridge_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.16';
+    if ($value === '' || stripos($value, 'peppro') !== false || stripos($value, 'TrufusionLabs_PhysiciansPortal') !== false) {
+        $value = trufusion_mailer_bridge_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.17';
     }
     return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -140,8 +140,8 @@ function trufusion_mailer_bridge_send_password_reset_email(WP_REST_Request $requ
     $greeting = $display_name !== '' ? 'Hi ' . esc_html($display_name) . ',' : 'Hi,';
 
     $reset_button = '<a href="' . esc_url($reset_url) . '"'
-      . ' style="display:inline-block;background:#0b0679;color:#ffffff;text-decoration:none;'
-      . 'padding:12px 18px;border-radius:10px;font-weight:700;line-height:1.1;">'
+      . ' style="display:inline-block;background-color:#0b0679;background-image:linear-gradient(#0b0679,#0b0679);color:#ffffff;-webkit-text-fill-color:#ffffff;text-decoration:none;'
+      . 'padding:12px 18px;border-radius:12px;font-weight:700;line-height:1.1;">'
       . 'Reset password'
       . '</a>';
 
@@ -279,10 +279,11 @@ function trufusion_mailer_bridge_configure_smtp($phpmailer) {
 // Reduce WooCommerce email header logo size for TrufusionLabs-branded emails.
 add_filter('woocommerce_email_styles', function ($css) {
     $css .= "\n"
-        . "#wrapper{background-color:#f6f8fb !important;}\n"
-        . "#template_container{border-color:rgba(15,39,75,0.12) !important;box-shadow:none !important;}\n"
+        . "#wrapper{background-color:#ffffff !important;}\n"
+        . "#template_container{border-color:#e2e8f0 !important;box-shadow:none !important;}\n"
         . "#template_header{background-color:#ffffff !important;border-bottom:1px solid rgba(15,39,75,0.10) !important;}\n"
         . "#template_header h1,.wc-email-header__title{color:#0B274B !important;background:transparent !important;}\n"
+        . "a.button,.button{background-color:#0b0679 !important;background-image:linear-gradient(#0b0679,#0b0679) !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;border-color:#0b0679 !important;border-radius:12px !important;text-decoration:none !important;}\n"
         . "#template_header_image img,"
         . ".wc-email-header__image img,"
         . ".email-header-image img,"

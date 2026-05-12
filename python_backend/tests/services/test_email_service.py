@@ -29,32 +29,35 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("width:360px", html)
         self.assertIn("max-width:70%", html)
         self.assertNotIn("width:100%", html)
-        self.assertIn("background-color:rgb(55,126,186);", html)
-        self.assertIn("background:rgb(55,126,186);", html)
+        self.assertIn("background-color:#ffffff;", html)
+        self.assertIn("background:#ffffff;", html)
         self.assertIn("background-image:none;", html)
+        self.assertIn("background-image:linear-gradient(#ffffff,#ffffff)", html)
         self.assertNotIn('background="cid:trufusion-leaf"', html)
         self.assertNotIn("url('cid:trufusion-leaf')", html)
         self.assertIn("min-height:100vh", html)
         self.assertIn("height:100vh", html)
-        self.assertIn("background:rgba(255,255,255,0.64)", html)
-        self.assertIn("backdrop-filter:blur(52px) saturate(1.9)", html)
+        self.assertIn('class="trufusion-email-card"', html)
+        self.assertNotIn("background:rgba(255,255,255,0.64)", html)
+        self.assertNotIn("backdrop-filter", html)
         self.assertIn('td align="center" style="padding:0 14px;"', html)
         self.assertIn("<strong>Order: 1505</strong>", html)
         self.assertIn("<strong>Tracking: 1ZSHIP1505</strong>", html)
         self.assertNotIn("UPS tracking", html)
-        self.assertIn('class="trufusion-track-button"', html)
+        self.assertIn('class="trufusion-button trufusion-track-button"', html)
         self.assertIn(".trufusion-track-button:hover", html)
-        self.assertIn("background-color:rgb(11,6,121) !important", html)
+        self.assertIn("background-color:#0B0679", html)
+        self.assertIn("background-color:#0B0679 !important", html)
+        self.assertIn("background-image:linear-gradient(#0B0679,#0B0679)", html)
         self.assertIn("color:#ffffff !important", html)
+        self.assertIn("-webkit-text-fill-color:#ffffff", html)
         self.assertIn('href="https://trufusionlabs.com"', html)
         self.assertIn(">trufusionlabs.com</a>", html)
         self.assertIn("Sign in to your account", dispatch_email.call_args.args[3])
-        self.assertIn("background-color:rgba(255,255,255,0.95)", html)
-        self.assertIn("color:rgb(11,6,121)", html)
-        self.assertIn("border:2px solid rgb(11,6,121)", html)
+        self.assertNotIn("background-color:rgba(255,255,255,0.95)", html)
+        self.assertNotIn("border:2px solid rgb(11,6,121)", html)
         self.assertIn("border-radius:12px", html)
         self.assertNotIn("border-radius:999px", html)
-        self.assertNotIn("background-color:#0B0679", html)
         self.assertNotIn("https://trufusionlabs.com/turfusionlabsphysiciansportal.png", html)
         self.assertNotIn("https://trufusionlabs.com/leafTexture.jpg", html)
         self.assertNotIn("/turfusionlabsphysiciansportal.png", html)
@@ -154,14 +157,20 @@ class EmailServiceTests(unittest.TestCase):
         ]
 
         for html in templates:
-            self.assertIn("background-color:rgb(55,126,186);", html)
-            self.assertIn("background:rgb(55,126,186);", html)
-            if "trufusion-contact-card" in html:
-                self.assertIn("background-image:linear-gradient(rgb(55,126,186),rgb(55,126,186));", html)
-                self.assertIn("background-image:linear-gradient(#A9D4F8,#A9D4F8);", html)
+            self.assertIn("background-color:#ffffff;", html)
+            self.assertIn("background:#ffffff;", html)
+            self.assertIn("background-image:linear-gradient(#ffffff,#ffffff)", html)
+            self.assertTrue("trufusion-email-card" in html or "trufusion-contact-card" in html)
+            if 'class="trufusion-contact-card"' in html:
+                self.assertIn("background-image:linear-gradient(#ffffff,#ffffff);", html)
                 self.assertIn("-webkit-text-fill-color:#111827", html)
+                self.assertIn("trufusion-email-shell", html)
+                self.assertIn("padding:32px 16px", html)
             else:
                 self.assertIn("background-image:none;", html)
+            self.assertIn('src="cid:trufusion-logo"', html)
+            self.assertNotIn("TrufusionLabs_PhysiciansPortal.png", html)
+            self.assertNotIn("border-radius:999px", html)
             self.assertNotIn("cid:trufusion-leaf", html)
             self.assertNotIn("leafTexture", html)
 
@@ -169,7 +178,7 @@ class EmailServiceTests(unittest.TestCase):
             spec for spec in email_service._EMAIL_INLINE_IMAGE_SPECS if spec["content_id"] == "trufusion-logo"
         )
 
-        self.assertEqual(logo_spec["filename"], "TrufusionLabs_PhysiciansPortal.png")
+        self.assertEqual(logo_spec["filename"], "FullLogo_Transparent_NoBuffer (18).png")
 
     def test_email_verification_email_forces_support_sender(self):
         from python_backend.services import email_service
@@ -222,6 +231,8 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("trufusion-contact-card", dispatch_email.call_args.args[2])
         self.assertIn("background-image:linear-gradient(#0B0679,#0B0679)", dispatch_email.call_args.args[2])
         self.assertIn("-webkit-text-fill-color:#ffffff", dispatch_email.call_args.args[2])
+        self.assertIn("border-radius:12px", dispatch_email.call_args.args[2])
+        self.assertNotIn("border-radius:999px", dispatch_email.call_args.args[2])
         self.assertIn("We received your contact form submission", dispatch_email.call_args.args[3])
         self.assertEqual(
             dispatch_email.call_args.kwargs["from_address"],
@@ -284,7 +295,7 @@ class EmailServiceTests(unittest.TestCase):
         inline_images = (
             {
                 "content_id": "trufusion-logo",
-                "filename": "TrufusionLabs_PhysiciansPortal.png",
+                "filename": "FullLogo_Transparent_NoBuffer (18).png",
                 "mime_type": "image/png",
                 "maintype": "image",
                 "subtype": "png",

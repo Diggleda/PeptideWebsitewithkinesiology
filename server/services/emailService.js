@@ -66,7 +66,11 @@ const normalizeFromAddress = (value) => {
   return normalized.replace(/Trufusion Labs/g, 'TrufusionLabs');
 };
 const FROM_ADDRESS = normalizeFromAddress(process.env.MAIL_FROM);
-const EMAIL_BACKGROUND_COLOR = 'rgb(55,126,186)';
+const EMAIL_BACKGROUND_COLOR = '#ffffff';
+const EMAIL_LOGO_FILENAME = 'FullLogo_Transparent_NoBuffer%20(18).png';
+
+const getFrontendBaseUrl = () => String(env.frontendBaseUrl || 'https://www.trufusionlabs.com').replace(/\/+$/, '');
+const buildEmailLogoUrl = () => `${getFrontendBaseUrl()}/${EMAIL_LOGO_FILENAME}`;
 
 const normalizeEmailAddress = (value) => {
   if (!value) return null;
@@ -106,7 +110,9 @@ const sendPasswordResetEmail = async (to, token) => {
   const resetUrl = buildResetUrl(token);
   const templatePath = path.join(__dirname, '..', 'templates', 'passwordReset.html');
   const htmlTemplate = fs.readFileSync(templatePath, 'utf8');
-  const html = htmlTemplate.replace('{{resetUrl}}', resetUrl);
+  const html = htmlTemplate
+    .replaceAll('{{resetUrl}}', escapeHtml(resetUrl))
+    .replaceAll('{{logoUrl}}', escapeHtml(buildEmailLogoUrl()));
 
   const mailOptions = {
     from: FROM_ADDRESS,
@@ -219,8 +225,7 @@ const sendOrderPaymentInstructionsEmail = async ({
   const htmlTemplate = fs.readFileSync(templatePath, 'utf8');
   const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
   const displayName = String(customerName || 'TrufusionLabs Customer').trim() || 'TrufusionLabs Customer';
-  const frontendBaseUrl = String(env.frontendBaseUrl || 'https://www.trufusionlabs.com').replace(/\/+$/, '');
-  const logoUrl = `${frontendBaseUrl}/TrufusionLabs_PhysiciansPortal.png`;
+  const logoUrl = buildEmailLogoUrl();
   const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
   const normalizedDiscountCode = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
   const discountDetails = normalizedDiscountCode
@@ -331,6 +336,7 @@ const sendManualRefundReviewEmail = async ({
   const displayName = String(customerName || '').trim();
   const displayEmail = String(customerEmail || '').trim();
   const displayPayment = String(paymentMethod || 'Manual payment').trim();
+  const logoUrl = buildEmailLogoUrl();
 
   const subjectBase = process.env.REFUND_NOTIFICATION_SUBJECT || 'TrufusionLabs manual refund review';
   const subject = displayOrderNumber ? `${subjectBase} — Order ${displayOrderNumber}` : subjectBase;
@@ -342,8 +348,11 @@ const sendManualRefundReviewEmail = async ({
     <title>Manual refund review needed</title>
   </head>
   <body style="margin:0; padding:0; background:${EMAIL_BACKGROUND_COLOR}; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
-    <div style="max-width: 680px; margin: 0 auto; padding: 24px 14px; background:${EMAIL_BACKGROUND_COLOR};">
-      <div style="background:#ffffff; border:1px solid rgba(255,255,255,0.82); border-radius:14px; padding:22px; line-height: 1.45; color: #0f172a;">
+    <div style="max-width: 680px; margin: 0 auto; padding: 24px 16px; background:${EMAIL_BACKGROUND_COLOR};">
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:14px; padding:22px; line-height: 1.45; color: #0f172a;">
+        <div style="text-align:center; margin: 0 0 18px;">
+          <img src="${escapeHtml(logoUrl)}" width="360" alt="TrufusionLabs" style="width:360px; max-width:70%; height:auto; display:block; margin:0 auto; border:0; outline:none; text-decoration:none;" />
+        </div>
         <h2 style="margin: 0 0 12px; font-size: 18px;">Manual refund review needed</h2>
         <p style="margin: 0 0 10px; color: #334155;">
           A customer cancelled an order that used a manual payment method (Zelle / bank transfer). If payment was already received, please refund manually and record the refund.

@@ -10028,7 +10028,7 @@ export function Header({
 				      ref={headerRef}
 				      data-app-header
 			      className={clsx(
-			        "w-full app-header-blur border-b border-slate-200 shadow-sm",
+			        "w-full app-header-blur glass-liquid border-b border-slate-200 shadow-sm",
 			      )}
 			      style={{
 			        position: 'fixed',

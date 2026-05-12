@@ -42,7 +42,7 @@ const navLinks = [
 ];
 
 const capabilities = [
-  { n: "01", title: "US-made peptides and supplies" },
+  { n: "01", title: "US-Synthesized Peptides and supplies" },
   { n: "02", title: "3PL logistics" },
   { n: "03", title: "White labeling" },
   { n: "04", title: "Protocol and Research tools" },
@@ -395,7 +395,7 @@ export function MarketingLandingPage({
             </p>
 
             <p className="marketing-landing__body marketing-landing__hero-copy">
-              In addition to our US-made peptides, TrufusionLabs offers 3PL logistics,
+              In addition to our US-Synthesized Peptides, TrufusionLabs offers 3PL logistics,
               white labeling, software tools for research, and a growing physician network
               across the US.
             </p>
