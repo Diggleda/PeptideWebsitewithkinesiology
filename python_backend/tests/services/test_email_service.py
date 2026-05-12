@@ -156,7 +156,12 @@ class EmailServiceTests(unittest.TestCase):
         for html in templates:
             self.assertIn("background-color:rgb(55,126,186);", html)
             self.assertIn("background:rgb(55,126,186);", html)
-            self.assertIn("background-image:none;", html)
+            if "trufusion-contact-card" in html:
+                self.assertIn("background-image:linear-gradient(rgb(55,126,186),rgb(55,126,186));", html)
+                self.assertIn("background-image:linear-gradient(#A9D4F8,#A9D4F8);", html)
+                self.assertIn("-webkit-text-fill-color:#111827", html)
+            else:
+                self.assertIn("background-image:none;", html)
             self.assertNotIn("cid:trufusion-leaf", html)
             self.assertNotIn("leafTexture", html)
 
@@ -214,6 +219,9 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("Dr. Jane Example", dispatch_email.call_args.args[2])
         self.assertIn("representative will review it shortly", dispatch_email.call_args.args[2])
         self.assertIn('src="cid:trufusion-logo"', dispatch_email.call_args.args[2])
+        self.assertIn("trufusion-contact-card", dispatch_email.call_args.args[2])
+        self.assertIn("background-image:linear-gradient(#0B0679,#0B0679)", dispatch_email.call_args.args[2])
+        self.assertIn("-webkit-text-fill-color:#ffffff", dispatch_email.call_args.args[2])
         self.assertIn("We received your contact form submission", dispatch_email.call_args.args[3])
         self.assertEqual(
             dispatch_email.call_args.kwargs["from_address"],

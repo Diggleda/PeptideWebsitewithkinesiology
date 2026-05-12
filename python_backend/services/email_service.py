@@ -31,6 +31,13 @@ _EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
 _EMAIL_LOGO_WIDTH = 360
 _EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
 _EMAIL_BACKGROUND_COLOR = "rgb(55,126,186)"
+_EMAIL_BACKGROUND_HEX = "#377EBA"
+_EMAIL_CONTACT_CARD_COLOR = "#A9D4F8"
+_EMAIL_CONTACT_CARD_BORDER = "#E8F5FF"
+_EMAIL_TEXT_COLOR = "#111827"
+_EMAIL_HEADING_COLOR = "#0B274B"
+_EMAIL_MUTED_COLOR = "#64748B"
+_EMAIL_BRAND_BLUE = "#0B0679"
 _EMAIL_LOGO_IMAGE_STYLE = (
     f"width:{_EMAIL_LOGO_WIDTH}px;"
     "max-width:70%;"
@@ -90,6 +97,109 @@ _EMAIL_ADMIN_REFRESH_BUTTON_STYLE = (
     "line-height:1;"
     "text-decoration:none;"
 )
+_EMAIL_LIGHT_MODE_LOCK_CSS = f"""
+    <style>
+      :root {{
+        color-scheme: light;
+        supported-color-schemes: light;
+      }}
+      .trufusion-email-bg {{
+        background-color: {_EMAIL_BACKGROUND_COLOR} !important;
+        background-image: linear-gradient({_EMAIL_BACKGROUND_COLOR},{_EMAIL_BACKGROUND_COLOR}) !important;
+      }}
+      .trufusion-contact-card {{
+        background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
+        background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
+        border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
+      }}
+      .trufusion-text {{
+        color: {_EMAIL_TEXT_COLOR} !important;
+        -webkit-text-fill-color: {_EMAIL_TEXT_COLOR} !important;
+      }}
+      .trufusion-heading {{
+        color: {_EMAIL_HEADING_COLOR} !important;
+        -webkit-text-fill-color: {_EMAIL_HEADING_COLOR} !important;
+      }}
+      .trufusion-muted {{
+        color: {_EMAIL_MUTED_COLOR} !important;
+        -webkit-text-fill-color: {_EMAIL_MUTED_COLOR} !important;
+      }}
+      .trufusion-link {{
+        color: {_EMAIL_BRAND_BLUE} !important;
+        -webkit-text-fill-color: {_EMAIL_BRAND_BLUE} !important;
+      }}
+      .trufusion-button {{
+        background-color: {_EMAIL_BRAND_BLUE} !important;
+        background-image: linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE}) !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+      }}
+      @media (prefers-color-scheme: dark) {{
+        .trufusion-email-bg {{
+          background-color: {_EMAIL_BACKGROUND_COLOR} !important;
+          background-image: linear-gradient({_EMAIL_BACKGROUND_COLOR},{_EMAIL_BACKGROUND_COLOR}) !important;
+        }}
+        .trufusion-contact-card {{
+          background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
+          background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
+          border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
+        }}
+        .trufusion-text {{
+          color: {_EMAIL_TEXT_COLOR} !important;
+          -webkit-text-fill-color: {_EMAIL_TEXT_COLOR} !important;
+        }}
+        .trufusion-heading {{
+          color: {_EMAIL_HEADING_COLOR} !important;
+          -webkit-text-fill-color: {_EMAIL_HEADING_COLOR} !important;
+        }}
+        .trufusion-muted {{
+          color: {_EMAIL_MUTED_COLOR} !important;
+          -webkit-text-fill-color: {_EMAIL_MUTED_COLOR} !important;
+        }}
+        .trufusion-link {{
+          color: {_EMAIL_BRAND_BLUE} !important;
+          -webkit-text-fill-color: {_EMAIL_BRAND_BLUE} !important;
+        }}
+        .trufusion-button {{
+          background-color: {_EMAIL_BRAND_BLUE} !important;
+          background-image: linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE}) !important;
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+        }}
+      }}
+      [data-ogsc] .trufusion-email-bg {{
+        background-color: {_EMAIL_BACKGROUND_COLOR} !important;
+        background-image: linear-gradient({_EMAIL_BACKGROUND_COLOR},{_EMAIL_BACKGROUND_COLOR}) !important;
+      }}
+      [data-ogsc] .trufusion-contact-card {{
+        background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
+        background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
+        border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
+      }}
+      [data-ogsc] .trufusion-text {{
+        color: {_EMAIL_TEXT_COLOR} !important;
+        -webkit-text-fill-color: {_EMAIL_TEXT_COLOR} !important;
+      }}
+      [data-ogsc] .trufusion-heading {{
+        color: {_EMAIL_HEADING_COLOR} !important;
+        -webkit-text-fill-color: {_EMAIL_HEADING_COLOR} !important;
+      }}
+      [data-ogsc] .trufusion-muted {{
+        color: {_EMAIL_MUTED_COLOR} !important;
+        -webkit-text-fill-color: {_EMAIL_MUTED_COLOR} !important;
+      }}
+      [data-ogsc] .trufusion-link {{
+        color: {_EMAIL_BRAND_BLUE} !important;
+        -webkit-text-fill-color: {_EMAIL_BRAND_BLUE} !important;
+      }}
+      [data-ogsc] .trufusion-button {{
+        background-color: {_EMAIL_BRAND_BLUE} !important;
+        background-image: linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE}) !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+      }}
+    </style>
+"""
 _EMAIL_TRACK_BUTTON_HOVER_CSS = (
     "<style>"
     ".trufusion-track-button:hover,"
@@ -358,6 +468,21 @@ def _email_container_style(max_width: int) -> str:
     return f"max-width:{max_width}px;{_EMAIL_GLASS_CONTAINER_STYLE}"
 
 
+def _email_contact_container_style(max_width: int) -> str:
+    return (
+        f"max-width:{max_width}px;"
+        f"background-color:{_EMAIL_CONTACT_CARD_COLOR};"
+        f"background-image:linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR});"
+        f"border:1px solid {_EMAIL_CONTACT_CARD_BORDER};"
+        "border-radius:28px;"
+        "overflow:hidden;"
+        "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
+        "0 6px 14px -10px rgba(15,23,42,0.35);"
+        f"color:{_EMAIL_TEXT_COLOR};"
+        "color-scheme:light;"
+    )
+
+
 def _email_order_container_style(max_width: int) -> str:
     return f"max-width:{max_width}px;{_EMAIL_ORDER_GLASS_CONTAINER_STYLE}"
 
@@ -580,9 +705,22 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
 def _build_contact_form_received_email(*, name: Optional[str], base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    body_style = _email_body_style()
-    outer_table_style = _email_outer_table_style()
-    container_style = _email_container_style(520)
+    locked_background_style = (
+        f"background-color:{_EMAIL_BACKGROUND_COLOR};"
+        f"background:{_EMAIL_BACKGROUND_COLOR};"
+        f"background-image:linear-gradient({_EMAIL_BACKGROUND_COLOR},{_EMAIL_BACKGROUND_COLOR});"
+    )
+    body_style = (
+        "margin:0;"
+        "padding:0;"
+        "min-height:100vh;"
+        f"{locked_background_style}"
+        "font-family:Arial,Helvetica,sans-serif;"
+        f"color:{_EMAIL_TEXT_COLOR};"
+        "color-scheme:light;"
+    )
+    outer_table_style = f"{locked_background_style}min-height:100vh;height:100vh;padding:32px 0;color-scheme:light;"
+    container_style = _email_contact_container_style(520)
     name_label = str(name or "").strip() or "there"
     safe_name_label = _html.escape(name_label, quote=True)
     html = f"""<!DOCTYPE html>
@@ -592,36 +730,37 @@ def _build_contact_form_received_email(*, name: Optional[str], base_url: str) ->
     <title>We received your TrufusionLabs contact request</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
+{_EMAIL_LIGHT_MODE_LOCK_CSS}
   </head>
-  <body style="{body_style}">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+  <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+        <td align="center" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{locked_background_style}">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_CONTACT_CARD_COLOR}" class="trufusion-contact-card" style="{container_style}">
             <tr>
-              <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
+              <td bgcolor="{_EMAIL_CONTACT_CARD_COLOR}" class="trufusion-contact-card" style="{_EMAIL_LOGO_CELL_STYLE}background-color:{_EMAIL_CONTACT_CARD_COLOR};background-image:linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR});" align="center">
                 <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
               </td>
             </tr>
             <tr>
-              <td style="padding:44px 28px 8px;">
-                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">We received your request</h1>
-                <p style="margin:0 0 12px;line-height:1.6;">Hi {safe_name_label},</p>
-                <p style="margin:0 0 12px;line-height:1.6;">
+              <td bgcolor="{_EMAIL_CONTACT_CARD_COLOR}" class="trufusion-contact-card trufusion-text" style="padding:44px 28px 8px;background-color:{_EMAIL_CONTACT_CARD_COLOR};background-image:linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR});color:{_EMAIL_TEXT_COLOR};-webkit-text-fill-color:{_EMAIL_TEXT_COLOR};">
+                <h1 class="trufusion-heading" style="margin:0 0 16px;font-size:22px;font-weight:700;color:{_EMAIL_HEADING_COLOR};-webkit-text-fill-color:{_EMAIL_HEADING_COLOR};">We received your request</h1>
+                <p class="trufusion-text" style="margin:0 0 12px;line-height:1.6;color:{_EMAIL_TEXT_COLOR};-webkit-text-fill-color:{_EMAIL_TEXT_COLOR};">Hi {safe_name_label},</p>
+                <p class="trufusion-text" style="margin:0 0 12px;line-height:1.6;color:{_EMAIL_TEXT_COLOR};-webkit-text-fill-color:{_EMAIL_TEXT_COLOR};">
                   Thanks for reaching out to TrufusionLabs. We received your contact form submission and a representative will review it shortly.
                 </p>
-                <p style="margin:0 0 32px;line-height:1.6;">
+                <p class="trufusion-text" style="margin:0 0 32px;line-height:1.6;color:{_EMAIL_TEXT_COLOR};-webkit-text-fill-color:{_EMAIL_TEXT_COLOR};">
                   If you need to add anything before we follow up, reply to this email or contact support at
-                  <a href="mailto:support@trufusionlabs.com" style="color:#0B0679;text-decoration:none;">support@trufusionlabs.com</a>.
+                  <a class="trufusion-link" href="mailto:support@trufusionlabs.com" style="color:{_EMAIL_BRAND_BLUE};-webkit-text-fill-color:{_EMAIL_BRAND_BLUE};text-decoration:none;">support@trufusionlabs.com</a>.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#0B0679;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Visit TrufusionLabs</a>
+                  <a class="trufusion-button" href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:{_EMAIL_BRAND_BLUE};background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE});color:#ffffff;-webkit-text-fill-color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Visit TrufusionLabs</a>
                 </p>
               </td>
             </tr>
             <tr>
-              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
-                <p style="margin:0 0 4px;">This is an automated confirmation that your contact request was received.</p>
+              <td bgcolor="{_EMAIL_CONTACT_CARD_COLOR}" class="trufusion-contact-card trufusion-muted" style="padding:24px 28px 32px;background-color:{_EMAIL_CONTACT_CARD_COLOR};background-image:linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR});font-size:12px;color:{_EMAIL_MUTED_COLOR};-webkit-text-fill-color:{_EMAIL_MUTED_COLOR};line-height:1.5;text-align:center;">
+                <p class="trufusion-muted" style="margin:0 0 4px;color:{_EMAIL_MUTED_COLOR};-webkit-text-fill-color:{_EMAIL_MUTED_COLOR};">This is an automated confirmation that your contact request was received.</p>
               </td>
             </tr>
           </table>

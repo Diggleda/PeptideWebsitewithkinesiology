@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 import unittest
 from unittest.mock import patch
 
@@ -215,6 +216,104 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
             {row["id"] for row in result},
             {"prospect-own", "prospect-other", "contact_form:1"},
         )
+
+    def test_scoped_contact_form_lead_hydrates_type_from_contact_form_row(self) -> None:
+        rep_user = {
+            "id": "rep-1",
+            "role": "sales_rep",
+            "email": "rep@example.com",
+            "salesRepId": "rep-1",
+        }
+        prospect = {
+            "id": "contact_form:42",
+            "salesRepId": "rep-1",
+            "contactFormId": "42",
+            "status": "contact_form",
+            "createdAt": "2026-04-09T00:00:00Z",
+            "updatedAt": "2026-04-09T00:00:00Z",
+        }
+
+        def fetch_one(query: str, _params=None):
+            if "FROM contact_forms" not in query:
+                return None
+            return {
+                "id": 42,
+                "name": "Join Lead",
+                "email": "join@example.com",
+                "phone": "555-0100",
+                "message": "LinkedIn",
+                "message_field_key": "heard_about_us",
+                "message_label": "How did you hear about us?",
+                "source": "join_network",
+                "created_at": "2026-04-08T00:00:00Z",
+            }
+
+        with patch.object(service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": True})), \
+            patch.object(service.mysql_client, "fetch_one", side_effect=fetch_one), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service, "_resolve_sales_rep_id", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value=None), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
+            patch.object(service, "_resolve_sales_rep_aliases", return_value={"rep-1"}), \
+            patch.object(service.user_repository, "find_by_id", side_effect=lambda identifier: rep_user if str(identifier) == "rep-1" else None), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep", return_value=[prospect]):
+            result = service.list_referrals_for_sales_rep("rep-1", scope_all=False, token_role="sales_rep")
+
+        self.assertEqual(len(result), 1)
+        lead = result[0]
+        self.assertEqual(lead["id"], "contact_form:42")
+        self.assertEqual(lead["contactFormId"], "42")
+        self.assertEqual(lead["contactFormSource"], "join_network")
+        self.assertEqual(lead["contactFormMessage"], "LinkedIn")
+        self.assertEqual(lead["contactFormMessageFieldKey"], "heard_about_us")
+        self.assertEqual(lead["contactFormMessageLabel"], "How did you hear about us?")
+        self.assertEqual(lead["referredContactName"], "Join Lead")
+        self.assertEqual(lead["referredContactEmail"], "join@example.com")
+        self.assertEqual(lead["referredContactPhone"], "555-0100")
+
+    def test_scoped_contact_form_lead_uses_payload_type_when_row_unavailable(self) -> None:
+        rep_user = {
+            "id": "rep-1",
+            "role": "sales_rep",
+            "email": "rep@example.com",
+            "salesRepId": "rep-1",
+        }
+        prospect = {
+            "id": "contact_form:77",
+            "salesRepId": "rep-1",
+            "contactFormId": "77",
+            "status": "contact_form",
+            "sourcePayloadJson": {
+                "source": "partner_application",
+                "contactName": "Partner Lead",
+                "contactEmail": "partner@example.com",
+                "message": "We can co-market.",
+                "messageFieldKey": "partnership_fit",
+                "messageLabel": "How can we help each other?",
+            },
+            "createdAt": "2026-04-09T00:00:00Z",
+            "updatedAt": "2026-04-09T00:00:00Z",
+        }
+
+        with patch.object(service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": False})), \
+            patch.object(service, "_resolve_sales_rep_id", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value=None), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
+            patch.object(service, "_resolve_sales_rep_aliases", return_value={"rep-1"}), \
+            patch.object(service.user_repository, "find_by_id", side_effect=lambda identifier: rep_user if str(identifier) == "rep-1" else None), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep", return_value=[prospect]):
+            result = service.list_referrals_for_sales_rep("rep-1", scope_all=False, token_role="sales_rep")
+
+        self.assertEqual(len(result), 1)
+        lead = result[0]
+        self.assertEqual(lead["contactFormSource"], "partner_application")
+        self.assertEqual(lead["contactFormMessage"], "We can co-market.")
+        self.assertEqual(lead["contactFormMessageFieldKey"], "partnership_fit")
+        self.assertEqual(lead["contactFormMessageLabel"], "How can we help each other?")
+        self.assertEqual(lead["referredContactName"], "Partner Lead")
+        self.assertEqual(lead["referredContactEmail"], "partner@example.com")
 
     def test_accounts_resolve_sales_rep_aliases(self) -> None:
         users = [

@@ -2541,7 +2541,8 @@ const formatContactFormSourceLabel = (value: unknown): string | null => {
     normalized === "questions" ||
     normalized === "footer" ||
     normalized === "footer_question" ||
-    normalized === "contact"
+    normalized === "contact" ||
+    normalized === "contact_form"
   ) {
     return "Question";
   }

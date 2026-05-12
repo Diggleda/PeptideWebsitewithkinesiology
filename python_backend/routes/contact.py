@@ -164,14 +164,34 @@ def submit_contact():
             try:
                 if inserted_id:
                     rep = sales_rep_repository.find_by_sales_code(sales_code) if sales_code else None
+                    contact_phones = [record["phone"]] if record["phone"] else []
                     sales_prospect_repository.upsert(
                         {
                             "id": f"contact_form:{inserted_id}",
                             "salesRepId": str(rep.get("id")) if rep and rep.get("id") else None,
                             "contactFormId": str(inserted_id),
+                            "sourceSystem": "contact_form",
+                            "sourceExternalId": str(inserted_id),
+                            "sourcePayloadJson": {
+                                "contactFormId": str(inserted_id),
+                                "source": record["source"] or None,
+                                "submittedAt": record["createdAt"],
+                                "contactName": record["name"],
+                                "contactEmail": record["email"],
+                                "contactPhone": record["phone"],
+                                "message": record["message"],
+                                "messageFieldKey": record["message_field_key"],
+                                "messageLabel": record["message_label"],
+                            },
                             "status": "contact_form",
                             "isManual": False,
-                        }
+                            "contactName": record["name"],
+                            "contactEmail": record["email"],
+                            "contactPhone": record["phone"],
+                            "contactEmails": [record["email"]],
+                            "contactPhones": contact_phones,
+                        },
+                        match_by_contact=False,
                     )
                     user_repository.mark_contact_form_origin_for_email(
                         record["email"],

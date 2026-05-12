@@ -75,6 +75,14 @@ CONTACT_FORM_PARTNER_SOURCE_ALIASES = {
     "partnership",
     "application",
 }
+CONTACT_FORM_QUESTION_SOURCE_ALIASES = {
+    "question",
+    "questions",
+    "footer",
+    "footer_question",
+    "contact",
+    "contact_form",
+}
 
 LEGACY_STATUS_ALIASES = {
     "follow_up": "nuture",
@@ -110,14 +118,21 @@ def _sanitize_text(value: Optional[str], max_length: int = 190) -> Optional[str]
     return text[:max_length]
 
 
-def _contact_form_message_metadata(row: Dict) -> Tuple[str, str]:
-    source = str(row.get("source") or "question").strip().lower().replace("-", "_").replace(" ", "_")
+def _normalize_contact_form_source(value: object) -> Optional[str]:
+    source = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not source:
+        return None
     if source in CONTACT_FORM_JOIN_SOURCE_ALIASES:
-        source = "join_network"
-    elif source in CONTACT_FORM_PARTNER_SOURCE_ALIASES:
-        source = "partner_application"
-    else:
-        source = "question"
+        return "join_network"
+    if source in CONTACT_FORM_PARTNER_SOURCE_ALIASES:
+        return "partner_application"
+    if source in CONTACT_FORM_QUESTION_SOURCE_ALIASES:
+        return "question"
+    return None
+
+
+def _contact_form_message_metadata(row: Dict) -> Tuple[str, str]:
+    source = _normalize_contact_form_source(row.get("source")) or "question"
     defaults = CONTACT_FORM_MESSAGE_FIELDS.get(source, CONTACT_FORM_MESSAGE_FIELDS["question"])
     field_key = _sanitize_text(row.get("message_field_key"), 64) or defaults["key"]
     label = _sanitize_text(row.get("message_label"), 255) or defaults["label"]
@@ -226,6 +241,76 @@ def _read_contact_form_field(row: Dict, field: str) -> Optional[str]:
     if not text or text == "[ENCRYPTED]":
         return None
     return text
+
+
+def _normalize_contact_form_identifier(value: object) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.startswith("contact_form:"):
+        text = text.split(":", 1)[1].strip()
+    return text or None
+
+
+def _parse_json_object(value: object) -> Dict:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _prospect_source_payload(prospect: Dict) -> Dict:
+    if not isinstance(prospect, dict):
+        return {}
+    return _parse_json_object(
+        prospect.get("sourcePayloadJson")
+        if "sourcePayloadJson" in prospect
+        else prospect.get("source_payload_json")
+    )
+
+
+def _payload_text(payload: Dict, *keys: str, max_length: int = 190) -> Optional[str]:
+    for key in keys:
+        value = payload.get(key) if isinstance(payload, dict) else None
+        sanitized = _sanitize_text(value, max_length=max_length)
+        if sanitized:
+            return sanitized
+    return None
+
+
+def _load_contact_form_row_by_id(contact_form_id: Optional[str]) -> Optional[Dict]:
+    normalized_id = _normalize_contact_form_identifier(contact_form_id)
+    if not normalized_id:
+        return None
+    try:
+        mysql_enabled = bool(get_config().mysql.get("enabled"))
+    except Exception:
+        mysql_enabled = False
+    if not mysql_enabled:
+        return None
+    try:
+        return mysql_client.fetch_one(
+            """
+            SELECT id, name, email, phone, message, message_field_key, message_label, source, created_at
+            FROM contact_forms
+            WHERE id = %(id)s
+            LIMIT 1
+            """,
+            {"id": normalized_id},
+        )
+    except Exception:
+        logger.warning(
+            "[referrals] failed to hydrate contact form prospect",
+            exc_info=True,
+            extra={"contactFormId": normalized_id},
+        )
+    return None
 
 
 def _contact_form_email_blind_index(email: Optional[str]) -> Optional[str]:
@@ -1968,23 +2053,106 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         return _apply_referred_contact_account_fields(base)
 
     def _make_contact_form_lead(p: Dict) -> Dict:
+        payload = _prospect_source_payload(p)
+        contact_form_id = _normalize_contact_form_identifier(
+            p.get("contactFormId")
+            or p.get("contact_form_id")
+            or (p.get("id") if str(p.get("id") or "").startswith("contact_form:") else None)
+        )
+        contact_form_row = _load_contact_form_row_by_id(contact_form_id)
+
         contact_emails, contact_phones = _prospect_contact_lists(p)
-        contact_form_id = p.get("contactFormId")
+        row_created_at = None
+        row_contact_name = None
+        row_contact_email = None
+        row_contact_phone = None
+        row_contact_message = None
+        row_source = None
+        contact_message_field_key = None
+        contact_message_label = None
+
+        if contact_form_row:
+            created_at_raw = contact_form_row.get("created_at") or contact_form_row.get("createdAt")
+            row_created_at = created_at_raw.isoformat() if isinstance(created_at_raw, datetime) else created_at_raw
+            row_contact_name = _sanitize_text(_read_contact_form_field(contact_form_row, "name"))
+            row_contact_email = _sanitize_email(_read_contact_form_field(contact_form_row, "email"))
+            row_contact_phone = _sanitize_phone(_read_contact_form_field(contact_form_row, "phone"))
+            row_contact_message = _sanitize_text(_read_contact_form_field(contact_form_row, "message"), 1000)
+            row_source = (
+                _normalize_contact_form_source(contact_form_row.get("source"))
+                or _sanitize_text(contact_form_row.get("source"), 255)
+            )
+            contact_message_field_key, contact_message_label = _contact_form_message_metadata(contact_form_row)
+
+        payload_contact_name = _payload_text(payload, "contactName", "contact_name")
+        payload_contact_email = _sanitize_email(_payload_text(payload, "contactEmail", "contact_email"))
+        payload_contact_phone = _sanitize_phone(_payload_text(payload, "contactPhone", "contact_phone"))
+        payload_source = (
+            _normalize_contact_form_source(payload.get("source"))
+            or _sanitize_text(payload.get("source"), 255)
+        )
+        notes_source = _normalize_contact_form_source(p.get("notes"))
+        contact_form_source = (
+            row_source
+            or _normalize_contact_form_source(p.get("contactFormSource"))
+            or _normalize_contact_form_source(p.get("source"))
+            or payload_source
+            or notes_source
+            or _sanitize_text(p.get("contactFormSource") or p.get("source"), 255)
+        )
+        contact_form_message = (
+            row_contact_message
+            or _sanitize_text(p.get("contactFormMessage"), 1000)
+            or _payload_text(payload, "message", "contactMessage", "contact_form_message", max_length=1000)
+        )
+        contact_message_field_key = (
+            contact_message_field_key
+            or _sanitize_text(p.get("contactFormMessageFieldKey"), 64)
+            or _payload_text(payload, "messageFieldKey", "message_field_key", max_length=64)
+        )
+        contact_message_label = (
+            contact_message_label
+            or _sanitize_text(p.get("contactFormMessageLabel"), 255)
+            or _payload_text(payload, "messageLabel", "message_label", max_length=255)
+        )
+        if not contact_message_field_key or not contact_message_label:
+            default_field_key, default_label = _contact_form_message_metadata(
+                {
+                    "source": contact_form_source,
+                    "message_field_key": contact_message_field_key,
+                    "message_label": contact_message_label,
+                }
+            )
+            contact_message_field_key = contact_message_field_key or default_field_key
+            contact_message_label = contact_message_label or default_label
+
+        if not contact_emails:
+            contact_emails = _sanitize_email_list(row_contact_email or payload_contact_email)
+        if not contact_phones:
+            contact_phones = _sanitize_phone_list(row_contact_phone or payload_contact_phone)
+
         lead_id = str(p.get("id") or "")
         if not lead_id.startswith("contact_form:"):
             lead_id = f"contact_form:{contact_form_id}" if contact_form_id else lead_id
         base = {
             "id": lead_id,
+            "contactFormId": contact_form_id,
             "referrerDoctorId": None,
             "salesRepId": p.get("salesRepId"),
-            "referredContactName": p.get("contactName") or "Contact Form Lead",
+            "referredContactName": p.get("contactName") or row_contact_name or payload_contact_name or "Contact Form Lead",
             "referredContactEmail": contact_emails[0] if contact_emails else None,
             "referredContactPhone": contact_phones[0] if contact_phones else None,
             "contactEmails": contact_emails,
             "contactPhones": contact_phones,
             "status": p.get("status") or "contact_form",
             "salesRepNotes": p.get("notes") or None,
-            "notes": p.get("notes") or "Contact form submission",
+            "notes": contact_form_source or p.get("notes") or "Contact form submission",
+            "contactFormSource": contact_form_source,
+            "contactFormMessage": contact_form_message,
+            "contactFormMessageFieldKey": contact_message_field_key,
+            "contactFormMessageLabel": contact_message_label,
+            "source": "contact_form",
+            "sourceSystem": p.get("sourceSystem") or "contact_form",
             "resellerPermitExempt": bool(p.get("resellerPermitExempt")),
             "resellerPermitFilePath": p.get("resellerPermitFilePath") or None,
             "resellerPermitFileName": p.get("resellerPermitFileName") or None,
@@ -1995,8 +2163,8 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
             "officeState": p.get("officeState") or None,
             "officePostalCode": p.get("officePostalCode") or None,
             "officeCountry": p.get("officeCountry") or None,
-            "createdAt": p.get("createdAt"),
-            "updatedAt": p.get("updatedAt"),
+            "createdAt": p.get("createdAt") or row_created_at,
+            "updatedAt": p.get("updatedAt") or row_created_at,
             "convertedDoctorId": p.get("doctorId") or None,
             "convertedAt": None,
             "referredContactHasAccount": False,

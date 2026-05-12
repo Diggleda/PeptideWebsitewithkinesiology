@@ -120,14 +120,33 @@ class SecureStorageWriteTests(unittest.TestCase):
         self.assertEqual(params["source"], "join_network")
         find_sales_code.assert_called_once_with("PEPPR7")
 
-        upsert.assert_called_once_with(
-            {
-                "id": "contact_form:321",
-                "salesRepId": "rep-7",
-                "contactFormId": "321",
-                "status": "contact_form",
-                "isManual": False,
-            }
+        upsert.assert_called_once()
+        self.assertEqual(upsert.call_args.kwargs, {"match_by_contact": False})
+        prospect_payload = upsert.call_args.args[0]
+        self.assertEqual(prospect_payload["id"], "contact_form:321")
+        self.assertEqual(prospect_payload["salesRepId"], "rep-7")
+        self.assertEqual(prospect_payload["contactFormId"], "321")
+        self.assertEqual(prospect_payload["sourceSystem"], "contact_form")
+        self.assertEqual(prospect_payload["sourceExternalId"], "321")
+        self.assertEqual(prospect_payload["status"], "contact_form")
+        self.assertEqual(prospect_payload["isManual"], False)
+        self.assertEqual(prospect_payload["contactName"], "Dr. Jane Example")
+        self.assertEqual(prospect_payload["contactEmail"], "Doctor@Example.com")
+        self.assertEqual(prospect_payload["contactPhone"], "555-0100")
+        self.assertEqual(prospect_payload["contactEmails"], ["Doctor@Example.com"])
+        self.assertEqual(prospect_payload["contactPhones"], ["555-0100"])
+        self.assertEqual(
+            prospect_payload["sourcePayloadJson"]["messageFieldKey"],
+            "heard_about_us",
+        )
+        self.assertEqual(
+            prospect_payload["sourcePayloadJson"]["messageLabel"],
+            "How did you hear about us?",
+        )
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["source"], "join_network")
+        self.assertEqual(
+            prospect_payload["sourcePayloadJson"]["message"],
+            "I would like to join the network.",
         )
         mark_origin.assert_called_once_with(
             "Doctor@Example.com",
