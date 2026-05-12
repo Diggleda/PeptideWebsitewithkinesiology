@@ -84,9 +84,10 @@ class SecureStorageWriteTests(unittest.TestCase):
             patch.object(self.contact.mysql_client, "cursor", return_value=_CursorContext(cursor)), \
             patch.object(self.contact, "encrypt_text", side_effect=fake_encrypt), \
             patch.object(self.contact, "compute_blind_index", return_value="blind:doctor@example.com"), \
-            patch.object(self.contact.sales_rep_repository, "find_by_sales_code", return_value={"id": "rep-7"}), \
+            patch.object(self.contact.sales_rep_repository, "find_by_sales_code", return_value={"id": "rep-7"}) as find_sales_code, \
             patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
-            patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email") as mark_origin:
+            patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email") as mark_origin, \
+            patch.object(self.contact.email_service, "send_contact_form_received_email") as send_received_email:
             with self.app.test_request_context(
                 "/api/contact",
                 method="POST",
@@ -94,7 +95,9 @@ class SecureStorageWriteTests(unittest.TestCase):
                     "name": "Dr. Jane Example",
                     "email": "Doctor@Example.com",
                     "phone": "555-0100",
-                    "source": "PEPPR7",
+                    "message": "I would like to join the network.",
+                    "source": "join-network",
+                    "salesCode": "PEPPR7",
                 },
             ):
                 response = self._make_response(self.contact.submit_contact())
@@ -107,11 +110,15 @@ class SecureStorageWriteTests(unittest.TestCase):
         self.assertEqual(params["name"], "cipher:name:Dr. Jane Example")
         self.assertEqual(params["email"], "cipher:email:Doctor@Example.com")
         self.assertEqual(params["phone"], "cipher:phone:555-0100")
+        self.assertEqual(params["message"], "cipher:message:I would like to join the network.")
+        self.assertEqual(params["message_field_key"], "heard_about_us")
+        self.assertEqual(params["message_label"], "How did you hear about us?")
         self.assertNotIn("name_encrypted", params)
         self.assertNotIn("email_encrypted", params)
         self.assertNotIn("phone_encrypted", params)
         self.assertEqual(params["email_blind_index"], "blind:doctor@example.com")
-        self.assertEqual(params["source"], "PEPPR7")
+        self.assertEqual(params["source"], "join_network")
+        find_sales_code.assert_called_once_with("PEPPR7")
 
         upsert.assert_called_once_with(
             {
@@ -125,6 +132,10 @@ class SecureStorageWriteTests(unittest.TestCase):
         mark_origin.assert_called_once_with(
             "Doctor@Example.com",
             source="contact_form:321",
+        )
+        send_received_email.assert_called_once_with(
+            "Doctor@Example.com",
+            name="Dr. Jane Example",
         )
 
     def test_bug_report_insert_stores_ciphertext_inline_in_existing_columns(self) -> None:

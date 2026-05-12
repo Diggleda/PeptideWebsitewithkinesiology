@@ -24,6 +24,64 @@ interface LegalDocumentContent {
   html: string;
 }
 
+type ContactFormSource = 'question' | 'join_network' | 'partner_application';
+
+interface ContactFormContent {
+  title: string;
+  fieldKey: string;
+  prompt: string;
+  success: string;
+}
+
+const CONTACT_FORM_CONTENT: Record<ContactFormSource, ContactFormContent> = {
+  question: {
+    title: 'Ask a Question',
+    fieldKey: 'question',
+    prompt: 'Type your question here:',
+    success: 'Thanks. We received your question.',
+  },
+  join_network: {
+    title: 'Join the Network',
+    fieldKey: 'heard_about_us',
+    prompt: 'How did you hear about us?',
+    success: 'Thanks. We received your network request.',
+  },
+  partner_application: {
+    title: 'Partner Application',
+    fieldKey: 'partnership_fit',
+    prompt: 'How can we help each other?',
+    success: 'Thanks. We received your partner application.',
+  },
+};
+
+const normalizeContactFormSource = (value: unknown): ContactFormSource => {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
+  if (
+    raw === 'join' ||
+    raw === 'join_network' ||
+    raw === 'join_the_network' ||
+    raw === 'join_physician_network' ||
+    raw === 'network' ||
+    raw === 'main_landing' ||
+    raw === 'landing' ||
+    raw === 'landing_join' ||
+    raw === 'landing_join_network'
+  ) {
+    return 'join_network';
+  }
+  if (
+    raw === 'partner' ||
+    raw === 'partner_application' ||
+    raw === 'partner_applications' ||
+    raw === 'partner_with_trufusionlabs' ||
+    raw === 'partnership' ||
+    raw === 'application'
+  ) {
+    return 'partner_application';
+  }
+  return 'question';
+};
+
 const LEGAL_DOCUMENTS: Record<LegalDocumentKey, LegalDocumentContent> = {
   terms: {
     title: 'Terms of Service',
@@ -79,7 +137,8 @@ export function LegalFooter({
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [contactSuccess, setContactSuccess] = useState('');
   const [contactError, setContactError] = useState('');
-  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', source: '' });
+  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', message: '' });
+  const [activeContactFormSource, setActiveContactFormSource] = useState<ContactFormSource>('question');
   const [bugOpen, setBugOpen] = useState(false);
   const [bugVisible, setBugVisible] = useState(false);
   const [bugSubmitting, setBugSubmitting] = useState(false);
@@ -94,6 +153,7 @@ export function LegalFooter({
   const contactCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bugCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
+  const activeContactFormContent = CONTACT_FORM_CONTENT[activeContactFormSource];
   // Keep this close to the Tailwind `duration-[..]` used below; this controls unmount timing.
   const MODAL_FADE_MS = 65;
   const legalModalState = isClosing ? 'closing' : isVisible ? 'open' : 'closed';
@@ -232,14 +292,33 @@ export function LegalFooter({
     }
   }, []);
 
-  const handleContactOpen = useCallback(() => {
+  const handleContactOpen = useCallback((sourceOverride?: unknown) => {
     if (contactCloseTimerRef.current) {
       clearTimeout(contactCloseTimerRef.current);
       contactCloseTimerRef.current = null;
     }
+    setActiveContactFormSource(normalizeContactFormSource(sourceOverride));
+    setContactError('');
+    setContactSuccess('');
     setContactOpen(true);
     requestAnimationFrame(() => setContactVisible(true));
   }, []);
+
+  useEffect(() => {
+    const openContact = (event: Event) => {
+      if (!showContactCTA) return;
+      const sourceOverride =
+        event instanceof CustomEvent
+          ? (event as CustomEvent<{ source?: ContactFormSource | string }>).detail?.source
+          : undefined;
+      window.dispatchEvent(new Event('trufusion:close-dialogs'));
+      handleContactOpen(sourceOverride);
+    };
+    window.addEventListener('trufusion:open-contact', openContact);
+    return () => {
+      window.removeEventListener('trufusion:open-contact', openContact);
+    };
+  }, [handleContactOpen, showContactCTA]);
 
   const handleContactClose = useCallback(() => {
     if (!contactOpen) return;
@@ -263,14 +342,17 @@ export function LegalFooter({
         name: contactForm.name.trim(),
         email: contactForm.email.trim(),
         phone: contactForm.phone.trim(),
-        source: contactForm.source.trim(),
+        message: contactForm.message.trim(),
+        messageFieldKey: activeContactFormContent.fieldKey,
+        messageLabel: activeContactFormContent.prompt,
+        source: activeContactFormSource,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || 'Unable to send your message.');
       }
-      setContactSuccess('Thanks! A representative will reach out shortly.');
-      setContactForm({ name: '', email: '', phone: '', source: '' });
+      setContactSuccess(activeContactFormContent.success);
+      setContactForm({ name: '', email: '', phone: '', message: '' });
     } catch (error: any) {
       setContactError(error?.message || 'Unable to send your message. Please try again.');
     } finally {
@@ -369,18 +451,18 @@ export function LegalFooter({
             {variant === 'ctaOnly' ? (
               <div className="flex flex-col items-center justify-center gap-6 pt-10 pb-10">
                 <div className="flex flex-col items-center justify-center gap-3">
-                  <p className="mt-7 pt-4 text-m font-medium text-slate-900">Want to join the physician network?</p>
+                  <p className="mt-7 pt-4 text-m font-medium text-slate-900">Have a question?</p>
                   {showContactCTA ? (
                     <button
                       type="button"
                       onClick={() => {
                         window.dispatchEvent(new Event('trufusion:close-dialogs'));
-                        handleContactOpen();
+                        handleContactOpen('question');
                       }}
                       className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(60,103,183,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
                       style={{ backgroundColor: 'rgb(60, 103, 183)' }}
                     >
-                      Contact a Representative
+                      Ask a question
                     </button>
                   ) : (
                     <button
@@ -449,17 +531,17 @@ export function LegalFooter({
             {/* Contact CTA - top on mobile, right on desktop */}
             {showContactCTA && (
               <div className="legal-contact flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0">
-                <p className="text-sm lg:pt-6 pb-2 font-medium text-slate-900">Want to join the physician network?</p>
+                <p className="text-sm lg:pt-6 pb-2 font-medium text-slate-900">Have a question?</p>
                 <button
                   type="button"
                   onClick={() => {
                     window.dispatchEvent(new Event('trufusion:close-dialogs'));
-                    handleContactOpen();
+                    handleContactOpen('question');
                   }}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(60,103,183,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
                   style={{ backgroundColor: 'rgb(60, 103, 183)' }}
                 >
-                  Contact a Representative
+                  Ask a question
                 </button>
               </div>
             )}
@@ -648,18 +730,18 @@ export function LegalFooter({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(60, 103, 183, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
-              <h2 className="flex-1 text-lg font-semibold text-[rgb(60,103,183)]">Contact Form</h2>
-		              <button
-	                type="button"
-	                onClick={handleContactClose}
-	                className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-	                style={{ backgroundColor: 'rgb(60, 103, 183)', borderRadius: '50%' }}
-	              >
-	                <X className="h-4 w-4" aria-hidden="true" />
-	                <span className="sr-only">Close</span>
-	              </button>
+              <h2 className="flex-1 text-lg font-semibold text-[rgb(60,103,183)]">{activeContactFormContent.title}</h2>
+              <button
+                type="button"
+                onClick={handleContactClose}
+                className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                style={{ backgroundColor: 'rgb(60, 103, 183)', borderRadius: '50%' }}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+                <span className="sr-only">Close</span>
+              </button>
             </div>
-            <form className="px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleContactSubmit}>
+            <form className="legal-contact-form px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleContactSubmit}>
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700" htmlFor="contact-name">Name</label>
                 <input
@@ -693,13 +775,16 @@ export function LegalFooter({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700" htmlFor="contact-source">How did you get introduced to TrufusionLabs?</label>
-                <input
-                  id="contact-source"
-                  type="text"
-                  value={contactForm.source}
-                  onChange={(e) => setContactForm((prev) => ({ ...prev, source: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
+                <label className="text-sm font-medium text-slate-700" htmlFor="contact-message">
+                  {activeContactFormContent.prompt}
+                </label>
+                <textarea
+                  id="contact-message"
+                  value={contactForm.message}
+                  onChange={(e) => setContactForm((prev) => ({ ...prev, message: e.target.value }))}
+                  required
+                  rows={4}
+                  className="w-full px-3 py-2 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(60,103,183)] focus:outline-none focus:ring-2 focus:ring-[rgba(60,103,183,0.25)]"
                 />
               </div>
               <div className="flex w-full items-center justify-between pt-3 mb-4">

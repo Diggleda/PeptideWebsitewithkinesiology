@@ -127,6 +127,10 @@ class EmailServiceTests(unittest.TestCase):
                 "123456",
                 "https://trufusionlabs.com",
             )[0],
+            email_service._build_contact_form_received_email(
+                name="Dr. Test",
+                base_url="https://trufusionlabs.com",
+            )[0],
             email_service._build_password_reset_email(
                 "https://trufusionlabs.com/reset-password?token=test",
                 "https://trufusionlabs.com",
@@ -189,6 +193,35 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_args.kwargs["reply_to"], "support@trufusionlabs.com")
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertTrue(dispatch_email.call_args.kwargs["enforce_trufusion_sender"])
+
+    def test_contact_form_received_email_confirms_submission(self):
+        from python_backend.services import email_service
+
+        with patch.object(
+            email_service,
+            "get_config",
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com"),
+        ), patch.object(email_service, "_dispatch_email") as dispatch_email:
+            email_service.send_contact_form_received_email(
+                "doctor@example.com",
+                name="Dr. Jane Example",
+            )
+
+        dispatch_email.assert_called_once()
+        self.assertEqual(dispatch_email.call_args.args[0], "doctor@example.com")
+        self.assertEqual(dispatch_email.call_args.args[1], "We received your TrufusionLabs contact request")
+        self.assertIn("We received your request", dispatch_email.call_args.args[2])
+        self.assertIn("Dr. Jane Example", dispatch_email.call_args.args[2])
+        self.assertIn("representative will review it shortly", dispatch_email.call_args.args[2])
+        self.assertIn('src="cid:trufusion-logo"', dispatch_email.call_args.args[2])
+        self.assertIn("We received your contact form submission", dispatch_email.call_args.args[3])
+        self.assertEqual(
+            dispatch_email.call_args.kwargs["from_address"],
+            "TrufusionLabs <support@trufusionlabs.com>",
+        )
+        self.assertEqual(dispatch_email.call_args.kwargs["cc"], ("support@trufusionlabs.com",))
+        self.assertEqual(dispatch_email.call_args.kwargs["reply_to"], "support@trufusionlabs.com")
+        self.assertNotIn("raise_on_failure", dispatch_email.call_args.kwargs)
 
     def test_delegate_links_beta_info_email_includes_badge_image(self):
         from python_backend.services import email_service

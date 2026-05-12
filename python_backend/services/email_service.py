@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
 _EMAIL_DEFAULT_FROM = "TrufusionLabs <support@trufusionlabs.com>"
 _EMAIL_DEFAULT_REPLY_TO = "support@trufusionlabs.com"
+_CONTACT_FORM_RECEIVED_CC = (_EMAIL_DEFAULT_REPLY_TO,)
 _EMAIL_DEFAULT_DOMAIN = "trufusionlabs.com"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
@@ -576,6 +577,68 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
     return html, plain
 
 
+def _build_contact_form_received_email(*, name: Optional[str], base_url: str) -> Tuple[str, str]:
+    safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
+    logo_url = _EMAIL_LOGO_SRC
+    body_style = _email_body_style()
+    outer_table_style = _email_outer_table_style()
+    container_style = _email_container_style(520)
+    name_label = str(name or "").strip() or "there"
+    safe_name_label = _html.escape(name_label, quote=True)
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>We received your TrufusionLabs contact request</title>
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+  </head>
+  <body style="{body_style}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{outer_table_style}">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="{container_style}">
+            <tr>
+              <td style="{_EMAIL_LOGO_CELL_STYLE}" align="center">
+                <img src="{logo_url}" width="{_EMAIL_LOGO_WIDTH}" alt="TrufusionLabs" style="{_EMAIL_LOGO_IMAGE_STYLE}" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:44px 28px 8px;">
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">We received your request</h1>
+                <p style="margin:0 0 12px;line-height:1.6;">Hi {safe_name_label},</p>
+                <p style="margin:0 0 12px;line-height:1.6;">
+                  Thanks for reaching out to TrufusionLabs. We received your contact form submission and a representative will review it shortly.
+                </p>
+                <p style="margin:0 0 32px;line-height:1.6;">
+                  If you need to add anything before we follow up, reply to this email or contact support at
+                  <a href="mailto:support@trufusionlabs.com" style="color:#3C67B7;text-decoration:none;">support@trufusionlabs.com</a>.
+                </p>
+                <p style="margin:0 0 32px;text-align:center;">
+                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#3C67B7;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Visit TrufusionLabs</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
+                <p style="margin:0 0 4px;">This is an automated confirmation that your contact request was received.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
+    plain = (
+        f"Hi {name_label},\n"
+        "Thanks for reaching out to TrufusionLabs. We received your contact form submission and a representative will review it shortly.\n"
+        "If you need to add anything before we follow up, reply to this email or contact support@trufusionlabs.com.\n"
+        f"Visit TrufusionLabs: {safe_base_url}"
+    )
+    return html, plain
+
+
 def _dispatch_email(
     recipient: str,
     subject: str,
@@ -996,6 +1059,28 @@ def send_email_verification_email(recipient: str, verification_code: str) -> Non
         reply_to=_EMAIL_DEFAULT_REPLY_TO,
         raise_on_failure=True,
         enforce_trufusion_sender=True,
+    )
+
+
+def send_contact_form_received_email(recipient: str, *, name: Optional[str] = None) -> None:
+    recipient_email = str(recipient or "").strip()
+    if not recipient_email:
+        raise ValueError("recipient is required")
+    config = get_config()
+    base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
+    subject = "We received your TrufusionLabs contact request"
+    html, plain_text = _build_contact_form_received_email(
+        name=name,
+        base_url=base_url,
+    )
+    _dispatch_email(
+        recipient_email,
+        subject,
+        html,
+        plain_text,
+        cc=_CONTACT_FORM_RECEIVED_CC,
+        from_address=_EMAIL_DEFAULT_FROM,
+        reply_to=_EMAIL_DEFAULT_REPLY_TO,
     )
 
 

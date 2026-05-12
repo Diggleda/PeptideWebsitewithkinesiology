@@ -38,7 +38,6 @@ import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -48,14 +47,8 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
-  BeakerIcon,
   CheckIcon,
   DocumentCurrencyDollarIcon,
-  EllipsisVerticalIcon,
-  LockOpenIcon,
-  ScaleIcon,
-  ShieldCheckIcon,
-  SwatchIcon,
 } from "@heroicons/react/24/outline";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
@@ -126,6 +119,8 @@ import {
 import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
 import { LegalFooter } from "./components/LegalFooter";
+import { MarketingLandingPage } from "./components/MarketingLandingPage";
+import { ManufacturingStandardsModal } from "./components/ManufacturingStandardsModal";
 import { PublicSite, isPublicSitePath } from "./components/PublicPages";
 import {
   YourQuotesPanel,
@@ -471,6 +466,9 @@ interface ContactFormSubmission {
   name: string;
   email: string;
   phone: string;
+  message?: string | null;
+  message_field_key?: string | null;
+  message_label?: string | null;
   source: string;
   created_at: string;
 }
@@ -2123,6 +2121,7 @@ const normalizeProfileAvatarUrl = (value: unknown): string | null => {
 };
 
 const RESET_PASSWORD_ROUTE = "/reset-password";
+const LOGIN_AUTH_ROUTE = "/?auth=login";
 const VERIFY_EMAIL_ROUTE = "/verify-email";
 const EMAIL_VERIFICATION_BROADCAST_CHANNEL = "trufusion-email-verification";
 const EMAIL_VERIFICATION_STORAGE_KEY = "trufusion:email-verification";
@@ -2195,6 +2194,11 @@ const isVerifyEmailRoute = () =>
   typeof window !== "undefined" &&
   normalizePathname(window.location.pathname) === VERIFY_EMAIL_ROUTE;
 
+const isLoginAuthRoute = () =>
+  typeof window !== "undefined" &&
+  normalizePathname(window.location.pathname) === "/" &&
+  new URLSearchParams(window.location.search).get("auth") === "login";
+
 const readResetTokenFromLocation = () => {
   if (typeof window === "undefined") {
     return null;
@@ -2234,8 +2238,26 @@ const clearDelegateLinksGuideFromLocation = () => {
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
-const getInitialLandingMode = (): "login" | "signup" | "forgot" | "reset" | "verify" | "verificationSent" =>
-  isVerifyEmailRoute() ? "verify" : isResetPasswordRoute() ? "reset" : "login";
+type LandingAuthMode =
+  | "landing"
+  | "login"
+  | "signup"
+  | "forgot"
+  | "reset"
+  | "verify"
+  | "verificationSent";
+
+const TRUFUSION_LABS_LOGO_PATH = "/FullLogo_Transparent_NoBuffer (18).png";
+const TRUFUSION_PHYSICIAN_PORTAL_LOGO_PATH = "/TrufusionLabs_PhysiciansPortal.png";
+
+const getInitialLandingMode = (): LandingAuthMode =>
+  isVerifyEmailRoute()
+    ? "verify"
+    : isResetPasswordRoute()
+      ? "reset"
+      : isLoginAuthRoute()
+        ? "login"
+        : "landing";
 
 const getInitialResetToken = () =>
   isResetPasswordRoute() ? readResetTokenFromLocation() : null;
@@ -2511,6 +2533,59 @@ const normalizeLeadTypeValue = (value: unknown) =>
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
+
+const formatContactFormSourceLabel = (value: unknown): string | null => {
+  const normalized = normalizeLeadTypeValue(value);
+  if (
+    normalized === "question" ||
+    normalized === "questions" ||
+    normalized === "footer" ||
+    normalized === "footer_question" ||
+    normalized === "contact"
+  ) {
+    return "Question";
+  }
+  if (
+    normalized === "join" ||
+    normalized === "join_network" ||
+    normalized === "join_the_network" ||
+    normalized === "join_physician_network" ||
+    normalized === "network" ||
+    normalized === "main_landing" ||
+    normalized === "landing" ||
+    normalized === "landing_join" ||
+    normalized === "landing_join_network"
+  ) {
+    return "Join the network";
+  }
+  if (
+    normalized === "application" ||
+    normalized === "partner_application" ||
+    normalized === "partner_applications" ||
+    normalized === "partner" ||
+    normalized === "partner_with_trufusionlabs" ||
+    normalized === "partnership"
+  ) {
+    return "Partner application";
+  }
+  return null;
+};
+
+const formatContactFormFieldKeyTypeLabel = (value: unknown): string | null => {
+  const normalized = normalizeLeadTypeValue(value);
+  if (normalized === "question") return "Question";
+  if (normalized === "heard_about_us") return "Join the network";
+  if (normalized === "partnership_fit") return "Partner application";
+  return null;
+};
+
+const getContactFormTypeSortRank = (label: string | null): number => {
+  const normalized = normalizeLeadTypeValue(label);
+  if (normalized === "question") return 0;
+  if (normalized === "join_the_network" || normalized === "join_network") return 1;
+  if (normalized === "partner_application") return 2;
+  return 3;
+};
 
 const isHouseLeadTypeValue = (value: unknown) => {
   const normalized = normalizeLeadTypeValue(value);
@@ -6121,9 +6196,9 @@ function MainApp() {
     ? checkoutPricingMode
     : "wholesale";
   const canSeeRetailRevenueInSalesDashboard = canUseRetailPricing;
-  const [landingAuthMode, setLandingAuthMode] = useState<
-    "login" | "signup" | "forgot" | "reset" | "verify" | "verificationSent"
-  >(getInitialLandingMode);
+  const [landingAuthMode, setLandingAuthMode] = useState<LandingAuthMode>(
+    getInitialLandingMode,
+  );
   const [manufacturingQualityStandardsOpen, setManufacturingQualityStandardsOpen] =
     useState(false);
   const [postLoginHold, setPostLoginHold] = useState(false);
@@ -6692,19 +6767,6 @@ function MainApp() {
       setCheckoutPricingMode("wholesale");
     }
   }, [canUseRetailPricing, checkoutPricingMode]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return undefined;
-    }
-    const className = "manufacturing-standards-modal-open";
-    document.body.classList.toggle(className, manufacturingQualityStandardsOpen);
-    document.documentElement.classList.toggle(className, manufacturingQualityStandardsOpen);
-    return () => {
-      document.body.classList.remove(className);
-      document.documentElement.classList.remove(className);
-    };
-  }, [manufacturingQualityStandardsOpen]);
 
   useLayoutEffect(() => {
     if (!checkoutOpen || !user?.id || !hasAuthToken()) {
@@ -8032,14 +8094,16 @@ function MainApp() {
       return;
     }
     const handleLocationSync = () => {
-      if (isVerifyEmailRoute()) {
-        setLandingAuthMode("verify");
-        setVerifyEmailToken(readVerifyEmailTokenFromLocation());
-      } else if (isResetPasswordRoute()) {
-        setLandingAuthMode("reset");
-        setResetPasswordToken(readResetTokenFromLocation());
-      }
-    };
+	      if (isVerifyEmailRoute()) {
+	        setLandingAuthMode("verify");
+	        setVerifyEmailToken(readVerifyEmailTokenFromLocation());
+	      } else if (isResetPasswordRoute()) {
+	        setLandingAuthMode("reset");
+	        setResetPasswordToken(readResetTokenFromLocation());
+	      } else if (isLoginAuthRoute()) {
+	        setLandingAuthMode("login");
+	      }
+	    };
     window.addEventListener("popstate", handleLocationSync);
     return () => window.removeEventListener("popstate", handleLocationSync);
   }, []);
@@ -8060,9 +8124,9 @@ function MainApp() {
       }
       window.close();
     } else {
-      window.location.replace("/");
-    }
-  }, []);
+	      window.location.replace(LOGIN_AUTH_ROUTE);
+	    }
+	  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -21044,6 +21108,28 @@ function MainApp() {
     return contactFormEntries.filter((entry) => !isLeadStatus(entry.status));
   }, [contactFormEntries, isLeadStatus]);
 
+  const contactFormTodoItems = useMemo(() => {
+    return contactFormQueue
+      .map((lead) => {
+        const typeLabel =
+          formatContactFormSourceLabel(lead.contactFormSource) ||
+          formatContactFormSourceLabel(lead.notes) ||
+          formatContactFormFieldKeyTypeLabel(lead.contactFormMessageFieldKey) ||
+          "Contact form";
+        const receivedAtMs = lead.createdAt ? new Date(lead.createdAt).getTime() : 0;
+        return {
+          lead,
+          typeLabel,
+          typeRank: getContactFormTypeSortRank(typeLabel),
+          receivedAtMs: Number.isFinite(receivedAtMs) ? receivedAtMs : 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.typeRank !== b.typeRank) return a.typeRank - b.typeRank;
+        return b.receivedAtMs - a.receivedAtMs;
+      });
+  }, [contactFormQueue]);
+
   const contactFormPipeline = useMemo(() => {
     return contactFormEntries.filter((entry) => {
 		      if (entry?.creditIssuedAt) {
@@ -24650,6 +24736,16 @@ function MainApp() {
     [user, referralPollingSuppressed, postLoginHold, refreshReferralData],
   );
 
+  const handleRefreshTodoItems = useCallback(async () => {
+    await Promise.all([
+      refreshPendingResellerPermitApprovals({ force: true }),
+      tracedRefreshReferralData("todo-manual-refresh", {
+        showLoading: true,
+        force: true,
+      }),
+    ]);
+  }, [refreshPendingResellerPermitApprovals, tracedRefreshReferralData]);
+
   const handleSalesDashboardTabClick = useCallback(
     (tabId: SalesDashboardTabId) => {
       setSalesDashboardTab(tabId);
@@ -26536,8 +26632,8 @@ function MainApp() {
     setLandingSignupVerificationSuccess(false);
   }, []);
 
-  const updateLandingAuthMode = useCallback(
-    (mode: "login" | "signup" | "forgot" | "reset" | "verify" | "verificationSent") => {
+	  const updateLandingAuthMode = useCallback(
+	    (mode: LandingAuthMode) => {
       setLandingAuthMode((previous) => {
         if (previous === mode) {
           return previous;
@@ -26609,10 +26705,18 @@ function MainApp() {
         return mode;
       });
     },
-    [clearLandingSignupVerificationState, clearResetRoute, resetLandingNpiState],
-  );
+	    [clearLandingSignupVerificationState, clearResetRoute, resetLandingNpiState],
+	  );
 
-  useEffect(() => {
+	  const handleReturnToSignIn = useCallback(() => {
+	    if (typeof window !== "undefined" && resetCompletionTimerRef.current) {
+	      window.clearTimeout(resetCompletionTimerRef.current);
+	      resetCompletionTimerRef.current = null;
+	    }
+	    updateLandingAuthMode("login");
+	  }, [updateLandingAuthMode]);
+
+	  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -30440,13 +30544,29 @@ function MainApp() {
         </div>
       );
     };
-    const renderPendingResellerPermitApprovalsCard = () => (
+    const renderPendingResellerPermitApprovalsCard = () => {
+      const hasPendingPermitTodos = pendingResellerPermitApprovals.length > 0;
+      const hasContactFormTodos = contactFormTodoItems.length > 0;
+      const hasTodoItems = hasPendingPermitTodos || hasContactFormTodos;
+      const todoItemsLoading =
+        (!pendingResellerPermitApprovalsHasSettled && !hasTodoItems) ||
+        (!referralDataHasSettled && !hasTodoItems) ||
+        ((pendingResellerPermitApprovalsLoading || referralDataLoading) && !hasTodoItems);
+      const todoItemsRefreshing =
+        pendingResellerPermitApprovalsLoading ||
+        pendingResellerPermitApprovalsRefreshing ||
+        referralDataLoading;
+      const todoError =
+        pendingResellerPermitApprovalsError && !hasTodoItems
+          ? pendingResellerPermitApprovalsError
+          : null;
+      return (
       <div className="sales-rep-leads-card sales-rep-combined-card">
         <div className="mb-0 flex w-full items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold text-slate-900">To-Do</h3>
             <p className="text-sm text-slate-600">
-              Handle outstanding follow-ups and account actions from one place.
+              Handle contact form follow-ups and account actions from one place.
             </p>
           </div>
           <Button
@@ -30454,20 +30574,19 @@ function MainApp() {
             variant="outline"
             size="sm"
             className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
-            onClick={() => void refreshPendingResellerPermitApprovals({ force: true })}
-            disabled={pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing}
-            aria-busy={pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing}
-            title="Refresh reseller permit approvals"
+            onClick={() => void handleRefreshTodoItems()}
+            disabled={todoItemsRefreshing}
+            aria-busy={todoItemsRefreshing}
+            title="Refresh to-do items"
           >
             <ArrowPathIcon
               className={clsx(
                 "h-4 w-4 shrink-0",
-                (pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing) &&
-                  "animate-spin",
+                todoItemsRefreshing && "animate-spin",
               )}
               aria-hidden="true"
             />
-            {pendingResellerPermitApprovalsLoading || pendingResellerPermitApprovalsRefreshing
+            {todoItemsRefreshing
               ? "Refreshing..."
               : "Refresh"}
           </Button>
@@ -30475,23 +30594,88 @@ function MainApp() {
         <div
           className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
           role="region"
-          aria-label="Pending reseller permit approvals"
+          aria-label="To-do items"
         >
-          {!pendingResellerPermitApprovalsHasSettled ||
-          (pendingResellerPermitApprovalsLoading && pendingResellerPermitApprovals.length === 0) ? (
+          {todoItemsLoading ? (
             <div className="px-4 py-3 text-sm text-slate-500">
               Loading to-do items…
             </div>
-          ) : pendingResellerPermitApprovalsError && pendingResellerPermitApprovals.length === 0 ? (
+          ) : todoError ? (
             <div className="px-4 py-3 text-sm text-slate-500">
-              {pendingResellerPermitApprovalsError}
+              {todoError}
             </div>
-          ) : pendingResellerPermitApprovals.length === 0 ? (
+          ) : !hasTodoItems ? (
             <div className="px-4 py-3 text-sm text-slate-500">
               No tasks to do yet.
             </div>
           ) : (
             <ul className="w-full border-t border-slate-200/70">
+              {contactFormTodoItems.map(({ lead, typeLabel }, index) => {
+                const contactName =
+                  lead.referredContactName ||
+                  lead.referredContactEmail ||
+                  "Contact form lead";
+                const taskTitle =
+                  typeLabel === "Contact form" ? "Contact Form" : `${typeLabel} Contact Form`;
+                const receivedDateLabel = lead.createdAt
+                  ? formatDateTime(lead.createdAt)
+                  : null;
+                const contactFormMessage =
+                  typeof lead.contactFormMessage === "string" && lead.contactFormMessage.trim()
+                    ? lead.contactFormMessage.trim()
+                    : null;
+                const contactFormMessageLabel =
+                  typeof lead.contactFormMessageLabel === "string" && lead.contactFormMessageLabel.trim()
+                    ? lead.contactFormMessageLabel.trim()
+                    : null;
+                const isUpdating = adminActionState.updatingReferral === lead.id;
+                const canUpdateContactFormTodo = Boolean(
+                  user && (isRep(user.role) || isAdmin(user.role)),
+                );
+                return (
+                  <li
+                    key={lead.id || `contact-form-todo-${index}`}
+                    className="admin-todo-list__item border-b border-slate-200/70 px-4 py-4 last:border-b-0"
+                  >
+                    <div className="admin-todo-list__details min-w-0 text-sm text-slate-800">
+                      <div>
+                        <span className="font-semibold text-slate-900">
+                          {taskTitle}
+                        </span>
+                        <span>{` - ${contactName}`}</span>
+                        {receivedDateLabel ? (
+                          <span className="text-slate-500">{` - Received ${receivedDateLabel}`}</span>
+                        ) : null}
+                      </div>
+                      {contactFormMessage ? (
+                        <div className="mt-1 text-xs text-slate-600">
+                          {contactFormMessageLabel ? (
+                            <span className="font-semibold text-slate-700">
+                              {`${contactFormMessageLabel} `}
+                            </span>
+                          ) : null}
+                          <span>{contactFormMessage}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="admin-todo-list__actions">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="admin-todo-list__button header-home-button squircle-sm gap-2"
+                        onClick={() => void handleUpdateReferralStatus(lead.id, "contacted")}
+                        disabled={isUpdating || !canUpdateContactFormTodo}
+                      >
+                        <CheckIcon
+                          className={clsx("h-4 w-4 shrink-0", isUpdating && "animate-pulse")}
+                          aria-hidden="true"
+                        />
+                        {isUpdating ? "Updating..." : "Mark contacted"}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
               {pendingResellerPermitApprovals.map((item, index) => {
                 const userId = String(item.userId || "").trim();
                 const physicianLabel =
@@ -30551,7 +30735,8 @@ function MainApp() {
           )}
         </div>
       </div>
-    );
+      );
+    };
 	    const renderEmailControlsCard = () => (
 	      <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
 	        <div className="border-b border-slate-200/60 pb-3">
@@ -32000,7 +32185,7 @@ function MainApp() {
                 {isHereNowSectionActive && renderSalesScopedOnHoldOrdersCard()}
 
                 {isHereNowSectionActive &&
-                  pendingResellerPermitApprovals.length > 0 &&
+                  (pendingResellerPermitApprovals.length > 0 || contactFormTodoItems.length > 0) &&
                   renderPendingResellerPermitApprovalsCard()}
 
                 {shouldShowLiveClientsCard && (
@@ -32424,7 +32609,7 @@ function MainApp() {
                     (
                       <div className="admin-tab-panel-enter space-y-6">
                         {renderAdminOnHoldOrdersCard()}
-                        {pendingResellerPermitApprovals.length > 0 &&
+                        {(pendingResellerPermitApprovals.length > 0 || contactFormTodoItems.length > 0) &&
                           renderPendingResellerPermitApprovalsCard()}
                       </div>
                     )}
@@ -38347,16 +38532,15 @@ function MainApp() {
                       </p>
                     ) : (
                     <div className="sales-rep-table-wrapper admin-dashboard-list">
-                      <table className="min-w-[720px] divide-y mb-2 divide-slate-200/70">
+                      <table className="min-w-[900px] divide-y mb-2 divide-slate-200/70">
                         <thead className="bg-slate-50/70">
                           <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                             <th className="px-4 py-3">ID</th>
                             <th className="px-4 py-3">Name</th>
                             <th className="px-4 py-3">Email</th>
                             <th className="px-4 py-3">Phone</th>
-                            <th className="px-4 py-3">
-                              How did you get introduced to TrufusionLabs?
-                            </th>
+                            <th className="px-4 py-3">Request type</th>
+                            <th className="px-4 py-3">Details</th>
                             <th className="px-4 py-3">Received</th>
                             <th className="px-4 py-3">Status</th>
                           </tr>
@@ -38376,6 +38560,18 @@ function MainApp() {
                                 (lead.id || "").replace("contact_form:", "") ||
                                 lead.id ||
                                 "—";
+                              const contactSourceLabel =
+                                formatContactFormSourceLabel(lead.contactFormSource) ||
+                                formatContactFormSourceLabel(lead.notes) ||
+                                formatContactFormFieldKeyTypeLabel(lead.contactFormMessageFieldKey);
+                              const contactFormMessage =
+                                typeof lead.contactFormMessage === "string" && lead.contactFormMessage.trim()
+                                  ? lead.contactFormMessage.trim()
+                                  : null;
+                              const contactFormMessageLabel =
+                                typeof lead.contactFormMessageLabel === "string" && lead.contactFormMessageLabel.trim()
+                                  ? lead.contactFormMessageLabel.trim()
+                                  : null;
                               return (
                                 <tr key={lead.id} className="align-top">
                                   <td className="px-4 py-4 font-mono text-xs text-slate-500">
@@ -38408,11 +38604,22 @@ function MainApp() {
                                   <td className="px-4 py-4 text-sm text-slate-600">
                                     {lead.referredContactPhone || "—"}
                                   </td>
-	                                  <td className="px-4 py-4 text-sm text-slate-600">
-	                                    {typeof lead.notes === "string"
-	                                      ? formatTimestampedNotesForDisplay(lead.notes)
-	                                      : lead.notes || "Contact form"}
-	                                  </td>
+                                  <td className="px-4 py-4 text-sm text-slate-600">
+                                    {contactSourceLabel ||
+                                      (typeof lead.notes === "string"
+                                        ? formatTimestampedNotesForDisplay(lead.notes)
+                                        : lead.notes || "Contact form")}
+                                  </td>
+                                  <td className="px-4 py-4 text-sm text-slate-600">
+                                    <div className="max-w-[280px] whitespace-pre-wrap break-words">
+                                      {contactFormMessageLabel ? (
+                                        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                          {contactFormMessageLabel}
+                                        </div>
+                                      ) : null}
+                                      {contactFormMessage || "—"}
+                                    </div>
+                                  </td>
                                   <td className="px-4 py-4 text-sm text-slate-600">
                                     <div>{formatDateTime(lead.createdAt)}</div>
                                   </td>
@@ -38910,6 +39117,17 @@ function MainApp() {
 			      </>
 			    );
 			  };
+  const showMarketingLanding = !user && landingAuthMode === "landing";
+  const showLandingAuthDialog = !user && landingAuthMode !== "landing";
+  const showLandingMarketingSurface = showMarketingLanding || showLandingAuthDialog;
+  const landingAuthDialogTitle =
+    landingAuthMode === "signup"
+      ? "Create account"
+      : landingAuthMode === "forgot" || landingAuthMode === "reset"
+        ? "Reset password"
+        : landingAuthMode === "verify" || landingAuthMode === "verificationSent"
+          ? "Verify email"
+          : "Sign in";
 	  return (
 	    <div
 	      data-delegate-theme={isDelegateThemeActive ? 'true' : 'false'}
@@ -39251,19 +39469,66 @@ function MainApp() {
           {/* Landing Page - Show when not logged in */}
           {!sessionBootstrapPending && (!user || postLoginHold) && !isDelegateMode && (
 	            <div
-	              className={`min-h-screen flex flex-col items-center px-4 pb-12 ${
-	                postLoginHold && user
-	                  ? ""
-	                  : `landing-auth-shell${landingAuthMode === "signup" ? " landing-auth-shell--signup" : ""}`
-	              }`}
+	              className={clsx(
+                  "min-h-screen flex flex-col",
+                  showLandingMarketingSurface
+                    ? "w-full bg-white"
+                    : postLoginHold && user
+                      ? "items-center px-4 pb-12"
+                      : "items-center bg-white px-4 pb-12",
+                  !showLandingMarketingSurface &&
+                    !(postLoginHold && user) &&
+                    `landing-auth-shell${landingAuthMode === "signup" ? " landing-auth-shell--signup" : ""}`,
+                )}
               style={
                 postLoginHold && user
                   ? { paddingTop: "calc(var(--app-header-height, 0px) + 1rem)" }
                   : undefined
               }
             >
+              {showLandingAuthDialog && (
+                <MarketingLandingPage
+                  onSignIn={() => updateLandingAuthMode("login")}
+                  onReferralCode={() => updateLandingAuthMode("signup")}
+                  onJoinNetwork={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("trufusion:open-contact", {
+                        detail: { source: "join_network" },
+                      }),
+                    );
+                  }}
+                  onPartnerApplication={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("trufusion:open-contact", {
+                        detail: { source: "partner_application" },
+                      }),
+                    );
+                  }}
+                />
+              )}
+              {showMarketingLanding ? (
+                <MarketingLandingPage
+                  onSignIn={() => updateLandingAuthMode("login")}
+                  onReferralCode={() => updateLandingAuthMode("signup")}
+                  onJoinNetwork={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("trufusion:open-contact", {
+                        detail: { source: "join_network" },
+                      }),
+                    );
+                  }}
+                  onPartnerApplication={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("trufusion:open-contact", {
+                        detail: { source: "partner_application" },
+                      }),
+                    );
+                  }}
+                />
+              ) : (
+              <>
               {/* Logo for secondary auth screens */}
-              {!user && landingAuthMode !== "login" && landingAuthMode !== "signup" ? (
+              {!showLandingAuthDialog && !user && landingAuthMode !== "login" && landingAuthMode !== "signup" ? (
                 <div
                   className={`flex justify-center ${
                     landingAuthMode === "signup"
@@ -39274,6 +39539,8 @@ function MainApp() {
                   <div className="brand-logo brand-logo--landing">
 	                    <BrandLogoImage
 	                      alt="TrufusionLabs"
+	                      defaultSrc={TRUFUSION_LABS_LOGO_PATH}
+	                      biotechSrc={TRUFUSION_LABS_LOGO_PATH}
 	                      style={{
                         display: "block",
                         width: "auto",
@@ -39793,13 +40060,40 @@ function MainApp() {
                   </div>
                 </div>
               ) : (
-                <div
-                  className={`w-full max-w-md ${
-                    landingAuthMode === "signup"
-                      ? "mt-3 sm:mt-4 md:mt-6"
-                      : "mt-4 sm:mt-6 md:mt-8"
-                  }`}
+                <Dialog
+                  open={showLandingAuthDialog}
+                  modal
+                  onOpenChange={(open) => {
+                    if (!open) {
+                      updateLandingAuthMode("landing");
+                    }
+                  }}
                 >
+                  <DialogContent
+                    className={clsx(
+                      "landing-auth-dialog-content",
+                      landingAuthMode === "signup" &&
+                        "landing-auth-dialog-content--signup",
+                    )}
+                    containerClassName="landing-auth-dialog-layer"
+                    overlayClassName="landing-auth-dialog-overlay"
+                    style={{
+                      backgroundColor: "transparent",
+                      borderColor: "transparent",
+                      boxShadow: "none",
+                      backdropFilter: "none",
+                      WebkitBackdropFilter: "none",
+                      margin: 0,
+                      padding: 0,
+                    }}
+                  >
+                    <VisuallyHidden>
+                      <DialogTitle>{landingAuthDialogTitle}</DialogTitle>
+                      <DialogDescription>
+                        {landingAuthDialogTitle} form
+                      </DialogDescription>
+                    </VisuallyHidden>
+                <div className="landing-auth-dialog-panel w-full max-w-md">
                   <div className="space-y-5">
 	                    <div
 	                      className={`glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] shadow-xl ${
@@ -39826,6 +40120,8 @@ function MainApp() {
 	                              <div className="brand-logo brand-logo--landing landing-login-logo">
 	                                <BrandLogoImage
 	                                  alt="TrufusionLabs"
+	                                  defaultSrc={TRUFUSION_PHYSICIAN_PORTAL_LOGO_PATH}
+	                                  biotechSrc={TRUFUSION_PHYSICIAN_PORTAL_LOGO_PATH}
 	                                  style={{
 	                                    display: "block",
 	                                    width: "auto",
@@ -40152,41 +40448,8 @@ function MainApp() {
                                 </p>
 	                              </div>
 	                            </form>
-	                            <div className="landing-login-partner flex flex-col items-center gap-1 text-center">
-	                              <div className="flex w-full justify-center">
-	                                <button
-	                                  type="button"
-	                                  onClick={() => setManufacturingQualityStandardsOpen(true)}
-	                                  className="partnered-protixa-row partnered-protixa-button squircle-xl flex max-w-full flex-row flex-wrap items-center justify-center"
-	                                >
-	                                  <span
-	                                    className="partnered-protixa-brand flex shrink-0 flex-col items-start gap-1"
-	                                    style={{ boxSizing: "border-box" }}
-	                                  >
-	                                    <span className="partnered-protixa-kicker w-full text-left font-medium text-slate-600">
-	                                      Partnered with a
-	                                    </span>
-                                      <span className="partnered-protixa-certification">
-                                        <span className="partnered-protixa-cta__label">
-                                          cGMP Certified Lab
-                                        </span>
-                                      </span>
-	                                  </span>
-	                                  <span className="partnered-protixa-cta squircle-sm inline-flex min-w-0 flex-none items-center justify-start px-0 py-0 text-left">
-	                                    <span className="partnered-protixa-cta__label">
-	                                      <span className="partnered-protixa-cta__line">
-	                                        Manufacturing &amp;
-	                                      </span>
-	                                      <span className="partnered-protixa-cta__line">
-	                                        Quality Standards
-	                                      </span>
-	                                    </span>
-	                                  </span>
-	                                </button>
-	                              </div>
-	                            </div>
-	                          </>
-	                        )}
+		                          </>
+		                        )}
                         {landingAuthMode === "forgot" && (
                           <>
                           <div className="text-center space-y-2">
@@ -40254,12 +40517,12 @@ function MainApp() {
                             </Button>
                           </form>
                           <div className="text-center text-sm text-gray-600">
-                            <button
-                              type="button"
-                              onClick={() => closeResetWindow()}
-                              className="font-semibold hover:underline btn-hover-lighter"
-                              style={{ color: "rgb(60, 103, 183)" }}
-                            >
+	                            <button
+	                              type="button"
+	                              onClick={handleReturnToSignIn}
+	                              className="font-semibold hover:underline btn-hover-lighter"
+	                              style={{ color: "rgb(60, 103, 183)" }}
+	                            >
                               Return to sign in
                             </button>
                           </div>
@@ -40404,10 +40667,10 @@ function MainApp() {
                               </p>
                               <Button
                                 type="button"
-                                size="lg"
-                                className="w-full squircle-sm glass-brand btn-hover-lighter"
-                                onClick={() => closeResetWindow()}
-                              >
+	                                size="lg"
+	                                className="w-full squircle-sm glass-brand btn-hover-lighter"
+	                                onClick={handleReturnToSignIn}
+	                              >
                                 Return to sign in
                               </Button>
                             </div>
@@ -41054,6 +41317,10 @@ function MainApp() {
                     </div>
 	                  </div>
                 </div>
+                  </DialogContent>
+                </Dialog>
+              )}
+              </>
               )}
             </div>
           )}
@@ -44235,233 +44502,10 @@ function MainApp() {
           )}
         </DialogContent>
       </Dialog>
-      <Dialog
+      <ManufacturingStandardsModal
         open={manufacturingQualityStandardsOpen}
         onOpenChange={setManufacturingQualityStandardsOpen}
-      >
-        <DialogContent
-          hideCloseButton
-          containerClassName="manufacturing-standards-dialog-layer fixed inset-0 flex items-stretch justify-stretch p-4"
-          overlayClassName="bg-[rgba(4,14,21,0.64)] backdrop-blur-2xl"
-          overlayStyle={{
-            backdropFilter: "blur(24px) saturate(1.55)",
-            WebkitBackdropFilter: "blur(24px) saturate(1.55)",
-          }}
-          className="glass-card h-[calc(100dvh-3rem)] w-full p-0 shadow-2xl sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-none"
-          style={{
-            maxWidth: "none",
-            maxHeight: "none",
-            margin: 0,
-            overflow: "hidden",
-            backgroundColor: "rgba(248, 252, 255, 0.995)",
-            borderColor: "rgba(60, 103, 183, 0.6)",
-            backdropFilter: "none",
-            WebkitBackdropFilter: "none",
-            isolation: "isolate",
-          }}
-        >
-          <div className="flex h-full min-h-0 flex-col px-6 pb-6 pt-8">
-            <div className="mb-8 flex shrink-0 items-start gap-4 sm:mb-10">
-              <DialogHeader className="min-w-0 flex-1 gap-0 text-left">
-                <DialogTitle className="leading-tight">
-                  Manufacturing &amp; Quality Standards
-                </DialogTitle>
-                <DialogDescription className="leading-snug" style={{ marginTop: 0 }}>
-                  TrufusionLabs manufacturing, testing, delivery, and compliance standards.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogClose
-                aria-label="Close manufacturing standards modal"
-                className="dialog-close-btn ml-auto inline-flex shrink-0 items-center justify-center self-start text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-                style={{
-                  backgroundColor: "rgb(60, 103, 183)",
-                  width: "38px",
-                  height: "38px",
-                  minWidth: "38px",
-                  minHeight: "38px",
-                  borderRadius: "9999px",
-                }}
-              >
-                <span aria-hidden="true" className="text-xl leading-none">
-                  ×
-                </span>
-              </DialogClose>
-            </div>
-            <div className="no-scrollbar mt-2 flex-1 min-h-0 space-y-4 overflow-y-auto px-2 py-2 text-left text-sm leading-relaxed text-slate-700">
-              <section
-                className="manufacturing-standards-card squircle-lg space-y-2"
-                style={{
-                  backgroundImage: `url(${withStaticAssetStamp("/leafTexture2.jpg")})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  backgroundRepeat: "no-repeat",
-                  backgroundClip: "padding-box",
-                }}
-              >
-                <h3
-                  className="flex items-center gap-2 text-base font-semibold"
-                  style={{ color: "#ffffff" }}
-                >
-                  <BeakerIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                  <span>Clinical Research-Grade Manufacturing</span>
-                </h3>
-                <p className="font-semibold" style={{ color: "#ffffff" }}>
-                  TrufusionLabs partners exclusively with FDA-registered and NSF-certified
-                  manufacturing facilities to ensure clinical research-grade quality and
-                  consistency. All peptide formulations are produced in GMP-compliant
-                  facilities.
-                </p>
-              </section>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
-                  <h3 className="flex items-center gap-2 text-base font-semibold">
-                    <EllipsisVerticalIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                    <span>Vertically Integrated Production</span>
-                  </h3>
-                  <p>
-                    Our formulations are manufactured in collaboration with a vertically
-                    integrated peptide innovator that controls every stage from synthesis to
-                    final packaging. This ensures:
-                  </p>
-                  <ul className="space-y-1">
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Complete chain-of-custody traceability</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Batch-specific Certificates of Analysis (COAs) for purity (&gt;= 99%) and sterility</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>HPLC and endotoxin testing</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Rapid scale-up and consistent results across all delivery formats (injectable, nasal spray)</span>
-                    </li>
-                  </ul>
-                </section>
-                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
-                  <h3 className="flex items-center gap-2 text-base font-semibold">
-                    <LockOpenIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                    <span>Proprietary Delivery Technology</span>
-                  </h3>
-                  <p>
-                    TrufusionLabs utilizes the{" "}
-                    <img
-                      src={withStaticAssetStamp("/protixa.png")}
-                      alt="Protixa"
-                      style={{
-                        display: "inline-block",
-                        height: "0.95em",
-                        width: "auto",
-                        verticalAlign: "-0.18em",
-                      }}
-                    />{" "}
-                    ION System&trade;, an advanced ionic liquid delivery platform designed for
-                    needle-free peptide administration. This
-                    proprietary system enhances bioavailability through five mechanisms:
-                  </p>
-                  <ol className="space-y-1">
-                    <li className="flex gap-2 leading-snug">
-                      <span className="font-semibold text-slate-900">1.</span>
-                      <span>Lipid layer modulation for superior absorption</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="font-semibold text-slate-900">2.</span>
-                      <span>Dual polarity solubilization (no emulsifiers needed)</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="font-semibold text-slate-900">3.</span>
-                      <span>Keratin modulation for transient micro-pathways</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="font-semibold text-slate-900">4.</span>
-                      <span>Optimized molecule partitioning for deeper tissue delivery</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="font-semibold text-slate-900">5.</span>
-                      <span>Cation exchange improving permeability</span>
-                    </li>
-                  </ol>
-                </section>
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
-                  <h3 className="flex items-center gap-2 text-base font-semibold">
-                    <ShieldCheckIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                    <span>Batch Testing &amp; COA Transparency</span>
-                  </h3>
-                  <p>
-                    Each TrufusionLabs peptide is backed by a Certificate of Analysis as well as
-                    third party testing to verify:
-                  </p>
-                  <ul className="space-y-1">
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Purity (&gt;= 99%)</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Sterility &amp; absence of microorganisms</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Endotoxin level &lt; 0.5 EU/mL</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Verified dosage and stability testing</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Quantitative testing</span>
-                    </li>
-                  </ul>
-                </section>
-                <section className="manufacturing-standards-card squircle-lg h-full space-y-2">
-                  <h3 className="flex items-center gap-2 text-base font-semibold">
-                    <ScaleIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                    <span>Quality Control &amp; Compliance</span>
-                  </h3>
-                  <ul className="space-y-1">
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Good Manufacturing Practice (cGMP) and ISO-aligned quality management systems</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Lot tracking and retention samples for every batch</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Stability testing for all formulations (-20 C cold chain storage)</span>
-                    </li>
-                    <li className="flex gap-2 leading-snug">
-                      <span className="mt-1 text-slate-900">•</span>
-                      <span>Third-party verification of all finished materials</span>
-                    </li>
-                  </ul>
-                </section>
-              </div>
-              <section className="manufacturing-standards-card squircle-lg space-y-2">
-                <h3 className="flex items-center gap-2 text-base font-semibold">
-                  <SwatchIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                  <span>Formulation Expertise</span>
-                </h3>
-                <p>
-                  Every formula is designed by a cross-disciplinary team of experts in
-                  pharmaceutical R&amp;D, biochemistry, and regulatory compliance. From
-                  clinical research-grade peptides to white-label consumer products,
-                  TrufusionLabs bridges science and accessibility with full transparency and
-                  safety.
-                </p>
-              </section>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      />
       <ProductDetailDialog
         product={selectedProduct}
         isOpen={productDetailOpen}

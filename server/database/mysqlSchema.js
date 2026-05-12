@@ -116,6 +116,9 @@ const STATEMENTS = [
       name LONGTEXT NOT NULL,
       email LONGTEXT NOT NULL,
       phone LONGTEXT NULL,
+      message LONGTEXT NULL,
+      message_field_key VARCHAR(64) NULL,
+      message_label VARCHAR(255) NULL,
       email_blind_index CHAR(64) NULL,
       source VARCHAR(255) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1318,6 +1321,18 @@ const ensureContactFormIndexes = async () => {
       name: 'email_blind_index',
       ddl: 'ALTER TABLE contact_forms ADD COLUMN email_blind_index CHAR(64) NULL',
     },
+    {
+      name: 'message',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN message LONGTEXT NULL',
+    },
+    {
+      name: 'message_field_key',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN message_field_key VARCHAR(64) NULL',
+    },
+    {
+      name: 'message_label',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN message_label VARCHAR(255) NULL',
+    },
   ];
   for (const column of columns) {
     try {
@@ -1343,6 +1358,27 @@ const ensureContactFormIndexes = async () => {
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL');
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL');
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN message LONGTEXT NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN message_field_key VARCHAR(64) NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN message_label VARCHAR(255) NULL');
+    await mysqlClient.execute(`
+      UPDATE contact_forms
+      SET message_field_key = CASE
+        WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('join', 'join_network', 'join_the_network', 'join_physician_network', 'network', 'main_landing', 'landing', 'landing_join', 'landing_join_network') THEN 'heard_about_us'
+        WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('partner', 'partner_application', 'partner_applications', 'partner_with_trufusionlabs', 'partnership', 'application') THEN 'partnership_fit'
+        ELSE 'question'
+      END
+      WHERE message_field_key IS NULL OR TRIM(message_field_key) = ''
+    `);
+    await mysqlClient.execute(`
+      UPDATE contact_forms
+      SET message_label = CASE
+        WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('join', 'join_network', 'join_the_network', 'join_physician_network', 'network', 'main_landing', 'landing', 'landing_join', 'landing_join_network') THEN 'How did you hear about us?'
+        WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('partner', 'partner_application', 'partner_applications', 'partner_with_trufusionlabs', 'partnership', 'application') THEN 'How can we help each other?'
+        ELSE 'Type your question here:'
+      END
+      WHERE message_label IS NULL OR TRIM(message_label) = ''
+    `);
   } catch (error) {
     logger.error({ err: error }, 'Failed to widen contact_forms inline ciphertext columns');
   }

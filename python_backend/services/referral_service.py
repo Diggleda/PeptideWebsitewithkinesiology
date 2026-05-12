@@ -42,6 +42,40 @@ REFERRAL_STATUS_CHOICES = [
 
 LEAD_TYPE_CHOICES = ("referral", "contact_form", "manual")
 
+CONTACT_FORM_MESSAGE_FIELDS = {
+    "question": {
+        "key": "question",
+        "label": "Type your question here:",
+    },
+    "join_network": {
+        "key": "heard_about_us",
+        "label": "How did you hear about us?",
+    },
+    "partner_application": {
+        "key": "partnership_fit",
+        "label": "How can we help each other?",
+    },
+}
+CONTACT_FORM_JOIN_SOURCE_ALIASES = {
+    "join",
+    "join_network",
+    "join_the_network",
+    "join_physician_network",
+    "network",
+    "main_landing",
+    "landing",
+    "landing_join",
+    "landing_join_network",
+}
+CONTACT_FORM_PARTNER_SOURCE_ALIASES = {
+    "partner",
+    "partner_application",
+    "partner_applications",
+    "partner_with_trufusionlabs",
+    "partnership",
+    "application",
+}
+
 LEGACY_STATUS_ALIASES = {
     "follow_up": "nuture",
     "nurture": "nuture",
@@ -74,6 +108,20 @@ def _sanitize_text(value: Optional[str], max_length: int = 190) -> Optional[str]
     if not text:
         return None
     return text[:max_length]
+
+
+def _contact_form_message_metadata(row: Dict) -> Tuple[str, str]:
+    source = str(row.get("source") or "question").strip().lower().replace("-", "_").replace(" ", "_")
+    if source in CONTACT_FORM_JOIN_SOURCE_ALIASES:
+        source = "join_network"
+    elif source in CONTACT_FORM_PARTNER_SOURCE_ALIASES:
+        source = "partner_application"
+    else:
+        source = "question"
+    defaults = CONTACT_FORM_MESSAGE_FIELDS.get(source, CONTACT_FORM_MESSAGE_FIELDS["question"])
+    field_key = _sanitize_text(row.get("message_field_key"), 64) or defaults["key"]
+    label = _sanitize_text(row.get("message_label"), 255) or defaults["label"]
+    return field_key, label
 
 
 def _sanitize_email(value: Optional[str]) -> Optional[str]:
@@ -1589,6 +1637,9 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     cf.name,
                     cf.email,
                     cf.phone,
+                    cf.message,
+                    cf.message_field_key,
+                    cf.message_label,
                     cf.source,
                     cf.created_at,
                     sp.doctor_id AS prospect_doctor_id,
@@ -1619,6 +1670,9 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     cf.name,
                     cf.email,
                     cf.phone,
+                    cf.message,
+                    cf.message_field_key,
+                    cf.message_label,
                     cf.source,
                     cf.created_at,
                     sp.sales_rep_id AS prospect_sales_rep_id,
@@ -1670,6 +1724,8 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
         contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
         contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
+        contact_message = _sanitize_text(_read_contact_form_field(row, "message"), 1000)
+        contact_message_field_key, contact_message_label = _contact_form_message_metadata(row)
         contact_emails = _sanitize_email_list(
             _parse_json_array(row.get("contact_emails_json"))
             if row.get("contact_emails_json") is not None
@@ -1698,6 +1754,13 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                         "contactPhone": contact_phones[0] if contact_phones else None,
                         "contactEmails": contact_emails,
                         "contactPhones": contact_phones,
+                        "sourcePayloadJson": {
+                            "contactFormId": str(row.get("id")),
+                            "source": row.get("source") or None,
+                            "message": contact_message,
+                            "messageFieldKey": contact_message_field_key,
+                            "messageLabel": contact_message_label,
+                        },
                     }
                 )
             except Exception:
@@ -1716,6 +1779,10 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
             "status": status,
             "salesRepNotes": row.get("prospect_notes") or None,
             "notes": row.get("source") or "Contact form submission",
+            "contactFormSource": row.get("source") or None,
+            "contactFormMessage": contact_message,
+            "contactFormMessageFieldKey": contact_message_field_key,
+            "contactFormMessageLabel": contact_message_label,
             "resellerPermitExempt": bool(row.get("reseller_permit_exempt") or 0),
             "resellerPermitFilePath": row.get("reseller_permit_file_path") or None,
             "resellerPermitFileName": row.get("reseller_permit_file_name") or None,
@@ -2282,6 +2349,8 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
     contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
     contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
     contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
+    contact_message = _sanitize_text(_read_contact_form_field(row, "message"), 1000)
+    contact_message_field_key, contact_message_label = _contact_form_message_metadata(row)
 
     payload: Dict = {
         "id": str(referral_id),
@@ -2318,6 +2387,10 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         "status": saved.get("status") or "contact_form",
         "salesRepNotes": saved.get("notes") or None,
         "notes": row.get("source") or "Contact form submission",
+        "contactFormSource": row.get("source") or None,
+        "contactFormMessage": contact_message,
+        "contactFormMessageFieldKey": contact_message_field_key,
+        "contactFormMessageLabel": contact_message_label,
         "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
         "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
         "resellerPermitFileName": saved.get("resellerPermitFileName") or None,

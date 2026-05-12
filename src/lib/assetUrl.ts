@@ -4,6 +4,7 @@ const STATIC_ASSET_STAMP =
 const NON_STAMPABLE_URL_PATTERN = /^(?:data|blob|javascript|mailto|tel|about|file):/i;
 
 const EMITTED_PUBLIC_ASSET_URLS: Record<string, string> = {
+  "/FullLogo_Transparent_NoBuffer (18).png": new URL("../generated/runtime-assets/FullLogo_Transparent_NoBuffer (18).png", import.meta.url).href,
   "/TrufusionLabs_PhysiciansPortal.png": new URL("../generated/runtime-assets/TrufusionLabs_PhysiciansPortal.png", import.meta.url).href,
   "/Trufusionpeptides_icon.png": new URL("../generated/runtime-assets/Trufusionpeptides_icon.png", import.meta.url).href,
   "/protixa.png": new URL("../generated/runtime-assets/protixa.png", import.meta.url).href,

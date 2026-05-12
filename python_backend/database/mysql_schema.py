@@ -304,6 +304,9 @@ CREATE_TABLE_STATEMENTS = [
         name LONGTEXT NOT NULL,
         email LONGTEXT NOT NULL,
         phone LONGTEXT NULL,
+        message LONGTEXT NULL,
+        message_field_key VARCHAR(64) NULL,
+        message_label VARCHAR(255) NULL,
         email_blind_index CHAR(64) NULL,
         source VARCHAR(255) NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -806,6 +809,9 @@ def ensure_schema() -> None:
         "ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL",
+        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS message LONGTEXT NULL",
+        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS message_field_key VARCHAR(64) NULL",
+        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS message_label VARCHAR(255) NULL",
         "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS email_blind_index CHAR(64) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
@@ -1276,10 +1282,41 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("contact_forms", "email_blind_index"):
             mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN email_blind_index CHAR(64) NULL")
+        if not _column_exists("contact_forms", "message"):
+            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN message LONGTEXT NULL")
+        if not _column_exists("contact_forms", "message_field_key"):
+            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN message_field_key VARCHAR(64) NULL")
+        if not _column_exists("contact_forms", "message_label"):
+            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN message_label VARCHAR(255) NULL")
         _drop_index_if_exists("contact_forms", "idx_contact_forms_email")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL")
+        mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN message LONGTEXT NULL")
+        mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN message_field_key VARCHAR(64) NULL")
+        mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN message_label VARCHAR(255) NULL")
+        mysql_client.execute(
+            """
+            UPDATE contact_forms
+            SET message_field_key = CASE
+                WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('join', 'join_network', 'join_the_network', 'join_physician_network', 'network', 'main_landing', 'landing', 'landing_join', 'landing_join_network') THEN 'heard_about_us'
+                WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('partner', 'partner_application', 'partner_applications', 'partner_with_trufusionlabs', 'partnership', 'application') THEN 'partnership_fit'
+                ELSE 'question'
+            END
+            WHERE message_field_key IS NULL OR TRIM(message_field_key) = ''
+            """
+        )
+        mysql_client.execute(
+            """
+            UPDATE contact_forms
+            SET message_label = CASE
+                WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('join', 'join_network', 'join_the_network', 'join_physician_network', 'network', 'main_landing', 'landing', 'landing_join', 'landing_join_network') THEN 'How did you hear about us?'
+                WHEN LOWER(REPLACE(REPLACE(COALESCE(source, 'question'), '-', '_'), ' ', '_')) IN ('partner', 'partner_application', 'partner_applications', 'partner_with_trufusionlabs', 'partnership', 'application') THEN 'How can we help each other?'
+                ELSE 'Type your question here:'
+            END
+            WHERE message_label IS NULL OR TRIM(message_label) = ''
+            """
+        )
         _copy_legacy_ciphertext("contact_forms", "name", "name_encrypted", placeholder="[ENCRYPTED]")
         _copy_legacy_ciphertext("contact_forms", "email", "email_encrypted", placeholder="[ENCRYPTED]")
         _copy_legacy_ciphertext("contact_forms", "phone", "phone_encrypted")

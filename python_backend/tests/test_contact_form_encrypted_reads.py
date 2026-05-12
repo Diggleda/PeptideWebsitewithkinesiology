@@ -199,6 +199,9 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
                         "name": "cipher-name",
                         "email": "cipher-email",
                         "phone": "cipher-phone",
+                        "message": "cipher-message",
+                        "message_field_key": "partnership_fit",
+                        "message_label": "How can we help each other?",
                         "source": "WEB",
                         "created_at": "2026-03-24T00:00:00Z",
                         "prospect_sales_rep_id": None,
@@ -222,6 +225,7 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
                     "cipher-name": "Encrypted Lead",
                     "cipher-email": "lead@example.com",
                     "cipher-phone": "555-0100",
+                    "cipher-message": "Please contact me about partnership.",
                 }
                 return mapping.get(value)
 
@@ -236,9 +240,15 @@ class ContactFormEncryptedReadTests(unittest.TestCase):
             self.assertEqual(records[0]["referredContactName"], "Encrypted Lead")
             self.assertEqual(records[0]["referredContactEmail"], "lead@example.com")
             self.assertEqual(records[0]["referredContactPhone"], "555-0100")
+            self.assertEqual(records[0]["contactFormMessage"], "Please contact me about partnership.")
+            self.assertEqual(records[0]["contactFormMessageFieldKey"], "partnership_fit")
+            self.assertEqual(records[0]["contactFormMessageLabel"], "How can we help each other?")
             self.assertEqual(captured["upsert"]["contactName"], "Encrypted Lead")
             self.assertEqual(captured["upsert"]["contactEmail"], "lead@example.com")
             self.assertEqual(captured["upsert"]["contactPhone"], "555-0100")
+            self.assertEqual(captured["upsert"]["sourcePayloadJson"]["message"], "Please contact me about partnership.")
+            self.assertEqual(captured["upsert"]["sourcePayloadJson"]["messageFieldKey"], "partnership_fit")
+            self.assertEqual(captured["upsert"]["sourcePayloadJson"]["messageLabel"], "How can we help each other?")
         finally:
             service.get_config = original_get_config
             service.mysql_client.fetch_all = original_fetch_all

@@ -26,6 +26,40 @@ const {
 
 const REFERRAL_STATUSES = ['pending', 'contacted', 'verified', 'account_created', 'converted', 'nuture', 'contact_form'];
 
+const CONTACT_FORM_MESSAGE_FIELDS = {
+  question: {
+    key: 'question',
+    label: 'Type your question here:',
+  },
+  join_network: {
+    key: 'heard_about_us',
+    label: 'How did you hear about us?',
+  },
+  partner_application: {
+    key: 'partnership_fit',
+    label: 'How can we help each other?',
+  },
+};
+const CONTACT_FORM_JOIN_SOURCE_ALIASES = new Set([
+  'join',
+  'join_network',
+  'join_the_network',
+  'join_physician_network',
+  'network',
+  'main_landing',
+  'landing',
+  'landing_join',
+  'landing_join_network',
+]);
+const CONTACT_FORM_PARTNER_SOURCE_ALIASES = new Set([
+  'partner',
+  'partner_application',
+  'partner_applications',
+  'partner_with_trufusionlabs',
+  'partnership',
+  'application',
+]);
+
 const normalizeReferralStatus = (value) => {
   const normalized = (value || '').toString().trim().toLowerCase();
   if (!normalized) return null;
@@ -338,6 +372,21 @@ const readContactFormField = (row, field) => {
     return null;
   }
   return text;
+};
+
+const contactFormMessageMetadata = (row) => {
+  let source = String(row?.source || 'question').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (CONTACT_FORM_JOIN_SOURCE_ALIASES.has(source)) {
+    source = 'join_network';
+  } else if (CONTACT_FORM_PARTNER_SOURCE_ALIASES.has(source)) {
+    source = 'partner_application';
+  } else {
+    source = 'question';
+  }
+  const defaults = CONTACT_FORM_MESSAGE_FIELDS[source] || CONTACT_FORM_MESSAGE_FIELDS.question;
+  const fieldKey = normalizeOptionalText(row?.message_field_key) || defaults.key;
+  const label = normalizeOptionalText(row?.message_label) || defaults.label;
+  return { fieldKey, label };
 };
 
 const computeContactFormEmailBlindIndex = (email) => {
@@ -936,9 +985,21 @@ const getDoctorLedger = (req, res, next) => {
 		      try {
 		        const rows = await mysqlClient.fetchAll(
 		          `
-		            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
+		            SELECT
+                  id,
+                  name,
+                  email,
+                  phone,
+                  message,
+                  message_field_key,
+                  message_label,
+                  source,
+                  created_at,
+                  NULL AS updated_at,
+                  created_at AS createdAt,
+                  NULL AS updatedAt
 	            FROM contact_forms
-	            ORDER BY COALESCE(updated_at, updatedAt, created_at, createdAt) DESC
+	            ORDER BY created_at DESC
 	          `,
 	        );
         const mapped = (rows || []).map((row) => {
@@ -947,6 +1008,8 @@ const getDoctorLedger = (req, res, next) => {
           const contactName = readContactFormField(row, 'name');
           const contactEmail = normalizeEmail(readContactFormField(row, 'email'));
           const contactPhone = readContactFormField(row, 'phone');
+          const contactMessage = normalizeOptionalText(readContactFormField(row, 'message'));
+          const messageMetadata = contactFormMessageMetadata(row);
           const contactEmails = contactEmail ? [contactEmail] : [];
           const contactPhones = contactPhone ? [contactPhone] : [];
           return {
@@ -963,6 +1026,10 @@ const getDoctorLedger = (req, res, next) => {
             contactEmails,
             contactPhones,
             notes: row.source || 'Contact form submission',
+            contactFormSource: row.source || null,
+            contactFormMessage: contactMessage,
+            contactFormMessageFieldKey: messageMetadata.fieldKey,
+            contactFormMessageLabel: messageMetadata.label,
             createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
             updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString(),
             source: 'contact_form',

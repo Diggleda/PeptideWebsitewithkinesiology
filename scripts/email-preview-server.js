@@ -33,6 +33,11 @@ const templates = [
     source: 'python_backend/services/email_service.py::send_password_reset_email',
   },
   {
+    id: 'contact-form-received',
+    label: 'Contact form received',
+    source: 'python_backend/services/email_service.py::send_contact_form_received_email',
+  },
+  {
     id: 'delegate-proposal',
     label: 'Delegate proposal ready',
     source: 'python_backend/services/email_service.py::send_delegate_proposal_ready_email',
@@ -110,6 +115,12 @@ elif template == "password-reset-python":
         base_url=base_url,
     )
     subject = "Password Reset Request"
+elif template == "contact-form-received":
+    html, plain = email_service._build_contact_form_received_email(
+        name="Dr. Jane Example",
+        base_url=base_url,
+    )
+    subject = "We received your TrufusionLabs contact request"
 elif template == "delegate-proposal":
     html, plain = email_service._build_delegate_proposal_ready_email(
         doctor_name="Dr. Holly O'Quin",

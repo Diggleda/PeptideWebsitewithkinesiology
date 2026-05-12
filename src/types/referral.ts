@@ -21,6 +21,10 @@ export interface ReferralRecord {
   convertedDoctorId?: string | null;
   convertedAt?: string | null;
   notes?: string | null;
+  contactFormSource?: string | null;
+  contactFormMessage?: string | null;
+  contactFormMessageFieldKey?: string | null;
+  contactFormMessageLabel?: string | null;
   referrerDoctorName?: string | null;
   referrerDoctorEmail?: string | null;
   referrerDoctorPhone?: string | null;
