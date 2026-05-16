@@ -85,6 +85,8 @@ class SecureStorageWriteTests(unittest.TestCase):
             patch.object(self.contact, "encrypt_text", side_effect=fake_encrypt), \
             patch.object(self.contact, "compute_blind_index", return_value="blind:doctor@example.com"), \
             patch.object(self.contact.sales_rep_repository, "find_by_sales_code", return_value={"id": "rep-7"}) as find_sales_code, \
+            patch.object(self.contact.user_repository, "find_by_email", return_value=None), \
+            patch.object(self.contact.sales_prospect_repository, "find_by_contact_email", return_value=None), \
             patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
             patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email") as mark_origin, \
             patch.object(self.contact.email_service, "send_contact_form_received_email") as send_received_email:
@@ -125,6 +127,7 @@ class SecureStorageWriteTests(unittest.TestCase):
         prospect_payload = upsert.call_args.args[0]
         self.assertEqual(prospect_payload["id"], "contact_form:321")
         self.assertEqual(prospect_payload["salesRepId"], "rep-7")
+        self.assertIsNone(prospect_payload["doctorId"])
         self.assertEqual(prospect_payload["contactFormId"], "321")
         self.assertEqual(prospect_payload["sourceSystem"], "contact_form")
         self.assertEqual(prospect_payload["sourceExternalId"], "321")
@@ -156,6 +159,144 @@ class SecureStorageWriteTests(unittest.TestCase):
             "Doctor@Example.com",
             name="Dr. Jane Example",
         )
+
+    def test_contact_form_existing_doctor_lead_keeps_rep_owner(self) -> None:
+        cursor = _FakeCursor(lastrowid=654)
+
+        def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
+            if value is None:
+                return None
+            return f"cipher:{aad['field']}:{value}"
+
+        with patch.object(self.contact.mysql_client, "is_enabled", return_value=True), \
+            patch.object(self.contact.mysql_client, "cursor", return_value=_CursorContext(cursor)), \
+            patch.object(self.contact, "encrypt_text", side_effect=fake_encrypt), \
+            patch.object(self.contact, "compute_blind_index", return_value="blind:doctor@example.com"), \
+            patch.object(self.contact.user_repository, "find_by_email", return_value={
+                "id": "doctor-9",
+                "role": "doctor",
+                "salesRepId": "rep-9",
+            }) as find_user, \
+            patch.object(self.contact.sales_rep_repository, "find_by_sales_code") as find_sales_code, \
+            patch.object(self.contact.sales_prospect_repository, "find_by_contact_email") as find_prospect_email, \
+            patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
+            patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email") as mark_origin, \
+            patch.object(self.contact.email_service, "send_contact_form_received_email"):
+            with self.app.test_request_context(
+                "/api/contact",
+                method="POST",
+                json={
+                    "name": "Dr. Jane Example",
+                    "email": "Doctor@Example.com",
+                    "message": "I have a question.",
+                    "source": "contact",
+                },
+            ):
+                response = self._make_response(self.contact.submit_contact())
+
+        self.assertEqual(response.status_code, 200)
+        find_user.assert_called_once_with("doctor@example.com")
+        find_sales_code.assert_not_called()
+        find_prospect_email.assert_not_called()
+
+        upsert.assert_called_once()
+        prospect_payload = upsert.call_args.args[0]
+        self.assertEqual(prospect_payload["id"], "contact_form:654")
+        self.assertEqual(prospect_payload["salesRepId"], "rep-9")
+        self.assertEqual(prospect_payload["doctorId"], "doctor-9")
+        self.assertEqual(prospect_payload["contactFormId"], "654")
+        mark_origin.assert_called_once_with(
+            "Doctor@Example.com",
+            source="contact_form:654",
+        )
+
+    def test_contact_form_existing_prospect_lead_keeps_rep_owner(self) -> None:
+        cursor = _FakeCursor(lastrowid=777)
+
+        def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
+            if value is None:
+                return None
+            return f"cipher:{aad['field']}:{value}"
+
+        with patch.object(self.contact.mysql_client, "is_enabled", return_value=True), \
+            patch.object(self.contact.mysql_client, "cursor", return_value=_CursorContext(cursor)), \
+            patch.object(self.contact, "encrypt_text", side_effect=fake_encrypt), \
+            patch.object(self.contact, "compute_blind_index", return_value="blind:doctor@example.com"), \
+            patch.object(self.contact.user_repository, "find_by_email", return_value=None), \
+            patch.object(self.contact.sales_prospect_repository, "find_by_contact_email", return_value={
+                "id": "manual:lead-1",
+                "doctorId": "doctor-11",
+                "salesRepId": "rep-11",
+            }) as find_prospect_email, \
+            patch.object(self.contact.sales_rep_repository, "find_by_sales_code") as find_sales_code, \
+            patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
+            patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email"), \
+            patch.object(self.contact.email_service, "send_contact_form_received_email"):
+            with self.app.test_request_context(
+                "/api/contact",
+                method="POST",
+                json={
+                    "name": "Dr. Prospect Example",
+                    "email": "prospect@example.com",
+                    "message": "Checking in.",
+                    "source": "question",
+                },
+            ):
+                response = self._make_response(self.contact.submit_contact())
+
+        self.assertEqual(response.status_code, 200)
+        find_prospect_email.assert_called_once_with("prospect@example.com")
+        find_sales_code.assert_not_called()
+
+        upsert.assert_called_once()
+        prospect_payload = upsert.call_args.args[0]
+        self.assertEqual(prospect_payload["id"], "contact_form:777")
+        self.assertEqual(prospect_payload["salesRepId"], "rep-11")
+        self.assertEqual(prospect_payload["doctorId"], "doctor-11")
+        self.assertEqual(prospect_payload["contactFormId"], "777")
+
+    def test_contact_form_admin_sales_code_creates_house_contact(self) -> None:
+        cursor = _FakeCursor(lastrowid=888)
+
+        def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
+            if value is None:
+                return None
+            return f"cipher:{aad['field']}:{value}"
+
+        with patch.object(self.contact.mysql_client, "is_enabled", return_value=True), \
+            patch.object(self.contact.mysql_client, "cursor", return_value=_CursorContext(cursor)), \
+            patch.object(self.contact, "encrypt_text", side_effect=fake_encrypt), \
+            patch.object(self.contact, "compute_blind_index", return_value="blind:doctor@example.com"), \
+            patch.object(self.contact.user_repository, "find_by_email", return_value=None), \
+            patch.object(self.contact.sales_prospect_repository, "find_by_contact_email", return_value=None), \
+            patch.object(self.contact.sales_rep_repository, "find_by_sales_code", return_value={
+                "id": "admin-rep",
+                "role": "admin",
+            }) as find_sales_code, \
+            patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
+            patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email"), \
+            patch.object(self.contact.email_service, "send_contact_form_received_email"):
+            with self.app.test_request_context(
+                "/api/contact",
+                method="POST",
+                json={
+                    "name": "Dr. House Example",
+                    "email": "house@example.com",
+                    "message": "Joining.",
+                    "source": "join_network",
+                    "salesCode": "ADMIN1",
+                },
+            ):
+                response = self._make_response(self.contact.submit_contact())
+
+        self.assertEqual(response.status_code, 200)
+        find_sales_code.assert_called_once_with("ADMIN1")
+        upsert.assert_called_once()
+        prospect_payload = upsert.call_args.args[0]
+        self.assertEqual(prospect_payload["id"], "contact_form:888")
+        self.assertEqual(prospect_payload["salesRepId"], "house")
+        self.assertIsNone(prospect_payload["doctorId"])
+        self.assertEqual(prospect_payload["contactFormId"], "888")
 
     def test_bug_report_insert_stores_ciphertext_inline_in_existing_columns(self) -> None:
         cursor = _FakeCursor()

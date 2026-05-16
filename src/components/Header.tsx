@@ -589,7 +589,6 @@ interface HeaderProps {
   onDelegateLinksGuideTabClick?: () => void;
   suppressHomeButton?: boolean;
   suppressSearch?: boolean;
-  suppressAccountHomeButton?: boolean;
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
   onBuyOrderAgain?: (order: AccountOrderSummary) => void;
@@ -1833,7 +1832,6 @@ export function Header({
   onDelegateLinksGuideTabClick,
   suppressHomeButton = false,
   suppressSearch = false,
-  suppressAccountHomeButton = false,
   showCanceledOrders = false,
   onToggleShowCanceled,
   onBuyOrderAgain,
@@ -2776,6 +2774,20 @@ export function Header({
   const accountIsPartner = !accountIsDoctor && isSalesPartner(accountRole, accountPartnerFlag);
   const accountPartnerLabel = accountIsPartner ? getSalesPartnerLabel(accountAllowedRetail) : null;
   const accountCanUploadResellerPermit = accountIsDoctor || accountIsPartner;
+  const accountModalBaseName = (localUser?.name || user?.name || 'Account').trim();
+  const accountModalDisplayName =
+    accountIsDoctor && accountModalBaseName && !/^(dr\.?|doctor)\s+/i.test(accountModalBaseName)
+      ? `Dr. ${accountModalBaseName}`
+      : accountModalBaseName || 'Account';
+  const accountModalRoleLabel = accountIsAdmin
+    ? 'Admin'
+    : accountIsDoctor
+      ? 'Physician'
+      : accountIsPartner && accountPartnerLabel
+        ? accountPartnerLabel
+        : accountIsSalesRep
+          ? 'Sales'
+          : null;
   const headerDisplayName = localUser
     ? accountIsAdmin
       ? `Admin: ${localUser.name}`
@@ -5737,12 +5749,27 @@ export function Header({
       } catch {
         // Soft-fail moderation checks; never block uploads if moderation is unavailable.
       }
-      const resized = await downscaleImageDataUrl(dataUrl, 1800, 1200, {
+      const preserveTransparency = /^data:image\/png(?:;|,)/i.test(dataUrl) || file.type === 'image/png';
+      const backgroundResizeOptions = {
         forceRender: true,
-        outputMime: 'image/jpeg',
+        outputMime: preserveTransparency ? 'image/png' : 'image/jpeg',
         quality: 0.82,
-        fillColor: '#ffffff',
-      });
+        fillColor: preserveTransparency ? null : '#ffffff',
+      } as const;
+      let resized = await downscaleImageDataUrl(dataUrl, 1800, 1200, backgroundResizeOptions);
+      if (preserveTransparency && resized.length > 2_400_000) {
+        const fallbackSizes: Array<[number, number]> = [
+          [1400, 933],
+          [1100, 733],
+          [900, 600],
+        ];
+        for (const [width, height] of fallbackSizes) {
+          if (resized.length <= 2_400_000) {
+            break;
+          }
+          resized = await downscaleImageDataUrl(dataUrl, width, height, backgroundResizeOptions);
+        }
+      }
       await saveProfileField('Delegate session background', {
         delegateBackgroundImageUrl: resized,
       });
@@ -8237,10 +8264,10 @@ export function Header({
 	              aria-hidden="true"
 	              style={{
 	                backgroundColor: delegatePreviewBackgroundColorHex,
-	                backgroundImage: `${delegatePreviewBackgroundImageCss}, linear-gradient(${delegatePreviewBackgroundColorHex}, ${delegatePreviewBackgroundColorHex})`,
-	                backgroundSize: 'cover, cover',
-	                backgroundPosition: 'center, center',
-	                backgroundRepeat: 'no-repeat, no-repeat',
+	                backgroundImage: delegatePreviewBackgroundImageCss,
+	                backgroundSize: 'cover',
+	                backgroundPosition: 'center',
+	                backgroundRepeat: 'no-repeat',
 	              }}
 	            />
 	          </div>
@@ -8295,7 +8322,7 @@ export function Header({
 	            <input
 	              ref={delegateBackgroundImageInputRef}
 	              type="file"
-	              accept="image/*"
+	              accept=".png,image/png,.jpg,.jpeg,image/jpeg,.webp,image/webp,image/*"
 	              className="hidden"
 	              onChange={(event) => void handleSelectDelegateBackgroundImage(event.target.files?.[0] ?? null)}
 	            />
@@ -9102,34 +9129,8 @@ export function Header({
             <div className="flex-1 min-w-0 max-w-full space-y-3 account-header-content">
 	            <div className="flex items-center gap-3 flex-wrap min-w-0">
 	              <DialogTitle className="text-xl font-semibold header-user-name min-w-0 truncate">
-	                  {localUser?.name || user?.name || 'Account'}
+	                  {accountModalRoleLabel ? `${accountModalDisplayName} | ${accountModalRoleLabel}` : accountModalDisplayName}
 	                </DialogTitle>
-                {!suppressAccountHomeButton && (
-                  <>
-                    <span aria-hidden="true" className="text-slate-300">
-                      |
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="header-home-button squircle-sm text-slate-900 gap-2"
-                      onClick={() => {
-                        setWelcomeOpen(false);
-                        setTimeout(() => {
-                          if (onShowInfo) {
-                            onShowInfo();
-                          }
-                        }, 100);
-                      }}
-                    >
-                      <Home
-                        className="h-5 w-5 text-[rgb(11,6,121)]"
-                        aria-hidden="true"
-                      />
-                    </Button>
-                  </>
-                )}
 	              </div>
               <DialogDescription className="account-header-description">
                 {((localUser?.visits ?? user?.visits ?? 1) > 1)

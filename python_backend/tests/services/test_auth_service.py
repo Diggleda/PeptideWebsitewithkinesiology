@@ -250,6 +250,44 @@ class AuthServiceTests(unittest.TestCase):
         self.assertFalse(inserted_payloads[0]["isOnline"])
         send_verification.assert_called_once()
 
+    def test_register_with_admin_sales_code_creates_house_lead(self) -> None:
+        inserted_payloads = []
+
+        def fake_insert(payload):
+            inserted_payloads.append(payload)
+            return {**payload, "id": payload.get("id") or "doctor-1"}
+
+        with patch.object(auth_service.sales_rep_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "find_by_npi_number", return_value=None), \
+            patch.object(auth_service.npi_service, "normalize_npi", return_value="1234567890"), \
+            patch.object(auth_service.npi_service, "verify_npi", return_value={"npiNumber": "1234567890"}), \
+            patch.object(auth_service.sales_rep_repository, "find_by_sales_code", return_value={
+                "id": "admin-rep",
+                "role": "admin",
+            }), \
+            patch.object(auth_service.referral_service, "backfill_lead_types_for_doctors", side_effect=lambda users: users), \
+            patch.object(auth_service.user_repository, "insert", side_effect=fake_insert), \
+            patch.object(auth_service, "_ensure_converted_sales_prospect_for_doctor"), \
+            patch.object(auth_service, "_send_email_verification", return_value=True), \
+            patch.object(auth_service.bcrypt, "gensalt", return_value=b"salt", create=True), \
+            patch.object(auth_service.bcrypt, "hashpw", return_value=b"hashed", create=True):
+            result = auth_service.register(
+                {
+                    "name": "Doctor One",
+                    "email": "doctor@example.com",
+                    "password": "secret",
+                    "code": "AD123",
+                    "npiNumber": "1234567890",
+                }
+            )
+
+        self.assertEqual(result["status"], "verification_required")
+        self.assertEqual(inserted_payloads[0]["salesRepId"], "house")
+        self.assertEqual(inserted_payloads[0]["leadType"], "house")
+        self.assertEqual(inserted_payloads[0]["leadTypeSource"], "admin_code:AD123")
+        self.assertTrue(inserted_payloads[0]["leadTypeLockedAt"])
+
     def test_pending_email_verification_login_is_blocked_after_password_check(self) -> None:
         auth_record = {
             "id": "doctor-1",

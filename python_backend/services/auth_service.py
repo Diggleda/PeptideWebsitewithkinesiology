@@ -167,6 +167,33 @@ def _is_sales_rep_like_role(value: Any) -> bool:
     )
 
 
+def _sales_rep_code_is_admin_owned(sales_rep: Optional[Dict]) -> bool:
+    if not isinstance(sales_rep, dict):
+        return False
+    if _normalize_role(sales_rep.get("role")) == "admin":
+        return True
+
+    legacy_user_id = str(sales_rep.get("legacyUserId") or sales_rep.get("legacy_user_id") or "").strip()
+    if legacy_user_id:
+        try:
+            linked_user = user_repository.find_by_id(legacy_user_id)
+        except Exception:
+            linked_user = None
+        if linked_user and _normalize_role(linked_user.get("role")) == "admin":
+            return True
+
+    rep_email = _normalize_email(str(sales_rep.get("email") or ""))
+    if rep_email:
+        try:
+            linked_user = user_repository.find_by_email(rep_email)
+        except Exception:
+            linked_user = None
+        if linked_user and _normalize_role(linked_user.get("role")) == "admin":
+            return True
+
+    return False
+
+
 def _resolve_sales_user_role(sales_rep: Optional[Dict]) -> str:
     if not isinstance(sales_rep, dict):
         return "sales_rep"
@@ -706,11 +733,17 @@ def register(data: Dict) -> Dict:
         sales_rep_id = onboarding_record.get("salesRepId")
         referrer_doctor_id = onboarding_record.get("referrerDoctorId")
     else:
-        sales_rep_id = sales_rep.get("id") if sales_rep else None
+        sales_rep_id = (
+            sales_prospect_repository.HOUSE_SALES_REP_ID
+            if _sales_rep_code_is_admin_owned(sales_rep)
+            else (sales_rep.get("id") if sales_rep else None)
+        )
         referrer_doctor_id = None
 
     if not sales_rep_id:
         raise _conflict("REFERRAL_CODE_UNAVAILABLE")
+
+    lead_type = "house" if str(sales_rep_id or "").strip().lower() == "house" else None
 
     user = user_repository.insert(
         {
@@ -723,6 +756,9 @@ def register(data: Dict) -> Dict:
             "status": "pending_email_verification",
             "salesRepId": sales_rep_id,
             "referrerDoctorId": referrer_doctor_id,
+            "leadType": lead_type,
+            "leadTypeSource": f"admin_code:{code}" if lead_type == "house" else None,
+            "leadTypeLockedAt": now if lead_type == "house" else None,
             "referralCredits": 0,
             "totalReferrals": 0,
             "visits": 0,

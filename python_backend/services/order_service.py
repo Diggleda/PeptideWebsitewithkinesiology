@@ -239,6 +239,56 @@ def _load_contact_form_emails_from_mysql() -> set[str]:
     return contact_form_emails
 
 
+def _prospect_contact_emails(record: Dict[str, Any]) -> List[str]:
+    raw_values: List[Any] = []
+    for key in ("contactEmails", "contact_emails_json"):
+        value = record.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except Exception:
+                parsed = value
+            value = parsed
+        if isinstance(value, (list, tuple)):
+            raw_values.extend(value)
+        else:
+            raw_values.append(value)
+    for key in ("contactEmail", "contact_email"):
+        value = record.get(key)
+        if value is not None:
+            raw_values.append(value)
+
+    emails: List[str] = []
+    for value in raw_values:
+        normalized = _normalize_contact_form_email(str(value or ""))
+        if normalized and normalized not in emails:
+            emails.append(normalized)
+    return emails
+
+
+def _is_contact_form_prospect(record: Dict[str, Any]) -> bool:
+    identifier = str(record.get("id") or "").strip()
+    return identifier.startswith("contact_form:") or bool(record.get("contactFormId") or record.get("contact_form_id"))
+
+
+def _house_contact_form_emails_from_prospects(prospects: List[Dict[str, Any]]) -> set[str]:
+    house_id = str(getattr(sales_prospect_repository, "HOUSE_SALES_REP_ID", "house") or "house").strip().lower()
+    house_aliases = {house_id, "__house__"}
+    emails: set[str] = set()
+    for prospect in prospects or []:
+        if not isinstance(prospect, dict):
+            continue
+        if not _is_contact_form_prospect(prospect):
+            continue
+        rep_id = str(prospect.get("salesRepId") or prospect.get("sales_rep_id") or "").strip().lower()
+        if rep_id not in house_aliases:
+            continue
+        emails.update(_prospect_contact_emails(prospect))
+    return emails
+
+
 def invalidate_admin_taxes_by_state_cache() -> None:
     with _admin_taxes_by_state_lock:
         _admin_taxes_by_state_cache["data"] = None
@@ -5619,9 +5669,9 @@ def get_sales_by_rep(
         except Exception:
             pass
 
-        # Any order placed by an email present in the MySQL `contact_forms` table should be
-        # treated as a house/contact-form order and split across admins.
-        contact_form_emails = _load_contact_form_emails_from_mysql()
+        # Only contact-form prospects explicitly assigned to the house bucket should fall
+        # back to house attribution. Regular rep-owned contact-form leads stay with the rep.
+        house_contact_form_emails = _house_contact_form_emails_from_prospects(prospects or [])
 
         valid_rep_ids: set[str] = set()
         for rep in reps:
@@ -5827,7 +5877,7 @@ def get_sales_by_rep(
             order_user_email = _norm_email(order_user.get("email") if isinstance(order_user, dict) else None)
             billing_email = _resolve_order_email(local_order)
             attribution_email = billing_email or order_user_email
-            force_house_contact_form = bool(attribution_email and attribution_email in contact_form_emails)
+            force_house_contact_form = bool(attribution_email and attribution_email in house_contact_form_emails)
 
             integrations = local_order.get("integrations") or local_order.get("integrationDetails") or {}
             if isinstance(integrations, str):
@@ -6833,9 +6883,13 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if email:
                 doctors_by_email[email] = u
 
-        # Any order placed by an email present in the MySQL contact-form submissions table should be
-        # treated as a house/contact-form order and split across admins.
-        contact_form_emails = _load_contact_form_emails_from_mysql()
+        # Only contact-form prospects explicitly assigned to the house bucket should trigger
+        # house/admin split behavior. Rep-owned contact-form leads should credit the rep.
+        try:
+            contact_form_prospects = sales_prospect_repository.get_all()
+        except Exception:
+            contact_form_prospects = []
+        house_contact_form_emails = _house_contact_form_emails_from_prospects(contact_form_prospects or [])
 
         recipient_rows: Dict[str, Dict[str, object]] = {}
         for rep in reps:
@@ -7095,29 +7149,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if not isinstance(meta_data, list):
                 meta_data = []
 
-            force_house_contact_form = bool(attribution_email and attribution_email in contact_form_emails)
-            contact_form_origin = force_house_contact_form
-            if doctor and not contact_form_origin:
-                lead_type = str(doctor.get("leadType") or "").strip().lower()
-                if lead_type and ("contact" in lead_type or lead_type == "house"):
-                    contact_form_origin = True
-            if attribution_email and not contact_form_origin:
-                try:
-                    prospect = sales_prospect_repository.find_by_contact_email(attribution_email)
-                    if prospect:
-                        prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
-                        prospect_identifier = str(prospect.get("id") or "")
-                        if prospect_contact_form_id or prospect_identifier.startswith("contact_form:"):
-                            contact_form_origin = True
-                except Exception:
-                    contact_form_origin = False
-            if attribution_email and not contact_form_origin and doctor and doctor.get("id"):
-                try:
-                    doctor_prospect = sales_prospect_repository.find_contact_form_by_doctor_id(str(doctor.get("id")))
-                    if doctor_prospect:
-                        contact_form_origin = True
-                except Exception:
-                    contact_form_origin = False
+            force_house_contact_form = bool(attribution_email and attribution_email in house_contact_form_emails)
 
             rep_id = _normalize_rep_id(
                 local_order.get("doctorSalesRepId")
@@ -7220,11 +7252,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 recipient_id = admin_id_by_email[attribution_email]
                 recipient_source = "attribution_email_admin"
 
-            # House commission comes from any order whose attribution email appears in the contact-form
-            # submissions table. This is an *additional* admin split and should not prevent a rep/admin
-            # from earning their normal commission for the same order.
+            # House commission is limited to contact-form prospects intentionally assigned to
+            # the house bucket, such as submissions tied to an admin-owned onboarding code.
             house_commission = False
-            if contact_form_origin and not recipient_id:
+            if force_house_contact_form and not recipient_id:
                 recipient_id = "__house__"
                 house_commission = True
                 recipient_source = "house_contact_form"
@@ -7519,7 +7550,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             elif recipient_id:
                 primary_commission_total = round(base * rate, 2)
 
-            # Additional house commission: split across admins when the order's attribution email is a contact-form email.
+            # Additional house commission: split across admins only for house-owned contact-form leads.
             # Do not double-pay if the primary recipient is already the house bucket.
             house_commission_total = 0.0
             house_allocations: Dict[str, float] = {}

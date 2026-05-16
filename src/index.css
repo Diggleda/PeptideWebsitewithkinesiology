@@ -93,16 +93,11 @@ body.login-view {
 body[data-delegate-theme="true"],
 body[data-delegate-theme="true"].login-view {
   background-color: var(--delegate-session-background-color, var(--email-background-color)) !important;
-  background-image:
-    var(--delegate-session-background-image, var(--email-background-image)),
-    linear-gradient(
-      var(--delegate-session-background-color, var(--email-background-color)),
-      var(--delegate-session-background-color, var(--email-background-color))
-    ) !important;
-  background-size: cover, cover !important;
-  background-position: center, center !important;
-  background-repeat: no-repeat, no-repeat !important;
-  background-attachment: fixed, fixed !important;
+  background-image: var(--delegate-session-background-image, var(--email-background-image)) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-attachment: fixed !important;
 }
 
 body[data-delegate-theme="true"].non-login-bg {
@@ -112,29 +107,34 @@ body[data-delegate-theme="true"].non-login-bg {
 
 body[data-delegate-theme="true"].non-login-bg::before {
   background-color: var(--delegate-session-background-color, var(--email-background-color)) !important;
-  background-image:
-    var(--delegate-session-background-image, var(--email-background-image)),
-    linear-gradient(
-      var(--delegate-session-background-color, var(--email-background-color)),
-      var(--delegate-session-background-color, var(--email-background-color))
-    ) !important;
-  background-size: cover, cover !important;
-  background-position: center, center !important;
-  background-repeat: no-repeat, no-repeat !important;
+  background-image: var(--delegate-session-background-image, var(--email-background-image)) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
 }
 
 body[data-delegate-theme="true"] .dev-theme-root {
   background-color: var(--delegate-session-background-color, var(--email-background-color)) !important;
-  background-image:
-    var(--delegate-session-background-image, var(--email-background-image)),
-    linear-gradient(
-      var(--delegate-session-background-color, var(--email-background-color)),
-      var(--delegate-session-background-color, var(--email-background-color))
-    ) !important;
-  background-size: cover, cover !important;
-  background-position: center, center !important;
-  background-repeat: no-repeat, no-repeat !important;
-  background-attachment: fixed, fixed !important;
+  background-image: var(--delegate-session-background-image, var(--email-background-image)) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-attachment: fixed !important;
+}
+
+.delegate-session-background-layer {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  min-height: 100vh;
+  min-height: 100dvh;
+  pointer-events: none;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  transform: translateZ(0);
 }
 
 #root {
@@ -4841,6 +4841,22 @@ html {
   max-height: 2.4rem !important;
 }
 
+.referral-submit-form {
+  border-color: var(--brand-glass-border-2) !important;
+}
+
+.referral-submit-form :is(input.referral-submit-field, textarea.referral-submit-field),
+.dev-theme-root .referral-submit-form :is(input.referral-submit-field, textarea.referral-submit-field) {
+  border-color: rgb(203, 213, 225) !important;
+}
+
+.referral-submit-form :is(input.referral-submit-field, textarea.referral-submit-field):focus,
+.referral-submit-form :is(input.referral-submit-field, textarea.referral-submit-field):focus-visible,
+.dev-theme-root .referral-submit-form :is(input.referral-submit-field, textarea.referral-submit-field):focus,
+.dev-theme-root .referral-submit-form :is(input.referral-submit-field, textarea.referral-submit-field):focus-visible {
+  border-color: rgb(148, 163, 184) !important;
+}
+
 .referral-sort-toggle {
   border-color: rgba(11, 6, 121, 0.35) !important;
   color: rgb(36, 85, 123) !important;
@@ -7010,18 +7026,10 @@ html {
   text-transform: uppercase;
   padding: 0.1rem 0.6rem;
   border-radius: var(--squircle-sm);
-  background: rgba(11, 6, 121, 0.15);
-  color: rgb(12, 74, 110);
-}
-
-.sales-tracking-row-status {
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 0.1rem 0.6rem;
-  border-radius: var(--squircle-sm);
-  background: rgba(11, 6, 121, 0.15);
-  color: rgb(12, 74, 110);
+  border: 1px solid rgba(11, 6, 121, 0.7);
+  background: rgb(24, 30, 126);
+  color: #ffffff;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.18);
 }
 
 @media (max-width: 1023px) {
@@ -8436,13 +8444,6 @@ body.manufacturing-standards-modal-open .header-account-avatar-shell {
 .sales-doctor-detail-dialog[data-slot="dialog-content"],
 .sales-order-detail-dialog[data-slot="dialog-content"] {
   border: var(--account-modal-border) !important;
-}
-
-.account-modal[data-slot="dialog-content"] > .dialog-close-btn {
-  width: 2rem !important;
-  height: 2rem !important;
-  min-width: 2rem !important;
-  min-height: 2rem !important;
 }
 
 .documentation-modal-layer {
@@ -10782,15 +10783,10 @@ body.theme-clinical[data-delegate-theme="true"] .dev-theme-root {
 
 body.theme-clinical[data-delegate-theme="true"]::before {
   background-color: var(--delegate-session-background-color, var(--theme-page-bg));
-  background-image:
-    var(--delegate-session-background-image, var(--theme-page-image)),
-    linear-gradient(
-      var(--delegate-session-background-color, var(--theme-page-bg)),
-      var(--delegate-session-background-color, var(--theme-page-bg))
-    );
-  background-size: cover, cover;
-  background-position: center, center;
-  background-repeat: no-repeat, no-repeat;
+  background-image: var(--delegate-session-background-image, var(--theme-page-image));
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .theme-leaf {
@@ -10831,15 +10827,10 @@ body.theme-leaf[data-delegate-theme="true"] .dev-theme-root {
 
 body.theme-leaf[data-delegate-theme="true"]::before {
   background-color: var(--delegate-session-background-color, var(--theme-page-bg));
-  background-image:
-    var(--delegate-session-background-image, var(--theme-page-image)),
-    linear-gradient(
-      var(--delegate-session-background-color, var(--theme-page-bg)),
-      var(--delegate-session-background-color, var(--theme-page-bg))
-    );
-  background-size: cover, cover;
-  background-position: center, center;
-  background-repeat: no-repeat, no-repeat;
+  background-image: var(--delegate-session-background-image, var(--theme-page-image));
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 body.theme-clinical[data-delegate-theme="true"] .dev-theme-root,
@@ -11440,28 +11431,29 @@ body.login-view .dev-theme-root {
 }
 
 .dev-theme-root.theme-clinical .sales-rep-dashboard {
-  /* Dashboard blue-glass gradient controls. */
+  /* Dashboard brand-blue liquid glass gradient controls. */
   --dashboard-liquid-gradient-angle: 145deg;
   --dashboard-liquid-gradient-start: 0%;
   --dashboard-liquid-gradient-middle: 50%;
   --dashboard-liquid-gradient-end: 100%;
   --dashboard-liquid-highlight-x: 18%;
   --dashboard-liquid-highlight-y: 0%;
-  --dashboard-liquid-highlight-fade: 34%;
-  --dashboard-liquid-highlight-color: rgba(255, 255, 255, 0.48);
+  --dashboard-liquid-highlight-fade: 28%;
+  --dashboard-liquid-highlight-color: rgba(255, 255, 255, 0.12);
   --dashboard-liquid-glow-x: 92%;
   --dashboard-liquid-glow-y: 110%;
   --dashboard-liquid-glow-fade: 40%;
-  --dashboard-liquid-surface: rgba(55, 126, 186, 0.64);
-  --dashboard-liquid-surface-strong: rgba(127, 199, 239, 0.78);
-  --dashboard-liquid-surface-muted: rgba(34, 101, 165, 0.58);
-  --dashboard-liquid-blue-wash: rgba(151, 229, 252, 0.32);
-  --dashboard-liquid-blue-wash-strong: rgba(151, 229, 252, 0.42);
-  --dashboard-liquid-border: rgba(204, 238, 255, 0.74);
+  --dashboard-liquid-base: rgb(20, 24, 108);
+  --dashboard-liquid-surface: rgba(20, 24, 108, 0.9);
+  --dashboard-liquid-surface-strong: rgba(17, 20, 112, 0.94);
+  --dashboard-liquid-surface-muted: rgba(28, 36, 112, 0.86);
+  --dashboard-liquid-blue-wash: rgba(var(--theme-accent-rgb), 0.08);
+  --dashboard-liquid-blue-wash-strong: rgba(var(--theme-accent-rgb), 0.12);
+  --dashboard-liquid-border: rgba(var(--theme-accent-rgb), 0.46);
   --dashboard-liquid-shadow:
-    0 24px 58px -42px rgba(8, 36, 68, 0.72),
-    0 16px 34px -28px rgba(23, 89, 150, 0.6),
-    inset 0 1px rgba(255, 255, 255, 0.72);
+    0 24px 58px -42px rgba(var(--theme-accent-rgb), 0.52),
+    0 16px 34px -28px rgba(var(--theme-accent-rgb), 0.34),
+    inset 0 1px rgba(255, 255, 255, 0.56);
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
   background:
@@ -11495,6 +11487,7 @@ body.login-view .dev-theme-root {
       var(--dashboard-liquid-surface) var(--dashboard-liquid-gradient-middle),
       var(--dashboard-liquid-surface-muted) var(--dashboard-liquid-gradient-end)
     ) !important;
+  background-color: var(--dashboard-liquid-base) !important;
   border-color: var(--dashboard-liquid-border) !important;
   box-shadow: var(--dashboard-liquid-shadow) !important;
   color: #ffffff !important;
@@ -11625,6 +11618,20 @@ body.login-view .dev-theme-root {
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.95) !important;
 }
 
+.dev-theme-root.theme-clinical .sales-rep-dashboard .admin-revenue-outlook-summary-card__value {
+  color: #ffffff !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard .admin-revenue-outlook-card .sales-rep-chart-body :is(
+  .recharts-cartesian-axis-tick text,
+  .recharts-label,
+  .recharts-text,
+  text
+) {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+}
+
 .dev-theme-root.theme-clinical .sales-rep-dashboard .header-search-input {
   --header-search-border-color: #ffffff;
   border-color: #ffffff !important;
@@ -11698,6 +11705,43 @@ body.login-view .dev-theme-root {
 
 .sales-rep-dashboard .lead-list-item :is(a, button):hover {
   color: rgb(15, 23, 42) !important;
+}
+
+.sales-rep-dashboard .sales-tracking-row-status,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-tracking-row-status,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-rep-lead-grid .lead-panel .sales-tracking-row-status {
+  background: rgb(24, 30, 126) !important;
+  border-color: rgba(11, 6, 121, 0.7) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.sales-rep-dashboard .sales-tracking-row-status *,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-tracking-row-status *,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .sales-rep-lead-grid .lead-panel .sales-tracking-row-status * {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid > .lead-panel {
+  box-shadow:
+    0 14px 30px -26px rgba(15, 23, 42, 0.38),
+    0 8px 18px -16px rgba(var(--theme-accent-rgb), 0.2),
+    inset 0 1px rgba(255, 255, 255, 0.92);
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .lead-list-item.sales-order-card {
+  box-shadow:
+    0 10px 20px -18px rgba(15, 23, 42, 0.36),
+    0 6px 14px -14px rgba(var(--theme-accent-rgb), 0.18),
+    inset 0 1px rgba(255, 255, 255, 0.96);
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .lead-list-item.sales-order-card:hover {
+  box-shadow:
+    0 16px 32px -24px rgba(15, 23, 42, 0.44),
+    0 10px 20px -16px rgba(var(--theme-accent-rgb), 0.28),
+    inset 0 1px rgba(255, 255, 255, 0.98);
 }
 
 .dev-theme-switcher {
@@ -12561,7 +12605,7 @@ body.login-view .dev-theme-root {
   background: var(--theme-surface-liquid) !important;
   background-color: var(--theme-surface-liquid) !important;
   background-image: none !important;
-  border-color: var(--theme-border) !important;
+  border-color: var(--theme-accent) !important;
   box-shadow: var(--theme-shadow-soft) !important;
   color: var(--theme-accent) !important;
 }
@@ -12600,7 +12644,17 @@ body.login-view .dev-theme-root {
 }
 
 .dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-input,
-.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input {
+  background: var(--theme-surface-strong) !important;
+  background-color: var(--theme-surface-strong) !important;
+  background-image: none !important;
+  border-color: var(--theme-accent) !important;
+  box-shadow: var(--theme-shadow-soft) !important;
+  color: var(--theme-accent) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
 .dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
   .shop-home-button,
   .header-account-button,
@@ -12623,19 +12677,156 @@ body.login-view .dev-theme-root {
   .header-cart-button,
   .mobile-search-toggle-button
 )[aria-expanded="true"] {
-  background: var(--theme-surface-strong) !important;
-  background-color: var(--theme-surface-strong) !important;
+  background: var(--theme-accent) !important;
+  background-color: var(--theme-accent) !important;
   background-image: none !important;
-  border-color: var(--theme-border-strong) !important;
+  border-color: var(--theme-accent) !important;
   box-shadow: var(--theme-shadow-soft) !important;
-  color: var(--theme-accent) !important;
+  color: var(--primary-foreground, #ffffff) !important;
   filter: none !important;
   transform: none !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid :is(
+  .shop-home-button:hover,
+  .shop-home-button:focus-visible,
+  .header-account-button:hover,
+  .header-account-button:focus-visible,
+  .header-account-button[data-state="open"],
+  .header-account-button[aria-expanded="true"],
+  .header-cart-button:hover,
+  .header-cart-button:focus-visible,
+  .header-cart-button[data-state="open"],
+  .header-cart-button[aria-expanded="true"],
+  .mobile-search-toggle-button:hover,
+  .mobile-search-toggle-button:focus-visible,
+  .mobile-search-toggle-button[data-state="open"],
+  .mobile-search-toggle-button[aria-expanded="true"]
+) :is(svg, .header-account-name, .mobile-search-icon) {
+  color: var(--primary-foreground, #ffffff) !important;
+  stroke: currentColor !important;
 }
 
 .dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-input::placeholder,
 .dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input::placeholder {
   color: rgba(11, 6, 121, 0.64) !important;
+}
+
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-icon {
+  color: rgb(100, 116, 139) !important;
+  stroke: currentColor !important;
+}
+
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-input,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:hover .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-input,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input {
+  color: rgb(100, 116, 139) !important;
+  caret-color: rgb(100, 116, 139) !important;
+}
+
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-input::placeholder,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-input::placeholder,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:hover .header-search-input::placeholder,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-input::placeholder,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input::placeholder,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-input::placeholder,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-icon,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:hover .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover .header-search-icon,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:focus-within .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within .header-search-icon {
+  color: rgb(100, 116, 139) !important;
+  opacity: 1 !important;
+  stroke: currentColor !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header],
+[data-delegate-theme="true"] [data-app-header] {
+  --app-header-brand-blue: var(--delegate-accent, rgb(11, 6, 121));
+  --app-header-refresh-border: var(--delegate-accent, rgb(11, 6, 121));
+  --app-header-refresh-hover-bg: var(--delegate-accent, rgb(11, 6, 121));
+  --app-header-refresh-hover-text: var(--primary-foreground, #ffffff);
+  --app-header-refresh-text: var(--delegate-accent, rgb(11, 6, 121));
+  --header-search-border-color: var(--delegate-accent, rgb(11, 6, 121));
+}
+
+body[data-delegate-theme="true"] [data-app-header] :is(
+  .header-search-input,
+  button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)
+),
+[data-delegate-theme="true"] [data-app-header] :is(
+  .header-search-input,
+  button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+  color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] .header-search-input,
+[data-delegate-theme="true"] [data-app-header] .header-search-input {
+  caret-color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] .header-search-input::placeholder,
+[data-delegate-theme="true"] [data-app-header] .header-search-input::placeholder,
+body[data-delegate-theme="true"] [data-app-header] .header-search-field:hover .header-search-input::placeholder,
+[data-delegate-theme="true"] [data-app-header] .header-search-field:hover .header-search-input::placeholder,
+body[data-delegate-theme="true"] [data-app-header] .header-search-field:focus-within .header-search-input::placeholder,
+[data-delegate-theme="true"] [data-app-header] .header-search-field:focus-within .header-search-input::placeholder {
+  color: var(--delegate-accent-65, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  opacity: 1 !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg,
+  button.header-cart-button.header-home-button:not(.mobile-search-toggle-button) svg
+),
+[data-delegate-theme="true"] [data-app-header] :is(
+  .header-search-icon,
+  .header-search-clear-button,
+  .header-search-clear-button svg,
+  button.header-cart-button.header-home-button:not(.mobile-search-toggle-button) svg
+) {
+  color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+  stroke: currentColor !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover,
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible,
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"],
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"],
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover,
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible,
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"],
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] {
+  background: var(--delegate-accent, rgb(11, 6, 121)) !important;
+  background-color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+  background-image: none !important;
+  border-color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+  color: var(--primary-foreground, #ffffff) !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover svg,
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible svg,
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"] svg,
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] svg,
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):hover svg,
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible svg,
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"] svg,
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] svg {
+  color: var(--primary-foreground, #ffffff) !important;
+  stroke: currentColor !important;
 }
 
 .dev-theme-root.theme-clinical :is(

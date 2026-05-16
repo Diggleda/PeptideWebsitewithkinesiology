@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from flask import Blueprint, request
 
@@ -78,6 +78,108 @@ def _extract_sales_code(payload: Dict[str, Any], raw_source: Any) -> str:
     if raw_source_text and _source_token(raw_source_text) not in CONTACT_FORM_SOURCE_ALIASES:
         return raw_source_text
     return ""
+
+
+def _normalize_identifier(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _non_house_sales_rep_id(value: Any) -> Optional[str]:
+    rep_id = _normalize_identifier(value)
+    if not rep_id:
+        return None
+    house_id = _normalize_identifier(getattr(sales_prospect_repository, "HOUSE_SALES_REP_ID", "house"))
+    if house_id and rep_id.lower() == house_id.lower():
+        return None
+    return rep_id
+
+
+def _is_admin_role(value: Any) -> bool:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_") == "admin"
+
+
+def _sales_rep_code_is_admin_owned(rep: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(rep, dict):
+        return False
+    if _is_admin_role(rep.get("role")):
+        return True
+
+    legacy_user_id = _normalize_identifier(rep.get("legacyUserId") or rep.get("legacy_user_id"))
+    if legacy_user_id:
+        try:
+            linked_user = user_repository.find_by_id(legacy_user_id)
+        except Exception:
+            linked_user = None
+        if linked_user and _is_admin_role(linked_user.get("role")):
+            return True
+
+    rep_email = str(rep.get("email") or "").strip()
+    if rep_email:
+        try:
+            linked_user = user_repository.find_by_email(rep_email)
+        except Exception:
+            linked_user = None
+        if linked_user and _is_admin_role(linked_user.get("role")):
+            return True
+
+    return False
+
+
+def _resolve_existing_lead_owner(email: str) -> Tuple[Optional[str], Optional[str]]:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email:
+        return None, None
+
+    doctor_id: Optional[str] = None
+    try:
+        user = user_repository.find_by_email(normalized_email)
+    except Exception:
+        logger.warning("Failed to resolve contact form user owner", exc_info=True)
+        user = None
+
+    if user:
+        role = str(user.get("role") or "").strip().lower()
+        if role in ("doctor", "test_doctor"):
+            doctor_id = _normalize_identifier(user.get("id")) or None
+            user_rep_id = _non_house_sales_rep_id(user.get("salesRepId") or user.get("sales_rep_id"))
+            if user_rep_id:
+                return user_rep_id, doctor_id
+
+    if doctor_id:
+        try:
+            doctor_prospect = sales_prospect_repository.find_by_doctor_id(doctor_id)
+        except Exception:
+            logger.warning(
+                "Failed to resolve contact form prospect owner by doctor",
+                extra={"doctorId": doctor_id},
+                exc_info=True,
+            )
+            doctor_prospect = None
+        prospect_rep_id = _non_house_sales_rep_id(
+            (doctor_prospect or {}).get("salesRepId")
+            or (doctor_prospect or {}).get("sales_rep_id")
+        )
+        if prospect_rep_id:
+            return prospect_rep_id, doctor_id
+
+    try:
+        prospect = sales_prospect_repository.find_by_contact_email(normalized_email)
+    except Exception:
+        logger.warning("Failed to resolve contact form prospect owner by email", exc_info=True)
+        prospect = None
+
+    prospect_rep_id = _non_house_sales_rep_id(
+        (prospect or {}).get("salesRepId")
+        or (prospect or {}).get("sales_rep_id")
+    )
+    if prospect_rep_id:
+        prospect_doctor_id = _normalize_identifier(
+            (prospect or {}).get("doctorId")
+            or (prospect or {}).get("doctor_id")
+        )
+        return prospect_rep_id, doctor_id or prospect_doctor_id or None
+
+    return None, doctor_id
 
 
 @blueprint.route("", methods=["POST"], strict_slashes=False)
@@ -163,12 +265,24 @@ def submit_contact():
             # Always add contact form submissions to the generalized prospects table.
             try:
                 if inserted_id:
-                    rep = sales_rep_repository.find_by_sales_code(sales_code) if sales_code else None
+                    existing_rep_id, existing_doctor_id = _resolve_existing_lead_owner(record["email"])
+                    rep = (
+                        sales_rep_repository.find_by_sales_code(sales_code)
+                        if sales_code and not existing_rep_id
+                        else None
+                    )
+                    if existing_rep_id:
+                        sales_rep_id = existing_rep_id
+                    elif _sales_rep_code_is_admin_owned(rep):
+                        sales_rep_id = sales_prospect_repository.HOUSE_SALES_REP_ID
+                    else:
+                        sales_rep_id = str(rep.get("id")) if rep and rep.get("id") else None
                     contact_phones = [record["phone"]] if record["phone"] else []
                     sales_prospect_repository.upsert(
                         {
                             "id": f"contact_form:{inserted_id}",
-                            "salesRepId": str(rep.get("id")) if rep and rep.get("id") else None,
+                            "salesRepId": sales_rep_id,
+                            "doctorId": existing_doctor_id,
                             "contactFormId": str(inserted_id),
                             "sourceSystem": "contact_form",
                             "sourceExternalId": str(inserted_id),

@@ -29452,7 +29452,7 @@ function MainApp() {
 	          )}
 
           <form
-            className="glass-strong squircle-lg p-4 sm:p-6 lg:p-8 mx-0 sm:mx-5 shadow-sm space-y-3 w-full"
+            className="referral-submit-form glass-strong squircle-lg border border-[var(--brand-glass-border-2)] p-4 sm:p-6 lg:p-8 mx-0 sm:mx-5 shadow-sm space-y-3 w-full"
             onSubmit={handleSubmitReferral}
           >
               <div className="grid gap-3 sm:grid-cols-2">
@@ -29474,7 +29474,7 @@ function MainApp() {
                         contactName: event.target.value,
                       }))
                     }
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="referral-submit-field w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
                 <div>
@@ -29494,7 +29494,7 @@ function MainApp() {
                         contactEmail: event.target.value,
                       }))
                     }
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="referral-submit-field w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
                 <div>
@@ -29514,7 +29514,7 @@ function MainApp() {
                         contactPhone: event.target.value,
                       }))
                     }
-                    className="h-[70px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="referral-submit-field h-[70px] w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
                 <div className="sm:col-span-2">
@@ -29533,7 +29533,7 @@ function MainApp() {
                         notes: event.target.value,
                       }))
                     }
-                    className="w-full min-h-[70px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="referral-submit-field w-full min-h-[70px] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
               </div>
@@ -39140,6 +39140,16 @@ function MainApp() {
           : {}),
       }}
     >
+      {isDelegateThemeActive && (
+        <div
+          className="delegate-session-background-layer"
+          aria-hidden="true"
+          style={{
+            backgroundColor: delegateBackgroundColorHex,
+            backgroundImage: delegateBackgroundImageCss,
+          }}
+        />
+      )}
       {infoFocusActive &&
         postLoginHold &&
         user &&
@@ -39423,7 +39433,6 @@ function MainApp() {
 	                    }}
 	                    suppressHomeButton={postLoginHold}
 	                    suppressSearch={postLoginHold}
-	                    suppressAccountHomeButton={false}
 				              onBuyOrderAgain={handleBuyOrderAgain}
 				              onCancelOrder={handleCancelOrder}
 				              referralCodes={referralCodesForHeader}

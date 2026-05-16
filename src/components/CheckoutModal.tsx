@@ -1813,7 +1813,7 @@ export function CheckoutModal({
             <>
               {/* Cart Items */}
               <div className="space-y-4">
-                <h3>Order Summary</h3>
+                <h3>{isDelegateFlow ? 'Summary' : 'Order Summary'}</h3>
                 {showCheckoutOptionsCard && (
                   <div
                     className={`glass-card squircle-lg flex flex-wrap items-center justify-between gap-4 border px-6 py-4 transition-colors ${
@@ -2186,7 +2186,7 @@ export function CheckoutModal({
                                         className="header-home-button squircle-sm gap-2 bg-white text-slate-900"
                                       >
                                         <ShoppingCart className="mr-2 h-4 w-4" />
-                                        Add to order
+                                        {proposalMode ? 'Add to proposal' : 'Add to order'}
                                       </Button>
                                     </div>
                                   </div>
@@ -2306,7 +2306,7 @@ export function CheckoutModal({
                     </div>
                   </div>
                 ) : isDelegateFlow ? (
-                  <div className="glass-card squircle-md border border-[rgba(11,6,121,0.28)] bg-[rgba(11,6,121,0.08)] px-5 py-4">
+                  <div className="glass-card squircle-md border border-[rgba(11,6,121,0.28)] bg-[rgba(11,6,121,0.08)] py-4 pl-7 pr-5 sm:pl-8">
                     <p className="text-sm font-semibold text-slate-900">Shipping is coordinated by your physician.</p>
                     <p className="mt-1 text-sm leading-relaxed text-slate-700">
                       Additional shipping charges may be incurred if your physician has to ship to your address. Coordinate with your physician regarding shipping.
@@ -2449,7 +2449,11 @@ export function CheckoutModal({
 	              {/* Payment Form */}
 	              <div className="space-y-5">
 	                <h3 className="mb-2">Payment Information</h3>
-	                <div className="rounded-xl border border-slate-200 bg-white/70 px-3 py-4 mb-3 text-sm text-slate-700 leading-relaxed">
+	                <div
+	                  className={`rounded-xl border bg-white/70 px-3 py-4 mb-3 text-sm text-slate-700 leading-relaxed ${
+	                    isDelegateFlow ? 'border-black' : 'border-slate-200'
+	                  }`}
+	                >
 	                  <div className="flex items-center gap-2">
 	                    {paymentMethod === "zelle" ? (
 	                      <ArrowLeftRight
@@ -2600,7 +2604,11 @@ export function CheckoutModal({
                   </div>
                 )}
 
-              <div className="flex items-center gap-3 pt-2">
+              <div
+                className={`flex items-center gap-3 ${
+                  isDelegateFlow ? 'rounded-xl border border-black bg-white/70 px-4 py-3' : 'pt-2'
+                }`}
+              >
                 <input
                   type="checkbox"
                   id="physician-terms"
