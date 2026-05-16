@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 class AwardFirstOrderCreditTests(unittest.TestCase):
@@ -75,7 +76,7 @@ class AwardFirstOrderCreditTests(unittest.TestCase):
             sys.modules["requests"] = requests
             sys.modules["requests.auth"] = requests_auth
 
-        from python_backend.services import referral_service
+        from python_backend.services import referral_service, settings_service
 
         fixed_now = "2026-01-27T00:00:00Z"
 
@@ -167,7 +168,6 @@ class AwardFirstOrderCreditTests(unittest.TestCase):
             "referral_repository": referral_service.referral_repository,
             "credit_ledger_repository": referral_service.credit_ledger_repository,
             "sales_prospect_repository": referral_service.sales_prospect_repository,
-            "get_config": referral_service.get_config,
             "_now": referral_service._now,
         }
         try:
@@ -175,10 +175,10 @@ class AwardFirstOrderCreditTests(unittest.TestCase):
             referral_service.referral_repository = FakeReferralRepo()
             referral_service.credit_ledger_repository = FakeLedgerRepo()
             referral_service.sales_prospect_repository = FakeSalesProspectRepo()
-            referral_service.get_config = lambda: types.SimpleNamespace(referral={"fixed_credit_amount": 25.0})
             referral_service._now = lambda: fixed_now
 
-            result = referral_service.award_first_order_credit("p1", "o1", 100.0)
+            with patch.object(settings_service, "get_referral_credit_amount", return_value=25.0):
+                result = referral_service.award_first_order_credit("p1", "o1", 100.0)
             self.assertIsNotNone(result)
 
             self.assertEqual(len(calls["referral_updates"]), 1)

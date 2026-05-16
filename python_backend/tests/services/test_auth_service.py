@@ -12,11 +12,22 @@ sys.modules.setdefault("jwt", types.SimpleNamespace())
 fake_requests = types.ModuleType("requests")
 fake_requests_auth = types.ModuleType("requests.auth")
 
+
+class _FakeRequestException(Exception):
+    pass
+
+
+class _FakeTimeout(_FakeRequestException):
+    pass
+
+
 class _FakeHTTPBasicAuth:
     def __init__(self, *args, **kwargs):
         pass
 
 
+fake_requests.RequestException = _FakeRequestException
+fake_requests.Timeout = _FakeTimeout
 fake_requests_auth.HTTPBasicAuth = _FakeHTTPBasicAuth
 fake_requests.auth = fake_requests_auth
 sys.modules.setdefault("requests", fake_requests)

@@ -3104,18 +3104,12 @@ def handle_order_referral_effects(purchaser_id: str, referral_code: Optional[str
 
 
 def get_referral_credit_amount() -> float:
-    fallback = round(float((get_config().referral or {}).get("fixed_credit_amount", 250.0)), 2)
     try:
         from . import settings_service  # Local import avoids eager module coupling.
 
-        settings = settings_service.get_settings() or {}
-        raw_value = settings.get("referralCreditAmount")
-        if raw_value is None:
-            return fallback
-        amount = round(float(raw_value), 2)
-        return amount if amount > 0 else fallback
+        return settings_service.get_referral_credit_amount()
     except Exception:
-        return fallback
+        return 250.0
 
 
 def award_checkout_referral_commission(referral_code: Optional[str], total: float, purchaser_id: str, order_id: str):
@@ -3292,6 +3286,8 @@ def calculate_doctor_credit_summary(doctor_id: str):
 
 def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: str, referral_id: Optional[str] = None):
     """Manually add a credit to a doctor's account."""
+    if referral_id:
+        amount = get_referral_credit_amount()
     if not doctor_id or not isinstance(amount, (int, float)) or not reason:
         raise _service_error("INVALID_REQUEST", 400)
 

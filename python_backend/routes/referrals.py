@@ -936,7 +936,7 @@ def admin_add_credit():
         reason = _sanitize_string(payload.get("reason"))
         referral_id = payload.get("referralId")
 
-        if not doctor_id or not isinstance(amount, (int, float)) or not reason:
+        if not doctor_id or not reason or (not referral_id and not isinstance(amount, (int, float))):
             raise _error("INVALID_PAYLOAD", 400)
 
         result = referral_service.manually_add_credit(

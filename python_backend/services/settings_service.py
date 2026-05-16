@@ -169,6 +169,20 @@ def _normalize_referral_credit_amount(value: Any) -> float:
     return round(parsed, 2)
 
 
+def _decode_settings_value(raw: Any) -> Any:
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode("utf-8")
+        except Exception:
+            return None
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except Exception:
+            return raw
+    return raw
+
+
 def _normalize_patient_link_default_expiry_hours(value: Any) -> Optional[int]:
     if value in (None, ""):
         return None
@@ -262,19 +276,7 @@ def _load_from_sql() -> Optional[Dict[str, Any]]:
         for row in rows:
             key = (row or {}).get("key")
             if key in DEFAULT_SETTINGS and "value_json" in row:
-                raw = row.get("value_json")
-                if isinstance(raw, (bytes, bytearray)):
-                    try:
-                        raw = raw.decode("utf-8")
-                    except Exception:
-                        raw = None
-                if isinstance(raw, str):
-                    try:
-                        merged[key] = json.loads(raw)
-                    except Exception:
-                        merged[key] = raw
-                else:
-                    merged[key] = raw
+                merged[key] = _decode_settings_value(row.get("value_json"))
         return normalize_settings(merged)
     except Exception:
         logger.warning("settings SQL read failed", exc_info=True)
@@ -362,6 +364,28 @@ def get_settings() -> Dict[str, Any]:
         if isinstance(cached, dict) and expires_at > now:
             return dict(cached)
         return _cache_settings(_read_settings_uncached())
+
+
+def get_referral_credit_amount() -> float:
+    """
+    Return the configured referral credit amount.
+
+    When MySQL is enabled, this reads the `settings.referralCreditAmount` key
+    directly so referral awards follow the shared SQL setting immediately.
+    """
+    if bool(get_config().mysql.get("enabled")):
+        try:
+            row = mysql_client.fetch_one(
+                "SELECT value_json FROM settings WHERE `key` = %(key)s LIMIT 1",
+                {"key": "referralCreditAmount"},
+            )
+            if isinstance(row, dict) and "value_json" in row:
+                return _normalize_referral_credit_amount(_decode_settings_value(row.get("value_json")))
+        except Exception:
+            logger.warning("referralCreditAmount SQL read failed", exc_info=True)
+
+    settings = get_settings()
+    return _normalize_referral_credit_amount(settings.get("referralCreditAmount"))
 
 
 def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:

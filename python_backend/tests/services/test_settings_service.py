@@ -61,6 +61,25 @@ class TestSettingsService(unittest.TestCase):
         self.assertEqual(second["shopEnabled"], False)
         self.assertEqual(second["crmEnabled"], True)
 
+    def test_referral_credit_amount_reads_sql_setting_directly(self):
+        try:
+            from python_backend.services import settings_service as svc
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        with patch.object(svc, "get_config", return_value=SimpleNamespace(mysql={"enabled": True})), patch.object(
+            svc, "mysql_client"
+        ) as mock_mysql_client:
+            mock_mysql_client.fetch_one.return_value = {"value_json": "125.75"}
+
+            amount = svc.get_referral_credit_amount()
+
+        self.assertEqual(amount, 125.75)
+        mock_mysql_client.fetch_one.assert_called_once_with(
+            "SELECT value_json FROM settings WHERE `key` = %(key)s LIMIT 1",
+            {"key": "referralCreditAmount"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
