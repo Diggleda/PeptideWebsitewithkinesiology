@@ -221,6 +221,169 @@ def _prospect_contact_lists(prospect: Optional[Dict]) -> Tuple[List[str], List[s
     return contact_emails, contact_phones
 
 
+def _normalize_phone_digits(value: object) -> str:
+    return re.sub(r"[^0-9]", "", str(value or ""))
+
+
+def _is_contact_form_prospect_record(prospect: Optional[Dict]) -> bool:
+    if not isinstance(prospect, dict):
+        return False
+    if str(prospect.get("id") or "").startswith("contact_form:"):
+        return True
+    return bool(prospect.get("contactFormId") or prospect.get("contact_form_id"))
+
+
+def _prospect_matches_contact_identity(
+    prospect: Dict,
+    contact_emails: set[str],
+    contact_phone_digits: set[str],
+    doctor_ids: set[str],
+) -> bool:
+    if not isinstance(prospect, dict):
+        return False
+    prospect_doctor_id = str(prospect.get("doctorId") or prospect.get("doctor_id") or "").strip()
+    if prospect_doctor_id and prospect_doctor_id in doctor_ids:
+        return True
+    prospect_emails, prospect_phones = _prospect_contact_lists(prospect)
+    if contact_emails and contact_emails.intersection(prospect_emails):
+        return True
+    if contact_phone_digits:
+        prospect_digits = {
+            digits
+            for digits in (_normalize_phone_digits(phone) for phone in prospect_phones)
+            if digits
+        }
+        if contact_phone_digits.intersection(prospect_digits):
+            return True
+    return False
+
+
+def _find_existing_non_contact_form_lead_for_contact(
+    *,
+    sales_rep_id: Optional[str] = None,
+    contact_email: object = None,
+    contact_phone: object = None,
+    prospects: Optional[List[Dict]] = None,
+    require_owner_match: bool = False,
+) -> Optional[Dict]:
+    contact_emails = set(_sanitize_email_list(contact_email))
+    contact_phones = _sanitize_phone_list(contact_phone)
+    contact_phone_digits = {
+        digits
+        for digits in (_normalize_phone_digits(phone) for phone in contact_phones)
+        if digits
+    }
+
+    doctor_ids: set[str] = set()
+    for email in contact_emails:
+        try:
+            user = user_repository.find_by_email(email)
+        except Exception:
+            user = None
+        if not isinstance(user, dict):
+            continue
+        role = _normalize_role(user.get("role"))
+        if role not in ("doctor", "test_doctor"):
+            continue
+        user_id = str(user.get("id") or "").strip()
+        if user_id:
+            doctor_ids.add(user_id)
+
+    if not contact_emails and not contact_phone_digits and not doctor_ids:
+        return None
+
+    raw_owner_aliases = _resolve_sales_rep_owner_aliases(sales_rep_id) if sales_rep_id else set()
+    owner_aliases = {
+        normalized
+        for normalized in (_normalize_sales_rep_owner_id(alias) for alias in raw_owner_aliases)
+        if normalized
+    }
+    candidates_by_key: Dict[str, Dict] = {}
+
+    def add_candidate(candidate: Optional[Dict]) -> None:
+        if not isinstance(candidate, dict):
+            return
+        if _is_contact_form_prospect_record(candidate):
+            return
+        if not _prospect_matches_contact_identity(
+            candidate,
+            contact_emails,
+            contact_phone_digits,
+            doctor_ids,
+        ):
+            return
+        key = str(candidate.get("id") or "").strip()
+        if not key:
+            key = f"candidate:{len(candidates_by_key)}"
+        candidates_by_key[key] = candidate
+
+    if prospects is not None:
+        for prospect in prospects or []:
+            add_candidate(prospect)
+    else:
+        for alias in owner_aliases:
+            for email in contact_emails:
+                try:
+                    add_candidate(sales_prospect_repository.find_by_sales_rep_and_contact_email(alias, email))
+                except Exception:
+                    pass
+            for doctor_id in doctor_ids:
+                try:
+                    add_candidate(sales_prospect_repository.find_by_sales_rep_and_doctor(alias, doctor_id))
+                except Exception:
+                    pass
+        for email in contact_emails:
+            try:
+                add_candidate(sales_prospect_repository.find_by_contact_email(email))
+            except Exception:
+                pass
+        for phone in contact_phones:
+            try:
+                add_candidate(sales_prospect_repository.find_by_contact_phone(phone))
+            except Exception:
+                pass
+        for doctor_id in doctor_ids:
+            try:
+                add_candidate(sales_prospect_repository.find_by_doctor_id(doctor_id))
+            except Exception:
+                pass
+        try:
+            for prospect in sales_prospect_repository.get_all() or []:
+                add_candidate(prospect)
+        except Exception:
+            logger.warning("[prospects] unable to scan existing leads for contact form match", exc_info=True)
+
+    candidates = list(candidates_by_key.values())
+    if not candidates:
+        return None
+
+    def owner_matches(candidate: Dict) -> bool:
+        if not owner_aliases:
+            return False
+        owner = _normalize_sales_rep_owner_id(candidate.get("salesRepId") or candidate.get("sales_rep_id"))
+        return bool(owner and owner in owner_aliases)
+
+    owned_candidates = [candidate for candidate in candidates if owner_matches(candidate)]
+    if require_owner_match:
+        selected = owned_candidates
+    else:
+        selected = owned_candidates or candidates
+    if not selected:
+        return None
+    selected.sort(
+        key=lambda prospect: _normalize_timestamp(prospect.get("updatedAt") or prospect.get("createdAt")),
+        reverse=True,
+    )
+    return selected[0]
+
+
+def _contact_form_is_handled_by_existing_lead(prospect: Optional[Dict]) -> bool:
+    if not isinstance(prospect, dict):
+        return False
+    status = _normalize_status_candidate(prospect.get("status")) or ""
+    return status in {"contacted", "verified", "account_created", "converted", "nuture"}
+
+
 def _contact_form_field_aad(field: str) -> Dict[str, str]:
     return {"table": "contact_forms", "field": field}
 
@@ -1714,40 +1877,7 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     ,sp.office_postal_code AS office_postal_code
                     ,sp.office_country AS office_country
             """
-        if mysql_enabled and sales_rep_id:
-            rows = mysql_client.fetch_all(
-                f"""
-                SELECT
-                    cf.id,
-                    cf.name,
-                    cf.email,
-                    cf.phone,
-                    cf.message,
-                    cf.message_field_key,
-                    cf.message_label,
-                    cf.source,
-                    cf.created_at,
-                    sp.doctor_id AS prospect_doctor_id,
-                    sp.status AS prospect_status,
-                    sp.notes AS prospect_notes,
-                    sp.updated_at AS prospect_updated_at,
-                    sp.reseller_permit_exempt AS reseller_permit_exempt,
-                    sp.reseller_permit_file_path AS reseller_permit_file_path,
-                    sp.reseller_permit_file_name AS reseller_permit_file_name,
-                    sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
-                    ,sp.contact_emails_json AS contact_emails_json
-                    ,sp.contact_phones_json AS contact_phones_json
-                    {address_select}
-                FROM sales_prospects sp
-                JOIN contact_forms cf ON cf.id = sp.contact_form_id
-                WHERE sp.sales_rep_id = %(sales_rep_id)s
-                  AND sp.contact_form_id IS NOT NULL
-                ORDER BY COALESCE(sp.updated_at, cf.created_at) DESC
-                LIMIT 200
-                """,
-                {"sales_rep_id": str(sales_rep_id)},
-            )
-        elif mysql_enabled:
+        if mysql_enabled:
             rows = mysql_client.fetch_all(
                 f"""
                 SELECT
@@ -1801,6 +1931,25 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         )
         rows = []
 
+    matching_prospects_cache: Optional[List[Dict]] = None
+
+    def _matching_prospects() -> List[Dict]:
+        nonlocal matching_prospects_cache
+        if matching_prospects_cache is None:
+            try:
+                matching_prospects_cache = sales_prospect_repository.get_all() or []
+            except Exception:
+                logger.warning("[prospects] unable to load prospects while filtering contact forms", exc_info=True)
+                matching_prospects_cache = []
+        return matching_prospects_cache
+
+    raw_target_owner_aliases = _resolve_sales_rep_owner_aliases(str(sales_rep_id)) if sales_rep_id else set()
+    target_owner_aliases = {
+        normalized
+        for normalized in (_normalize_sales_rep_owner_id(alias) for alias in raw_target_owner_aliases)
+        if normalized
+    }
+
     for row in rows or []:
         created_at_raw = row.get("created_at") or row.get("createdAt")
         created_at = created_at_raw.isoformat() if isinstance(created_at_raw, datetime) else created_at_raw
@@ -1811,6 +1960,35 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
         contact_message = _sanitize_text(_read_contact_form_field(row, "message"), 1000)
         contact_message_field_key, contact_message_label = _contact_form_message_metadata(row)
+        existing_contact_lead = _find_existing_non_contact_form_lead_for_contact(
+            sales_rep_id=sales_rep_id,
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+            prospects=_matching_prospects(),
+            require_owner_match=bool(sales_rep_id),
+        )
+        if sales_rep_id:
+            if _contact_form_is_handled_by_existing_lead(existing_contact_lead):
+                continue
+            if not existing_contact_lead:
+                any_existing_contact_lead = _find_existing_non_contact_form_lead_for_contact(
+                    contact_email=contact_email,
+                    contact_phone=contact_phone,
+                    prospects=_matching_prospects(),
+                )
+                if any_existing_contact_lead:
+                    continue
+            row_owner = _normalize_sales_rep_owner_id(row.get("prospect_sales_rep_id"))
+            if not existing_contact_lead and (not row_owner or row_owner not in target_owner_aliases):
+                continue
+        else:
+            any_existing_contact_lead = _find_existing_non_contact_form_lead_for_contact(
+                contact_email=contact_email,
+                contact_phone=contact_phone,
+                prospects=_matching_prospects(),
+            )
+            if any_existing_contact_lead:
+                continue
         contact_emails = _sanitize_email_list(
             _parse_json_array(row.get("contact_emails_json"))
             if row.get("contact_emails_json") is not None
@@ -1823,8 +2001,12 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         )
         record_id = f"contact_form:{row.get('id')}" if row.get("id") is not None else _generate_unique_code("system")
         status = row.get("prospect_status") or "contact_form"
-        prospect_sales_rep_id = row.get("prospect_sales_rep_id") or None
-        if mysql_enabled and row.get("id") is not None and not row.get("prospect_status"):
+        prospect_sales_rep_id = (
+            (existing_contact_lead or {}).get("salesRepId")
+            or row.get("prospect_sales_rep_id")
+            or None
+        )
+        if mysql_enabled and row.get("id") is not None and not row.get("prospect_status") and not existing_contact_lead:
             # Best-effort backfill so every contact form exists in the generalized prospects table.
             try:
                 sales_prospect_repository.upsert(
@@ -2245,12 +2427,53 @@ def list_referrals_for_sales_rep(
 
     manual_leads = [_make_manual_lead(p) for p in normalized_prospects if _is_manual_prospect(p)]
 
-    # All-scope dashboards and an admin's own scoped dashboard include house
-    # contact-form leads so the To-Do panel can surface inbound site requests.
-    if scope_all or is_admin or include_house_contact_forms:
+    # All-scope dashboards include unmatched house contact-form leads.
+    # An admin's own scoped dashboard also gets their personal matching contact-form
+    # tasks, but not house items that already belong to another rep's lead.
+    if scope_all:
         contact_form_leads = _load_contact_form_referrals(sales_rep_id=None)
+    elif is_admin or include_house_contact_forms:
+        contact_form_leads = []
+        seen_contact_form_ids: set[str] = set()
+        for lead in [
+            *_load_contact_form_referrals(sales_rep_id=str(sales_rep_id)),
+            *_load_contact_form_referrals(sales_rep_id=None),
+        ]:
+            if not isinstance(lead, dict):
+                continue
+            lead_id = str(lead.get("id") or "").strip()
+            if lead_id and lead_id in seen_contact_form_ids:
+                continue
+            if lead_id:
+                seen_contact_form_ids.add(lead_id)
+            contact_form_leads.append(lead)
     else:
-        contact_form_leads = [_make_contact_form_lead(p) for p in normalized_prospects if _is_contact_form_prospect(p)]
+        try:
+            contact_form_leads = _load_contact_form_referrals(sales_rep_id=str(sales_rep_id))
+        except Exception:
+            logger.warning("[referrals] scoped contact form load failed", exc_info=True)
+            contact_form_leads = []
+        seen_contact_form_ids = {str(lead.get("id") or "").strip() for lead in contact_form_leads if isinstance(lead, dict)}
+        for prospect in normalized_prospects:
+            if not _is_contact_form_prospect(prospect):
+                continue
+            contact_emails, contact_phones = _prospect_contact_lists(prospect)
+            existing_contact_lead = _find_existing_non_contact_form_lead_for_contact(
+                sales_rep_id=prospect.get("salesRepId") or sales_rep_id,
+                contact_email=contact_emails,
+                contact_phone=contact_phones,
+                prospects=normalized_prospects,
+                require_owner_match=True,
+            )
+            if _contact_form_is_handled_by_existing_lead(existing_contact_lead):
+                continue
+            lead = _make_contact_form_lead(prospect)
+            lead_id = str(lead.get("id") or "").strip()
+            if lead_id and lead_id in seen_contact_form_ids:
+                continue
+            if lead_id:
+                seen_contact_form_ids.add(lead_id)
+            contact_form_leads.append(lead)
 
     referral_ids: list[str] = []
     for p in normalized_prospects:
@@ -2507,6 +2730,7 @@ def update_referral_for_sales_rep(referral_id: str, sales_rep_id: str, updates: 
 
 def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: Dict) -> Dict:
     contact_form_pk = str(referral_id).replace("contact_form:", "")
+    resolved_sales_rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
     row = mysql_client.fetch_one(
         "SELECT * FROM contact_forms WHERE id = %(id)s",
         {"id": contact_form_pk},
@@ -2514,20 +2738,99 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
     if not row:
         raise _service_error("REFERRAL_NOT_FOUND", 404)
 
-    existing = sales_prospect_repository.find_by_sales_rep_and_contact_form(
-        str(_resolve_user_id(sales_rep_id) or sales_rep_id),
-        str(contact_form_pk),
-    )
-    current_status = (existing.get("status") if existing else None) or "contact_form"
     contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
     contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
     contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
     contact_message = _sanitize_text(_read_contact_form_field(row, "message"), 1000)
     contact_message_field_key, contact_message_label = _contact_form_message_metadata(row)
+    existing_lead = _find_existing_non_contact_form_lead_for_contact(
+        sales_rep_id=resolved_sales_rep_id,
+        contact_email=contact_email,
+        contact_phone=contact_phone,
+        require_owner_match=True,
+    )
+    if not existing_lead:
+        conflicting_lead = _find_existing_non_contact_form_lead_for_contact(
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+        )
+        if conflicting_lead:
+            raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    if existing_lead:
+        current_status = existing_lead.get("status") or "pending"
+        owner_sales_rep_id = str(existing_lead.get("salesRepId") or resolved_sales_rep_id).strip()
+        payload: Dict = {
+            "id": str(existing_lead.get("id")),
+            "salesRepId": owner_sales_rep_id,
+        }
+        if "status" in updates:
+            payload["status"] = _sanitize_referral_status(updates.get("status"), current_status)
+        if "salesRepNotes" in updates:
+            payload["notes"] = _sanitize_notes(updates.get("salesRepNotes"))
+
+        try:
+            saved = sales_prospect_repository.upsert(payload, match_by_contact=False)
+            saved = {**existing_lead, **(saved or payload)}
+        except Exception as exc:
+            logger.warning("[prospects] existing lead update from contact form failed", exc_info=exc)
+            saved = {**existing_lead, **payload}
+
+        try:
+            sales_prospect_repository.delete_by_contact_form_id(str(contact_form_pk))
+        except Exception:
+            logger.warning("[prospects] redundant contact form prospect cleanup failed", exc_info=True)
+
+        created_at = saved.get("createdAt") or (
+            row.get("created_at").isoformat() if isinstance(row.get("created_at"), datetime) else row.get("created_at")
+        )
+        updated_at = saved.get("updatedAt") or created_at
+        contact_emails, contact_phones = _prospect_contact_lists(saved)
+        base = {
+            "id": saved.get("referralId") or saved.get("id"),
+            "referrerDoctorId": None,
+            "salesRepId": saved.get("salesRepId") or owner_sales_rep_id,
+            "referredContactName": saved.get("contactName") or contact_name or "Contact Form Lead",
+            "referredContactEmail": (contact_emails[0] if contact_emails else None) or contact_email,
+            "referredContactPhone": (contact_phones[0] if contact_phones else None) or contact_phone,
+            "contactEmails": contact_emails or _sanitize_email_list(contact_email),
+            "contactPhones": contact_phones or _sanitize_phone_list(contact_phone),
+            "status": saved.get("status") or current_status,
+            "salesRepNotes": saved.get("notes") or None,
+            "notes": saved.get("notes") or None,
+            "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
+            "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
+            "resellerPermitFileName": saved.get("resellerPermitFileName") or None,
+            "resellerPermitUploadedAt": saved.get("resellerPermitUploadedAt") or None,
+            "createdAt": created_at,
+            "updatedAt": updated_at,
+            "convertedDoctorId": saved.get("doctorId") or None,
+            "convertedAt": None,
+            "referredContactHasAccount": False,
+            "referredContactAccountId": None,
+            "referredContactAccountName": None,
+            "referredContactAccountEmail": None,
+            "referredContactAccountCreatedAt": None,
+            "referredContactTotalOrders": 0,
+            "referredContactEligibleForCredit": False,
+            "isManual": bool(saved.get("isManual")) or str(saved.get("id") or "").startswith("manual:"),
+        }
+        return _apply_referred_contact_account_fields(base)
+
+    existing = sales_prospect_repository.find_by_sales_rep_and_contact_form(
+        resolved_sales_rep_id,
+        str(contact_form_pk),
+    )
+    if not existing:
+        try:
+            existing = sales_prospect_repository.find_by_contact_form_id(str(contact_form_pk))
+        except Exception:
+            existing = None
+    current_status = (existing.get("status") if existing else None) or "contact_form"
 
     payload: Dict = {
-        "id": str(referral_id),
-        "salesRepId": str(_resolve_user_id(sales_rep_id) or sales_rep_id),
+        "id": str(existing.get("id") if existing and existing.get("id") else referral_id),
+        "salesRepId": resolved_sales_rep_id,
         "contactFormId": str(contact_form_pk),
         "contactName": contact_name,
         "contactEmail": contact_email,
@@ -2543,7 +2846,7 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         payload["notes"] = _sanitize_notes(updates.get("salesRepNotes"))
 
     try:
-        saved = sales_prospect_repository.upsert(payload)
+        saved = sales_prospect_repository.upsert(payload, match_by_contact=False)
     except Exception as exc:
         logger.warning("[prospects] contact form prospect update failed", exc_info=exc)
         saved = payload
@@ -2553,7 +2856,7 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
     return {
         "id": str(referral_id),
         "referrerDoctorId": None,
-        "salesRepId": str(_resolve_user_id(sales_rep_id) or sales_rep_id),
+        "salesRepId": resolved_sales_rep_id,
         "referredContactName": contact_name or "Contact Form Lead",
         "referredContactEmail": contact_email,
         "referredContactPhone": contact_phone,

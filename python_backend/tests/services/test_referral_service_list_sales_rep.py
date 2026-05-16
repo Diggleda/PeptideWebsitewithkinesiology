@@ -156,7 +156,10 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
             )
 
         self.assertEqual([row["id"] for row in result], ["contact_form:42", "prospect-own"])
-        load_contact_forms.assert_called_once_with(sales_rep_id=None)
+        self.assertEqual(
+            [call.kwargs for call in load_contact_forms.call_args_list],
+            [{"sales_rep_id": "admin-1"}, {"sales_rep_id": None}],
+        )
 
     def test_scope_all_keeps_all_leads_visible_for_sales_lead_overview(self) -> None:
         sales_lead_user = {
@@ -314,6 +317,325 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual(lead["contactFormMessageLabel"], "How can we help each other?")
         self.assertEqual(lead["referredContactName"], "Partner Lead")
         self.assertEqual(lead["referredContactEmail"], "partner@example.com")
+
+    def test_contact_form_status_update_reuses_existing_lead_by_email(self) -> None:
+        existing_lead = {
+            "id": "ref-1",
+            "salesRepId": "rep-1",
+            "referralId": "ref-1",
+            "contactName": "Existing Doctor",
+            "contactEmail": "doctor@example.com",
+            "contactEmails": ["doctor@example.com"],
+            "status": "pending",
+            "createdAt": "2026-04-01T00:00:00Z",
+            "updatedAt": "2026-04-01T00:00:00Z",
+        }
+        contact_form_prospect = {
+            "id": "contact_form:42",
+            "salesRepId": "rep-1",
+            "contactFormId": "42",
+            "contactName": "Existing Doctor",
+            "contactEmail": "doctor@example.com",
+            "contactEmails": ["doctor@example.com"],
+            "status": "contact_form",
+        }
+        contact_form_row = {
+            "id": 42,
+            "name": "Existing Doctor",
+            "email": "doctor@example.com",
+            "phone": "555-0100",
+            "message": "Please call me.",
+            "message_field_key": "question",
+            "message_label": "Type your question here:",
+            "source": "question",
+            "created_at": "2026-04-02T00:00:00Z",
+        }
+
+        def fake_upsert(payload, **_kwargs):
+            return {**existing_lead, **payload, "updatedAt": "2026-04-02T00:00:00Z"}
+
+        with patch.object(service.mysql_client, "fetch_one", return_value=contact_form_row), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value="rep-1"), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_email", return_value=existing_lead), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_email", return_value=contact_form_prospect), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_phone", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_doctor_id", return_value=None), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[contact_form_prospect, existing_lead]), \
+            patch.object(service.sales_prospect_repository, "upsert", side_effect=fake_upsert) as upsert, \
+            patch.object(service.sales_prospect_repository, "delete_by_contact_form_id", return_value=True) as delete_by_contact, \
+            patch.object(service, "_apply_referred_contact_account_fields", side_effect=lambda record: record):
+            result = service.update_referral_for_sales_rep(
+                "contact_form:42",
+                "rep-1",
+                {"status": "contacted"},
+            )
+
+        self.assertEqual(result["id"], "ref-1")
+        self.assertEqual(result["status"], "contacted")
+        self.assertEqual(result["referredContactEmail"], "doctor@example.com")
+        upsert.assert_called_once()
+        payload = upsert.call_args.args[0]
+        self.assertEqual(payload["id"], "ref-1")
+        self.assertEqual(payload["salesRepId"], "rep-1")
+        self.assertEqual(payload["status"], "contacted")
+        self.assertNotIn("contactFormId", payload)
+        self.assertEqual(upsert.call_args.kwargs, {"match_by_contact": False})
+        delete_by_contact.assert_called_once_with("42")
+
+    def test_contact_form_status_update_adds_contact_form_when_lead_missing(self) -> None:
+        contact_form_row = {
+            "id": 43,
+            "name": "New Doctor",
+            "email": "new@example.com",
+            "phone": "555-0101",
+            "message": "Interested.",
+            "message_field_key": "question",
+            "message_label": "Type your question here:",
+            "source": "question",
+            "created_at": "2026-04-03T00:00:00Z",
+        }
+
+        def fake_upsert(payload, **_kwargs):
+            return {**payload, "updatedAt": "2026-04-03T00:00:00Z"}
+
+        with patch.object(service.mysql_client, "fetch_one", return_value=contact_form_row), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value="rep-1"), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_phone", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_doctor_id", return_value=None), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[]), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_form", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_form_id", return_value=None), \
+            patch.object(service.sales_prospect_repository, "upsert", side_effect=fake_upsert) as upsert, \
+            patch.object(service.sales_prospect_repository, "delete_by_contact_form_id", return_value=True) as delete_by_contact:
+            result = service.update_referral_for_sales_rep(
+                "contact_form:43",
+                "rep-1",
+                {"status": "contacted"},
+            )
+
+        self.assertEqual(result["id"], "contact_form:43")
+        self.assertEqual(result["status"], "contacted")
+        self.assertEqual(result["referredContactEmail"], "new@example.com")
+        upsert.assert_called_once()
+        payload = upsert.call_args.args[0]
+        self.assertEqual(payload["id"], "contact_form:43")
+        self.assertEqual(payload["contactFormId"], "43")
+        self.assertEqual(upsert.call_args.kwargs, {"match_by_contact": False})
+        delete_by_contact.assert_not_called()
+
+    def test_handled_contact_form_submission_is_not_backfilled_as_second_lead(self) -> None:
+        existing_lead = {
+            "id": "ref-1",
+            "salesRepId": "rep-1",
+            "referralId": "ref-1",
+            "contactName": "Existing Doctor",
+            "contactEmail": "doctor@example.com",
+            "contactEmails": ["doctor@example.com"],
+            "status": "contacted",
+            "createdAt": "2026-04-01T00:00:00Z",
+            "updatedAt": "2026-04-02T00:00:00Z",
+        }
+
+        def fake_fetch_all(query: str, _params=None):
+            if "SHOW COLUMNS" in query:
+                return []
+            if "FROM contact_forms" in query:
+                return [
+                    {
+                        "id": 42,
+                        "name": "Existing Doctor",
+                        "email": "doctor@example.com",
+                        "phone": "555-0100",
+                        "message": "Please call me.",
+                        "message_field_key": "question",
+                        "message_label": "Type your question here:",
+                        "source": "question",
+                        "created_at": "2026-04-02T00:00:00Z",
+                        "prospect_sales_rep_id": None,
+                        "prospect_doctor_id": None,
+                        "prospect_status": None,
+                        "prospect_notes": None,
+                        "prospect_updated_at": None,
+                        "reseller_permit_exempt": 0,
+                        "reseller_permit_file_path": None,
+                        "reseller_permit_file_name": None,
+                        "reseller_permit_uploaded_at": None,
+                    }
+                ]
+            return []
+
+        with patch.object(service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": True})), \
+            patch.object(service.mysql_client, "fetch_all", side_effect=fake_fetch_all), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[existing_lead]), \
+            patch.object(service.sales_prospect_repository, "upsert") as upsert:
+            records = service._load_contact_form_referrals()
+
+        self.assertEqual(records, [])
+        upsert.assert_not_called()
+
+    def test_admin_house_contact_forms_hide_submissions_matching_other_rep_leads(self) -> None:
+        other_rep_lead = {
+            "id": "ref-other",
+            "salesRepId": "rep-2",
+            "referralId": "ref-other",
+            "contactName": "Other Rep Doctor",
+            "contactEmail": "other@example.com",
+            "contactEmails": ["other@example.com"],
+            "status": "pending",
+            "createdAt": "2026-04-01T00:00:00Z",
+            "updatedAt": "2026-04-01T00:00:00Z",
+        }
+
+        def fake_fetch_all(query: str, _params=None):
+            if "SHOW COLUMNS" in query:
+                return []
+            if "FROM contact_forms" in query:
+                return [
+                    {
+                        "id": 52,
+                        "name": "Other Rep Doctor",
+                        "email": "other@example.com",
+                        "phone": "555-0200",
+                        "message": "Follow up.",
+                        "message_field_key": "question",
+                        "message_label": "Type your question here:",
+                        "source": "question",
+                        "created_at": "2026-04-05T00:00:00Z",
+                        "prospect_sales_rep_id": None,
+                        "prospect_doctor_id": None,
+                        "prospect_status": None,
+                        "prospect_notes": None,
+                        "prospect_updated_at": None,
+                        "reseller_permit_exempt": 0,
+                        "reseller_permit_file_path": None,
+                        "reseller_permit_file_name": None,
+                        "reseller_permit_uploaded_at": None,
+                    }
+                ]
+            return []
+
+        with patch.object(service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": True})), \
+            patch.object(service.mysql_client, "fetch_all", side_effect=fake_fetch_all), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[other_rep_lead]), \
+            patch.object(service.sales_prospect_repository, "upsert") as upsert:
+            records = service._load_contact_form_referrals()
+
+        self.assertEqual(records, [])
+        upsert.assert_not_called()
+
+    def test_rep_scoped_contact_forms_include_house_submission_matching_their_lead(self) -> None:
+        existing_lead = {
+            "id": "ref-1",
+            "salesRepId": "rep-1",
+            "referralId": "ref-1",
+            "contactName": "Rep Doctor",
+            "contactEmail": "repdoctor@example.com",
+            "contactEmails": ["repdoctor@example.com"],
+            "status": "pending",
+            "createdAt": "2026-04-01T00:00:00Z",
+            "updatedAt": "2026-04-01T00:00:00Z",
+        }
+
+        def fake_fetch_all(query: str, _params=None):
+            if "SHOW COLUMNS" in query:
+                return []
+            if "FROM contact_forms" in query:
+                return [
+                    {
+                        "id": 53,
+                        "name": "Rep Doctor",
+                        "email": "repdoctor@example.com",
+                        "phone": "555-0201",
+                        "message": "Please contact me.",
+                        "message_field_key": "question",
+                        "message_label": "Type your question here:",
+                        "source": "question",
+                        "created_at": "2026-04-06T00:00:00Z",
+                        "prospect_sales_rep_id": None,
+                        "prospect_doctor_id": None,
+                        "prospect_status": None,
+                        "prospect_notes": None,
+                        "prospect_updated_at": None,
+                        "reseller_permit_exempt": 0,
+                        "reseller_permit_file_path": None,
+                        "reseller_permit_file_name": None,
+                        "reseller_permit_uploaded_at": None,
+                    }
+                ]
+            return []
+
+        with patch.object(service, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": True})), \
+            patch.object(service.mysql_client, "fetch_all", side_effect=fake_fetch_all), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[existing_lead]), \
+            patch.object(service.sales_prospect_repository, "upsert") as upsert:
+            records = service._load_contact_form_referrals(sales_rep_id="rep-1")
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["id"], "contact_form:53")
+        self.assertEqual(records[0]["salesRepId"], "rep-1")
+        self.assertEqual(records[0]["status"], "contact_form")
+        self.assertEqual(records[0]["referredContactEmail"], "repdoctor@example.com")
+        upsert.assert_not_called()
+
+    def test_admin_cannot_mark_contact_form_for_other_rep_existing_lead(self) -> None:
+        other_rep_lead = {
+            "id": "ref-other",
+            "salesRepId": "rep-2",
+            "referralId": "ref-other",
+            "contactName": "Other Rep Doctor",
+            "contactEmail": "other@example.com",
+            "contactEmails": ["other@example.com"],
+            "status": "pending",
+        }
+        contact_form_row = {
+            "id": 54,
+            "name": "Other Rep Doctor",
+            "email": "other@example.com",
+            "phone": "555-0202",
+            "message": "Follow up.",
+            "message_field_key": "question",
+            "message_label": "Type your question here:",
+            "source": "question",
+            "created_at": "2026-04-07T00:00:00Z",
+        }
+
+        with patch.object(service.mysql_client, "fetch_one", return_value=contact_form_row), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value="admin-1"), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", side_effect=lambda value: {str(value)}), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_email", return_value=other_rep_lead), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_phone", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_doctor_id", return_value=None), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[other_rep_lead]), \
+            patch.object(service.sales_prospect_repository, "upsert") as upsert, \
+            patch.object(service.sales_prospect_repository, "delete_by_contact_form_id") as delete_by_contact:
+            with self.assertRaises(Exception) as context:
+                service.update_referral_for_sales_rep(
+                    "contact_form:54",
+                    "admin-1",
+                    {"status": "contacted"},
+                )
+
+        self.assertEqual(getattr(context.exception, "status", None), 404)
+        upsert.assert_not_called()
+        delete_by_contact.assert_not_called()
 
     def test_accounts_resolve_sales_rep_aliases(self) -> None:
         users = [

@@ -424,6 +424,42 @@ def find_by_sales_rep_and_contact_form(sales_rep_id: str, contact_form_id: str) 
     )
 
 
+def find_by_contact_form_id(contact_form_id: str) -> Optional[Dict]:
+    if not contact_form_id:
+        return None
+    target = str(contact_form_id).strip()
+    if not target:
+        return None
+    canonical_id = f"contact_form:{target}"
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            """
+            SELECT *
+            FROM sales_prospects
+            WHERE contact_form_id = %(contact_form_id)s
+               OR id = %(canonical_id)s
+               OR id = %(contact_form_id)s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            {"contact_form_id": target, "canonical_id": canonical_id},
+        )
+        return _row_to_record(row)
+    matches = [
+        _ensure_defaults(item)
+        for item in _get_store().read()
+        if str(item.get("contactFormId") or "").strip() == target
+        or str(item.get("id") or "").strip() in {target, canonical_id}
+    ]
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda rec: str(rec.get("updatedAt") or rec.get("createdAt") or ""),
+        reverse=True,
+    )
+    return matches[0]
+
+
 def find_by_sales_rep_and_contact_email(sales_rep_id: str, contact_email: str) -> Optional[Dict]:
     if not sales_rep_id or not contact_email:
         return None
