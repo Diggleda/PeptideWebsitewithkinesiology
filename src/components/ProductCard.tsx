@@ -301,7 +301,19 @@ function PdfPreview({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [documentReadyVersion, setDocumentReadyVersion] = useState(0);
-  const [useNativePreview, setUseNativePreview] = useState(preferNativePreview);
+  const [useNativePreview, setUseNativePreview] = useState(
+    () => preferNativePreview || prefersNativePdfPreview(),
+  );
+  const nativePreviewSrc = useMemo(() => {
+    if (!src || src.includes('#')) {
+      return src;
+    }
+    return `${src}#toolbar=0&navpanes=0&scrollbar=1`;
+  }, [src]);
+
+  useEffect(() => {
+    setUseNativePreview(preferNativePreview || prefersNativePdfPreview());
+  }, [preferNativePreview, src]);
 
   useEffect(() => {
     if (loading || error) {
@@ -365,6 +377,13 @@ function PdfPreview({
           return;
         }
         const message = typeof renderError?.message === 'string' ? renderError.message : '';
+        if (shouldFallbackPdfErrorToNative(message)) {
+          container.replaceChildren();
+          setError(null);
+          setLoading(false);
+          setUseNativePreview(true);
+          return;
+        }
         container.replaceChildren();
         setError(message || 'Unable to load document preview.');
         setLoading(false);
@@ -579,6 +598,13 @@ function PdfPreview({
           return;
         }
         const message = typeof renderError?.message === 'string' ? renderError.message : '';
+        if (shouldFallbackPdfErrorToNative(message)) {
+          container.replaceChildren();
+          setError(null);
+          setLoading(false);
+          setUseNativePreview(true);
+          return;
+        }
         container.replaceChildren();
         setError(message || 'Unable to load document preview.');
         setLoading(false);
@@ -602,7 +628,7 @@ function PdfPreview({
   return (
     <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">
       <div
-        className="w-full flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"
+        className="w-full flex-1 min-h-0 min-w-0 overflow-auto"
         ref={viewportRef}
         style={{
           height,
@@ -612,39 +638,17 @@ function PdfPreview({
         }}
       >
       {useNativePreview ? (
-        <div className="h-full w-full min-w-0 overflow-auto bg-white">
-          <div
-            className="origin-top"
+        <div className="h-full w-full min-w-0 overflow-hidden bg-white" style={{ minHeight }}>
+          <iframe
+            src={nativePreviewSrc}
+            title="Document preview"
+            className="block h-full min-h-full w-full bg-white"
             style={{
-              width: '100%',
-              minWidth: '100%',
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
+              height: height || '100%',
+              minHeight,
+              border: '0',
             }}
-          >
-            <object
-              data={src}
-              type="application/pdf"
-              aria-label="Protixa ION System Dossier"
-              className="block h-full w-full bg-white"
-              style={{
-                height,
-                minHeight,
-                border: '0',
-              }}
-            >
-              <iframe
-                src={src}
-                title="Protixa ION System Dossier"
-                className="block h-full w-full bg-white"
-                style={{
-                  height,
-                  minHeight,
-                  border: '0',
-                }}
-              />
-            </object>
-          </div>
+          />
         </div>
       ) : (
         <>
@@ -1748,7 +1752,6 @@ export function ProductCard({
                           Math.abs(current - DEFAULT_DOCUMENT_PREVIEW_SCALE) < 0.001 ? nextScale : current
                         ))}
                         showZoomControls={false}
-                        preferNativePreview
                       />
                     </div>
                   ) : null}
@@ -1772,7 +1775,6 @@ export function ProductCard({
                             Math.abs(current - DEFAULT_DOCUMENT_PREVIEW_SCALE) < 0.001 ? nextScale : current
                           ))}
                           showZoomControls={false}
-                          preferNativePreview
                         />
                       </div>
                     ) : (

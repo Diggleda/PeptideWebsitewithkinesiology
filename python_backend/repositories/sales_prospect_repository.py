@@ -494,6 +494,47 @@ def find_by_sales_rep_and_contact_email(sales_rep_id: str, contact_email: str) -
     return matches[0]
 
 
+def find_by_sales_rep_and_contact_phone(sales_rep_id: str, contact_phone: str) -> Optional[Dict]:
+    if not sales_rep_id or not contact_phone:
+        return None
+    phone_digits = _normalize_phone_digits(contact_phone)
+    if not phone_digits:
+        return None
+    if _using_mysql():
+        rows = mysql_client.fetch_all(
+            """
+            SELECT *
+            FROM sales_prospects
+            WHERE sales_rep_id = %(sales_rep_id)s
+              AND contact_phones_json IS NOT NULL
+            """,
+            {"sales_rep_id": str(sales_rep_id)},
+        )
+        matches = []
+        for row in rows:
+            normalized = _row_to_record(row)
+            if normalized and _record_has_phone(normalized, phone_digits):
+                matches.append(normalized)
+        matches.sort(
+            key=lambda rec: str(rec.get("updatedAt") or rec.get("createdAt") or ""),
+            reverse=True,
+        )
+        return matches[0] if matches else None
+    matches = [
+        _ensure_defaults(item)
+        for item in _get_store().read()
+        if str(item.get("salesRepId") or "") == str(sales_rep_id)
+        and _record_has_phone(item, phone_digits)
+    ]
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda rec: str(rec.get("updatedAt") or rec.get("createdAt") or ""),
+        reverse=True,
+    )
+    return matches[0]
+
+
 def find_by_contact_phone(phone: str) -> Optional[Dict]:
     if not phone:
         return None

@@ -207,7 +207,7 @@ def _prospect_contact_lists(prospect: Optional[Dict]) -> Tuple[List[str], List[s
     )
     if not contact_emails:
         contact_emails = _sanitize_email_list(
-            prospect.get("contactEmail") or prospect.get("contact_email"),
+            prospect.get("contactEmail") or prospect.get("contact_email") or prospect.get("referredContactEmail"),
         )
     contact_phones = _sanitize_phone_list(
         prospect.get("contactPhones")
@@ -216,7 +216,7 @@ def _prospect_contact_lists(prospect: Optional[Dict]) -> Tuple[List[str], List[s
     )
     if not contact_phones:
         contact_phones = _sanitize_phone_list(
-            prospect.get("contactPhone") or prospect.get("contact_phone"),
+            prospect.get("contactPhone") or prospect.get("contact_phone") or prospect.get("referredContactPhone"),
         )
     return contact_emails, contact_phones
 
@@ -325,6 +325,11 @@ def _find_existing_non_contact_form_lead_for_contact(
             for email in contact_emails:
                 try:
                     add_candidate(sales_prospect_repository.find_by_sales_rep_and_contact_email(alias, email))
+                except Exception:
+                    pass
+            for phone in contact_phones:
+                try:
+                    add_candidate(sales_prospect_repository.find_by_sales_rep_and_contact_phone(alias, phone))
                 except Exception:
                     pass
             for doctor_id in doctor_ids:

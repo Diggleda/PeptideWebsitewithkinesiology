@@ -386,6 +386,7 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
             patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
             patch.object(service.user_repository, "find_by_email", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_email", return_value=existing_lead), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_phone", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_contact_email", return_value=contact_form_prospect), \
             patch.object(service.sales_prospect_repository, "find_by_contact_phone", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_doctor_id", return_value=None), \
@@ -411,6 +412,67 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual(upsert.call_args.kwargs, {"match_by_contact": False})
         delete_by_contact.assert_called_once_with("42")
 
+    def test_contact_form_status_update_reuses_existing_lead_by_phone(self) -> None:
+        existing_lead = {
+            "id": "ref-phone",
+            "salesRepId": "rep-1",
+            "referralId": "ref-phone",
+            "contactName": "Phone Match Doctor",
+            "contactEmail": "older@example.com",
+            "contactEmails": ["older@example.com"],
+            "contactPhone": "(555) 010-3333",
+            "contactPhones": ["(555) 010-3333"],
+            "status": "pending",
+            "createdAt": "2026-04-01T00:00:00Z",
+            "updatedAt": "2026-04-01T00:00:00Z",
+        }
+        contact_form_row = {
+            "id": 44,
+            "name": "Phone Match Doctor",
+            "email": "newer@example.com",
+            "phone": "555-010-3333",
+            "message": "Please call me.",
+            "message_field_key": "question",
+            "message_label": "Type your question here:",
+            "source": "question",
+            "created_at": "2026-04-02T00:00:00Z",
+        }
+
+        def fake_upsert(payload, **_kwargs):
+            return {**existing_lead, **payload, "updatedAt": "2026-04-02T00:00:00Z"}
+
+        with patch.object(service.mysql_client, "fetch_one", return_value=contact_form_row), \
+            patch.object(service, "decrypt_text", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value="rep-1"), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_phone", return_value=existing_lead), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_contact_phone", return_value=existing_lead), \
+            patch.object(service.sales_prospect_repository, "find_by_doctor_id", return_value=None), \
+            patch.object(service.sales_prospect_repository, "get_all", return_value=[existing_lead]), \
+            patch.object(service.sales_prospect_repository, "upsert", side_effect=fake_upsert) as upsert, \
+            patch.object(service.sales_prospect_repository, "delete_by_contact_form_id", return_value=True) as delete_by_contact, \
+            patch.object(service, "_apply_referred_contact_account_fields", side_effect=lambda record: record):
+            result = service.update_referral_for_sales_rep(
+                "contact_form:44",
+                "rep-1",
+                {"status": "contacted"},
+            )
+
+        self.assertEqual(result["id"], "ref-phone")
+        self.assertEqual(result["status"], "contacted")
+        self.assertEqual(result["referredContactPhone"], "(555) 010-3333")
+        upsert.assert_called_once()
+        payload = upsert.call_args.args[0]
+        self.assertEqual(payload["id"], "ref-phone")
+        self.assertEqual(payload["salesRepId"], "rep-1")
+        self.assertEqual(payload["status"], "contacted")
+        self.assertNotIn("contactFormId", payload)
+        self.assertEqual(upsert.call_args.kwargs, {"match_by_contact": False})
+        delete_by_contact.assert_called_once_with("44")
+
     def test_contact_form_status_update_adds_contact_form_when_lead_missing(self) -> None:
         contact_form_row = {
             "id": 43,
@@ -433,6 +495,7 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
             patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
             patch.object(service.user_repository, "find_by_email", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_phone", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_contact_email", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_contact_phone", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_doctor_id", return_value=None), \
@@ -646,6 +709,7 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
             patch.object(service, "_resolve_sales_rep_owner_aliases", side_effect=lambda value: {str(value)}), \
             patch.object(service.user_repository, "find_by_email", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep_and_contact_phone", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_contact_email", return_value=other_rep_lead), \
             patch.object(service.sales_prospect_repository, "find_by_contact_phone", return_value=None), \
             patch.object(service.sales_prospect_repository, "find_by_doctor_id", return_value=None), \

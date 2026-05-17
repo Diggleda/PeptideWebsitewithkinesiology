@@ -4609,6 +4609,10 @@ html {
   padding-right: 6.25rem;
 }
 
+.sales-doctor-detail-dialog .sales-doctor-detail-header {
+  position: static;
+}
+
 .sales-doctor-detail-header-row {
   width: 100%;
   max-width: 100%;
