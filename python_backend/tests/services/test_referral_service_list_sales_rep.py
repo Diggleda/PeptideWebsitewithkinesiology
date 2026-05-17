@@ -318,6 +318,32 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         self.assertEqual(lead["referredContactName"], "Partner Lead")
         self.assertEqual(lead["referredContactEmail"], "partner@example.com")
 
+    def test_strict_load_raises_when_scoped_contact_forms_fail(self) -> None:
+        rep_user = {
+            "id": "rep-1",
+            "role": "sales_rep",
+            "email": "rep@example.com",
+            "salesRepId": "rep-1",
+        }
+
+        with patch.object(service, "_resolve_sales_rep_id", return_value=None), \
+            patch.object(service, "_resolve_user_id", return_value=None), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"rep-1"}), \
+            patch.object(service.user_repository, "find_by_id", side_effect=lambda identifier: rep_user if str(identifier) == "rep-1" else None), \
+            patch.object(service.user_repository, "find_by_email", return_value=None), \
+            patch.object(service.sales_prospect_repository, "find_by_sales_rep", return_value=[]), \
+            patch.object(service, "_load_contact_form_referrals", side_effect=RuntimeError("database unavailable")):
+            with self.assertRaises(Exception) as context:
+                service.list_referrals_for_sales_rep(
+                    "rep-1",
+                    scope_all=False,
+                    token_role="sales_rep",
+                    strict_load=True,
+                )
+
+        self.assertEqual(getattr(context.exception, "status", None), 503)
+        self.assertEqual(str(context.exception), "Unable to load active prospects")
+
     def test_contact_form_status_update_reuses_existing_lead_by_email(self) -> None:
         existing_lead = {
             "id": "ref-1",

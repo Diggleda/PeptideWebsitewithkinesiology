@@ -2086,6 +2086,7 @@ def list_referrals_for_sales_rep(
     scope_all: bool = False,
     token_role: Optional[str] = None,
     include_house_contact_forms: bool = False,
+    strict_load: bool = False,
 ):
     """
     Fetch lead records visible to the given sales rep.
@@ -2452,6 +2453,8 @@ def list_referrals_for_sales_rep(
             contact_form_leads = _load_contact_form_referrals(sales_rep_id=str(sales_rep_id))
         except Exception:
             logger.warning("[referrals] scoped contact form load failed", exc_info=True)
+            if strict_load:
+                raise _service_error("Unable to load active prospects", 503)
             contact_form_leads = []
         seen_contact_form_ids = {str(lead.get("id") or "").strip() for lead in contact_form_leads if isinstance(lead, dict)}
         for prospect in normalized_prospects:

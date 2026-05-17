@@ -38,6 +38,21 @@ class ReferralsDashboardScopeTests(unittest.TestCase):
         self.assertEqual(payload["networkUsers"][0]["email"], "doctor@example.com")
         self.assertTrue(payload["_debug"]["activePhysicians"]["scopeAllApplied"])
 
+    def test_modal_dashboard_surfaces_active_prospect_load_failure(self) -> None:
+        app = Flask(__name__)
+        with app.test_request_context("/api/referrals/dashboard?context=modal&include=referrals&salesRepId=rep-1"):
+            g.current_user = {"id": "admin-1", "role": "admin"}
+            with patch.object(referrals, "_ensure_user", return_value={"id": "admin-1", "role": "admin"}), \
+                patch.object(referrals, "_require_sales_rep", return_value=None), \
+                patch.object(referrals.auth_service, "_resolve_sales_rep_record_for_user", return_value=None), \
+                patch.object(referrals.referral_service, "list_referrals_for_sales_rep", side_effect=RuntimeError("database unavailable")):
+                result = referrals.admin_dashboard.__wrapped__()
+
+        body, status = result
+        payload = body.get_json()
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["error"], "Unable to load active prospects")
+
 
 if __name__ == "__main__":
     unittest.main()

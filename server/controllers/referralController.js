@@ -862,6 +862,11 @@ const getDoctorLedger = (req, res, next) => {
       dashboardProspects = await salesProspectRepository.getAll();
     } catch (error) {
       logger.warn({ err: error }, 'Failed to load sales prospects for dashboard');
+      if (requestContext === 'modal') {
+        const prospectError = new Error('Unable to load active prospects');
+        prospectError.status = 503;
+        throw prospectError;
+      }
       dashboardProspects = [];
     }
     // House/contact-form leads are admin-only. Prevent them from showing up for

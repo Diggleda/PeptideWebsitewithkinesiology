@@ -11453,6 +11453,11 @@ function MainApp() {
 				        });
 				        const respObj =
 				          response && typeof response === "object" ? (response as any) : null;
+				        const hasReferralCollection =
+				          Array.isArray(respObj?.referrals) || Array.isArray(respObj?.leads);
+				        if (!respObj || !hasReferralCollection) {
+				          throw new Error("Unable to load active prospects.");
+				        }
 			        const rawUsers = Array.isArray(respObj?.users) ? respObj.users : [];
 			        const userById = new Map<string, any>();
 			        const userIdByEmail = new Map<string, string>();
@@ -11634,7 +11639,14 @@ function MainApp() {
 		    return () => {
 		      canceled = true;
 		    };
-		  }, [referralAPI, salesDoctorDetail?.doctorId, salesDoctorDetail?.role, user?.role]);
+		  }, [
+		    referralAPI,
+		    salesDoctorDetail?.doctorId,
+		    salesDoctorDetail?.ownerSalesRepId,
+		    salesDoctorDetail?.role,
+		    user?.id,
+		    user?.role,
+		  ]);
 
 		  useEffect(() => {
 		    const canSeeOwner =
@@ -18252,7 +18264,7 @@ function MainApp() {
           <span>{saving ? "Beta…" : "Beta"}</span>
           <input
             type="checkbox"
-            className="brand-checkbox"
+            className="brand-checkbox checkbox-on-dark"
             checked={checked}
             disabled={disabled}
             onChange={(event) => {
@@ -30960,7 +30972,7 @@ function MainApp() {
 	              onChange={(e) =>
                   void handleReceiveClientOrderUpdateEmailsToggle(e.target.checked)
                 }
-	              className="brand-checkbox mt-0.5"
+	              className="brand-checkbox checkbox-on-dark mt-0.5"
                 disabled={!user?.id || settingsSaving.receiveClientOrderUpdateEmails}
 	            />
 	            <span className="min-w-0">
@@ -34059,7 +34071,7 @@ function MainApp() {
 				                          aria-label="Enable Enter Dashboard view for users"
 			                          checked={shopEnabled}
 			                          onChange={(e) => handleShopToggle(e.target.checked)}
-			                          className="brand-checkbox mt-0.5"
+			                          className="brand-checkbox checkbox-on-dark mt-0.5"
 			                          disabled={!isAdmin(user.role) || settingsSaving.shop}
 			                        />
 			                        <span className="min-w-0">
@@ -34099,7 +34111,7 @@ function MainApp() {
                                 }
                                 void handlePatientLinksToggle(e.target.checked);
                               }}
-                              className="brand-checkbox mt-0.5"
+                              className="brand-checkbox checkbox-on-dark mt-0.5"
                               disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
                             />
                             <span className="min-w-0">
@@ -34135,7 +34147,7 @@ function MainApp() {
                                 <ChevronRight
                                   className="h-5 w-5 transition-transform duration-200"
                                   style={{
-                                    color: "rgb(11, 6, 121)",
+                                    color: "#ffffff",
                                     transform: patientLinksDoctorsOpen
                                       ? "rotate(90deg)"
                                       : "rotate(0deg)",
@@ -34189,7 +34201,7 @@ function MainApp() {
                                   <ChevronRight
                                     className="h-5 w-5 transition-transform duration-200"
                                     style={{
-                                      color: "rgb(11, 6, 121)",
+                                      color: "#ffffff",
                                       transform: patientLinksDoctorsOpen
                                         ? "rotate(90deg)"
                                         : "rotate(0deg)",
@@ -34301,7 +34313,7 @@ function MainApp() {
 	                              aria-label="Enable CRM for sales users"
 	                              checked={crmEnabled}
 	                              onChange={(e) => handleCrmToggle(e.target.checked)}
-	                              className="brand-checkbox mt-0.5"
+	                              className="brand-checkbox checkbox-on-dark mt-0.5"
 	                              disabled={!isAdmin(user.role) || settingsSaving.crm}
 	                            />
 	                            <span className="min-w-0">
@@ -34338,7 +34350,7 @@ function MainApp() {
 			                          onChange={(e) =>
 			                            handlePeptideForumToggle(e.target.checked)
 			                          }
-			                          className="brand-checkbox mt-0.5"
+			                          className="brand-checkbox checkbox-on-dark mt-0.5"
 			                          disabled={!isAdmin(user.role) || settingsSaving.forum}
 			                        />
 			                        <span className="min-w-0">
@@ -34375,7 +34387,7 @@ function MainApp() {
                               onChange={(e) =>
                                 handlePhysicianMapToggle(e.target.checked)
                               }
-                              className="brand-checkbox mt-0.5"
+                              className="brand-checkbox checkbox-on-dark mt-0.5"
                               disabled={!isAdmin(user.role) || settingsSaving.physicianMap}
                             />
                             <span className="min-w-0">
@@ -34412,7 +34424,7 @@ function MainApp() {
 			                          onChange={(e) =>
 			                            handleResearchDashboardToggle(e.target.checked)
 			                          }
-			                          className="brand-checkbox mt-0.5"
+			                          className="brand-checkbox checkbox-on-dark mt-0.5"
 			                          disabled={
 			                            !isAdmin(user.role) ||
 			                            settingsSaving.research ||
@@ -34455,7 +34467,7 @@ function MainApp() {
 	                              onChange={(e) =>
 	                                handleTestPaymentsOverrideToggle(e.target.checked)
 	                              }
-	                              className="brand-checkbox mt-0.5"
+	                              className="brand-checkbox checkbox-on-dark mt-0.5"
 	                              disabled={!isAdmin(user.role) || settingsSaving.testPaymentsOverride}
 	                            />
 	                            <span className="min-w-0">
@@ -43785,7 +43797,11 @@ function MainApp() {
 			                    <span className="text-[11px] font-semibold text-slate-500">
 		                      {salesRepProspectsLoading
 		                        ? "Loading..."
-		                        : `${(salesRepProspectsForModal || []).length} active`}
+		                        : salesRepProspectsError
+		                          ? "Error"
+		                          : salesRepProspectsForModal === null
+		                            ? "Not loaded"
+		                            : `${salesRepProspectsForModal.length} active`}
 		                    </span>
 		                  </div>
 				                  <p className="mt-1 mb-1 text-xs text-slate-600">
@@ -43802,8 +43818,12 @@ function MainApp() {
 				                    <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
 				                      {salesRepProspectsLoading ? (
 				                        renderSalesDoctorProspectsSkeleton()
-				                      ) : (salesRepProspectsForModal || []).length > 0 ? (
-				                        (salesRepProspectsForModal || []).map((row: any) => {
+				                      ) : salesRepProspectsForModal === null ? (
+			                        <p className="text-xs text-amber-700">
+			                          Active prospects could not be loaded.
+			                        </p>
+			                      ) : salesRepProspectsForModal.length > 0 ? (
+				                        salesRepProspectsForModal.map((row: any) => {
 			                          const listKey = String(
 			                            row?._accountId ||
 			                              row?.id ||

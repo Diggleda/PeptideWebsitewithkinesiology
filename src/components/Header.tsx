@@ -1881,7 +1881,7 @@ export function Header({
   const [signupVerificationSuccess, setSignupVerificationSuccess] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
-  const [researchToolRequestExpanded, setResearchToolRequestExpanded] = useState(true);
+  const [researchToolRequestExpanded, setResearchToolRequestExpanded] = useState(false);
   const [researchToolRequestReport, setResearchToolRequestReport] = useState('');
   const [researchToolRequestSubmitting, setResearchToolRequestSubmitting] = useState(false);
   const [researchToolRequestSuccess, setResearchToolRequestSuccess] = useState('');

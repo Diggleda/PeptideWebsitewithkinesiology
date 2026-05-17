@@ -356,6 +356,8 @@ def admin_dashboard():
         can_scope_all = _can_scope_all_dashboard(token_role, role, sales_rep_role)
         raw_include = str(request.args.get("include") or "").strip().lower()
         includes = {part.strip() for part in raw_include.split(",") if part.strip()}
+        request_context = str(request.args.get("context") or "").strip().lower()
+        strict_active_prospects_load = request_context == "modal"
         debug_active_physicians = (
             str(request.args.get("debug") or "").strip().lower()
             in ("active_physicians", "active-physicians", "activephysicians")
@@ -386,12 +388,18 @@ def admin_dashboard():
         payload = {"version": "python_backend"}
 
         if wants("referrals", "leads"):
-            payload["referrals"] = referral_service.list_referrals_for_sales_rep(
-                target_sales_rep_id,
-                scope_all=scope_all and can_scope_all,
-                token_role=token_role,
-                include_house_contact_forms=include_house_contact_forms,
-            )
+            try:
+                payload["referrals"] = referral_service.list_referrals_for_sales_rep(
+                    target_sales_rep_id,
+                    scope_all=scope_all and can_scope_all,
+                    token_role=token_role,
+                    include_house_contact_forms=include_house_contact_forms,
+                    strict_load=strict_active_prospects_load,
+                )
+            except Exception:
+                if strict_active_prospects_load:
+                    raise _error("Unable to load active prospects", 503)
+                raise
 
         if wants("codes"):
             payload["codes"] = (
