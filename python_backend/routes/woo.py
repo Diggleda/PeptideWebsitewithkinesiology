@@ -27,9 +27,11 @@ from ..utils.security import verify_woocommerce_webhook_signature
 blueprint = Blueprint("woo", __name__, url_prefix="/api/woo")
 logger = getLogger(__name__)
 
-# Certificate uploads are sent as base64 (data URL) via JSON; base64 adds ~33% overhead.
+# Certificate uploads may arrive as multipart files or base64 data URLs.
 # Keep the binary limit reasonably high for scanned COAs while still preventing abuse.
 _COA_MAX_BYTES = int(os.environ.get("COA_MAX_BYTES", str(20 * 1024 * 1024)))  # 20MB default
+_COA_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_COA_PDF_SIGNATURE = b"%PDF-"
 _WOO_MEDIA_FETCH_CONCURRENCY = int(os.environ.get("WOO_MEDIA_FETCH_CONCURRENCY") or 6)
 _WOO_MEDIA_FETCH_CONCURRENCY = max(1, min(_WOO_MEDIA_FETCH_CONCURRENCY, 32))
 _WOO_MEDIA_FETCH_SEMAPHORE = threading.BoundedSemaphore(_WOO_MEDIA_FETCH_CONCURRENCY)
@@ -509,6 +511,49 @@ def _parse_data_url_or_base64(value: str) -> tuple[bytes, str | None]:
     return decoded, mime
 
 
+def _detect_certificate_mime_type(data: bytes) -> str:
+    if not isinstance(data, (bytes, bytearray)) or len(data) == 0:
+        err = ValueError("Document data is required")
+        setattr(err, "status", 400)
+        raise err
+
+    payload = bytes(data)
+    if payload.startswith(_COA_PDF_SIGNATURE):
+        return "application/pdf"
+    if payload.startswith(_COA_PNG_SIGNATURE):
+        return "image/png"
+
+    err = ValueError("Certificate must be a PNG or PDF.")
+    setattr(err, "status", 415)
+    raise err
+
+
+def _default_certificate_filename(mime_type: str | None) -> str:
+    return (
+        "certificate-of-analysis.pdf"
+        if str(mime_type or "").lower().startswith("application/pdf")
+        else "certificate-of-analysis.png"
+    )
+
+
+def _normalize_certificate_filename(filename: str | None, mime_type: str) -> str:
+    extension = ".pdf" if mime_type == "application/pdf" else ".png"
+    raw = str(filename or "").replace("\\", "/").split("/")[-1].strip()
+    cleaned = re.sub(r'["\r\n]+', "", raw)
+    if not cleaned:
+        return _default_certificate_filename(mime_type)
+
+    stem = Path(cleaned).stem.strip() or "certificate-of-analysis"
+    current_ext = Path(cleaned).suffix.lower()
+    if current_ext != extension:
+        cleaned = f"{stem}{extension}"
+
+    max_stem_len = max(1, 255 - len(extension))
+    if len(cleaned) > 255:
+        cleaned = f"{Path(cleaned).stem[:max_stem_len]}{extension}"
+    return cleaned
+
+
 @blueprint.get("/products/<int:product_id>/certificate-of-analysis")
 @require_auth
 def get_certificate_of_analysis(product_id: int):
@@ -535,8 +580,8 @@ def get_certificate_of_analysis(product_id: int):
             setattr(err, "status", 404)
             raise err
 
-        filename = row.get("filename") or "certificate-of-analysis.png"
         mime_type = row.get("mime_type") or "image/png"
+        filename = row.get("filename") or _default_certificate_filename(mime_type)
 
         response = Response(bytes(data), status=200)
         response.headers["Content-Type"] = mime_type
@@ -590,8 +635,8 @@ def get_certificate_of_analysis_delegate(product_id: int):
             setattr(err, "status", 404)
             raise err
 
-        filename = row.get("filename") or "certificate-of-analysis.png"
         mime_type = row.get("mime_type") or "image/png"
+        filename = row.get("filename") or _default_certificate_filename(mime_type)
 
         response = Response(bytes(data), status=200)
         response.headers["Content-Type"] = mime_type
@@ -649,7 +694,6 @@ def upsert_certificate_of_analysis(product_id: int):
         _require_admin()
         decoded: bytes
         filename: str | None = None
-        mime: str = "application/octet-stream"
 
         # Prefer multipart uploads to avoid base64 overhead and proxy limits.
         if request.files and "file" in request.files:
@@ -673,11 +717,10 @@ def upsert_certificate_of_analysis(product_id: int):
 
             decoded = bytes(data)
             filename = (incoming.filename or "").strip() or None
-            mime = (incoming.mimetype or "").strip() or "application/octet-stream"
         else:
             payload = request.get_json(force=True, silent=True) or {}
             data_raw = payload.get("data") or payload.get("dataBase64") or payload.get("dataUrl")
-            decoded, mime_from_payload = _parse_data_url_or_base64(str(data_raw or ""))
+            decoded, _ = _parse_data_url_or_base64(str(data_raw or ""))
             if len(decoded) > _COA_MAX_BYTES:
                 max_mb = round(_COA_MAX_BYTES / (1024 * 1024), 2)
                 err = ValueError(f"Document is too large (max {max_mb} MB).")
@@ -685,11 +728,9 @@ def upsert_certificate_of_analysis(product_id: int):
                 raise err
 
             filename = payload.get("filename") if isinstance(payload.get("filename"), str) else None
-            mime_type = payload.get("mimeType") if isinstance(payload.get("mimeType"), str) else None
-            # Data URL already embeds the true mime; only fall back to explicit mimeType if needed.
-            mime = (mime_from_payload or mime_type or "application/octet-stream").strip()
 
-        filename = filename or "certificate-of-analysis"
+        mime = _detect_certificate_mime_type(decoded)
+        filename = _normalize_certificate_filename(filename, mime)
 
         saved = product_document_repository.upsert_document(
             woo_product_id=int(product_id),

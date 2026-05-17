@@ -1,19 +1,22 @@
+from io import BytesIO
 import unittest
 from unittest.mock import patch
 
 try:
     from flask import Flask
+    from python_backend.middleware import auth as auth_middleware
     from python_backend.routes import woo
     _IMPORT_ERROR = None
 except Exception as exc:  # pragma: no cover - local test env may not include Flask stack
     Flask = None
+    auth_middleware = None
     woo = None
     _IMPORT_ERROR = exc
 
 
 class WooRouteTests(unittest.TestCase):
     def setUp(self) -> None:
-        if Flask is None or woo is None:
+        if Flask is None or woo is None or auth_middleware is None:
             self.skipTest(f"woo route test requires Flask backend dependencies: {_IMPORT_ERROR}")
         self.app = Flask(__name__)
         self.app.register_blueprint(woo.blueprint)
@@ -73,6 +76,64 @@ class WooRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json(), live_payload)
         get_catalog_product.assert_not_called()
         fetch_catalog_proxy.assert_called_once()
+
+    def test_upload_certificate_accepts_pdf_and_normalizes_metadata(self) -> None:
+        calls = []
+
+        def fake_upsert_document(**kwargs):
+            calls.append(kwargs)
+            return {
+                "woo_product_id": kwargs["woo_product_id"],
+                "mime_type": kwargs["mime_type"],
+                "filename": kwargs["filename"],
+            }
+
+        with self.app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            return_value=None,
+        ), patch.object(
+            woo,
+            "_require_admin",
+            return_value=None,
+        ), patch.object(
+            woo.product_document_repository,
+            "upsert_document",
+            side_effect=fake_upsert_document,
+        ):
+            response = client.post(
+                "/api/woo/products/1512/certificate-of-analysis",
+                data={"file": (BytesIO(b"%PDF-1.4\n% test pdf\n"), "batch-coa")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["woo_product_id"], 1512)
+        self.assertEqual(calls[0]["mime_type"], "application/pdf")
+        self.assertEqual(calls[0]["filename"], "batch-coa.pdf")
+
+    def test_upload_certificate_rejects_unsupported_file_type(self) -> None:
+        with self.app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            return_value=None,
+        ), patch.object(
+            woo,
+            "_require_admin",
+            return_value=None,
+        ), patch.object(
+            woo.product_document_repository,
+            "upsert_document",
+        ) as upsert_document:
+            response = client.post(
+                "/api/woo/products/1512/certificate-of-analysis",
+                data={"file": (BytesIO(b"not a certificate"), "coa.txt")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 415)
+        upsert_document.assert_not_called()
 
 
 if __name__ == "__main__":

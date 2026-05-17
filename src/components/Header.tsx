@@ -21,7 +21,6 @@ import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
 import { DoctorProfileForm } from './DoctorProfileForm';
 import { BrandLogoImage } from './BrandLogoImage';
-import { ToolRequestModal } from './ToolRequestModal';
 import delegateLinkBetaImage1 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage1.png';
 import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage2.png';
 import {
@@ -1882,7 +1881,11 @@ export function Header({
   const [signupVerificationSuccess, setSignupVerificationSuccess] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
-  const [researchToolRequestOpen, setResearchToolRequestOpen] = useState(false);
+  const [researchToolRequestExpanded, setResearchToolRequestExpanded] = useState(true);
+  const [researchToolRequestReport, setResearchToolRequestReport] = useState('');
+  const [researchToolRequestSubmitting, setResearchToolRequestSubmitting] = useState(false);
+  const [researchToolRequestSuccess, setResearchToolRequestSuccess] = useState('');
+  const [researchToolRequestError, setResearchToolRequestError] = useState('');
   const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
   const [deleteAccountHoldCount, setDeleteAccountHoldCount] = useState(0);
   const [deleteAccountDeleting, setDeleteAccountDeleting] = useState(false);
@@ -1994,6 +1997,7 @@ export function Header({
     queue: Array<() => void>;
   }>({ active: 0, queue: [] });
   const researchPanelRef = useRef<HTMLDivElement | null>(null);
+  const researchToolRequestFieldRef = useRef<HTMLTextAreaElement | null>(null);
   const accountModalShellRef = useRef<HTMLDivElement | null>(null);
   const accountModalScrollRef = useRef<HTMLDivElement | null>(null);
   const accountTabScrollTopRef = useRef<Partial<Record<AccountTabId, number>>>({});
@@ -2080,64 +2084,57 @@ export function Header({
     expandResearchOverlay();
   }, [collapseResearchOverlay, expandResearchOverlay, researchDashboardExpanded]);
 
-  const openResearchToolRequest = useCallback(() => {
-    storeAccountTabScrollPosition();
-    setLegalModalOpen(true);
-    setResearchToolRequestOpen(true);
-  }, [storeAccountTabScrollPosition]);
-
   const handleResearchToolRequestClick = useCallback((event?: {
     preventDefault?: () => void;
     stopPropagation?: () => void;
   }) => {
     event?.preventDefault();
     event?.stopPropagation();
-    if (typeof window === 'undefined') return;
-    openResearchToolRequest();
-  }, [openResearchToolRequest]);
+    storeAccountTabScrollPosition();
+    setResearchToolRequestExpanded(true);
+    setResearchToolRequestError('');
+    setResearchToolRequestSuccess('');
+    void import('../services/api')
+      .then((api) =>
+        api.usageTrackingAPI.track({
+          event: 'tool_request_clicked',
+          metadata: { source: 'research_tab' },
+        }),
+      )
+      .catch(() => {});
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => researchToolRequestFieldRef.current?.focus());
+    }
+  }, [storeAccountTabScrollPosition]);
 
-  const handleResearchToolRequestClose = useCallback(() => {
-    setResearchToolRequestOpen(false);
-    setLegalModalOpen(false);
-  }, []);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return undefined;
-    const handleNativeToolRequestOpen = (event: Event) => {
-      const target = event.target as HTMLElement | null;
-      if (!target?.closest?.('[data-research-tool-request-trigger="true"]')) {
-        return;
+  const handleResearchToolRequestSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setResearchToolRequestError('');
+    setResearchToolRequestSuccess('');
+    const report = researchToolRequestReport.trim();
+    if (!report) {
+      setResearchToolRequestError('Please describe the tool you want.');
+      return;
+    }
+    setResearchToolRequestSubmitting(true);
+    try {
+      const { api } = await import('../services/api');
+      const res = await api.post('/tool-requests', { report, source: 'research_tab' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Unable to submit tool request.');
       }
-      if (
-        event instanceof globalThis.MouseEvent &&
-        event.type !== 'click' &&
-        event.button !== 0
-      ) {
-        return;
-      }
-      if (
-        typeof globalThis.PointerEvent !== 'undefined' &&
-        event instanceof globalThis.PointerEvent &&
-        event.pointerType === 'mouse' &&
-        event.button !== 0
-      ) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      openResearchToolRequest();
-    };
-    document.addEventListener('pointerdown', handleNativeToolRequestOpen, true);
-    document.addEventListener('mousedown', handleNativeToolRequestOpen, true);
-    document.addEventListener('touchstart', handleNativeToolRequestOpen, true);
-    document.addEventListener('click', handleNativeToolRequestOpen, true);
-    return () => {
-      document.removeEventListener('pointerdown', handleNativeToolRequestOpen, true);
-      document.removeEventListener('mousedown', handleNativeToolRequestOpen, true);
-      document.removeEventListener('touchstart', handleNativeToolRequestOpen, true);
-      document.removeEventListener('click', handleNativeToolRequestOpen, true);
-    };
-  }, [openResearchToolRequest]);
+      setResearchToolRequestReport('');
+      setResearchToolRequestSuccess('Thanks. Your tool request has been submitted.');
+      setResearchToolRequestExpanded(false);
+    } catch (error: any) {
+      setResearchToolRequestError(
+        error?.message || 'Unable to submit tool request. Please try again.',
+      );
+    } finally {
+      setResearchToolRequestSubmitting(false);
+    }
+  }, [researchToolRequestReport]);
 
   useEffect(() => {
     if (accountTab !== 'research') {
@@ -6302,25 +6299,63 @@ export function Header({
   const canSubmitResearchToolRequest = isDoctorRole(effectiveRole) || isAdmin(effectiveRole);
   const researchDevelopmentCopy = "This section is currently in development. Soon you'll be able to access research tools and resources here to share your findings securely and anonymously with the TrufusionLabs network of physicians. We work for you. Think of us as a dedicated workflow development team.";
   const researchToolRequestCta = canSubmitResearchToolRequest ? (
-    <button
-      type="button"
-      data-research-tool-request-trigger="true"
-      className="mx-auto mt-1 inline-flex h-auto min-h-8 max-w-full items-center justify-center gap-2 whitespace-normal squircle-sm px-4 py-2 text-center leading-snug text-white shadow-lg shadow-[rgba(11,6,121,0.18)] transition duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)]"
-      style={{ backgroundColor: 'rgb(11, 6, 121)' }}
-      onPointerDown={(event) => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return;
-        handleResearchToolRequestClick(event);
-      }}
-      onMouseDown={(event) => {
-        if (event.button !== 0) return;
-        handleResearchToolRequestClick(event);
-      }}
-      onTouchStart={handleResearchToolRequestClick}
-      onClick={handleResearchToolRequestClick}
-    >
-      <Pencil className="h-4 w-4" aria-hidden="true" />
-      <span>Have a tool request? We are listening</span>
-    </button>
+    <div className="mx-auto mt-1 flex w-full max-w-xl flex-col items-center gap-3">
+      <button
+        type="button"
+        className="inline-flex h-auto min-h-8 max-w-full items-center justify-center gap-2 whitespace-normal squircle-sm px-4 py-2 text-center leading-snug text-white shadow-lg shadow-[rgba(11,6,121,0.18)] transition duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)]"
+        style={{ backgroundColor: 'rgb(11, 6, 121)' }}
+        onClick={handleResearchToolRequestClick}
+      >
+        <Pencil className="h-4 w-4" aria-hidden="true" />
+        <span>Have a tool request? We are listening</span>
+      </button>
+      {researchToolRequestExpanded ? (
+        <form className="w-full space-y-3 text-left" onSubmit={handleResearchToolRequestSubmit}>
+          <label className="sr-only" htmlFor="research-tool-request-inline">
+            Tool request
+          </label>
+          <Textarea
+            ref={researchToolRequestFieldRef}
+            id="research-tool-request-inline"
+            value={researchToolRequestReport}
+            onChange={(event) => {
+              setResearchToolRequestReport(event.target.value);
+              if (researchToolRequestError) setResearchToolRequestError('');
+              if (researchToolRequestSuccess) setResearchToolRequestSuccess('');
+            }}
+            rows={4}
+            placeholder="Tell us what workflow or research tool would help you."
+            className="min-h-[7rem] resize-y border-2 !border-[rgba(11,6,121,0.35)] bg-white text-sm text-slate-800 shadow-inner placeholder:text-slate-400 focus:!border-[rgb(11,6,121)] focus:ring-[rgba(11,6,121,0.22)]"
+            disabled={researchToolRequestSubmitting}
+          />
+          {researchToolRequestError ? (
+            <p className="text-xs font-medium text-red-600">{researchToolRequestError}</p>
+          ) : null}
+          <div className="flex justify-center sm:justify-end">
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              className="header-home-button squircle-sm bg-white text-slate-900"
+              disabled={researchToolRequestSubmitting}
+            >
+              {researchToolRequestSubmitting ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Submitting...
+                </span>
+              ) : (
+                'Submit request'
+              )}
+            </Button>
+          </div>
+        </form>
+      ) : researchToolRequestSuccess ? (
+        <p className="text-center text-xs font-medium text-emerald-700">
+          {researchToolRequestSuccess}
+        </p>
+      ) : null}
+    </div>
   ) : null;
 
   const researchPlaceholderPanel = (
@@ -9157,6 +9192,7 @@ export function Header({
             </Button>
 			          </DialogTrigger>
 					        <DialogContent
+                    hideCloseButton
 					          className="checkout-modal account-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
                     overlayClassName="bg-slate-950/40"
                     containerClassName="account-modal-layer fixed inset-0 z-[13000] flex items-start justify-center px-3 py-6 sm:px-4 sm:py-8"
@@ -9300,6 +9336,16 @@ export function Header({
                 />
               </div>
             </div>
+            <DialogClose
+              className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+              style={{
+                backgroundColor: 'rgb(11, 6, 121)',
+                borderRadius: '50%',
+              }}
+              aria-label="Close account modal"
+            >
+              <X className="h-4 w-4 text-white" />
+            </DialogClose>
 	          </DialogHeader>
           <div
             ref={accountModalScrollRef}
@@ -9449,11 +9495,6 @@ export function Header({
 	          </div>
 	        </DialogContent>
 	      </Dialog>
-	      <ToolRequestModal
-	        open={researchToolRequestOpen}
-	        source="research_tab"
-	        onClose={handleResearchToolRequestClose}
-	      />
 	      {renderCartButton()}
 	    </>
 	  ) : (

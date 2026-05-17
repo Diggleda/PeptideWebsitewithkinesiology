@@ -76,11 +76,15 @@ const DialogContent = React.forwardRef<
         }
         style={
           containerClassName
-            ? containerStyle
+            ? {
+                overscrollBehavior: "contain",
+                ...containerStyle,
+              }
             : {
                 top: "var(--modal-header-offset, 6rem)",
                 left: 0,
                 right: 0,
+                overscrollBehavior: "contain",
                 ...containerStyle,
               }
         }
@@ -102,6 +106,7 @@ const DialogContent = React.forwardRef<
             maxHeight:
               "calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))",
             margin: "clamp(0.5rem, 3vh, 2rem) auto 1.5rem",
+            overscrollBehavior: "contain",
             willChange: "opacity, transform",
             ...style,
           }}

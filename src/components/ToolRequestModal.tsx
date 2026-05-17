@@ -8,6 +8,7 @@ import { api, usageTrackingAPI } from '../services/api';
 type ToolRequestSource = 'research_tab';
 
 const MODAL_FADE_MS = 65;
+const TOOL_REQUEST_PORTAL_ROOT_ID = 'trufusion-tool-request-modal-root';
 
 const normalizeToolRequestSource = (value: unknown): ToolRequestSource => {
   const raw = typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
@@ -30,6 +31,7 @@ export function ToolRequestModal({ open, source = 'research_tab', onClose }: Too
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [report, setReport] = useState('');
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSource = useMemo(() => normalizeToolRequestSource(source), [source]);
 
@@ -69,6 +71,32 @@ export function ToolRequestModal({ open, source = 'research_tab', onClose }: Too
   }, [activeSource, clearCloseTimer, mounted, open]);
 
   useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
+
+  useEffect(() => {
+    if (!mounted || typeof document === 'undefined') {
+      setPortalRoot(null);
+      return undefined;
+    }
+    let root = document.getElementById(TOOL_REQUEST_PORTAL_ROOT_ID) as HTMLElement | null;
+    if (!root) {
+      root = document.createElement('div');
+      root.id = TOOL_REQUEST_PORTAL_ROOT_ID;
+    }
+    Object.assign(root.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '2147483647',
+      isolation: 'isolate',
+      pointerEvents: 'none',
+    });
+    document.body.appendChild(root);
+    document.body.classList.add('tool-request-modal-open');
+    setPortalRoot(root);
+    return () => {
+      document.body.classList.remove('tool-request-modal-open');
+      setPortalRoot(null);
+    };
+  }, [mounted]);
 
   useEffect(() => {
     if (!mounted || typeof window === 'undefined') return undefined;
@@ -141,7 +169,7 @@ export function ToolRequestModal({ open, source = 'research_tab', onClose }: Too
     }
   };
 
-  if (!mounted || typeof document === 'undefined') {
+  if (!mounted || !portalRoot) {
     return null;
   }
 
@@ -232,6 +260,6 @@ export function ToolRequestModal({ open, source = 'research_tab', onClose }: Too
         </form>
       </div>
     </div>,
-    document.body,
+    portalRoot,
   );
 }

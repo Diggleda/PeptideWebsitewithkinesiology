@@ -10597,8 +10597,6 @@ function MainApp() {
       const activeSalesDoctorDetailWindowKey = salesDoctorDetail
         ? getSalesDoctorDetailWindowKey(salesDoctorDetail)
         : null;
-      const hasMultipleSalesDoctorDetailWindows =
-        salesDoctorDetailStack.length + (salesDoctorDetail ? 1 : 0) > 1;
 		  const salesDoctorDialogContentRef = useRef<HTMLDivElement | null>(null);
 		  const salesDoctorDialogContentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 		  const salesDashboardModalDragRef = useRef<SalesDashboardModalDragState | null>(null);
@@ -11078,13 +11076,13 @@ function MainApp() {
             Math.max(sampleRect?.width || 672, 320),
             Math.max(320, viewportWidth - 16),
           );
-          const independentWindowMaxHeight = Math.max(
+          const viewportLimitedHeight = Math.max(
             360,
-            Math.min(544, viewportHeight - (viewportWidth >= 768 ? 112 : 64)),
+            viewportHeight - 16,
           );
           const height = Math.min(
-            Math.max(sampleRect?.height || independentWindowMaxHeight, 360),
-            independentWindowMaxHeight,
+            Math.max(sampleRect?.height || Math.min(640, viewportLimitedHeight), 360),
+            viewportLimitedHeight,
           );
           const rawCandidates = [
             { x: 0, y: 0 },
@@ -20517,19 +20515,23 @@ function MainApp() {
 	      return;
 	    }
 	    if (!missingCertificatesSelectedFile) {
-	      toast.error("Choose a PNG file first.");
+	      toast.error("Choose a PNG or PDF file first.");
 	      return;
 	    }
 	    const file = missingCertificatesSelectedFile;
-	    const isPng =
-	      file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
-	    if (!isPng) {
-	      toast.error("Certificate must be a PNG.");
+	    const normalizedFileName = file.name.toLowerCase();
+	    const isSupportedCertificate =
+	      file.type === "image/png" ||
+	      file.type === "application/pdf" ||
+	      normalizedFileName.endsWith(".png") ||
+	      normalizedFileName.endsWith(".pdf");
+	    if (!isSupportedCertificate) {
+	      toast.error("Certificate must be a PNG or PDF.");
 	      return;
 	    }
-	    const maxBytes = 8 * 1024 * 1024;
+	    const maxBytes = 20 * 1024 * 1024;
 	    if (file.size > maxBytes) {
-	      toast.error("PNG is too large (max 8 MB).");
+	      toast.error("Certificate is too large (max 20 MB).");
 	      return;
 	    }
 
@@ -35192,7 +35194,7 @@ function MainApp() {
 		                        <div className="flex flex-col gap-1">
 		                          <div className="flex items-center justify-between gap-2">
 		                            <label className="text-xs font-medium text-slate-600">
-		                              PNG certificate
+		                              PDF or PNG certificate
 		                            </label>
 		                            <Button
 		                              type="button"
@@ -35217,12 +35219,12 @@ function MainApp() {
 		                              : missingCertificatesInfoError
 		                                ? "Current: —"
 		                                : missingCertificatesInfo?.exists
-		                                  ? `Current: ${missingCertificatesInfo.filename || "certificate-of-analysis.png"}`
+		                                  ? `Current: ${missingCertificatesInfo.filename || (missingCertificatesInfo.mimeType?.toLowerCase().includes("pdf") ? "certificate-of-analysis.pdf" : "certificate-of-analysis.png")}`
 		                                  : "Current: None"}
 		                          </div>
 		                          <input
 		                            type="file"
-		                            accept="image/png"
+		                            accept="application/pdf,image/png,.pdf,.png"
 		                            onChange={(e) => {
 		                              const file = e.target.files?.[0] ?? null;
 		                              setMissingCertificatesSelectedFile(file);
@@ -42202,11 +42204,7 @@ function MainApp() {
 	              containerClassName={`${salesDashboardDetailModalContainerClassName} sales-dashboard-window-layer`}
 	              containerStyle={getSalesDashboardModalContainerStyle(salesDoctorDetailWindowKey)}
 	              overlayClassName="sales-dashboard-window-overlay"
-	              className={clsx(
-                  "sales-doctor-detail-dialog sales-dashboard-draggable-modal max-w-2xl",
-                  hasMultipleSalesDoctorDetailWindows &&
-                    "sales-dashboard-draggable-modal--independent",
-                )}
+	              className="sales-doctor-detail-dialog sales-dashboard-draggable-modal max-w-2xl"
 	              style={getSalesDashboardModalStyle(salesDoctorDetailWindowKey)}
 	              data-sales-dashboard-draggable-modal="true"
 	              onPointerDownCapture={focusSalesDoctorDetailWindow}
