@@ -25,6 +25,7 @@ interface LegalDocumentContent {
 }
 
 type ContactFormSource = 'question' | 'join_network' | 'partner_application';
+type ToolRequestSource = 'research_tab';
 
 interface ContactFormContent {
   title: string;
@@ -123,6 +124,14 @@ const normalizeBugReportSource = (
   return fallback === 'delegate_link' ? 'delegate_link' : 'footer';
 };
 
+const normalizeToolRequestSource = (value: unknown): ToolRequestSource => {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
+  if (raw === 'research' || raw === 'research_tab' || raw === 'account_research') {
+    return 'research_tab';
+  }
+  return 'research_tab';
+};
+
 export function LegalFooter({
   variant = 'full',
   showContactCTA = true,
@@ -148,10 +157,18 @@ export function LegalFooter({
   const [activeBugReportSource, setActiveBugReportSource] = useState<'footer' | 'delegate_link'>(() =>
     normalizeBugReportSource(undefined, bugReportSource),
   );
+  const [toolRequestOpen, setToolRequestOpen] = useState(false);
+  const [toolRequestVisible, setToolRequestVisible] = useState(false);
+  const [toolRequestSubmitting, setToolRequestSubmitting] = useState(false);
+  const [toolRequestSuccess, setToolRequestSuccess] = useState('');
+  const [toolRequestError, setToolRequestError] = useState('');
+  const [toolRequestReport, setToolRequestReport] = useState('');
+  const [activeToolRequestSource, setActiveToolRequestSource] = useState<ToolRequestSource>('research_tab');
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contactCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bugCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toolRequestCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
   const activeContactFormContent = CONTACT_FORM_CONTENT[activeContactFormSource];
   // Keep this close to the Tailwind `duration-[..]` used below; this controls unmount timing.
@@ -170,7 +187,7 @@ export function LegalFooter({
     const originalOverflow = body.style.overflow;
     const originalPaddingRight = body.style.paddingRight;
 
-    if ((activeDocument || contactOpen || bugOpen) && !isClosing) {
+    if ((activeDocument || contactOpen || bugOpen || toolRequestOpen) && !isClosing) {
       const scrollbarWidth = window.innerWidth - docEl.clientWidth;
       if (!originalPaddingRight && scrollbarWidth > 0) {
         body.style.paddingRight = `${scrollbarWidth}px`;
@@ -185,7 +202,7 @@ export function LegalFooter({
     body.style.overflow = originalOverflow;
     body.style.paddingRight = originalPaddingRight;
     return undefined;
-  }, [activeDocument, contactOpen, bugOpen, isClosing]);
+  }, [activeDocument, contactOpen, bugOpen, toolRequestOpen, isClosing]);
 
   const legalLinks = useMemo(
     () => [
@@ -268,14 +285,14 @@ export function LegalFooter({
   }, [selectedDocument, isClosing, isVisible]);
 
   useEffect(() => {
-    const open = Boolean(selectedDocument || contactOpen || bugOpen);
+    const open = Boolean(selectedDocument || contactOpen || bugOpen || toolRequestOpen);
     window.dispatchEvent(new CustomEvent('trufusion:legal-state', { detail: { open } }));
     return () => {
       if (open) {
         window.dispatchEvent(new CustomEvent('trufusion:legal-state', { detail: { open: false } }));
       }
     };
-  }, [selectedDocument, contactOpen, bugOpen]);
+  }, [selectedDocument, contactOpen, bugOpen, toolRequestOpen]);
 
   useEffect(() => () => {
     if (closeTimerRef.current) {
@@ -289,6 +306,9 @@ export function LegalFooter({
     }
     if (bugCloseTimerRef.current) {
       clearTimeout(bugCloseTimerRef.current);
+    }
+    if (toolRequestCloseTimerRef.current) {
+      clearTimeout(toolRequestCloseTimerRef.current);
     }
   }, []);
 
@@ -441,7 +461,80 @@ export function LegalFooter({
     }
   };
 
-  const shouldBlurBackground = isVisible || isClosing || contactOpen || bugOpen;
+  const handleToolRequestOpen = useCallback((sourceOverride?: unknown) => {
+    const resolvedToolRequestSource = normalizeToolRequestSource(sourceOverride);
+    if (toolRequestCloseTimerRef.current) {
+      clearTimeout(toolRequestCloseTimerRef.current);
+      toolRequestCloseTimerRef.current = null;
+    }
+    setActiveToolRequestSource(resolvedToolRequestSource);
+    setToolRequestError('');
+    setToolRequestSuccess('');
+    void usageTrackingAPI.track({
+      event: 'tool_request_clicked',
+      metadata: { source: resolvedToolRequestSource },
+    }).catch(() => {});
+    setToolRequestOpen(true);
+    const revealToolRequest = () => setToolRequestVisible(true);
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(revealToolRequest);
+    } else {
+      revealToolRequest();
+    }
+  }, []);
+
+  const handleToolRequestClose = useCallback(() => {
+    if (!toolRequestOpen) return;
+    setToolRequestVisible(false);
+    if (toolRequestCloseTimerRef.current) {
+      clearTimeout(toolRequestCloseTimerRef.current);
+    }
+    toolRequestCloseTimerRef.current = setTimeout(() => {
+      setToolRequestOpen(false);
+      toolRequestCloseTimerRef.current = null;
+    }, MODAL_FADE_MS);
+  }, [toolRequestOpen, MODAL_FADE_MS]);
+
+  useEffect(() => {
+    const openToolRequest = (event: Event) => {
+      const sourceOverride =
+        event instanceof CustomEvent
+          ? (event as CustomEvent<{ source?: ToolRequestSource | string }>).detail?.source
+          : undefined;
+      handleToolRequestOpen(sourceOverride);
+    };
+    window.addEventListener('trufusion:open-tool-request', openToolRequest);
+    return () => {
+      window.removeEventListener('trufusion:open-tool-request', openToolRequest);
+    };
+  }, [handleToolRequestOpen]);
+
+  const handleToolRequestSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setToolRequestError('');
+    setToolRequestSuccess('');
+    const report = toolRequestReport.trim();
+    if (!report) {
+      setToolRequestError('Please describe the tool you want.');
+      return;
+    }
+    setToolRequestSubmitting(true);
+    try {
+      const res = await api.post('/tool-requests', { report, source: activeToolRequestSource });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Unable to submit tool request.');
+      }
+      setToolRequestSuccess('Thanks. Your tool request has been submitted.');
+      setToolRequestReport('');
+    } catch (error: any) {
+      setToolRequestError(error?.message || 'Unable to submit tool request. Please try again.');
+    } finally {
+      setToolRequestSubmitting(false);
+    }
+  };
+
+  const shouldBlurBackground = isVisible || isClosing || contactOpen || bugOpen || toolRequestOpen;
 
   return (
     <>
@@ -885,6 +978,92 @@ export function LegalFooter({
                   style={{ backgroundColor: 'rgb(11, 6, 121)' }}
                 >
                   {bugSubmitting ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+      {toolRequestOpen && createPortal(
+        <div
+          className={clsx(
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[55ms] ease-out backdrop-blur-[16px] pointer-events-auto',
+            toolRequestVisible ? 'opacity-100' : 'opacity-0',
+          )}
+          style={{
+            zIndex: 2147483647,
+            willChange: 'opacity',
+            backdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
+            WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
+          }}
+          onClick={handleToolRequestClose}
+          aria-modal="true"
+          role="dialog"
+        >
+          <div
+            className={clsx(
+              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[55ms] ease-out',
+              toolRequestVisible ? 'opacity-100' : 'opacity-0',
+            )}
+            aria-hidden="true"
+            style={{
+              willChange: 'opacity',
+              backdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
+              WebkitBackdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
+            }}
+          />
+          <div
+            className={clsx(
+              supportModalPanelClass,
+              toolRequestVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
+            )}
+            style={{
+              ...supportModalPanelStyle,
+              backgroundColor: 'rgba(245, 251, 255, 0.94)',
+              borderColor: 'rgba(11, 6, 121, 0.65)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(11, 6, 121, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+              <h2 className="flex-1 text-lg font-semibold text-[rgb(11,6,121)]">Tool Request</h2>
+              <button
+                type="button"
+                onClick={handleToolRequestClose}
+                className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                style={{ backgroundColor: 'rgb(11, 6, 121)', borderRadius: '50%' }}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+                <span className="sr-only">Close</span>
+              </button>
+            </div>
+            <form className="px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleToolRequestSubmit}>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700" htmlFor="tool-request">
+                  Tool request
+                </label>
+                <textarea
+                  id="tool-request"
+                  value={toolRequestReport}
+                  onChange={(e) => setToolRequestReport(e.target.value)}
+                  required
+                  rows={6}
+                  className="w-full px-3 py-2 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.25)]"
+                  placeholder="Describe the research tool or resource you would like us to build."
+                />
+              </div>
+              <div className="flex w-full items-center justify-between pt-3 mb-4">
+                <div className="text-sm">
+                  {toolRequestError && <p className="text-red-600" role="alert">{toolRequestError}</p>}
+                  {toolRequestSuccess && <p className="text-emerald-600" role="status">{toolRequestSuccess}</p>}
+                </div>
+                <button
+                  type="submit"
+                  disabled={toolRequestSubmitting}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(11,6,121,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed mb-[3px]"
+                  style={{ backgroundColor: 'rgb(11, 6, 121)' }}
+                >
+                  {toolRequestSubmitting ? 'Sending...' : 'Send'}
                 </button>
               </div>
             </form>

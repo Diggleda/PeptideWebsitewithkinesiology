@@ -21,6 +21,7 @@ import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
 import { DoctorProfileForm } from './DoctorProfileForm';
 import { BrandLogoImage } from './BrandLogoImage';
+import { ToolRequestModal } from './ToolRequestModal';
 import delegateLinkBetaImage1 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage1.png';
 import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage2.png';
 import {
@@ -1881,6 +1882,7 @@ export function Header({
   const [signupVerificationSuccess, setSignupVerificationSuccess] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [researchToolRequestOpen, setResearchToolRequestOpen] = useState(false);
   const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
   const [deleteAccountHoldCount, setDeleteAccountHoldCount] = useState(0);
   const [deleteAccountDeleting, setDeleteAccountDeleting] = useState(false);
@@ -1997,7 +1999,7 @@ export function Header({
   const accountTabScrollTopRef = useRef<Partial<Record<AccountTabId, number>>>({});
   const restoreAccountTabScrollRef = useRef<Partial<Record<AccountTabId, boolean>>>({});
   const researchOverlayTimeoutRef = useRef<number | null>(null);
-  const isResearchFullscreen = accountTab === 'research' && researchDashboardExpanded;
+  const isResearchFullscreen = false;
   const modalFullscreenHeight =
     "calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))";
 
@@ -2077,6 +2079,65 @@ export function Header({
     }
     expandResearchOverlay();
   }, [collapseResearchOverlay, expandResearchOverlay, researchDashboardExpanded]);
+
+  const openResearchToolRequest = useCallback(() => {
+    storeAccountTabScrollPosition();
+    setLegalModalOpen(true);
+    setResearchToolRequestOpen(true);
+  }, [storeAccountTabScrollPosition]);
+
+  const handleResearchToolRequestClick = useCallback((event?: {
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (typeof window === 'undefined') return;
+    openResearchToolRequest();
+  }, [openResearchToolRequest]);
+
+  const handleResearchToolRequestClose = useCallback(() => {
+    setResearchToolRequestOpen(false);
+    setLegalModalOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const handleNativeToolRequestOpen = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest?.('[data-research-tool-request-trigger="true"]')) {
+        return;
+      }
+      if (
+        event instanceof globalThis.MouseEvent &&
+        event.type !== 'click' &&
+        event.button !== 0
+      ) {
+        return;
+      }
+      if (
+        typeof globalThis.PointerEvent !== 'undefined' &&
+        event instanceof globalThis.PointerEvent &&
+        event.pointerType === 'mouse' &&
+        event.button !== 0
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      openResearchToolRequest();
+    };
+    document.addEventListener('pointerdown', handleNativeToolRequestOpen, true);
+    document.addEventListener('mousedown', handleNativeToolRequestOpen, true);
+    document.addEventListener('touchstart', handleNativeToolRequestOpen, true);
+    document.addEventListener('click', handleNativeToolRequestOpen, true);
+    return () => {
+      document.removeEventListener('pointerdown', handleNativeToolRequestOpen, true);
+      document.removeEventListener('mousedown', handleNativeToolRequestOpen, true);
+      document.removeEventListener('touchstart', handleNativeToolRequestOpen, true);
+      document.removeEventListener('click', handleNativeToolRequestOpen, true);
+    };
+  }, [openResearchToolRequest]);
 
   useEffect(() => {
     if (accountTab !== 'research') {
@@ -6237,6 +6298,31 @@ export function Header({
     </div>
   ) : null;
 
+  const effectiveRole = localUser?.role || user?.role || null;
+  const canSubmitResearchToolRequest = isDoctorRole(effectiveRole) || isAdmin(effectiveRole);
+  const researchDevelopmentCopy = "This section is currently in development. Soon you'll be able to access research tools and resources here to share your findings securely and anonymously with the TrufusionLabs network of physicians. We work for you. Think of us as a dedicated workflow development team.";
+  const researchToolRequestCta = canSubmitResearchToolRequest ? (
+    <button
+      type="button"
+      data-research-tool-request-trigger="true"
+      className="mx-auto mt-1 inline-flex h-auto min-h-8 max-w-full items-center justify-center gap-2 whitespace-normal squircle-sm px-4 py-2 text-center leading-snug text-white shadow-lg shadow-[rgba(11,6,121,0.18)] transition duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)]"
+      style={{ backgroundColor: 'rgb(11, 6, 121)' }}
+      onPointerDown={(event) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        handleResearchToolRequestClick(event);
+      }}
+      onMouseDown={(event) => {
+        if (event.button !== 0) return;
+        handleResearchToolRequestClick(event);
+      }}
+      onTouchStart={handleResearchToolRequestClick}
+      onClick={handleResearchToolRequestClick}
+    >
+      <Pencil className="h-4 w-4" aria-hidden="true" />
+      <span>Have a tool request? We are listening</span>
+    </button>
+  ) : null;
+
   const researchPlaceholderPanel = (
     <div
       ref={researchPanelRef}
@@ -6244,42 +6330,27 @@ export function Header({
     >
       <h3 className="text-base font-semibold text-slate-800">Research</h3>
       <p className="text-sm text-slate-600">
-        This section is currently in development. Soon you&apos;ll be able to access research tools and resources here to share your findings securely and anonymously with the TrufusionLabs network of physicians.
+        {researchDevelopmentCopy}
       </p>
+      {researchToolRequestCta}
     </div>
   );
 
   const researchWipPanel = (
     <div
       ref={researchPanelRef}
-      className={clsx(
-        "transition-all duration-300 ease-in-out bg-white",
-        researchDashboardExpanded && "h-full w-full min-h-full",
-        researchDashboardExpanded ? "h-full flex flex-col" : "space-y-4",
-      )}
-    >
-      <div className="flex">
-        <button
-          type="button"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-[rgb(11,6,121)] shadow-[0_10px_18px_-12px_rgba(15,23,42,0.35)] transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)]"
-          aria-label={
-            researchDashboardExpanded
-              ? 'Exit full screen Research dashboard'
-              : 'Expand Research dashboard to full screen'
-          }
-          onClick={toggleResearchOverlay}
-        >
-          {researchDashboardExpanded ? (
-            <Minimize2 className="h-4 w-4" aria-hidden="true" style={{ transform: "scaleX(-1)" }} />
-          ) : (
-            <Maximize2 className="h-4 w-4" aria-hidden="true" style={{ transform: "scaleX(-1)" }} />
-          )}
-        </button>
+      className="space-y-4 bg-white"
+      >
+      <div className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3 bg-white">
+        <h3 className="text-base font-semibold text-slate-800">Research</h3>
+        <p className="text-sm text-slate-600">
+          {researchDevelopmentCopy}
+        </p>
+        {researchToolRequestCta}
       </div>
     </div>
   );
 
-  const effectiveRole = localUser?.role || user?.role || null;
   const canSeeResearchWip =
     isAdmin(effectiveRole)
     || normalizeRole(effectiveRole) === 'test_doctor'
@@ -9378,6 +9449,11 @@ export function Header({
 	          </div>
 	        </DialogContent>
 	      </Dialog>
+	      <ToolRequestModal
+	        open={researchToolRequestOpen}
+	        source="research_tab"
+	        onClose={handleResearchToolRequestClose}
+	      />
 	      {renderCartButton()}
 	    </>
 	  ) : (

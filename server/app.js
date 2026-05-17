@@ -45,6 +45,7 @@ const getReferralRoutes = lazyModule(() => require('./routes/referralRoutes'));
 const getPasswordResetRoutes = lazyModule(() => require('./routes/passwordReset'));
 const getContactRoutes = lazyModule(() => require('./routes/contactRoutes'));
 const getBugRoutes = lazyModule(() => require('./routes/bugRoutes'));
+const getToolRequestRoutes = lazyModule(() => require('./routes/toolRequestRoutes'));
 const getSettingsRoutes = lazyModule(() => require('./routes/settingsRoutes'));
 const getModerationRoutes = lazyModule(() => require('./routes/moderationRoutes'));
 const getPeptideForumRoutes = lazyModule(() => require('./routes/peptideForumRoutes'));
@@ -428,6 +429,7 @@ const createApp = () => {
   app.use('/api/password-reset', lazyRoute(() => getPasswordResetRoutes()));
   app.use('/api/contact', lazyRoute(() => getContactRoutes()));
   app.use('/api/bugs', lazyRoute(() => getBugRoutes()));
+  app.use('/api/tool-requests', lazyRoute(() => getToolRequestRoutes()));
   app.use('/api/settings', lazyRoute(() => getSettingsRoutes()));
   app.use('/api/moderation', lazyRoute(() => getModerationRoutes()));
   app.use('/api/forum', lazyRoute(() => getPeptideForumRoutes()));

@@ -153,6 +153,12 @@ body[data-delegate-theme="true"] .dev-theme-root {
   box-sizing: border-box;
 }
 
+.app-root-shell {
+  padding-top: 0;
+  padding-bottom: var(--safe-area-bottom);
+  box-sizing: border-box;
+}
+
 .post-login-layout {
   display: flex;
   flex-direction: column;
@@ -5415,6 +5421,24 @@ html {
   border-color: rgb(11, 6, 121);
 }
 
+.sales-rep-dashboard .database-visualizer-card :is(
+  button.database-visualizer-button:hover,
+  button.database-visualizer-button:focus-visible,
+  button.database-visualizer-table-button:hover,
+  button.database-visualizer-table-button:focus-visible,
+  button.database-visualizer-table-button.database-visualizer-table-button--active
+),
+.sales-rep-dashboard .database-visualizer-card :is(
+  button.database-visualizer-button:hover,
+  button.database-visualizer-button:focus-visible,
+  button.database-visualizer-table-button:hover,
+  button.database-visualizer-table-button:focus-visible,
+  button.database-visualizer-table-button.database-visualizer-table-button--active
+) * {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
 .sales-rep-card-controls {
   display: flex;
   flex-wrap: wrap;
@@ -8359,9 +8383,10 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 
 [data-app-header] {
   position: fixed !important;
-  inset: 0 0 auto 0 !important;
-  inset-block-start: 0 !important;
-  top: 0 !important;
+  inset: -2px 0 auto 0 !important;
+  inset-block-start: -2px !important;
+  top: -2px !important;
+  padding-top: 2px;
   margin-top: 0 !important;
   box-sizing: border-box;
   flex: 0 0 auto !important;
@@ -11989,6 +12014,10 @@ body.login-view .dev-theme-root {
   will-change: left, top;
 }
 
+.sales-dashboard-detail-modal-layer.sales-dashboard-window-layer .sales-dashboard-draggable-modal--independent[data-slot="dialog-content"] {
+  max-height: min(34rem, calc(100dvh - 7rem)) !important;
+}
+
 .sales-dashboard-draggable-modal-titlebar {
   cursor: grab;
   user-select: none;
@@ -12042,6 +12071,10 @@ body.login-view .dev-theme-root {
     width: calc(100vw - 1rem) !important;
     max-width: calc(100vw - 1rem) !important;
     max-height: calc(100dvh - 1rem) !important;
+  }
+
+  .sales-dashboard-detail-modal-layer.sales-dashboard-window-layer .sales-dashboard-draggable-modal--independent[data-slot="dialog-content"] {
+    max-height: calc(100dvh - 4rem) !important;
   }
 }
 
@@ -12866,13 +12899,14 @@ body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.hea
 
 .marketing-landing__header {
   position: fixed;
-  inset: 0 0 auto 0;
-  inset-block-start: 0;
-  top: 0;
+  inset: -2px 0 auto 0;
+  inset-block-start: -2px;
+  top: -2px;
   left: 0;
   right: 0;
   z-index: 110;
   width: 100%;
+  padding-top: 2px;
   margin-top: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.66);
   background:

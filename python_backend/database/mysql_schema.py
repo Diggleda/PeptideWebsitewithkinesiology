@@ -326,6 +326,17 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS tool_requests (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(64) NULL,
+        name LONGTEXT NULL,
+        email LONGTEXT NULL,
+        report LONGTEXT NOT NULL,
+        source VARCHAR(64) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS tax_tracking (
         state_code CHAR(2) PRIMARY KEY,
         state_name VARCHAR(64) NOT NULL UNIQUE,
@@ -865,6 +876,10 @@ def ensure_schema() -> None:
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS name LONGTEXT NULL",
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS email LONGTEXT NULL",
         "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS source VARCHAR(64) NULL",
+        "ALTER TABLE tool_requests ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) NULL",
+        "ALTER TABLE tool_requests ADD COLUMN IF NOT EXISTS name LONGTEXT NULL",
+        "ALTER TABLE tool_requests ADD COLUMN IF NOT EXISTS email LONGTEXT NULL",
+        "ALTER TABLE tool_requests ADD COLUMN IF NOT EXISTS source VARCHAR(64) NULL",
     ]
     for stmt in migrations:
         try:
@@ -1346,6 +1361,25 @@ def ensure_schema() -> None:
         _drop_column_if_exists("bugs_reported", "name_encrypted")
         _drop_column_if_exists("bugs_reported", "email_encrypted")
         _drop_column_if_exists("bugs_reported", "report_encrypted")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("tool_requests", "name"):
+            mysql_client.execute("ALTER TABLE tool_requests ADD COLUMN name LONGTEXT NULL")
+        if not _column_exists("tool_requests", "email"):
+            mysql_client.execute("ALTER TABLE tool_requests ADD COLUMN email LONGTEXT NULL")
+        if not _column_exists("tool_requests", "source"):
+            mysql_client.execute("ALTER TABLE tool_requests ADD COLUMN source VARCHAR(64) NULL")
+        mysql_client.execute("ALTER TABLE tool_requests MODIFY COLUMN name LONGTEXT NULL")
+        mysql_client.execute("ALTER TABLE tool_requests MODIFY COLUMN email LONGTEXT NULL")
+        mysql_client.execute("ALTER TABLE tool_requests MODIFY COLUMN source VARCHAR(64) NULL")
+        _copy_legacy_ciphertext("tool_requests", "name", "name_encrypted")
+        _copy_legacy_ciphertext("tool_requests", "email", "email_encrypted")
+        _copy_legacy_ciphertext("tool_requests", "report", "report_encrypted", placeholder="[ENCRYPTED]")
+        _drop_column_if_exists("tool_requests", "name_encrypted")
+        _drop_column_if_exists("tool_requests", "email_encrypted")
+        _drop_column_if_exists("tool_requests", "report_encrypted")
     except Exception:
         pass
 

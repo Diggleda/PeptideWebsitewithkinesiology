@@ -198,7 +198,17 @@ type CalendarWindowPositionOptions = {
   preferOutsideBoundary?: boolean;
 };
 
-type SalesDashboardDraggableModalKey = "salesDoctorDetail" | "salesOrderDetail";
+type SalesDashboardDraggableModalKey = string;
+
+const SALES_ORDER_DETAIL_MODAL_KEY = "salesOrderDetail";
+
+const getSalesDoctorDetailWindowKey = (
+  detail: { doctorId?: unknown; referralId?: unknown } | null | undefined,
+) => {
+  const doctorId = String(detail?.doctorId || "user").trim() || "user";
+  const referralId = String(detail?.referralId || "").trim();
+  return `salesDoctorDetail:${doctorId}:${referralId}`;
+};
 
 type SalesDashboardModalDragState = {
   key: SalesDashboardDraggableModalKey;
@@ -239,6 +249,15 @@ const clampCenteredViewportOffset = (
     maxCenter,
   );
   return Math.round(clampedCenter - safeViewportSize / 2);
+};
+
+const getRectOverlapArea = (
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number },
+) => {
+  const width = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const height = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return width * height;
 };
 
 const stabilizeViewportDragBounds = (min: number, max: number) =>
@@ -10575,20 +10594,25 @@ function MainApp() {
       useEffect(() => {
         salesDoctorDetailStackRef.current = salesDoctorDetailStack;
       }, [salesDoctorDetailStack]);
+      const activeSalesDoctorDetailWindowKey = salesDoctorDetail
+        ? getSalesDoctorDetailWindowKey(salesDoctorDetail)
+        : null;
+      const hasMultipleSalesDoctorDetailWindows =
+        salesDoctorDetailStack.length + (salesDoctorDetail ? 1 : 0) > 1;
 		  const salesDoctorDialogContentRef = useRef<HTMLDivElement | null>(null);
+		  const salesDoctorDialogContentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 		  const salesDashboardModalDragRef = useRef<SalesDashboardModalDragState | null>(null);
 		  const salesDashboardModalZIndexRef = useRef(14030);
+      const salesDashboardModalTopKeyRef = useRef<SalesDashboardDraggableModalKey | null>(null);
 		  const [salesDashboardModalOffsets, setSalesDashboardModalOffsets] = useState<
 		    Record<SalesDashboardDraggableModalKey, { x: number; y: number }>
 		  >({
-		    salesDoctorDetail: { x: 0, y: 0 },
-		    salesOrderDetail: { x: 0, y: 0 },
+		    [SALES_ORDER_DETAIL_MODAL_KEY]: { x: 0, y: 0 },
 		  });
 		  const [salesDashboardModalZIndexes, setSalesDashboardModalZIndexes] = useState<
 		    Record<SalesDashboardDraggableModalKey, number>
 		  >({
-		    salesDoctorDetail: 14020,
-		    salesOrderDetail: 14030,
+		    [SALES_ORDER_DETAIL_MODAL_KEY]: 14030,
 		  });
 		  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
       const [salesDoctorDetailHydrating, setSalesDoctorDetailHydrating] = useState(false);
@@ -10937,18 +10961,48 @@ function MainApp() {
         salesDoctorDetail?.doctorId,
       ]);
 
+        const clearSalesDashboardModalWindowState = useCallback(
+          (key: SalesDashboardDraggableModalKey) => {
+            if (!key || key === SALES_ORDER_DETAIL_MODAL_KEY) {
+              return;
+            }
+            if (salesDashboardModalTopKeyRef.current === key) {
+              salesDashboardModalTopKeyRef.current = null;
+            }
+            delete salesDoctorDialogContentRefs.current[key];
+            setSalesDashboardModalOffsets((current) => {
+              if (!Object.prototype.hasOwnProperty.call(current, key)) return current;
+              const { [key]: _removed, ...rest } = current;
+              return rest;
+            });
+            setSalesDashboardModalZIndexes((current) => {
+              if (!Object.prototype.hasOwnProperty.call(current, key)) return current;
+              const { [key]: _removed, ...rest } = current;
+              return rest;
+            });
+          },
+          [],
+        );
+
         const closeTopSalesDoctorDetailModal = useCallback(() => {
-          const stack = salesDoctorDetailStackRef.current;
-          if (stack.length > 0) {
-            const restored = stack[stack.length - 1];
-            setSalesDoctorDetailStack(stack.slice(0, -1));
-            setSalesDoctorDetail(restored);
-          } else {
-            setSalesDoctorDetail(null);
+          const current = salesDoctorDetailRef.current;
+          if (current) {
+            clearSalesDashboardModalWindowState(getSalesDoctorDetailWindowKey(current));
           }
+          setSalesDoctorDetail(null);
           setSalesDoctorDetailLoading(false);
           setSalesDoctorDetailHydrating(false);
-        }, []);
+        }, [clearSalesDashboardModalWindowState]);
+
+        const closeSalesDoctorDetailStackWindow = useCallback((index: number) => {
+          const removed = salesDoctorDetailStackRef.current[index];
+          if (removed) {
+            clearSalesDashboardModalWindowState(getSalesDoctorDetailWindowKey(removed));
+          }
+          setSalesDoctorDetailStack((current) =>
+            current.filter((_, entryIndex) => entryIndex !== index),
+          );
+        }, [clearSalesDashboardModalWindowState]);
 
 			  useEffect(() => {
 			    if (!salesDoctorDetail?.doctorId) return;
@@ -10969,6 +11023,10 @@ function MainApp() {
 
 		  const bringSalesDashboardModalToFront = useCallback(
 		    (key: SalesDashboardDraggableModalKey) => {
+          if (salesDashboardModalTopKeyRef.current === key) {
+            return;
+          }
+          salesDashboardModalTopKeyRef.current = key;
 		      salesDashboardModalZIndexRef.current += 1;
 		      const nextZIndex = salesDashboardModalZIndexRef.current;
 		      setSalesDashboardModalZIndexes((current) => ({
@@ -10993,36 +11051,154 @@ function MainApp() {
 		    return { x: 0, y: 0 };
 		  }, []);
 
+      const getBestSalesDashboardModalOffset = useCallback(
+        (
+          key: SalesDashboardDraggableModalKey,
+          currentOffsets: Record<SalesDashboardDraggableModalKey, { x: number; y: number }>,
+        ) => {
+          if (typeof window === "undefined") {
+            return { x: 0, y: 0 };
+          }
+          const viewportWidth = window.innerWidth;
+          const viewportHeight = window.innerHeight;
+          const doctorWindows = Object.entries(salesDoctorDialogContentRefs.current)
+            .filter(([entryKey, node]) => entryKey !== key && node)
+            .map(([, node]) => node as HTMLDivElement);
+          const existingRects = [
+            ...doctorWindows.map((node) => node.getBoundingClientRect()),
+            ...(salesOrderDialogContentRef.current
+              ? [salesOrderDialogContentRef.current.getBoundingClientRect()]
+              : []),
+          ].filter((rect) => rect.width > 0 && rect.height > 0);
+          if (existingRects.length === 0) {
+            return { x: 0, y: 0 };
+          }
+          const sampleRect = existingRects[0] || null;
+          const width = Math.min(
+            Math.max(sampleRect?.width || 672, 320),
+            Math.max(320, viewportWidth - 16),
+          );
+          const independentWindowMaxHeight = Math.max(
+            360,
+            Math.min(544, viewportHeight - (viewportWidth >= 768 ? 112 : 64)),
+          );
+          const height = Math.min(
+            Math.max(sampleRect?.height || independentWindowMaxHeight, 360),
+            independentWindowMaxHeight,
+          );
+          const rawCandidates = [
+            { x: 0, y: 0 },
+            { x: Math.round(viewportWidth * 0.3), y: 0 },
+            { x: -Math.round(viewportWidth * 0.3), y: 0 },
+            { x: 0, y: Math.round(viewportHeight * 0.22) },
+            { x: 0, y: -Math.round(viewportHeight * 0.22) },
+            { x: Math.round(viewportWidth * 0.3), y: Math.round(viewportHeight * 0.18) },
+            { x: -Math.round(viewportWidth * 0.3), y: Math.round(viewportHeight * 0.18) },
+            { x: Math.round(viewportWidth * 0.3), y: -Math.round(viewportHeight * 0.18) },
+            { x: -Math.round(viewportWidth * 0.3), y: -Math.round(viewportHeight * 0.18) },
+          ];
+          const candidates = rawCandidates.reduce<Array<{ x: number; y: number }>>(
+            (acc, candidate) => {
+              const clamped = {
+                x: clampCenteredViewportOffset(candidate.x, width, viewportWidth),
+                y: clampCenteredViewportOffset(candidate.y, height, viewportHeight),
+              };
+              if (!acc.some((entry) => entry.x === clamped.x && entry.y === clamped.y)) {
+                acc.push(clamped);
+              }
+              return acc;
+            },
+            [],
+          );
+          const toRect = (offset: { x: number; y: number }) => {
+            const centerX = viewportWidth / 2 + offset.x;
+            const centerY = viewportHeight / 2 + offset.y;
+            return {
+              left: centerX - width / 2,
+              right: centerX + width / 2,
+              top: centerY - height / 2,
+              bottom: centerY + height / 2,
+            };
+          };
+          let best = candidates[0] || { x: 0, y: 0 };
+          let bestScore = Number.POSITIVE_INFINITY;
+          candidates.forEach((candidate) => {
+            const rect = toRect(candidate);
+            const overlapScore = existingRects.reduce((score, existingRect) => {
+              const chromeRect = {
+                left: existingRect.left,
+                right: existingRect.right,
+                top: existingRect.top,
+                bottom: Math.min(existingRect.bottom, existingRect.top + 88),
+              };
+              return (
+                score +
+                getRectOverlapArea(rect, existingRect) +
+                getRectOverlapArea(rect, chromeRect) * 12
+              );
+            }, 0);
+            const centerPenalty = Math.hypot(candidate.x, candidate.y) * 8;
+            const reusedPositionPenalty = Object.entries(currentOffsets).reduce(
+              (score, [entryKey, offset]) => {
+                if (entryKey === key) return score;
+                return (
+                  score +
+                  Math.max(0, 180 - Math.hypot(candidate.x - offset.x, candidate.y - offset.y)) *
+                    250
+                );
+              },
+              0,
+            );
+            const score = overlapScore + centerPenalty + reusedPositionPenalty;
+            if (score < bestScore) {
+              bestScore = score;
+              best = candidate;
+            }
+          });
+          return best;
+        },
+        [],
+      );
+
 		  const getSalesDashboardModalStyle = useCallback(
-		    (key: SalesDashboardDraggableModalKey) =>
-		      ({
-		        "--sales-dashboard-modal-x": `${salesDashboardModalOffsets[key].x}px`,
-		        "--sales-dashboard-modal-y": `${salesDashboardModalOffsets[key].y}px`,
-		      }) as CSSProperties,
+		    (key: SalesDashboardDraggableModalKey) => {
+          const offset = salesDashboardModalOffsets[key] || { x: 0, y: 0 };
+		      return {
+		        "--sales-dashboard-modal-x": `${offset.x}px`,
+		        "--sales-dashboard-modal-y": `${offset.y}px`,
+		      } as CSSProperties;
+        },
 		    [salesDashboardModalOffsets],
 		  );
 
 		  const getSalesDashboardModalContainerStyle = useCallback(
 		    (key: SalesDashboardDraggableModalKey) =>
 		      ({
-		        "--sales-dashboard-window-z-index": salesDashboardModalZIndexes[key],
+		        "--sales-dashboard-window-z-index": salesDashboardModalZIndexes[key] || 14020,
 		      }) as CSSProperties,
 		    [salesDashboardModalZIndexes],
 		  );
 
+      const getSalesDashboardModalElement = useCallback(
+        (key: SalesDashboardDraggableModalKey) => {
+          if (key === SALES_ORDER_DETAIL_MODAL_KEY) {
+            return salesOrderDialogContentRef.current;
+          }
+          return salesDoctorDialogContentRefs.current[key] || null;
+        },
+        [],
+      );
+
 			  const clampSalesDashboardModalToViewport = useCallback(
 			    (key: SalesDashboardDraggableModalKey) => {
 			      if (typeof window === "undefined") return;
-			      const modal =
-			        key === "salesDoctorDetail"
-			          ? salesDoctorDialogContentRef.current
-			          : salesOrderDialogContentRef.current;
+			      const modal = getSalesDashboardModalElement(key);
 			      if (!modal) return;
 			      const rect = modal.getBoundingClientRect();
 			      const viewportWidth = window.innerWidth;
 			      const viewportHeight = window.innerHeight;
 			      setSalesDashboardModalOffsets((current) => {
-			        const currentOffset = current[key];
+			        const currentOffset = current[key] || { x: 0, y: 0 };
 			        const nextX = clampCenteredViewportOffset(
 			          currentOffset.x,
 			          rect.width,
@@ -11045,7 +11221,7 @@ function MainApp() {
 			        };
 			      });
 			    },
-			    [],
+			    [getSalesDashboardModalElement],
 			  );
 
 		  const handleSalesDashboardModalDragStart = useCallback(
@@ -11061,7 +11237,7 @@ function MainApp() {
 			      if (!modal || typeof window === "undefined") return;
 			      bringSalesDashboardModalToFront(key);
 			      const rect = modal.getBoundingClientRect();
-			      const origin = salesDashboardModalOffsets[key];
+			      const origin = salesDashboardModalOffsets[key] || { x: 0, y: 0 };
 			      const xBounds = stabilizeViewportDragBounds(
 			        CALENDAR_POPOVER_VIEWPORT_PADDING - rect.left,
 			        window.innerWidth - CALENDAR_POPOVER_VIEWPORT_PADDING - rect.right,
@@ -11142,48 +11318,52 @@ function MainApp() {
 		  );
 
 		  useEffect(() => {
-		    if (!salesDoctorDetail?.doctorId) return;
-		    setSalesDashboardModalOffsets((current) => ({
-		      ...current,
-		      salesDoctorDetail: { x: 0, y: 0 },
-		    }));
-		    bringSalesDashboardModalToFront("salesDoctorDetail");
-		  }, [bringSalesDashboardModalToFront, salesDoctorDetail?.doctorId]);
+		    if (!activeSalesDoctorDetailWindowKey) return;
+		    setSalesDashboardModalOffsets((current) =>
+          current[activeSalesDoctorDetailWindowKey]
+            ? current
+            : {
+                ...current,
+                [activeSalesDoctorDetailWindowKey]: { x: 0, y: 0 },
+              },
+        );
+		    bringSalesDashboardModalToFront(activeSalesDoctorDetailWindowKey);
+		  }, [activeSalesDoctorDetailWindowKey, bringSalesDashboardModalToFront]);
 
 		  useLayoutEffect(() => {
 		    if (typeof window === "undefined") return;
 		    const frame = window.requestAnimationFrame(() => {
-		      if (salesDoctorDetail?.doctorId) {
-		        clampSalesDashboardModalToViewport("salesDoctorDetail");
+		      if (activeSalesDoctorDetailWindowKey) {
+		        clampSalesDashboardModalToViewport(activeSalesDoctorDetailWindowKey);
 		      }
 		      if (salesOrderDetailOpen) {
-		        clampSalesDashboardModalToViewport("salesOrderDetail");
+		        clampSalesDashboardModalToViewport(SALES_ORDER_DETAIL_MODAL_KEY);
 		      }
 		    });
 		    return () => window.cancelAnimationFrame(frame);
 		  }, [
+        activeSalesDoctorDetailWindowKey,
 		    clampSalesDashboardModalToViewport,
-		    salesDashboardModalOffsets.salesDoctorDetail.x,
-		    salesDashboardModalOffsets.salesDoctorDetail.y,
-		    salesDashboardModalOffsets.salesOrderDetail.x,
-		    salesDashboardModalOffsets.salesOrderDetail.y,
-		    salesDoctorDetail?.doctorId,
+		    salesDashboardModalOffsets,
 		    salesOrderDetailOpen,
 		  ]);
 
 		  useEffect(() => {
 		    if (
-		      (!salesDoctorDetail?.doctorId && !salesOrderDetailOpen) ||
+		      (!activeSalesDoctorDetailWindowKey && !salesOrderDetailOpen) ||
 		      typeof window === "undefined"
 		    ) {
 		      return;
 		    }
 		    const handleViewportChange = () => {
-		      if (salesDoctorDetailRef.current?.doctorId) {
-		        clampSalesDashboardModalToViewport("salesDoctorDetail");
+		      const activeDoctorDetail = salesDoctorDetailRef.current;
+		      if (activeDoctorDetail?.doctorId) {
+		        clampSalesDashboardModalToViewport(
+              getSalesDoctorDetailWindowKey(activeDoctorDetail),
+            );
 		      }
 		      if (salesOrderDetailOpen) {
-		        clampSalesDashboardModalToViewport("salesOrderDetail");
+		        clampSalesDashboardModalToViewport(SALES_ORDER_DETAIL_MODAL_KEY);
 		      }
 		    };
 		    window.addEventListener("resize", handleViewportChange);
@@ -11196,13 +11376,13 @@ function MainApp() {
 		    };
 		  }, [
 		    clampSalesDashboardModalToViewport,
-		    salesDoctorDetail?.doctorId,
+		    activeSalesDoctorDetailWindowKey,
 		    salesOrderDetailOpen,
 		  ]);
 
 		  useEffect(() => {
 		    if (
-		      (!salesDoctorDetail?.doctorId && !salesOrderDetailOpen) ||
+		      (!activeSalesDoctorDetailWindowKey && !salesOrderDetailOpen) ||
 		      typeof window === "undefined"
 		    ) {
 		      return;
@@ -11218,9 +11398,9 @@ function MainApp() {
 		      window.removeEventListener("pointercancel", handleSalesDashboardModalDragEnd);
 		    };
 		  }, [
+        activeSalesDoctorDetailWindowKey,
 		    handleSalesDashboardModalDragEnd,
 		    handleSalesDashboardModalDragMove,
-		    salesDoctorDetail?.doctorId,
 		    salesOrderDetailOpen,
 		  ]);
 
@@ -13219,13 +13399,36 @@ function MainApp() {
       } as NonNullable<typeof salesDoctorDetail>;
 
         const current = salesDoctorDetailRef.current;
-        if (
+        const nextWindowKey = getSalesDoctorDetailWindowKey(nextDetail);
+        const currentKey = current
+          ? `${String(current.doctorId || "").trim()}|${String(current.referralId || "").trim()}`
+          : "";
+        const nextKey = `${String(nextDetail.doctorId || "").trim()}|${String(nextDetail.referralId || "").trim()}`;
+        const shouldKeepCurrentWindowOpen = Boolean(
           current &&
           String(current.doctorId || "").trim() &&
-          String(current.doctorId || "").trim() !== String(nextDetail.doctorId || "").trim()
-        ) {
-          setSalesDoctorDetailStack((prev) => [...prev, current as any]);
+          String(current.doctorId || "").trim() !== String(nextDetail.doctorId || "").trim(),
+        );
+        const hasOtherUserWindows =
+          shouldKeepCurrentWindowOpen || salesDoctorDetailStackRef.current.length > 0;
+        if (hasOtherUserWindows) {
+          setSalesDashboardModalOffsets((prev) => {
+            const bestNextOffset =
+              prev[nextWindowKey] ||
+              getBestSalesDashboardModalOffset(nextWindowKey, prev);
+            return {
+              ...prev,
+              [nextWindowKey]: bestNextOffset,
+            };
+          });
         }
+        setSalesDoctorDetailStack((prev) => {
+          const filtered = prev.filter((entry) => {
+            const entryKey = `${String(entry.doctorId || "").trim()}|${String(entry.referralId || "").trim()}`;
+            return entryKey !== currentKey && entryKey !== nextKey;
+          });
+          return shouldKeepCurrentWindowOpen ? [...filtered, current as any] : filtered;
+        });
         setSalesDoctorDetail(nextDetail);
     },
     [],
@@ -30996,12 +31199,12 @@ function MainApp() {
                           className={clsx(
                             "database-visualizer-table-button inline-flex w-max max-w-none items-center gap-1.5 px-3 py-1.5 text-left text-sm",
                             isActive
-                              ? "database-visualizer-table-button--active text-slate-900"
+                              ? "database-visualizer-table-button--active text-white"
                               : "text-slate-800",
                           )}
                           style={{ textAlign: "left" }}
                         >
-                          <span className="shrink-0 text-slate-500">+</span>
+                          <span className={clsx("shrink-0", isActive ? "text-slate-200" : "text-slate-500")}>+</span>
                           <span className="text-left font-medium whitespace-nowrap">{table.name}</span>
                         </button>
                       );
@@ -39132,7 +39335,7 @@ function MainApp() {
 	  return (
 	    <div
 	      data-delegate-theme={isDelegateThemeActive ? 'true' : 'false'}
-	      className="min-h-screen flex flex-col safe-area-vertical"
+	      className="app-root-shell min-h-screen flex flex-col"
       style={{
         position: "static",
         ...(isDelegateThemeActive
@@ -41890,30 +42093,123 @@ function MainApp() {
 	          </form>
 	        </DialogContent>
 	      </Dialog>
-	      {(salesDoctorDetail || salesOrderDetailOpen) && typeof document !== "undefined"
+	      {(salesDoctorDetail || salesDoctorDetailStack.length > 0 || salesOrderDetailOpen) && typeof document !== "undefined"
 	        ? createPortal(
 	            <div className="sales-dashboard-window-backdrop" aria-hidden="true" />,
 	            document.body,
 	          )
 	        : null}
+        {[
+          ...salesDoctorDetailStack.map((detail, stackIndex) => ({
+            detail,
+            stackIndex,
+          })),
+          ...(salesDoctorDetail
+            ? [
+                {
+                  detail: salesDoctorDetail,
+                  stackIndex: null as number | null,
+                },
+              ]
+            : []),
+        ].map(({ detail: salesDoctorDetailWindow, stackIndex }) => {
+          const salesDoctorDetailWindowKey =
+            getSalesDoctorDetailWindowKey(salesDoctorDetailWindow);
+          const isFocusedSalesDoctorDetailWindow = stackIndex == null;
+          const salesDoctorDetail = salesDoctorDetailWindow;
+          const salesDoctorDetailEmailValues = normalizeSalesDoctorContactValues(
+            salesDoctorDetail.contactEmails,
+            salesDoctorDetail.email,
+          );
+          const salesDoctorDetailPhoneValues = normalizeSalesDoctorContactValues(
+            salesDoctorDetail.contactPhones,
+            salesDoctorDetail.phone,
+          );
+          const salesDoctorDetailEmailDisplay = salesDoctorDetailEmailValues.join(", ");
+          const salesDoctorResolvedAddressFields = (() => {
+            const directFields = resolveSalesDoctorAddressFields(salesDoctorDetail);
+            return hasSalesDoctorOfficeAddressFields(directFields)
+              ? directFields
+              : parseSalesDoctorOfficeAddress(salesDoctorDetail.address);
+          })();
+          const salesDoctorNoteDraftForWindow = isFocusedSalesDoctorDetailWindow
+            ? salesDoctorNoteDraft
+            : normalizeNotesValue(
+                typeof salesDoctorDetail.prospectNotes === "string"
+                  ? salesDoctorDetail.prospectNotes
+                  : salesDoctorNotes[String(salesDoctorDetail.doctorId)] || "",
+              );
+          const salesDoctorNotesLoadingForWindow =
+            isFocusedSalesDoctorDetailWindow && salesDoctorNotesLoading;
+          const salesDoctorNotesSavedForWindow =
+            isFocusedSalesDoctorDetailWindow && salesDoctorNotesSaved;
+          const canOpenMaintenanceViewForSalesDoctorDetail = (() => {
+            const doctorId = String(salesDoctorDetail.doctorId || "").trim();
+            if (
+              !isAdmin(user?.role) ||
+              !doctorId ||
+              salesDoctorDetail.hasAccount !== true ||
+              salesDoctorDetail.summaryOnly === true
+            ) {
+              return false;
+            }
+            if (
+              doctorId.startsWith("contact_form:") ||
+              doctorId.startsWith("manual:") ||
+              doctorId.startsWith("anon:")
+            ) {
+              return false;
+            }
+            return MAINTENANCE_TARGET_ROLES.has(
+              normalizeRole(salesDoctorDetail.role || ""),
+            );
+          })();
+          const focusSalesDoctorDetailWindow = (
+            event?: React.PointerEvent<HTMLElement>,
+          ) => {
+            const target = event?.target as HTMLElement | null;
+            if (target?.closest?.(".dialog-close-btn")) {
+              return;
+            }
+            bringSalesDashboardModalToFront(salesDoctorDetailWindowKey);
+          };
+          return (
 	      <Dialog
+          key={salesDoctorDetailWindowKey}
 	        modal={false}
-	        open={Boolean(salesDoctorDetail)}
+	        open
 	        onOpenChange={(open) => {
 	          if (!open) {
-	            closeTopSalesDoctorDetailModal();
+              if (typeof stackIndex === "number") {
+                closeSalesDoctorDetailStackWindow(stackIndex);
+              } else {
+	              closeTopSalesDoctorDetailModal();
+              }
           }
         }}
 			      >
 			        <DialogContent
-	              ref={salesDoctorDialogContentRef}
+	              ref={(node) => {
+	                if (node) {
+	                  salesDoctorDialogContentRefs.current[salesDoctorDetailWindowKey] = node;
+	                } else {
+	                  delete salesDoctorDialogContentRefs.current[salesDoctorDetailWindowKey];
+	                }
+                  if (isFocusedSalesDoctorDetailWindow) {
+                    salesDoctorDialogContentRef.current = node;
+                  }
+	              }}
 	              containerClassName={`${salesDashboardDetailModalContainerClassName} sales-dashboard-window-layer`}
-	              containerStyle={getSalesDashboardModalContainerStyle("salesDoctorDetail")}
+	              containerStyle={getSalesDashboardModalContainerStyle(salesDoctorDetailWindowKey)}
 	              overlayClassName="sales-dashboard-window-overlay"
-	              className="sales-doctor-detail-dialog sales-dashboard-draggable-modal max-w-2xl"
-	              style={getSalesDashboardModalStyle("salesDoctorDetail")}
+	              className={clsx(
+                  "sales-doctor-detail-dialog sales-dashboard-draggable-modal max-w-2xl",
+                  hasMultipleSalesDoctorDetailWindows &&
+                    "sales-dashboard-draggable-modal--independent",
+                )}
+	              style={getSalesDashboardModalStyle(salesDoctorDetailWindowKey)}
 	              data-sales-dashboard-draggable-modal="true"
-	              onPointerDownCapture={() => bringSalesDashboardModalToFront("salesDoctorDetail")}
+	              onPointerDownCapture={focusSalesDoctorDetailWindow}
 	              onPointerDownOutside={(event) => event.preventDefault()}
 	              onInteractOutside={(event) => event.preventDefault()}
 	            >
@@ -41922,7 +42218,7 @@ function MainApp() {
 	                aria-hidden="true"
 	                data-sales-dashboard-modal-drag-handle="true"
 	                onPointerDown={(event) =>
-	                  handleSalesDashboardModalDragStart("salesDoctorDetail", event)
+	                  handleSalesDashboardModalDragStart(salesDoctorDetailWindowKey, event)
 	                }
 	                onPointerMove={handleSalesDashboardModalCapturedDragMove}
 	                onPointerUp={handleSalesDashboardModalCapturedDragEnd}
@@ -41945,7 +42241,7 @@ function MainApp() {
 			                    className="sales-doctor-detail-header sales-dashboard-draggable-modal-titlebar min-w-0 text-left"
 			                    data-sales-dashboard-modal-drag-handle="true"
 			                    onPointerDown={(event) =>
-			                      handleSalesDashboardModalDragStart("salesDoctorDetail", event)
+			                      handleSalesDashboardModalDragStart(salesDoctorDetailWindowKey, event)
 			                    }
 			                    onPointerMove={handleSalesDashboardModalCapturedDragMove}
 			                    onPointerUp={handleSalesDashboardModalCapturedDragEnd}
@@ -42070,10 +42366,7 @@ function MainApp() {
 						                          const role = normalizeRole(
 						                            ownerProfile?.role || "sales_rep",
 						                          );
-						                          const ownerRoleLabel = formatRoleLabel(role || "sales_rep", {
-                                    isPartner: ownerProfile?.isPartner ?? null,
-                                    allowedRetail: ownerProfile?.allowedRetail ?? null,
-                                  });
+						                          const ownerRoleLabel = "Sales Rep";
 					                          const content = name || ownerId;
 					                          const resolved = Boolean(name);
 					                          const canOpen = Boolean(userId);
@@ -42245,18 +42538,21 @@ function MainApp() {
                         Your Notes
 		                  </p>
 		                  <TimestampedNotesField
-		                    value={salesDoctorNoteDraft}
-		                    onChange={(next) => setSalesDoctorNoteDraft(next)}
+		                    value={salesDoctorNoteDraftForWindow}
+		                    onChange={(next) => {
+                          focusSalesDoctorDetailWindow();
+                          setSalesDoctorNoteDraft(next);
+                        }}
 		                    placeholder={
-		                      salesDoctorNotesLoading
+		                      salesDoctorNotesLoadingForWindow
 		                        ? "Loading notes..."
 		                        : "Add notes"
 		                    }
 		                    className="text-sm notes-textarea"
-		                    disabled={salesDoctorNotesLoading}
+		                    disabled={salesDoctorNotesLoadingForWindow}
 		                  />
 		                  <div className="mt-2 mb-1 flex items-center justify-end gap-2">
-		                    {salesDoctorNotesSaved && (
+		                    {salesDoctorNotesSavedForWindow && (
 		                      <CheckSquare className="h-4 w-4 text-emerald-600" />
 		                    )}
 		                    <Button
@@ -42265,7 +42561,7 @@ function MainApp() {
 		                      size="sm"
 		                      onClick={() => void saveSalesDoctorNotes()}
 		                      className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
-		                      disabled={salesDoctorNotesLoading}
+		                      disabled={salesDoctorNotesLoadingForWindow}
 		                    >
 		                      Save
 		                    </Button>
@@ -43764,6 +44060,8 @@ function MainApp() {
 	          )}
 	        </DialogContent>
       </Dialog>
+          );
+        })}
 	      <Dialog
 	        modal={false}
 	        open={salesOrderDetailOpen}

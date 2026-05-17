@@ -160,6 +160,17 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
   `
+    CREATE TABLE IF NOT EXISTS tool_requests (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(64) NULL,
+      name LONGTEXT NULL,
+      email LONGTEXT NULL,
+      report LONGTEXT NOT NULL,
+      source VARCHAR(64) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
+  `,
+  `
     CREATE TABLE IF NOT EXISTS sales_prospects (
       id VARCHAR(64) PRIMARY KEY,
       sales_rep_id VARCHAR(32) NOT NULL,
@@ -1241,6 +1252,88 @@ const ensureBugReportColumns = async () => {
   await dropColumnIfExists('bugs_reported', 'report_encrypted');
 };
 
+const ensureToolRequestColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const columns = [
+    {
+      name: 'user_id',
+      ddl: `
+        ALTER TABLE tool_requests
+        ADD COLUMN user_id VARCHAR(64) NULL AFTER id
+      `,
+    },
+    {
+      name: 'name',
+      ddl: `
+        ALTER TABLE tool_requests
+        ADD COLUMN name LONGTEXT NULL AFTER user_id
+      `,
+    },
+    {
+      name: 'email',
+      ddl: `
+        ALTER TABLE tool_requests
+        ADD COLUMN email LONGTEXT NULL AFTER name
+      `,
+    },
+    {
+      name: 'source',
+      ddl: `
+        ALTER TABLE tool_requests
+        ADD COLUMN source VARCHAR(64) NULL AFTER report
+      `,
+    },
+  ];
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'tool_requests'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL tool_requests column added');
+      }
+    } catch (error) {
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL tool_requests column');
+    }
+  }
+  try {
+    await mysqlClient.execute('ALTER TABLE tool_requests MODIFY COLUMN name LONGTEXT NULL');
+    await mysqlClient.execute('ALTER TABLE tool_requests MODIFY COLUMN email LONGTEXT NULL');
+    await mysqlClient.execute('ALTER TABLE tool_requests MODIFY COLUMN source VARCHAR(64) NULL');
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to widen tool_requests inline ciphertext columns');
+  }
+  await copyLegacyCiphertext({
+    tableName: 'tool_requests',
+    baseColumn: 'name',
+    legacyColumn: 'name_encrypted',
+  });
+  await copyLegacyCiphertext({
+    tableName: 'tool_requests',
+    baseColumn: 'email',
+    legacyColumn: 'email_encrypted',
+  });
+  await copyLegacyCiphertext({
+    tableName: 'tool_requests',
+    baseColumn: 'report',
+    legacyColumn: 'report_encrypted',
+    placeholder: '[ENCRYPTED]',
+  });
+  await dropColumnIfExists('tool_requests', 'name_encrypted');
+  await dropColumnIfExists('tool_requests', 'email_encrypted');
+  await dropColumnIfExists('tool_requests', 'report_encrypted');
+};
+
 const ensureTaxTrackingColumns = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -1531,6 +1624,7 @@ const ensureSchema = async () => {
   await ensureOrderColumns();
   await ensureSalesProspectColumns();
   await ensureBugReportColumns();
+  await ensureToolRequestColumns();
   await ensureTaxTrackingColumns();
   await ensureContactFormIndexes();
   await ensurePeptideForumColumns();

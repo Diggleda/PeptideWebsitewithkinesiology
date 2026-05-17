@@ -68,6 +68,7 @@ class SecureStorageWriteTests(unittest.TestCase):
         self.app = Flask(__name__)
         self.contact = self._load_route_module("contact")
         self.bugs = self._load_route_module("bugs")
+        self.tool_requests = self._load_route_module("tool_requests")
 
     def _make_response(self, result):
         return self.app.make_response(result)
@@ -347,6 +348,54 @@ class SecureStorageWriteTests(unittest.TestCase):
                 "email": "doctor@example.com",
             },
             metadata={"source": "delegate_link"},
+        )
+
+    def test_tool_request_insert_stores_ciphertext_inline_in_existing_columns(self) -> None:
+        cursor = _FakeCursor()
+
+        def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
+            if value is None:
+                return None
+            return f"cipher:{aad['field']}:{value}"
+
+        actor = {
+            "id": "doctor-8",
+            "name": "Dr. Tool Builder",
+            "email": "tool-doctor@example.com",
+        }
+        with patch.object(self.tool_requests, "get_config", return_value=types.SimpleNamespace(mysql={"enabled": True})), \
+            patch.object(self.tool_requests, "_resolve_optional_actor", return_value=actor), \
+            patch.object(self.tool_requests.mysql_client, "cursor", return_value=_CursorContext(cursor)), \
+            patch.object(self.tool_requests, "encrypt_text", side_effect=fake_encrypt), \
+            patch.object(self.tool_requests.usage_tracking_service, "track_event") as track_event:
+            with self.app.test_request_context(
+                "/api/tool-requests",
+                method="POST",
+                json={
+                    "report": "A blinded research intake builder.",
+                    "source": "research_tab",
+                },
+            ):
+                response = self._make_response(self.tool_requests.submit_tool_request())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"status": "ok"})
+        self.assertEqual(len(cursor.calls), 1)
+
+        query, params = cursor.calls[0]
+        self.assertIn("INSERT INTO tool_requests", query)
+        self.assertEqual(params["user_id"], "doctor-8")
+        self.assertEqual(params["name"], "cipher:name:Dr. Tool Builder")
+        self.assertEqual(params["email"], "cipher:email:tool-doctor@example.com")
+        self.assertEqual(params["report"], "cipher:report:A blinded research intake builder.")
+        self.assertEqual(params["source"], "research_tab")
+        self.assertNotIn("name_encrypted", params)
+        self.assertNotIn("email_encrypted", params)
+        self.assertNotIn("report_encrypted", params)
+        track_event.assert_called_once_with(
+            "tool_request_submitted",
+            actor=actor,
+            metadata={"source": "research_tab"},
         )
 
 
