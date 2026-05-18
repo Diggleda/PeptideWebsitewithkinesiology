@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo, FormEvent, MouseEvent, WheelEvent, TouchEvent, ReactNode, CSSProperties } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo, FormEvent, MouseEvent, WheelEvent, TouchEvent, ReactNode, CSSProperties, ElementType } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
@@ -6,7 +7,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import { AdjustmentsHorizontalIcon, ArrowPathIcon, TruckIcon } from '@heroicons/react/24/outline';
 import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCircle2, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
@@ -185,6 +186,7 @@ const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#0b0679';
 const DEFAULT_DELEGATE_BACKGROUND_COLOR = '#377eba';
 const HEADER_BRAND_BLUE = 'rgb(11, 6, 121)';
+const HEADER_SEARCH_TEXT_GREY = 'rgb(100, 116, 139)';
 
 const normalizeDelegateSecondaryColor = (value?: string | null) => {
   if (typeof value !== 'string') return null;
@@ -257,6 +259,9 @@ const isNodePatientLinkDummyMode = (() => {
 
 type NetworkQuality = 'good' | 'fair' | 'poor' | 'offline';
 type AccountTabId = 'details' | 'orders' | 'research' | 'patient_links';
+type PhysicianDashboardTabId = 'links' | 'orders' | '3pl' | 'refer' | 'settings';
+
+export const PHYSICIAN_DASHBOARD_PORTAL_ID = 'physician-dashboard-root';
 
 const DELEGATE_LINK_FUNNEL_STAGES = [
   { event: 'delegate_link_tab_clicked', label: 'Tab Clicked' },
@@ -556,6 +561,7 @@ interface HeaderProps {
   delegateSecondaryColor?: string | null;
   delegateDoctorName?: string | null;
   researchDashboardEnabled?: boolean;
+  physicianThreePlEnabled?: boolean;
   patientLinksEnabled?: boolean;
   patientLinksDoctorUserIds?: string[];
   betaServices?: string[];
@@ -608,6 +614,7 @@ interface HeaderProps {
   }) => void;
   patientLinksRefreshToken?: number;
   onAccountIndicatorTotalChange?: (count: number) => void;
+  physicianReferralDashboardPanel?: ReactNode;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -1805,8 +1812,7 @@ export function Header({
   delegateSecondaryColor = null,
   delegateDoctorName = null,
   researchDashboardEnabled = false,
-  patientLinksEnabled = false,
-  patientLinksDoctorUserIds = [],
+  physicianThreePlEnabled = false,
   betaServices = [],
   onLogin,
   onResendVerificationEmail,
@@ -1843,6 +1849,7 @@ export function Header({
   onLoadDelegateProposal,
   patientLinksRefreshToken = 0,
   onAccountIndicatorTotalChange,
+  physicianReferralDashboardPanel = null,
 	}: HeaderProps) {
   const delegateSessionSecondaryHex =
     normalizeDelegateSecondaryColor(delegateSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
@@ -1890,6 +1897,14 @@ export function Header({
   const [deleteAccountHoldCount, setDeleteAccountHoldCount] = useState(0);
   const [deleteAccountDeleting, setDeleteAccountDeleting] = useState(false);
   const [accountTab, setAccountTab] = useState<AccountTabId>('details');
+  const [physicianDashboardTab, setPhysicianDashboardTab] = useState<PhysicianDashboardTabId>('links');
+  const [physicianDashboardPortalTarget, setPhysicianDashboardPortalTarget] = useState<HTMLElement | null>(null);
+  const physicianDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [physicianDashboardTabIndicator, setPhysicianDashboardTabIndicator] = useState({
+    left: 0,
+    width: 0,
+    opacity: 0,
+  });
   const [patientLinksLoading, setPatientLinksLoading] = useState(false);
   const [patientLinksError, setPatientLinksError] = useState<string | null>(null);
   const [patientLinks, setPatientLinks] = useState<any[]>([]);
@@ -2707,14 +2722,38 @@ export function Header({
       mergeOrderIntoCache(accountModalRequest.order);
       setSelectedOrder(accountModalRequest.order);
     }
-    if (accountModalRequest.tab) {
+    const requestRole = localUser?.role ?? user?.role ?? null;
+    const requestIsDoctor = isDoctorRole(requestRole);
+    if (requestIsDoctor && accountModalRequest.tab === 'orders') {
+      setPhysicianDashboardTab('orders');
+      setWelcomeOpen(false);
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          document
+            .getElementById(PHYSICIAN_DASHBOARD_PORTAL_ID)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    } else if (requestIsDoctor && accountModalRequest.tab === 'patient_links') {
+      setPhysicianDashboardTab('links');
+      setWelcomeOpen(false);
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          document
+            .getElementById(PHYSICIAN_DASHBOARD_PORTAL_ID)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    } else if (accountModalRequest.tab) {
       setAccountTab(accountModalRequest.tab);
-    }
-    if (accountModalRequest.open || accountModalRequest.order) {
+      if (accountModalRequest.open || accountModalRequest.order) {
+        setWelcomeOpen(true);
+      }
+    } else if (accountModalRequest.open || accountModalRequest.order) {
       setWelcomeOpen(true);
     }
     onAccountModalRequestHandled?.(token);
-  }, [accountModalRequest, mergeOrderIntoCache, onAccountModalRequestHandled, rememberSelectedOrderEstimateWindow]);
+  }, [accountModalRequest, localUser?.role, mergeOrderIntoCache, onAccountModalRequestHandled, rememberSelectedOrderEstimateWindow, user?.role]);
   useEffect(() => { setLocalUser(user); }, [user]);
   useEffect(() => {
     rememberSelectedOrderEstimateWindow(selectedOrder);
@@ -2772,6 +2811,8 @@ export function Header({
   ]);
   const accountDetailsRefreshSeqRef = useRef(0);
   const accountDetailsRefreshKeyRef = useRef<string | null>(null);
+  const physicianDashboardRefreshSeqRef = useRef(0);
+  const physicianDashboardRefreshKeyRef = useRef<string | null>(null);
   const onUserUpdatedRef = useRef(onUserUpdated);
   useEffect(() => {
     onUserUpdatedRef.current = onUserUpdated;
@@ -2873,6 +2914,104 @@ export function Header({
     : [];
   const primaryReferralCode = normalizedReferralCodes[0] || null;
   const canShowReferralCode = (accountIsAdmin || accountIsSalesRep) && Boolean(primaryReferralCode);
+  const accountOrdersPanelVisible =
+    (welcomeOpen && accountTab === 'orders') ||
+    (accountIsDoctor && physicianDashboardTab === 'orders');
+  const patientLinksPanelVisible =
+    (welcomeOpen && accountTab === 'patient_links') ||
+    (accountIsDoctor && physicianDashboardTab === 'links');
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !accountIsDoctor) {
+      setPhysicianDashboardPortalTarget((current) => (current === null ? current : null));
+      return;
+    }
+    const target = document.getElementById(PHYSICIAN_DASHBOARD_PORTAL_ID);
+    setPhysicianDashboardPortalTarget((current) => (current === target ? current : target));
+  }, [accountIsDoctor, suppressHomeButton, user?.id]);
+
+  useEffect(() => {
+    if (!accountIsDoctor || !physicianDashboardPortalTarget || !user) {
+      physicianDashboardRefreshKeyRef.current = null;
+      return;
+    }
+    const refreshKey = `${String(user.id || user.email || 'account')}:physician-dashboard`;
+    if (physicianDashboardRefreshKeyRef.current === refreshKey) {
+      return;
+    }
+    physicianDashboardRefreshKeyRef.current = refreshKey;
+    const seq = ++physicianDashboardRefreshSeqRef.current;
+    (async () => {
+      try {
+        const api = await import('../services/api');
+        const fresh = await api.authAPI.getCurrentUser({ background: true });
+        if (seq !== physicianDashboardRefreshSeqRef.current) return;
+        if (!fresh) return;
+        let nextUserState: HeaderUser | null = null;
+        setLocalUser((previous) => {
+          nextUserState = {
+            ...(previous || user || {}),
+            ...(fresh as any),
+          };
+          return nextUserState;
+        });
+        if (nextUserState) {
+          onUserUpdatedRef.current?.(nextUserState);
+        }
+      } catch (error) {
+        console.warn('[Header] Failed to refresh physician dashboard user', error);
+      }
+    })();
+  }, [accountIsDoctor, physicianDashboardPortalTarget, user]);
+
+  const updatePhysicianDashboardTabIndicator = useCallback(() => {
+    const container = physicianDashboardTabsContainerRef.current;
+    if (!container) {
+      setPhysicianDashboardTabIndicator((current) =>
+        current.opacity === 0 ? current : { left: 0, width: 0, opacity: 0 },
+      );
+      return;
+    }
+    const activeBtn =
+      container.querySelector<HTMLButtonElement>(`button[data-physician-dashboard-tab="${physicianDashboardTab}"]`) ||
+      container.querySelector<HTMLButtonElement>('button[data-physician-dashboard-tab]');
+    if (!activeBtn) {
+      setPhysicianDashboardTabIndicator((current) =>
+        current.opacity === 0 ? current : { left: 0, width: 0, opacity: 0 },
+      );
+      return;
+    }
+    const inset = 8;
+    const left = Math.max(0, activeBtn.offsetLeft - (container.scrollLeft || 0) + inset);
+    const width = Math.max(24, activeBtn.offsetWidth - inset * 2);
+    setPhysicianDashboardTabIndicator((current) => {
+      if (current.left === left && current.width === width && current.opacity === 1) {
+        return current;
+      }
+      return { left, width, opacity: 1 };
+    });
+  }, [physicianDashboardTab]);
+
+  useLayoutEffect(() => {
+    if (!accountIsDoctor || !physicianDashboardPortalTarget) {
+      return;
+    }
+    updatePhysicianDashboardTabIndicator();
+  }, [
+    accountIsDoctor,
+    physicianDashboardPortalTarget,
+    physicianDashboardTab,
+    updatePhysicianDashboardTabIndicator,
+  ]);
+
+  useEffect(() => {
+    if (!accountIsDoctor || !physicianDashboardPortalTarget) {
+      return undefined;
+    }
+    const handleResize = () => updatePhysicianDashboardTabIndicator();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [accountIsDoctor, physicianDashboardPortalTarget, updatePhysicianDashboardTabIndicator]);
 
   // Account tab underline indicator (shared bar that moves to active tab)
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -3510,7 +3649,7 @@ export function Header({
 
   // Auto-refresh orders when the orders tab is open
   useEffect(() => {
-		    if (!welcomeOpen || accountTab !== 'orders' || !onRefreshOrders || !user) {
+		    if (!accountOrdersPanelVisible || !onRefreshOrders || !user) {
 		      return undefined;
 		    }
 	    let cancelled = false;
@@ -3545,7 +3684,7 @@ export function Header({
 	      releaseTabLeadership(leaderKey);
 	      window.clearInterval(intervalId);
 	    };
-	  }, [welcomeOpen, accountTab, onRefreshOrders, user]);
+	  }, [accountOrdersPanelVisible, onRefreshOrders, user]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -4437,7 +4576,7 @@ export function Header({
   }, []);
 
   useEffect(() => {
-    if (!welcomeOpen || accountTab !== 'orders') {
+    if (!accountOrdersPanelVisible) {
       return;
     }
 
@@ -4473,8 +4612,7 @@ export function Header({
       }
     }
   }, [
-    welcomeOpen,
-    accountTab,
+    accountOrdersPanelVisible,
     cachedAccountOrders,
     showCanceledOrders,
     ensureOrderLineImageLoaded,
@@ -4484,7 +4622,7 @@ export function Header({
   ]);
 
   useEffect(() => {
-    if (!welcomeOpen || accountTab !== 'orders' || !selectedOrder) {
+    if (!accountOrdersPanelVisible || !selectedOrder) {
       return;
     }
     const wooLineItems = extractWooLineItemsFromOrder(selectedOrder);
@@ -4492,10 +4630,10 @@ export function Header({
     lines.forEach((line) => {
       void ensureOrderLineImageLoaded(line, wooLineItems);
     });
-  }, [welcomeOpen, accountTab, selectedOrder, ensureOrderLineImageLoaded, extractWooLineItemsFromOrder]);
+  }, [accountOrdersPanelVisible, selectedOrder, ensureOrderLineImageLoaded, extractWooLineItemsFromOrder]);
 
   useEffect(() => {
-    if (!welcomeOpen || accountTab !== 'orders' || !selectedOrder) {
+    if (!accountOrdersPanelVisible || !selectedOrder) {
       return;
     }
     const trackingNumber = resolveTrackingNumber(selectedOrder);
@@ -4553,7 +4691,7 @@ export function Header({
     return () => {
       cancelled = true;
     };
-  }, [welcomeOpen, accountTab, selectedOrder?.id]);
+  }, [accountOrdersPanelVisible, selectedOrder?.id]);
 
   const handleCopyReferralCode = useCallback(async () => {
     if (!primaryReferralCode) return;
@@ -4610,21 +4748,22 @@ export function Header({
       readOnly?: boolean;
       showClearButton?: boolean;
       borderColor?: string | null;
+      textColor?: string | null;
     },
   ) => {
-    const searchFieldColor =
+    const searchBorderColor =
       options?.borderColor || (delegateMode ? secondaryColor : HEADER_BRAND_BLUE);
+    const searchTextColor =
+      options?.textColor || (delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY);
     return (
       <div
-        className="header-search-field relative"
+        className="header-search-field relative isolate"
         style={{
-          '--header-search-border-color': options?.borderColor || (delegateMode ? secondaryColor : HEADER_BRAND_BLUE),
+          '--header-search-border-color': searchBorderColor,
+          '--header-search-text-color': searchTextColor,
+          color: searchTextColor,
         } as CSSProperties}
       >
-        <Search
-          className="header-search-icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform"
-          style={{ color: searchFieldColor }}
-        />
         <Input
           type="text"
           inputMode="search"
@@ -4636,17 +4775,23 @@ export function Header({
             handleSearchChange(e.target.value);
           }}
           ref={options?.readOnly ? undefined : searchInputRef}
-          className={`header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-12 placeholder:text-white focus-visible:outline-none focus-visible:!ring-0 ${inputClassName}`.trim()}
+          className={`header-search-input relative z-0 squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-12 placeholder:text-white focus-visible:outline-none focus-visible:!ring-0 ${inputClassName}`.trim()}
           style={{
             minWidth: '100%',
-            color: searchFieldColor,
-            caretColor: searchFieldColor,
+            color: searchTextColor,
+            caretColor: searchTextColor,
           }}
           readOnly={Boolean(options?.readOnly)}
         />
-		      {(options?.showClearButton ?? true) && searchQuery.trim().length > 0 && (
-		        <button
-		          type="button"
+        <Search
+          aria-hidden="true"
+          focusable="false"
+          className="header-search-icon pointer-events-none absolute left-3 top-1/2 z-20 block h-4 w-4 -translate-y-1/2 transform"
+          style={{ color: searchTextColor, stroke: searchTextColor, zIndex: 20 }}
+        />
+			      {(options?.showClearButton ?? true) && searchQuery.trim().length > 0 && (
+			        <button
+			          type="button"
 		          aria-label="Clear search"
 	          onClick={() => {
             handleSearchChange('');
@@ -4654,7 +4799,7 @@ export function Header({
 	              searchInputRef.current?.focus();
 	            });
 	          }}
-	          className="header-search-clear-button absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
+		          className="header-search-clear-button absolute right-3 left-auto top-1/2 z-20 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
             style={{ right: '0.75rem', left: 'auto' }}
 	        >
 	          <X className="h-4 w-4" />
@@ -4665,40 +4810,36 @@ export function Header({
   };
 
   const normalizedRole = String((localUser as any)?.role || '').toLowerCase();
-  const normalizedPatientLinksDoctorUserIds = new Set(
-    Array.isArray(patientLinksDoctorUserIds)
-      ? patientLinksDoctorUserIds.map((value) => String(value || '').trim()).filter(Boolean)
-      : [],
-  );
   const showPatientLinksTab = Boolean(
     localUser && (
       normalizedRole === 'test_doctor'
-      || (
-        normalizedRole === 'doctor'
-        && (
-          isNodePatientLinkDummyMode
-          || (
-            patientLinksEnabled
-            && normalizedPatientLinksDoctorUserIds.has(String((localUser as any)?.id || '').trim())
-          )
-        )
-      )
+      || normalizedRole === 'doctor'
     ),
   );
   const showPatientLinksBetaLabel = Array.isArray(betaServices)
     && betaServices.includes('patientLinks');
-  const delegateOptInEnabled = Boolean(localUser?.delegateOptIn);
+  const delegateOptInEnabled = coerceOptionalBoolean(
+    localUser?.delegateOptIn ?? (localUser as any)?.delegate_opt_in,
+  ) === true;
   const accountHeaderTabs = useMemo(() => {
     const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
       { id: 'details', label: 'Details', Icon: Info },
-      { id: 'orders', label: 'Orders', Icon: Package },
     ];
-    if (showPatientLinksTab) {
+    if (!accountIsDoctor) {
+      tabs.push({ id: 'orders', label: 'Orders', Icon: Package });
+    }
+    if (!accountIsDoctor && showPatientLinksTab) {
       tabs.push({ id: 'patient_links', label: 'Delegate Links', Icon: Link2 });
     }
     tabs.push({ id: 'research', label: 'Research', Icon: Users });
     return tabs;
-  }, [showPatientLinksTab]);
+  }, [accountIsDoctor, showPatientLinksTab]);
+
+  useEffect(() => {
+    if (accountIsDoctor && welcomeOpen && (accountTab === 'orders' || accountTab === 'patient_links')) {
+      setAccountTab('details');
+    }
+  }, [accountIsDoctor, accountTab, welcomeOpen]);
 
   const accountTabDescriptionById: Record<AccountTabId, string> = {
     details: 'Update your profile, shipping info, and settings.',
@@ -4959,6 +5100,18 @@ export function Header({
     }, 0);
   }, [patientLinks]);
 
+  useLayoutEffect(() => {
+    if (!accountIsDoctor || !physicianDashboardPortalTarget) {
+      return;
+    }
+    updatePhysicianDashboardTabIndicator();
+  }, [
+    accountIsDoctor,
+    outstandingPatientProposalCount,
+    physicianDashboardPortalTarget,
+    updatePhysicianDashboardTabIndicator,
+  ]);
+
   const accountTabIndicatorCounts = useMemo<Partial<Record<AccountTabId, number>>>(() => {
     const counts: Partial<Record<AccountTabId, number>> = {};
     if (showPatientLinksTab && outstandingPatientProposalCount > 0) {
@@ -5129,7 +5282,7 @@ export function Header({
   }, []);
 
   useEffect(() => {
-    if (!welcomeOpen || accountTab !== 'patient_links' || !showPatientLinksTab || delegateOptInEnabled) {
+    if (!patientLinksPanelVisible || !showPatientLinksTab || delegateOptInEnabled) {
       return;
     }
 
@@ -5169,7 +5322,7 @@ export function Header({
     return () => {
       cancelled = true;
     };
-  }, [accountTab, delegateOptInEnabled, showPatientLinksTab, welcomeOpen]);
+  }, [delegateOptInEnabled, patientLinksPanelVisible, showPatientLinksTab]);
 
   const trackPatientLinkFieldEntry = useCallback((field: string, value: string) => {
     const normalizedField = typeof field === 'string' ? field.trim() : '';
@@ -5952,6 +6105,109 @@ export function Header({
     [accountHasResellerPermitFile, accountResellerPermitDisplayName, resellerPermitBusy],
   );
 
+  const resellerPermitUploadPanel = accountCanUploadResellerPermit ? (
+    <div className="reseller-permit-settings-card glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+      <div>
+        <h3 className="text-base font-semibold text-slate-800">Reseller Permit</h3>
+        <p className="text-sm text-slate-600">
+          Upload an applicable reseller permit for tax exemption.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <Input
+          ref={resellerPermitInputRef}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.gif"
+          className="bg-slate-100 file:mr-4 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900"
+          disabled={resellerPermitBusy}
+          onChange={(event) => {
+            void handleAccountResellerPermitUpload(event.target.files?.[0] || null);
+          }}
+        />
+        <p className="text-xs text-slate-500">
+          Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
+        </p>
+        {accountHasResellerPermitFile && (
+          <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <button
+              type="button"
+              className="block w-full min-w-0 flex-1 text-left transition-colors hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={resellerPermitBusy}
+              aria-label="Download uploaded reseller permit"
+              title="Download uploaded reseller permit"
+              onClick={() => {
+                void handleAccountResellerPermitDownload();
+              }}
+            >
+              <span className="font-medium text-slate-900">On file:</span>{' '}
+              <span className="break-all underline decoration-dotted underline-offset-2">
+                {accountResellerPermitDisplayName}
+              </span>
+              {accountResellerPermitUploadedLabel
+                ? ` • Uploaded ${accountResellerPermitUploadedLabel}`
+                : ''}
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-transparent text-slate-500 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={resellerPermitBusy}
+              aria-label="Delete uploaded reseller permit"
+              title="Delete uploaded permit"
+              onClick={() => {
+                void handleAccountResellerPermitDelete();
+              }}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        {resellerPermitUploading && (
+          <p className="text-sm text-slate-600">Uploading reseller permit…</p>
+        )}
+        {resellerPermitDownloading && (
+          <p className="text-sm text-slate-600">Downloading reseller permit…</p>
+        )}
+        {resellerPermitDeleting && (
+          <p className="text-sm text-slate-600">Deleting reseller permit…</p>
+        )}
+      </div>
+    </div>
+  ) : null;
+
+  const physicianDashboardSettingsPanel = accountIsDoctor ? (
+    <div className="physician-dashboard-settings-panel space-y-4">
+      {resellerPermitUploadPanel}
+    </div>
+  ) : (
+    <div className="physician-dashboard-settings-empty" aria-label="Settings" />
+  );
+
+  const physicianThreePlRepresentativeEmail =
+    String(localUser?.salesRep?.email || '').trim();
+  const canSeePhysicianThreePlTab =
+    normalizeRole(localUser?.role ?? user?.role) === 'test_doctor' ||
+    physicianThreePlEnabled === true;
+  const physicianThreePlPanel = (
+    <div className="physician-dashboard-3pl-panel glass-card squircle-md border border-[var(--brand-glass-border-2)] bg-white/80 p-4 text-sm text-slate-700">
+      Please contact your representative
+      {physicianThreePlRepresentativeEmail ? (
+        <>
+          {' '}
+          at{' '}
+          <a
+            href={`mailto:${physicianThreePlRepresentativeEmail}`}
+            className="font-semibold text-[rgb(11,6,121)] hover:underline"
+          >
+            {physicianThreePlRepresentativeEmail}
+          </a>
+        </>
+      ) : (
+        '.'
+      )}
+    </div>
+  );
+
   const accountInfoPanel = localUser ? (
     <div className="space-y-4">
       {accountIsDoctor ? (
@@ -6212,75 +6468,7 @@ export function Header({
         </div>
       </div>
 
-      {accountCanUploadResellerPermit && (
-        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-800">Reseller Permit</h3>
-            <p className="text-sm text-slate-600">
-              Upload an applicable reseller permit for tax exemption.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            <Input
-              ref={resellerPermitInputRef}
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.gif"
-              className="bg-slate-100 file:mr-4 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900"
-              disabled={resellerPermitBusy}
-              onChange={(event) => {
-                void handleAccountResellerPermitUpload(event.target.files?.[0] || null);
-              }}
-            />
-            <p className="text-xs text-slate-500">
-              Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
-            </p>
-            {accountHasResellerPermitFile && (
-              <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <button
-                  type="button"
-                  className="block w-full min-w-0 flex-1 text-left transition-colors hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-70"
-                  disabled={resellerPermitBusy}
-                  aria-label="Download uploaded reseller permit"
-                  title="Download uploaded reseller permit"
-                  onClick={() => {
-                    void handleAccountResellerPermitDownload();
-                  }}
-                >
-                  <span className="font-medium text-slate-900">On file:</span>{' '}
-                  <span className="break-all underline decoration-dotted underline-offset-2">
-                    {accountResellerPermitDisplayName}
-                  </span>
-                  {accountResellerPermitUploadedLabel
-                    ? ` • Uploaded ${accountResellerPermitUploadedLabel}`
-                    : ''}
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-transparent text-slate-500 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={resellerPermitBusy}
-                  aria-label="Delete uploaded reseller permit"
-                  title="Delete uploaded permit"
-                  onClick={() => {
-                    void handleAccountResellerPermitDelete();
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
-            )}
-            {resellerPermitUploading && (
-              <p className="text-sm text-slate-600">Uploading reseller permit…</p>
-            )}
-            {resellerPermitDownloading && (
-              <p className="text-sm text-slate-600">Downloading reseller permit…</p>
-            )}
-            {resellerPermitDeleting && (
-              <p className="text-sm text-slate-600">Deleting reseller permit…</p>
-            )}
-          </div>
-        </div>
-      )}
+      {!accountIsDoctor && resellerPermitUploadPanel}
 
 	      <div className="pt-1">
 	        <button
@@ -6325,7 +6513,7 @@ export function Header({
             }}
             rows={4}
             placeholder="Tell us what workflow or research tool would help you."
-            className="min-h-[7rem] resize-y border-2 !border-[rgba(11,6,121,0.35)] bg-white text-sm text-slate-800 shadow-inner placeholder:text-slate-400 focus:!border-[rgb(11,6,121)] focus:ring-[rgba(11,6,121,0.22)]"
+            className="research-tool-request-field min-h-[7rem] resize-y border-2 bg-white text-sm text-slate-800 shadow-inner placeholder:text-slate-400 focus:ring-slate-200"
             disabled={researchToolRequestSubmitting}
           />
           {researchToolRequestError ? (
@@ -6584,10 +6772,14 @@ export function Header({
       toast.message('No associated delegate link was found for this order.');
       return;
     }
-    setAccountTab('patient_links');
+    if (accountIsDoctor) {
+      setPhysicianDashboardTab('links');
+    } else {
+      setAccountTab('patient_links');
+    }
     setPendingPatientLinkScrollTarget(target);
     requestPatientLinksRefresh({ force: true });
-  }, [buildOrderToPatientLinkTarget, requestPatientLinksRefresh, showPatientLinksTab]);
+  }, [accountIsDoctor, buildOrderToPatientLinkTarget, requestPatientLinksRefresh, showPatientLinksTab]);
   const findMatchingPatientLinkToken = useCallback(
     (
       target: { delegateTokens: string[]; orderIds: string[]; referenceLabels: string[] } | null,
@@ -6647,7 +6839,7 @@ export function Header({
   }, [welcomeOpen]);
 
   useEffect(() => {
-    if (!welcomeOpen || accountTab !== 'patient_links' || !pendingPatientLinkScrollTarget) {
+    if (!patientLinksPanelVisible || !pendingPatientLinkScrollTarget) {
       return;
     }
     if (patientLinksLoading || patientLinksLoadInFlightRef.current) {
@@ -6679,12 +6871,11 @@ export function Header({
 
     setPendingPatientLinkScrollTarget(null);
   }, [
-    accountTab,
     findMatchingPatientLinkToken,
     patientLinks,
     patientLinksLoading,
+    patientLinksPanelVisible,
     pendingPatientLinkScrollTarget,
-    welcomeOpen,
   ]);
 
 		  const renderOrdersList = () => {
@@ -6919,7 +7110,10 @@ export function Header({
           return (
             <div
               key={`${order.source}-${order.id}`}
-              className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden"
+              className={clsx(
+                "account-order-card squircle-lg bg-white border overflow-hidden",
+                doctorView && "physician-dashboard-order-card",
+              )}
             >
               {/* Order Header */}
               <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9]">
@@ -7110,7 +7304,10 @@ export function Header({
 	                      type="button"
 	                      size="sm"
 	                      variant="outline"
-	                      className="header-home-button squircle-sm bg-white text-slate-900 px-6 justify-center font-semibold gap-2 w-full lg:w-full"
+	                      className={clsx(
+                          "header-home-button squircle-sm bg-white text-slate-900 px-6 justify-center font-semibold gap-2 w-full lg:w-full",
+                          !repView && "order-buy-again-button",
+                        )}
 	                      onClick={() => {
 	                        if (onBuyOrderAgain) {
 	                          // Close account modal before opening checkout to avoid stacked modal blur.
@@ -7480,7 +7677,12 @@ export function Header({
 	            ← Back to orders
 	          </Button>
 	        </div>
-	        <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden text-left">
+	        <div
+            className={clsx(
+              "account-order-card squircle-lg bg-white border overflow-hidden text-left",
+              accountIsDoctor && "physician-dashboard-order-card",
+            )}
+          >
 	          <div className="px-6 py-4 bg-[#f5f6f6] flex flex-wrap items-center justify-between gap-4">
 	            <div className="space-y-1">
 	              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Order</p>
@@ -7773,11 +7975,14 @@ export function Header({
 	            </button>
 	          )}
 
-          <div className="relative w-full sm:w-[16rem] md:w-[18rem]">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform !text-slate-500"
-              style={{ color: delegateMode ? secondaryColor : 'rgb(100, 116, 139)' }}
-            />
+          <div
+            className="header-search-field relative isolate w-full sm:w-[16rem] md:w-[18rem]"
+            style={{
+              '--header-search-border-color': delegateMode ? secondaryColor : HEADER_BRAND_BLUE,
+              '--header-search-text-color': delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+              color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+            } as CSSProperties}
+          >
             <Input
               type="text"
               inputMode="search"
@@ -7785,19 +7990,30 @@ export function Header({
               value={ordersSearchQuery}
               onChange={(event) => setOrdersSearchQuery(event.target.value)}
               placeholder="Search orders..."
-              className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
+              className="header-search-input orders-search-input relative z-0 squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
               style={{
                 '--header-search-border-color': delegateMode ? secondaryColor : undefined,
-                color: delegateMode ? secondaryColor : undefined,
-                caretColor: delegateMode ? secondaryColor : undefined,
+                '--header-search-text-color': delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+                color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+                caretColor: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
               } as CSSProperties}
+            />
+            <Search
+              aria-hidden="true"
+              focusable="false"
+              className="header-search-icon pointer-events-none absolute left-3 top-1/2 z-20 block h-4 w-4 -translate-y-1/2 transform"
+              style={{
+                color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+                stroke: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+                zIndex: 20,
+              }}
             />
             {ordersSearchQuery.trim().length > 0 && (
               <button
                 type="button"
                 aria-label="Clear order search"
                 onClick={() => setOrdersSearchQuery('')}
-                className="absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
+                className="absolute right-3 left-auto top-1/2 z-20 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -7817,8 +8033,8 @@ export function Header({
                   <EyeOff className="h-4 w-4 mr-2" aria-hidden="true" />
                   Hide canceled
                 </>
-              ) : (
-                <>
+  ) : (
+    <>
                   <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
                   Show canceled
                 </>
@@ -8320,8 +8536,9 @@ export function Header({
 	                          value: '',
 	                          readOnly: true,
 	                          showClearButton: false,
-                            borderColor: delegatePreviewSecondaryColor,
-	                        })}
+	                            borderColor: delegatePreviewSecondaryColor,
+                            textColor: delegatePreviewSecondaryColor,
+		                        })}
 	                      </div>
 	                    </div>
 	                  )}
@@ -10141,7 +10358,138 @@ export function Header({
     </>
 	  );
 
+  const physicianDashboardTabs: Array<{
+    id: PhysicianDashboardTabId;
+    label: string;
+    Icon: ElementType;
+    count?: number;
+  }> = [
+    { id: 'links', label: 'Your Links', Icon: Link2, count: outstandingPatientProposalCount },
+    { id: 'orders', label: 'Your Orders', Icon: Package },
+    ...(canSeePhysicianThreePlTab
+      ? [{ id: '3pl' as const, label: '3PL', Icon: TruckIcon }]
+      : []),
+    { id: 'refer', label: 'Refer a Colleague', Icon: Users },
+    { id: 'settings', label: 'Settings', Icon: AdjustmentsHorizontalIcon },
+  ];
+
+  useEffect(() => {
+    if (physicianDashboardTab === '3pl' && !canSeePhysicianThreePlTab) {
+      setPhysicianDashboardTab('links');
+    }
+  }, [canSeePhysicianThreePlTab, physicianDashboardTab]);
+
+  const physicianDashboardActivePanel =
+    physicianDashboardTab === 'links'
+      ? patientLinksPanel
+      : physicianDashboardTab === 'orders'
+        ? accountOrdersPanel
+        : physicianDashboardTab === '3pl' && canSeePhysicianThreePlTab
+          ? physicianThreePlPanel
+        : physicianDashboardTab === 'refer'
+          ? physicianReferralDashboardPanel
+          : physicianDashboardSettingsPanel;
+
+  const physicianDashboardPortal =
+    accountIsDoctor && physicianDashboardPortalTarget
+      ? createPortal(
+          <section
+            className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(11,6,121,0.6)] w-full sales-rep-dashboard physician-dashboard-container"
+            aria-label="Physician dashboard"
+          >
+            <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">
+                  Physician Dashboard
+                </h2>
+                <p className="text-sm text-slate-600">
+                  {canSeePhysicianThreePlTab
+                    ? 'Manage your delegate links, orders, 3PL, colleague referrals, and account tools.'
+                    : 'Manage your delegate links, orders, colleague referrals, and account tools.'}
+                </p>
+              </div>
+            </div>
+            <div className="relative mb-3 w-full account-tab-shell physician-dashboard-tabs">
+              <div
+                className="w-full account-tab-scroll-container"
+                ref={physicianDashboardTabsContainerRef}
+                onScroll={updatePhysicianDashboardTabIndicator}
+              >
+                <div className="flex items-center gap-4 pb-0 account-tab-row">
+                  {physicianDashboardTabs.map((tab) => {
+                    const isActive = physicianDashboardTab === tab.id;
+                    const showCount = Number(tab.count || 0) > 0;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        className={clsx(
+                          "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap transition-colors text-black hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 physician-dashboard-tab",
+                          isActive && "text-black",
+                        )}
+                        data-physician-dashboard-tab={tab.id}
+                        aria-pressed={isActive}
+                        onClick={() => {
+                          setPhysicianDashboardTab(tab.id);
+                          if (tab.id === 'links') {
+                            trackUsageEvent('delegate_link_tab_clicked', {
+                              tab: 'delegate_links',
+                              tabLabel: tab.label,
+                              source: 'physician_dashboard',
+                            });
+                          }
+                        }}
+                      >
+                        <span
+                          className="inline-flex items-center gap-2"
+                          data-physician-dashboard-tab-content
+                        >
+                          <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden">
+                            <tab.Icon
+                              className="h-5 w-5 shrink-0"
+                              aria-hidden="true"
+                            />
+                          </span>
+                          <span className="inline-flex items-center">
+                            {tab.label}
+                            {showCount && (
+                              <Badge
+                                variant="outline"
+                                className="ml-1 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(11,6,121)] font-semibold leading-none shadow-sm pointer-events-none"
+                                aria-label={`${tab.label} notifications: ${tab.count}`}
+                                style={{ color: 'rgb(11,6,121)' }}
+                              >
+                                {Number(tab.count) > 9 ? '9+' : tab.count}
+                              </Badge>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <span
+                aria-hidden="true"
+                className="account-tab-underline-indicator"
+                style={{
+                  left: physicianDashboardTabIndicator.left,
+                  width: physicianDashboardTabIndicator.width,
+                  opacity: physicianDashboardTabIndicator.opacity,
+                }}
+              />
+            </div>
+            <div className="physician-dashboard-panel">
+              {physicianDashboardActivePanel}
+            </div>
+          </section>,
+          physicianDashboardPortalTarget,
+        )
+      : null;
+
 				  return (
+            <>
+              {physicianDashboardPortal}
 				    <header
 				      ref={headerRef}
 				      data-app-header
@@ -10315,6 +10663,7 @@ export function Header({
         </div>
       </div>
     </header>
+            </>
   );
 }
 

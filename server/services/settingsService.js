@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   peptideForumEnabled: true,
   researchDashboardEnabled: false,
   physicianMapEnabled: false,
+  physicianThreePlEnabled: false,
   crmEnabled: true,
   testPaymentsOverrideEnabled: false,
   stripeMode: null, // null = follow env
@@ -27,6 +28,7 @@ const BETA_SERVICE_KEYS = new Set([
   'forum',
   'research',
   'physicianMap',
+  'physicianThreePl',
   'testPaymentsOverride',
 ]);
 
@@ -65,6 +67,9 @@ const normalizeSettings = (settings = {}) => {
   );
   merged.physicianMapEnabled = Boolean(
     raw.physicianMapEnabled ?? DEFAULT_SETTINGS.physicianMapEnabled,
+  );
+  merged.physicianThreePlEnabled = Boolean(
+    raw.physicianThreePlEnabled ?? DEFAULT_SETTINGS.physicianThreePlEnabled,
   );
   merged.crmEnabled = Boolean(raw.crmEnabled ?? DEFAULT_SETTINGS.crmEnabled);
   merged.testPaymentsOverrideEnabled = Boolean(
@@ -203,6 +208,11 @@ const getPhysicianMapEnabled = async () => {
   return Boolean(settings.physicianMapEnabled);
 };
 
+const getPhysicianThreePlEnabled = async () => {
+  const settings = await getSettings();
+  return Boolean(settings.physicianThreePlEnabled);
+};
+
 const getCrmEnabled = async () => {
   const settings = await getSettings();
   return Boolean(settings.crmEnabled);
@@ -304,6 +314,22 @@ const setPhysicianMapEnabled = async (enabled) => {
   }
   persistToStore(next);
   return Boolean(next.physicianMapEnabled);
+};
+
+const setPhysicianThreePlEnabled = async (enabled) => {
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    physicianThreePlEnabled: Boolean(enabled),
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.physicianThreePlEnabled);
+  }
+  persistToStore(next);
+  return Boolean(next.physicianThreePlEnabled);
 };
 
 const setCrmEnabled = async (enabled) => {
@@ -946,6 +972,8 @@ module.exports = {
   setResearchDashboardEnabled,
   getPhysicianMapEnabled,
   setPhysicianMapEnabled,
+  getPhysicianThreePlEnabled,
+  setPhysicianThreePlEnabled,
   getCrmEnabled,
   setCrmEnabled,
   getTestPaymentsOverrideEnabled,

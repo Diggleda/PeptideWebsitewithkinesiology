@@ -23,11 +23,15 @@ import { formatOrderStatusLabel } from "./lib/orderStatusLabels.mjs";
 import { shouldDisplayShippingStatusForOrder } from "./lib/orderStatusPrecedence.mjs";
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
-import { Header } from "./components/Header";
+import { Header, PHYSICIAN_DASHBOARD_PORTAL_ID } from "./components/Header";
 import { BrandLogoImage } from "./components/BrandLogoImage";
 import { DoctorProfileForm } from "./components/DoctorProfileForm";
 import { FeaturedSection } from "./components/FeaturedSection";
-import { PhysicianNetworkMap } from "./components/PhysicianNetworkMap";
+import {
+  PhysicianNetworkMap,
+  PhysicianNetworkStateBreakdown,
+  type PhysicianNetworkMapStateSelection,
+} from "./components/PhysicianNetworkMap";
 import { ProductCard } from "./components/ProductCard";
 import { ImageWithFallback } from "./components/ImageWithFallback";
 import type { Product as CardProduct } from "./components/ProductCard";
@@ -4281,7 +4285,12 @@ const resolveOnHoldOrderDoctorFallbackLabel = (order: AccountOrderSummary) => {
     .map((value) => normalizeStringField(value) || "")
     .find((value) => {
       const normalized = value.toLowerCase();
-      return value && normalized !== "unknown doctor" && normalized !== "unknown";
+      return (
+        value &&
+        normalized !== "unknown doctor" &&
+        normalized !== "unknown physician" &&
+        normalized !== "unknown"
+      );
     });
 
   return (
@@ -4812,6 +4821,7 @@ const CONTACT_FORM_STATUS_FLOW_SELECT = CONTACT_FORM_STATUS_FLOW.filter(
 
 const PROSPECT_DELETE_VALUE = "__prospect_delete__";
 const MANUAL_PROSPECT_DELETE_VALUE = "__manual_delete__";
+const ACTIVE_PROSPECT_DISPLAY_LIMIT = 7;
 const DELETED_USER_ID = "0000000000000";
 const DELETED_USER_LABEL = "DELETED";
 
@@ -6222,6 +6232,11 @@ function MainApp() {
   const [manufacturingQualityStandardsOpen, setManufacturingQualityStandardsOpen] =
     useState(false);
   const [postLoginHold, setPostLoginHold] = useState(false);
+  const [physicianMapStateSelection, setPhysicianMapStateSelection] =
+    useState<PhysicianNetworkMapStateSelection | null>(null);
+  const [physicianMapSelectedDoctorId, setPhysicianMapSelectedDoctorId] =
+    useState<string | null>(null);
+  const [physicianMapSelectionResetKey, setPhysicianMapSelectionResetKey] = useState(0);
   const [maintenanceLaunchPending, setMaintenanceLaunchPending] = useState(false);
   const [maintenanceCompanionActive, setMaintenanceCompanionActive] = useState(false);
   const [maintenanceNowMs, setMaintenanceNowMs] = useState(() => Date.now());
@@ -8855,6 +8870,14 @@ function MainApp() {
         setPhysicianMapEnabled(false);
       }
       try {
+        const stored = localStorage.getItem("trufusion:physician-3pl-enabled");
+        if (stored !== null) {
+          setPhysicianThreePlEnabled(stored === "true");
+        }
+      } catch {
+        setPhysicianThreePlEnabled(false);
+      }
+      try {
         const stored = localStorage.getItem("trufusion:test-payments-override-enabled");
         if (stored !== null) {
           setTestPaymentsOverrideEnabled(stored === "true");
@@ -8883,18 +8906,20 @@ function MainApp() {
                 patientLinksResult,
                 crmResult,
                 forumResult,
-                researchResult,
-                physicianMapResult,
-                betaServicesResult,
-              ] = await Promise.allSettled([
+	                researchResult,
+	                physicianMapResult,
+                physicianThreePlResult,
+	                betaServicesResult,
+	              ] = await Promise.allSettled([
 			          settingsAPI.getShopStatus(),
 	              settingsAPI.getPatientLinksStatus(),
 	              settingsAPI.getCrmStatus(),
 			          settingsAPI.getForumStatus(),
-			          settingsAPI.getResearchStatus(),
-                settingsAPI.getPhysicianMapStatus(),
-                settingsAPI.getBetaServices(),
-			        ]);
+				          settingsAPI.getResearchStatus(),
+	                settingsAPI.getPhysicianMapStatus(),
+                settingsAPI.getPhysicianThreePlStatus(),
+	                settingsAPI.getBetaServices(),
+				        ]);
 		        if (cancelled) return;
 	        if (shopResult.status === "fulfilled") {
 	          const shop = shopResult.value as any;
@@ -8976,10 +9001,25 @@ function MainApp() {
                 } catch {
                   // ignore
                 }
+	              }
+	            }
+
+            if (physicianThreePlResult.status === "fulfilled") {
+              const physicianThreePl = physicianThreePlResult.value as any;
+              if (physicianThreePl && typeof physicianThreePl.physicianThreePlEnabled === "boolean") {
+                setPhysicianThreePlEnabled(physicianThreePl.physicianThreePlEnabled);
+                try {
+                  localStorage.setItem(
+                    "trufusion:physician-3pl-enabled",
+                    physicianThreePl.physicianThreePlEnabled ? "true" : "false",
+                  );
+                } catch {
+                  // ignore
+                }
               }
             }
 
-            if (betaServicesResult.status === "fulfilled") {
+	            if (betaServicesResult.status === "fulfilled") {
               const betaInfo = betaServicesResult.value as any;
               setBetaServices(normalizePortalBetaServices(betaInfo?.betaServices));
             }
@@ -9358,8 +9398,8 @@ function MainApp() {
 	    [user?.role],
 	  );
 
-  const handlePhysicianMapToggle = useCallback(
-    async (value: boolean) => {
+	  const handlePhysicianMapToggle = useCallback(
+	    async (value: boolean) => {
       if (!isAdmin(user?.role)) {
         return;
       }
@@ -9408,10 +9448,63 @@ function MainApp() {
         setSettingsSaving((prev) => ({ ...prev, physicianMap: false }));
       }
     },
+	    [user?.role],
+	  );
+
+  const handlePhysicianThreePlToggle = useCallback(
+    async (value: boolean) => {
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+      setSettingsSaving((prev) => ({ ...prev, physicianThreePl: true }));
+      let previousValue = false;
+      setPhysicianThreePlEnabled((prev) => {
+        previousValue = prev;
+        return value;
+      });
+      try {
+        localStorage.setItem(
+          "trufusion:physician-3pl-enabled",
+          value ? "true" : "false",
+        );
+      } catch {
+        // ignore
+      }
+      try {
+        const updated = await settingsAPI.updatePhysicianThreePlStatus(value);
+        const confirmed =
+          updated && typeof (updated as any).physicianThreePlEnabled === "boolean"
+            ? (updated as any).physicianThreePlEnabled
+            : value;
+        setPhysicianThreePlEnabled(confirmed);
+        try {
+          localStorage.setItem(
+            "trufusion:physician-3pl-enabled",
+            confirmed ? "true" : "false",
+          );
+        } catch {
+          // ignore
+        }
+      } catch (error) {
+        console.warn("[Settings] Failed to update physician 3PL setting", error);
+        toast.error("Unable to update physician 3PL setting right now.");
+        setPhysicianThreePlEnabled(previousValue);
+        try {
+          localStorage.setItem(
+            "trufusion:physician-3pl-enabled",
+            previousValue ? "true" : "false",
+          );
+        } catch {
+          // ignore
+        }
+      } finally {
+        setSettingsSaving((prev) => ({ ...prev, physicianThreePl: false }));
+      }
+    },
     [user?.role],
   );
 
-		  const handleTestPaymentsOverrideToggle = useCallback(
+			  const handleTestPaymentsOverrideToggle = useCallback(
 	    async (value: boolean) => {
 	      if (!isAdmin(user?.role)) {
 	        return;
@@ -12850,6 +12943,7 @@ function MainApp() {
     "forum",
     "research",
     "physicianMap",
+    "physicianThreePl",
     "testPaymentsOverride",
   ] as const;
 
@@ -12861,6 +12955,7 @@ function MainApp() {
     forum: "The Peptide Forum",
     research: "Research Dashboard",
     physicianMap: "Physician Network Map",
+    physicianThreePl: "Physician 3PL Tab",
     testPaymentsOverride: "Test Payments Override",
   };
   const ADMIN_DELEGATE_LINK_BASELINE_STAGES = [
@@ -17511,11 +17606,38 @@ function MainApp() {
   const [receiveClientOrderUpdateEmails, setReceiveClientOrderUpdateEmails] =
     useState(false);
   const [accountIndicatorTotal, setAccountIndicatorTotal] = useState(0);
-  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
-	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
-  const [physicianMapEnabled, setPhysicianMapEnabled] = useState(false);
-  const shouldShowPhysicianMapCard =
-    physicianMapEnabled || isTestDoctor(user?.role);
+	  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
+		  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
+	  const [physicianMapEnabled, setPhysicianMapEnabled] = useState(false);
+  const [physicianThreePlEnabled, setPhysicianThreePlEnabled] = useState(false);
+	  const shouldShowPhysicianMapCard =
+	    physicianMapEnabled || isTestDoctor(user?.role);
+  const handlePhysicianMapStateSelectionChange = useCallback(
+    (selection: PhysicianNetworkMapStateSelection | null) => {
+      setPhysicianMapStateSelection(selection);
+      setPhysicianMapSelectedDoctorId((currentDoctorId) => {
+        if (!selection || !currentDoctorId) {
+          return null;
+        }
+        return selection.doctors.some((doctor) => doctor.id === currentDoctorId)
+          ? currentDoctorId
+          : null;
+      });
+    },
+    [],
+  );
+  const handlePhysicianMapBack = useCallback(() => {
+    setPhysicianMapStateSelection(null);
+    setPhysicianMapSelectedDoctorId(null);
+    setPhysicianMapSelectionResetKey((current) => current + 1);
+  }, []);
+  useEffect(() => {
+    if (postLoginHold && user && shouldShowPhysicianMapCard) {
+      return;
+    }
+    setPhysicianMapStateSelection(null);
+    setPhysicianMapSelectedDoctorId(null);
+  }, [postLoginHold, shouldShowPhysicianMapCard, user?.id]);
 	  const [settingsSupport, setSettingsSupport] = useState<{
 	    research: boolean;
 	  }>({ research: true });
@@ -17523,19 +17645,21 @@ function MainApp() {
 	    shop: boolean;
 	    patientLinks: boolean;
 	    crm: boolean;
-    forum: boolean;
-    research: boolean;
-    physicianMap: boolean;
-    testPaymentsOverride: boolean;
+	    forum: boolean;
+	    research: boolean;
+	    physicianMap: boolean;
+    physicianThreePl: boolean;
+	    testPaymentsOverride: boolean;
     receiveClientOrderUpdateEmails: boolean;
 	  }>({
     shop: false,
     patientLinks: false,
     crm: false,
-    forum: false,
-    research: false,
-    physicianMap: false,
-		    testPaymentsOverride: false,
+	    forum: false,
+	    research: false,
+	    physicianMap: false,
+    physicianThreePl: false,
+			    testPaymentsOverride: false,
 		    receiveClientOrderUpdateEmails: false,
 		  });
   const [databaseVisualizer, setDatabaseVisualizer] = useState<DatabaseVisualizerPayload | null>(null);
@@ -18186,7 +18310,7 @@ function MainApp() {
             : nextDoctorUserIds,
         );
       } catch (error) {
-        console.warn("[Settings] Failed to update Delegate Links doctors", error);
+        console.warn("[Settings] Failed to update Delegate Links physicians", error);
         toast.error("Unable to update Delegate Links physicians right now.");
         setPatientLinksDoctorUserIds(previousDoctorUserIds);
       } finally {
@@ -18227,7 +18351,7 @@ function MainApp() {
         );
       } catch (error) {
         if (cancelled) return;
-        console.warn("[Settings] Failed to load Delegate Links doctors", error);
+        console.warn("[Settings] Failed to load Delegate Links physicians", error);
       }
     })();
     return () => {
@@ -18324,7 +18448,7 @@ function MainApp() {
           : nextDoctorUserIds,
       );
     } catch (error) {
-      console.warn("[Settings] Failed to bulk update Delegate Links doctors", error);
+      console.warn("[Settings] Failed to bulk update Delegate Links physicians", error);
       toast.error("Unable to update Delegate Links physicians right now.");
       setPatientLinksDoctorUserIds(previousDoctorUserIds);
     } finally {
@@ -19378,7 +19502,7 @@ function MainApp() {
         setSalesRepHandDeliveryError(
           typeof error?.message === "string"
             ? error.message
-            : "Unable to load doctors for hand delivery settings.",
+            : "Unable to load physicians for hand delivery settings.",
         );
       } finally {
         setSalesRepHandDeliveryLoading(false);
@@ -21165,8 +21289,6 @@ function MainApp() {
       newsLoadingTimeoutRef.current = null;
     }, remaining);
   }, []);
-  const [isReferralSectionExpanded, setIsReferralSectionExpanded] =
-    useState(false);
   const [quoteOfTheDay, setQuoteOfTheDay] = useState<{
     text: string;
     author: string;
@@ -21433,6 +21555,7 @@ function MainApp() {
 
 		  const [activeProspectFilter, setActiveProspectFilter] = useState<string>("all");
   const [activeProspectSearch, setActiveProspectSearch] = useState("");
+  const [activeProspectsExpanded, setActiveProspectsExpanded] = useState(false);
 	  const activeProspectSortOrderRef = useRef<Map<string, number>>(new Map());
 	  const activeProspectSortOrderCounterRef = useRef(0);
 
@@ -22274,6 +22397,17 @@ function MainApp() {
     });
   }, [activeProspectEntries, activeProspectFilter, activeProspectSearch]);
 
+  const hasOverflowActiveProspects =
+    filteredActiveProspects.length > ACTIVE_PROSPECT_DISPLAY_LIMIT;
+  const activeProspectsToRender =
+    activeProspectsExpanded || !hasOverflowActiveProspects
+      ? filteredActiveProspects
+      : filteredActiveProspects.slice(0, ACTIVE_PROSPECT_DISPLAY_LIMIT);
+
+  useEffect(() => {
+    setActiveProspectsExpanded(false);
+  }, [activeProspectFilter, activeProspectSearch]);
+
   const getActiveProspectNavigationIdentifier = useCallback((record: any) => {
     const rawContactFormId = String(
       (record as any)?.contactFormId ||
@@ -22737,6 +22871,15 @@ function MainApp() {
 
   useEffect(() => {
     if (
+      salesDashboardTab === "doctor_referrals_manual" &&
+      activeProspectHighlightedIdentifier
+    ) {
+      setActiveProspectsExpanded(true);
+    }
+  }, [activeProspectHighlightedIdentifier, salesDashboardTab]);
+
+  useEffect(() => {
+    if (
       salesDashboardTab !== "doctor_referrals_manual" ||
       !activeProspectHighlightedIdentifier
     ) {
@@ -22758,6 +22901,7 @@ function MainApp() {
     };
   }, [
     activeProspectHighlightedIdentifier,
+    activeProspectsExpanded,
     filteredActiveProspects,
     salesDashboardTab,
   ]);
@@ -23486,7 +23630,7 @@ function MainApp() {
         orders = response as AccountOrderSummary[];
       }
 
-      // Normalize orders using the same logic as the doctor's orders tab so dates and shipping ETAs are consistent
+      // Normalize orders using the same logic as the physician's orders tab so dates and shipping ETAs are consistent
       const originalByKey = new Map<string, any>();
       const orderKey = (order: any, idx: number) =>
         String(
@@ -23503,7 +23647,7 @@ function MainApp() {
       });
       const normalizeDateField = normalizeTimestampCandidate;
 
-      // Normalize using Woo order summaries only (same shape doctor tab uses)
+      // Normalize using Woo order summaries only (same shape physician tab uses)
       const existingByKey = new Map<string, AccountOrderSummary>();
       const addExistingKeys = (order: AccountOrderSummary, idx = 0) => {
         const keys = [
@@ -25358,7 +25502,7 @@ function MainApp() {
         );
         toast.success("Referral deleted.");
       } catch (error: any) {
-        console.error("[Referral] Doctor referral delete failed", error);
+        console.error("[Referral] Physician referral delete failed", error);
         toast.error(
           typeof error?.message === "string"
             ? error.message
@@ -29486,7 +29630,7 @@ function MainApp() {
     [salesQuotesSelectedProspectId, tracedRefreshReferralData],
   );
 
-  const renderDoctorDashboard = () => {
+  const renderDoctorReferralDashboardPanel = () => {
     if (!user || !isDoctorRole(user.role)) {
       return null;
     }
@@ -29494,7 +29638,6 @@ function MainApp() {
     const lifetimeCredits = doctorSummary?.totalCredits ?? 0;
     const availableCreditsDisplay =
       doctorSummary?.availableCredits ?? Number(user.referralCredits ?? 0);
-    const firstOrderBonuses = doctorSummary?.firstOrderBonuses ?? 0;
     const totalReferrals = user.totalReferrals ?? doctorReferrals.length ?? 0;
     const ledgerEntries = doctorSummary?.ledger ?? [];
     const processedCredits = (() => {
@@ -29565,90 +29708,8 @@ function MainApp() {
       )
       .slice(0, 5);
 
-    const renderReferralHubTrigger = (expanded: boolean) => {
-      const baseTriggerClasses =
-        "group glass-card referral-pill squircle-xl flex w-full items-center justify-between gap-4 pr-5 py-4 text-left transition-all";
-      const triggerClasses = expanded
-        ? `${baseTriggerClasses} shadow-md`
-        : `${baseTriggerClasses} shadow-[0_18px_48px_-28px_rgba(11,6,121,0.8)] hover:shadow-[0_20px_52px_-24px_rgba(11,6,121,0.85)]`;
-
-      return (
-        <button
-          type="button"
-          className={triggerClasses}
-          onClick={() => setIsReferralSectionExpanded((prev) => !prev)}
-          aria-expanded={expanded}
-          aria-label={
-            expanded
-              ? "Collapse Referral Rewards Hub"
-              : "Expand Referral Rewards Hub"
-          }
-	          style={{
-	            borderWidth: "2px",
-	            borderColor: "var(--brand-glass-border-2)",
-	            paddingLeft: "1rem",
-	            borderRadius: "var(--squircle-xl)",
-	          }}
-	        >
-          <div className="flex items-center gap-6 flex-shrink-0 pl-4 ml-2">
-	            <div
-	              className={`flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-all duration-300 group-hover:bg-slate-200 ${
-	                expanded ? "shadow-inner" : ""
-	              }`}
-		            >
-		              <ChevronRight
-		                className="h-4 w-4"
-		                style={{
-		                  transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-		                  transition: "transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
-		                  transformOrigin: "center",
-		                }}
-		              />
-            </div>
-            <div className="hidden sm:block">
-              <p className="text-sm font-semibold text-slate-700">
-                Referral Rewards Hub
-              </p>
-              <p className="text-xs text-slate-500">
-                Invite doctors & track credited referrals
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-1 items-center justify-end gap-2">
-            <svg
-              className="w-5 h-5 text-slate-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-              />
-            </svg>
-            <p className="text-lg font-medium text-slate-700">
-              Refer your colleagues
-            </p>
-          </div>
-        </button>
-      );
-    };
-
-    const renderExpandedContent = () => (
-      <div
-        className="overflow-hidden transition-all duration-500 ease-in-out"
-        style={{
-          maxHeight: isReferralSectionExpanded ? "5000px" : "0",
-          opacity: isReferralSectionExpanded ? 1 : 0,
-        }}
-      >
-        <div
-          className="px-4 sm:px-8 lg:px-16 pb-8 space-y-8 squircle-xl"
-          style={{ padding: "1rem 1rem 1rem" }}
-        >
+    return (
+      <div className="physician-referral-dashboard-panel space-y-8 squircle-xl">
           {referralDataError && (
             <div className="px-4 py-3 text-sm text-red-700">
               <div className="flex items-center justify-center gap-2">
@@ -29870,14 +29931,20 @@ function MainApp() {
                 <div className="space-y-4">
                   <div className="referral-toolbar">
                     <div
-                      className="referral-toolbar__search relative"
+                      className="referral-toolbar__search header-search-field relative"
                       style={{
                         "--header-search-border-color": "rgb(11, 6, 121)",
+                        "--app-header-refresh-bg": "transparent",
+                        "--app-header-refresh-text": "rgb(11, 6, 121)",
+                        "--app-header-refresh-border": "rgb(11, 6, 121)",
+                        "--app-header-refresh-hover-bg": "rgb(11, 6, 121)",
+                        "--app-header-refresh-hover-text": "#ffffff",
+                        color: "rgb(11, 6, 121)",
                       } as CSSProperties}
                     >
                       <Search
-                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform !text-slate-500"
-                        style={{ color: "rgb(100, 116, 139)" }}
+                        className="header-search-icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform"
+                        style={{ color: "rgb(11, 6, 121)" }}
                         aria-hidden="true"
                       />
                       <Input
@@ -29890,9 +29957,11 @@ function MainApp() {
                         }
                         placeholder="Search by name or email"
                         aria-label="Search referrals"
-                        className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
+                        className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 focus-visible:outline-none focus-visible:!ring-0"
                         style={{
                           minWidth: "100%",
+                          color: "rgb(11, 6, 121)",
+                          caretColor: "rgb(11, 6, 121)",
                         }}
                       />
                     </div>
@@ -29908,8 +29977,22 @@ function MainApp() {
                       {sortDirectionLabel}
                     </Button>
                   </div>
-                  <div className="referrals-table-scroll">
-                    <div className="referrals-table-container glass-card squircle-xl">
+                  <div
+                    className="overflow-hidden border border-[#c1c1c1] bg-white"
+                    style={{ minWidth: 0, maxWidth: "100%" }}
+                  >
+                    <div
+                      className="relative w-full"
+                      style={{
+                        display: "block",
+                        maxHeight: "20rem",
+                        overflowX: "auto",
+                        overflowY: "auto",
+                        WebkitOverflowScrolling: "touch",
+                        scrollbarGutter: "stable both-edges",
+                        maxWidth: "100%",
+                      }}
+                    >
                       {filteredDoctorReferrals.length === 0 ? (
                         <div className="referrals-empty-state">
                           <p className="text-sm text-slate-600">
@@ -29920,22 +30003,34 @@ function MainApp() {
                           </p>
                         </div>
                       ) : (
-                        <div
-                          className="referrals-table"
-                          role="table"
+                        <table
+                          className="text-left text-sm"
                           aria-label="Your referrals"
+                          style={{
+                            width: "max-content",
+                            minWidth: "100%",
+                            borderCollapse: "separate",
+                            borderSpacing: 0,
+                          }}
                         >
-                          <div className="referrals-table__header" role="row">
-                            <span role="columnheader">Colleague</span>
-                            <span role="columnheader">Submitted</span>
-                            <span role="columnheader">Status</span>
-                            <span role="columnheader">Actions</span>
-                          </div>
-                          <div
-                            className="referrals-table__body"
-                            role="rowgroup"
-                          >
-                            {filteredDoctorReferrals.map((referral) => {
+                          <thead className="bg-gradient-to-b from-[#f8f8f8] to-[#d1d1d1] text-[#2d5f8b]">
+                            <tr>
+                              <th className="sticky top-0 z-[3] min-w-[14rem] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap">
+                                Colleague
+                              </th>
+                              <th className="sticky top-0 z-[3] min-w-[17rem] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap">
+                                Submitted
+                              </th>
+                              <th className="sticky top-0 z-[3] min-w-[16rem] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap">
+                                Status
+                              </th>
+                              <th className="sticky top-0 z-[3] min-w-[8rem] border-b border-r border-[#c8c8c8] bg-[#e6e6e6] px-3 py-2 whitespace-nowrap">
+                                Actions
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredDoctorReferrals.map((referral, rowIndex) => {
                               const creditedEntry =
                                 creditedDoctorLedgerEntries.get(referral.id);
                               const rawStatusLabel = humanizeReferralStatus(
@@ -29950,101 +30045,83 @@ function MainApp() {
                               const isPendingStatus =
                                 sanitizeReferralStatus(referral.status) ===
                                 "pending";
+                              const rowBgClass =
+                                rowIndex % 2 === 0 ? "bg-white" : "bg-[#e9e9e9]";
                               return (
-                                <div
+                                <tr
                                   key={referral.id}
-                                  className="referrals-table__row"
-                                  role="row"
+                                  className={rowBgClass}
                                 >
-                                  <div
-                                    className="referrals-table__cell"
-                                    role="cell"
-                                    data-label="Colleague"
-                                  >
-                                    <div className="referral-contact">
-                                      <span className="referral-contact__name">
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 align-top text-xs text-slate-800">
+                                    <div className="max-w-[22rem] overflow-x-auto whitespace-nowrap">
+                                      <span className="font-semibold">
                                         {referral.referredContactName}
                                       </span>
                                       {(referral.referredContactEmail ||
                                         referral.referredContactPhone) && (
-                                        <span className="referral-contact__meta">
+                                        <span className="ml-2 text-slate-500">
                                           {referral.referredContactEmail ||
                                             referral.referredContactPhone}
                                         </span>
                                       )}
                                     </div>
-                                  </div>
-                                  <div
-                                    className="referrals-table__cell referrals-table__cell--date"
-                                    role="cell"
-                                    data-label="Submitted"
-                                  >
-                                    <span className="referral-date">
-                                      {formatDate(referral.createdAt)}
-                                    </span>
-                                    <span className="referral-date-updated">
-                                      Updated{" "}
-                                      {formatDateTime(
-                                        referral.updatedAt ??
-                                          referral.createdAt,
-                                      )}
-                                    </span>
-                                  </div>
-                                  <div
-                                    className="referrals-table__cell"
-                                    role="cell"
-                                    data-label="Status"
-                                  >
-                                    <div className="flex flex-col items-start">
-                                      <span className="referral-status-badge">
+                                  </td>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 align-top font-mono text-xs text-slate-800">
+                                    <div className="max-w-[24rem] overflow-x-auto whitespace-nowrap">
+                                      <span>{formatDate(referral.createdAt)}</span>
+                                      <span className="ml-3 text-slate-500">
+                                        Updated{" "}
+                                        {formatDateTime(
+                                          referral.updatedAt ??
+                                            referral.createdAt,
+                                        )}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 align-top text-xs text-slate-800">
+                                    <div className="max-w-[26rem] overflow-x-auto whitespace-nowrap">
+                                      <span className="referral-status-badge align-middle">
                                         {referralStatusLabel}
                                       </span>
                                       {awaitingCredit && (
-                                        <span className="text-xs text-amber-600 font-medium mt-1">
+                                        <span className="ml-2 font-medium text-amber-600">
                                           Awaiting credit
                                         </span>
                                       )}
-	                                      {referral.notes && (
-	                                        <p className="text-xs text-slate-500 mt-2 max-w-[220px]">
-	                                          {typeof referral.notes === "string"
-	                                            ? formatTimestampedNotesForDisplay(referral.notes)
-	                                            : referral.notes}
-	                                        </p>
-	                                      )}
+                                      {referral.notes && (
+                                        <span className="ml-2 text-slate-500">
+                                          {typeof referral.notes === "string"
+                                            ? formatTimestampedNotesForDisplay(referral.notes)
+                                            : referral.notes}
+                                        </span>
+                                      )}
                                     </div>
-                                  </div>
-                                  <div
-                                  className="referrals-table__cell referrals-table__cell--actions"
-                                  role="cell"
-                                  data-label="Actions"
-                                >
+                                  </td>
+                                  <td className="border-b border-r border-[#d3d3d3] px-3 py-2 align-top text-xs text-slate-800">
                                     {isPendingStatus ? (
-                                      <Button
+                                      <button
                                         type="button"
-                                        variant="outline"
-                                        size="sm"
                                         onClick={() =>
                                           handleDeleteDoctorReferral(referral.id)
                                         }
                                         disabled={
                                           doctorDeletingReferralId === referral.id
                                         }
+                                        className="database-visualizer-button h-7 px-2 text-xs font-semibold disabled:opacity-50"
                                       >
-                                        {doctorDeletingReferralId === referral.id
-                                          ? "Deleting…"
-                                          : "Delete"}
-                                      </Button>
+                                        {doctorDeletingReferralId === referral.id ? "Deleting…" : "Delete"}
+                                      </button>
                                     ) : (
-                                      <span className="text-xs text-slate-500">
+                                      <span className="inline-block max-w-[13rem] overflow-x-auto whitespace-nowrap text-xs text-slate-500">
                                         Cannot delete after the Pending status.
                                       </span>
                                     )}
-                                  </div>
-                                </div>
+                                  </td>
+                                </tr>
                               );
                             })}
-                          </div>
-                        </div>
+                          </tbody>
+                        </table>
                       )}
                     </div>
                   </div>
@@ -30193,23 +30270,21 @@ function MainApp() {
               )}
             </div>
           </div>
-        </div>
       </div>
     );
+  };
+
+  const renderDoctorDashboard = () => {
+    if (!user || !isDoctorRole(user.role)) {
+      return null;
+    }
 
     return (
-      <section className="grid gap-0 mb-16 mt-0">
+      <section className="physician-dashboard-host-shell">
         <div
-          className={`glass-card squircle-xl referral-pill-wrapper transition-all duration-500 ${
-            isReferralSectionExpanded
-              ? "pb-8 shadow-[0_30px_80px_-65px_rgba(11,6,121,0.8)]"
-              : "shadow-[0_18px_48px_-28px_rgba(11,6,121,0.8)] hover:shadow-[0_20px_52px_-24px_rgba(11,6,121,0.85)]"
-          }`}
-	          style={{ borderRadius: "var(--squircle-xl)" }}
-	        >
-          {renderReferralHubTrigger(isReferralSectionExpanded)}
-          {renderExpandedContent()}
-        </div>
+          id={PHYSICIAN_DASHBOARD_PORTAL_ID}
+          className="physician-dashboard-portal-host"
+        />
       </section>
     );
   };
@@ -31013,7 +31088,7 @@ function MainApp() {
                 onClick={() => void fetchSalesRepHandDeliveryDoctors({ force: true })}
                 disabled={salesRepHandDeliveryLoading}
                 className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0 gap-2"
-                title="Refresh hand delivery doctors"
+                title="Refresh hand delivery physicians"
               >
                 <RefreshActionIcon spinning={salesRepHandDeliveryLoading} />
                 {salesRepHandDeliveryLoading ? "Refreshing…" : "Refresh"}
@@ -31028,10 +31103,10 @@ function MainApp() {
           )}
 
           {salesRepHandDeliveryLoading ? (
-            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading doctors…</div>
+            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading physicians…</div>
           ) : salesRepHandDeliveryDoctors.length === 0 ? (
             <div className="pt-4 px-4 py-3 text-sm text-slate-500">
-              No assigned doctors found.
+              No assigned physicians found.
             </div>
           ) : (
             <div className="pt-4 sales-rep-table-wrapper admin-dashboard-list flex flex-col gap-2">
@@ -32138,7 +32213,7 @@ function MainApp() {
 			                        Sales by Sales Rep
 			                      </h3>
 			                      <p className="text-sm text-slate-600">
-			                        Orders placed by doctors assigned to each rep.
+			                        Orders placed by physicians assigned to each rep.
 			                      </p>
 			                    </div>
 			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
@@ -34103,7 +34178,7 @@ function MainApp() {
 	                          >
                             <input
                               type="checkbox"
-                              aria-label="Enable Delegate Links tab for doctors"
+                              aria-label="Enable Delegate Links tab for physicians"
                               checked={patientLinksEnabled}
                               onChange={(e) => {
                                 if (!e.target.checked) {
@@ -34116,7 +34191,7 @@ function MainApp() {
                             />
                             <span className="min-w-0">
                               <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                                <span>Delegate Links tab (doctors)</span>
+                                <span>Delegate Links tab (physicians)</span>
                                 <span className="text-xs font-semibold text-slate-500">
                                   {"\u00A0"}(
                                   {settingsSaving.patientLinks
@@ -34128,7 +34203,7 @@ function MainApp() {
                                 </span>
                               </span>
                               <span className="block text-xs text-slate-600">
-                                When disabled, only test doctors can access Delegate Links.
+                                When disabled, only test physicians can access Delegate Links.
                               </span>
                             </span>
                           </div>
@@ -34404,22 +34479,59 @@ function MainApp() {
                                 </span>
                               </span>
                               <span className="block text-xs text-slate-600">
-                                When disabled, only test doctors still see the physician network map on the info page.
+                                When disabled, only test physicians still see the physician network map on the info page.
                               </span>
                             </span>
                           </div>
-                          {renderPortalControlBetaToggle("physicianMap")}
+	                          {renderPortalControlBetaToggle("physicianMap")}
+	                        </div>
+	                      </div>
+
+                      <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+                        <div
+                          className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
+                        >
+                          <div className="flex min-w-0 items-start gap-3">
+                            <input
+                              type="checkbox"
+                              aria-label="Enable physician 3PL tab"
+                              checked={physicianThreePlEnabled}
+                              onChange={(e) =>
+                                handlePhysicianThreePlToggle(e.target.checked)
+                              }
+                              className="brand-checkbox checkbox-on-dark mt-0.5"
+                              disabled={!isAdmin(user.role) || settingsSaving.physicianThreePl}
+                            />
+                            <span className="min-w-0">
+                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+                                <span>Physician 3PL tab</span>
+                                <span className="text-xs font-semibold text-slate-500">
+                                  {"\u00A0"}(
+                                  {settingsSaving.physicianThreePl
+                                    ? "Saving…"
+                                    : physicianThreePlEnabled
+                                      ? "Enabled"
+                                      : "Disabled"}
+                                  )
+                                </span>
+                              </span>
+                              <span className="block text-xs text-slate-600">
+                                When disabled, only test physicians still see the 3PL tab on the physician dashboard.
+                              </span>
+                            </span>
+                          </div>
+                          {renderPortalControlBetaToggle("physicianThreePl")}
                         </div>
                       </div>
-			
-			                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+
+				                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
 			                    <div
 			                      className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
 			                    >
                             <div className="flex min-w-0 items-start gap-3">
 			                        <input
 			                          type="checkbox"
-			                          aria-label="Enable Research dashboard for doctors and reps"
+			                          aria-label="Enable Research dashboard for physicians and reps"
 			                          checked={researchDashboardEnabled}
 			                          onChange={(e) =>
 			                            handleResearchDashboardToggle(e.target.checked)
@@ -34433,7 +34545,7 @@ function MainApp() {
 			                        />
 			                        <span className="min-w-0">
 			                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-			                            <span>Research dashboard access (doctors/reps)</span>
+			                            <span>Research dashboard access (physicians/reps)</span>
 			                            <span className="text-xs font-semibold text-slate-500">
 			                              {"\u00A0"}(
 			                              {settingsSaving.research
@@ -34447,7 +34559,7 @@ function MainApp() {
 			                            </span>
 			                          </span>
 			                          <span className="block text-xs text-slate-600">
-			                            When disabled, only admins and test doctors see the work-in-progress research dashboard.
+			                            When disabled, only admins and test physicians see the work-in-progress research dashboard.
 			                          </span>
 			                        </span>
                             </div>
@@ -35658,7 +35770,7 @@ function MainApp() {
                       Sales by Sales Rep
                     </h3>
                     <p className="text-sm text-slate-600">
-                      Orders placed by doctors assigned to each rep.
+                      Orders placed by physicians assigned to each rep.
                     </p>
 				                    {/* Period controls moved to the parent Admin Reports header. */}
                   </div>
@@ -37226,7 +37338,7 @@ function MainApp() {
                       <div className="sales-metric-header-copy min-w-0 flex-1">
                         <h3 className="text-lg sm:text-xl">Your Sales</h3>
                         <p className="text-sm text-slate-600">
-                          Live orders grouped by your doctors.
+                          Live orders grouped by your physicians.
                         </p>
                       </div>
                       <Button
@@ -37743,9 +37855,10 @@ function MainApp() {
                       Nobody yet. Go get 'em!
                     </p>
                   ) : (
-                    <div className="lead-list-scroll active-prospects-list-scroll">
-                      <ul className="lead-list">
-	                        {filteredActiveProspects.map(({ kind, record }) => {
+                    <div className="space-y-3">
+                      <div className="lead-list-scroll active-prospects-list-scroll">
+                        <ul id="your-leads-list" className="lead-list">
+	                        {activeProspectsToRender.map(({ kind, record }) => {
 	                        const isUpdating =
 	                          adminActionState.updatingReferral === record.id;
 	                        const normalizedStatus =
@@ -38407,7 +38520,27 @@ function MainApp() {
 			                            </li>
 			                          );
 			                        })}
-                      </ul>
+                        </ul>
+                      </div>
+                      {hasOverflowActiveProspects && (
+                        <div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="header-home-button squircle-sm bg-white text-slate-900"
+                            onClick={() =>
+                              setActiveProspectsExpanded((prev) => !prev)
+                            }
+                            aria-expanded={activeProspectsExpanded}
+                            aria-controls="your-leads-list"
+                          >
+                            {activeProspectsExpanded
+                              ? "Show less"
+                              : `Show more (${filteredActiveProspects.length - ACTIVE_PROSPECT_DISPLAY_LIMIT})`}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </section>
@@ -38453,7 +38586,7 @@ function MainApp() {
                       </p>
                     ) : filteredSalesRepReferrals.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
-                        You have no referrals yet. Encourage doctors to grow the
+                        You have no referrals yet. Encourage physicians to grow the
                         network and they will receive {formatCurrency(referralCreditAmount)} when
                         their referee places their first order.
                       </p>
@@ -39610,10 +39743,11 @@ function MainApp() {
 			        {/* Header */}
 			        {user && !isDelegateMode && (
 			          <div>
-		                  <Header
-				              user={user}
-				              researchDashboardEnabled={researchDashboardEnabled}
-                      patientLinksEnabled={patientLinksEnabled}
+			                  <Header
+					              user={user}
+					              researchDashboardEnabled={researchDashboardEnabled}
+                      physicianThreePlEnabled={physicianThreePlEnabled}
+	                      patientLinksEnabled={patientLinksEnabled}
                       patientLinksDoctorUserIds={patientLinksDoctorUserIds}
                       betaServices={betaServices}
 					              onLogin={handleLogin}
@@ -39648,6 +39782,7 @@ function MainApp() {
                         return prev.token === token ? null : prev;
                       });
 	                    }}
+                      physicianReferralDashboardPanel={renderDoctorReferralDashboardPanel()}
 	                    suppressHomeButton={postLoginHold}
 	                    suppressSearch={postLoginHold}
 				              onBuyOrderAgain={handleBuyOrderAgain}
@@ -39788,21 +39923,38 @@ function MainApp() {
                     <div className="physician-network-card glass-card landing-glass squircle-xl mb-4 px-4 py-4 shadow-xl sm:mb-6 sm:px-6">
                       <div className="physician-network-card__layout">
                         <div className="physician-network-card__intro">
-                          <p
-                            className="physician-network-card__intro-primary font-medium"
-                            style={{ color: "rgb(11, 6, 121)" }}
-                          >
-                            Thank you for helping us promote integrity and endogenous healing across the healthcare system. Our products and services exist to empower your ability to cure, relieve and comfort others.
-                          </p>
-                          <div className="physician-network-card__divider" aria-hidden="true" />
-                          <p
-                            className="physician-network-card__intro-secondary"
-                            style={{ color: "rgb(11, 6, 121)" }}
-                          >
-                            Connect with your peers, build relationships, and collaborate on research.
-                          </p>
+                          {physicianMapStateSelection ? (
+                            <PhysicianNetworkStateBreakdown
+                              selection={physicianMapStateSelection}
+                              selectedDoctorId={physicianMapSelectedDoctorId}
+                              onSelectDoctor={setPhysicianMapSelectedDoctorId}
+                              onBack={handlePhysicianMapBack}
+                            />
+                          ) : (
+                            <>
+                              <p
+                                className="physician-network-card__intro-primary font-medium"
+                                style={{ color: "rgb(11, 6, 121)" }}
+                              >
+                                Thank you for helping us promote integrity and endogenous healing across the healthcare system. Our products and services exist to empower your ability to cure, relieve and comfort others.
+                              </p>
+                              <div className="physician-network-card__divider" aria-hidden="true" />
+                              <p
+                                className="physician-network-card__intro-secondary"
+                                style={{ color: "rgb(11, 6, 121)" }}
+                              >
+                                Connect with your peers, build relationships, and collaborate on research.
+                              </p>
+                            </>
+                          )}
                         </div>
-                        <PhysicianNetworkMap showDetails={false} />
+                        <PhysicianNetworkMap
+                          showDetails={false}
+                          currentUserId={user.id}
+                          currentUserEmail={user.email}
+                          selectionResetKey={physicianMapSelectionResetKey}
+                          onStateSelectionChange={handlePhysicianMapStateSelectionChange}
+                        />
                       </div>
                     </div>
                   ) : null}
@@ -40242,7 +40394,7 @@ function MainApp() {
 	                          })()}
 	                        </div>
                         )}
-                        {/* Regional contact info for doctors */}
+                        {/* Regional contact info for physicians */}
                         {!(isRep(user.role) || isAdmin(user.role)) && (
                           <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
                             <p className="text-sm font-medium text-slate-700">

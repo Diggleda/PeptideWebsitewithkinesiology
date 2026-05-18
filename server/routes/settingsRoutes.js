@@ -16,6 +16,8 @@ const {
   setResearchDashboardEnabled,
   getPhysicianMapEnabled,
   setPhysicianMapEnabled,
+  getPhysicianThreePlEnabled,
+  setPhysicianThreePlEnabled,
   getCrmEnabled,
   setCrmEnabled,
   getTestPaymentsOverrideEnabled,
@@ -404,14 +406,15 @@ const buildPhysicianNetworkEntries = () => userRepository
     return {
       id: profile?.id || '',
       name: profile?.name || profile?.email || 'Physician',
+      email: profile?.email || null,
       profileImageUrl: profile?.profileImageUrl || null,
       greaterArea: profile?.greaterArea || null,
       studyFocus: profile?.studyFocus || null,
-    bio: profile?.bio || null,
-    officeCity: profile?.officeCity || null,
-    officeState: profile?.officeState || null,
-    lastLoginAt: profile?.lastLoginAt || null,
-  };
+      bio: profile?.bio || null,
+      officeCity: profile?.officeCity || null,
+      officeState: profile?.officeState || null,
+      lastLoginAt: profile?.lastLoginAt || null,
+    };
   })
   .filter((doctor) => doctor.id)
   .sort((a, b) => {
@@ -431,6 +434,28 @@ const buildPhysicianNetworkEntries = () => userRepository
     }
     return String(a.id || '').localeCompare(String(b.id || ''));
   });
+
+const filterCurrentUserFromPhysicianNetwork = (doctors, currentUser) => {
+  const currentUserId = normalizeOptionalText(currentUser?.id);
+  const currentUserEmail = normalizeOptionalText(currentUser?.email)?.toLowerCase();
+
+  if (!currentUserId && !currentUserEmail) {
+    return doctors;
+  }
+
+  return doctors.filter((doctor) => {
+    const doctorId = normalizeOptionalText(doctor?.id);
+    const doctorEmail = normalizeOptionalText(doctor?.email)?.toLowerCase();
+
+    if (currentUserId && doctorId === currentUserId) {
+      return false;
+    }
+    if (currentUserEmail && doctorEmail === currentUserEmail) {
+      return false;
+    }
+    return true;
+  });
+};
 
 const buildDoctorOwnershipSet = async (ownerIds = []) => {
   const ownedDoctorIds = new Set();
@@ -566,7 +591,7 @@ router.get('/network/doctors', authenticate, async (req, res) => {
   if (!enabled && !isTestDoctorUser(currentUser)) {
     return res.status(403).json({ error: 'Physician map is disabled' });
   }
-  const doctors = buildPhysicianNetworkEntries();
+  const doctors = filterCurrentUserFromPhysicianNetwork(buildPhysicianNetworkEntries(), currentUser);
   res.json({
     generatedAt: new Date().toISOString(),
     doctors,
@@ -587,6 +612,11 @@ router.get('/research', async (_req, res) => {
 router.get('/physician-map', async (_req, res) => {
   const enabled = await getPhysicianMapEnabled();
   res.json({ physicianMapEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.get('/physician-3pl', async (_req, res) => {
+  const enabled = await getPhysicianThreePlEnabled();
+  res.json({ physicianThreePlEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/crm', async (_req, res) => {
@@ -668,6 +698,12 @@ router.put('/physician-map', authenticate, requireAdmin, async (req, res) => {
   const enabled = req.body?.physicianMapEnabled ?? req.body?.enabled;
   const confirmed = await setPhysicianMapEnabled(Boolean(enabled));
   res.json({ physicianMapEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.put('/physician-3pl', authenticate, requireAdmin, async (req, res) => {
+  const enabled = req.body?.physicianThreePlEnabled ?? req.body?.enabled;
+  const confirmed = await setPhysicianThreePlEnabled(Boolean(enabled));
+  res.json({ physicianThreePlEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.put('/crm', authenticate, requireAdmin, async (req, res) => {

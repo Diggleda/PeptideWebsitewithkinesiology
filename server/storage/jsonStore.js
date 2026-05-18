@@ -123,18 +123,11 @@ class JsonStore {
           logger.warn({ err: writeError, file: this.filePath }, 'Failed to rewrite recovered JSON store');
         }
       } else {
-        logger.error({ err: error, file: this.filePath }, 'JSON store is corrupted; renaming and serving default');
-        try {
-          const corruptPath = `${this.filePath}.corrupt.${Date.now()}`;
-          fs.renameSync(this.filePath, corruptPath);
-        } catch (_renameError) {
-          // ignore rename failures
-        }
-        parsed = this.getDefaultValue();
-        try {
-          this.write(parsed);
-        } catch (_writeError) {
-          // ignore write failures; caller will still receive defaults
+        logger.error({ err: error, file: this.filePath }, 'JSON store is corrupted; preserving existing file');
+        if (this.cache !== null) {
+          parsed = this.cache;
+        } else {
+          throw error;
         }
       }
     }

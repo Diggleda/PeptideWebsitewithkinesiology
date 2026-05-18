@@ -63,6 +63,7 @@ class TestSettingsControls(unittest.TestCase):
             "peptideForumEnabled": True,
             "researchDashboardEnabled": True,
             "physicianMapEnabled": False,
+            "physicianThreePlEnabled": True,
         }), \
             patch.object(settings, "_get_delegate_links_doctors", return_value=[
                 {"userId": "doctor-1", "delegateLinksEnabled": True},
@@ -109,6 +110,35 @@ class TestSettingsControls(unittest.TestCase):
                     response.get_json(),
                     {"physicianMapEnabled": False, "mysqlEnabled": True},
                 )
+
+            with self.app.test_request_context("/api/settings/physician-3pl", method="GET"):
+                response = self._make_response(settings.get_physician_3pl())
+                self.assertEqual(
+                    response.get_json(),
+                    {"physicianThreePlEnabled": True, "mysqlEnabled": True},
+                )
+
+    def test_admin_can_update_physician_3pl_setting(self):
+        settings = self.settings
+
+        with patch.object(
+            settings.settings_service,
+            "update_settings",
+            return_value={"physicianThreePlEnabled": True},
+        ) as update_settings, patch.object(settings, "_mysql_enabled", return_value=True):
+            with self.app.test_request_context(
+                "/api/settings/physician-3pl",
+                method="PUT",
+                json={"enabled": True},
+            ):
+                g.current_user = {"id": "admin-1", "role": "admin"}
+                response = self._make_response(settings.update_physician_3pl.__wrapped__())
+
+        update_settings.assert_called_once_with({"physicianThreePlEnabled": True})
+        self.assertEqual(
+            response.get_json(),
+            {"physicianThreePlEnabled": True, "mysqlEnabled": True},
+        )
 
     def test_physician_map_routes_and_network_feed_respect_toggle(self):
         settings = self.settings
@@ -162,20 +192,32 @@ class TestSettingsControls(unittest.TestCase):
                 {
                     "id": "doctor-1",
                     "name": "Dr. Example",
+                    "email": "doctor1@example.com",
                     "profileImageUrl": None,
                     "greaterArea": "Midwest",
                     "studyFocus": "Longevity",
                     "bio": "Bio",
                     "officeCity": "Indianapolis",
                     "officeState": "IN",
+                },
+                {
+                    "id": "doctor-2",
+                    "name": "Dr. Peer",
+                    "email": "peer@example.com",
+                    "profileImageUrl": None,
+                    "greaterArea": "Midwest",
+                    "studyFocus": "Sports medicine",
+                    "bio": "Peer Bio",
+                    "officeCity": "Chicago",
+                    "officeState": "IL",
                 }
             ]), \
             patch.object(settings, "_mysql_enabled", return_value=True):
             with self.app.test_request_context("/api/settings/network/doctors", method="GET"):
-                g.current_user = {"id": "doctor-1", "role": "doctor"}
+                g.current_user = {"id": "doctor-1", "email": "doctor1@example.com", "role": "doctor"}
                 response = self._make_response(settings.get_network_doctors.__wrapped__())
                 payload = response.get_json()
-                self.assertEqual(payload["doctors"][0]["id"], "doctor-1")
+                self.assertEqual([doctor["id"] for doctor in payload["doctors"]], ["doctor-2"])
                 self.assertEqual(payload["total"], 1)
                 self.assertTrue(isinstance(payload.get("generatedAt"), str) and payload["generatedAt"])
 
@@ -504,10 +546,10 @@ class TestSettingsControls(unittest.TestCase):
         from python_backend.services import settings_service
 
         normalized = settings_service.normalize_settings({
-            "betaServices": ["shop", "crm", "invalid", "shop", None, "research", "physicianMap"],
+            "betaServices": ["shop", "crm", "invalid", "shop", None, "research", "physicianMap", "physicianThreePl"],
         })
 
-        self.assertEqual(normalized["betaServices"], ["shop", "crm", "research", "physicianMap"])
+        self.assertEqual(normalized["betaServices"], ["shop", "crm", "research", "physicianMap", "physicianThreePl"])
         self.assertIn("betaServices", settings_service.DEFAULT_SETTINGS)
 
     def test_admin_database_visualizer_route_returns_table_and_column_metadata(self):

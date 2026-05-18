@@ -58,7 +58,7 @@ const CreditManager: React.FC = () => {
               value={doctorId}
               onChange={(e) => setDoctorId(e.target.value)}
               required
-              placeholder="e.g. doctor_123"
+              placeholder="e.g. physician_123"
             />
           </label>
 

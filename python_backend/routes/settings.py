@@ -885,6 +885,27 @@ def _build_physician_network_entries() -> list[dict]:
     return doctors
 
 
+def _filter_current_user_from_physician_network(doctors: list[dict], current_user: dict | None) -> list[dict]:
+    if not isinstance(current_user, dict):
+        return doctors
+
+    current_user_id = _normalize_optional_text(current_user.get("id"))
+    current_user_email = (_normalize_optional_text(current_user.get("email")) or "").lower()
+    if not current_user_id and not current_user_email:
+        return doctors
+
+    filtered: list[dict] = []
+    for doctor in doctors:
+        doctor_id = _normalize_optional_text(doctor.get("id"))
+        doctor_email = (_normalize_optional_text(doctor.get("email")) or "").lower()
+        if current_user_id and doctor_id == current_user_id:
+            continue
+        if current_user_email and doctor_email == current_user_email:
+            continue
+        filtered.append(doctor)
+    return filtered
+
+
 def _build_sales_rep_indexes(reps: list[dict]) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
     by_id: dict[str, dict] = {}
     by_legacy_user_id: dict[str, dict] = {}
@@ -1574,6 +1595,18 @@ def get_physician_map():
     return handle_action(action)
 
 
+@blueprint.get("/physician-3pl")
+def get_physician_3pl():
+    def action():
+        settings = settings_service.get_settings()
+        return {
+            "physicianThreePlEnabled": bool(settings.get("physicianThreePlEnabled", False)),
+            "mysqlEnabled": _mysql_enabled(),
+        }
+
+    return handle_action(action)
+
+
 @blueprint.get("/network/doctors")
 @require_auth
 def get_network_doctors():
@@ -1582,7 +1615,10 @@ def get_network_doctors():
         current_user = getattr(g, "current_user", None) or {}
         if not bool(settings.get("physicianMapEnabled", False)) and not _is_test_doctor_user(current_user):
             raise service_error("Physician map is disabled", 403)
-        doctors = _build_physician_network_entries()
+        doctors = _filter_current_user_from_physician_network(
+            _build_physician_network_entries(),
+            current_user,
+        )
         return {
             "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "doctors": doctors,
@@ -1756,6 +1792,22 @@ def update_physician_map():
         updated = settings_service.update_settings({"physicianMapEnabled": enabled})
         return {
             "physicianMapEnabled": bool(updated.get("physicianMapEnabled", False)),
+            "mysqlEnabled": _mysql_enabled(),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.put("/physician-3pl")
+@require_auth
+def update_physician_3pl():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("physicianThreePlEnabled", payload.get("enabled", False)))
+        updated = settings_service.update_settings({"physicianThreePlEnabled": enabled})
+        return {
+            "physicianThreePlEnabled": bool(updated.get("physicianThreePlEnabled", False)),
             "mysqlEnabled": _mysql_enabled(),
         }
 

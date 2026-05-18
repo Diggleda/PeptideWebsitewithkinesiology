@@ -1,5 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type WheelEvent,
+} from "react";
 import { geoAlbersUsa, geoCentroid } from "d3-geo";
+import { ArrowLeft } from "lucide-react";
 import { feature } from "topojson-client";
 import {
   ComposableMap,
@@ -22,6 +31,23 @@ type NetworkDoctorRecord = {
   officeCity?: string | null;
   officeState?: string | null;
   lastLoginAt?: string | null;
+};
+
+export type PhysicianNetworkMapDoctor = {
+  id: string;
+  displayName: string;
+  email?: string | null;
+  profileImageUrl?: string | null;
+  studyFocus?: string | null;
+  bio?: string | null;
+  locationLabel: string | null;
+  stateCode: string | null;
+};
+
+export type PhysicianNetworkMapStateSelection = {
+  stateCode: string;
+  stateName: string;
+  doctors: PhysicianNetworkMapDoctor[];
 };
 
 type NormalizedDoctor = NetworkDoctorRecord & {
@@ -179,6 +205,55 @@ const normalizeText = (value?: string | null) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeIdentity = (value?: string | number | null) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return normalizeText(String(value))?.toLowerCase() || null;
+};
+
+const slugifyDummyPhysicianName = (value?: string | null) => {
+  const normalized = normalizeText(value)
+    ?.replace(/^\s*dr\.?\s+/i, "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .replace(/\.{2,}/g, ".");
+  return normalized || "physician";
+};
+
+const deriveDummyPhysicianEmail = (
+  doctor: Pick<NetworkDoctorRecord, "id" | "name">,
+  stateCode: string | null,
+) => {
+  const id = normalizeText(doctor.id);
+  const match = id?.match(/^dummy-physician-([a-z]{2})-(\d+)$/i);
+  if (!match) {
+    return null;
+  }
+  const state = (stateCode || match[1] || "xx").toLowerCase();
+  const sequence = match[2] || "000";
+  return `${slugifyDummyPhysicianName(doctor.name)}.${state}-${sequence}@peppro.test`;
+};
+
+const buildPhysicianInitials = (name: string) => {
+  const words = name
+    .replace(/^\s*dr\.?\s+/i, "")
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-zA-Z]/g, ""))
+    .filter(Boolean);
+  const initials = words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join("");
+  return initials || "P";
+};
+
+const buildPhysicianAvatarDataUrl = (name: string) => {
+  const initials = buildPhysicianInitials(name);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="#f8f9fc"/><circle cx="48" cy="48" r="46" fill="#eef0f8" stroke="#0b0679" stroke-opacity="0.28" stroke-width="2"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#4b5563">${initials}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+};
+
 const parseIsoTimestamp = (value?: string | null) => {
   if (!value) {
     return null;
@@ -332,9 +407,277 @@ const buildClusterEntries = (
 
 type PhysicianNetworkMapProps = {
   showDetails?: boolean;
+  currentUserId?: string | number | null;
+  currentUserEmail?: string | null;
+  selectionResetKey?: number;
+  onStateSelectionChange?: (selection: PhysicianNetworkMapStateSelection | null) => void;
 };
 
-export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapProps) {
+type PhysicianNetworkStateBreakdownProps = {
+  selection: PhysicianNetworkMapStateSelection;
+  selectedDoctorId: string | null;
+  onSelectDoctor: (doctorId: string) => void;
+  onBack: () => void;
+};
+
+export function PhysicianNetworkStateBreakdown({
+  selection,
+  selectedDoctorId,
+  onSelectDoctor,
+  onBack,
+}: PhysicianNetworkStateBreakdownProps) {
+  const doctorListRef = useRef<HTMLDivElement | null>(null);
+  const [doctorScrollThumb, setDoctorScrollThumb] = useState({ height: 100, top: 0 });
+  const [doctorListScrollable, setDoctorListScrollable] = useState(false);
+  const hasDoctors = selection.doctors.length > 0;
+  const selectedDoctor = useMemo(
+    () => selection.doctors.find((doctor) => doctor.id === selectedDoctorId) || null,
+    [selection.doctors, selectedDoctorId],
+  );
+  const updateDoctorScrollThumb = useCallback(() => {
+    const list = doctorListRef.current;
+    if (!list) {
+      return;
+    }
+
+    const scrollHeight = list.scrollHeight;
+    const clientHeight = list.clientHeight;
+    if (!scrollHeight || !clientHeight) {
+      setDoctorListScrollable(false);
+      setDoctorScrollThumb({ height: 100, top: 0 });
+      return;
+    }
+
+    const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+    const nextScrollable = maxScrollTop > 1;
+    setDoctorListScrollable((current) => (current === nextScrollable ? current : nextScrollable));
+
+    if (!nextScrollable) {
+      setDoctorScrollThumb({ height: 100, top: 0 });
+      return;
+    }
+
+    const nextHeight = Math.min(100, Math.max(14, (clientHeight / scrollHeight) * 100));
+    const maxTop = Math.max(0, 100 - nextHeight);
+    const nextTop = (list.scrollTop / maxScrollTop) * maxTop;
+    setDoctorScrollThumb((current) => {
+      if (
+        Math.abs(current.height - nextHeight) < 0.1
+        && Math.abs(current.top - nextTop) < 0.1
+      ) {
+        return current;
+      }
+      return { height: nextHeight, top: nextTop };
+    });
+  }, []);
+  const doctorScrollStyle = useMemo(
+    () => ({
+      "--doctor-scroll-thumb-height": `${doctorScrollThumb.height}%`,
+      "--doctor-scroll-thumb-top": `${doctorScrollThumb.top}%`,
+    }) as CSSProperties,
+    [doctorScrollThumb.height, doctorScrollThumb.top],
+  );
+  const handleDoctorListWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      const list = event.currentTarget;
+      const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (maxScrollTop <= 0) {
+        return;
+      }
+
+      list.scrollTop = Math.min(
+        maxScrollTop,
+        Math.max(0, list.scrollTop + event.deltaY),
+      );
+      updateDoctorScrollThumb();
+    },
+    [updateDoctorScrollThumb],
+  );
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(updateDoctorScrollThumb);
+    const list = doctorListRef.current;
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateDoctorScrollThumb);
+
+    if (list && resizeObserver) {
+      resizeObserver.observe(list);
+    }
+    window.addEventListener("resize", updateDoctorScrollThumb);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateDoctorScrollThumb);
+    };
+  }, [selection.doctors, updateDoctorScrollThumb]);
+
+  return (
+    <div className="physician-network-state-breakdown">
+      <div className="physician-network-state-breakdown__header">
+        <button
+          type="button"
+          className="physician-network-state-breakdown__back-button"
+          aria-label="Back to mission text"
+          onClick={onBack}
+        >
+          <ArrowLeft aria-hidden="true" />
+        </button>
+        <h3 className="physician-network-state-breakdown__title">{selection.stateName}</h3>
+      </div>
+      <div
+        className={`physician-network-state-breakdown__content ${
+          hasDoctors ? "" : "physician-network-state-breakdown__content--empty"
+        }`}
+      >
+        <div
+          className={`physician-network-state-breakdown__doctor-list-shell ${
+            hasDoctors ? "" : "physician-network-state-breakdown__doctor-list-shell--empty"
+          } ${
+            doctorListScrollable ? "physician-network-state-breakdown__doctor-list-shell--scrollable" : ""
+          }`}
+          style={doctorScrollStyle}
+        >
+          <div
+            ref={doctorListRef}
+            className="physician-network-state-breakdown__doctor-list"
+            aria-label={`${selection.stateName} physicians`}
+            onScroll={updateDoctorScrollThumb}
+            onWheel={handleDoctorListWheel}
+          >
+            {hasDoctors ? (
+              selection.doctors.map((doctor) => {
+                const isSelected = doctor.id === selectedDoctor?.id;
+                return (
+                  <button
+                    key={doctor.id}
+                    type="button"
+                    className={`physician-network-state-breakdown__doctor-button ${
+                      isSelected ? "physician-network-state-breakdown__doctor-button--active" : ""
+                    }`}
+                    title={doctor.displayName}
+                    onClick={() => onSelectDoctor(doctor.id)}
+                  >
+                    <span className="physician-network-state-breakdown__doctor-name">
+                      {doctor.displayName}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <p className="physician-network-state-breakdown__empty">
+                No physician profiles are listed in this state.
+              </p>
+            )}
+          </div>
+          {hasDoctors && doctorListScrollable ? (
+            <div className="physician-network-state-breakdown__custom-scrollbar" aria-hidden="true" />
+          ) : null}
+        </div>
+
+        {hasDoctors ? (
+          <>
+            <div className="physician-network-state-breakdown__divider" aria-hidden="true" />
+
+            <div className="physician-network-state-breakdown__profile" aria-live="polite">
+              {selectedDoctor ? (
+                <div className="physician-network-state-breakdown__profile-card">
+                  <div className="physician-network-state-breakdown__profile-detail physician-network-state-breakdown__profile-detail--name">
+                    <div className="physician-network-state-breakdown__profile-name-copy">
+                      <span className="physician-network-state-breakdown__profile-label">
+                        Name
+                      </span>
+                      <h4 className="physician-network-state-breakdown__profile-name physician-network-state-breakdown__profile-value">
+                        {selectedDoctor.displayName}
+                      </h4>
+                    </div>
+                    <div
+                      className="physician-network-state-breakdown__profile-photo"
+                      aria-label={`${selectedDoctor.displayName} profile photo`}
+                    >
+                      <span className="physician-network-state-breakdown__profile-photo-fallback">
+                        {buildPhysicianInitials(selectedDoctor.displayName)}
+                      </span>
+                      {selectedDoctor.profileImageUrl ? (
+                        <img
+                          src={selectedDoctor.profileImageUrl}
+                          alt=""
+                          className="physician-network-state-breakdown__profile-photo-image"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                  {selectedDoctor.locationLabel ? (
+                    <div className="physician-network-state-breakdown__profile-detail">
+                      <span className="physician-network-state-breakdown__profile-label">
+                        Location
+                      </span>
+                      <p className="physician-network-state-breakdown__profile-meta physician-network-state-breakdown__profile-value">
+                        {selectedDoctor.locationLabel}
+                      </p>
+                    </div>
+                  ) : null}
+                  {selectedDoctor.email ? (
+                    <div className="physician-network-state-breakdown__profile-detail">
+                      <span className="physician-network-state-breakdown__profile-label">
+                        Email
+                      </span>
+                      <a
+                        href={`mailto:${selectedDoctor.email}`}
+                        className="physician-network-state-breakdown__profile-email physician-network-state-breakdown__profile-value"
+                      >
+                        {selectedDoctor.email}
+                      </a>
+                    </div>
+                  ) : null}
+                  {selectedDoctor.studyFocus ? (
+                    <div className="physician-network-state-breakdown__profile-detail">
+                      <span className="physician-network-state-breakdown__profile-label">
+                        Research
+                      </span>
+                      <p className="physician-network-state-breakdown__profile-focus physician-network-state-breakdown__profile-value">
+                        {selectedDoctor.studyFocus}
+                      </p>
+                    </div>
+                  ) : null}
+                  {selectedDoctor.bio ? (
+                    <div className="physician-network-state-breakdown__profile-detail">
+                      <span className="physician-network-state-breakdown__profile-label">
+                        Bio
+                      </span>
+                      <p className="physician-network-state-breakdown__profile-bio physician-network-state-breakdown__profile-value">
+                        {selectedDoctor.bio}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="physician-network-state-breakdown__prompt">
+                  Click on a physician to view their profile.
+                </p>
+              )}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function PhysicianNetworkMap({
+  showDetails = true,
+  currentUserId,
+  currentUserEmail,
+  selectionResetKey = 0,
+  onStateSelectionChange,
+}: PhysicianNetworkMapProps) {
   const [networkDoctors, setNetworkDoctors] = useState<NetworkDoctorRecord[]>([]);
   const [stateCenters, setStateCenters] = useState<Map<string, [number, number]>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -342,6 +685,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
   const [hoveredClusterId, setHoveredClusterId] = useState<string | null>(null);
   const [pinnedClusterId, setPinnedClusterId] = useState<string | null>(null);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
+  const [selectedStateCode, setSelectedStateCode] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -418,12 +762,34 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
     [],
   );
 
+  const visibleNetworkDoctors = useMemo(() => {
+    const normalizedCurrentUserId = normalizeIdentity(currentUserId);
+    const normalizedCurrentUserEmail = normalizeIdentity(currentUserEmail);
+
+    if (!normalizedCurrentUserId && !normalizedCurrentUserEmail) {
+      return networkDoctors;
+    }
+
+    return networkDoctors.filter((doctor) => {
+      const doctorId = normalizeIdentity(doctor.id);
+      const doctorEmail = normalizeIdentity(doctor.email);
+      if (normalizedCurrentUserId && doctorId === normalizedCurrentUserId) {
+        return false;
+      }
+      if (normalizedCurrentUserEmail && doctorEmail === normalizedCurrentUserEmail) {
+        return false;
+      }
+      return true;
+    });
+  }, [currentUserEmail, currentUserId, networkDoctors]);
+
   const normalizedDoctors = useMemo<NormalizedDoctor[]>(
     () => {
-      const nextDoctors = networkDoctors.map((doctor) => {
+      const nextDoctors = visibleNetworkDoctors.map((doctor) => {
         const stateCode = normalizeStateCode(doctor.officeState);
         const displayName = normalizeText(doctor.name) || "Physician";
-        const email = normalizeText(doctor.email);
+        const email = normalizeText(doctor.email) || deriveDummyPhysicianEmail(doctor, stateCode);
+        const profileImageUrl = normalizeText(doctor.profileImageUrl) || buildPhysicianAvatarDataUrl(displayName);
         const bio = normalizeText(doctor.bio);
         const lastLoginAt = normalizeText(doctor.lastLoginAt);
         const resolvedLocation = resolveApproximateUsPlaceCoordinates({
@@ -438,6 +804,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
           bio,
           displayName,
           email,
+          profileImageUrl,
           lastLoginAt,
           lastLoginMs: parseIsoTimestamp(lastLoginAt),
           stateCode,
@@ -453,7 +820,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
       nextDoctors.sort(compareDoctorsByRecentLogin);
       return nextDoctors;
     },
-    [networkDoctors, stateCenters],
+    [visibleNetworkDoctors, stateCenters],
   );
 
   const mappedDoctors = useMemo(
@@ -463,7 +830,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
 
   const doctorsByState = useMemo(() => {
     const next = new Map<string, NormalizedDoctor[]>();
-    mappedDoctors.forEach((doctor) => {
+    normalizedDoctors.forEach((doctor) => {
       if (!doctor.stateCode) {
         return;
       }
@@ -471,8 +838,11 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
       bucket.push(doctor);
       next.set(doctor.stateCode, bucket);
     });
+    next.forEach((doctors, stateCode) => {
+      next.set(stateCode, [...doctors].sort(compareDoctorsByRecentLogin));
+    });
     return next;
-  }, [mappedDoctors]);
+  }, [normalizedDoctors]);
 
   const clusterEntries = useMemo(
     () => buildClusterEntries(mappedDoctors, projection),
@@ -499,7 +869,52 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
     }
   }, [clustersById, hoveredClusterId, pinnedClusterId, selectedDoctorId, mappedDoctors]);
 
-  const activeClusterId = hoveredClusterId || pinnedClusterId || clusterEntries[0]?.id || null;
+  useEffect(() => {
+    setSelectedStateCode(null);
+    setPinnedClusterId(null);
+    setSelectedDoctorId(null);
+  }, [selectionResetKey]);
+
+  const selectedStateDoctors = useMemo(
+    () => (selectedStateCode ? doctorsByState.get(selectedStateCode) || [] : []),
+    [doctorsByState, selectedStateCode],
+  );
+
+  useEffect(() => {
+    if (!onStateSelectionChange) {
+      return;
+    }
+    if (!selectedStateCode) {
+      onStateSelectionChange(null);
+      return;
+    }
+
+    onStateSelectionChange({
+      stateCode: selectedStateCode,
+      stateName: STATE_NAME_BY_CODE[selectedStateCode] || selectedStateCode,
+      doctors: selectedStateDoctors.map((doctor) => ({
+        id: doctor.id,
+        displayName: doctor.displayName,
+        email: doctor.email,
+        profileImageUrl: normalizeText(doctor.profileImageUrl),
+        studyFocus: normalizeText(doctor.studyFocus),
+        bio: doctor.bio,
+        locationLabel: doctor.locationLabel,
+        stateCode: doctor.stateCode,
+      })),
+    });
+  }, [onStateSelectionChange, selectedStateCode, selectedStateDoctors]);
+
+  const handleStateSelect = useCallback((stateCode: string | null) => {
+    if (!stateCode) {
+      return;
+    }
+    setSelectedStateCode(stateCode);
+    setPinnedClusterId(null);
+    setSelectedDoctorId(null);
+  }, []);
+
+  const activeClusterId = hoveredClusterId || pinnedClusterId || (showDetails ? clusterEntries[0]?.id : null);
   const activeCluster = activeClusterId ? clustersById.get(activeClusterId) || null : null;
   const activeDoctor = useMemo(() => {
     if (!activeCluster) {
@@ -514,13 +929,16 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
 
   const activeStateCodes = useMemo(() => {
     const next = new Set<string>();
+    if (selectedStateCode) {
+      next.add(selectedStateCode);
+    }
     (activeCluster?.doctors || []).forEach((doctor) => {
       if (doctor.stateCode) {
         next.add(doctor.stateCode);
       }
     });
     return next;
-  }, [activeCluster]);
+  }, [activeCluster, selectedStateCode]);
 
   const sortedClusterEntries = useMemo(
     () =>
@@ -552,13 +970,34 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                   <>
                     {geographies.map((geography: any) => {
                       const stateCode = STATE_CODE_BY_FIPS[String(geography.id).padStart(2, "0")];
-                      const hasDoctors = stateCode ? doctorsByState.has(stateCode) : false;
+                      const stateDoctors = stateCode ? doctorsByState.get(stateCode) || [] : [];
+                      const hasDoctors = stateDoctors.length > 0;
                       const isActive = stateCode ? activeStateCodes.has(stateCode) : false;
+                      const stateName = stateCode ? STATE_NAME_BY_CODE[stateCode] || stateCode : "State";
 
                         return (
                           <Geography
                             key={geography.rsmKey}
                             geography={geography}
+                            role={stateCode ? "button" : undefined}
+                            tabIndex={stateCode ? 0 : undefined}
+                            aria-label={
+                              stateCode
+                                ? `${stateName}, ${stateDoctors.length} physician${
+                                  stateDoctors.length === 1 ? "" : "s"
+                                }`
+                                : undefined
+                            }
+                            onClick={() => handleStateSelect(stateCode || null)}
+                            onKeyDown={(event: any) => {
+                              if (!stateCode) {
+                                return;
+                              }
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                handleStateSelect(stateCode);
+                              }
+                            }}
                             style={{
                               default: {
                                 fill: hasDoctors
@@ -569,6 +1008,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                                 outline: "none",
                                 stroke: hasDoctors ? "rgba(11,6,121,0.9)" : "rgba(11,6,121,0.44)",
                                 strokeWidth: isActive ? 1.8 : 1.1,
+                                cursor: stateCode ? "pointer" : "default",
                               },
                               hover: {
                                 fill: hasDoctors
@@ -577,6 +1017,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                                 outline: "none",
                                 stroke: "rgba(11,6,121,0.92)",
                                 strokeWidth: 1.5,
+                                cursor: stateCode ? "pointer" : "default",
                               },
                               pressed: {
                                 fill: hasDoctors
@@ -585,6 +1026,7 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                                 outline: "none",
                                 stroke: "rgba(11,6,121,0.92)",
                                 strokeWidth: 1.5,
+                                cursor: stateCode ? "pointer" : "default",
                               },
                             }}
                           />
@@ -621,12 +1063,18 @@ export function PhysicianNetworkMap({ showDetails = true }: PhysicianNetworkMapP
                                 )
                               }
                               onClick={() => {
+                                if (representative.stateCode) {
+                                  setSelectedStateCode(representative.stateCode);
+                                }
                                 setSelectedDoctorId(representative.id);
                                 setPinnedClusterId((current) => (current === cluster.id ? null : cluster.id));
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
                                   event.preventDefault();
+                                  if (representative.stateCode) {
+                                    setSelectedStateCode(representative.stateCode);
+                                  }
                                   setSelectedDoctorId(representative.id);
                                   setPinnedClusterId((current) => (current === cluster.id ? null : cluster.id));
                                 }

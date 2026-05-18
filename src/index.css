@@ -215,12 +215,14 @@ body[data-delegate-theme="true"] .dev-theme-root {
 }
 
 .physician-network-card__intro-primary {
+  animation: physician-network-mission-fade-in 520ms ease-out both;
   font-size: 1.5rem;
   line-height: 1.08;
   margin: 0;
 }
 
 .physician-network-card__divider {
+  animation: physician-network-mission-fade-in 560ms ease-out 90ms both;
   width: 100%;
   height: 1px;
   margin: 0.25rem 0;
@@ -229,9 +231,374 @@ body[data-delegate-theme="true"] .dev-theme-root {
 }
 
 .physician-network-card__intro-secondary {
+  animation: physician-network-mission-fade-in 600ms ease-out 160ms both;
   font-size: 1.25rem;
   line-height: 1.1;
   margin: 0;
+}
+
+@keyframes physician-network-mission-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.45rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .physician-network-card__intro-primary,
+  .physician-network-card__divider,
+  .physician-network-card__intro-secondary {
+    animation: none;
+  }
+}
+
+.physician-network-state-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+  width: 100%;
+  color: rgb(11, 6, 121);
+}
+
+.physician-network-state-breakdown__header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.physician-network-state-breakdown__back-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+  color: rgb(11, 6, 121);
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.physician-network-state-breakdown__back-button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  stroke-width: 2.2;
+}
+
+.physician-network-state-breakdown__back-button:hover,
+.physician-network-state-breakdown__back-button:focus-visible {
+  background: rgba(255, 255, 255, 0.78);
+  color: rgb(0, 0, 0);
+  outline: none;
+}
+
+.physician-network-state-breakdown__title {
+  min-width: 0;
+  margin: 0;
+  color: rgb(11, 6, 121);
+  font-size: clamp(1.45rem, 2.8vw, 2.25rem);
+  font-weight: 650;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.physician-network-state-breakdown__content {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) 1px minmax(0, 1.14fr);
+  gap: 0.9rem;
+  align-items: stretch;
+  min-height: 8.5rem;
+}
+
+.physician-network-state-breakdown__content--empty {
+  grid-template-columns: 1fr;
+  min-height: 0;
+}
+
+.physician-network-state-breakdown__doctor-list-shell {
+  position: relative;
+  align-self: stretch;
+  height: 100%;
+  min-width: 0;
+  min-height: 12rem;
+  max-height: none;
+  padding-right: 0;
+}
+
+.physician-network-state-breakdown__doctor-list-shell--scrollable {
+  padding-right: 0.85rem;
+}
+
+.physician-network-state-breakdown__doctor-list-shell--empty {
+  height: auto;
+  max-height: none;
+  padding-right: 0;
+}
+
+.physician-network-state-breakdown__doctor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
+  scrollbar-width: none;
+}
+
+.physician-network-state-breakdown__doctor-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.physician-network-state-breakdown__custom-scrollbar {
+  position: absolute;
+  top: 0;
+  right: 0.15rem;
+  bottom: 0;
+  width: 0.42rem;
+  border-radius: 999px;
+  background: rgba(11, 6, 121, 0.1);
+  pointer-events: none;
+}
+
+.physician-network-state-breakdown__custom-scrollbar::after {
+  content: "";
+  position: absolute;
+  top: var(--doctor-scroll-thumb-top, 0%);
+  right: 0;
+  left: 0;
+  height: var(--doctor-scroll-thumb-height, 100%);
+  min-height: 1.35rem;
+  border-radius: 999px;
+  background: rgba(11, 6, 121, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
+}
+
+.physician-network-state-breakdown__doctor-button {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  box-sizing: border-box;
+  gap: 0;
+  width: 100%;
+  height: auto;
+  padding: 0.24rem 0.44rem;
+  border: 0;
+  border-radius: var(--squircle-sm, 12px);
+  background: transparent;
+  color: rgb(11, 6, 121);
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1.24;
+  text-align: left;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.physician-network-state-breakdown__doctor-name,
+.physician-network-state-breakdown__doctor-email {
+  display: block;
+  max-width: 100%;
+}
+
+.physician-network-state-breakdown__doctor-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.physician-network-state-breakdown__doctor-name {
+  width: 100%;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.24;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: normal;
+}
+
+.physician-network-state-breakdown__doctor-email {
+  color: rgba(11, 6, 121, 0.74);
+  font-size: 0.72rem;
+  font-weight: 550;
+  line-height: 1;
+  min-height: 0.72rem;
+}
+
+.physician-network-state-breakdown__doctor-button:hover,
+.physician-network-state-breakdown__doctor-button:focus-visible,
+.physician-network-state-breakdown__doctor-button--active {
+  background: rgba(255, 255, 255, 0.62);
+  color: rgb(0, 0, 0);
+  outline: none;
+}
+
+.physician-network-state-breakdown__divider {
+  width: 1px;
+  min-height: 100%;
+  background: rgba(11, 6, 121, 0.42);
+}
+
+.physician-network-state-breakdown__profile {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.physician-network-state-breakdown__prompt,
+.physician-network-state-breakdown__empty,
+.physician-network-state-breakdown__profile-label {
+  color: rgb(75, 85, 99) !important;
+}
+
+.physician-network-state-breakdown__profile-name,
+.physician-network-state-breakdown__profile-email,
+.physician-network-state-breakdown__profile-meta,
+.physician-network-state-breakdown__profile-focus,
+.physician-network-state-breakdown__profile-bio,
+.physician-network-state-breakdown__profile-value {
+  color: rgb(11, 6, 121) !important;
+}
+
+.physician-network-state-breakdown__prompt,
+.physician-network-state-breakdown__empty {
+  margin: 0;
+  font-size: clamp(1rem, 1.65vw, 1.25rem);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.physician-network-state-breakdown__profile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.72rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.physician-network-state-breakdown__profile-name {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.physician-network-state-breakdown__profile-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.physician-network-state-breakdown__profile-detail--name {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.physician-network-state-breakdown__profile-name-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.physician-network-state-breakdown__profile-label {
+  font-size: 0.68rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.physician-network-state-breakdown__profile-email,
+.physician-network-state-breakdown__profile-meta,
+.physician-network-state-breakdown__profile-focus,
+.physician-network-state-breakdown__profile-bio {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 550;
+  line-height: 1.28;
+}
+
+.physician-network-state-breakdown__profile-email {
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.physician-network-state-breakdown__profile-photo {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 3.15rem;
+  height: 3.15rem;
+  overflow: hidden;
+  border: 1px solid rgba(11, 6, 121, 0.22);
+  border-radius: 999px;
+  background: rgba(11, 6, 121, 0.08);
+  color: rgb(11, 6, 121);
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.physician-network-state-breakdown__profile-photo-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.physician-network-state-breakdown__profile-photo-fallback {
+  position: relative;
+  z-index: 0;
+}
+
+.physician-network-state-breakdown__profile-email:hover,
+.physician-network-state-breakdown__profile-email:focus-visible {
+  color: rgb(75, 85, 99) !important;
+  outline: none;
+}
+
+.physician-network-state-breakdown__profile-focus {
+  font-size: 0.86rem;
+  font-weight: 550;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.physician-network-state-breakdown__profile-bio {
+  max-height: 5.5rem;
+  overflow-y: auto;
+  padding-right: 0.2rem;
 }
 
 .physician-network-map-shell {
@@ -359,6 +726,10 @@ body[data-delegate-theme="true"] .dev-theme-root {
     font-size: clamp(1.25rem, 2.25vw, 1.95rem);
   }
 
+  .physician-network-state-breakdown__content {
+    gap: 1.1rem;
+  }
+
   .physician-network-map-shell {
     width: 100% !important;
     max-width: none !important;
@@ -381,6 +752,30 @@ body[data-delegate-theme="true"] .dev-theme-root {
   .physician-network-map-shell {
     width: 100% !important;
     max-width: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .physician-network-state-breakdown__content {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .physician-network-state-breakdown__divider {
+    width: 100%;
+    height: 1px;
+    min-height: 1px;
+  }
+
+  .physician-network-state-breakdown__doctor-list-shell {
+    height: min(18rem, 46vh);
+    min-height: 12rem;
+    max-height: none;
+  }
+
+  .physician-network-state-breakdown__doctor-list {
+    height: 100%;
+    max-height: none;
   }
 }
 
@@ -4845,6 +5240,55 @@ html {
   height: 2.4rem;
 }
 
+.referral-toolbar__search.header-search-field .header-search-input,
+.dev-theme-root .referral-toolbar__search.header-search-field .header-search-input {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 2px solid rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+  color: rgb(11, 6, 121) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.referral-toolbar__search.header-search-field .header-search-input::placeholder,
+.dev-theme-root .referral-toolbar__search.header-search-field .header-search-input::placeholder {
+  color: rgba(11, 6, 121, 0.64) !important;
+  opacity: 1 !important;
+}
+
+.referral-toolbar__search.header-search-field:hover .header-search-input,
+.referral-toolbar__search.header-search-field:focus-within .header-search-input,
+.dev-theme-root .referral-toolbar__search.header-search-field:hover .header-search-input,
+.dev-theme-root .referral-toolbar__search.header-search-field:focus-within .header-search-input {
+  background: rgb(11, 6, 121) !important;
+  background-color: rgb(11, 6, 121) !important;
+  border-color: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+}
+
+.referral-toolbar__search.header-search-field:hover .header-search-input::placeholder,
+.referral-toolbar__search.header-search-field:focus-within .header-search-input::placeholder,
+.dev-theme-root .referral-toolbar__search.header-search-field:hover .header-search-input::placeholder,
+.dev-theme-root .referral-toolbar__search.header-search-field:focus-within .header-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.referral-toolbar__search.header-search-field .header-search-icon,
+.dev-theme-root .referral-toolbar__search.header-search-field .header-search-icon {
+  color: rgb(11, 6, 121) !important;
+}
+
+.referral-toolbar__search.header-search-field:hover .header-search-icon,
+.referral-toolbar__search.header-search-field:focus-within .header-search-icon,
+.dev-theme-root .referral-toolbar__search.header-search-field:hover .header-search-icon,
+.dev-theme-root .referral-toolbar__search.header-search-field:focus-within .header-search-icon {
+  color: #ffffff !important;
+}
+
 .referral-toolbar__search .header-search-input {
   height: 2.4rem !important;
   min-height: 2.4rem !important;
@@ -6893,6 +7337,10 @@ html {
   box-sizing: border-box;
 }
 
+.sales-rep-dashboard .account-tab-underline-indicator {
+  box-shadow: none;
+}
+
 .maintenance-mode-shell {
   box-sizing: border-box;
   min-width: 0;
@@ -7642,6 +8090,306 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   min-width: 0;
 }
 
+.physician-dashboard-host-shell {
+  margin: 0 0 1.75rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.physician-dashboard-portal-host {
+  width: 100%;
+  min-width: 0;
+}
+
+.physician-dashboard-container {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.physician-dashboard-tabs {
+  border-bottom: 0;
+}
+
+.physician-dashboard-tab {
+  color: rgb(0, 0, 0);
+}
+
+.physician-dashboard-panel {
+  min-width: 0;
+}
+
+.physician-dashboard-panel .account-order-card {
+  border-color: rgb(11, 6, 121) !important;
+}
+
+.physician-dashboard-panel .physician-dashboard-order-card {
+  border-color: rgb(11, 6, 121) !important;
+}
+
+.physician-dashboard-container .orders-search-input,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.physician-dashboard-container .orders-search-input {
+  --header-search-border-color: rgb(11, 6, 121);
+  border-color: rgb(11, 6, 121) !important;
+}
+
+.physician-dashboard-container .orders-search-input:focus,
+.physician-dashboard-container .orders-search-input:focus-visible,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.physician-dashboard-container .orders-search-input:focus,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.physician-dashboard-container .orders-search-input:focus-visible {
+  border-color: rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+}
+
+.physician-dashboard-panel > .space-y-4,
+.physician-dashboard-panel > .space-y-6 {
+  margin: 0;
+}
+
+.physician-referral-dashboard-panel {
+  min-width: 0;
+}
+
+.physician-referral-dashboard-panel table[aria-label="Your referrals"] {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.physician-referral-dashboard-panel table[aria-label="Your referrals"] th,
+.physician-referral-dashboard-panel table[aria-label="Your referrals"] td {
+  border-right: 1px solid #b7c1cb !important;
+  border-bottom: 1px solid #b7c1cb !important;
+}
+
+.physician-referral-dashboard-panel table[aria-label="Your referrals"] th:first-child,
+.physician-referral-dashboard-panel table[aria-label="Your referrals"] td:first-child {
+  border-left: 1px solid #b7c1cb !important;
+}
+
+.physician-referral-dashboard-panel table[aria-label="Your referrals"] thead th {
+  border-top: 1px solid #b7c1cb !important;
+  background-clip: padding-box;
+}
+
+.physician-referral-dashboard-panel .referrals-table-scroll {
+  max-height: 20rem;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding-right: 0;
+  border: 1px solid rgba(11, 6, 121, 0.18);
+  border-radius: var(--squircle-md, 16px);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.physician-referral-dashboard-panel .referrals-table-container {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.physician-referral-dashboard-panel .referrals-table {
+  --referral-columns: minmax(11rem, 1.55fr) minmax(8rem, 0.95fr) minmax(7.25rem, 0.8fr) minmax(7.5rem, 0.9fr);
+  --referral-table-width: 100%;
+  gap: 0;
+  width: var(--referral-table-width);
+  min-width: 44rem;
+  max-width: none;
+}
+
+.physician-referral-dashboard-panel .referrals-table__header,
+.physician-referral-dashboard-panel .referrals-table__row {
+  display: grid;
+  grid-template-columns: var(--referral-columns);
+  width: var(--referral-table-width);
+  min-width: 0;
+  align-items: center;
+  column-gap: 0;
+  row-gap: 0;
+}
+
+.physician-referral-dashboard-panel .referrals-table__header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 0;
+  font-size: 0.65rem;
+  letter-spacing: 0.065em;
+  color: rgb(71, 85, 105);
+  background: rgb(241, 245, 249);
+  border-bottom: 1px solid rgba(11, 6, 121, 0.18);
+}
+
+.physician-referral-dashboard-panel .referrals-table__header > span,
+.physician-referral-dashboard-panel .referrals-table__cell {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 2.1rem;
+  padding: 0.45rem 0.65rem;
+  border-right: 1px solid rgba(11, 6, 121, 0.12);
+  overflow: hidden;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell {
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.physician-referral-dashboard-panel .referrals-table__header > span:last-child,
+.physician-referral-dashboard-panel .referrals-table__cell:last-child {
+  border-right: 0;
+}
+
+.physician-referral-dashboard-panel .referrals-table__body {
+  gap: 0;
+}
+
+.physician-referral-dashboard-panel .referrals-table__row {
+  min-height: 2.45rem;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid rgba(11, 6, 121, 0.1);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.physician-referral-dashboard-panel .referrals-table__row:nth-child(even) {
+  background: rgba(248, 250, 252, 0.95);
+}
+
+.physician-referral-dashboard-panel .referrals-table__row:last-child {
+  border-bottom: 0;
+}
+
+.physician-referral-dashboard-panel .referrals-table__row:hover {
+  transform: none;
+  box-shadow: none;
+  background: rgba(236, 245, 255, 0.78);
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell {
+  align-items: center;
+  white-space: normal;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell[data-label] {
+  display: flex;
+}
+
+.physician-referral-dashboard-panel .referrals-table__header > span {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell[data-label]::before {
+  display: none;
+}
+
+.physician-referral-dashboard-panel .referral-contact {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.physician-referral-dashboard-panel .referral-contact__name {
+  font-size: 0.82rem;
+  line-height: 1.25;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.physician-referral-dashboard-panel .referral-contact__meta,
+.physician-referral-dashboard-panel .referral-date-updated {
+  font-size: 0.66rem;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell--date {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.12rem;
+}
+
+.physician-referral-dashboard-panel .referral-date,
+.physician-referral-dashboard-panel .referral-status-badge {
+  min-height: 1.25rem;
+  padding: 0.08rem 0.4rem;
+  font-size: 0.66rem;
+  line-height: 1.15;
+  box-shadow: none;
+}
+
+.physician-referral-dashboard-panel .referral-date {
+  background: transparent;
+  border: 0;
+  color: rgb(51, 65, 85);
+  padding-left: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell[data-label="Status"] > div {
+  display: flex;
+  flex-direction: column !important;
+  align-items: flex-start;
+  gap: 0.18rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell[data-label="Status"] > div > span,
+.physician-referral-dashboard-panel .referrals-table__cell[data-label="Status"] > div > p {
+  flex: 0 0 auto;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell p {
+  max-width: 100%;
+  overflow: hidden;
+  margin-top: 0;
+  font-size: 0.66rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell--actions button {
+  min-height: 1.55rem;
+  height: 1.55rem;
+  padding: 0 0.5rem;
+  font-size: 0.68rem;
+}
+
+.physician-referral-dashboard-panel .referrals-table__cell--actions span {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.physician-dashboard-settings-empty {
+  min-height: 12rem;
+}
+
 @media (min-width: 64rem) {
   .filter-sidebar-container {
     align-self: start;
@@ -7659,6 +8407,10 @@ body.ultra-wide-screen .ultra-wide-info-shell {
     margin-right: clamp(1rem, 2vw, 1.5rem);
     max-width: calc(100% - (2 * clamp(1rem, 2vw, 1.5rem)));
   }
+
+  .physician-dashboard-host-shell {
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 640px) {
@@ -7672,6 +8424,17 @@ body.ultra-wide-screen .ultra-wide-info-shell {
     max-width: 100%;
     box-sizing: border-box;
     min-width: 0;
+  }
+
+  .physician-dashboard-host-shell {
+    margin: 0 0 1.25rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .physician-referral-dashboard-panel .glass-card {
+    padding: 1.1rem;
   }
 }
 
@@ -11695,6 +12458,40 @@ input[type="checkbox"].checkbox-on-dark:not(.brand-checkbox):checked::after {
   transform: scale(1);
 }
 
+.catalog-filter-card .shop-filter-checkbox {
+  --shop-filter-checkbox-accent: rgb(11, 6, 121);
+  --checkbox-control-check-color: rgb(11, 6, 121);
+  --checkbox-control-checked-border-color: rgb(11, 6, 121);
+  --checkbox-control-checked-background: #ffffff;
+  --checkbox-control-focus-ring: rgba(11, 6, 121, 0.2);
+  border-color: rgb(11, 6, 121) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgb(11, 6, 121) !important;
+  color: rgb(11, 6, 121) !important;
+}
+
+.catalog-filter-card .shop-filter-checkbox[data-state='checked'] {
+  border-color: rgb(11, 6, 121) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: rgb(11, 6, 121) !important;
+}
+
+.catalog-filter-card .shop-filter-checkbox:hover {
+  border-color: rgb(11, 6, 121) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgb(11, 6, 121) !important;
+  color: rgb(11, 6, 121) !important;
+}
+
+.catalog-filter-card .shop-filter-checkbox[data-state='checked'] [data-slot='checkbox-indicator'],
+.catalog-filter-card .shop-filter-checkbox[data-state='checked'] [data-slot='checkbox-indicator'] svg {
+  color: rgb(11, 6, 121) !important;
+  stroke: currentColor !important;
+}
+
 .dev-theme-root:not(.theme-biotech) .welcome-greeting,
 .dev-theme-root:not(.theme-biotech) .shimmer-text.is-shimmering {
   background: linear-gradient(92deg, var(--theme-accent) 0%, var(--theme-accent-hover) 100%) !important;
@@ -13153,6 +13950,65 @@ body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.hea
   stroke: currentColor !important;
 }
 
+[data-app-header].glass-liquid .header-search-field {
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  isolation: isolate;
+}
+
+[data-app-header].glass-liquid .header-search-field > .header-search-input,
+[data-app-header].glass-liquid .header-search-field:hover > .header-search-input,
+[data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field > .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover > .header-search-input,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field > .header-search-input,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:hover > .header-search-input,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field > .header-search-input,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field:hover > .header-search-input,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input {
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  caret-color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  position: relative;
+  z-index: 1;
+}
+
+[data-app-header].glass-liquid .header-search-field > .header-search-input::placeholder,
+[data-app-header].glass-liquid .header-search-field:hover > .header-search-input::placeholder,
+[data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input::placeholder,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field > .header-search-input::placeholder,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover > .header-search-input::placeholder,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input::placeholder,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field > .header-search-input::placeholder,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:hover > .header-search-input::placeholder,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input::placeholder,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field > .header-search-input::placeholder,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field:hover > .header-search-input::placeholder,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-input::placeholder {
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  opacity: 1 !important;
+}
+
+[data-app-header].glass-liquid .header-search-field > .header-search-icon,
+[data-app-header].glass-liquid .header-search-field:hover > .header-search-icon,
+[data-app-header].glass-liquid .header-search-field:focus-within > .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field > .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:hover > .header-search-icon,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-icon,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field > .header-search-icon,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:hover > .header-search-icon,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-icon,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field > .header-search-icon,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field:hover > .header-search-icon,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-search-field:focus-within > .header-search-icon {
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  stroke: currentColor !important;
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 20 !important;
+}
+
 .dev-theme-root.theme-clinical :is(
   .sales-rep-dashboard,
   .referral-pill-wrapper
@@ -13943,7 +14799,79 @@ body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.hea
     grid-template-columns: 1fr;
   }
 
-  .marketing-landing__standard {
+.marketing-landing__standard {
     gap: 1.5rem;
   }
+}
+
+.sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card,
+.dev-theme-root:not(.theme-biotech) .sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card {
+  border: 2px solid rgb(11, 6, 121) !important;
+  border-color: rgb(11, 6, 121) !important;
+}
+
+.sales-rep-dashboard .account-tab-underline-indicator,
+.physician-dashboard-container .account-tab-underline-indicator,
+.database-visualizer-tab-shell .account-tab-underline-indicator,
+.dev-theme-root .sales-rep-dashboard .account-tab-underline-indicator,
+.dev-theme-root .physician-dashboard-container .account-tab-underline-indicator,
+.dev-theme-root .database-visualizer-tab-shell .account-tab-underline-indicator {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.order-card-actions .order-buy-again-button,
+.dev-theme-root .order-card-actions .order-buy-again-button {
+  border: 2px solid rgb(11, 6, 121) !important;
+  border-color: rgb(11, 6, 121) !important;
+}
+
+.research-tool-request-field,
+.dev-theme-root .research-tool-request-field {
+  border-color: rgb(203, 213, 225) !important;
+}
+
+.research-tool-request-field:focus,
+.research-tool-request-field:focus-visible,
+.dev-theme-root .research-tool-request-field:focus,
+.dev-theme-root .research-tool-request-field:focus-visible {
+  border-color: rgb(148, 163, 184) !important;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.18) !important;
+  outline: none !important;
+}
+
+.physician-network-state-breakdown .physician-network-state-breakdown__profile-label {
+  color: rgb(75, 85, 99) !important;
+}
+
+.physician-network-state-breakdown .physician-network-state-breakdown__profile-value,
+.physician-network-state-breakdown :is(
+  .physician-network-state-breakdown__profile-name,
+  .physician-network-state-breakdown__profile-email,
+  .physician-network-state-breakdown__profile-meta,
+  .physician-network-state-breakdown__profile-focus,
+  .physician-network-state-breakdown__profile-bio,
+  .physician-network-state-breakdown__profile-photo-fallback
+) {
+  color: rgb(11, 6, 121) !important;
+}
+
+.physician-network-state-breakdown .physician-network-state-breakdown__profile-email:hover,
+.physician-network-state-breakdown .physician-network-state-breakdown__profile-email:focus-visible {
+  color: rgb(11, 6, 121) !important;
+}
+
+.dev-theme-root .post-login-content-shell .physician-network-card .physician-network-card__intro .physician-network-state-breakdown .physician-network-state-breakdown__profile-label {
+  color: rgb(75, 85, 99) !important;
+  -webkit-text-fill-color: rgb(75, 85, 99) !important;
+}
+
+.dev-theme-root .post-login-content-shell .physician-network-card .physician-network-card__intro .physician-network-state-breakdown :is(
+  p.physician-network-state-breakdown__profile-meta,
+  p.physician-network-state-breakdown__profile-focus,
+  p.physician-network-state-breakdown__profile-bio,
+  .physician-network-state-breakdown__profile-value
+) {
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
 }
