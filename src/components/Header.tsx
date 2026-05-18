@@ -4731,12 +4731,12 @@ export function Header({
             <ShoppingCart className="h-4 w-4" />
           )}
         </Button>
-        <Badge
-          variant="outline"
-          className="absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(11,6,121)]"
+        <span
+          className="header-action-count-badge header-count-indicator"
+          aria-label={`${cartItems} item${cartItems === 1 ? "" : "s"} in cart`}
         >
           {cartItems}
-        </Badge>
+        </span>
       </div>
     );
   };
@@ -7255,7 +7255,7 @@ export function Header({
 		                          return (
 		                            <div
 		                              key={line.id || `${line.sku}-${idx}`}
-		                              className="order-line-item flex items-center gap-4 mb-4 min-h-[60px]"
+		                              className="order-line-item flex items-center gap-4 min-h-[60px]"
 		                            >
                               <div
                                 className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
@@ -9396,14 +9396,13 @@ export function Header({
 	              <span className="header-account-avatar-shell">
 	                {renderAvatar(isLargeScreen ? 48 : 53, 'header-account-avatar')}
                   {accountButtonIndicatorTotal > 0 && (
-                    <Badge
-                      variant="outline"
-                      className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(11,6,121)]"
+                    <span
+                      className="header-action-count-badge header-account-count-badge account-indicator-badge header-count-indicator"
                       aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
                       title={`Notifications: ${accountButtonIndicatorTotal}`}
                     >
                       {accountButtonIndicatorTotal > 9 ? '9+' : accountButtonIndicatorTotal}
-                    </Badge>
+                    </span>
                   )}
 	              </span>
             </Button>
@@ -9529,7 +9528,7 @@ export function Header({
                               <Badge
                                 variant="outline"
                                 className={clsx(
-                                  "ml-2 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(11,6,121)] font-semibold leading-none shadow-sm pointer-events-none transition-opacity duration-150",
+                                  "count-badge-opaque ml-2 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(11,6,121)] font-semibold leading-none shadow-sm pointer-events-none transition-opacity duration-150",
                                   showIndicator ? "opacity-100" : "opacity-0",
                                 )}
                                 title={`${tab.label} notifications`}
@@ -10455,7 +10454,7 @@ export function Header({
                             {showCount && (
                               <Badge
                                 variant="outline"
-                                className="ml-1 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(11,6,121)] font-semibold leading-none shadow-sm pointer-events-none"
+                                className="count-badge-opaque ml-1 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(11,6,121)] font-semibold leading-none shadow-sm pointer-events-none"
                                 aria-label={`${tab.label} notifications: ${tab.count}`}
                                 style={{ color: 'rgb(11,6,121)' }}
                               >

@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS = {
   salesLeadSalesBySalesRepCsvDownloadedAt: null, // ISO timestamp (sales lead report)
   taxesByStateCsvDownloadedAt: null, // ISO timestamp (admin report)
   productsCommissionCsvDownloadedAt: null, // ISO timestamp (admin report)
+  referralCreditAmount: 250,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
@@ -45,6 +46,15 @@ const normalizeIsoTimestamp = (value) => {
     return null;
   }
   return parsed.toISOString();
+};
+
+const normalizeReferralCreditAmount = (value) => {
+  const fallback = 250;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.round(parsed * 100) / 100;
 };
 
 const normalizeSettings = (settings = {}) => {
@@ -88,6 +98,9 @@ const normalizeSettings = (settings = {}) => {
     normalizeIsoTimestamp(raw.taxesByStateCsvDownloadedAt) ?? DEFAULT_SETTINGS.taxesByStateCsvDownloadedAt;
   merged.productsCommissionCsvDownloadedAt =
     normalizeIsoTimestamp(raw.productsCommissionCsvDownloadedAt) ?? DEFAULT_SETTINGS.productsCommissionCsvDownloadedAt;
+  merged.referralCreditAmount = normalizeReferralCreditAmount(
+    raw.referralCreditAmount ?? DEFAULT_SETTINGS.referralCreditAmount,
+  );
   return merged;
 };
 
@@ -221,6 +234,32 @@ const getCrmEnabled = async () => {
 const getTestPaymentsOverrideEnabled = async () => {
   const settings = await getSettings();
   return Boolean(settings.testPaymentsOverrideEnabled);
+};
+
+const getReferralCreditAmount = async () => {
+  if (mysqlClient.isEnabled()) {
+    try {
+      const row = await mysqlClient.fetchOne(
+        'SELECT value_json FROM settings WHERE `key` = :key LIMIT 1',
+        { key: 'referralCreditAmount' },
+      );
+      if (row && Object.prototype.hasOwnProperty.call(row, 'value_json')) {
+        const raw = row.value_json;
+        if (typeof raw === 'string') {
+          try {
+            return normalizeReferralCreditAmount(JSON.parse(raw));
+          } catch {
+            return normalizeReferralCreditAmount(raw);
+          }
+        }
+        return normalizeReferralCreditAmount(raw);
+      }
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to load referral credit amount from MySQL settings');
+    }
+  }
+  const settings = await getSettings();
+  return normalizeReferralCreditAmount(settings.referralCreditAmount);
 };
 
 const setShopEnabled = async (enabled) => {
@@ -978,6 +1017,7 @@ module.exports = {
   setCrmEnabled,
   getTestPaymentsOverrideEnabled,
   setTestPaymentsOverrideEnabled,
+  getReferralCreditAmount,
   getStripeMode,
   getStripeModeSync,
   setStripeMode,

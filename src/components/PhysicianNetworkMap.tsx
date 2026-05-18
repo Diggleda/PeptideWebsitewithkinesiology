@@ -28,8 +28,6 @@ type NetworkDoctorRecord = {
   greaterArea?: string | null;
   studyFocus?: string | null;
   bio?: string | null;
-  officeCity?: string | null;
-  officeState?: string | null;
   lastLoginAt?: string | null;
 };
 
@@ -281,31 +279,47 @@ const compareDoctorsByRecentLogin = (a: NormalizedDoctor, b: NormalizedDoctor) =
   return a.id.localeCompare(b.id);
 };
 
-const buildLocationLabel = (doctor: {
-  officeCity?: string | null;
-  greaterArea?: string | null;
-  stateCode?: string | null;
-}) => {
-  const city = normalizeText(doctor.officeCity);
-  const area = normalizeText(doctor.greaterArea);
-  const stateCode = normalizeText(doctor.stateCode);
+const splitLocationLabelParts = (value?: string | null) =>
+  normalizeText(value)
+    ?.split(",")
+    .map((part) => normalizeText(part))
+    .filter((part): part is string => Boolean(part)) || [];
 
-  if (area && stateCode) {
-    return `${area}, ${stateCode}`;
+const getStateCodePart = (value: string) => {
+  const normalized = value.trim().replace(/\./g, "").toUpperCase();
+  return /^[A-Z]{2}$/.test(normalized) && STATE_NAME_BY_CODE[normalized] ? normalized : null;
+};
+
+const deriveStateCodeFromGreaterArea = (value?: string | null) => {
+  const area = normalizeText(value);
+  if (!area) {
+    return null;
   }
-  if (area) {
-    return area;
+
+  const parts = splitLocationLabelParts(area);
+  for (const part of [...parts].reverse()) {
+    const stateCode = normalizeStateCode(part) || getStateCodePart(part);
+    if (stateCode) {
+      return stateCode;
+    }
   }
-  if (city && stateCode) {
-    return `${city}, ${stateCode}`;
+
+  const normalizedArea = area.toLowerCase().replace(/\./g, "").replace(/\s+/g, " ");
+  for (const [code, name] of Object.entries(STATE_NAME_BY_CODE)) {
+    const normalizedName = name.toLowerCase();
+    if (normalizedArea === normalizedName || normalizedArea.endsWith(` ${normalizedName}`)) {
+      return code;
+    }
   }
-  if (city) {
-    return city;
-  }
-  if (stateCode) {
-    return STATE_NAME_BY_CODE[stateCode] || stateCode;
-  }
-  return null;
+
+  const trailingCode = area.match(/(?:^|[\s,])([A-Za-z]{2})$/)?.[1];
+  return trailingCode ? normalizeStateCode(trailingCode) || getStateCodePart(trailingCode) : normalizeStateCode(area);
+};
+
+const buildLocationLabel = (doctor: {
+  greaterArea?: string | null;
+}) => {
+  return normalizeText(doctor.greaterArea);
 };
 
 const buildClusterLocationLabel = (doctors: NormalizedDoctor[]) => {
@@ -786,21 +800,23 @@ export function PhysicianNetworkMap({
   const normalizedDoctors = useMemo<NormalizedDoctor[]>(
     () => {
       const nextDoctors = visibleNetworkDoctors.map((doctor) => {
-        const stateCode = normalizeStateCode(doctor.officeState);
+        const greaterArea = normalizeText(doctor.greaterArea);
+        const greaterAreaStateCode = deriveStateCodeFromGreaterArea(greaterArea);
         const displayName = normalizeText(doctor.name) || "Physician";
-        const email = normalizeText(doctor.email) || deriveDummyPhysicianEmail(doctor, stateCode);
+        const email = normalizeText(doctor.email) || deriveDummyPhysicianEmail(doctor, greaterAreaStateCode);
         const profileImageUrl = normalizeText(doctor.profileImageUrl) || buildPhysicianAvatarDataUrl(displayName);
         const bio = normalizeText(doctor.bio);
         const lastLoginAt = normalizeText(doctor.lastLoginAt);
         const resolvedLocation = resolveApproximateUsPlaceCoordinates({
-          greaterArea: doctor.greaterArea,
-          officeCity: doctor.officeCity,
-          stateCode,
-          fallbackCoordinates: stateCode ? stateCenters.get(stateCode) || null : null,
+          greaterArea,
+          stateCode: greaterAreaStateCode,
+          fallbackCoordinates: greaterAreaStateCode ? stateCenters.get(greaterAreaStateCode) || null : null,
         });
+        const stateCode = greaterAreaStateCode || resolvedLocation.stateCode;
 
         return {
           ...doctor,
+          greaterArea,
           bio,
           displayName,
           email,
@@ -809,9 +825,7 @@ export function PhysicianNetworkMap({
           lastLoginMs: parseIsoTimestamp(lastLoginAt),
           stateCode,
           locationLabel: buildLocationLabel({
-            officeCity: doctor.officeCity,
-            greaterArea: doctor.greaterArea,
-            stateCode,
+            greaterArea,
           }),
           coordinates: resolvedLocation.coordinates,
           locationPrecision: resolvedLocation.precision,

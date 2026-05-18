@@ -2055,6 +2055,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getReferralSettings: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/referrals`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   updateShopStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
       method: 'PUT',

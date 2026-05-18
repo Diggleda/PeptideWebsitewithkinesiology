@@ -870,8 +870,6 @@ def _build_physician_network_entries() -> list[dict]:
                 "greaterArea": profile.get("greaterArea") or None,
                 "studyFocus": profile.get("studyFocus") or None,
                 "bio": profile.get("bio") or None,
-                "officeCity": profile.get("officeCity") or None,
-                "officeState": profile.get("officeState") or None,
                 "lastLoginAt": profile.get("lastLoginAt") or None,
             }
         )
@@ -1601,6 +1599,17 @@ def get_physician_3pl():
         settings = settings_service.get_settings()
         return {
             "physicianThreePlEnabled": bool(settings.get("physicianThreePlEnabled", False)),
+            "mysqlEnabled": _mysql_enabled(),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.get("/referrals")
+def get_referrals():
+    def action():
+        return {
+            "referralCreditAmount": settings_service.get_referral_credit_amount(),
             "mysqlEnabled": _mysql_enabled(),
         }
 

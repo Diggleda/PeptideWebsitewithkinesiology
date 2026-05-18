@@ -253,6 +253,8 @@ class TestSettingsControls(unittest.TestCase):
                 "networkPresenceAgreement": True,
                 "researchTermsAgreement": True,
                 "bio": "Visible bio",
+                "greaterArea": "Greater Indianapolis",
+                "officeCity": "Hidden Office City",
                 "officeState": "IN",
                 "lastLoginAt": "2026-04-12T10:00:00Z",
             },
@@ -265,6 +267,8 @@ class TestSettingsControls(unittest.TestCase):
                 "networkPresenceAgreement": True,
                 "researchTermsAgreement": True,
                 "bio": "Visible recent bio",
+                "greaterArea": "Greater Los Angeles",
+                "officeCity": "Hidden Recent Office City",
                 "officeState": "CA",
                 "lastLoginAt": "2026-04-13T10:00:00Z",
             },
@@ -331,6 +335,9 @@ class TestSettingsControls(unittest.TestCase):
             ["doctor-visible-recent", "doctor-visible"],
         )
         self.assertEqual(doctors[0]["email"], "visible-recent@example.com")
+        self.assertEqual(doctors[0]["greaterArea"], "Greater Los Angeles")
+        self.assertNotIn("officeCity", doctors[0])
+        self.assertNotIn("officeState", doctors[0])
         self.assertEqual(doctors[0]["lastLoginAt"], "2026-04-13T10:00:00Z")
         visible_profile_url = urlparse(str(doctors[0]["profileImageUrl"]))
         self.assertTrue(visible_profile_url.path.endswith("/api/settings/network/doctors/doctor-visible-recent/profile-image"))

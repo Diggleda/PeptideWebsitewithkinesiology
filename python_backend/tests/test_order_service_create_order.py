@@ -242,6 +242,89 @@ class CreateOrderTests(unittest.TestCase):
         self.assertEqual(result["order"]["wooOrderId"], 9001)
         self.assertEqual(result["order"]["integrations"]["wooCommerce"], "success")
 
+    def test_create_order_does_not_copy_shipping_address_to_profile_location(self):
+        service = self.order_service
+        inserted_orders = []
+
+        def succeed(order, _user):
+            return {
+                "status": "success",
+                "response": {
+                    "id": 9002,
+                    "number": "1492",
+                    "status": "processing",
+                    "orderKey": "wc_order_key_456",
+                },
+            }
+
+        def capture_insert(order):
+            inserted_orders.append(dict(order))
+            return dict(order)
+
+        with patch.object(service.order_repository, "insert", side_effect=capture_insert), patch.object(
+            service.order_repository, "update", side_effect=lambda order: dict(order)
+        ), patch.object(
+            service.order_repository, "update_woo_fields"
+        ), patch.object(
+            service.sales_prospect_repository, "mark_doctor_as_nurturing_if_purchased"
+        ), patch.object(
+            service.user_repository, "find_by_id",
+            return_value={
+                "id": "doctor-1",
+                "name": "Dr. Pepper",
+                "email": "doctor@example.com",
+                "role": "doctor",
+                "referralCredits": 0,
+                "officeAddressLine1": None,
+                "officeCity": None,
+                "officeState": None,
+            },
+        ), patch.object(
+            service.user_repository, "update"
+        ) as update_user_mock, patch.object(service.settings_service, "get_settings", return_value={}), patch.object(
+            service.referral_service, "handle_order_referral_effects", return_value={}
+        ), patch.object(
+            service.discount_code_repository, "reserve_use_once"
+        ), patch.object(
+            service.woo_commerce, "forward_order", side_effect=succeed
+        ), patch.object(
+            service, "_is_tax_exempt_for_checkout", return_value=False
+        ), patch.object(
+            service, "_resolve_order_exemption_snapshot", return_value={}
+        ), patch.object(
+            service, "_resolve_sales_rep_context", return_value={}
+        ), patch.object(
+            service, "_calculate_checkout_tax", return_value=(0.0, "none", None)
+        ), patch.object(
+            service, "_can_user_use_hand_delivery_for_checkout", return_value=False
+        ):
+            service.create_order(
+                user_id="doctor-1",
+                items=[{"productId": 101, "name": "Test Product", "price": 25.0, "quantity": 2}],
+                total=50.0,
+                referral_code=None,
+                discount_code=None,
+                payment_method="bacs",
+                pricing_mode="wholesale",
+                tax_total=0.0,
+                shipping_total=0.0,
+                shipping_address={
+                    "addressLine1": "123 Ship St",
+                    "city": "Dallas",
+                    "state": "TX",
+                    "postalCode": "75201",
+                    "country": "US",
+                },
+                facility_pickup=False,
+                shipping_rate=None,
+                expected_shipment_window=None,
+                physician_certified=True,
+                as_delegate_label=None,
+            )
+
+        update_user_mock.assert_not_called()
+        self.assertEqual(inserted_orders[0]["shippingAddress"]["city"], "Dallas")
+
     def test_create_order_sets_facility_pickup_flags_when_enabled(self):
         service = self.order_service
         inserted_orders = []

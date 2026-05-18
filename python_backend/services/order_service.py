@@ -1957,19 +1957,6 @@ def _build_facility_pickup_shipping_address(
     }, resolved_name)
 
 
-def _extract_user_address_fields(shipping_address: Optional[Dict]) -> Dict[str, Optional[str]]:
-    if not isinstance(shipping_address, dict):
-        return {}
-    return {
-        "officeAddressLine1": _normalize_address_field(shipping_address.get("addressLine1")),
-        "officeAddressLine2": _normalize_address_field(shipping_address.get("addressLine2")),
-        "officeCity": _normalize_address_field(shipping_address.get("city")),
-        "officeState": _normalize_address_field(shipping_address.get("state")),
-        "officePostalCode": _normalize_address_field(shipping_address.get("postalCode")),
-        "officeCountry": _normalize_address_field(shipping_address.get("country")),
-    }
-
-
 def _normalize_woo_order_id(value: Optional[object]) -> Optional[str]:
     if value is None:
         return None
@@ -2385,13 +2372,6 @@ def create_order(
     test_override_allowed = role in ("admin", "test_doctor")
     test_override_payment = normalized_payment_method == "bacs"
     test_override = bool(test_override_enabled and test_override_allowed and test_override_payment)
-
-    if not bypass_shipping:
-        address_updates = _extract_user_address_fields(shipping_address)
-        if any(address_updates.values()):
-            updated_user = user_repository.update({**user, **address_updates})
-            if updated_user:
-                user = updated_user
 
     normalized_referral = (referral_code or "").strip().upper() or None
     if test_override:

@@ -157,7 +157,7 @@ const findBestKnownPlace = (value: string, stateCode?: string | null) => {
     return null;
   }
 
-  let bestMatch: { coordinates: [number, number]; score: number } | null = null;
+  let bestMatch: { coordinates: [number, number]; score: number; stateCode: string | null } | null = null;
 
   KNOWN_PLACE_ENTRIES.forEach((entry) => {
     const stateMatches = !entry.stateCodes || !stateCode || entry.stateCodes.includes(stateCode);
@@ -174,6 +174,7 @@ const findBestKnownPlace = (value: string, stateCode?: string | null) => {
         bestMatch = {
           coordinates: entry.coordinates,
           score: nextScore,
+          stateCode: entry.stateCodes?.[0] || null,
         };
       }
     });
@@ -192,7 +193,7 @@ export const resolveApproximateUsPlaceCoordinates = ({
   officeCity?: string | null;
   stateCode?: string | null;
   fallbackCoordinates?: [number, number] | null;
-}): { coordinates: [number, number] | null; precision: MapLocationPrecision } => {
+}): { coordinates: [number, number] | null; precision: MapLocationPrecision; stateCode: string | null } => {
   const candidates: CandidateValue[] = [
     { precision: "area", value: greaterArea },
     { precision: "city", value: officeCity },
@@ -207,6 +208,7 @@ export const resolveApproximateUsPlaceCoordinates = ({
       return {
         coordinates: match.coordinates,
         precision: candidate.precision,
+        stateCode: stateCode || match.stateCode,
       };
     }
   }
@@ -215,11 +217,13 @@ export const resolveApproximateUsPlaceCoordinates = ({
     return {
       coordinates: fallbackCoordinates,
       precision: "state",
+      stateCode: stateCode || null,
     };
   }
 
   return {
     coordinates: null,
     precision: "unknown",
+    stateCode: null,
   };
 };

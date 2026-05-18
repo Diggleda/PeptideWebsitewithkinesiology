@@ -6,6 +6,21 @@ const repoRoot = process.cwd();
 const buildDir = path.join(repoRoot, "build");
 const outputArg = process.argv[2] || "frontend_flattened.zip";
 const outputPath = path.resolve(repoRoot, outputArg);
+const excludedImagePatterns = [
+  "*.png",
+  "*.jpg",
+  "*.jpeg",
+  "*.gif",
+  "*.webp",
+  "*.avif",
+  "*.svg",
+  "*.ico",
+  "*.bmp",
+  "*.tif",
+  "*.tiff",
+  "*.heic",
+  "*.heif",
+];
 const staticSpaHtaccess = [
   "DirectoryIndex index.html",
   "",
@@ -45,7 +60,16 @@ normalizeBuildPermissions(buildDir);
 
 const zipResult = spawnSync(
   "zip",
-  ["-r", outputPath, ".", "-x", "*.DS_Store", "-x", "*/.DS_Store"],
+  [
+    "-r",
+    outputPath,
+    ".",
+    "-x",
+    "*.DS_Store",
+    "-x",
+    "*/.DS_Store",
+    ...excludedImagePatterns.flatMap((pattern) => ["-x", pattern, "-x", `*/${pattern}`]),
+  ],
   {
     cwd: buildDir,
     stdio: "inherit",

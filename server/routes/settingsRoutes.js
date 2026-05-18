@@ -22,6 +22,7 @@ const {
   setCrmEnabled,
   getTestPaymentsOverrideEnabled,
   setTestPaymentsOverrideEnabled,
+  getReferralCreditAmount,
   getStripeMode,
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
@@ -411,8 +412,6 @@ const buildPhysicianNetworkEntries = () => userRepository
       greaterArea: profile?.greaterArea || null,
       studyFocus: profile?.studyFocus || null,
       bio: profile?.bio || null,
-      officeCity: profile?.officeCity || null,
-      officeState: profile?.officeState || null,
       lastLoginAt: profile?.lastLoginAt || null,
     };
   })
@@ -617,6 +616,11 @@ router.get('/physician-map', async (_req, res) => {
 router.get('/physician-3pl', async (_req, res) => {
   const enabled = await getPhysicianThreePlEnabled();
   res.json({ physicianThreePlEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.get('/referrals', async (_req, res) => {
+  const referralCreditAmount = await getReferralCreditAmount();
+  res.json({ referralCreditAmount, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/crm', async (_req, res) => {

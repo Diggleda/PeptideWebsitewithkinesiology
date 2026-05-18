@@ -463,7 +463,8 @@ body[data-delegate-theme="true"] .dev-theme-root {
 
 .physician-network-state-breakdown__profile {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  align-self: start;
   min-width: 0;
 }
 
@@ -492,6 +493,7 @@ body[data-delegate-theme="true"] .dev-theme-root {
 
 .physician-network-state-breakdown__profile-card {
   display: flex;
+  align-self: flex-start;
   flex-direction: column;
   gap: 0.72rem;
   min-width: 0;
@@ -14874,4 +14876,136 @@ body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-li
 ) {
   color: rgb(11, 6, 121) !important;
   -webkit-text-fill-color: rgb(11, 6, 121) !important;
+}
+
+[data-app-header] :is(
+  .header-count-indicator,
+  .account-indicator-badge,
+  .header-cart-button + .header-count-indicator
+),
+.dev-theme-root [data-app-header] :is(
+  .header-count-indicator,
+  .account-indicator-badge,
+  .header-cart-button + .header-count-indicator
+) {
+  opacity: 1 !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  mix-blend-mode: normal !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
+
+.count-badge-opaque,
+.count-badge-opaque.glass-strong,
+[data-slot="badge"].count-badge-opaque,
+[data-app-header] .count-badge-opaque,
+.dev-theme-root .count-badge-opaque {
+  --tw-bg-opacity: 1 !important;
+  opacity: 1 !important;
+  isolation: isolate !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  background-clip: padding-box !important;
+  border-color: rgb(11, 6, 121) !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  mix-blend-mode: normal !important;
+  filter: none !important;
+  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.15) !important;
+  text-shadow: none !important;
+}
+
+.count-badge-opaque::before,
+.count-badge-opaque::after,
+.dev-theme-root .count-badge-opaque::before,
+.dev-theme-root .count-badge-opaque::after {
+  content: none !important;
+  display: none !important;
+}
+
+.count-badge-opaque *,
+.dev-theme-root .count-badge-opaque * {
+  opacity: 1 !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+}
+
+.header-action-count-badge,
+[data-app-header] .header-action-count-badge,
+.dev-theme-root [data-app-header] .header-action-count-badge {
+  position: absolute !important;
+  top: -0.5rem !important;
+  right: -0.5rem !important;
+  z-index: 50 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  min-width: 1.25rem !important;
+  padding: 0 !important;
+  border: 1px solid rgb(11, 6, 121) !important;
+  border-radius: var(--squircle-sm, 12px) !important;
+  opacity: 1 !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  background-clip: padding-box !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  text-shadow: none !important;
+  mix-blend-mode: normal !important;
+  filter: none !important;
+  box-shadow: 0 1px 3px rgba(2, 6, 23, 0.18) !important;
+  pointer-events: none !important;
+}
+
+.header-action-count-badge::before,
+.header-action-count-badge::after,
+[data-app-header] .header-action-count-badge::before,
+[data-app-header] .header-action-count-badge::after,
+.dev-theme-root [data-app-header] .header-action-count-badge::before,
+.dev-theme-root [data-app-header] .header-action-count-badge::after {
+  content: none !important;
+  display: none !important;
+}
+
+.header-action-count-badge.header-account-count-badge,
+[data-app-header] .header-action-count-badge.header-account-count-badge,
+.dev-theme-root [data-app-header] .header-action-count-badge.header-account-count-badge {
+  top: -0.3rem !important;
+  right: -0.3rem !important;
+}
+
+[data-app-header].glass-liquid .header-action-count-badge.header-count-indicator,
+body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-liquid .header-action-count-badge.header-count-indicator,
+.dev-theme-root [data-app-header].glass-liquid .header-action-count-badge.header-count-indicator,
+.dev-theme-root.theme-clinical [data-delegate-theme="false"] [data-app-header].glass-liquid .header-action-count-badge.header-count-indicator,
+[data-delegate-theme="true"] [data-app-header].glass-liquid .header-action-count-badge.header-count-indicator {
+  opacity: 1 !important;
+  background: rgb(255, 255, 255) !important;
+  background-color: rgb(255, 255, 255) !important;
+  background-image: none !important;
+  border-color: rgb(11, 6, 121) !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow:
+    inset 0 0 0 999px rgb(255, 255, 255),
+    0 1px 3px rgba(2, 6, 23, 0.18) !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
 }

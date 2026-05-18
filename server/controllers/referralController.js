@@ -13,6 +13,7 @@ const orderRepository = require('../repositories/orderRepository');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 const { env } = require('../config/env');
+const { getReferralCreditAmount } = require('../services/settingsService');
 const { computeBlindIndex, decryptText } = require('../utils/cryptoEnvelope');
 const { parseMultipartSingleFile } = require('../utils/multipart');
 const {
@@ -671,38 +672,45 @@ const deleteDoctorReferral = (req, res, next) => {
   }
 };
 
-const buildDoctorCredits = (doctorId) => {
+const buildDoctorCredits = async (doctorId, referralCreditAmountOverride = null) => {
   const ledger = creditLedgerRepository.findByDoctorId(doctorId);
   const totalCredits = ledger.reduce((sum, entry) => {
     const amount = Number(entry.amount) || 0;
     return entry.direction === 'debit' ? sum - amount : sum + amount;
   }, 0);
   const firstOrderBonuses = ledger.filter((entry) => entry.firstOrderBonus).length;
+  const referralCreditAmount = Number.isFinite(Number(referralCreditAmountOverride))
+    ? Number(referralCreditAmountOverride)
+    : await getReferralCreditAmount();
   return {
     totalCredits,
     firstOrderBonuses,
+    referralCreditAmount,
     ledger,
   };
 };
 
-const buildAggregatedCredits = (doctorIds = []) => {
+const buildAggregatedCredits = async (doctorIds = []) => {
   const uniqueDoctorIds = Array.from(new Set(doctorIds.filter(Boolean)));
+  const referralCreditAmount = await getReferralCreditAmount();
   const aggregated = {
     totalCredits: 0,
     firstOrderBonuses: 0,
+    referralCreditAmount,
     ledger: [],
   };
 
-  uniqueDoctorIds.forEach((doctorId) => {
-    const summary = buildDoctorCredits(doctorId);
+  for (const doctorId of uniqueDoctorIds) {
+    // eslint-disable-next-line no-await-in-loop
+    const summary = await buildDoctorCredits(doctorId, referralCreditAmount);
     aggregated.totalCredits += summary.totalCredits;
     aggregated.firstOrderBonuses += summary.firstOrderBonuses;
-  });
+  }
 
   return aggregated;
 };
 
-const getDoctorSummary = (req, res, next) => {
+const getDoctorSummary = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
     logger.info(
@@ -722,7 +730,7 @@ const getDoctorSummary = (req, res, next) => {
 
     if (role === 'doctor' || role === 'test_doctor') {
       const referrals = referralRepository.findByDoctorId(req.user.id);
-      const credits = buildDoctorCredits(req.user.id);
+      const credits = await buildDoctorCredits(req.user.id);
       const normalizeId = (value) => {
         if (value == null) return '';
         const text = String(value).trim();
@@ -754,7 +762,7 @@ const getDoctorSummary = (req, res, next) => {
       const salesRepId = req.user.salesRepId || req.user.id;
       const referrals = referralRepository.findBySalesRepId(salesRepId);
       const doctorIds = referrals.map((referral) => referral.referrerDoctorId).filter(Boolean);
-      const credits = buildAggregatedCredits(doctorIds);
+      const credits = await buildAggregatedCredits(doctorIds);
       res.json({
         credits,
         referrals,
@@ -766,7 +774,7 @@ const getDoctorSummary = (req, res, next) => {
     if (role === 'admin') {
       const referrals = referralRepository.getAll();
       const doctorIds = referrals.map((referral) => referral.referrerDoctorId).filter(Boolean);
-      const credits = buildAggregatedCredits(doctorIds);
+      const credits = await buildAggregatedCredits(doctorIds);
       res.json({
         credits,
         referrals,
@@ -1284,6 +1292,7 @@ const getDoctorLedger = (req, res, next) => {
       codes,
       users: usersWithOrders,
       statuses: REFERRAL_STATUSES,
+      referralCreditAmount: await getReferralCreditAmount(),
       unassignedCount,
       dataFreshness: {
         generatedAt: new Date().toISOString(),

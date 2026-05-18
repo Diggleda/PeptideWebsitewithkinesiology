@@ -813,6 +813,14 @@ const isDoctorRole = (role?: string | null) => {
 const canUseProductRecommendations = (role?: string | null) =>
   isDoctorRole(role) || isAdmin(role) || isRep(role) || isSalesLead(role);
 
+const normalizeReferralCreditAmount = (value: unknown): number | null => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  return Math.round(amount * 100) / 100;
+};
+
 const noop = () => {};
 
 const hasUploadedResellerPermit = (...values: unknown[]): boolean =>
@@ -8906,10 +8914,11 @@ function MainApp() {
                 patientLinksResult,
                 crmResult,
                 forumResult,
-	                researchResult,
-	                physicianMapResult,
+                researchResult,
+                physicianMapResult,
                 physicianThreePlResult,
-	                betaServicesResult,
+                referralSettingsResult,
+                betaServicesResult,
 	              ] = await Promise.allSettled([
 			          settingsAPI.getShopStatus(),
 	              settingsAPI.getPatientLinksStatus(),
@@ -8918,6 +8927,7 @@ function MainApp() {
 				          settingsAPI.getResearchStatus(),
 	                settingsAPI.getPhysicianMapStatus(),
                 settingsAPI.getPhysicianThreePlStatus(),
+                settingsAPI.getReferralSettings(),
 	                settingsAPI.getBetaServices(),
 				        ]);
 		        if (cancelled) return;
@@ -9016,6 +9026,16 @@ function MainApp() {
                 } catch {
                   // ignore
                 }
+              }
+            }
+
+            if (referralSettingsResult.status === "fulfilled") {
+              const referralSettings = referralSettingsResult.value as any;
+              const configuredAmount = normalizeReferralCreditAmount(
+                referralSettings?.referralCreditAmount,
+              );
+              if (configuredAmount !== null) {
+                setSettingsReferralCreditAmount(configuredAmount);
               }
             }
 
@@ -9661,6 +9681,8 @@ function MainApp() {
   const [salesRepDashboard, setSalesRepDashboard] =
     useState<SalesRepDashboard | null>(null);
   const salesRepDashboardRef = useRef<SalesRepDashboard | null>(null);
+  const [settingsReferralCreditAmount, setSettingsReferralCreditAmount] =
+    useState<number | null>(null);
   const [activePhysiciansCsvRemoteData, setActivePhysiciansCsvRemoteData] =
     useState<{
       networkUsers: PhysicianCsvRow[];
@@ -9668,16 +9690,23 @@ function MainApp() {
       debug?: unknown;
     } | null>(null);
   const referralCreditAmount = useMemo(() => {
-    const doctorConfigured = Number(doctorSummary?.referralCreditAmount);
-    if (Number.isFinite(doctorConfigured) && doctorConfigured > 0) {
+    const doctorConfigured = normalizeReferralCreditAmount(doctorSummary?.referralCreditAmount);
+    if (doctorConfigured !== null) {
       return doctorConfigured;
     }
-    const salesConfigured = Number(salesRepDashboard?.referralCreditAmount);
-    if (Number.isFinite(salesConfigured) && salesConfigured > 0) {
+    const salesConfigured = normalizeReferralCreditAmount(salesRepDashboard?.referralCreditAmount);
+    if (salesConfigured !== null) {
       return salesConfigured;
     }
+    if (settingsReferralCreditAmount !== null) {
+      return settingsReferralCreditAmount;
+    }
     return 250;
-  }, [doctorSummary?.referralCreditAmount, salesRepDashboard?.referralCreditAmount]);
+  }, [
+    doctorSummary?.referralCreditAmount,
+    salesRepDashboard?.referralCreditAmount,
+    settingsReferralCreditAmount,
+  ]);
 
   const normalizeEmailIdentity = useCallback((value: unknown): string | null => {
     if (value === null || value === undefined) return null;
@@ -9916,6 +9945,15 @@ function MainApp() {
           didPreserve = true;
         }
       });
+      if (
+        normalizeReferralCreditAmount(mergedDashboard.referralCreditAmount) === null &&
+        normalizeReferralCreditAmount((previousDashboard as Record<string, unknown>).referralCreditAmount) !== null
+      ) {
+        mergedDashboard.referralCreditAmount = (
+          previousDashboard as Record<string, unknown>
+        ).referralCreditAmount;
+        didPreserve = true;
+      }
       return didPreserve ? (mergedDashboard as SalesRepDashboard) : nextDashboard;
     },
     [],
@@ -24825,6 +24863,10 @@ function MainApp() {
             ? response.referrals
             : [];
           const credits = response?.credits ?? {};
+          const configuredReferralAmount =
+            normalizeReferralCreditAmount(credits.referralCreditAmount) ??
+            normalizeReferralCreditAmount(response?.referralCreditAmount) ??
+            settingsReferralCreditAmount;
 
           const normalizedCredits: DoctorCreditSummary = {
             totalCredits: Number(credits.totalCredits ?? 0),
@@ -24839,11 +24881,12 @@ function MainApp() {
                 ? Number(credits.netCredits)
                 : undefined,
             firstOrderBonuses: Number(credits.firstOrderBonuses ?? 0),
-            referralCreditAmount: Number(
-              credits.referralCreditAmount ?? response?.referralCreditAmount ?? 250,
-            ),
+            referralCreditAmount: configuredReferralAmount ?? 250,
             ledger: Array.isArray(credits.ledger) ? credits.ledger : [],
           };
+          if (configuredReferralAmount !== null) {
+            setSettingsReferralCreditAmount(configuredReferralAmount);
+          }
           const normalizedReferrals = referrals.map((referral) => ({
             ...referral,
           }));
@@ -24945,6 +24988,12 @@ function MainApp() {
             salesRepDashboardRef.current,
           );
 	          setSalesRepDashboard(dashboard);
+            const dashboardReferralAmount = normalizeReferralCreditAmount(
+              (dashboard as any)?.referralCreditAmount ?? (dashboardResponse as any)?.referralCreditAmount,
+            );
+            if (dashboardReferralAmount !== null) {
+              setSettingsReferralCreditAmount(dashboardReferralAmount);
+            }
             const dashboardAny = dashboard && typeof dashboard === "object"
               ? (dashboard as any)
               : null;
@@ -25069,6 +25118,7 @@ function MainApp() {
       hasAuthToken,
       activePhysiciansDebugEnabled,
       mergeDashboardCollectionsWithFallback,
+      settingsReferralCreditAmount,
     ],
   );
 
