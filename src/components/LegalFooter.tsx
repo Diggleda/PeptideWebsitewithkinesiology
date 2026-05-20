@@ -962,7 +962,8 @@ export function LegalFooter({
                   onChange={(e) => setBugReport(e.target.value)}
                   required
                   rows={6}
-                  className="w-full px-3 py-2 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.25)]"
+                  className="bug-report-textarea w-full px-3 py-2 rounded-md border border-slate-400 bg-white text-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-[rgba(100,116,139,0.25)]"
+                  style={{ border: '1px solid rgb(148, 163, 184)' }}
                   placeholder="Describe what happened and how to reproduce it."
                 />
               </div>

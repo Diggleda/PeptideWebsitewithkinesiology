@@ -61,6 +61,37 @@ def _should_count_resolve_page_load(args: object) -> bool:
     return normalized not in {"0", "false", "no", "off", "read", "readonly", "poll"}
 
 
+def _payload_value(payload: dict, camel: str, snake: str, default=None):
+    if camel in payload:
+        return payload.get(camel)
+    if snake in payload:
+        return payload.get(snake)
+    return default
+
+
+def _delegate_usage_actor(doctor_id: object = None) -> dict:
+    actor = getattr(g, "current_user", None) or {}
+    actor_id = str(actor.get("id") or "").strip()
+    if actor_id:
+        return actor
+    normalized_doctor_id = str(doctor_id or "").strip()
+    if normalized_doctor_id:
+        return {"id": normalized_doctor_id, "role": "doctor"}
+    return {}
+
+
+def _track_delegate_usage(event: str, *, doctor_id: object = None, metadata: dict | None = None) -> None:
+    normalized_event = str(event or "").strip()
+    if not normalized_event:
+        return
+    event_metadata = {"linkType": "delegate", **(metadata or {})}
+    usage_tracking_service.track_event(
+        normalized_event,
+        actor=_delegate_usage_actor(doctor_id),
+        metadata=event_metadata,
+    )
+
+
 @blueprint.get("/links")
 @require_auth
 def list_links():
@@ -103,7 +134,25 @@ def create_link():
             if "patientReference" in payload
             else payload.get("patient_reference")
         )
+        delegate_name = _payload_value(payload, "delegateName", "delegate_name")
+        delegate_contact = _payload_value(payload, "delegateContact", "delegate_contact")
+        delegate_role = _payload_value(payload, "delegateRole", "delegate_role")
+        product_scope = _payload_value(payload, "productScope", "product_scope")
+        product_scope_items = _payload_value(payload, "productScopeItems", "product_scope_items")
+        delegate_permission = _payload_value(payload, "delegatePermission", "delegate_permission")
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+        pricing_disclosure = _payload_value(payload, "pricingDisclosure", "pricing_disclosure")
+        zelle_recipient_name = _payload_value(payload, "zelleRecipientName", "zelle_recipient_name")
+        payment_confirmation_required = _payload_value(
+            payload,
+            "paymentConfirmationRequired",
+            "payment_confirmation_required",
+        )
+        delegate_instructions = _payload_value(payload, "delegateInstructions", "delegate_instructions")
+        internal_physician_note = _payload_value(payload, "internalPhysicianNote", "internal_physician_note")
+        terms_version = _payload_value(payload, "termsVersion", "terms_version")
+        shipping_policy_version = _payload_value(payload, "shippingPolicyVersion", "shipping_policy_version")
+        privacy_policy_version = _payload_value(payload, "privacyPolicyVersion", "privacy_policy_version")
         instructions = payload.get("instructions") if "instructions" in payload else None
         allowed_products = (
             payload.get("allowedProducts")
@@ -115,7 +164,6 @@ def create_link():
             if "expiresInHours" in payload
             else payload.get("expires_in_hours")
         )
-        usage_limit = payload.get("usageLimit") if "usageLimit" in payload else payload.get("usage_limit")
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
             payload.get("paymentInstructions")
@@ -134,11 +182,24 @@ def create_link():
             subject_label=subject_label if isinstance(subject_label, str) else None,
             study_label=study_label if isinstance(study_label, str) else None,
             patient_reference=patient_reference if isinstance(patient_reference, str) else None,
+            delegate_name=delegate_name if isinstance(delegate_name, str) else None,
+            delegate_contact=delegate_contact if isinstance(delegate_contact, str) else None,
+            delegate_role=delegate_role if isinstance(delegate_role, str) else None,
+            product_scope=product_scope if isinstance(product_scope, str) else None,
+            product_scope_items=product_scope_items,
+            delegate_permission=delegate_permission if isinstance(delegate_permission, str) else None,
             markup_percent=markup_percent if markup_percent is not None else None,
+            pricing_disclosure=pricing_disclosure if isinstance(pricing_disclosure, str) else None,
+            zelle_recipient_name=zelle_recipient_name if isinstance(zelle_recipient_name, str) else None,
+            payment_confirmation_required=payment_confirmation_required,
+            delegate_instructions=delegate_instructions if isinstance(delegate_instructions, str) else None,
+            internal_physician_note=internal_physician_note if isinstance(internal_physician_note, str) else None,
+            terms_version=terms_version if isinstance(terms_version, str) else None,
+            shipping_policy_version=shipping_policy_version if isinstance(shipping_policy_version, str) else None,
+            privacy_policy_version=privacy_policy_version if isinstance(privacy_policy_version, str) else None,
             instructions=instructions if isinstance(instructions, str) else None,
             allowed_products=allowed_products,
             expires_in_hours=expires_in_hours,
-            usage_limit=usage_limit,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
             physician_certified=physician_certified,
@@ -146,7 +207,12 @@ def create_link():
         usage_tracking_service.track_event(
             "delegate_link_created",
             actor=getattr(g, "current_user", None) or {},
-            metadata={"token": link.get("token"), "subjectLabel": link.get("subjectLabel"), "studyLabel": link.get("studyLabel")},
+            metadata={
+                "linkType": "delegate",
+                "token": link.get("token"),
+                "productScope": link.get("productScope"),
+                "delegatePermission": link.get("delegatePermission"),
+            },
         )
         return {"success": True, "link": link}
 
@@ -182,6 +248,12 @@ def update_link(token: str):
             if "patient_reference" in payload
             else None
         )
+        delegate_name = _payload_value(payload, "delegateName", "delegate_name")
+        delegate_contact = _payload_value(payload, "delegateContact", "delegate_contact")
+        delegate_role = _payload_value(payload, "delegateRole", "delegate_role")
+        product_scope = _payload_value(payload, "productScope", "product_scope")
+        product_scope_items = _payload_value(payload, "productScopeItems", "product_scope_items")
+        delegate_permission = _payload_value(payload, "delegatePermission", "delegate_permission")
         revoke = payload.get("revoke") if "revoke" in payload else None
         delete_link = (
             payload.get("delete")
@@ -193,6 +265,18 @@ def update_link(token: str):
             else None
         )
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+        pricing_disclosure = _payload_value(payload, "pricingDisclosure", "pricing_disclosure")
+        zelle_recipient_name = _payload_value(payload, "zelleRecipientName", "zelle_recipient_name")
+        payment_confirmation_required = _payload_value(
+            payload,
+            "paymentConfirmationRequired",
+            "payment_confirmation_required",
+        )
+        delegate_instructions = _payload_value(payload, "delegateInstructions", "delegate_instructions")
+        internal_physician_note = _payload_value(payload, "internalPhysicianNote", "internal_physician_note")
+        terms_version = _payload_value(payload, "termsVersion", "terms_version")
+        shipping_policy_version = _payload_value(payload, "shippingPolicyVersion", "shipping_policy_version")
+        privacy_policy_version = _payload_value(payload, "privacyPolicyVersion", "privacy_policy_version")
         instructions = payload.get("instructions") if "instructions" in payload else None
         allowed_products = (
             payload.get("allowedProducts")
@@ -209,7 +293,6 @@ def update_link(token: str):
             else None
         )
         has_expires_in_hours = "expiresInHours" in payload or "expires_in_hours" in payload
-        usage_limit = payload.get("usageLimit") if "usageLimit" in payload else payload.get("usage_limit") if "usage_limit" in payload else None
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
           payload.get("paymentInstructions")
@@ -229,6 +312,11 @@ def update_link(token: str):
         )
         if bool(delete_link):
             result = delegation_service.delete_link(doctor_id, token)
+            _track_delegate_usage(
+                "delegate_link_deleted",
+                doctor_id=doctor_id,
+                metadata={"status": "deleted"},
+            )
             return {"success": True, **result}
 
         updated = delegation_service.update_link(
@@ -239,8 +327,22 @@ def update_link(token: str):
             subject_label=subject_label if isinstance(subject_label, str) else None,
             study_label=study_label if isinstance(study_label, str) else None,
             patient_reference=patient_reference if isinstance(patient_reference, str) else None,
+            delegate_name=delegate_name if isinstance(delegate_name, str) else None,
+            delegate_contact=delegate_contact if isinstance(delegate_contact, str) else None,
+            delegate_role=delegate_role if isinstance(delegate_role, str) else None,
+            product_scope=product_scope if isinstance(product_scope, str) else None,
+            product_scope_items=product_scope_items,
+            delegate_permission=delegate_permission if isinstance(delegate_permission, str) else None,
             revoke=bool(revoke) if revoke is not None else None,
             markup_percent=markup_percent if markup_percent is not None else None,
+            pricing_disclosure=pricing_disclosure if isinstance(pricing_disclosure, str) else None,
+            zelle_recipient_name=zelle_recipient_name if isinstance(zelle_recipient_name, str) else None,
+            payment_confirmation_required=payment_confirmation_required,
+            delegate_instructions=delegate_instructions if isinstance(delegate_instructions, str) else None,
+            internal_physician_note=internal_physician_note if isinstance(internal_physician_note, str) else None,
+            terms_version=terms_version if isinstance(terms_version, str) else None,
+            shipping_policy_version=shipping_policy_version if isinstance(shipping_policy_version, str) else None,
+            privacy_policy_version=privacy_policy_version if isinstance(privacy_policy_version, str) else None,
             instructions=instructions if isinstance(instructions, str) else None,
             allowed_products=allowed_products,
             expires_in_hours=(
@@ -250,10 +352,26 @@ def update_link(token: str):
                 if has_expires_in_hours
                 else None
             ),
-            usage_limit=usage_limit,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
             received_payment=received_payment if received_payment is not None else None,
+        )
+        event_name = "delegate_link_updated"
+        if revoke is True:
+            event_name = "delegate_link_revoked"
+        elif revoke is False:
+            event_name = "delegate_link_reactivated"
+        elif received_payment is not None:
+            event_name = "delegate_payment_status_updated"
+        _track_delegate_usage(
+            event_name,
+            doctor_id=doctor_id,
+            metadata={
+                "productScope": updated.get("productScope") if isinstance(updated, dict) else None,
+                "delegatePermission": updated.get("delegatePermission") if isinstance(updated, dict) else None,
+                "status": updated.get("status") if isinstance(updated, dict) else None,
+                "receivedPayment": updated.get("receivedPayment") if isinstance(updated, dict) else None,
+            },
         )
         return {"success": True, "link": updated}
 
@@ -280,12 +398,25 @@ def update_config():
 def resolve_token():
     token = (request.args.get("token") or "").strip()
     count_page_load = _should_count_resolve_page_load(request.args)
-    return handle_action(
-        lambda: {
-            "success": True,
-            **delegation_service.resolve_delegate_token(token, count_page_load=count_page_load),
-        }
-    )
+
+    def action():
+        resolved = delegation_service.resolve_delegate_token(token, count_page_load=count_page_load)
+        if count_page_load:
+            _track_delegate_usage(
+                "delegate_link_opened",
+                doctor_id=resolved.get("doctorId") if isinstance(resolved, dict) else None,
+                metadata={
+                    "productScope": resolved.get("productScope") if isinstance(resolved, dict) else None,
+                    "delegatePermission": resolved.get("delegatePermission") if isinstance(resolved, dict) else None,
+                    "status": resolved.get("status") if isinstance(resolved, dict) else None,
+                    "usageCount": resolved.get("usageCount") if isinstance(resolved, dict) else None,
+                    "openCount": resolved.get("openCount") if isinstance(resolved, dict) else None,
+                    "proposalStatus": resolved.get("proposalStatus") if isinstance(resolved, dict) else None,
+                },
+            )
+        return {"success": True, **resolved}
+
+    return handle_action(action)
 
 
 @blueprint.get("/links/<token>/proposal")
@@ -297,6 +428,14 @@ def get_link_proposal(token: str):
         _require_doctor_access(role)
         doctor_id = _resolve_target_doctor_id(role)
         proposal = delegation_service.get_link_proposal(doctor_id, token)
+        _track_delegate_usage(
+            "delegate_proposal_review_loaded",
+            doctor_id=doctor_id,
+            metadata={
+                "proposalStatus": proposal.get("proposalStatus") if isinstance(proposal, dict) else None,
+                "status": proposal.get("status") if isinstance(proposal, dict) else None,
+            },
+        )
         return {"success": True, "proposal": proposal}
 
     return handle_action(action)

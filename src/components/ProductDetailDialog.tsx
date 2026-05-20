@@ -22,6 +22,7 @@ interface ProductDetailDialogProps {
   onAddToCart: (productId: string, quantity: number, note?: string, variantId?: string | null) => void;
   pricingMarkupPercent?: number | null;
   proposalMode?: boolean;
+  proposalActionsDisabled?: boolean;
 }
 
 export function ProductDetailDialog({
@@ -31,6 +32,7 @@ export function ProductDetailDialog({
   onAddToCart,
   pricingMarkupPercent,
   proposalMode = false,
+  proposalActionsDisabled = false,
 }: ProductDetailDialogProps) {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
@@ -477,7 +479,7 @@ export function ProductDetailDialog({
 	                  {/* Add to cart button */}
 	                  <Button
 	                    onClick={handleAddToCart}
-	                    disabled={isVariantSelectionLoading}
+	                    disabled={isVariantSelectionLoading || proposalActionsDisabled}
 	                    className={proposalMode
                         ? 'w-full h-14 text-base font-semibold squircle-lg border-0 text-white transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed'
                         : 'w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed'}
@@ -490,7 +492,7 @@ export function ProductDetailDialog({
 	                    )}
 	                    {isVariantSelectionLoading
 	                      ? 'Loading options…'
-	                      : proposalMode ? 'Add to Proposal' : 'Add to cart'}
+	                      : proposalMode ? (proposalActionsDisabled ? 'View only' : 'Add to Proposal') : 'Add to cart'}
 	                  </Button>
                 </div>
               </div>

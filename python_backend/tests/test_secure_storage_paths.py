@@ -423,7 +423,21 @@ class PatientLinkEncryptionTests(unittest.TestCase):
                 subject_label="PAT-123",
                 study_label="Study A",
                 patient_reference="REF-7",
+                delegate_name="Delegate A",
+                delegate_contact="delegate@example.com",
+                delegate_role="caregiver",
+                product_scope="specific_products",
+                product_scope_items=["bpc-157"],
+                delegate_permission="submit_for_physician_review",
                 markup_percent=7.5,
+                pricing_disclosure="Prices include service fees.",
+                zelle_recipient_name="Dr. Example",
+                payment_confirmation_required=True,
+                delegate_instructions="Review available research products.",
+                internal_physician_note="Internal note.",
+                terms_version="terms-v1",
+                shipping_policy_version="shipping-v1",
+                privacy_policy_version="privacy-v1",
                 payment_method="zelle",
                 payment_instructions="Pay by Friday",
                 instructions="Use nightly",
@@ -440,6 +454,20 @@ class PatientLinkEncryptionTests(unittest.TestCase):
         self.assertEqual(params["subject_label"], "cipher:subject_label:PAT-123")
         self.assertEqual(params["study_label"], "cipher:study_label:Study A")
         self.assertEqual(params["patient_reference"], "cipher:patient_reference:REF-7")
+        self.assertEqual(params["delegate_name"], "cipher:delegate_name:Delegate A")
+        self.assertEqual(params["delegate_contact"], "cipher:delegate_contact:delegate@example.com")
+        self.assertEqual(params["delegate_role"], "caregiver")
+        self.assertEqual(params["product_scope"], "specific_products")
+        self.assertEqual(params["product_scope_items_json"], '["BPC-157"]')
+        self.assertEqual(params["delegate_permission"], "submit_for_physician_review")
+        self.assertEqual(params["pricing_disclosure"], "cipher:pricing_disclosure:Prices include service fees.")
+        self.assertEqual(params["zelle_recipient_name"], "cipher:zelle_recipient_name:Dr. Example")
+        self.assertEqual(params["payment_confirmation_required"], 1)
+        self.assertEqual(params["delegate_instructions"], "cipher:delegate_instructions:Review available research products.")
+        self.assertEqual(params["internal_physician_note"], "cipher:internal_physician_note:Internal note.")
+        self.assertEqual(params["terms_version"], "terms-v1")
+        self.assertEqual(params["shipping_policy_version"], "shipping-v1")
+        self.assertEqual(params["privacy_policy_version"], "privacy-v1")
         self.assertEqual(params["instructions"], "cipher:instructions:Use nightly")
         self.assertEqual(
             params["payment_instructions"],
@@ -450,6 +478,12 @@ class PatientLinkEncryptionTests(unittest.TestCase):
         self.assertNotIn("subject_label_encrypted", params)
         self.assertNotIn("study_label_encrypted", params)
         self.assertNotIn("patient_reference_encrypted", params)
+        self.assertNotIn("delegate_name_encrypted", params)
+        self.assertNotIn("delegate_contact_encrypted", params)
+        self.assertNotIn("pricing_disclosure_encrypted", params)
+        self.assertNotIn("zelle_recipient_name_encrypted", params)
+        self.assertNotIn("delegate_instructions_encrypted", params)
+        self.assertNotIn("internal_physician_note_encrypted", params)
         self.assertNotIn("instructions_encrypted", params)
         self.assertNotIn("payment_instructions_encrypted", params)
         self.assertEqual(params["token_ciphertext"], "cipher:token:token-1234")

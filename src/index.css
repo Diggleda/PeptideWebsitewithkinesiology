@@ -1050,6 +1050,99 @@ body[data-delegate-theme="true"] .dev-theme-root {
   margin-top: 0.45rem !important;
 }
 
+.delegate-link-create-form.patient-link-form--grouped .patient-link-group + .patient-link-group {
+  position: relative;
+  margin-top: 1rem !important;
+  border-top: 0 !important;
+  padding-top: 1.25rem !important;
+}
+
+.delegate-link-create-form.patient-link-form--grouped .patient-link-group + .patient-link-group::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.55);
+  border-radius: 0;
+}
+
+.delegate-link-create-form .patient-link-group > div:first-child {
+  margin-bottom: 0.85rem;
+}
+
+.delegate-link-create-form.patient-link-form--generate .patient-link-form__patient-id-input,
+.delegate-link-create-form.patient-link-form--generate .patient-link-form__input,
+.delegate-link-create-form.patient-link-form--generate .patient-link-form__zelle-contact-input,
+.delegate-link-create-form.patient-link-form--generate .patient-link-form__markup,
+.delegate-link-create-form.patient-link-form--generate .patient-link-form__select,
+.delegate-link-create-form.patient-link-form--generate .patient-link-form__instructions,
+.delegate-link-create-form.patient-link-form--generate textarea {
+  margin-bottom: 0.72rem !important;
+}
+
+.delegate-link-create-form .patient-link-form__label--optional-row {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.delegate-link-create-form .patient-link-form__label--optional-row .label-paren--right {
+  flex: 1 1 auto;
+  margin-left: auto;
+  text-align: right;
+}
+
+.delegate-link-create-form .delegate-link-submit-row {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0.85rem !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin-top: 1rem !important;
+  padding-top: 1rem !important;
+  border-top: 1px solid rgba(148, 163, 184, 0.45);
+}
+
+.delegate-link-create-form .delegate-link-certification-account,
+.delegate-link-create-form .delegate-link-certification-copy,
+.delegate-link-create-form .delegate-link-submit-action {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+.delegate-link-create-form .delegate-link-certification-copy {
+  align-items: flex-start !important;
+  color: rgb(51, 65, 85);
+}
+
+.delegate-link-create-form .delegate-link-certification-copy .brand-checkbox {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.delegate-link-create-form .delegate-link-submit-action {
+  justify-content: flex-end !important;
+  align-items: stretch !important;
+  justify-self: auto !important;
+}
+
+.delegate-link-create-form .delegate-link-submit-action .delegate-link-submit-button {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  align-self: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
 @media (min-width: 640px) {
   .patient-link-item {
     display: grid;
@@ -1164,6 +1257,26 @@ body[data-delegate-theme="true"] .dev-theme-root {
   .patient-link-submit-action .patient-link-form__button {
     height: 2.75rem !important;
     min-height: 2.75rem !important;
+  }
+
+  .delegate-link-create-form .delegate-link-submit-row {
+    display: flex !important;
+    grid-template-columns: none !important;
+    gap: 0.85rem !important;
+  }
+
+  .delegate-link-create-form .delegate-link-submit-action {
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+
+  .delegate-link-create-form .delegate-link-submit-action .delegate-link-submit-button {
+    width: auto !important;
+    min-width: 9rem !important;
+  }
+
+  .delegate-link-create-form .delegate-link-submit-action .delegate-link-submit-button--primary {
+    min-width: 15rem !important;
   }
 
   .patient-link-actions {
@@ -4061,6 +4174,8 @@ body {
   --primary-foreground: #ffffff;
   --brand-color: rgb(11, 6, 121);
   --brand-color-rgb: 11, 6, 121;
+  --brand-blue-2: rgb(60, 103, 183);
+  --brand-blue-2-rgb: 60, 103, 183;
   --secondary: rgb(11, 6, 121);
   --secondary-foreground: #ffffff;
   --muted: #ececf0;
@@ -4127,6 +4242,8 @@ html[data-brand-color="blue"] {
   --primary-foreground: #ffffff;
   --brand-color: rgb(11, 6, 121);
   --brand-color-rgb: 11, 6, 121;
+  --brand-blue-2: rgb(60, 103, 183);
+  --brand-blue-2-rgb: 60, 103, 183;
   --brand-glass-rgb: 11, 6, 121;
   --secondary: rgb(11, 6, 121);
   --secondary-foreground: #ffffff;
@@ -4232,9 +4349,13 @@ html[data-brand-color="blue"] .brand-logo--landing::before {
   right: 1.25rem !important;
 }
 
+.landing-auth-dialog-content--signup[data-slot="dialog-content"] > .dialog-close-btn {
+  right: 1rem !important;
+}
+
 .landing-auth-dialog-content--signup[data-slot="dialog-content"] {
-  width: min(100%, 34rem) !important;
-  max-width: min(34rem, calc(100vw - 2rem)) !important;
+  width: min(100%, 28rem) !important;
+  max-width: min(28rem, calc(100vw - 2rem)) !important;
 }
 
 .landing-auth-dialog-panel {
@@ -5078,6 +5199,20 @@ html {
   padding-top: 0.25rem;
   padding-bottom: 1px;
   min-height: 2.75rem;
+}
+
+.account-tab-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: currentColor;
+  stroke: currentColor;
+}
+
+.physician-dashboard-tab-icon {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .account-tab-shell {
@@ -6262,7 +6397,7 @@ html {
 
 .checkout-item-scroll-inner {
   min-width: 620px;
-  width: max-content;
+  width: 100%;
   position: relative;
 }
 
@@ -8676,6 +8811,129 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   height: 1.25rem;
 }
 
+.create-link-type-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.75rem;
+  box-sizing: border-box;
+  width: min(100%, 42rem);
+  max-width: 100%;
+  min-width: 0;
+  margin: 1.7rem auto 0;
+  overflow: hidden;
+}
+
+.create-link-type-button {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex !important;
+  flex: 0 1 20rem !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  box-sizing: border-box !important;
+  width: min(20rem, 100%) !important;
+  max-width: min(20rem, 100%) !important;
+  min-width: 0 !important;
+  min-height: 6.5rem !important;
+  height: auto !important;
+  gap: 0.75rem;
+  overflow: hidden;
+  padding: 1rem !important;
+  border: 2px solid rgb(11, 6, 121) !important;
+  border-radius: var(--squircle-sm, 12px) !important;
+  corner-shape: squircle;
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  text-align: left !important;
+  white-space: normal !important;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.create-link-type-button:hover,
+.create-link-type-button:focus-visible {
+  background: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  outline: none;
+}
+
+.create-link-type-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(11, 6, 121, 0.24);
+}
+
+.create-link-type-button__icon {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.125rem;
+  color: currentColor;
+  stroke: currentColor;
+}
+
+.create-link-type-button__copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  text-align: left;
+}
+
+.create-link-type-button__label,
+.create-link-type-button__subtext {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.create-link-type-button__label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.create-link-type-button__beta {
+  display: inline-block;
+  margin-left: 0.4rem;
+  color: var(--brand-blue-2, rgb(60, 103, 183));
+  -webkit-text-fill-color: var(--brand-blue-2, rgb(60, 103, 183));
+  font-size: 0.75rem;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: 0;
+  vertical-align: baseline;
+}
+
+.create-link-type-button__subtext {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgba(15, 23, 42, 0.72);
+  -webkit-text-fill-color: rgba(15, 23, 42, 0.72);
+}
+
+.create-link-type-button:hover .create-link-type-button__subtext,
+.create-link-type-button:focus-visible .create-link-type-button__subtext {
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+
+.create-link-type-button:hover .create-link-type-button__beta,
+.create-link-type-button:focus-visible .create-link-type-button__beta {
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+
 .partnered-protixa-row {
   --partnered-protixa-scale: 0.7;
   --partnered-protixa-gap: 0.56rem;
@@ -9110,7 +9368,8 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   margin-left: 0.3rem;
   padding: 0;
   background: transparent !important;
-  color: rgb(11, 6, 121) !important;
+  color: var(--brand-blue-2, rgb(60, 103, 183)) !important;
+  -webkit-text-fill-color: var(--brand-blue-2, rgb(60, 103, 183)) !important;
   font-size: 11px;
   font-weight: 900;
   line-height: 1;
@@ -9527,22 +9786,21 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
 
 .order-cancel-button {
   background-color: transparent;
-  border: 2px solid #0f172a6c !important;
-  color: #0f172a6c;
-  transition: background-color 150ms ease, color 150ms ease;
+  border: 2px solid currentColor !important;
+  color: rgb(71, 85, 105);
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .order-cancel-button:hover,
 .order-cancel-button:focus-visible {
-  background-color: #0f172a6c;
+  background-color: rgb(100, 116, 139);
   color: #ffffff;
-  /* Keep the border from appearing darker on hover (use a light outline). */
-  border-color: rgba(255, 255, 255, 0.35) !important;
+  border-color: currentColor !important;
 }
 
 .order-cancel-button:disabled {
   background-color: rgba(15, 23, 42, 0.05);
-  border-color: #0f172a6c;
+  border-color: currentColor !important;
   color: rgba(15, 23, 42, 0.4);
 }
 
@@ -11215,6 +11473,9 @@ a[href^="mailto:"]:hover {
   flex-direction: column;
   gap: 0.45rem;
   padding-block: 0.5rem !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 .delegate-logo-summary-row + .delegate-logo-summary-row {
@@ -11223,6 +11484,56 @@ a[href^="mailto:"]:hover {
 
 .delegate-preview-label {
   margin-bottom: 0.35rem;
+}
+
+.delegate-header-preview-scroll {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  border-radius: var(--squircle-lg, 0.875rem);
+}
+
+.delegate-header-preview-canvas {
+  box-sizing: border-box;
+  container-type: inline-size;
+  display: block;
+  margin-inline: auto;
+  max-width: none;
+  width: 20rem;
+  min-width: 20rem;
+}
+
+.delegate-header-preview-search-field {
+  display: none !important;
+}
+
+.delegate-header-preview-search-button {
+  flex: 0 0 2.4rem !important;
+  width: 2.4rem !important;
+  min-width: 2.4rem !important;
+  max-width: 2.4rem !important;
+  height: 2.4rem !important;
+  min-height: 2.4rem !important;
+  max-height: 2.4rem !important;
+  padding: 0 !important;
+}
+
+.delegate-header-preview-search-input,
+.delegate-header-preview-search-input:focus,
+.delegate-header-preview-search-input:focus-visible {
+  border-color: var(--header-search-border-color, rgb(11, 6, 121)) !important;
+  color: rgb(100, 116, 139) !important;
+  caret-color: rgb(100, 116, 139) !important;
+}
+
+.delegate-header-preview-search-input::placeholder {
+  color: rgb(100, 116, 139) !important;
+  opacity: 1 !important;
 }
 
 .delegate-logo-summary-copy {
@@ -11254,9 +11565,17 @@ a[href^="mailto:"]:hover {
 .delegate-session-appearance {
   display: grid;
   gap: 0.9rem;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 .delegate-session-background-preview {
+  background-color: var(--delegate-preview-background-color, #377eba) !important;
+  background-image: var(--delegate-preview-background-image, none) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
   min-height: 8rem;
 }
 
@@ -11342,7 +11661,29 @@ a[href^="mailto:"]:hover {
   }
 }
 
+@container (min-width: 48rem) {
+  .delegate-header-preview-search-field {
+    display: flex !important;
+  }
+
+  .delegate-header-preview-search-button {
+    display: none !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .delegate-header-preview-canvas {
+    width: max(36rem, 100%);
+    min-width: 36rem;
+  }
+}
+
 @media (min-width: 1024px) {
+  .delegate-header-preview-canvas {
+    width: 100%;
+    min-width: 0;
+  }
+
   .delegate-session-background-preview {
     min-height: 11rem;
   }
@@ -11718,6 +12059,55 @@ body.login-view.theme-leaf::before {
 body.login-view .dev-theme-root {
   background-color: #ffffff;
   background-image: none;
+}
+
+body.non-login-bg:not([data-delegate-theme="true"]) {
+  --post-login-background-image:
+    radial-gradient(circle at 34% 58%, rgba(190, 234, 255, 0.56) 0%, rgba(190, 234, 255, 0) 37%),
+    radial-gradient(circle at 73% 69%, rgba(104, 190, 244, 0.28) 0%, rgba(104, 190, 244, 0) 40%),
+    radial-gradient(circle at 14% 38%, rgba(79, 157, 226, 0.2) 0%, rgba(79, 157, 226, 0) 32%),
+    linear-gradient(
+      180deg,
+      #66aae9 0%,
+      #73b9ef 30%,
+      #91d4fb 62%,
+      #76c6f4 100%
+    );
+  --theme-page-bg: #82caf7;
+  --theme-page-image: var(--post-login-background-image);
+  --email-background-color: #82caf7;
+  --email-background-image: var(--post-login-background-image);
+  background-color: #82caf7 !important;
+  background-image: none !important;
+  background-attachment: scroll !important;
+}
+
+body.non-login-bg:not([data-delegate-theme="true"])::before {
+  content: "" !important;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100dvh;
+  background-color: #82caf7;
+  background-image: var(--post-login-background-image);
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center top;
+  pointer-events: none;
+  transform: translateZ(0);
+  z-index: 0;
+}
+
+body.non-login-bg:not([data-delegate-theme="true"]) .dev-theme-root {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+body.non-login-bg.physician-portal-bg:not([data-delegate-theme="true"]) {
+  --post-login-background-image: url("/sky.jpg");
+  --theme-page-image: var(--post-login-background-image);
+  --email-background-image: var(--post-login-background-image);
 }
 
 .dev-theme-root.theme-biotech .physician-network-card__intro p,
@@ -13879,14 +14269,22 @@ body[data-delegate-theme="true"] [data-app-header],
   --header-search-border-color: var(--delegate-accent, rgb(11, 6, 121));
 }
 
-body[data-delegate-theme="true"] [data-app-header] :is(
-  .header-search-input,
-  button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)
-),
-[data-delegate-theme="true"] [data-app-header] :is(
-  .header-search-input,
-  button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)
-) {
+body[data-delegate-theme="true"] [data-app-header] .header-search-input,
+body[data-delegate-theme="true"] [data-app-header] .header-search-field:hover .header-search-input,
+body[data-delegate-theme="true"] [data-app-header] .header-search-field:focus-within .header-search-input,
+[data-delegate-theme="true"] [data-app-header] .header-search-input,
+[data-delegate-theme="true"] [data-app-header] .header-search-field:hover .header-search-input,
+[data-delegate-theme="true"] [data-app-header] .header-search-field:focus-within .header-search-input {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 2px solid var(--delegate-accent, var(--header-search-border-color, rgb(11, 6, 121))) !important;
+  border-color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+  color: var(--delegate-accent, rgb(11, 6, 121)) !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button),
+[data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button) {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
@@ -13948,6 +14346,49 @@ body[data-delegate-theme="true"] [data-app-header] button.header-cart-button.hea
 [data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button):focus-visible svg,
 [data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[data-state="open"] svg,
 [data-delegate-theme="true"] [data-app-header] button.header-cart-button.header-home-button:not(.mobile-search-toggle-button)[aria-expanded="true"] svg {
+  color: var(--primary-foreground, #ffffff) !important;
+  stroke: currentColor !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button,
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 2px solid var(--delegate-accent, var(--app-header-refresh-border, rgb(11, 6, 121))) !important;
+  border-color: var(--delegate-accent, var(--app-header-refresh-border, rgb(11, 6, 121))) !important;
+  color: var(--delegate-accent, var(--app-header-refresh-text, rgb(11, 6, 121))) !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button :is(svg, .mobile-search-icon),
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button :is(svg, .mobile-search-icon) {
+  color: var(--delegate-accent, var(--app-header-refresh-text, rgb(11, 6, 121))) !important;
+  stroke: currentColor !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):hover,
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):focus-visible,
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[data-state="open"],
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[aria-expanded="true"],
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):hover,
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):focus-visible,
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[data-state="open"],
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[aria-expanded="true"] {
+  background: var(--delegate-accent, var(--app-header-refresh-hover-bg, rgb(11, 6, 121))) !important;
+  background-color: var(--delegate-accent, var(--app-header-refresh-hover-bg, rgb(11, 6, 121))) !important;
+  background-image: none !important;
+  border-color: var(--delegate-accent, var(--app-header-refresh-hover-bg, rgb(11, 6, 121))) !important;
+  color: var(--primary-foreground, #ffffff) !important;
+}
+
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):hover :is(svg, .mobile-search-icon),
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):focus-visible :is(svg, .mobile-search-icon),
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[data-state="open"] :is(svg, .mobile-search-icon),
+body[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[aria-expanded="true"] :is(svg, .mobile-search-icon),
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):hover :is(svg, .mobile-search-icon),
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):focus-visible :is(svg, .mobile-search-icon),
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[data-state="open"] :is(svg, .mobile-search-icon),
+[data-delegate-theme="true"] [data-app-header] button.mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"])[aria-expanded="true"] :is(svg, .mobile-search-icon) {
   color: var(--primary-foreground, #ffffff) !important;
   stroke: currentColor !important;
 }
@@ -14291,10 +14732,24 @@ body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-li
   border: 1px solid rgb(148, 163, 184) !important;
 }
 
+.bug-report-textarea,
+textarea.bug-report-textarea,
+textarea#bug-report.bug-report-textarea {
+  border: 1px solid rgb(148, 163, 184) !important;
+  border-color: rgb(148, 163, 184) !important;
+}
+
 .legal-contact-form input:focus,
 .legal-contact-form input:focus-visible,
 .legal-contact-form textarea:focus,
 .legal-contact-form textarea:focus-visible {
+  border-color: rgb(100, 116, 139) !important;
+}
+
+.bug-report-textarea:focus,
+.bug-report-textarea:focus-visible,
+textarea#bug-report.bug-report-textarea:focus,
+textarea#bug-report.bug-report-textarea:focus-visible {
   border-color: rgb(100, 116, 139) !important;
 }
 
@@ -14809,6 +15264,50 @@ body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-li
 .sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card,
 .dev-theme-root:not(.theme-biotech) .sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card {
   border: 2px solid rgb(11, 6, 121) !important;
+  border-color: rgba(11, 6, 121, 0.55) !important;
+  transition: border-color 160ms ease;
+}
+
+.sales-rep-dashboard,
+.sales-rep-dashboard :is(
+  .sales-rep-leads-card,
+  .sales-tracking-card,
+  .admin-dashboard-list-card,
+  .referrals-table-container,
+  .lead-panel,
+  .sales-tracking-summary-item,
+  .sales-metric-pill,
+  .admin-revenue-outlook-summary-card__stat,
+  .physician-dashboard-panel .account-order-card,
+  .physician-dashboard-panel .physician-dashboard-order-card,
+  .physician-referral-dashboard-panel .referrals-table-scroll
+) {
+  border-width: 2px !important;
+}
+
+.account-order-card,
+.dev-theme-root:not(.theme-biotech) .account-order-card,
+.physician-dashboard-panel .account-order-card,
+.dev-theme-root:not(.theme-biotech) .physician-dashboard-panel .account-order-card,
+.physician-dashboard-panel .physician-dashboard-order-card {
+  border-color: rgba(11, 6, 121, 0.55) !important;
+  transition: border-color 160ms ease;
+}
+
+.account-order-card:hover,
+.account-order-card:focus-within,
+.dev-theme-root:not(.theme-biotech) .account-order-card:hover,
+.dev-theme-root:not(.theme-biotech) .account-order-card:focus-within,
+.physician-dashboard-panel .account-order-card:hover,
+.physician-dashboard-panel .account-order-card:focus-within,
+.dev-theme-root:not(.theme-biotech) .physician-dashboard-panel .account-order-card:hover,
+.dev-theme-root:not(.theme-biotech) .physician-dashboard-panel .account-order-card:focus-within,
+.physician-dashboard-panel .physician-dashboard-order-card:hover,
+.physician-dashboard-panel .physician-dashboard-order-card:focus-within,
+.sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card:hover,
+.sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card:focus-within,
+.dev-theme-root:not(.theme-biotech) .sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card:hover,
+.dev-theme-root:not(.theme-biotech) .sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card:focus-within {
   border-color: rgb(11, 6, 121) !important;
 }
 
@@ -14823,9 +15322,260 @@ body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-li
 }
 
 .order-card-actions .order-buy-again-button,
-.dev-theme-root .order-card-actions .order-buy-again-button {
+.orders-canceled-toggle-button.order-buy-again-button,
+.dev-theme-root .order-card-actions .order-buy-again-button,
+.dev-theme-root .orders-canceled-toggle-button.order-buy-again-button,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .order-card-actions .order-buy-again-button,
+.dev-theme-root.theme-clinical .sales-rep-dashboard .orders-canceled-toggle-button.order-buy-again-button,
+.dev-theme-root:not(.theme-biotech) .order-card-actions .order-buy-again-button,
+.dev-theme-root:not(.theme-biotech) .orders-canceled-toggle-button.order-buy-again-button {
   border: 2px solid rgb(11, 6, 121) !important;
   border-color: rgb(11, 6, 121) !important;
+}
+
+.checkout-quantity-button,
+button.checkout-quantity-button,
+body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"],
+.dev-theme-root button.checkout-quantity-button[data-slot="button"] {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+}
+
+body:not([data-delegate-theme="true"]) :is(
+  [data-slot="button"],
+  button.header-home-button,
+  button.shop-home-button,
+  button.create-link-type-button,
+  button.btn-hover-lighter,
+  button.glass-brand,
+  button.glass-brand-subtle,
+  button.glass,
+  button.glass-card
+):not([role="switch"]):not(.admin-dashboard-link-button):not(.header-home-button--clear):not(.checkout-quantity-button):not(.delegate-header-preview-search-button):not(.delegate-product-picker-trigger):not(.landing-login-container button):not(.landing-create-account-container button) {
+  border-style: solid !important;
+  border-width: 2px !important;
+  border-color: rgb(11, 6, 121) !important;
+}
+
+.checkout-quantity-button,
+.checkout-quantity-button:hover,
+.checkout-quantity-button:focus,
+.checkout-quantity-button:focus-visible,
+.checkout-quantity-button:disabled,
+button.checkout-quantity-button,
+button.checkout-quantity-button:hover,
+button.checkout-quantity-button:focus,
+button.checkout-quantity-button:focus-visible,
+button.checkout-quantity-button:disabled,
+body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"],
+body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:hover,
+body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:focus,
+body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:focus-visible,
+body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:disabled,
+.dev-theme-root button.checkout-quantity-button[data-slot="button"],
+.dev-theme-root button.checkout-quantity-button[data-slot="button"]:hover,
+.dev-theme-root button.checkout-quantity-button[data-slot="button"]:focus,
+.dev-theme-root button.checkout-quantity-button[data-slot="button"]:focus-visible,
+.dev-theme-root button.checkout-quantity-button[data-slot="button"]:disabled {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-style: none !important;
+  border-width: 0 !important;
+}
+
+body:not([data-delegate-theme="true"]) .landing-login-container button:not([role="switch"]),
+body:not([data-delegate-theme="true"]) .landing-login-container [data-slot="button"] {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+}
+
+.delegate-header-preview-search-input,
+input.delegate-header-preview-search-input,
+.header-search-field > input.delegate-header-preview-search-input,
+.dev-theme-root input.delegate-header-preview-search-input,
+.dev-theme-root .header-search-field > input.delegate-header-preview-search-input,
+.delegate-header-preview-search-input:focus,
+input.delegate-header-preview-search-input:focus,
+.header-search-field > input.delegate-header-preview-search-input:focus,
+.dev-theme-root input.delegate-header-preview-search-input:focus,
+.dev-theme-root .header-search-field > input.delegate-header-preview-search-input:focus,
+.delegate-header-preview-search-input:focus-visible,
+input.delegate-header-preview-search-input:focus-visible,
+.header-search-field > input.delegate-header-preview-search-input:focus-visible,
+.dev-theme-root input.delegate-header-preview-search-input:focus-visible,
+.dev-theme-root .header-search-field > input.delegate-header-preview-search-input:focus-visible {
+  border-color: var(--header-search-border-color, rgb(11, 6, 121)) !important;
+}
+
+.delegate-header-preview-search-button,
+button.delegate-header-preview-search-button,
+body:not([data-delegate-theme="true"]) button.delegate-header-preview-search-button[data-slot="button"],
+.dev-theme-root button.delegate-header-preview-search-button[data-slot="button"] {
+  border-color: var(--delegate-header-preview-primary-color, rgb(11, 6, 121)) !important;
+}
+
+.delegate-header-preview-search-button,
+.delegate-header-preview-search-button svg,
+button.delegate-header-preview-search-button,
+button.delegate-header-preview-search-button svg {
+  color: rgb(100, 116, 139) !important;
+  stroke: rgb(100, 116, 139) !important;
+}
+
+body:not([data-delegate-theme="true"]) .landing-create-account-container button.btn-hover-lighter:not(.glass-brand),
+body:not([data-delegate-theme="true"]) .landing-create-account-container button.btn-hover-lighter:not(.glass-brand):hover,
+body:not([data-delegate-theme="true"]) .landing-create-account-container button.btn-hover-lighter:not(.glass-brand):focus-visible {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+button.orders-updated-status-button,
+body:not([data-delegate-theme="true"]) button.orders-updated-status-button,
+.dev-theme-root button.orders-updated-status-button {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+}
+
+button.orders-updated-status-button svg {
+  margin-right: 0.4rem;
+}
+
+button.orders-updated-status-button:hover,
+button.orders-updated-status-button:focus-visible,
+body:not([data-delegate-theme="true"]) button.orders-updated-status-button:hover,
+body:not([data-delegate-theme="true"]) button.orders-updated-status-button:focus-visible,
+.dev-theme-root button.orders-updated-status-button:hover,
+.dev-theme-root button.orders-updated-status-button:focus-visible {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+  background-color: transparent !important;
+}
+
+.orders-canceled-toggle-button,
+body:not([data-delegate-theme="true"]) .orders-canceled-toggle-button[data-slot="button"],
+.dev-theme-root .orders-canceled-toggle-button[data-slot="button"] {
+  box-sizing: border-box !important;
+  width: 10.25rem !important;
+  min-width: 10.25rem !important;
+  max-width: 10.25rem !important;
+  height: 2.4rem !important;
+  min-height: 2.4rem !important;
+  max-height: 2.4rem !important;
+}
+
+.patient-links-toolbar-control,
+button.patient-links-toolbar-control,
+select.patient-links-toolbar-control,
+body:not([data-delegate-theme="true"]) button.patient-links-toolbar-control[data-slot="button"],
+.dev-theme-root button.patient-links-toolbar-control[data-slot="button"] {
+  box-sizing: border-box !important;
+  height: 2.25rem !important;
+  min-height: 2.25rem !important;
+  max-height: 2.25rem !important;
+}
+
+button.patient-links-toolbar-control {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.patient-links-toolbar-controls {
+  min-width: 0;
+  margin-left: auto;
+}
+
+.patient-links-toolbar-button-row {
+  flex: 0 0 auto !important;
+}
+
+.patient-links-toolbar-button-row > button.patient-links-toolbar-control {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content !important;
+  max-width: max-content !important;
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+  white-space: nowrap !important;
+}
+
+select.patient-links-type-filter-shadow,
+.dev-theme-root select.patient-links-type-filter-shadow,
+.dev-theme-root:not(.theme-biotech) select.patient-links-type-filter-shadow {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08) !important;
+}
+
+select.patient-links-type-filter-shadow:focus,
+select.patient-links-type-filter-shadow:focus-visible,
+.dev-theme-root select.patient-links-type-filter-shadow:focus,
+.dev-theme-root select.patient-links-type-filter-shadow:focus-visible,
+.dev-theme-root:not(.theme-biotech) select.patient-links-type-filter-shadow:focus,
+.dev-theme-root:not(.theme-biotech) select.patient-links-type-filter-shadow:focus-visible {
+  box-shadow: 0 0 0 3px rgba(11, 6, 121, 0.2), 0 8px 18px rgba(15, 23, 42, 0.08) !important;
+}
+
+@media (min-width: 640px) {
+  .patient-links-toolbar-controls {
+    justify-content: flex-end !important;
+  }
+
+  .patient-links-toolbar-button-row {
+    flex-direction: row-reverse !important;
+    width: auto !important;
+    justify-content: flex-end !important;
+  }
+}
+
+.sales-rep-dashboard.physician-dashboard-container button.header-home-button,
+.sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button,
+.dev-theme-root .sales-rep-dashboard.physician-dashboard-container button.header-home-button,
+.dev-theme-root .sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.physician-dashboard-container button.header-home-button:not(.header-account-button):not(.admin-dashboard-link-button),
+.dev-theme-root.theme-clinical .sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button:not(.header-account-button):not(.admin-dashboard-link-button) {
+  border: 2px solid rgb(11, 6, 121) !important;
+  border-color: rgb(11, 6, 121) !important;
+}
+
+.sales-rep-dashboard.physician-dashboard-container button.header-home-button:disabled,
+.sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button:disabled,
+.dev-theme-root .sales-rep-dashboard.physician-dashboard-container button.header-home-button:disabled,
+.dev-theme-root .sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button:disabled,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.physician-dashboard-container button.header-home-button:not(.header-account-button):not(.admin-dashboard-link-button):disabled,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button:not(.header-account-button):not(.admin-dashboard-link-button):disabled {
+  border-color: rgb(11, 6, 121) !important;
+  opacity: 1 !important;
+}
+
+.sales-rep-dashboard.physician-dashboard-container button.header-home-button:disabled > :is(svg, span),
+.sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button:disabled > :is(svg, span),
+.dev-theme-root .sales-rep-dashboard.physician-dashboard-container button.header-home-button:disabled > :is(svg, span),
+.dev-theme-root .sales-rep-dashboard.physician-dashboard-container button.patient-link-payment-toggle-button:disabled > :is(svg, span) {
+  opacity: 0.48;
+}
+
+.order-card-actions .order-cancel-button,
+.order-card-actions .order-cancel-button:hover,
+.order-card-actions .order-cancel-button:focus-visible,
+.order-card-actions .order-cancel-button:disabled,
+.dev-theme-root .order-card-actions .order-cancel-button,
+.dev-theme-root .order-card-actions .order-cancel-button:hover,
+.dev-theme-root .order-card-actions .order-cancel-button:focus-visible,
+.dev-theme-root .order-card-actions .order-cancel-button:disabled {
+  border-color: currentColor !important;
+}
+
+.delegate-links-beta-chip,
+.dev-theme-root .delegate-links-beta-chip,
+.dev-theme-root:not(.theme-biotech) .delegate-links-beta-chip {
+  color: var(--brand-blue-2, rgb(60, 103, 183)) !important;
+  -webkit-text-fill-color: var(--brand-blue-2, rgb(60, 103, 183)) !important;
 }
 
 .research-tool-request-field,
@@ -14937,6 +15687,19 @@ body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-li
   -webkit-text-fill-color: rgb(11, 6, 121) !important;
 }
 
+.account-tab-row .count-badge-opaque,
+.account-tab-row .count-badge-opaque.glass-strong,
+.physician-dashboard-tabs .count-badge-opaque,
+.physician-dashboard-tabs .count-badge-opaque.glass-strong,
+.dev-theme-root .account-tab-row .count-badge-opaque,
+.dev-theme-root .physician-dashboard-tabs .count-badge-opaque {
+  --tw-bg-opacity: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
 .header-action-count-badge,
 [data-app-header] .header-action-count-badge,
 .dev-theme-root [data-app-header] .header-action-count-badge {
@@ -15008,4 +15771,389 @@ body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-li
     0 1px 3px rgba(2, 6, 23, 0.18) !important;
   filter: none !important;
   mix-blend-mode: normal !important;
+}
+
+.patient-links-tab-count,
+.account-tab-row .patient-links-tab-count,
+.physician-dashboard-tabs .patient-links-tab-count,
+.dev-theme-root .patient-links-tab-count {
+  --tw-bg-opacity: 0 !important;
+  margin-left: 0.5rem !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background-clip: border-box !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+}
+
+.delegate-header-preview-canvas :is(
+  .delegate-header-preview-search-input,
+  input.delegate-header-preview-search-input,
+  .header-search-field > input.delegate-header-preview-search-input,
+  .delegate-header-preview-search-input:focus,
+  input.delegate-header-preview-search-input:focus,
+  .header-search-field > input.delegate-header-preview-search-input:focus,
+  .delegate-header-preview-search-input:focus-visible,
+  input.delegate-header-preview-search-input:focus-visible,
+  .header-search-field > input.delegate-header-preview-search-input:focus-visible
+),
+.dev-theme-root .delegate-header-preview-canvas :is(
+  .delegate-header-preview-search-input,
+  input.delegate-header-preview-search-input,
+  .header-search-field > input.delegate-header-preview-search-input,
+  .delegate-header-preview-search-input:focus,
+  input.delegate-header-preview-search-input:focus,
+  .header-search-field > input.delegate-header-preview-search-input:focus,
+  .delegate-header-preview-search-input:focus-visible,
+  input.delegate-header-preview-search-input:focus-visible,
+  .header-search-field > input.delegate-header-preview-search-input:focus-visible
+) {
+  border: 2px solid var(--delegate-header-preview-primary-color, var(--header-search-border-color, rgb(11, 6, 121))) !important;
+  border-color: var(--delegate-header-preview-primary-color, var(--header-search-border-color, rgb(11, 6, 121))) !important;
+}
+
+.delegate-header-preview-canvas button.delegate-header-preview-search-button,
+.delegate-header-preview-canvas button.delegate-header-preview-search-button[data-slot="button"],
+.delegate-header-preview-canvas button.delegate-header-preview-search-button:disabled,
+.delegate-header-preview-canvas button.delegate-header-preview-search-button[data-slot="button"]:disabled,
+.dev-theme-root .delegate-header-preview-canvas button.delegate-header-preview-search-button,
+.dev-theme-root .delegate-header-preview-canvas button.delegate-header-preview-search-button[data-slot="button"],
+.dev-theme-root .delegate-header-preview-canvas button.delegate-header-preview-search-button:disabled,
+.dev-theme-root .delegate-header-preview-canvas button.delegate-header-preview-search-button[data-slot="button"]:disabled {
+  border: 2px solid var(--delegate-header-preview-primary-color, rgb(11, 6, 121)) !important;
+  border-color: var(--delegate-header-preview-primary-color, rgb(11, 6, 121)) !important;
+  opacity: 1 !important;
+}
+
+.delegate-product-picker-trigger {
+  margin-top: -0.3rem !important;
+  margin-bottom: 0.72rem !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+  background: transparent !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+}
+
+button.delegate-product-picker-trigger,
+button.delegate-product-picker-trigger:hover,
+button.delegate-product-picker-trigger:focus,
+button.delegate-product-picker-trigger:focus-visible,
+body:not([data-delegate-theme="true"]) button.delegate-product-picker-trigger[data-slot="button"],
+body:not([data-delegate-theme="true"]) button.delegate-product-picker-trigger[data-slot="button"]:hover,
+body:not([data-delegate-theme="true"]) button.delegate-product-picker-trigger[data-slot="button"]:focus,
+body:not([data-delegate-theme="true"]) button.delegate-product-picker-trigger[data-slot="button"]:focus-visible,
+.dev-theme-root button.delegate-product-picker-trigger[data-slot="button"],
+.dev-theme-root button.delegate-product-picker-trigger[data-slot="button"]:hover,
+.dev-theme-root button.delegate-product-picker-trigger[data-slot="button"]:focus,
+.dev-theme-root button.delegate-product-picker-trigger[data-slot="button"]:focus-visible {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-style: none !important;
+  border-width: 0 !important;
+  background: transparent !important;
+  color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+[data-radix-dialog-content] button.delegate-product-picker-trigger,
+[data-radix-dialog-content] button.delegate-product-picker-trigger:hover,
+[data-radix-dialog-content] button.delegate-product-picker-trigger:focus,
+[data-radix-dialog-content] button.delegate-product-picker-trigger:focus-visible,
+[data-slot="dialog-content"] button.delegate-product-picker-trigger,
+[data-slot="dialog-content"] button.delegate-product-picker-trigger:hover,
+[data-slot="dialog-content"] button.delegate-product-picker-trigger:focus,
+[data-slot="dialog-content"] button.delegate-product-picker-trigger:focus-visible,
+body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"],
+body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"]:hover,
+body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"]:focus,
+body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"]:focus-visible,
+.dev-theme-root [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"],
+.dev-theme-root [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"]:hover,
+.dev-theme-root [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"]:focus,
+.dev-theme-root [data-slot="dialog-content"] button.delegate-product-picker-trigger[data-slot="button"]:focus-visible {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-style: none !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.delegate-product-picker-trigger :is(svg, span) {
+  color: rgb(11, 6, 121) !important;
+  stroke: currentColor !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+}
+
+.delegate-product-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(10px);
+  overscroll-behavior: none;
+  pointer-events: auto !important;
+}
+
+.delegate-product-picker-modal {
+  width: min(680px, 100%);
+  height: min(720px, calc(100dvh - 2rem));
+  max-height: min(720px, calc(100vh - 2rem));
+  max-height: min(720px, calc(100dvh - 2rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(11, 6, 121, 0.28);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px -32px rgba(2, 6, 23, 0.55);
+  overscroll-behavior: none;
+  pointer-events: auto !important;
+}
+
+.delegate-product-picker-header,
+.delegate-product-picker-footer {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.delegate-product-picker-header {
+  padding-right: 4.75rem;
+}
+
+.delegate-product-picker-footer {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+  border-bottom: 0;
+}
+
+.delegate-product-picker-close {
+  width: 2.4rem !important;
+  height: 2.4rem !important;
+  min-width: 2.4rem !important;
+  min-height: 2.4rem !important;
+  background: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.delegate-product-picker-close:hover,
+.delegate-product-picker-close:focus-visible {
+  background: rgb(147, 206, 253) !important;
+  color: #ffffff !important;
+}
+
+.delegate-product-picker-tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.delegate-product-picker-search {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 2.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.delegate-product-picker-search-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgb(15, 23, 42);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.delegate-product-picker-search-input::placeholder {
+  color: rgb(100, 116, 139);
+}
+
+.delegate-product-picker-domain-select {
+  flex: 0 0 auto;
+  width: min(15rem, 24vw);
+  min-width: 11rem;
+  height: 2.35rem !important;
+  min-height: 2.35rem !important;
+  max-height: 2.35rem !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-color: rgba(148, 163, 184, 0.42) !important;
+  box-shadow: none !important;
+}
+
+.delegate-product-picker-domain-select:focus,
+.delegate-product-picker-domain-select:focus-visible {
+  border-color: rgb(11, 6, 121) !important;
+  box-shadow: 0 0 0 3px rgba(11, 6, 121, 0.16) !important;
+}
+
+.delegate-product-picker-tool-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.delegate-product-picker-tool-button {
+  height: 2.35rem !important;
+  min-height: 2.35rem !important;
+  padding: 0 0.85rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 800 !important;
+  white-space: nowrap !important;
+}
+
+.delegate-product-picker-done-button {
+  height: 2.35rem !important;
+  min-height: 2.35rem !important;
+  padding-left: 1.1rem !important;
+  padding-right: 1.1rem !important;
+}
+
+.delegate-product-picker-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.35rem;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.delegate-product-picker-row {
+  min-height: 3.25rem;
+  display: grid;
+  grid-template-columns: 1.25rem 2.35rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.delegate-product-picker-row:hover,
+.delegate-product-picker-row--selected {
+  border-color: rgba(11, 6, 121, 0.32);
+  background: rgba(11, 6, 121, 0.045);
+}
+
+.delegate-product-picker-image {
+  width: 2.35rem;
+  height: 2.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  color: rgb(15, 23, 42);
+  background: rgb(255, 255, 255);
+}
+
+.delegate-product-picker-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.delegate-product-picker-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.delegate-product-picker-name,
+.delegate-product-picker-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delegate-product-picker-name {
+  color: rgb(15, 23, 42);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.delegate-product-picker-meta {
+  color: rgb(100, 116, 139);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.delegate-product-picker-empty {
+  padding: 1.5rem;
+  color: rgb(100, 116, 139);
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .delegate-product-picker-backdrop {
+    align-items: flex-end;
+    padding: 0.6rem;
+  }
+
+  .delegate-product-picker-modal {
+    height: calc(100dvh - 1.2rem);
+    max-height: calc(100vh - 1.2rem);
+    max-height: calc(100dvh - 1.2rem);
+    border-radius: 16px;
+  }
+
+  .delegate-product-picker-tools {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .delegate-product-picker-domain-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .delegate-product-picker-tool-buttons {
+    width: 100%;
+  }
+
+  .delegate-product-picker-tool-button {
+    flex: 1 1 0;
+  }
 }

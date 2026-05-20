@@ -352,6 +352,10 @@ interface CheckoutModalProps {
   delegateDoctorName?: string | null;
   delegatePaymentMethod?: string | null;
   delegatePaymentInstructions?: string | null;
+  delegatePricingDisclosure?: string | null;
+  delegateSessionInstructions?: string | null;
+  delegateCanSubmitProposal?: boolean;
+  delegateSubmitDisabledMessage?: string | null;
   pricingMarkupPercent?: number | null;
   proposalMarkupPercent?: number | null;
   onRejectProposal?: ((notes?: string | null) => Promise<void> | void) | null;
@@ -421,6 +425,10 @@ export function CheckoutModal({
   delegateDoctorName,
   delegatePaymentMethod,
   delegatePaymentInstructions,
+  delegatePricingDisclosure,
+  delegateSessionInstructions,
+  delegateCanSubmitProposal = true,
+  delegateSubmitDisabledMessage = null,
   pricingMarkupPercent,
   proposalMarkupPercent,
   onRejectProposal,
@@ -763,6 +771,7 @@ export function CheckoutModal({
   ]);
   const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
   const proposalMode = isDelegateFlow || Boolean(forceProposalMode);
+  const delegateSubmitBlocked = Boolean(isDelegateFlow && !delegateCanSubmitProposal);
   const showDualPricing = proposalMode && !isDelegateFlow && proposalMarkupPercentValue != null;
   const delegateComparisonPricingMode: PricingMode = 'wholesale';
   const delegateDoctorDisplayName = isDelegateFlow
@@ -878,6 +887,18 @@ export function CheckoutModal({
     return raw ? raw : null;
   }, [delegatePaymentInstructions, isDelegateFlow]);
 
+  const delegatePricingDisclosureText = useMemo(() => {
+    if (!isDelegateFlow) return null;
+    const raw = typeof delegatePricingDisclosure === 'string' ? delegatePricingDisclosure.trim() : '';
+    return raw ? raw : null;
+  }, [delegatePricingDisclosure, isDelegateFlow]);
+
+  const delegateSessionInstructionsText = useMemo(() => {
+    if (!isDelegateFlow) return null;
+    const raw = typeof delegateSessionInstructions === 'string' ? delegateSessionInstructions.trim() : '';
+    return raw ? raw : null;
+  }, [delegateSessionInstructions, isDelegateFlow]);
+
   const paymentMethodTitle = useMemo(() => {
     if (paymentMethod === 'zelle') return 'Zelle';
     if (paymentMethod === 'bank_transfer') return 'Direct Bank Transfer';
@@ -887,7 +908,9 @@ export function CheckoutModal({
   let checkoutButtonLabel = isDelegateFlow
     ? `Share with ${delegateDoctorDisplayName}`
     : `Place Order (${displayTotal.toFixed(2)})`;
-  if (checkoutStatus === 'success' && checkoutStatusMessage) {
+  if (delegateSubmitBlocked) {
+    checkoutButtonLabel = 'View only';
+  } else if (checkoutStatus === 'success' && checkoutStatusMessage) {
     checkoutButtonLabel = checkoutStatusMessage;
   } else if (checkoutStatus === 'error' && checkoutStatusMessage) {
     checkoutButtonLabel = checkoutStatusMessage;
@@ -1356,6 +1379,10 @@ export function CheckoutModal({
   const handlePrimaryAction = async () => {
     if (!termsAccepted || !isPaymentValid) {
       toast.error('Accept the terms to continue.');
+      return;
+    }
+    if (delegateSubmitBlocked) {
+      toast.error(delegateSubmitDisabledMessage || 'This delegate session is view only. Proposal submission is disabled.');
       return;
     }
     if (!delegateShippingHandledByPhysician && !shippingAddressComplete) {
@@ -1982,7 +2009,7 @@ export function CheckoutModal({
                                         size="icon"
                                         onClick={() => handleDecreaseQuantity(item.id, item.quantity)}
                                         disabled={item.quantity <= 1}
-                                        className="squircle-sm bg-slate-50 border-2"
+                                        className="checkout-quantity-button squircle-sm bg-slate-50 border-0"
                                       >
                                         <Minus className="h-4 w-4" />
                                       </Button>
@@ -1999,7 +2026,7 @@ export function CheckoutModal({
                                         variant="outline"
                                         size="icon"
                                         onClick={() => handleIncreaseQuantity(item.id, item.quantity)}
-                                        className="squircle-sm bg-slate-50 border-2"
+                                        className="checkout-quantity-button squircle-sm bg-slate-50 border-0"
                                       >
                                         <Plus className="h-4 w-4" />
                                       </Button>
@@ -2057,7 +2084,7 @@ export function CheckoutModal({
                                   )}
                                 </div>
                               </div>
-	                              <div className="flex flex-col items-end gap-3 shrink-0 text-right">
+	                              <div className="ml-auto flex flex-col items-end gap-3 shrink-0 text-right">
 	                                <div className="flex flex-col items-end leading-tight">
 	                                  <p className={`${retailPricingEnabled ? 'text-green-700' : ''} font-bold tabular-nums tracking-tight`}>
 	                                    ${lineTotal.toFixed(2)}
@@ -2177,7 +2204,7 @@ export function CheckoutModal({
                                         </div>
                                       </div>
                                     </div>
-                                    <div className="flex flex-col items-end gap-3 shrink-0 text-right">
+                                    <div className="ml-auto flex flex-col items-end gap-3 shrink-0 text-right">
                                       <Button
                                         type="button"
                                         variant="outline"
@@ -2480,6 +2507,22 @@ export function CheckoutModal({
 	                      <p className="mt-1">
 	                        They apply a markup to the subtotal in the form of a service fee.
 	                      </p>
+	                      {delegatePricingDisclosureText ? (
+	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+	                          <p className="text-xs font-semibold text-slate-700">Pricing disclosure</p>
+	                          <p className="mt-1 whitespace-pre-wrap text-[13px] text-slate-700">
+	                            {delegatePricingDisclosureText}
+	                          </p>
+	                        </div>
+	                      ) : null}
+	                      {delegateSessionInstructionsText ? (
+	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+	                          <p className="text-xs font-semibold text-slate-700">Session instructions</p>
+	                          <p className="mt-1 whitespace-pre-wrap text-[13px] text-slate-700">
+	                            {delegateSessionInstructionsText}
+	                          </p>
+	                        </div>
+	                      ) : null}
 	                      {delegatePaymentInstructionsText ? (
 	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
 	                          <p className="text-xs font-semibold text-slate-700">Instructions</p>
@@ -2802,6 +2845,11 @@ export function CheckoutModal({
                 </div>
               )}
               <div className="pt-4 flex items-center gap-2">
+                {delegateSubmitBlocked && (
+                  <p className="min-w-0 flex-1 text-xs font-semibold leading-snug text-slate-600">
+                    {delegateSubmitDisabledMessage || 'This delegate session is view only. Proposal submission is disabled.'}
+                  </p>
+                )}
                 {canRejectProposalInCheckout && (
                   <>
                     {rejectNotesOpen && (
@@ -2831,7 +2879,7 @@ export function CheckoutModal({
                 <Button
                   variant="ghost"
                   onClick={handlePrimaryAction}
-                  disabled={!meetsCheckoutRequirements || isProcessing || checkoutStatus === 'success'}
+                  disabled={delegateSubmitBlocked || !meetsCheckoutRequirements || isProcessing || checkoutStatus === 'success'}
                   className={isDelegateFlow
                     ? 'flex-1 squircle-sm gap-2 border-0 text-white transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0'
                     : 'flex-1 glass-brand squircle-sm gap-2 transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0'}

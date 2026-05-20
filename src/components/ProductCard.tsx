@@ -179,6 +179,7 @@ interface ProductCardProps {
   onEnsureVariants?: (options?: { force?: boolean }) => Promise<unknown> | void;
   onProductView?: (product: Product) => void;
   proposalMode?: boolean;
+  proposalActionsDisabled?: boolean;
   personalizedRecommendation?: boolean;
   personalizedRecommendationReason?: string | null;
 }
@@ -730,6 +731,7 @@ export function ProductCard({
   onEnsureVariants,
   onProductView,
   proposalMode = false,
+  proposalActionsDisabled = false,
   personalizedRecommendation = false,
   personalizedRecommendationReason = null,
 }: ProductCardProps) {
@@ -1519,18 +1521,20 @@ export function ProductCard({
   const addToCartButton = (
 	    <Button
       onClick={() => {
+        if (proposalActionsDisabled) return;
         onAddToCart(product.id, selectedVariation.id, quantity);
         setQuantity(1);
         setQuantityInput('1');
         setBulkOpen(false);
       }}
+      disabled={proposalActionsDisabled}
       className={proposalMode ? 'squircle-sm btn-hover-lighter w-full justify-center border-0 text-white [&_svg]:text-white' : 'squircle-sm glass-brand btn-hover-lighter w-full'}
       style={proposalMode ? { backgroundColor: 'var(--brand-color, rgb(11, 6, 121))', borderColor: 'var(--brand-color, rgb(11, 6, 121))', color: '#ffffff', WebkitTextFillColor: '#ffffff' } : undefined}
 	    >
 	      {proposalMode ? null : (
 	        <ShoppingCart className="w-4 h-4 mr-2" />
 	      )}
-	      {proposalMode ? '+ Add to Proposal' : 'Add to cart'}
+	      {proposalMode ? (proposalActionsDisabled ? 'View only' : '+ Add to Proposal') : 'Add to cart'}
 	    </Button>
 	  );
 

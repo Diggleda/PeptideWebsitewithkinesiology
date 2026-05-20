@@ -150,6 +150,8 @@ class DelegationServiceTests(unittest.TestCase):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
+        original_create = service.patient_links_repository.create_link
+        original_audit = service._audit_event
         original_find_user = service.user_repository.find_by_id
         try:
             service._using_mysql = lambda: True
@@ -165,9 +167,11 @@ class DelegationServiceTests(unittest.TestCase):
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.create_link = original_create
+            service._audit_event = original_audit
             service.user_repository.find_by_id = original_find_user
 
-    def test_get_doctor_config_defaults_expiry_to_none_even_if_setting_exists(self):
+    def test_get_doctor_config_defaults_expiry_to_safe_delegate_default(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
@@ -184,7 +188,7 @@ class DelegationServiceTests(unittest.TestCase):
 
             config = service.get_doctor_config("doc-1")
 
-            self.assertIsNone(config.get("defaultExpiryHours"))
+            self.assertEqual(config.get("defaultExpiryHours"), 72)
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
@@ -231,7 +235,7 @@ class DelegationServiceTests(unittest.TestCase):
             service.patient_links_repository.create_link = original_create
             service._audit_event = original_audit
 
-    def test_create_link_does_not_apply_global_default_expiry(self):
+    def test_create_link_defaults_expiry_and_leaves_usage_unlimited(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
@@ -247,11 +251,12 @@ class DelegationServiceTests(unittest.TestCase):
             def fake_create_link(doctor_id, **kwargs):
                 captured["doctor_id"] = doctor_id
                 captured["expires_in_hours"] = kwargs.get("expires_in_hours")
+                captured["usage_limit"] = kwargs.get("usage_limit")
                 return {
                     "token": "tok-1",
                     "markupPercent": kwargs.get("markup_percent"),
                     "allowedProducts": kwargs.get("allowed_products") or [],
-                    "expiresAt": None,
+                    "expiresAt": "future",
                     "usageLimit": kwargs.get("usage_limit"),
                 }
 
@@ -261,14 +266,103 @@ class DelegationServiceTests(unittest.TestCase):
             result = service.create_link("doc-1", physician_certified=True)
 
             self.assertEqual(captured.get("doctor_id"), "doc-1")
-            self.assertIsNone(captured.get("expires_in_hours"))
-            self.assertIsNone(result.get("expiresAt"))
+            self.assertEqual(captured.get("expires_in_hours"), 72)
+            self.assertIsNone(captured.get("usage_limit"))
+            self.assertIsNone(result.get("usageLimit"))
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
             service.patient_links_repository.create_link = original_create
             service._audit_event = original_audit
             service.settings_service.get_settings = original_get_settings
+
+    def test_create_link_rejects_explicit_non_positive_expiry_but_ignores_usage_limit(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+
+            with self.assertRaises(ValueError) as expiry_ctx:
+                service.create_link("doc-1", expires_in_hours=0, physician_certified=True)
+            self.assertEqual(getattr(expiry_ctx.exception, "status", None), 400)
+
+            service.patient_links_repository.create_link = lambda _doctor_id, **kwargs: {
+                "token": "tok-1",
+                "usageLimit": kwargs.get("usage_limit"),
+            }
+            service._audit_event = lambda *_args, **_kwargs: None
+            result = service.create_link("doc-1", usage_limit=-1, physician_certified=True)
+            self.assertIsNone(result.get("usageLimit"))
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+
+    def test_create_link_passes_hardened_delegate_session_fields(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_create = service.patient_links_repository.create_link
+        original_audit = service._audit_event
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            captured: dict[str, object] = {}
+
+            def fake_create_link(doctor_id, **kwargs):
+                captured.update(kwargs)
+                return {
+                    "token": "tok-1",
+                    "markupPercent": kwargs.get("markup_percent"),
+                    "allowedProducts": kwargs.get("allowed_products") or [],
+                    "expiresAt": "future",
+                    "usageLimit": kwargs.get("usage_limit"),
+                    "productScope": kwargs.get("product_scope"),
+                    "delegatePermission": kwargs.get("delegate_permission"),
+                }
+
+            service.patient_links_repository.create_link = fake_create_link
+            service._audit_event = lambda *_args, **_kwargs: None
+
+            service.create_link(
+                "doc-1",
+                delegate_name="Delegate A",
+                delegate_contact="delegate@example.com",
+                delegate_role="caregiver",
+                product_scope="specific_products",
+                product_scope_items=["bpc-157"],
+                delegate_permission="submit_for_physician_review",
+                pricing_disclosure="Transparent pricing disclosure.",
+                zelle_recipient_name="Dr. Example",
+                payment_confirmation_required=True,
+                delegate_instructions="Review the product list.",
+                internal_physician_note="Internal reference only.",
+                terms_version="terms-v1",
+                shipping_policy_version="ship-v1",
+                privacy_policy_version="privacy-v1",
+                physician_certified=True,
+            )
+
+            self.assertEqual(captured.get("delegate_name"), "Delegate A")
+            self.assertEqual(captured.get("delegate_contact"), "delegate@example.com")
+            self.assertEqual(captured.get("delegate_role"), "caregiver")
+            self.assertEqual(captured.get("product_scope"), "specific_products")
+            self.assertEqual(captured.get("product_scope_items"), ["BPC-157"])
+            self.assertEqual(captured.get("delegate_permission"), "submit_for_physician_review")
+            self.assertEqual(captured.get("pricing_disclosure"), "Transparent pricing disclosure.")
+            self.assertEqual(captured.get("zelle_recipient_name"), "Dr. Example")
+            self.assertTrue(captured.get("payment_confirmation_required"))
+            self.assertEqual(captured.get("delegate_instructions"), "Review the product list.")
+            self.assertEqual(captured.get("internal_physician_note"), "Internal reference only.")
+            self.assertEqual(captured.get("terms_version"), "terms-v1")
+            self.assertEqual(captured.get("shipping_policy_version"), "ship-v1")
+            self.assertEqual(captured.get("privacy_policy_version"), "privacy-v1")
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.create_link = original_create
+            service._audit_event = original_audit
 
     def test_resolve_delegate_token_preserves_markup_above_legacy_twenty_percent(self):
         service = self.delegation_service

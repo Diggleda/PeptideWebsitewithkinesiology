@@ -5984,6 +5984,7 @@ interface LazyCatalogProductCardProps {
   product: Product;
   pricingMarkupPercent?: number | null;
   proposalMode?: boolean;
+  proposalActionsDisabled?: boolean;
   personalizedRecommendation?: boolean;
   personalizedRecommendationReason?: string | null;
   onAddToCart: (
@@ -6002,6 +6003,7 @@ const LazyCatalogProductCard = ({
   product,
   pricingMarkupPercent,
   proposalMode = false,
+  proposalActionsDisabled = false,
   personalizedRecommendation = false,
   personalizedRecommendationReason = null,
   onAddToCart,
@@ -6017,6 +6019,7 @@ const LazyCatalogProductCard = ({
     <ProductCard
       product={cardProduct}
       proposalMode={proposalMode}
+      proposalActionsDisabled={proposalActionsDisabled}
       personalizedRecommendation={personalizedRecommendation}
       personalizedRecommendationReason={personalizedRecommendationReason}
       onEnsureVariants={
@@ -6094,6 +6097,14 @@ function MainApp() {
     subjectLabel?: string | null;
     studyLabel?: string | null;
     patientReference?: string | null;
+    delegateName?: string | null;
+    delegateRole?: string | null;
+    productScope?: string | null;
+    productScopeItems?: string[];
+    delegatePermission?: string | null;
+    pricingDisclosure?: string | null;
+    paymentConfirmationRequired?: boolean | null;
+    delegateInstructions?: string | null;
     instructions?: string | null;
     allowedProducts?: string[];
     status?: string | null;
@@ -6117,6 +6128,13 @@ function MainApp() {
   const delegatePricingMarkupPercent = isDelegateMode
     ? Number(delegateContext?.markupPercent) || 0
     : 0;
+  const delegatePermission = String(
+    delegateContext?.delegatePermission || "submit_for_physician_review",
+  ).trim().toLowerCase();
+  const delegateCanSubmitProposal =
+    !isDelegateMode || delegatePermission === "submit_for_physician_review";
+  const delegateSubmitDisabledMessage =
+    "This delegate session is view only. Proposal submission is disabled.";
   const delegateDoctorNameForShare = useMemo(() => {
     const raw = typeof delegateContext?.doctorName === "string" ? delegateContext.doctorName.trim() : "";
     if (!raw) return "Physician";
@@ -6132,9 +6150,7 @@ function MainApp() {
   const delegateBackgroundColorHex = delegateBackgroundColorRaw || DEFAULT_DELEGATE_BACKGROUND_COLOR;
   const delegateBackgroundImageCss = delegateBackgroundImageUrl
     ? toCssUrlValue(delegateBackgroundImageUrl)
-    : delegateBackgroundColorRaw
-      ? 'none'
-      : 'var(--email-background-image)';
+    : 'none';
   const isDelegateThemeActive = isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError;
   const delegateThemeCssVariables = useMemo<Array<[string, string]>>(
     () => [
@@ -7073,13 +7089,19 @@ function MainApp() {
 	            ? resolved.paymentInstructions
 	            : typeof resolved?.payment_instructions === 'string'
 	              ? resolved.payment_instructions
-	              : typeof resolved?.instructions === 'string'
-	                ? resolved.instructions
-	                : typeof resolved?.delegateInstructions === 'string'
-	                  ? resolved.delegateInstructions
-	                  : typeof resolved?.delegate_instructions === 'string'
-	                    ? resolved.delegate_instructions
-	                    : null;
+	              : null;
+	        const delegateInstructions =
+	          typeof resolved?.delegateInstructions === 'string'
+	            ? resolved.delegateInstructions
+	            : typeof resolved?.delegate_instructions === 'string'
+	              ? resolved.delegate_instructions
+	              : null;
+	        const pricingDisclosure =
+	          typeof resolved?.pricingDisclosure === 'string'
+	            ? resolved.pricingDisclosure
+	            : typeof resolved?.pricing_disclosure === 'string'
+	              ? resolved.pricing_disclosure
+	              : null;
 	        const allowedProducts = Array.isArray(resolved?.allowedProducts)
 	          ? resolved.allowedProducts.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
 	          : Array.isArray(resolved?.allowed_products)
@@ -7148,15 +7170,52 @@ function MainApp() {
 	              : typeof resolved?.study_label === 'string'
 	                ? resolved.study_label
 	                : null,
-	          patientReference:
-	            typeof resolved?.patientReference === 'string'
-	              ? resolved.patientReference
-	              : typeof resolved?.patient_reference === 'string'
-	                ? resolved.patient_reference
-	                : null,
-	          instructions:
-	            typeof resolved?.instructions === 'string'
-	              ? resolved.instructions
+          patientReference:
+            typeof resolved?.patientReference === 'string'
+              ? resolved.patientReference
+              : typeof resolved?.patient_reference === 'string'
+                ? resolved.patient_reference
+                : null,
+          delegateName:
+            typeof resolved?.delegateName === 'string'
+              ? resolved.delegateName
+              : typeof resolved?.delegate_name === 'string'
+                ? resolved.delegate_name
+                : null,
+          delegateRole:
+            typeof resolved?.delegateRole === 'string'
+              ? resolved.delegateRole
+              : typeof resolved?.delegate_role === 'string'
+                ? resolved.delegate_role
+                : null,
+          productScope:
+            typeof resolved?.productScope === 'string'
+              ? resolved.productScope
+              : typeof resolved?.product_scope === 'string'
+                ? resolved.product_scope
+                : null,
+          productScopeItems: Array.isArray(resolved?.productScopeItems)
+            ? resolved.productScopeItems.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+            : Array.isArray(resolved?.product_scope_items)
+              ? resolved.product_scope_items.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+              : [],
+          delegatePermission:
+            typeof resolved?.delegatePermission === 'string'
+              ? resolved.delegatePermission
+              : typeof resolved?.delegate_permission === 'string'
+                ? resolved.delegate_permission
+                : null,
+          pricingDisclosure,
+          paymentConfirmationRequired:
+            typeof resolved?.paymentConfirmationRequired === 'boolean'
+              ? resolved.paymentConfirmationRequired
+              : typeof resolved?.payment_confirmation_required === 'boolean'
+                ? resolved.payment_confirmation_required
+                : null,
+          delegateInstructions,
+          instructions:
+            typeof resolved?.instructions === 'string'
+              ? resolved.instructions
 	              : null,
 	          allowedProducts,
 	          status:
@@ -12990,7 +13049,7 @@ function MainApp() {
   const PORTAL_BETA_SERVICE_LABELS: Record<PortalBetaServiceKey, string> = {
 	    shop: "Enter Dashboard",
     patientLinks: "Delegate Links",
-    brochureLinks: "Brochure Links",
+    brochureLinks: "Product Brochure Links",
     crm: "CRM",
     forum: "The Peptide Forum",
     research: "Research Dashboard",
@@ -13005,8 +13064,16 @@ function MainApp() {
   const ADMIN_DELEGATE_LINK_TRACKED_STAGES = [
     { event: "delegate_link_tab_clicked", label: "Tab Clicked", shortLabel: "Tab" },
     { event: "delegate_link_text_field_entry", label: "Text Field Entry", shortLabel: "Field" },
-    { event: "delegate_link_created", label: "Link Created", shortLabel: "Created" },
+    { event: "delegate_link_create_started", label: "Delegate Started", shortLabel: "Del. Start" },
+    { event: "brochure_link_button_clicked", label: "Brochure Button Clicked", shortLabel: "Brochure" },
+    { event: "delegate_link_created", label: "Delegate Created", shortLabel: "Del. Created" },
+    { event: "delegate_link_copied", label: "Delegate Copied", shortLabel: "Del. Copy" },
+    { event: "delegate_link_preview_opened", label: "Delegate Preview Opened", shortLabel: "Del. Preview" },
+    { event: "delegate_link_opened", label: "Delegate Opened", shortLabel: "Open" },
+    { event: "delegate_order_estimated", label: "Order Estimated", shortLabel: "Estimate" },
+    { event: "delegate_proposal_shared", label: "Proposal Shared", shortLabel: "Shared" },
     { event: "delegate_proposal_review_clicked", label: "Review Clicked", shortLabel: "Review" },
+    { event: "delegate_proposal_review_loaded", label: "Review Loaded", shortLabel: "Loaded" },
     { event: "delegate_proposal_reviewed", label: "Proposal Reviewed", shortLabel: "Done" },
     { event: "delegate_order_placed", label: "Delegate Order Placed", shortLabel: "Order" },
   ] as const;
@@ -13017,8 +13084,16 @@ function MainApp() {
   const ADMIN_DELEGATE_LINK_FUNNEL_DEMO_COUNTS: Record<string, number> = {
     delegate_link_tab_clicked: 148,
     delegate_link_text_field_entry: 121,
+    delegate_link_create_started: 96,
+    brochure_link_button_clicked: 27,
     delegate_link_created: 84,
+    delegate_link_copied: 72,
+    delegate_link_preview_opened: 55,
+    delegate_link_opened: 48,
+    delegate_order_estimated: 38,
+    delegate_proposal_shared: 34,
     delegate_proposal_review_clicked: 49,
+    delegate_proposal_review_loaded: 43,
     delegate_proposal_reviewed: 31,
     delegate_order_placed: 18,
   };
@@ -26666,11 +26741,14 @@ function MainApp() {
     if (typeof document === "undefined") return;
     const isNonLoginView = Boolean(user);
     const isLoginView = !user;
+    const isPhysicianPortalView = Boolean(user && isDoctorRole(user.role));
     document.body.classList.toggle("non-login-bg", isNonLoginView);
     document.body.classList.toggle("login-view", isLoginView);
+    document.body.classList.toggle("physician-portal-bg", isPhysicianPortalView);
     return () => {
       document.body.classList.remove("non-login-bg");
       document.body.classList.remove("login-view");
+      document.body.classList.remove("physician-portal-bg");
     };
   }, [user]);
 
@@ -28339,6 +28417,10 @@ function MainApp() {
       toast.error("Maintenance mode is read-only.");
       return;
     }
+    if (isDelegateMode && !delegateCanSubmitProposal) {
+      toast.error(delegateSubmitDisabledMessage);
+      return;
+    }
     console.debug("[Cart] Add to cart requested", {
       productId,
       quantity,
@@ -29069,6 +29151,9 @@ function MainApp() {
 		    })();
 		    try {
 	        if (isDelegateMode && delegateToken) {
+            if (!delegateCanSubmitProposal) {
+              throw new Error(delegateSubmitDisabledMessage);
+            }
 	          const shared = await delegationAPI.shareDelegateOrder({
 	            delegateToken,
 	            items,
@@ -29384,6 +29469,10 @@ function MainApp() {
     if (source !== "cart_button") {
       return;
     }
+    if (isDelegateMode && !delegateCanSubmitProposal) {
+      toast.error(delegateSubmitDisabledMessage);
+      return;
+    }
     cartItems.forEach((item) => {
       trackPhysicianProductEvent("checkout_open", item.product, {
         variant: item.variant ?? null,
@@ -29392,7 +29481,7 @@ function MainApp() {
       });
     });
     setCheckoutOpen(true);
-  }, [cartItems, trackPhysicianProductEvent]);
+  }, [cartItems, delegateCanSubmitProposal, delegateSubmitDisabledMessage, isDelegateMode, trackPhysicianProductEvent]);
 
   const handleUpdateCartItemQuantity = (
     cartItemId: string,
@@ -30466,6 +30555,7 @@ function MainApp() {
                         personalizedRecommendationReason={getCatalogRecommendationReason(product)}
 	                      pricingMarkupPercent={delegatePricingMarkupPercent}
 	                      proposalMode={isDelegateMode}
+                        proposalActionsDisabled={isDelegateMode && !delegateCanSubmitProposal}
 			                  onEnsureVariants={ensureCatalogProductHasVariants}
                         onProductView={(viewedProduct) => {
                           trackPhysicianProductEvent("product_view", viewedProduct);
@@ -31261,7 +31351,7 @@ function MainApp() {
         <div className="mb-4 sales-rep-leads-card sales-rep-combined-card database-visualizer-card text-slate-900">
           <div className="database-visualizer-card__header flex items-center justify-between border-b border-slate-200/60 px-4 py-3">
             <div>
-              <h4 className="text-lg font-semibold text-slate-900">Database Visualizer</h4>
+              <h4 className="text-lg font-semibold text-white">Database Visualizer</h4>
               <p className="text-xs text-slate-600">
                 Read-only viewer for the live database.
               </p>
@@ -39461,6 +39551,45 @@ function MainApp() {
     (sum, item) => sum + item.quantity,
     0,
   );
+
+  const cartProductScopeSummary = useMemo(() => {
+    const productKeys = new Set<string>();
+    const tokenKeys = new Set<string>();
+    const tokens: string[] = [];
+    const addToken = (value: unknown) => {
+      const normalized = String(value ?? '').trim();
+      if (!normalized) return;
+      const key = normalized.toUpperCase();
+      if (tokenKeys.has(key)) return;
+      tokenKeys.add(key);
+      tokens.push(normalized);
+    };
+
+    for (const item of cartItems) {
+      const product = item.product;
+      if (!product) continue;
+      const productKey = String(product.id || product.wooId || item.id || '').trim();
+      if (productKey) productKeys.add(productKey.toUpperCase());
+      addToken(product.id);
+      if (product.wooId !== undefined && product.wooId !== null) {
+        addToken(product.wooId);
+        addToken(`woo-${product.wooId}`);
+      }
+      addToken(product.sku);
+      addToken(item.variant?.id);
+      if (item.variant?.wooId !== undefined && item.variant?.wooId !== null) {
+        addToken(item.variant.wooId);
+        addToken(`woo-${item.variant.wooId}`);
+      }
+      addToken(item.variant?.sku);
+    }
+
+    return {
+      count: productKeys.size,
+      tokens,
+    };
+  }, [cartItems]);
+
 		  const newsLoadingPlaceholders = Array.from({ length: 5 });
 		  const forumLoadingPlaceholders = Array.from({ length: 1 });
 		  const PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS = 180;
@@ -39805,8 +39934,10 @@ function MainApp() {
 					              onLogin={handleLogin}
 					              onResendVerificationEmail={handleResendVerificationEmail}
                         onVerifyEmailCode={handleVerifyEmailCode}
-			              onLogout={handleLogout}
+		              onLogout={handleLogout}
 		              cartItems={totalCartItems}
+		              cartProductCount={cartProductScopeSummary.count}
+		              cartProductTokens={cartProductScopeSummary.tokens}
 		              onSearch={handleSearch}
 		              onCreateAccount={handleCreateAccount}
 		              onCartClick={handleHeaderCartClick}
@@ -39841,6 +39972,7 @@ function MainApp() {
 				              onCancelOrder={handleCancelOrder}
 				              referralCodes={referralCodesForHeader}
 				              catalogLoading={catalogLoading}
+                      catalogProducts={catalogProducts}
                       apiHealthNetworkQuality={apiHealthNetworkQuality}
                       apiHealthNetworkReason={apiHealthNetworkReason}
 				              onLoadDelegateProposal={handleLoadDelegateProposalIntoCart}
@@ -41993,6 +42125,10 @@ function MainApp() {
         delegateDoctorName={isDelegateMode ? delegateDoctorNameForShare : null}
         delegatePaymentMethod={isDelegateMode ? (delegateContext?.paymentMethod ?? null) : null}
         delegatePaymentInstructions={isDelegateMode ? (delegateContext?.paymentInstructions ?? null) : null}
+        delegatePricingDisclosure={isDelegateMode ? (delegateContext?.pricingDisclosure ?? null) : null}
+        delegateSessionInstructions={isDelegateMode ? (delegateContext?.delegateInstructions ?? null) : null}
+        delegateCanSubmitProposal={delegateCanSubmitProposal}
+        delegateSubmitDisabledMessage={isDelegateMode ? delegateSubmitDisabledMessage : null}
 	        estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
 	        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
 	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}
@@ -45047,6 +45183,7 @@ function MainApp() {
         onAddToCart={handleAddToCart}
         pricingMarkupPercent={delegatePricingMarkupPercent}
         proposalMode={isDelegateMode}
+        proposalActionsDisabled={isDelegateMode && !delegateCanSubmitProposal}
       />
     </div>
   );

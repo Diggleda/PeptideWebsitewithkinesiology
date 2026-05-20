@@ -4,8 +4,16 @@ const router = Router();
 const demoCountsByEvent = {
   delegate_link_tab_clicked: 148,
   delegate_link_text_field_entry: 121,
+  delegate_link_create_started: 96,
+  brochure_link_button_clicked: 27,
   delegate_link_created: 84,
+  delegate_link_copied: 72,
+  delegate_link_preview_opened: 55,
+  delegate_link_opened: 48,
+  delegate_order_estimated: 38,
+  delegate_proposal_shared: 34,
   delegate_proposal_review_clicked: 49,
+  delegate_proposal_review_loaded: 43,
   delegate_proposal_reviewed: 31,
   delegate_order_placed: 18,
 };

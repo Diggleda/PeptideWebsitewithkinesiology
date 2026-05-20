@@ -26,6 +26,38 @@ _CONFIG_KEY_PREFIX = "delegation_config_v1:"
 _INDEX_KEY = "delegation_link_index_v1"
 _LEGACY_MIGRATED = False
 _LEGACY_MIGRATION_LOCK = threading.Lock()
+DEFAULT_DELEGATE_LINK_EXPIRY_HOURS = 72
+DEFAULT_PRICING_DISCLOSURE = (
+    "Prices may include physician-directed service, handling, administrative, or research coordination fees."
+)
+ALLOWED_PRODUCT_SCOPES = {
+    "all_physician_approved",
+    "specific_cart_only",
+    "specific_products",
+    "category_or_protocol",
+}
+ENABLED_PRODUCT_SCOPES = {
+    "all_physician_approved",
+    "specific_cart_only",
+}
+ALLOWED_DELEGATE_PERMISSIONS = {
+    "view_products_only",
+    "build_cart_only",
+    "submit_payment_info_only",
+    "submit_for_physician_review",
+    "direct_checkout",
+}
+ENABLED_DELEGATE_PERMISSIONS = {
+    "view_products_only",
+    "submit_for_physician_review",
+}
+RESTRICTED_LEGACY_DELEGATE_PERMISSIONS = {
+    "build_cart_only",
+    "submit_payment_info_only",
+    "direct_checkout",
+}
+DEFAULT_PRODUCT_SCOPE = "all_physician_approved"
+DEFAULT_DELEGATE_PERMISSION = "submit_for_physician_review"
 _PHI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "SSN"),
     (re.compile(r"\b(?:dob|date of birth)\b", re.IGNORECASE), "DOB"),
@@ -95,8 +127,7 @@ def _patient_link_settings() -> Dict[str, Any]:
 
 
 def _patient_link_default_expiry_hours() -> Optional[int]:
-    # Delegate links should not auto-expire unless a link-specific TTL is supplied.
-    return None
+    return DEFAULT_DELEGATE_LINK_EXPIRY_HOURS
 
 
 def _patient_link_max_markup_percent() -> float:
@@ -121,6 +152,107 @@ def _normalize_usage_limit(value: Any) -> Optional[int]:
     except Exception:
         return None
     return max(1, min(parsed, 10_000))
+
+
+def _normalize_link_limit(value: Any, *, field_name: str, default: int, allow_missing: bool = True) -> int:
+    if value is None or value == "":
+        if allow_missing:
+            return default
+        err = ValueError(f"{field_name} is required")
+        setattr(err, "status", 400)
+        raise err
+    try:
+        parsed = int(float(value))
+    except Exception:
+        err = ValueError(f"{field_name} must be a positive number")
+        setattr(err, "status", 400)
+        raise err
+    if parsed <= 0:
+        err = ValueError(f"{field_name} must be greater than zero")
+        setattr(err, "status", 400)
+        raise err
+    return max(1, min(parsed, 10_000))
+
+
+def _normalize_optional_link_limit(value: Any, *, field_name: str) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    return _normalize_link_limit(value, field_name=field_name, default=1, allow_missing=False)
+
+
+def _normalize_choice(value: Any, *, allowed: set[str], default: str, enabled: Optional[set[str]] = None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in allowed:
+        return default
+    if enabled is not None and normalized not in enabled:
+        return default
+    return normalized
+
+
+def _normalize_product_scope(value: Any) -> str:
+    return _normalize_choice(
+        value,
+        allowed=ALLOWED_PRODUCT_SCOPES,
+        default=DEFAULT_PRODUCT_SCOPE,
+    )
+
+
+def _normalize_delegate_permission(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in RESTRICTED_LEGACY_DELEGATE_PERMISSIONS:
+        return "view_products_only"
+    return _normalize_choice(
+        value,
+        allowed=ALLOWED_DELEGATE_PERMISSIONS,
+        enabled=ENABLED_DELEGATE_PERMISSIONS,
+        default=DEFAULT_DELEGATE_PERMISSION,
+    )
+
+
+def _normalize_delegate_role(value: Any) -> Optional[str]:
+    normalized = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    allowed = {
+        "patient",
+        "caregiver",
+        "staff",
+        "research_participant",
+        "authorized_representative",
+        "other",
+    }
+    return normalized if normalized in allowed else None
+
+
+def _normalize_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return int(value) == 1
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _validate_sensitive_session_text(value: Optional[str], *, field_name: str, max_len: int = 4000) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return _validate_research_note(text[:max_len], field_name=field_name, max_len=max_len)
+
+
+def _validate_policy_version(value: Optional[str], *, field_name: str) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    return normalized[:64]
 
 
 def _normalize_currency_amount(value: Any) -> Optional[float]:
@@ -762,7 +894,21 @@ def create_link(
     subject_label: Optional[str] = None,
     study_label: Optional[str] = None,
     patient_reference: Optional[str] = None,
+    delegate_name: Optional[str] = None,
+    delegate_contact: Optional[str] = None,
+    delegate_role: Optional[str] = None,
+    product_scope: Optional[str] = None,
+    product_scope_items: Optional[Any] = None,
+    delegate_permission: Optional[str] = None,
     markup_percent: Optional[object] = None,
+    pricing_disclosure: Optional[str] = None,
+    zelle_recipient_name: Optional[str] = None,
+    payment_confirmation_required: Optional[Any] = None,
+    delegate_instructions: Optional[str] = None,
+    internal_physician_note: Optional[str] = None,
+    terms_version: Optional[str] = None,
+    shipping_policy_version: Optional[str] = None,
+    privacy_policy_version: Optional[str] = None,
     instructions: Optional[str] = None,
     allowed_products: Optional[Any] = None,
     expires_in_hours: Optional[Any] = None,
@@ -777,11 +923,10 @@ def create_link(
     if _using_mysql():
         _migrate_legacy_links_to_table()
         markup_value = None if markup_percent is None else _normalize_capped_markup_percent(markup_percent)
-        requested_expires_in_hours = _normalize_usage_limit(expires_in_hours)
-        effective_expires_in_hours = (
-            requested_expires_in_hours
-            if requested_expires_in_hours is not None
-            else _patient_link_default_expiry_hours()
+        effective_expires_in_hours = _normalize_link_limit(
+            expires_in_hours,
+            field_name="expiresInHours",
+            default=DEFAULT_DELEGATE_LINK_EXPIRY_HOURS,
         )
         created = patient_links_repository.create_link(
             doctor_id,
@@ -790,11 +935,33 @@ def create_link(
             subject_label=_validate_non_phi_label(subject_label, field_name="subjectLabel"),
             study_label=_validate_non_phi_label(study_label, field_name="studyLabel"),
             patient_reference=_validate_non_phi_label(patient_reference, field_name="patientReference"),
+            delegate_name=_validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190),
+            delegate_contact=_validate_sensitive_session_text(delegate_contact, field_name="delegateContact", max_len=190),
+            delegate_role=_normalize_delegate_role(delegate_role),
+            product_scope=_normalize_product_scope(product_scope),
+            product_scope_items=_normalize_allowed_products(product_scope_items),
+            delegate_permission=_normalize_delegate_permission(delegate_permission),
             markup_percent=markup_value,
+            pricing_disclosure=_validate_sensitive_session_text(
+                pricing_disclosure or DEFAULT_PRICING_DISCLOSURE,
+                field_name="pricingDisclosure",
+                max_len=1000,
+            ),
+            zelle_recipient_name=_validate_sensitive_session_text(
+                zelle_recipient_name,
+                field_name="zelleRecipientName",
+                max_len=190,
+            ),
+            payment_confirmation_required=_normalize_bool(payment_confirmation_required, default=True),
+            delegate_instructions=_validate_research_note(delegate_instructions, field_name="delegateInstructions"),
+            internal_physician_note=_validate_research_note(internal_physician_note, field_name="internalPhysicianNote"),
+            terms_version=_validate_policy_version(terms_version, field_name="termsVersion"),
+            shipping_policy_version=_validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion"),
+            privacy_policy_version=_validate_policy_version(privacy_policy_version, field_name="privacyPolicyVersion"),
             instructions=_validate_research_note(instructions, field_name="instructions"),
             allowed_products=_normalize_allowed_products(allowed_products),
             expires_in_hours=effective_expires_in_hours,
-            usage_limit=_normalize_usage_limit(usage_limit),
+            usage_limit=None,
             payment_method=payment_method,
             payment_instructions=_validate_research_note(payment_instructions, field_name="paymentInstructions"),
             physician_certified=physician_certified,
@@ -805,9 +972,16 @@ def create_link(
             doctor_id=doctor_id,
             payload={
                 "allowedProductsCount": len(created.get("allowedProducts") or []),
+                "productScope": created.get("productScope"),
+                "delegatePermission": created.get("delegatePermission"),
                 "expiresAt": created.get("expiresAt"),
-                "usageLimit": created.get("usageLimit"),
                 "markupPercent": created.get("markupPercent"),
+                "confirmationRequired": created.get("paymentConfirmationRequired"),
+                "policyVersions": {
+                    "terms": created.get("termsVersion"),
+                    "shipping": created.get("shippingPolicyVersion"),
+                    "privacy": created.get("privacyPolicyVersion"),
+                },
             },
         )
         return created
@@ -823,18 +997,18 @@ def create_link(
     study_value = _validate_non_phi_label(study_label, field_name="studyLabel")
     patient_reference_value = _validate_non_phi_label(patient_reference or reference_label, field_name="patientReference")
     allowed_products_value = _normalize_allowed_products(allowed_products)
-    usage_limit_value = _normalize_usage_limit(usage_limit)
-    requested_expires_in_hours = _normalize_usage_limit(expires_in_hours)
-    expires_hours_value = (
-        requested_expires_in_hours
-        if requested_expires_in_hours is not None
-        else _patient_link_default_expiry_hours()
+    expires_hours_value = _normalize_link_limit(
+        expires_in_hours,
+        field_name="expiresInHours",
+        default=DEFAULT_DELEGATE_LINK_EXPIRY_HOURS,
     )
     expires_at = (
         (datetime.now(timezone.utc) + timedelta(hours=expires_hours_value)).isoformat()
         if expires_hours_value is not None
         else None
     )
+    product_scope_value = _normalize_product_scope(product_scope)
+    delegate_permission_value = _normalize_delegate_permission(delegate_permission)
     link = {
         "token": token,
         "patientId": subject_value,
@@ -843,12 +1017,34 @@ def create_link(
         "label": patient_reference_value or study_value,
         "subjectLabel": subject_value,
         "studyLabel": study_value,
+        "delegateName": _validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190),
+        "delegateContact": _validate_sensitive_session_text(delegate_contact, field_name="delegateContact", max_len=190),
+        "delegateRole": _normalize_delegate_role(delegate_role),
         "createdAt": now,
         "expiresAt": expires_at,
         "markupPercent": float(markup_value or 0.0),
+        "pricingDisclosure": _validate_sensitive_session_text(
+            pricing_disclosure or DEFAULT_PRICING_DISCLOSURE,
+            field_name="pricingDisclosure",
+            max_len=1000,
+        ),
+        "zelleRecipientName": _validate_sensitive_session_text(
+            zelle_recipient_name,
+            field_name="zelleRecipientName",
+            max_len=190,
+        ),
+        "paymentConfirmationRequired": _normalize_bool(payment_confirmation_required, default=True),
+        "delegateInstructions": _validate_research_note(delegate_instructions, field_name="delegateInstructions"),
+        "internalPhysicianNote": _validate_research_note(internal_physician_note, field_name="internalPhysicianNote"),
+        "termsVersion": _validate_policy_version(terms_version, field_name="termsVersion"),
+        "shippingPolicyVersion": _validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion"),
+        "privacyPolicyVersion": _validate_policy_version(privacy_policy_version, field_name="privacyPolicyVersion"),
+        "productScope": product_scope_value,
+        "productScopeItems": _normalize_allowed_products(product_scope_items),
+        "delegatePermission": delegate_permission_value,
         "instructions": _validate_research_note(instructions, field_name="instructions"),
         "allowedProducts": allowed_products_value,
-        "usageLimit": usage_limit_value,
+        "usageLimit": None,
         "usageCount": 0,
         "openCount": 0,
         "status": "active",
@@ -878,8 +1074,22 @@ def update_link(
     subject_label: Optional[str] = None,
     study_label: Optional[str] = None,
     patient_reference: Optional[str] = None,
+    delegate_name: Optional[str] = None,
+    delegate_contact: Optional[str] = None,
+    delegate_role: Optional[str] = None,
+    product_scope: Optional[str] = None,
+    product_scope_items: Optional[Any] = None,
+    delegate_permission: Optional[str] = None,
     revoke: Optional[bool] = None,
     markup_percent: Optional[object] = None,
+    pricing_disclosure: Optional[str] = None,
+    zelle_recipient_name: Optional[str] = None,
+    payment_confirmation_required: Optional[Any] = None,
+    delegate_instructions: Optional[str] = None,
+    internal_physician_note: Optional[str] = None,
+    terms_version: Optional[str] = None,
+    shipping_policy_version: Optional[str] = None,
+    privacy_policy_version: Optional[str] = None,
     instructions: Optional[str] = None,
     allowed_products: Optional[Any] = None,
     expires_in_hours: Optional[Any] = None,
@@ -905,12 +1115,62 @@ def update_link(
             subject_label=_validate_non_phi_label(subject_label, field_name="subjectLabel") if subject_label is not None else None,
             study_label=_validate_non_phi_label(study_label, field_name="studyLabel") if study_label is not None else None,
             patient_reference=_validate_non_phi_label(patient_reference, field_name="patientReference") if patient_reference is not None else None,
+            delegate_name=(
+                _validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190)
+                if delegate_name is not None
+                else None
+            ),
+            delegate_contact=(
+                _validate_sensitive_session_text(delegate_contact, field_name="delegateContact", max_len=190)
+                if delegate_contact is not None
+                else None
+            ),
+            delegate_role=_normalize_delegate_role(delegate_role) if delegate_role is not None else None,
+            product_scope=_normalize_product_scope(product_scope) if product_scope is not None else None,
+            product_scope_items=_normalize_allowed_products(product_scope_items) if product_scope_items is not None else None,
+            delegate_permission=(
+                _normalize_delegate_permission(delegate_permission)
+                if delegate_permission is not None
+                else None
+            ),
             revoke=revoke,
             markup_percent=markup_value,
+            pricing_disclosure=(
+                _validate_sensitive_session_text(pricing_disclosure, field_name="pricingDisclosure", max_len=1000)
+                if pricing_disclosure is not None
+                else None
+            ),
+            zelle_recipient_name=(
+                _validate_sensitive_session_text(zelle_recipient_name, field_name="zelleRecipientName", max_len=190)
+                if zelle_recipient_name is not None
+                else None
+            ),
+            payment_confirmation_required=payment_confirmation_required,
+            delegate_instructions=(
+                _validate_research_note(delegate_instructions, field_name="delegateInstructions")
+                if delegate_instructions is not None
+                else None
+            ),
+            internal_physician_note=(
+                _validate_research_note(internal_physician_note, field_name="internalPhysicianNote")
+                if internal_physician_note is not None
+                else None
+            ),
+            terms_version=_validate_policy_version(terms_version, field_name="termsVersion") if terms_version is not None else None,
+            shipping_policy_version=(
+                _validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion")
+                if shipping_policy_version is not None
+                else None
+            ),
+            privacy_policy_version=(
+                _validate_policy_version(privacy_policy_version, field_name="privacyPolicyVersion")
+                if privacy_policy_version is not None
+                else None
+            ),
             instructions=_validate_research_note(instructions, field_name="instructions") if instructions is not None else None,
             allowed_products=_normalize_allowed_products(allowed_products) if allowed_products is not None else None,
-            expires_in_hours=expires_in_hours if expires_in_hours is not None else None,
-            usage_limit=_normalize_usage_limit(usage_limit) if usage_limit is not None else None,
+            expires_in_hours=_normalize_optional_link_limit(expires_in_hours, field_name="expiresInHours") if expires_in_hours is not None else None,
+            usage_limit=None,
             payment_method=payment_method,
             payment_instructions=_validate_research_note(payment_instructions, field_name="paymentInstructions") if payment_instructions is not None else None,
             received_payment=received_payment,
@@ -926,8 +1186,9 @@ def update_link(
             payload={
                 "revoke": revoke,
                 "markupPercent": updated.get("markupPercent"),
-                "usageLimit": updated.get("usageLimit"),
-                "allowedProducts": updated.get("allowedProducts"),
+                "allowedProductsCount": len(updated.get("allowedProducts") or []),
+                "productScope": updated.get("productScope"),
+                "delegatePermission": updated.get("delegatePermission"),
                 "status": updated.get("status"),
             },
         )
@@ -947,16 +1208,50 @@ def update_link(
             entry["patientId"] = _validate_non_phi_label(subject_label or patient_id, field_name="subjectLabel")
         if study_label is not None:
             entry["studyLabel"] = _validate_non_phi_label(study_label, field_name="studyLabel")
+        if delegate_name is not None:
+            entry["delegateName"] = _validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190)
+        if delegate_contact is not None:
+            entry["delegateContact"] = _validate_sensitive_session_text(delegate_contact, field_name="delegateContact", max_len=190)
+        if delegate_role is not None:
+            entry["delegateRole"] = _normalize_delegate_role(delegate_role)
+        if product_scope is not None:
+            entry["productScope"] = _normalize_product_scope(product_scope)
+        if product_scope_items is not None:
+            entry["productScopeItems"] = _normalize_allowed_products(product_scope_items)
+        if delegate_permission is not None:
+            entry["delegatePermission"] = _normalize_delegate_permission(delegate_permission)
         if markup_percent is not None:
             entry["markupPercent"] = float(_normalize_capped_markup_percent(markup_percent) or 0.0)
+        if pricing_disclosure is not None:
+            entry["pricingDisclosure"] = _validate_sensitive_session_text(
+                pricing_disclosure,
+                field_name="pricingDisclosure",
+                max_len=1000,
+            )
+        if zelle_recipient_name is not None:
+            entry["zelleRecipientName"] = _validate_sensitive_session_text(
+                zelle_recipient_name,
+                field_name="zelleRecipientName",
+                max_len=190,
+            )
+        if payment_confirmation_required is not None:
+            entry["paymentConfirmationRequired"] = _normalize_bool(payment_confirmation_required, default=True)
+        if delegate_instructions is not None:
+            entry["delegateInstructions"] = _validate_research_note(delegate_instructions, field_name="delegateInstructions")
+        if internal_physician_note is not None:
+            entry["internalPhysicianNote"] = _validate_research_note(internal_physician_note, field_name="internalPhysicianNote")
+        if terms_version is not None:
+            entry["termsVersion"] = _validate_policy_version(terms_version, field_name="termsVersion")
+        if shipping_policy_version is not None:
+            entry["shippingPolicyVersion"] = _validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion")
+        if privacy_policy_version is not None:
+            entry["privacyPolicyVersion"] = _validate_policy_version(privacy_policy_version, field_name="privacyPolicyVersion")
         if instructions is not None:
             entry["instructions"] = _validate_research_note(instructions, field_name="instructions")
         if allowed_products is not None:
             entry["allowedProducts"] = _normalize_allowed_products(allowed_products)
-        if usage_limit is not None:
-            entry["usageLimit"] = _normalize_usage_limit(usage_limit)
         if expires_in_hours is not None:
-            normalized_expiry_hours = _normalize_usage_limit(expires_in_hours)
+            normalized_expiry_hours = _normalize_optional_link_limit(expires_in_hours, field_name="expiresInHours")
             entry["expiresAt"] = (
                 (datetime.now(timezone.utc) + timedelta(hours=normalized_expiry_hours)).isoformat()
                 if normalized_expiry_hours is not None
@@ -1040,9 +1335,8 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
 
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        # Allow exhausted links to be resolved so delegates can still view
-        # proposal review outcomes (accepted/modified/rejected + notes).
-        # Revoked/expired links remain inaccessible.
+        # Revoked/expired links remain inaccessible. Usage is tracked but
+        # never exhausts a delegate session.
         link = patient_links_repository.find_by_token(token, include_inactive=True)
         if not isinstance(link, dict):
             err = ValueError("Invalid or expired delegate link")
@@ -1085,7 +1379,16 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
                 link["openCount"] = 1
             link["lastUsedAt"] = opened_at
             link["lastOpenedAt"] = opened_at
-            _audit_event("link_opened", token=token, doctor_id=doctor_id, payload={"status": link.get("status")})
+            _audit_event(
+                "link_opened",
+                token=token,
+                doctor_id=doctor_id,
+                payload={
+                    "status": link.get("status"),
+                    "productScope": link.get("productScope"),
+                    "delegatePermission": link.get("delegatePermission"),
+                },
+            )
 
         doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
 
@@ -1103,9 +1406,20 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
             "subjectLabel": link.get("subjectLabel"),
             "studyLabel": link.get("studyLabel"),
             "patientReference": link.get("patientReference"),
+            "delegateName": link.get("delegateName"),
+            "delegateRole": link.get("delegateRole"),
+            "productScope": link.get("productScope") or DEFAULT_PRODUCT_SCOPE,
+            "productScopeItems": link.get("productScopeItems") or [],
+            "delegatePermission": link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION,
+            "pricingDisclosure": link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE,
+            "paymentConfirmationRequired": link.get("paymentConfirmationRequired"),
+            "delegateInstructions": link.get("delegateInstructions"),
+            "termsVersion": link.get("termsVersion"),
+            "shippingPolicyVersion": link.get("shippingPolicyVersion"),
+            "privacyPolicyVersion": link.get("privacyPolicyVersion"),
             "instructions": link.get("instructions"),
             "allowedProducts": link.get("allowedProducts") or [],
-            "usageLimit": link.get("usageLimit"),
+            "usageLimit": None,
             "usageCount": link.get("usageCount"),
             "openCount": link.get("openCount"),
             "status": link.get("status") or "active",
@@ -1175,8 +1489,19 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
         "subjectLabel": link.get("subjectLabel"),
         "studyLabel": link.get("studyLabel"),
         "patientReference": link.get("patientReference"),
+        "delegateName": link.get("delegateName"),
+        "delegateRole": link.get("delegateRole"),
+        "productScope": link.get("productScope") or DEFAULT_PRODUCT_SCOPE,
+        "productScopeItems": link.get("productScopeItems") or [],
+        "delegatePermission": link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION,
+        "pricingDisclosure": link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE,
+        "paymentConfirmationRequired": link.get("paymentConfirmationRequired"),
+        "delegateInstructions": link.get("delegateInstructions"),
+        "termsVersion": link.get("termsVersion"),
+        "shippingPolicyVersion": link.get("shippingPolicyVersion"),
+        "privacyPolicyVersion": link.get("privacyPolicyVersion"),
         "instructions": link.get("instructions"),
-        "usageLimit": link.get("usageLimit"),
+        "usageLimit": None,
         "usageCount": link.get("usageCount"),
         "openCount": link.get("openCount"),
         "status": link.get("status") or "active",
@@ -1237,7 +1562,9 @@ def store_delegate_submission(
             payload={
                 "orderId": order_id,
                 "riskFlags": risk_flags,
-                "allowedProducts": link.get("allowedProducts") or [],
+                "allowedProductsCount": len(link.get("allowedProducts") or []),
+                "productScope": link.get("productScope"),
+                "delegatePermission": link.get("delegatePermission"),
             },
         )
         updated_link = patient_links_repository.find_by_token(token, include_inactive=True) or link
@@ -1288,10 +1615,24 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         "studyLabel": link.get("studyLabel"),
         "referenceLabel": link.get("referenceLabel") or link.get("label"),
         "label": link.get("referenceLabel") or link.get("label"),
+        "delegateName": link.get("delegateName"),
+        "delegateContact": link.get("delegateContact"),
+        "delegateRole": link.get("delegateRole"),
+        "productScope": link.get("productScope") or DEFAULT_PRODUCT_SCOPE,
+        "productScopeItems": link.get("productScopeItems") or [],
+        "delegatePermission": link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION,
         "markupPercent": link.get("markupPercent"),
+        "pricingDisclosure": link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE,
+        "zelleRecipientName": link.get("zelleRecipientName"),
+        "paymentConfirmationRequired": link.get("paymentConfirmationRequired"),
+        "delegateInstructions": link.get("delegateInstructions"),
+        "internalPhysicianNote": link.get("internalPhysicianNote"),
+        "termsVersion": link.get("termsVersion"),
+        "shippingPolicyVersion": link.get("shippingPolicyVersion"),
+        "privacyPolicyVersion": link.get("privacyPolicyVersion"),
         "instructions": link.get("instructions"),
         "allowedProducts": link.get("allowedProducts") or [],
-        "usageLimit": link.get("usageLimit"),
+        "usageLimit": None,
         "usageCount": link.get("usageCount"),
         "status": link.get("status"),
         "delegateCart": link.get("delegateCart"),
@@ -1453,6 +1794,8 @@ def validate_delegate_items(token: str, items: List[Dict[str, Any]]) -> Dict[str
         setattr(err, "status", 404)
         raise err
     allowed_products = _normalize_allowed_products(link.get("allowedProducts") or [])
+    if not allowed_products:
+        allowed_products = _normalize_allowed_products(link.get("productScopeItems") or [])
     if not allowed_products:
         return {"link": link, "allowedProducts": [], "validatedItems": items or []}
     allowed_set = {entry.upper() for entry in allowed_products}

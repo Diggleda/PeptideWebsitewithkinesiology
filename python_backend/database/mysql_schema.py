@@ -454,9 +454,23 @@ CREATE_TABLE_STATEMENTS = [
         subject_label LONGTEXT NULL,
         study_label LONGTEXT NULL,
         patient_reference LONGTEXT NULL,
+        delegate_name LONGTEXT NULL,
+        delegate_contact LONGTEXT NULL,
+        delegate_role VARCHAR(64) NULL,
+        product_scope VARCHAR(64) NOT NULL DEFAULT 'all_physician_approved',
+        product_scope_items_json JSON NULL,
+        delegate_permission VARCHAR(64) NOT NULL DEFAULT 'submit_for_physician_review',
         created_at DATETIME NOT NULL,
         expires_at DATETIME NULL,
         markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+        pricing_disclosure LONGTEXT NULL,
+        zelle_recipient_name LONGTEXT NULL,
+        payment_confirmation_required TINYINT(1) NOT NULL DEFAULT 1,
+        delegate_instructions LONGTEXT NULL,
+        internal_physician_note LONGTEXT NULL,
+        terms_version VARCHAR(64) NULL,
+        shipping_policy_version VARCHAR(64) NULL,
+        privacy_policy_version VARCHAR(64) NULL,
         instructions LONGTEXT NULL,
         allowed_products_json JSON NULL,
         usage_limit INT NULL,
@@ -872,6 +886,20 @@ def ensure_schema() -> None:
         "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_name LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_contact LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_role VARCHAR(64) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS product_scope VARCHAR(64) NOT NULL DEFAULT 'all_physician_approved'",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS product_scope_items_json JSON NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_permission VARCHAR(64) NOT NULL DEFAULT 'submit_for_physician_review'",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS pricing_disclosure LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS zelle_recipient_name LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_confirmation_required TINYINT(1) NOT NULL DEFAULT 1",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_instructions LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS internal_physician_note LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS terms_version VARCHAR(64) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS shipping_policy_version VARCHAR(64) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS privacy_policy_version VARCHAR(64) NULL",
         "ALTER TABLE patient_links MODIFY COLUMN patient_id LONGTEXT NULL",
         "ALTER TABLE patient_links MODIFY COLUMN expires_at DATETIME NULL",
         "ALTER TABLE patient_links MODIFY COLUMN reference_label LONGTEXT NULL",
@@ -1224,6 +1252,40 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN study_label LONGTEXT NULL")
         if not _column_exists("patient_links", "patient_reference"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_reference LONGTEXT NULL")
+        if not _column_exists("patient_links", "delegate_name"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_name LONGTEXT NULL")
+        if not _column_exists("patient_links", "delegate_contact"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_contact LONGTEXT NULL")
+        if not _column_exists("patient_links", "delegate_role"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_role VARCHAR(64) NULL")
+        if not _column_exists("patient_links", "product_scope"):
+            mysql_client.execute(
+                "ALTER TABLE patient_links ADD COLUMN product_scope VARCHAR(64) NOT NULL DEFAULT 'all_physician_approved'"
+            )
+        if not _column_exists("patient_links", "product_scope_items_json"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN product_scope_items_json JSON NULL")
+        if not _column_exists("patient_links", "delegate_permission"):
+            mysql_client.execute(
+                "ALTER TABLE patient_links ADD COLUMN delegate_permission VARCHAR(64) NOT NULL DEFAULT 'submit_for_physician_review'"
+            )
+        if not _column_exists("patient_links", "pricing_disclosure"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN pricing_disclosure LONGTEXT NULL")
+        if not _column_exists("patient_links", "zelle_recipient_name"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN zelle_recipient_name LONGTEXT NULL")
+        if not _column_exists("patient_links", "payment_confirmation_required"):
+            mysql_client.execute(
+                "ALTER TABLE patient_links ADD COLUMN payment_confirmation_required TINYINT(1) NOT NULL DEFAULT 1"
+            )
+        if not _column_exists("patient_links", "delegate_instructions"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_instructions LONGTEXT NULL")
+        if not _column_exists("patient_links", "internal_physician_note"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN internal_physician_note LONGTEXT NULL")
+        if not _column_exists("patient_links", "terms_version"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN terms_version VARCHAR(64) NULL")
+        if not _column_exists("patient_links", "shipping_policy_version"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN shipping_policy_version VARCHAR(64) NULL")
+        if not _column_exists("patient_links", "privacy_policy_version"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN privacy_policy_version VARCHAR(64) NULL")
         if not _column_exists("patient_links", "received_payment"):
             mysql_client.execute(
                 "ALTER TABLE patient_links ADD COLUMN received_payment TINYINT(1) NOT NULL DEFAULT 0"
@@ -1265,6 +1327,12 @@ def ensure_schema() -> None:
         _copy_legacy_ciphertext("patient_links", "patient_reference", "patient_reference_encrypted")
         _copy_legacy_ciphertext("patient_links", "instructions", "instructions_encrypted")
         _copy_legacy_ciphertext("patient_links", "payment_instructions", "payment_instructions_encrypted")
+        _copy_legacy_ciphertext("patient_links", "delegate_name", "delegate_name_encrypted")
+        _copy_legacy_ciphertext("patient_links", "delegate_contact", "delegate_contact_encrypted")
+        _copy_legacy_ciphertext("patient_links", "pricing_disclosure", "pricing_disclosure_encrypted")
+        _copy_legacy_ciphertext("patient_links", "zelle_recipient_name", "zelle_recipient_name_encrypted")
+        _copy_legacy_ciphertext("patient_links", "delegate_instructions", "delegate_instructions_encrypted")
+        _copy_legacy_ciphertext("patient_links", "internal_physician_note", "internal_physician_note_encrypted")
         _copy_legacy_ciphertext("patient_links", "delegate_cart_json", "delegate_cart_encrypted")
         _copy_legacy_ciphertext("patient_links", "delegate_shipping_json", "delegate_shipping_encrypted")
         _copy_legacy_ciphertext("patient_links", "delegate_payment_json", "delegate_payment_encrypted")
@@ -1276,6 +1344,12 @@ def ensure_schema() -> None:
         _drop_column_if_exists("patient_links", "patient_reference_encrypted")
         _drop_column_if_exists("patient_links", "instructions_encrypted")
         _drop_column_if_exists("patient_links", "payment_instructions_encrypted")
+        _drop_column_if_exists("patient_links", "delegate_name_encrypted")
+        _drop_column_if_exists("patient_links", "delegate_contact_encrypted")
+        _drop_column_if_exists("patient_links", "pricing_disclosure_encrypted")
+        _drop_column_if_exists("patient_links", "zelle_recipient_name_encrypted")
+        _drop_column_if_exists("patient_links", "delegate_instructions_encrypted")
+        _drop_column_if_exists("patient_links", "internal_physician_note_encrypted")
         _drop_column_if_exists("patient_links", "delegate_cart_encrypted")
         _drop_column_if_exists("patient_links", "delegate_shipping_encrypted")
         _drop_column_if_exists("patient_links", "delegate_payment_encrypted")

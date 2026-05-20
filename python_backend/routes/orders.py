@@ -53,6 +53,29 @@ def _find_local_order_for_user_invoice(order_id: str, *, user_id: str | None) ->
     return None
 
 
+def _delegate_usage_actor(doctor_id: object = None) -> dict:
+    actor = getattr(g, "current_user", None) or {}
+    actor_id = str(actor.get("id") or "").strip()
+    if actor_id:
+        return actor
+    normalized_doctor_id = str(doctor_id or "").strip()
+    if normalized_doctor_id:
+        return {"id": normalized_doctor_id, "role": "doctor"}
+    return {}
+
+
+def _track_delegate_usage(event: str, *, doctor_id: object = None, metadata: dict | None = None) -> None:
+    normalized_event = str(event or "").strip()
+    if not normalized_event:
+        return
+    event_metadata = {"linkType": "delegate", **(metadata or {})}
+    usage_tracking_service.track_event(
+        normalized_event,
+        actor=_delegate_usage_actor(doctor_id),
+        metadata=event_metadata,
+    )
+
+
 def _build_invoice_from_local_order(local_order: dict, *, customer_email: str | None) -> tuple[bytes, str]:
     items = local_order.get("items") or []
     if not isinstance(items, list):
@@ -269,7 +292,14 @@ def create_order():
             usage_tracking_service.track_event(
                 "delegate_order_placed",
                 actor=getattr(g, "current_user", None) or {},
-                metadata={"delegateProposalToken": normalized_delegate_token, "orderId": result.get("id")},
+                metadata={
+                    "linkType": "delegate",
+                    "delegateProposalToken": normalized_delegate_token,
+                    "orderId": result.get("id") if isinstance(result, dict) else None,
+                    "itemCount": len(items or []),
+                    "paymentMethod": payment_method,
+                    "pricingMode": pricing_mode,
+                },
             )
         try:
             product_recommendation_service.track_order_purchase_events(
@@ -831,7 +861,7 @@ def delegate_estimate_order_totals():
             err = ValueError("Invalid or expired delegate link")
             setattr(err, "status", 404)
             raise err
-        return order_service.estimate_order_totals(
+        estimate = order_service.estimate_order_totals(
             user_id=str(doctor_id),
             items=validated.get("validatedItems") or items,
             shipping_address=shipping_address,
@@ -841,6 +871,19 @@ def delegate_estimate_order_totals():
             payment_method=payment_method,
             discount_code=discount_code,
         )
+        totals = estimate.get("totals") if isinstance(estimate, dict) else None
+        _track_delegate_usage(
+            "delegate_order_estimated",
+            doctor_id=doctor_id,
+            metadata={
+                "itemCount": len(validated.get("validatedItems") or items or []),
+                "productScope": delegate_info.get("productScope"),
+                "delegatePermission": delegate_info.get("delegatePermission"),
+                "grandTotal": totals.get("grandTotal") if isinstance(totals, dict) else None,
+                "paymentMethod": payment_method,
+            },
+        )
+        return estimate
 
     return handle_action(action)
 
@@ -867,6 +910,13 @@ def delegate_share_order():
         if not doctor_id:
             err = ValueError("Invalid or expired delegate link")
             setattr(err, "status", 404)
+            raise err
+        delegate_permission = str(
+            delegate_info.get("delegatePermission") or "submit_for_physician_review"
+        ).strip().lower()
+        if delegate_permission != "submit_for_physician_review":
+            err = ValueError("This delegate session is not permitted to submit an order proposal.")
+            setattr(err, "status", 403)
             raise err
 
         estimate = order_service.estimate_order_totals(
@@ -952,6 +1002,18 @@ def delegate_share_order():
             },
             order_id=str(stored_id or order_id),
             shared_at=now_dt,
+        )
+        _track_delegate_usage(
+            "delegate_proposal_shared",
+            doctor_id=doctor_id,
+            metadata={
+                "orderId": str(stored_id or order_id),
+                "itemCount": len(validated.get("validatedItems") or items or []),
+                "productScope": delegate_info.get("productScope"),
+                "delegatePermission": delegate_permission,
+                "paymentMethod": normalized_payment_method,
+                "grandTotal": grand_total_value,
+            },
         )
         return {
             "success": True,

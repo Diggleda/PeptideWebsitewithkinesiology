@@ -15,11 +15,28 @@ store.init();
 
 const DEFAULT_MARKUP_PERCENT = 15;
 const LINK_EXPIRY_HOURS = 72;
+const DEFAULT_PRICING_DISCLOSURE =
+  'Prices may include physician-directed service, handling, administrative, or research coordination fees.';
+const ALLOWED_PRODUCT_SCOPES = new Set([
+  'all_physician_approved',
+  'specific_cart_only',
+  'specific_products',
+  'category_or_protocol',
+]);
+const ENABLED_DELEGATE_PERMISSIONS = new Set([
+  'view_products_only',
+  'submit_for_physician_review',
+]);
+const RESTRICTED_LEGACY_DELEGATE_PERMISSIONS = new Set([
+  'build_cart_only',
+  'submit_payment_info_only',
+  'direct_checkout',
+]);
 
-const normalizeOptionalString = (value) => {
+const normalizeOptionalString = (value, maxLength = 4000) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  return trimmed ? trimmed.slice(0, maxLength) : null;
 };
 
 const normalizeMarkupPercent = (value, fallback = DEFAULT_MARKUP_PERCENT) => {
@@ -38,6 +55,38 @@ const normalizeUsageLimit = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return Math.max(1, Math.floor(parsed));
+};
+
+const normalizeRequiredLinkLimit = (value, defaultValue, label) => {
+  if (value === undefined || value === null || value === '') {
+    return { value: defaultValue };
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { error: `${label} must be greater than zero` };
+  }
+  return { value: Math.max(1, Math.min(10_000, Math.floor(parsed))) };
+};
+
+const normalizeProductScope = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ALLOWED_PRODUCT_SCOPES.has(normalized) ? normalized : 'all_physician_approved';
+};
+
+const normalizeDelegatePermission = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (RESTRICTED_LEGACY_DELEGATE_PERMISSIONS.has(normalized)) return 'view_products_only';
+  return ENABLED_DELEGATE_PERMISSIONS.has(normalized) ? normalized : 'submit_for_physician_review';
+};
+
+const normalizeBool = (value, fallback = false) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return fallback;
 };
 
 const shouldCountResolvePageLoad = (query = {}) => {
@@ -177,6 +226,14 @@ const buildNodeDummyResolvePayload = (
     studyLabel: 'GH response pilot',
     patientReference: 'RS-UI-001',
     referenceLabel: 'Subject A104',
+    delegateName: 'Demo delegate',
+    delegateRole: 'patient',
+    productScope: 'all_physician_approved',
+    productScopeItems: [],
+    delegatePermission: 'submit_for_physician_review',
+    pricingDisclosure: DEFAULT_PRICING_DISCLOSURE,
+    paymentConfirmationRequired: true,
+    delegateInstructions: null,
     allowedProducts: ['BPC-157-5MG', 'TB-500-10MG'],
     instructions: null,
     delegateSharedAt: null,
@@ -231,6 +288,9 @@ router.post('/links', authenticate, async (req, res) => {
     req.body?.markupPercent,
     normalizeMarkupPercent(bucket?.config?.markupPercent, DEFAULT_MARKUP_PERCENT),
   );
+  const expiresInHours = normalizeRequiredLinkLimit(req.body?.expiresInHours ?? req.body?.expires_in_hours, LINK_EXPIRY_HOURS, 'expiresInHours');
+  if (expiresInHours.error) return res.status(400).json({ error: expiresInHours.error });
+  const paymentMethod = normalizeOptionalString(req.body?.paymentMethod ?? req.body?.payment_method, 32) || 'none';
   const link = {
     token: makeToken(),
     referenceLabel: normalizeOptionalString(req.body?.referenceLabel),
@@ -238,15 +298,32 @@ router.post('/links', authenticate, async (req, res) => {
     subjectLabel: normalizeOptionalString(req.body?.subjectLabel),
     studyLabel: normalizeOptionalString(req.body?.studyLabel),
     patientReference: normalizeOptionalString(req.body?.patientReference),
+    delegateName: normalizeOptionalString(req.body?.delegateName ?? req.body?.delegate_name),
+    delegateContact: normalizeOptionalString(req.body?.delegateContact ?? req.body?.delegate_contact),
+    delegateRole: normalizeOptionalString(req.body?.delegateRole ?? req.body?.delegate_role, 64),
+    productScope: normalizeProductScope(req.body?.productScope ?? req.body?.product_scope),
+    productScopeItems: normalizeAllowedProducts(req.body?.productScopeItems ?? req.body?.product_scope_items),
+    delegatePermission: normalizeDelegatePermission(req.body?.delegatePermission ?? req.body?.delegate_permission),
     createdAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + LINK_EXPIRY_HOURS * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(now + expiresInHours.value * 60 * 60 * 1000).toISOString(),
     markupPercent,
+    pricingDisclosure: normalizeOptionalString(req.body?.pricingDisclosure ?? req.body?.pricing_disclosure, 1000) || DEFAULT_PRICING_DISCLOSURE,
+    zelleRecipientName: normalizeOptionalString(req.body?.zelleRecipientName ?? req.body?.zelle_recipient_name),
+    paymentConfirmationRequired: normalizeBool(
+      req.body?.paymentConfirmationRequired ?? req.body?.payment_confirmation_required,
+      true,
+    ),
+    delegateInstructions: normalizeOptionalString(req.body?.delegateInstructions ?? req.body?.delegate_instructions, 4000),
+    internalPhysicianNote: normalizeOptionalString(req.body?.internalPhysicianNote ?? req.body?.internal_physician_note, 4000),
+    termsVersion: normalizeOptionalString(req.body?.termsVersion ?? req.body?.terms_version, 64),
+    shippingPolicyVersion: normalizeOptionalString(req.body?.shippingPolicyVersion ?? req.body?.shipping_policy_version, 64),
+    privacyPolicyVersion: normalizeOptionalString(req.body?.privacyPolicyVersion ?? req.body?.privacy_policy_version, 64),
     instructions: normalizeOptionalString(req.body?.instructions),
     allowedProducts: normalizeAllowedProducts(req.body?.allowedProducts),
-    usageLimit: normalizeUsageLimit(req.body?.usageLimit),
+    usageLimit: null,
     usageCount: 0,
     openCount: 0,
-    paymentMethod: normalizeOptionalString(req.body?.paymentMethod) || 'none',
+    paymentMethod,
     paymentInstructions: normalizeOptionalString(req.body?.paymentInstructions) || '',
     receivedPayment: false,
     lastUsedAt: null,
@@ -295,8 +372,50 @@ router.patch('/links/:token', authenticate, async (req, res) => {
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'patientReference')) {
     link.patientReference = normalizeOptionalString(req.body.patientReference);
   }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'delegateName')) {
+    link.delegateName = normalizeOptionalString(req.body.delegateName);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'delegateContact')) {
+    link.delegateContact = normalizeOptionalString(req.body.delegateContact);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'delegateRole')) {
+    link.delegateRole = normalizeOptionalString(req.body.delegateRole, 64);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'productScope')) {
+    link.productScope = normalizeProductScope(req.body.productScope);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'productScopeItems')) {
+    link.productScopeItems = normalizeAllowedProducts(req.body.productScopeItems);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'delegatePermission')) {
+    link.delegatePermission = normalizeDelegatePermission(req.body.delegatePermission);
+  }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'markupPercent')) {
     link.markupPercent = normalizeMarkupPercent(req.body.markupPercent, link.markupPercent || DEFAULT_MARKUP_PERCENT);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'pricingDisclosure')) {
+    link.pricingDisclosure = normalizeOptionalString(req.body.pricingDisclosure, 1000) || DEFAULT_PRICING_DISCLOSURE;
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'zelleRecipientName')) {
+    link.zelleRecipientName = normalizeOptionalString(req.body.zelleRecipientName);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'paymentConfirmationRequired')) {
+    link.paymentConfirmationRequired = normalizeBool(req.body.paymentConfirmationRequired, true);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'delegateInstructions')) {
+    link.delegateInstructions = normalizeOptionalString(req.body.delegateInstructions, 4000);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'internalPhysicianNote')) {
+    link.internalPhysicianNote = normalizeOptionalString(req.body.internalPhysicianNote, 4000);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'termsVersion')) {
+    link.termsVersion = normalizeOptionalString(req.body.termsVersion, 64);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'shippingPolicyVersion')) {
+    link.shippingPolicyVersion = normalizeOptionalString(req.body.shippingPolicyVersion, 64);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'privacyPolicyVersion')) {
+    link.privacyPolicyVersion = normalizeOptionalString(req.body.privacyPolicyVersion, 64);
   }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'instructions')) {
     link.instructions = normalizeOptionalString(req.body.instructions);
@@ -304,8 +423,10 @@ router.patch('/links/:token', authenticate, async (req, res) => {
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'allowedProducts')) {
     link.allowedProducts = normalizeAllowedProducts(req.body.allowedProducts);
   }
-  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'usageLimit')) {
-    link.usageLimit = normalizeUsageLimit(req.body.usageLimit);
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'expiresInHours')) {
+    const expiresInHours = normalizeRequiredLinkLimit(req.body.expiresInHours, LINK_EXPIRY_HOURS, 'expiresInHours');
+    if (expiresInHours.error) return res.status(400).json({ error: expiresInHours.error });
+    link.expiresAt = new Date(Date.now() + expiresInHours.value * 60 * 60 * 1000).toISOString();
   }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'paymentMethod')) {
     link.paymentMethod = normalizeOptionalString(req.body.paymentMethod) || 'none';
@@ -353,6 +474,20 @@ router.get('/links/:token/proposal', authenticate, (req, res) => {
     status: link.proposalStatus || 'pending',
     delegateOrderId: link.delegateOrderId || null,
     delegateSharedAt: link.delegateSharedAt || null,
+    delegateName: link.delegateName || null,
+    delegateContact: link.delegateContact || null,
+    delegateRole: link.delegateRole || null,
+    productScope: link.productScope || 'all_physician_approved',
+    productScopeItems: link.productScopeItems || [],
+    delegatePermission: link.delegatePermission || 'submit_for_physician_review',
+    pricingDisclosure: link.pricingDisclosure || DEFAULT_PRICING_DISCLOSURE,
+    zelleRecipientName: link.zelleRecipientName || null,
+    paymentConfirmationRequired: link.paymentConfirmationRequired !== false,
+    delegateInstructions: link.delegateInstructions || null,
+    internalPhysicianNote: link.internalPhysicianNote || null,
+    termsVersion: link.termsVersion || null,
+    shippingPolicyVersion: link.shippingPolicyVersion || null,
+    privacyPolicyVersion: link.privacyPolicyVersion || null,
   });
 });
 
@@ -413,9 +548,20 @@ router.get('/resolve', authenticateOptional, async (req, res) => {
       markupPercent: normalizeMarkupPercent(link.markupPercent, DEFAULT_MARKUP_PERCENT),
       paymentMethod: link.paymentMethod || 'none',
       paymentInstructions: link.paymentInstructions || '',
+      delegateName: link.delegateName || null,
+      delegateRole: link.delegateRole || null,
+      productScope: link.productScope || 'all_physician_approved',
+      productScopeItems: link.productScopeItems || [],
+      delegatePermission: link.delegatePermission || 'submit_for_physician_review',
+      pricingDisclosure: link.pricingDisclosure || DEFAULT_PRICING_DISCLOSURE,
+      paymentConfirmationRequired: link.paymentConfirmationRequired !== false,
+      delegateInstructions: link.delegateInstructions || null,
+      termsVersion: link.termsVersion || null,
+      shippingPolicyVersion: link.shippingPolicyVersion || null,
+      privacyPolicyVersion: link.privacyPolicyVersion || null,
       createdAt: link.createdAt || null,
       expiresAt: link.expiresAt || null,
-      usageLimit: normalizeUsageLimit(link.usageLimit ?? link.usage_limit),
+      usageLimit: null,
       usageCount: normalizeUsageCount(link.usageCount ?? link.usage_count),
       openCount: normalizeUsageCount(link.openCount ?? link.open_count),
       lastUsedAt: link.lastUsedAt || null,
