@@ -13,8 +13,8 @@ define('TRUFUSION_MAILER_SECRET', 'CHANGE_ME_TO_A_LONG_RANDOM_STRING');
 define('TRUFUSION_MAIL_FROM_EMAIL', 'support@trufusionlabs.com');
 define('TRUFUSION_MAIL_FROM_NAME', 'TrufusionLabs');
 define('TRUFUSION_MAIL_REPLY_TO', 'support@trufusionlabs.com');
-// Comma-separated allowlist for `resetUrl` hostnames (default: trufusionlabs.com)
-define('TRUFUSION_MAIL_ALLOWED_HOSTS', 'trufusionlabs.com');
+// Comma-separated allowlist for `resetUrl` hostnames (default: trufusionlabs.com,www.trufusionlabs.com)
+define('TRUFUSION_MAIL_ALLOWED_HOSTS', 'trufusionlabs.com,www.trufusionlabs.com');
 ```
 
 ## SMTP (recommended)

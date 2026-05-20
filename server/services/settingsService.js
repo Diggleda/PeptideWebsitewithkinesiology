@@ -25,6 +25,7 @@ const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
 const BETA_SERVICE_KEYS = new Set([
   'shop',
   'patientLinks',
+  'brochureLinks',
   'crm',
   'forum',
   'research',

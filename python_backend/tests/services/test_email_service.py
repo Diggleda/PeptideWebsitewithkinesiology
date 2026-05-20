@@ -122,6 +122,28 @@ class EmailServiceTests(unittest.TestCase):
 
         self.assertEqual(settings["from"], "TrufusionLabs <support@trufusionlabs.com>")
 
+    def test_email_settings_honors_smtp_secure_ssl_alias(self):
+        from python_backend.services import email_service
+
+        env = {"SMTP_HOST": "smtp.example.com", "SMTP_PORT": "465", "SMTP_SECURE": "true"}
+        with patch.dict("os.environ", env, clear=True):
+            settings = email_service._email_settings()
+
+        self.assertEqual(settings["smtp"]["port"], 465)
+        self.assertTrue(settings["smtp"]["ssl"])
+        self.assertFalse(settings["smtp"]["starttls"])
+
+    def test_email_settings_honors_smtp_secure_starttls_alias(self):
+        from python_backend.services import email_service
+
+        env = {"SMTP_HOST": "smtp.example.com", "SMTP_PORT": "587", "SMTP_SECURE": "tls"}
+        with patch.dict("os.environ", env, clear=True):
+            settings = email_service._email_settings()
+
+        self.assertEqual(settings["smtp"]["port"], 587)
+        self.assertFalse(settings["smtp"]["ssl"])
+        self.assertTrue(settings["smtp"]["starttls"])
+
     def test_generated_email_templates_use_shared_solid_background(self):
         from python_backend.services import email_service
 

@@ -71,10 +71,14 @@ function trufusion_mailer_bridge_mailer_wrap($subject, $body_html) {
 }
 
 function trufusion_mailer_bridge_allowed_hosts() {
-    $raw = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_ALLOWED_HOSTS', 'PEPPR_MAIL_ALLOWED_HOSTS', 'trufusionlabs.com');
+    $raw = trufusion_mailer_bridge_get_constant(
+        'TRUFUSION_MAIL_ALLOWED_HOSTS',
+        'PEPPR_MAIL_ALLOWED_HOSTS',
+        'trufusionlabs.com,www.trufusionlabs.com'
+    );
     $parts = array_filter(array_map('trim', explode(',', $raw)));
     if (empty($parts)) {
-        $parts = array('trufusionlabs.com');
+        $parts = array('trufusionlabs.com', 'www.trufusionlabs.com');
     }
     return $parts;
 }

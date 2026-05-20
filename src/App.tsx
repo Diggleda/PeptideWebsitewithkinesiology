@@ -12977,6 +12977,7 @@ function MainApp() {
 	  const PORTAL_BETA_SERVICE_KEYS = [
     "shop",
     "patientLinks",
+    "brochureLinks",
     "crm",
     "forum",
     "research",
@@ -12989,6 +12990,7 @@ function MainApp() {
   const PORTAL_BETA_SERVICE_LABELS: Record<PortalBetaServiceKey, string> = {
 	    shop: "Enter Dashboard",
     patientLinks: "Delegate Links",
+    brochureLinks: "Brochure Links",
     crm: "CRM",
     forum: "The Peptide Forum",
     research: "Research Dashboard",

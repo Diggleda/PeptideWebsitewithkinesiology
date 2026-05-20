@@ -8,7 +8,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { AdjustmentsHorizontalIcon, ArrowPathIcon, TruckIcon } from '@heroicons/react/24/outline';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCircle2, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCircle2, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle, Plus, FileText } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -109,6 +109,7 @@ const getSalesPartnerLabel = (allowedRetail?: unknown) => {
 };
 
 type PatientLinkPaymentMethod = 'none' | 'zelle';
+type CreateLinkDialogMode = 'select' | 'delegate' | 'brochure';
 
 const patientLinkPaymentMethodOptions: Array<{ value: PatientLinkPaymentMethod; label: string }> = [
   { value: 'none', label: '-' },
@@ -1935,6 +1936,8 @@ export function Header({
   const [patientLinksSavingPaymentToken, setPatientLinksSavingPaymentToken] = useState<string | null>(null);
   const [patientLinksPaymentReceivedToken, setPatientLinksPaymentReceivedToken] = useState<string | null>(null);
   const [patientLinksSavingReviewNotesToken, setPatientLinksSavingReviewNotesToken] = useState<string | null>(null);
+  const [createLinkDialogOpen, setCreateLinkDialogOpen] = useState(false);
+  const [createLinkDialogMode, setCreateLinkDialogMode] = useState<CreateLinkDialogMode>('select');
   const patientLinkTrackedFieldsRef = useRef<Set<string>>(new Set());
   const [patientLinkPaymentMethodDraftByToken, setPatientLinkPaymentMethodDraftByToken] = useState<Record<string, PatientLinkPaymentMethod>>({});
   const [patientLinkInstructionsDraftByToken, setPatientLinkInstructionsDraftByToken] = useState<Record<string, string>>({});
@@ -4821,6 +4824,12 @@ export function Header({
   const delegateOptInEnabled = coerceOptionalBoolean(
     localUser?.delegateOptIn ?? (localUser as any)?.delegate_opt_in,
   ) === true;
+  const delegateLinkCreationEnabled = Boolean(showPatientLinksTab && delegateOptInEnabled);
+  const brochureLinkCreationEnabled = Array.isArray(betaServices)
+    && betaServices.some((service) =>
+      ['brochureLinks', 'productBrochureLinks', 'brochure'].includes(String(service || '').trim()),
+    );
+  const hasCreateLinkTypeOptions = delegateLinkCreationEnabled || brochureLinkCreationEnabled;
   const accountHeaderTabs = useMemo(() => {
     const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
       { id: 'details', label: 'Details', Icon: Info },
@@ -5213,6 +5222,8 @@ export function Header({
       setPatientLinkUsageLimitDraft('');
       setPatientLinkResearchNoteDraft('');
       setPatientLinkTermsAccepted(false);
+      setCreateLinkDialogOpen(false);
+      setCreateLinkDialogMode('select');
       toast.success('Delegate link created.');
       requestPatientLinksRefresh({ force: true });
     } catch (error: any) {
@@ -5243,6 +5254,8 @@ export function Header({
     onUserUpdated,
     requestPatientLinksRefresh,
     setLocalUser,
+    setCreateLinkDialogOpen,
+    setCreateLinkDialogMode,
     showPatientLinksTab,
     user?.name,
     zelleContactDraft,
@@ -8185,27 +8198,153 @@ export function Header({
           </div>
         </div>
       ) : (
-        <>
-      <p className="text-sm text-slate-600">
-        This tool is in early access. Please{' '}
-        <button
+        <div className="flex flex-col gap-6">
+      <div className="order-1 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p className="max-w-3xl text-sm text-slate-600">
+          This tool is in early access. Please{' '}
+          <button
+            type="button"
+            className="font-bold hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2"
+            style={{
+              color: 'rgb(11,6,121)',
+              textDecorationLine: 'underline',
+              textDecorationColor: 'rgb(11,6,121)',
+              textUnderlineOffset: '2px',
+            }}
+            onClick={() => window.dispatchEvent(new CustomEvent('trufusion:open-bug-report', {
+              detail: { source: 'delegate_link' },
+            }))}
+          >
+            report
+          </button>
+          {' '}any issues you encounter, and we will prioritize fixing them (usually within a day or two).
+        </p>
+        <Button
           type="button"
-          className="font-bold hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2"
-          style={{
-            color: 'rgb(11,6,121)',
-            textDecorationLine: 'underline',
-            textDecorationColor: 'rgb(11,6,121)',
-            textUnderlineOffset: '2px',
+          onClick={() => {
+            setCreateLinkDialogMode('select');
+            setCreateLinkDialogOpen(true);
           }}
-          onClick={() => window.dispatchEvent(new CustomEvent('trufusion:open-bug-report', {
-            detail: { source: 'delegate_link' },
-          }))}
+          disabled={!hasCreateLinkTypeOptions}
+          className="header-home-button inline-flex h-11 min-h-[44px] w-full flex-none items-center justify-center gap-2 squircle-sm bg-white px-5 text-slate-900 sm:w-auto"
         >
-          report
-        </button>
-        {' '}any issues you encounter, and we will prioritize fixing them (usually within a day or two).
-      </p>
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Create a link
+        </Button>
+      </div>
+      <Dialog
+        open={createLinkDialogOpen}
+        onOpenChange={(open) => {
+          setCreateLinkDialogOpen(open);
+          if (!open) {
+            setCreateLinkDialogMode('select');
+          }
+        }}
+      >
+        <DialogContent className="max-w-[min(920px,calc(100vw-2rem))]">
+          {createLinkDialogMode === 'select' ? (
+            <div className="space-y-5">
+              <DialogHeader className="pr-10 text-left">
+                <DialogTitle className="text-xl font-semibold text-slate-900">
+                  Which link type would you like to create?
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Choose a link type.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+	                {brochureLinkCreationEnabled && (
+	                  <Button
+	                    type="button"
+	                    variant="outline"
+	                    onClick={() => setCreateLinkDialogMode('brochure')}
+	                    className="header-home-button min-h-[4.5rem] justify-start gap-3 squircle-sm bg-white px-4 text-left text-slate-900"
+	                  >
+                    <FileText className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <span className="font-semibold">Brochure</span>
+                  </Button>
+                )}
+                {delegateLinkCreationEnabled && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCreateLinkDialogMode('delegate')}
+                    className="header-home-button min-h-[4.5rem] justify-start gap-3 squircle-sm bg-white px-4 text-left text-slate-900"
+                  >
+                    <Link2 className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <span className="font-semibold">Delegate</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : createLinkDialogMode === 'brochure' ? (
+            <div className="space-y-5">
+              <DialogHeader className="pr-10 text-left">
+                <DialogTitle className="text-xl font-semibold text-slate-900">
+                  Create a brochure link
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Configure a brochure link.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="patient-link-form patient-link-form--generate patient-link-form--grouped">
+                <div className="patient-link-group rounded-xl bg-white/55 px-4 py-4 sm:px-5">
+                  <Label
+                    htmlFor="brochure-link-name"
+                    className="patient-link-form__label text-sm font-semibold text-slate-700"
+                  >
+                    Brochure name
+                  </Label>
+                  <Input
+                    id="brochure-link-name"
+                    placeholder="e.g., Research overview"
+                    className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <Label
+                    htmlFor="brochure-link-product"
+                    className="patient-link-form__label text-sm font-semibold text-slate-700"
+                  >
+                    Product or SKU
+                  </Label>
+                  <Input
+                    id="brochure-link-product"
+                    placeholder="Search or enter a SKU"
+                    className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <Label
+                    htmlFor="brochure-link-note"
+                    className="patient-link-form__label text-sm font-semibold text-slate-700"
+                  >
+                    Note
+                  </Label>
+                  <Textarea
+                    id="brochure-link-note"
+                    rows={3}
+                    placeholder="Optional context for this brochure link."
+                    className="min-h-[72px] squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCreateLinkDialogMode('select')}
+                  className="header-home-button squircle-sm bg-white text-slate-900"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => toast.message('Brochure link creation is not connected yet.')}
+                  className="header-home-button squircle-sm bg-white text-slate-900"
+                >
+                  Create brochure link
+                </Button>
+              </div>
+            </div>
+          ) : (
+      <div className="space-y-4">
         <h3 className="text-lg font-semibold text-slate-900">Create a delegate link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
           Configure a session for your patient, and share the link with them once configured. This tool is intended to help you fascilate independent peptide research. Please be consienscious when setting compensation, as patients will see the disclosures you set when they access the link. You can demo your own links before sharing by clicking the "View" button.
@@ -8491,8 +8630,11 @@ export function Header({
 	          </div>
 	        </div>
 	      </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
-	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+	      <div className="order-3 glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
 	        <h3 className="text-lg font-semibold text-slate-900">White label your sessions</h3>
 	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
 	          Customize the logo, colors, and background your patients see in delegate sessions.
@@ -8726,9 +8868,9 @@ export function Header({
 	        </div>
 	      </div>
 
-	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-1">
+	      <div className="order-2 glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-1">
 	        <div className="flex items-start justify-between gap-3">
-	          <h3 className="text-lg font-semibold text-slate-900 leading-tight">Manage your links</h3>
+	          <h3 className="text-lg font-semibold text-slate-900 leading-tight">Your links</h3>
 	          <Button
 		            type="button"
 	            variant="outline"
@@ -8742,10 +8884,10 @@ export function Header({
             <RefreshActionIcon spinning={patientLinksLoading} />
             {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
-        </div>
-	        <p className="text-sm leading-relaxed text-slate-700">
-	          Copy the link to share a restricted delegate session. Delegates can build a proposal for your review using only the approved SKUs tied to that link. Use “Revoke link” to disable it early.
-	        </p>
+	        </div>
+		        <p className="text-sm leading-relaxed text-slate-700">
+		          All link types created from your account appear here.
+		        </p>
 
         {patientLinksError && (
           <div className="glass-card squircle-md p-4 border border-red-200 bg-red-50/60">
@@ -8760,8 +8902,8 @@ export function Header({
 	        ) : patientLinks.length === 0 ? (
 	          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
 	            <div className="flex items-center justify-between gap-3">
-	              <p className="text-sm font-semibold text-slate-900">No delegate links yet.</p>
-	              <p className="text-sm text-slate-600">Create one above to get started.</p>
+		              <p className="text-sm font-semibold text-slate-900">No links yet.</p>
+		              <p className="text-sm text-slate-600">Create a link to get started.</p>
 	            </div>
 	          </div>
 	        ) : (
@@ -8794,7 +8936,17 @@ export function Header({
 		                        : (typeof link?.label === 'string' && link.label.trim())
 		                          ? link.label.trim()
 		                          : '';
-		              const label = patientReference || studyLabel || subjectLabel || 'Delegate link';
+			              const linkTypeRaw = [
+			                (link as any)?.linkType,
+			                (link as any)?.link_type,
+			                (link as any)?.type,
+			                (link as any)?.kind,
+			              ].find((value) => typeof value === 'string' && value.trim().length > 0);
+			              const normalizedLinkType = String(linkTypeRaw || '').trim().toLowerCase();
+			              const linkTypeLabel = normalizedLinkType.includes('brochure') ? 'Brochure' : 'Delegate';
+			              const LinkTypeIcon = linkTypeLabel === 'Brochure' ? FileText : Link2;
+			              const isDelegateLinkType = linkTypeLabel === 'Delegate';
+			              const label = patientReference || studyLabel || subjectLabel || `${linkTypeLabel} link`;
 		              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
 		              const markupPercentValueRaw =
 		                typeof (link as any)?.markupPercent === 'number'
@@ -8922,7 +9074,7 @@ export function Header({
 	              const reviewStatus = delegateReviewStatusRaw || proposalStatusRaw;
 	              const proposalStatus =
 	                reviewStatus || (delegateSharedAt || delegateOrderId ? 'pending' : '');
-	              const hasProposal = Boolean(reviewStatus || delegateSharedAt || delegateOrderId);
+	              const hasProposal = isDelegateLinkType && Boolean(reviewStatus || delegateSharedAt || delegateOrderId);
 		              const isRevoked = Boolean(revokedAt);
 		              const isUpdating = patientLinksUpdatingToken === token;
 		              const isDeleting = patientLinksDeletingToken === token;
@@ -8991,8 +9143,11 @@ export function Header({
 				                >
 			                  <div className="min-w-0 flex-1">
 				                    <div className="flex items-center gap-2">
-				                      <Link2 className="h-4 w-4 text-[rgb(11,6,121)] shrink-0" aria-hidden="true" />
-				                      <span className="font-semibold text-slate-900 truncate">{label}</span>
+					                      <LinkTypeIcon className="h-4 w-4 text-[rgb(11,6,121)] shrink-0" aria-hidden="true" />
+					                      <span className="font-semibold text-slate-900 truncate">{label}</span>
+                                  <Badge variant="outline" className="border-[rgba(11,6,121,0.25)] bg-white/70 text-[rgb(11,6,121)]">
+                                    {linkTypeLabel}
+                                  </Badge>
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
 		                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
@@ -9005,8 +9160,8 @@ export function Header({
 			                      <div>Open Count: {openCountValue}</div>
 			                      {usageLimitValue ? <div>Uses: {usageCountValue} / {usageLimitValue}</div> : <div>Uses: {usageCountValue}</div>}
 			                      {allowedProducts.length > 0 && <div>Allowed SKUs: {allowedProducts.join(', ')}</div>}
-			                      <div>Payment: {paymentMethodLabel}</div>
-			                      <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>
+			                      {isDelegateLinkType && <div>Payment: {paymentMethodLabel}</div>}
+			                      {isDelegateLinkType && <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>}
 			                      {statusRaw && <div>Status: {statusRaw.replace(/_/g, ' ')}</div>}
 			                      {hasProposal && (
 			                        <div className="font-semibold text-slate-700">
@@ -9215,7 +9370,8 @@ export function Header({
 			                        }}
 			                      />
 			                    )}
-			                    <details className="patient-link-settings-details mt-0 w-full rounded-xl bg-white/70 px-3 py-2">
+				                    {isDelegateLinkType && (
+				                    <details className="patient-link-settings-details mt-0 w-full rounded-xl bg-white/70 px-3 py-2">
 			                      <summary className="patient-link-settings-summary">
 			                        Payment settings (delegate)
 			                      </summary>
@@ -9289,7 +9445,8 @@ export function Header({
 	                          </Button>
 	                        </div>
 	                      </div>
-	                    </details>
+		                    </details>
+                            )}
 		                  </div>
 		                </div>
 		              );
@@ -9297,7 +9454,7 @@ export function Header({
 	          </div>
 	        )}
 	      </div>
-        </>
+        </div>
       )}
     </div>
   ) : null;

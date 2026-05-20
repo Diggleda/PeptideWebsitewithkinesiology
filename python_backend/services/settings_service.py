@@ -52,6 +52,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 _BETA_SERVICE_KEYS = {
     "shop",
     "patientLinks",
+    "brochureLinks",
     "crm",
     "forum",
     "research",

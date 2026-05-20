@@ -299,7 +299,7 @@ def _email_settings() -> Dict[str, Any]:
         except (TypeError, ValueError):
             return fallback
 
-    def _to_bool(value: Optional[str], fallback: bool) -> bool:
+    def _to_bool(value: Optional[str], fallback: Optional[bool]) -> Optional[bool]:
         if value is None:
             return fallback
         normalized = str(value).strip().lower()
@@ -309,13 +309,33 @@ def _email_settings() -> Dict[str, Any]:
             return True
         return fallback
 
+    def _secure_mode(value: Optional[str]) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized in ("ssl", "smtps", "1", "true", "yes", "on"):
+            return "ssl"
+        if normalized in ("tls", "starttls"):
+            return "starttls"
+        if normalized in ("0", "false", "no", "off", "none"):
+            return "none"
+        return ""
+
     smtp_host = os.environ.get("SMTP_HOST") or os.environ.get("EMAIL_HOST")
     smtp_user = os.environ.get("SMTP_USER") or os.environ.get("EMAIL_USER")
     smtp_pass = os.environ.get("SMTP_PASS") or os.environ.get("EMAIL_PASS")
     smtp_port = _to_int(os.environ.get("SMTP_PORT") or os.environ.get("EMAIL_PORT"), 587)
-    smtp_ssl = _to_bool(os.environ.get("SMTP_SSL") or os.environ.get("EMAIL_SSL"), False)
-    smtp_starttls_enabled = _to_bool(os.environ.get("SMTP_STARTTLS") or os.environ.get("EMAIL_STARTTLS"), True)
-    smtp_auth_enabled = _to_bool(os.environ.get("SMTP_AUTH") or os.environ.get("EMAIL_AUTH"), True)
+    secure_mode = _secure_mode(os.environ.get("SMTP_SECURE") or os.environ.get("EMAIL_SECURE"))
+    explicit_ssl = _to_bool(os.environ.get("SMTP_SSL") or os.environ.get("EMAIL_SSL"), None)
+    smtp_ssl = bool(explicit_ssl) if explicit_ssl is not None else secure_mode == "ssl"
+    explicit_starttls = _to_bool(os.environ.get("SMTP_STARTTLS") or os.environ.get("EMAIL_STARTTLS"), None)
+    if explicit_starttls is not None:
+        smtp_starttls_enabled = bool(explicit_starttls)
+    elif secure_mode == "starttls":
+        smtp_starttls_enabled = True
+    elif secure_mode == "none":
+        smtp_starttls_enabled = False
+    else:
+        smtp_starttls_enabled = not smtp_ssl
+    smtp_auth_enabled = bool(_to_bool(os.environ.get("SMTP_AUTH") or os.environ.get("EMAIL_AUTH"), True))
 
     settings = {
         "from": _normalize_from_brand(os.environ.get("MAIL_FROM")),
