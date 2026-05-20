@@ -1059,6 +1059,7 @@ def help_endpoint():
                 "/api/contact",
                 "/api/integrations/google-sheets/sales-reps",
                 "/api/integrations/google-sheets/the-peptide-forum",
+                "/api/integrations/google-sheets/peptide-products",
                 "/api/help",
                 "/api/news/peptides",
                 "/api/health",

@@ -45,6 +45,16 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("user_id VARCHAR(64) NOT NULL", schema_sql)
         self.assertIn("KEY idx_email_verification_tokens_expires (expires_at)", schema_sql)
 
+    def test_product_brochure_info_schema_exists(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS product_brochure_info", schema_sql)
+        self.assertIn("product_name VARCHAR(255) NOT NULL", schema_sql)
+        self.assertIn("product_sku VARCHAR(128) NOT NULL", schema_sql)
+        self.assertIn("product_description LONGTEXT NULL", schema_sql)
+        self.assertIn("product_information LONGTEXT NULL", schema_sql)
+        self.assertIn("UNIQUE KEY uq_product_brochure_info_sku (product_sku)", schema_sql)
+
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []
 

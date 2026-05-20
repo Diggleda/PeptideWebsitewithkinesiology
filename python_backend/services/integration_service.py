@@ -10,6 +10,7 @@ from ..repositories import sales_rep_repository, user_repository
 from ..storage import seamless_store
 from ..utils.http import service_error as _service_error
 from . import get_config
+from . import peptide_product_information_service
 from . import peptide_forum_service
 
 
@@ -152,6 +153,35 @@ def sync_peptide_forum(payload: Dict, headers: Dict[str, str]) -> Dict:
 
     items: List[Dict] = payload.get("items") if isinstance(payload.get("items"), list) else []
     result = peptide_forum_service.replace_from_webhook(items)
+    return {"success": True, **result}
+
+
+def sync_peptide_products(payload: Dict, headers: Dict[str, str]) -> Dict | tuple[Dict, int]:
+    config = get_config()
+    secret = config.integrations.get("google_sheets_secret")
+    if secret:
+        header_secret = headers.get("x-webhook-signature") or headers.get("authorization", "")
+        header_secret = re.sub(r"^(Bearer|Basic)\s+", "", header_secret, flags=re.I)
+        if header_secret != secret:
+            raise _service_error("Unauthorized webhook request", 401)
+
+    if not isinstance(payload.get("products"), list):
+        return {
+            "success": False,
+            "ok": False,
+            "error": "MISSING_PRODUCTS_ARRAY",
+            "received": 0,
+            "stored": 0,
+            "skipped": 0,
+            "errors": ["Missing products array"],
+            "results": [],
+        }, 422
+
+    products: List[Dict] = payload.get("products")
+    full_sync = bool(payload.get("fullSync", True))
+    result = peptide_product_information_service.replace_from_webhook(products, full_sync=full_sync)
+    if not result.get("ok", True):
+        return {"success": False, **result}, 422
     return {"success": True, **result}
 
 

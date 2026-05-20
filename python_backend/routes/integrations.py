@@ -29,6 +29,18 @@ def sync_peptide_forum():
     return handle_action(lambda: integration_service.sync_peptide_forum(payload, headers))
 
 
+@blueprint.post("/google-sheets/peptide-products")
+@blueprint.post("/google-sheets/peptide-products/")
+@blueprint.post("/google-sheets/peptide-products.php")
+@blueprint.post("/google-sheets/peptide-products.php/")
+@blueprint.post("/google-sheets/peptide-products/products.php")
+@blueprint.post("/google-sheets/peptide-products/products.php/")
+def sync_peptide_products():
+    payload = request.get_json(force=True, silent=True) or {}
+    headers = {key.lower(): value for key, value in request.headers.items()}
+    return handle_action(lambda: integration_service.sync_peptide_products(payload, headers))
+
+
 @blueprint.route("/seamless/raw", methods=["OPTIONS"])
 @blueprint.route("/seamless/raw/", methods=["OPTIONS"])
 def get_seamless_raw_options():
