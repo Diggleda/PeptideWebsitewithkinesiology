@@ -8199,8 +8199,8 @@ export function Header({
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-      <div className="order-1 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p className="max-w-3xl text-sm text-slate-600">
+      <div className="order-1 space-y-3">
+        <p className="text-sm text-slate-600">
           This tool is in early access. Please{' '}
           <button
             type="button"
@@ -8219,18 +8219,20 @@ export function Header({
           </button>
           {' '}any issues you encounter, and we will prioritize fixing them (usually within a day or two).
         </p>
-        <Button
-          type="button"
-          onClick={() => {
-            setCreateLinkDialogMode('select');
-            setCreateLinkDialogOpen(true);
-          }}
-          disabled={!hasCreateLinkTypeOptions}
-          className="header-home-button inline-flex h-11 min-h-[44px] w-full flex-none items-center justify-center gap-2 squircle-sm bg-white px-5 text-slate-900 sm:w-auto"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Create a link
-        </Button>
+        <div className="flex w-full justify-end">
+          <Button
+            type="button"
+            onClick={() => {
+              setCreateLinkDialogMode('select');
+              setCreateLinkDialogOpen(true);
+            }}
+            disabled={!hasCreateLinkTypeOptions}
+            className="header-home-button inline-flex h-11 min-h-[44px] w-full flex-none items-center justify-center gap-2 squircle-sm bg-white px-5 text-slate-900 sm:w-auto"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Create a link
+          </Button>
+        </div>
       </div>
       <Dialog
         open={createLinkDialogOpen}
@@ -8241,7 +8243,16 @@ export function Header({
           }
         }}
       >
-        <DialogContent className="max-w-[min(920px,calc(100vw-2rem))]">
+        <DialogContent
+          className="z-[14001] max-w-[min(920px,calc(100vw-2rem))]"
+          overlayClassName="z-[14000] bg-slate-950/45"
+          containerClassName="fixed inset-x-0 bottom-0 z-[14000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
+          containerStyle={{
+            top: "var(--modal-header-offset, 0px)",
+            left: 0,
+            right: 0,
+          }}
+        >
           {createLinkDialogMode === 'select' ? (
             <div className="space-y-5">
               <DialogHeader className="pr-10 text-left">

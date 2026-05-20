@@ -15,6 +15,12 @@ export const API_BASE_URL = (() => {
     if (import.meta.env.DEV) {
       return 'http://localhost:3001/api';
     }
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname.toLowerCase();
+      if (hostname === 'trufusionlabs.com' || hostname === 'www.trufusionlabs.com') {
+        return 'https://api.trufusionlabs.com/api';
+      }
+    }
     // In production, default to relative same-origin `/api` so the bundle stays host-agnostic.
     return '/api';
   }

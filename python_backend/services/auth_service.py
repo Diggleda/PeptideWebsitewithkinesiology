@@ -1927,22 +1927,34 @@ def _dispatch_woo_mailer_password_reset(email: str, reset_url: str, display_name
         return False
 
     if response.status_code >= 500:
+        body_snippet = ""
+        try:
+            body_snippet = (response.text or "")[:250]
+        except Exception:
+            body_snippet = ""
         logger.warning(
             "Woo mailer password reset returned server error",
             extra={
                 "status": response.status_code,
                 "contentType": response.headers.get("Content-Type", ""),
                 "email": email,
+                "bodyText": body_snippet,
             },
         )
         return False
     if response.status_code >= 400:
+        body_snippet = ""
+        try:
+            body_snippet = (response.text or "")[:250]
+        except Exception:
+            body_snippet = ""
         logger.warning(
             "Woo mailer password reset returned client error",
             extra={
                 "status": response.status_code,
                 "contentType": response.headers.get("Content-Type", ""),
                 "email": email,
+                "bodyText": body_snippet,
             },
         )
         return False
