@@ -86,6 +86,33 @@ class TestPresenceService(unittest.TestCase):
         finally:
             presence_service.clear_user(user_id)
 
+    def test_record_ping_can_force_new_session_online_since(self):
+        try:
+            from python_backend.services import presence_service
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"python deps not installed: {exc}")
+
+        user_id = "u-new-session"
+        presence_service.clear_user(user_id)
+        try:
+            with patch.dict("os.environ", {"USER_PRESENCE_ONLINE_SECONDS": "3600"}):
+                with patch.object(presence_service.time, "time", return_value=1000.0):
+                    first = presence_service.record_ping(user_id, kind="heartbeat")
+                with patch.object(presence_service.time, "time", return_value=1100.0):
+                    second = presence_service.record_ping(
+                        user_id,
+                        kind="interaction",
+                        is_idle=False,
+                        reset_online_since=True,
+                    )
+
+            self.assertEqual(first.get("onlineSinceAt"), 1000.0)
+            self.assertEqual(second.get("onlineSinceAt"), 1100.0)
+            self.assertEqual(second.get("lastInteractionAt"), 1100.0)
+            self.assertFalse(second.get("isIdle"))
+        finally:
+            presence_service.clear_user(user_id)
+
     def test_derive_online_state_prefers_recent_local_presence(self):
         try:
             from python_backend.services import presence_service

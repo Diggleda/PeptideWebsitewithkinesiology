@@ -590,14 +590,14 @@ export function LegalFooter({
                   <nav className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
                     <button
                       type="button"
-                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
+                      className="legal-footer-link-button cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
                       onClick={() => handleLinkClick('contact')}
                     >
                       Contact
                     </button>
                     <button
                       type="button"
-                      className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
+                      className="legal-footer-link-button cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
                       onClick={() => handleLinkClick('returns')}
                     >
                       Returns & Refunds
@@ -606,7 +606,7 @@ export function LegalFooter({
                       <button
                         key={link.key}
                         type="button"
-                        className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
+                        className="legal-footer-link-button cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
                         onClick={() => handleLinkClick(link.key)}
                       >
                         {link.label}
@@ -671,14 +671,14 @@ export function LegalFooter({
               <nav className="mt-2 mb-2 flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-slate-900">
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
+                  className="legal-footer-link-button cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
                   onClick={() => handleLinkClick('contact')}
                 >
                   Contact
                 </button>
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
+                  className="legal-footer-link-button cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
                   onClick={() => handleLinkClick('returns')}
                 >
                   Returns & Refunds
@@ -687,7 +687,7 @@ export function LegalFooter({
                   <button
                     key={link.key}
                     type="button"
-                    className="cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
+                    className="legal-footer-link-button cursor-pointer rounded-full px-2.5 py-1 text-slate-900 sm:px-3 sm:py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)] btn-hover-lighter"
                     onClick={() => handleLinkClick(link.key)}
                   >
                     {link.label}

@@ -11,7 +11,7 @@ from ..services import referral_service, auth_service, sales_prospect_quote_serv
 from ..utils.http import handle_action
 
 blueprint = Blueprint("referrals", __name__, url_prefix="/api/referrals")
-_DASHBOARD_SCOPE_ALL_ROLES = ("admin", "sales_lead", "saleslead")
+_DASHBOARD_SCOPE_ALL_ROLES = ("admin",)
 
 
 def _normalize_role(value) -> str:
@@ -24,6 +24,17 @@ def _is_sales_rep_like_role(value) -> bool:
 
 def _can_scope_all_dashboard(*roles) -> bool:
     return any(_normalize_role(role) in _DASHBOARD_SCOPE_ALL_ROLES for role in roles)
+
+
+def _own_sales_rep_id(user) -> str:
+    if not isinstance(user, dict):
+        return ""
+    return str(
+        user.get("salesRepId")
+        or user.get("sales_rep_id")
+        or user.get("id")
+        or ""
+    ).strip()
 
 
 def _sanitize_string(value, max_length=190):
@@ -305,10 +316,15 @@ def active_physicians_csv_data():
         sales_rep_role = _normalize_role(
             current_sales_rep_record.get("role") if isinstance(current_sales_rep_record, dict) else None
         )
-        if not _can_scope_all_dashboard(token_role, role, sales_rep_role):
-            raise _error("SALES_LEAD_ACCESS_REQUIRED", 403)
+        can_scope_all = _can_scope_all_dashboard(token_role, role, sales_rep_role)
+        target_sales_rep_id = _own_sales_rep_id(user)
+        service_token_role = "admin" if can_scope_all else token_role
 
-        data = referral_service.get_active_physicians_csv_data()
+        data = referral_service.get_active_physicians_csv_data(
+            target_sales_rep_id,
+            scope_all=can_scope_all,
+            token_role=service_token_role,
+        )
         payload = {
             "version": "python_backend",
             "networkUsers": data.get("networkUsers") if isinstance(data, dict) else [],
@@ -325,7 +341,8 @@ def active_physicians_csv_data():
                     "tokenRole": token_role or None,
                     "userRole": role or None,
                     "salesRepRole": sales_rep_role or None,
-                    "scopeAllApplied": True,
+                    "targetSalesRepId": target_sales_rep_id or None,
+                    "scopeAllApplied": bool(can_scope_all),
                     "counts": payload.get("counts") or {},
                 }
             }
@@ -342,7 +359,6 @@ def admin_dashboard():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        requested_sales_rep_id = (request.args.get("salesRepId") or user.get("salesRepId") or user.get("id") or "").strip()
         scope_all = (request.args.get("scope") or "").lower() == "all"
         token_role = _normalize_role(g.current_user.get("role"))
         role = _normalize_role(user.get("role"))
@@ -354,6 +370,9 @@ def admin_dashboard():
             current_sales_rep_record.get("role") if isinstance(current_sales_rep_record, dict) else None
         )
         can_scope_all = _can_scope_all_dashboard(token_role, role, sales_rep_role)
+        own_sales_rep_id = _own_sales_rep_id(user)
+        requested_sales_rep_id_raw = str(request.args.get("salesRepId") or "").strip()
+        requested_sales_rep_id = requested_sales_rep_id_raw if can_scope_all else ""
         raw_include = str(request.args.get("include") or "").strip().lower()
         includes = {part.strip() for part in raw_include.split(",") if part.strip()}
         request_context = str(request.args.get("context") or "").strip().lower()
@@ -362,7 +381,6 @@ def admin_dashboard():
             str(request.args.get("debug") or "").strip().lower()
             in ("active_physicians", "active-physicians", "activephysicians")
         )
-        requested_sales_rep_id_raw = str(request.args.get("salesRepId") or "").strip()
         own_sales_rep_ids = {
             str(user.get("id") or "").strip(),
             str(user.get("salesRepId") or "").strip(),
@@ -382,8 +400,10 @@ def admin_dashboard():
                 return True
             return any(name in includes for name in names)
 
-        # Admins can view all referrals; sales reps stay scoped to their own assignments.
-        target_sales_rep_id = user["id"] if not scope_all and not requested_sales_rep_id else requested_sales_rep_id or user["id"]
+        # Admins can view all/override referrals; reps, leads, and partners stay scoped to their own assignments.
+        scope_all_applied = bool(scope_all and can_scope_all)
+        target_sales_rep_id = requested_sales_rep_id or own_sales_rep_id or str(user.get("id") or "").strip()
+        service_token_role = "admin" if scope_all_applied else token_role
 
         payload = {"version": "python_backend"}
 
@@ -391,8 +411,8 @@ def admin_dashboard():
             try:
                 payload["referrals"] = referral_service.list_referrals_for_sales_rep(
                     target_sales_rep_id,
-                    scope_all=scope_all and can_scope_all,
-                    token_role=token_role,
+                    scope_all=scope_all_applied,
+                    token_role=service_token_role,
                     include_house_contact_forms=include_house_contact_forms,
                     strict_load=strict_active_prospects_load,
                 )
@@ -404,14 +424,14 @@ def admin_dashboard():
         if wants("codes"):
             payload["codes"] = (
                 referral_code_repository.get_all()
-                if scope_all and can_scope_all
+                if scope_all_applied
                 else [code for code in referral_code_repository.get_all() if str(code.get("salesRepId")) == str(target_sales_rep_id)]
             )
 
         if wants("users", "accounts", "doctors"):
             payload["users"] = referral_service.list_accounts_for_sales_rep(
                 target_sales_rep_id,
-                scope_all=scope_all and can_scope_all,
+                scope_all=scope_all_applied,
             )
 
         if wants("salesreps", "sales_reps", "salesReps"):
@@ -463,7 +483,7 @@ def admin_dashboard():
                     "requestedSalesRepId": requested_sales_rep_id or None,
                     "targetSalesRepId": target_sales_rep_id or None,
                     "scopeAllRequested": scope_all,
-                    "scopeAllApplied": bool(scope_all and can_scope_all),
+                    "scopeAllApplied": scope_all_applied,
                     "canScopeAll": bool(can_scope_all),
                     "tokenRole": token_role or None,
                     "userRole": role or None,

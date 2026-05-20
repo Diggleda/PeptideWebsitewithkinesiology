@@ -10549,6 +10549,73 @@ function MainApp() {
     lastLoginAt?: string | null;
         summaryOnly?: boolean;
 		  } | null>(null);
+  const [externalDetailEditConfirm, setExternalDetailEditConfirm] = useState<{
+    targetName: string;
+    fieldLabel: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+  const resolveExternalDetailEditConfirm = useCallback((confirmed: boolean) => {
+    setExternalDetailEditConfirm((current) => {
+      current?.resolve(confirmed);
+      return null;
+    });
+  }, []);
+  const requestExternalDetailEditConfirmation = useCallback(
+    ({
+      targetId,
+      targetEmail,
+      targetName,
+      fieldLabel,
+    }: {
+      targetId?: string | number | null;
+      targetEmail?: string | null;
+      targetName?: string | null;
+      fieldLabel?: string;
+    }) => {
+      const normalizeIdentity = (value: unknown) =>
+        String(value ?? "").trim().toLowerCase();
+      const normalizedTargetId = normalizeIdentity(targetId);
+      const normalizedCurrentUserId = normalizeIdentity(user?.id);
+      const normalizedTargetEmail = normalizeIdentity(targetEmail);
+      const normalizedCurrentUserEmail = normalizeIdentity(user?.email);
+      const isOwnDetails =
+        (Boolean(normalizedTargetId) &&
+          Boolean(normalizedCurrentUserId) &&
+          normalizedTargetId === normalizedCurrentUserId) ||
+        (Boolean(normalizedTargetEmail) &&
+          Boolean(normalizedCurrentUserEmail) &&
+          normalizedTargetEmail === normalizedCurrentUserEmail);
+
+      if (isOwnDetails) {
+        return Promise.resolve(true);
+      }
+
+      return new Promise<boolean>((resolve) => {
+        setExternalDetailEditConfirm((current) => {
+          current?.resolve(false);
+          return {
+            targetName: String(targetName || targetEmail || "this person").trim() || "this person",
+            fieldLabel: String(fieldLabel || "details").trim() || "details",
+            resolve,
+          };
+        });
+      });
+    },
+    [user?.email, user?.id],
+  );
+  useEffect(() => {
+    if (!externalDetailEditConfirm) {
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        resolveExternalDetailEditConfirm(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [externalDetailEditConfirm, resolveExternalDetailEditConfirm]);
       const canOpenMaintenanceViewForSalesDoctorDetail = useMemo(() => {
         const doctorId = String(salesDoctorDetail?.doctorId || "").trim();
         if (
@@ -19739,35 +19806,52 @@ function MainApp() {
 	    adminLiveUsersRef.current = adminLiveUsers;
 	  }, [adminLiveUsers]);
 
-  const scopedLiveClients = useMemo(() => {
-    const entries = Array.isArray(liveClients) ? liveClients : [];
-    if (!user || isAdmin(user.role) || (!isRep(user.role) && !isSalesLead(user.role))) {
-      return entries;
+  const currentSessionStartedAtIso = useMemo(() => {
+    const userLastLoginAt =
+      typeof (user as any)?.lastLoginAt === "string" &&
+      (user as any).lastLoginAt.trim().length > 0
+        ? (user as any).lastLoginAt.trim()
+        : null;
+    if (typeof window === "undefined") {
+      return userLastLoginAt;
     }
+    try {
+      const raw = window.sessionStorage.getItem("trufusion_session_started_at_v1");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return new Date(parsed).toISOString();
+      }
+    } catch {
+      // ignore
+    }
+    return userLastLoginAt;
+  }, [user?.id, (user as any)?.lastLoginAt]);
 
-    const currentUserId = String(user.id || "").trim();
-    const currentUserEmail = String(user.email || "").trim().toLowerCase();
-    const alreadyIncluded = entries.some((entry: any) => {
+  const isCurrentUserPresenceEntry = useCallback(
+    (entry: any) => {
+      const currentUserId = String(user?.id || "").trim();
+      const currentUserEmail = String(user?.email || "").trim().toLowerCase();
       const entryId = String(entry?.id || "").trim();
       const entryEmail = String(entry?.email || "").trim().toLowerCase();
       return (
-        (currentUserId && entryId && currentUserId === entryId) ||
-        (currentUserEmail && entryEmail && currentUserEmail === entryEmail)
+        Boolean(currentUserId && entryId && currentUserId === entryId) ||
+        Boolean(currentUserEmail && entryEmail && currentUserEmail === entryEmail)
       );
-    });
-    if (alreadyIncluded) {
-      return entries;
-    }
+    },
+    [user?.email, user?.id],
+  );
 
+  const currentUserLivePresenceEntry = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const currentUserId = String(user.id || "").trim();
+    const currentUserEmail = String(user.email || "").trim().toLowerCase();
     const lastInteractionAt =
       Number.isFinite(lastActivityAtRef.current) && lastActivityAtRef.current > 0
         ? new Date(lastActivityAtRef.current).toISOString()
         : null;
-    const selfOnlineSinceAt =
-      typeof (user as any)?.lastLoginAt === "string" && (user as any).lastLoginAt.trim().length > 0
-        ? (user as any).lastLoginAt.trim()
-        : null;
-    const selfEntry = {
+    return {
       id: currentUserId || `self:${currentUserEmail || normalizeRole(user.role) || "user"}`,
       name: String(user.name || user.email || "You").trim() || "You",
       email: user.email || null,
@@ -19800,19 +19884,18 @@ function MainApp() {
       isOnline: true,
       isIdle,
       idleMinutes: null,
-      onlineSinceAt: selfOnlineSinceAt,
+      onlineSinceAt: currentSessionStartedAtIso,
       lastSeenAt: lastInteractionAt,
       lastInteractionAt,
-      lastLoginAt: selfOnlineSinceAt,
+      lastLoginAt: currentSessionStartedAtIso,
       isPartner: coerceOptionalBoolean((user as any)?.isPartner ?? (user as any)?.is_partner),
       allowedRetail: currentSalesActorAllowedRetail,
     };
-
-    return [selfEntry, ...entries];
   }, [
     currentSalesActorAllowedRetail,
+    currentSessionStartedAtIso,
     isIdle,
-    liveClients,
+    user,
     user?.bio,
     user?.email,
     user?.greaterArea,
@@ -19827,6 +19910,25 @@ function MainApp() {
     user?.profileImageUrl,
     user?.role,
     user?.studyFocus,
+  ]);
+
+  const scopedLiveClients = useMemo(() => {
+    const entries = Array.isArray(liveClients) ? liveClients : [];
+    if (!user || isAdmin(user.role) || (!isRep(user.role) && !isSalesLead(user.role))) {
+      return entries;
+    }
+    if (!currentUserLivePresenceEntry) {
+      return entries;
+    }
+    return [
+      currentUserLivePresenceEntry,
+      ...entries.filter((entry: any) => !isCurrentUserPresenceEntry(entry)),
+    ];
+  }, [
+    currentUserLivePresenceEntry,
+    isCurrentUserPresenceEntry,
+    liveClients,
+    user?.role,
   ]);
 
   const hideRepViewerSalesActorCommerceSections = useMemo(() => {
@@ -34895,21 +34997,21 @@ function MainApp() {
                       Loading users…
                     </div>
                   ) : (() => {
-                    const visibleUsers = (adminLiveUsers || []).filter((entry: any) => {
+                    const sourceVisibleUsers = (adminLiveUsers || []).filter((entry: any) => {
                       const simulated = (entry as any)?.isSimulated === true;
                       const id = String((entry as any)?.id || "");
                       return !simulated && !id.startsWith("pseudo-live-");
                     });
+                    const visibleUsers = currentUserLivePresenceEntry
+                      ? [
+                          currentUserLivePresenceEntry,
+                          ...sourceVisibleUsers.filter(
+                            (entry: any) => !isCurrentUserPresenceEntry(entry),
+                          ),
+                        ]
+                      : sourceVisibleUsers;
 
-                    const isEntryCurrentUser = (entry: any) => {
-                      return (
-                        (user?.id && entry?.id === user.id) ||
-                        (user?.email &&
-                          entry?.email &&
-                          String(user.email).toLowerCase() ===
-                            String(entry.email).toLowerCase())
-                      );
-                    };
+                    const isEntryCurrentUser = isCurrentUserPresenceEntry;
 
                     const getEntryIdle = (entry: any) => {
                       const entryIdleRaw = entry?.isIdle;
@@ -39570,18 +39672,12 @@ function MainApp() {
       if (!product) continue;
       const productKey = String(product.id || product.wooId || item.id || '').trim();
       if (productKey) productKeys.add(productKey.toUpperCase());
-      addToken(product.id);
-      if (product.wooId !== undefined && product.wooId !== null) {
-        addToken(product.wooId);
-        addToken(`woo-${product.wooId}`);
+      const selectedSku = String(item.variant?.sku || product.sku || '').trim();
+      if (selectedSku) {
+        addToken(selectedSku);
+        continue;
       }
-      addToken(product.sku);
-      addToken(item.variant?.id);
-      if (item.variant?.wooId !== undefined && item.variant?.wooId !== null) {
-        addToken(item.variant.wooId);
-        addToken(`woo-${item.variant.wooId}`);
-      }
-      addToken(item.variant?.sku);
+      addToken(product.wooId ?? product.id);
     }
 
     return {
@@ -39971,8 +40067,11 @@ function MainApp() {
 				              onBuyOrderAgain={handleBuyOrderAgain}
 				              onCancelOrder={handleCancelOrder}
 				              referralCodes={referralCodesForHeader}
-				              catalogLoading={catalogLoading}
+                      catalogLoading={catalogLoading}
                       catalogProducts={catalogProducts}
+                      onEnsureCatalogProductMedia={(product) =>
+                        ensureCatalogProductHasVariants(product as Product, { background: true })
+                      }
                       apiHealthNetworkQuality={apiHealthNetworkQuality}
                       apiHealthNetworkReason={apiHealthNetworkReason}
 				              onLoadDelegateProposal={handleLoadDelegateProposalIntoCart}
@@ -40125,7 +40224,7 @@ function MainApp() {
                               <div className="physician-network-card__divider" aria-hidden="true" />
                               <p
                                 className="physician-network-card__intro-secondary"
-                                style={{ color: "rgb(11, 6, 121)" }}
+                                style={{ color: "#ffffff" }}
                               >
                                 Connect with your peers, build relationships, and collaborate on research.
                               </p>
@@ -42518,6 +42617,13 @@ function MainApp() {
               normalizeRole(salesDoctorDetail.role || ""),
             );
           })();
+          const requestSalesDoctorDetailEdit = (fieldLabel: string) =>
+            requestExternalDetailEditConfirmation({
+              targetId: salesDoctorDetail.doctorId,
+              targetEmail: salesDoctorDetail.email || null,
+              targetName: salesDoctorDetail.name,
+              fieldLabel,
+            });
           const focusSalesDoctorDetailWindow = (
             event?: React.PointerEvent<HTMLElement>,
           ) => {
@@ -43483,6 +43589,9 @@ function MainApp() {
                                     row.value,
                                     "email",
                                   )}
+                                  onEditRequest={() =>
+                                    requestSalesDoctorDetailEdit("email details")
+                                  }
                                   onSave={
                                     canEditLeadContactLists
                                       ? async (nextValue) => {
@@ -43529,7 +43638,13 @@ function MainApp() {
 	                                <div className="mb-1 pb-1 pt-0.5">
                                   <button
                                     type="button"
-                                    onClick={() => setSalesDoctorAddingEmailRow(true)}
+                                    onClick={() => {
+                                      void (async () => {
+                                        if (await requestSalesDoctorDetailEdit("email details")) {
+                                          setSalesDoctorAddingEmailRow(true);
+                                        }
+                                      })();
+                                    }}
                                     disabled={salesDoctorAddingEmailRow}
                                     className={clsx(
                                       "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
@@ -43570,6 +43685,9 @@ function MainApp() {
                                       row.value,
                                       "phone",
                                     )}
+                                    onEditRequest={() =>
+                                      requestSalesDoctorDetailEdit("phone details")
+                                    }
                                     onSave={
                                       canEditRow
                                         ? async (nextValue) => {
@@ -43623,7 +43741,13 @@ function MainApp() {
 		                                <div className="mb-1 pb-4 pt-0.5">
                                   <button
                                     type="button"
-                                    onClick={() => setSalesDoctorAddingPhoneRow(true)}
+                                    onClick={() => {
+                                      void (async () => {
+                                        if (await requestSalesDoctorDetailEdit("phone details")) {
+                                          setSalesDoctorAddingPhoneRow(true);
+                                        }
+                                      })();
+                                    }}
                                     disabled={salesDoctorAddingPhoneRow}
                                     className={clsx(
                                       "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
@@ -43706,6 +43830,9 @@ function MainApp() {
                                 contentClassName="w-max min-w-max"
                                 displayClassName="w-max min-w-max"
                                 displayValueClassName="whitespace-nowrap"
+                                onEditRequest={() =>
+                                  requestSalesDoctorDetailEdit("office address")
+                                }
                                 onSave={
                                   canEditAddress
                                     ? async (nextValue) => {
@@ -45185,6 +45312,87 @@ function MainApp() {
         proposalMode={isDelegateMode}
         proposalActionsDisabled={isDelegateMode && !delegateCanSubmitProposal}
       />
+      {externalDetailEditConfirm && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              role="presentation"
+              className="fixed inset-0 flex items-center justify-center overflow-y-auto px-3 py-6 sm:px-4 sm:py-8"
+              style={{
+                zIndex: 2147483647,
+                isolation: "isolate",
+                pointerEvents: "auto",
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  resolveExternalDetailEditConfirm(false);
+                }
+              }}
+            >
+              <div
+                className="absolute inset-0"
+                aria-hidden="true"
+                style={{
+                  zIndex: 0,
+                  backgroundColor: "rgba(4, 14, 21, 0.72)",
+                  backdropFilter: "blur(16px) saturate(1.35)",
+                  WebkitBackdropFilter: "blur(16px) saturate(1.35)",
+                }}
+                onClick={() => resolveExternalDetailEditConfirm(false)}
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="external-detail-edit-confirm-title"
+                aria-describedby="external-detail-edit-confirm-description"
+                className="external-detail-edit-confirm-dialog relative z-[1] flex flex-col gap-4 p-6 text-slate-900 focus:outline-none"
+                style={{
+                  width: "min(520px, calc(100vw - 2rem))",
+                  maxWidth: "calc(100vw - 2rem)",
+                  backgroundColor: "rgb(245, 251, 255)",
+                  border: "3px solid rgba(11, 6, 121, 0.72)",
+                  borderRadius: "22px",
+                  boxShadow: "0 28px 80px -24px rgba(7, 27, 27, 0.72)",
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="space-y-2">
+                  <h2
+                    id="external-detail-edit-confirm-title"
+                    className="text-lg font-semibold leading-6 text-slate-900"
+                  >
+                    Edit another person's details?
+                  </h2>
+                  <p
+                    id="external-detail-edit-confirm-description"
+                    className="text-sm leading-6 text-slate-600"
+                  >
+                    {`You are about to edit ${externalDetailEditConfirm.fieldLabel} for ${externalDetailEditConfirm.targetName}. Proceed only if you intend to update this person's record.`}
+                  </p>
+                </div>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-slate-300 bg-white text-slate-900"
+                    onClick={() => resolveExternalDetailEditConfirm(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    className="header-home-button squircle-sm bg-white text-slate-900"
+                    onClick={() => resolveExternalDetailEditConfirm(true)}
+                  >
+                    Proceed
+                  </Button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -45207,6 +45415,7 @@ function InlineEditableValueRow({
   contentClassName,
   scrollableDisplay = false,
   editorClassName,
+  onEditRequest,
   onSave,
   onCancel,
 }: {
@@ -45227,12 +45436,14 @@ function InlineEditableValueRow({
   contentClassName?: string;
   scrollableDisplay?: boolean;
   editorClassName?: string;
+  onEditRequest?: () => Promise<boolean> | boolean;
   onSave?: (next: string) => Promise<void> | void;
   onCancel?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [next, setNext] = useState(value);
   const [saving, setSaving] = useState(false);
+  const [requestingEdit, setRequestingEdit] = useState(false);
 
   useEffect(() => {
     setNext(value);
@@ -45264,6 +45475,22 @@ function InlineEditableValueRow({
       setSaving(false);
     }
   }, [editable, next, onSave, saving]);
+  const beginEditing = useCallback(async () => {
+    if (!editable || requestingEdit) {
+      return;
+    }
+    setRequestingEdit(true);
+    try {
+      const shouldEdit = onEditRequest ? await onEditRequest() : true;
+      if (shouldEdit) {
+        setEditing(true);
+      }
+    } catch {
+      // Leave the row read-only if the confirmation flow cannot complete.
+    } finally {
+      setRequestingEdit(false);
+    }
+  }, [editable, onEditRequest, requestingEdit]);
   const saveButtonClassName = "header-home-button squircle-sm bg-white text-slate-900";
 
   if (scrollableDisplay) {
@@ -45346,7 +45573,8 @@ function InlineEditableValueRow({
                   <button
                     type="button"
                     className={clsx("inline-edit-button", editing && "is-active")}
-                    onClick={() => setEditing(true)}
+                    onClick={() => void beginEditing()}
+                    disabled={requestingEdit}
                     aria-label={`Edit ${label}`}
                     title={`Edit ${label}`}
                   >
@@ -45466,7 +45694,8 @@ function InlineEditableValueRow({
                   <button
                     type="button"
                     className={clsx("inline-edit-button", editing && "is-active")}
-                    onClick={() => setEditing(true)}
+                    onClick={() => void beginEditing()}
+                    disabled={requestingEdit}
                     aria-label={`Edit ${label}`}
                     title={`Edit ${label}`}
                   >
@@ -45492,7 +45721,8 @@ function InlineEditableValueRow({
                 <button
                   type="button"
                   className={clsx("inline-edit-button", editing && "is-active")}
-                  onClick={() => setEditing(true)}
+                  onClick={() => void beginEditing()}
+                  disabled={requestingEdit}
                   aria-label={`Edit ${label}`}
                   title={`Edit ${label}`}
                 >

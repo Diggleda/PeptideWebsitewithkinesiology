@@ -12141,6 +12141,10 @@ body.non-login-bg.physician-portal-bg:not([data-delegate-theme="true"]) {
   color: var(--theme-accent) !important;
 }
 
+.dev-theme-root .post-login-content-shell .physician-network-card .physician-network-card__intro p.physician-network-card__intro-secondary {
+  color: #ffffff !important;
+}
+
 .dev-theme-root.theme-biotech :is(.app-header-blur, [data-app-header]) {
   background: rgba(255, 255, 255, 0.69) !important;
   background-color: rgba(255, 255, 255, 0.69) !important;
@@ -15352,10 +15356,19 @@ body:not([data-delegate-theme="true"]) :is(
   button.glass-brand-subtle,
   button.glass,
   button.glass-card
-):not([role="switch"]):not(.admin-dashboard-link-button):not(.header-home-button--clear):not(.checkout-quantity-button):not(.delegate-header-preview-search-button):not(.delegate-product-picker-trigger):not(.landing-login-container button):not(.landing-create-account-container button) {
+):not([role="switch"]):not(.admin-dashboard-link-button):not(.header-home-button--clear):not(.checkout-quantity-button):not(.delegate-header-preview-search-button):not(.delegate-product-picker-trigger):not(.landing-login-container button):not(.landing-create-account-container button):not(.legal-footer-link-button) {
   border-style: solid !important;
   border-width: 2px !important;
   border-color: rgb(11, 6, 121) !important;
+}
+
+button.legal-footer-link-button,
+body:not([data-delegate-theme="true"]) button.legal-footer-link-button.btn-hover-lighter {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
+  background: transparent;
+  box-shadow: none;
 }
 
 .checkout-quantity-button,

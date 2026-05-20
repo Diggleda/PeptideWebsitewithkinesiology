@@ -131,6 +131,7 @@ def record_ping(
     *,
     kind: str = "heartbeat",
     is_idle: Optional[bool] = None,
+    reset_online_since: bool = False,
 ) -> Dict[str, object]:
     uid = str(user_id or "").strip()
     if not uid:
@@ -141,7 +142,7 @@ def record_ping(
         entry = dict(_PRESENCE.get(uid) or {})
         previous_heartbeat = _coerce_epoch(entry.get("lastHeartbeatAt"))
         online_since = _coerce_epoch(entry.get("onlineSinceAt"))
-        if not is_recent_epoch(
+        if reset_online_since or not is_recent_epoch(
             previous_heartbeat,
             threshold_s=_online_threshold_seconds(),
             now_epoch=now,

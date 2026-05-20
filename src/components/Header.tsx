@@ -160,6 +160,17 @@ const buildPatientLinkDefaultInstructions = (
     : `Reach out to ${doctor || 'your physician'} for Zelle payment details.`;
 };
 
+const isGeneratedPatientLinkDefaultInstructions = (
+  value: string,
+  doctorName?: string | null,
+) => {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized) return true;
+  if (/^Please send payment to .+\.$/.test(normalized)) return true;
+  const doctor = typeof doctorName === 'string' ? doctorName.trim() : '';
+  return normalized === `Reach out to ${doctor || 'your physician'} for Zelle payment details.`;
+};
+
 const normalizePatientLinkPaymentMethod = (value: unknown): PatientLinkPaymentMethod => {
   const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (raw === 'zelle') return 'zelle';
@@ -496,6 +507,7 @@ interface HeaderCatalogProduct {
   tags?: Array<{ id?: string | number | null; name?: string | null; slug?: string | null }> | null;
   image?: string | null;
   images?: string[] | null;
+  variants?: Array<{ image?: string | null; sku?: string | null }> | null;
   inStock?: boolean | null;
 }
 
@@ -674,6 +686,7 @@ interface HeaderProps {
   referralCodes?: string[] | null;
   catalogLoading?: boolean;
   catalogProducts?: HeaderCatalogProduct[];
+  onEnsureCatalogProductMedia?: (product: HeaderCatalogProduct) => Promise<unknown> | unknown;
   apiHealthNetworkQuality?: 'poor' | 'offline' | null;
   apiHealthNetworkReason?: string | null;
   onLoadDelegateProposal?: (payload: {
@@ -1385,6 +1398,12 @@ const normalizeImageSource = (value: any): string | null => {
   return null;
 };
 
+const isDelegatePickerPlaceholderImage = (value?: string | null): boolean => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  return normalized.includes('Trufusionpeptides_icon');
+};
+
 const getDelegatePickerProductKey = (product: HeaderCatalogProduct): string => {
   const id = typeof product?.id === 'string' ? product.id.trim() : '';
   if (id) return id;
@@ -1394,12 +1413,32 @@ const getDelegatePickerProductKey = (product: HeaderCatalogProduct): string => {
   return sku;
 };
 
+const isInternalAllowedProductAlias = (value: string): boolean => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return /^\d+$/.test(normalized) || /^WOO-(?:VARIATION-)?\d+$/.test(normalized);
+};
+
+const formatAllowedProductsForDisplay = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const normalizedValues: string[] = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const normalized = String(value || '').trim();
+    if (!normalized) continue;
+    const key = normalized.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalizedValues.push(normalized);
+  }
+  const publicValues = normalizedValues.filter((value) => !isInternalAllowedProductAlias(value));
+  return publicValues.length > 0 ? publicValues : normalizedValues;
+};
+
 const getDelegatePickerProductTokens = (product: HeaderCatalogProduct): string[] => {
+  const sku = typeof product?.sku === 'string' ? product.sku.trim() : '';
+  if (sku) return [sku];
   const candidates = [
     product?.id,
-    product?.sku,
     product?.wooId == null ? null : String(product.wooId),
-    product?.wooId == null ? null : `woo-${product.wooId}`,
   ];
   const seen = new Set<string>();
   const tokens: string[] = [];
@@ -1415,9 +1454,24 @@ const getDelegatePickerProductTokens = (product: HeaderCatalogProduct): string[]
 };
 
 const getDelegatePickerProductImage = (product: HeaderCatalogProduct): string | null => {
+  const candidates: Array<string | null> = [];
+  if (Array.isArray(product?.variants)) {
+    for (const variant of product.variants) {
+      candidates.push(normalizeImageSource(variant?.image));
+    }
+  }
+  if (Array.isArray(product?.images)) {
+    for (const image of product.images) {
+      candidates.push(normalizeImageSource(image));
+    }
+  }
+  candidates.push(normalizeImageSource(product?.image));
+
+  const normalizedCandidates = candidates.filter((src): src is string => Boolean(src));
   return (
-    normalizeImageSource(product?.image) ||
-    normalizeImageSource(Array.isArray(product?.images) ? product.images[0] : null)
+    normalizedCandidates.find((src) => !isDelegatePickerPlaceholderImage(src)) ||
+    normalizedCandidates[0] ||
+    null
   );
 };
 
@@ -1975,6 +2029,7 @@ export function Header({
   referralCodes = [],
   catalogLoading = false,
   catalogProducts = [],
+  onEnsureCatalogProductMedia,
   apiHealthNetworkQuality = null,
   apiHealthNetworkReason = null,
   onLoadDelegateProposal,
@@ -2082,6 +2137,7 @@ export function Header({
   const [patientLinksSavingReviewNotesToken, setPatientLinksSavingReviewNotesToken] = useState<string | null>(null);
   const [createLinkDialogOpen, setCreateLinkDialogOpen] = useState(false);
   const [createLinkDialogMode, setCreateLinkDialogMode] = useState<CreateLinkDialogMode>('select');
+  const [delegateProductPickerBrokenImages, setDelegateProductPickerBrokenImages] = useState<Set<string>>(() => new Set());
   const createLinkDialogContentRef = useRef<HTMLDivElement | null>(null);
   const createLinkDialogScrollPositionRef = useRef({ top: 0, left: 0 });
   const createLinkDialogScrollRestoreRafRef = useRef<number | null>(null);
@@ -3009,7 +3065,8 @@ export function Header({
       const nextDefault = buildPatientLinkDefaultInstructions('zelle', nextZelleContact, localUser?.name ?? user?.name ?? null);
       const shouldReplace =
         !patientLinkInstructionsDraft.trim()
-        || patientLinkInstructionsDraft.trim() === prevDefault.trim();
+        || patientLinkInstructionsDraft.trim() === prevDefault.trim()
+        || isGeneratedPatientLinkDefaultInstructions(patientLinkInstructionsDraft, localUser?.name ?? user?.name ?? null);
       if (shouldReplace && nextDefault.trim() !== patientLinkInstructionsDraft.trim()) {
         setPatientLinkInstructionsDraft(nextDefault);
       }
@@ -3026,7 +3083,10 @@ export function Header({
         if (method !== 'zelle') continue;
         const existing = typeof prev[token] === 'string' ? prev[token] : '';
         const prevDefault = buildPatientLinkDefaultInstructions('zelle', prevZelleContact, localUser?.name ?? user?.name ?? null);
-        const shouldReplace = !existing.trim() || existing.trim() === prevDefault.trim();
+        const shouldReplace =
+          !existing.trim()
+          || existing.trim() === prevDefault.trim()
+          || isGeneratedPatientLinkDefaultInstructions(existing, localUser?.name ?? user?.name ?? null);
         if (shouldReplace) {
           next[token] = buildPatientLinkDefaultInstructions('zelle', nextZelleContact, localUser?.name ?? user?.name ?? null);
         }
@@ -5056,7 +5116,7 @@ export function Header({
   const delegateOptInEnabled = coerceOptionalBoolean(
     localUser?.delegateOptIn ?? (localUser as any)?.delegate_opt_in,
   ) === true;
-  const delegateLinkCreationEnabled = Boolean(showPatientLinksTab && delegateOptInEnabled);
+  const delegateLinkCreationEnabled = showPatientLinksTab;
   const brochureLinkCreationEnabled = showPatientLinksTab;
   const hasCreateLinkTypeOptions = delegateLinkCreationEnabled || brochureLinkCreationEnabled;
   const accountHeaderTabs = useMemo(() => {
@@ -5466,7 +5526,7 @@ export function Header({
       seen.add(dedupeKey);
       tokens.push(normalized);
     }
-    return tokens;
+    return formatAllowedProductsForDisplay(tokens);
   }, [cartProductTokens]);
 
   const patientLinkCartProductCount = Math.max(
@@ -5507,6 +5567,50 @@ export function Header({
       return haystack.includes(query);
     });
   }, [delegateProductPickerItems, patientLinkProductPickerDomain, patientLinkProductPickerQuery]);
+
+  useEffect(() => {
+    if (!patientLinkProductPickerOpen || !onEnsureCatalogProductMedia) {
+      return;
+    }
+    let cancelled = false;
+    const candidates = (catalogProducts || [])
+      .filter((product) => {
+        const image = getDelegatePickerProductImage(product);
+        return !image || isDelegatePickerPlaceholderImage(image);
+      })
+      .slice(0, 12);
+
+    void (async () => {
+      for (const product of candidates) {
+        if (cancelled) break;
+        try {
+          await onEnsureCatalogProductMedia(product);
+        } catch {
+          // Catalog media repair is best-effort; the row fallback still renders.
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogProducts, onEnsureCatalogProductMedia, patientLinkProductPickerOpen]);
+
+  useEffect(() => {
+    if (!patientLinkProductPickerOpen || typeof window === 'undefined') {
+      return;
+    }
+    const imagesToWarm = filteredDelegateProductPickerItems
+      .map((item) => item.image)
+      .filter((src): src is string => Boolean(src && !isDelegatePickerPlaceholderImage(src)))
+      .slice(0, 80);
+    for (const src of imagesToWarm) {
+      const image = new Image();
+      image.decoding = 'async';
+      image.loading = 'eager';
+      image.src = src;
+    }
+  }, [filteredDelegateProductPickerItems, patientLinkProductPickerOpen]);
 
   const togglePatientLinkApprovedProduct = useCallback((productKey: string) => {
     const normalized = String(productKey || '').trim();
@@ -5725,7 +5829,10 @@ export function Header({
   }, [trackUsageEvent]);
 
   useEffect(() => {
-    if (!patientLinksPanelVisible || !showPatientLinksTab || delegateOptInEnabled) {
+    const delegateOptInStepVisible =
+      createLinkDialogOpen && createLinkDialogMode === 'delegate' && !delegateOptInEnabled;
+
+    if (!delegateOptInStepVisible || !patientLinksPanelVisible || !showPatientLinksTab) {
       return;
     }
 
@@ -5765,7 +5872,7 @@ export function Header({
     return () => {
       cancelled = true;
     };
-  }, [delegateOptInEnabled, patientLinksPanelVisible, showPatientLinksTab]);
+  }, [createLinkDialogMode, createLinkDialogOpen, delegateOptInEnabled, patientLinksPanelVisible, showPatientLinksTab]);
 
   const trackPatientLinkFieldEntry = useCallback((field: string, value: string, linkType: PatientLinkType = 'delegate') => {
     const normalizedField = typeof field === 'string' ? field.trim() : '';
@@ -8556,84 +8663,103 @@ export function Header({
     0,
   );
 
-		  const patientLinksPanel = showPatientLinksTab ? (
-		    <div className="space-y-6">
-      {!delegateOptInEnabled ? (
-        <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-          <div className="w-full space-y-4">
-            <div className="max-w-3xl space-y-3">
-              <h3 className="text-lg font-semibold text-slate-900">Welcome to Delegate Links!</h3>
-              <p className="text-sm leading-relaxed text-slate-700">
-                This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate sessions for patient-specific order proposals. This means you can send your patients links to allow them to create a proposal of products for your approval and ordering or rejection.
-              </p>
-              <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
-                {[
-                  { src: delegateLinkBetaImage1, alt: 'Delegate Links beta preview 1' },
-                  { src: delegateLinkBetaImage2, alt: 'Delegate Links beta preview 2' },
-                ].map((image) => (
-                  <div
-                    key={image.src}
-                    className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
-                  >
-                    <img
-                      src={image.src}
-                      alt={image.alt}
-                      className="h-48 w-full object-cover bg-white"
-                    />
-                  </div>
-                ))}
+  const delegateOptInStep = (
+    <div className="space-y-5">
+      <DialogHeader className="pr-10 text-left">
+        <DialogTitle className="text-xl font-semibold text-slate-900">
+          Welcome to Delegate Links!
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          Enable access to create delegate links.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="rounded-xl bg-white/55 px-5 py-5 sm:px-6">
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-slate-700">
+            This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate sessions for patient-specific order proposals. This means you can send your patients links to allow them to create a proposal of products for your approval and ordering or rejection.
+          </p>
+          <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+            {[
+              { src: delegateLinkBetaImage1, alt: 'Delegate Links beta preview 1' },
+              { src: delegateLinkBetaImage2, alt: 'Delegate Links beta preview 2' },
+            ].map((image) => (
+              <div
+                key={image.src}
+                className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
+              >
+                <img
+                  src={image.src}
+                  alt={image.alt}
+                  className="h-48 w-full object-cover bg-white"
+                />
               </div>
-              <p className="text-sm leading-relaxed text-slate-700">
-                The intention for this tool is to empower your clinical reach by minimizing friction in your patient research workflow. By enabling Delegate Links, you understand that you are solely responsible for its appropriate use within your independent research and professional context. Links can be viewed and tested before being sent out to your patients.
-              </p>
-              <p className="text-sm leading-relaxed text-slate-700">
-                If you have any questions or recommendations, please contact{' '}
-                {hasDelegateSalesRepEmail ? (
-                  <>
-                    your rep at{' '}
-                    <a
-                      href={`mailto:${delegateSalesRepEmail}`}
-                      className="font-semibold text-[rgb(11,6,121)] underline decoration-[rgb(11,6,121)] underline-offset-2 hover:opacity-80"
-                    >
-                      {delegateSalesRepEmail}
-                    </a>
-                    {' '}or our support team at{' '}
-                  </>
-                ) : (
-                  <>our support team at{' '}</>
-                )}
+            ))}
+          </div>
+          <p className="text-sm leading-relaxed text-slate-700">
+            The intention for this tool is to empower your clinical reach by minimizing friction in your patient research workflow. By enabling Delegate Links, you understand that you are solely responsible for its appropriate use within your independent research and professional context. Links can be viewed and tested before being sent out to your patients.
+          </p>
+          <p className="text-sm leading-relaxed text-slate-700">
+            If you have any questions or recommendations, please contact{' '}
+            {hasDelegateSalesRepEmail ? (
+              <>
+                your rep at{' '}
                 <a
-                  href={`mailto:${delegateSupportEmail}`}
+                  href={`mailto:${delegateSalesRepEmail}`}
                   className="font-semibold text-[rgb(11,6,121)] underline decoration-[rgb(11,6,121)] underline-offset-2 hover:opacity-80"
                 >
-                  {delegateSupportEmail}
+                  {delegateSalesRepEmail}
                 </a>
-                .
-              </p>
-            </div>
-            <div className="w-full text-right">
-              <Button
-                type="button"
-                onClick={async () => {
-                  if (delegateOptInSaving) {
-                    return;
-                  }
-                  setDelegateOptInSaving(true);
-                  try {
-                    await saveProfileField('Delegate Links opt-in', { delegateOptIn: true });
-                  } finally {
-                    setDelegateOptInSaving(false);
-                  }
-                }}
-                disabled={delegateOptInSaving}
-                className="header-home-button inline-flex h-auto min-h-[44px] w-auto flex-none squircle-sm bg-white p-3 leading-none text-slate-900"
-              >
-                {delegateOptInSaving ? 'Enabling access…' : 'Enable Access'}
-              </Button>
-            </div>
-          </div>
+                {' '}or our support team at{' '}
+              </>
+            ) : (
+              <>our support team at{' '}</>
+            )}
+            <a
+              href={`mailto:${delegateSupportEmail}`}
+              className="font-semibold text-[rgb(11,6,121)] underline decoration-[rgb(11,6,121)] underline-offset-2 hover:opacity-80"
+            >
+              {delegateSupportEmail}
+            </a>
+            .
+          </p>
         </div>
-      ) : (
+      </div>
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setCreateLinkDialogOpen(true);
+            setCreateLinkDialogMode('select');
+          }}
+          className="header-home-button squircle-sm bg-white text-slate-900"
+        >
+          Back
+        </Button>
+        <Button
+          type="button"
+          onClick={async () => {
+            if (delegateOptInSaving) {
+              return;
+            }
+            setDelegateOptInSaving(true);
+            try {
+              await saveProfileField('Delegate Links opt-in', { delegateOptIn: true });
+            } finally {
+              setDelegateOptInSaving(false);
+            }
+          }}
+          disabled={delegateOptInSaving}
+          className="header-home-button squircle-sm bg-white text-slate-900"
+        >
+          {delegateOptInSaving ? 'Enabling access…' : 'Enable Access'}
+        </Button>
+      </div>
+    </div>
+  );
+
+		  const patientLinksPanel = showPatientLinksTab ? (
+		    <div className="space-y-6">
         <div className="flex flex-col gap-6">
       <div className="space-y-3" style={{ order: 1 }}>
         <p className="text-sm text-slate-600">
@@ -8770,46 +8896,11 @@ export function Header({
                   Create a product brochure link
                 </DialogTitle>
                 <DialogDescription className="sr-only">
-                  Configure a product brochure link.
+                  Product brochure links are coming soon.
                 </DialogDescription>
               </DialogHeader>
-              <div className="patient-link-form patient-link-form--generate patient-link-form--grouped">
-                <div className="patient-link-group rounded-xl bg-white/55 px-0 py-4 sm:px-5">
-                  <Label
-                    htmlFor="brochure-link-name"
-                    className="patient-link-form__label text-sm font-semibold text-slate-700"
-                  >
-                    Product brochure name
-                  </Label>
-                  <Input
-                    id="brochure-link-name"
-                    placeholder="e.g., Research overview"
-                    className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
-                  />
-                  <Label
-                    htmlFor="brochure-link-product"
-                    className="patient-link-form__label text-sm font-semibold text-slate-700"
-                  >
-                    Product or SKU
-                  </Label>
-                  <Input
-                    id="brochure-link-product"
-                    placeholder="Search or enter a SKU"
-                    className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
-                  />
-                  <Label
-                    htmlFor="brochure-link-note"
-                    className="patient-link-form__label text-sm font-semibold text-slate-700"
-                  >
-                    Note
-                  </Label>
-                  <Textarea
-                    id="brochure-link-note"
-                    rows={3}
-                    placeholder="Optional context for this product brochure link."
-                    className="min-h-[72px] squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
-                  />
-                </div>
+              <div className="rounded-xl bg-white/55 px-8 py-14 text-center sm:px-10">
+                <p className="inline-flex px-4 py-2 text-lg font-semibold text-slate-900">Coming soon</p>
               </div>
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button
@@ -8823,21 +8914,14 @@ export function Header({
                 >
                   Back
                 </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    toast.message('Product brochure link creation is not connected yet.');
-                  }}
-                  className="header-home-button squircle-sm bg-white text-slate-900"
-                >
-                  Create product brochure link
-                </Button>
               </div>
             </div>
+          ) : !delegateOptInEnabled ? (
+            delegateOptInStep
           ) : (
       <div>
         <h3 className="text-lg font-semibold leading-tight text-slate-900">Create a delegate link</h3>
-        <p className="mt-1 mb-3 text-sm leading-relaxed text-slate-700">
+        <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
           This tool is intended to help you fascilate independent peptide research. You can demo your own links before sharing by clicking the "View" button.
         </p>
 	        <div className="delegate-link-create-form mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
@@ -9095,7 +9179,8 @@ export function Header({
 	              );
 	              const shouldReplace =
 	                !patientLinkInstructionsDraft.trim()
-	                || patientLinkInstructionsDraft.trim() === currentDefault.trim();
+	                || patientLinkInstructionsDraft.trim() === currentDefault.trim()
+	                || isGeneratedPatientLinkDefaultInstructions(patientLinkInstructionsDraft, localUser?.name ?? user?.name ?? null);
 	              setPatientLinkPaymentMethodDraft(next);
 	              if (shouldReplace) {
 	                setPatientLinkInstructionsDraft(
@@ -9138,7 +9223,25 @@ export function Header({
 	                id="patient-link-zelle-contact"
 	                value={zelleContactDraft}
 	                onChange={(event) => {
-                    setZelleContactDraft(event.target.value);
+                    const nextContact = event.target.value;
+                    const currentDefault = buildPatientLinkDefaultInstructions(
+                      'zelle',
+                      zelleContactDraft.trim() || null,
+                      localUser?.name ?? user?.name ?? null,
+                    );
+                    const shouldReplace =
+                      patientLinkPaymentMethodDraft === 'zelle'
+                      && (
+                        !patientLinkInstructionsDraft.trim()
+                        || patientLinkInstructionsDraft.trim() === currentDefault.trim()
+                        || isGeneratedPatientLinkDefaultInstructions(patientLinkInstructionsDraft, localUser?.name ?? user?.name ?? null)
+                      );
+                    setZelleContactDraft(nextContact);
+                    if (shouldReplace) {
+                      setPatientLinkInstructionsDraft(
+                        buildPatientLinkDefaultInstructions('zelle', nextContact.trim() || null, localUser?.name ?? user?.name ?? null),
+                      );
+                    }
                     trackPatientLinkFieldEntry('zelle_contact', event.target.value);
                   }}
 	                className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
@@ -9398,6 +9501,10 @@ export function Header({
 	              ) : (
 	                filteredDelegateProductPickerItems.map((item) => {
 	                  const checked = patientLinkApprovedProductIdSet.has(item.key);
+	                  const imageSrc =
+	                    item.image && !delegateProductPickerBrokenImages.has(item.image)
+	                      ? item.image
+	                      : null;
 	                  return (
 	                    <label
 	                      key={item.key}
@@ -9410,8 +9517,21 @@ export function Header({
 	                        className="brand-checkbox"
 	                      />
 	                      <span className="delegate-product-picker-image">
-	                        {item.image ? (
-	                          <img src={item.image} alt="" loading="lazy" />
+	                        {imageSrc ? (
+	                          <img
+	                            src={imageSrc}
+	                            alt=""
+	                            loading="eager"
+	                            decoding="async"
+	                            onError={() => {
+	                              setDelegateProductPickerBrokenImages((prev) => {
+	                                if (prev.has(imageSrc)) return prev;
+	                                const next = new Set(prev);
+	                                next.add(imageSrc);
+	                                return next;
+	                              });
+	                            }}
+	                          />
 	                        ) : (
 	                          <Package className="h-4 w-4" aria-hidden="true" />
 	                        )}
@@ -9816,6 +9936,7 @@ export function Header({
 		              const allowedProducts = Array.isArray((link as any)?.allowedProducts)
 		                ? (link as any).allowedProducts.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
 		                : [];
+		              const allowedProductsDisplay = formatAllowedProductsForDisplay(allowedProducts);
 		              const usageCountRaw =
 		                typeof (link as any)?.usageCount === 'number'
 		                  ? (link as any).usageCount
@@ -9995,7 +10116,7 @@ export function Header({
 			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
 			                      <div>Open Count: {openCountValue}</div>
 			                      <div>Uses: {usageCountValue}</div>
-			                      {allowedProducts.length > 0 && <div>Allowed SKUs: {allowedProducts.join(', ')}</div>}
+			                      {allowedProductsDisplay.length > 0 && <div>Allowed SKUs: {allowedProductsDisplay.join(', ')}</div>}
 			                      {isDelegateLinkType && <div>Payment: {paymentMethodLabel}</div>}
 			                      {isDelegateLinkType && <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>}
 			                      {statusRaw && <div>Status: {statusRaw.replace(/_/g, ' ')}</div>}
@@ -10238,7 +10359,8 @@ export function Header({
 	                                );
 	                                const shouldReplace =
 	                                  !existing.trim()
-	                                  || existing.trim() === currentDefault.trim();
+	                                  || existing.trim() === currentDefault.trim()
+	                                  || isGeneratedPatientLinkDefaultInstructions(existing, localUser?.name ?? user?.name ?? null);
 	                                if (!shouldReplace) return { ...prev, [token]: existing };
 	                                return {
 	                                  ...prev,
@@ -10296,7 +10418,6 @@ export function Header({
 	      </div>
 	      </div>
         </div>
-      )}
     </div>
   ) : null;
 

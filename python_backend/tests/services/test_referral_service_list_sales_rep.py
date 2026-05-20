@@ -161,7 +161,7 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
             [{"sales_rep_id": "admin-1"}, {"sales_rep_id": None}],
         )
 
-    def test_scope_all_keeps_all_leads_visible_for_sales_lead_overview(self) -> None:
+    def test_scope_all_is_ignored_for_sales_lead_overview(self) -> None:
         sales_lead_user = {
             "id": "sales-lead-1",
             "role": "sales_lead",
@@ -201,9 +201,14 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
         def find_by_sales_rep(identifier: str):
             return [own_prospect] if str(identifier) == "sales-lead-1" else []
 
+        def load_contact_forms(*, sales_rep_id=None):
+            return [house_contact_form_lead] if sales_rep_id is None else []
+
         with patch.object(service, "_resolve_sales_rep_id", return_value=None), \
             patch.object(service, "_resolve_user_id", return_value=None), \
-            patch.object(service, "_load_contact_form_referrals", return_value=[house_contact_form_lead]), \
+            patch.object(service, "_resolve_sales_rep_owner_aliases", return_value={"sales-lead-1"}), \
+            patch.object(service, "_resolve_sales_rep_aliases", return_value={"sales-lead-1"}), \
+            patch.object(service, "_load_contact_form_referrals", side_effect=load_contact_forms), \
             patch.object(service, "count_orders_for_doctor", return_value=0), \
             patch.object(service.user_repository, "find_by_id", side_effect=find_by_id), \
             patch.object(service.user_repository, "find_by_email", return_value=None), \
@@ -217,7 +222,7 @@ class ListReferralsForSalesRepOwnershipTests(unittest.TestCase):
 
         self.assertEqual(
             {row["id"] for row in result},
-            {"prospect-own", "prospect-other", "contact_form:1"},
+            {"prospect-own"},
         )
 
     def test_scoped_contact_form_lead_hydrates_type_from_contact_form_row(self) -> None:

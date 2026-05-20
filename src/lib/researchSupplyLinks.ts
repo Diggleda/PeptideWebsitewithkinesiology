@@ -68,7 +68,7 @@ export const formatAllowedProductsInput = (value: unknown): string => {
 };
 
 export const productMatchesAllowedSku = (
-  product: { sku?: string | null; wooId?: number; variants?: Array<{ sku?: string | null }> } | null | undefined,
+  product: { id?: string | null; sku?: string | null; wooId?: number; variants?: Array<{ sku?: string | null }> } | null | undefined,
   allowedProducts: string[],
 ) => {
   if (!product || !Array.isArray(allowedProducts) || allowedProducts.length === 0) {
@@ -77,6 +77,8 @@ export const productMatchesAllowedSku = (
   const allowed = new Set(allowedProducts.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean));
   const productSku = typeof product.sku === 'string' ? product.sku.trim().toUpperCase() : '';
   if (productSku && allowed.has(productSku)) return true;
+  const productId = typeof product.id === 'string' ? product.id.trim().toUpperCase() : '';
+  if (productId && allowed.has(productId)) return true;
   const wooId = Number.isFinite(Number(product.wooId)) ? String(product.wooId).trim().toUpperCase() : '';
   if (wooId && allowed.has(wooId)) return true;
   for (const variant of product.variants || []) {

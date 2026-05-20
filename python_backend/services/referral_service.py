@@ -725,8 +725,13 @@ def get_sales_rep_scope_diagnostics(identifier: Optional[str]) -> Dict[str, obje
     }
 
 
-def get_active_physicians_csv_data() -> Dict[str, object]:
-    """Return the all-scope Active Physicians CSV source rows."""
+def get_active_physicians_csv_data(
+    sales_rep_id: Optional[str] = None,
+    scope_all: bool = True,
+    token_role: Optional[str] = "admin",
+) -> Dict[str, object]:
+    """Return Active Physicians CSV source rows for either admin all-scope or one sales owner."""
+    scope_all = bool(scope_all and _normalize_role(token_role) == "admin")
 
     def _display_name(*values: object) -> str:
         for value in values:
@@ -756,7 +761,13 @@ def get_active_physicians_csv_data() -> Dict[str, object]:
             ),
         )
 
-    raw_users = user_repository.list_referral_dashboard_users()
+    target_sales_rep_id = str(sales_rep_id or "").strip()
+    if scope_all:
+        raw_users = user_repository.list_referral_dashboard_users()
+    elif target_sales_rep_id:
+        raw_users = list_accounts_for_sales_rep(target_sales_rep_id, scope_all=False)
+    else:
+        raw_users = []
     network_users: List[Dict[str, str]] = []
     network_keys: set[str] = set()
     for account in raw_users or []:
@@ -794,9 +805,9 @@ def get_active_physicians_csv_data() -> Dict[str, object]:
         network_users.append({"name": name, "email": emails[0] if emails else ""})
 
     raw_leads = list_referrals_for_sales_rep(
-        "active-physicians",
-        scope_all=True,
-        token_role="sales_lead",
+        target_sales_rep_id or "active-physicians",
+        scope_all=scope_all,
+        token_role=token_role,
     )
     leads: List[Dict[str, str]] = []
     lead_keys: set[str] = set()
@@ -2099,6 +2110,7 @@ def list_referrals_for_sales_rep(
     The sales_prospects table is the authoritative source for which leads belong in the sales-rep pipeline.
     The referrals table is used only to enrich referral-derived leads (e.g. referrerDoctor details, creditIssuedAt).
     """
+    scope_all = bool(scope_all and _normalize_role(token_role) == "admin")
     sales_rep_id = (
         _resolve_sales_rep_id(sales_rep_identifier)
         or _resolve_sales_rep_id(_resolve_user_id(sales_rep_identifier))

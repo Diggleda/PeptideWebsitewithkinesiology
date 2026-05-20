@@ -324,7 +324,12 @@ def _record_local_presence_login(user_id: object) -> None:
     try:
         uid = str(user_id or "").strip()
         if uid:
-            presence_service.record_ping(uid, kind="interaction", is_idle=False)
+            presence_service.record_ping(
+                uid,
+                kind="interaction",
+                is_idle=False,
+                reset_online_since=True,
+            )
     except Exception:
         pass
 
