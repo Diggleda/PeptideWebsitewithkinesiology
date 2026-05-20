@@ -34,7 +34,16 @@ def _normalize_optional_text(value: Any) -> str | None:
     return text or None
 
 
+def _sheet_row(row: Dict[str, Any], index: int) -> int:
+    try:
+        value = int(row.get("sheetRow") or row.get("sheet_row") or 0)
+    except Exception:
+        value = 0
+    return value if value > 0 else index + 2
+
+
 def _normalize_product(row: Dict[str, Any], index: int) -> Dict[str, Any]:
+    sheet_row = _sheet_row(row, index)
     product_name = _normalize_text(row.get("productName") or row.get("name") or row.get("product_name"), 255)
     product_sku = _normalize_text(row.get("productSku") or row.get("sku") or row.get("product_sku"), 128)
     product_description = _normalize_optional_text(
@@ -45,22 +54,32 @@ def _normalize_product(row: Dict[str, Any], index: int) -> Dict[str, Any]:
     )
 
     if not product_name and not product_sku and not product_description and not product_information:
-        return {"ok": False, "skip": True, "result": {"status": "skipped", "error": "EMPTY_RECORD"}}
+        return {"ok": False, "skip": True, "result": {"sheetRow": sheet_row, "status": "skipped", "error": "EMPTY_RECORD"}}
     if not product_name:
-        return {"ok": False, "error": f"Row {index}: missing product_name", "result": {"status": "error", "error": "MISSING_PRODUCT_NAME"}}
+        return {
+            "ok": False,
+            "error": f"Row {sheet_row}: missing product_name",
+            "result": {"sheetRow": sheet_row, "status": "error", "error": "MISSING_PRODUCT_NAME"},
+        }
     if not product_sku:
-        return {"ok": False, "error": f"Row {index}: missing product_sku", "result": {"status": "error", "error": "MISSING_SKU"}}
+        return {
+            "ok": False,
+            "error": f"Row {sheet_row}: missing product_sku",
+            "result": {"sheetRow": sheet_row, "status": "error", "error": "MISSING_SKU"},
+        }
 
     return {
         "ok": True,
         "value": {
             "request_index": index,
+            "sheet_row": sheet_row,
             "product_name": product_name,
             "product_sku": product_sku,
             "product_description": product_description,
             "product_information": product_information,
         },
         "result": {
+            "sheetRow": sheet_row,
             "productSku": product_sku,
             "status": "pending",
             "key": product_sku.lower(),
@@ -93,15 +112,22 @@ def replace_from_webhook(rows: List[Dict[str, Any]], *, full_sync: bool = True) 
         value = normalized["value"]
         sku_key = str(value["product_sku"]).lower()
         if sku_key in seen_skus:
-            duplicate = {"productSku": value["product_sku"], "rows": [seen_skus[sku_key], index]}
+            first_index = seen_skus[sku_key]
+            first_row = int(clean[first_index]["sheet_row"]) if first_index < len(clean) else index + 2
+            duplicate = {"productSku": value["product_sku"], "rows": [first_row, value["sheet_row"]]}
             duplicate_skus.append(duplicate)
             errors.append(
-                f"Duplicate product_sku {value['product_sku']!r} on rows {seen_skus[sku_key]}, {index}"
+                f"Duplicate product_sku {value['product_sku']!r} on rows {first_row}, {value['sheet_row']}"
             )
-            results[index] = {"productSku": value["product_sku"], "status": "error", "error": "DUPLICATE_SKU"}
+            results[index] = {
+                "sheetRow": value["sheet_row"],
+                "productSku": value["product_sku"],
+                "status": "error",
+                "error": "DUPLICATE_SKU",
+            }
             continue
 
-        seen_skus[sku_key] = index
+        seen_skus[sku_key] = len(clean)
         clean.append(value)
 
     if errors:
@@ -148,6 +174,7 @@ def replace_from_webhook(rows: List[Dict[str, Any]], *, full_sync: bool = True) 
                 },
             )
             results[product["request_index"]] = {
+                "sheetRow": product["sheet_row"],
                 "productSku": product["product_sku"],
                 "status": "upserted",
                 "key": str(product["product_sku"]).lower(),

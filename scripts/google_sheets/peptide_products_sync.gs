@@ -39,7 +39,7 @@ function syncPeptideProducts() {
     productSku: findHeaderIndex_(headers, 'Product SKU', 1),
     productDescription: findHeaderIndex_(headers, 'Product Description', 2),
     productInformation: findHeaderIndex_(headers, 'Product Information', 3),
-    syncStatus: findHeaderIndex_(headers, 'Sync Status', 4),
+    syncStatus: 4,
   };
 
   const toStr = (v) => (v == null ? '' : String(v));
@@ -48,7 +48,16 @@ function syncPeptideProducts() {
 
   const products = [];
   const rowMap = [];
-  const hasAnyData = rows.map((r) => r.some((c) => c && String(c).trim() !== ''));
+  const hasAnyData = rows.map((row) => {
+    const productName = norm(row[idx.productName]);
+    const productSku = norm(row[idx.productSku]);
+    const productDescription = norm(row[idx.productDescription]);
+    const productInformation = norm(row[idx.productInformation]);
+    return productName !== ''
+      || productSku !== ''
+      || productDescription !== ''
+      || productInformation !== '';
+  });
 
   for (let i = 0; i < rows.length; i++) {
     const productName = norm(rows[i][idx.productName]);
@@ -56,16 +65,12 @@ function syncPeptideProducts() {
     const productDescription = norm(rows[i][idx.productDescription]);
     const productInformation = norm(rows[i][idx.productInformation]);
 
-    if (
-      productName === ''
-      && productSku === ''
-      && productDescription === ''
-      && productInformation === ''
-    ) {
+    if (productName === '' && productSku === '') {
       continue;
     }
 
     products.push({
+      sheetRow: i + 2,
       productName,
       productSku,
       productDescription,
@@ -104,8 +109,14 @@ function syncPeptideProducts() {
 
     let deletedSet = new Set();
     let results = null;
+    let responseErrors = [];
     try {
       const json = JSON.parse(responseBody || '{}');
+      if (Array.isArray(json.errors)) {
+        responseErrors = json.errors.map((error) => String(error || '').trim()).filter(Boolean);
+      } else if (json.error) {
+        responseErrors = [String(json.error).trim()].filter(Boolean);
+      }
       if (Array.isArray(json.deletedSkus)) {
         json.deletedSkus.forEach((sku) => {
           if (sku) deletedSet.add(keyOf(sku));
@@ -145,8 +156,11 @@ function syncPeptideProducts() {
         }
       }
     } else {
+      const genericError = responseErrors.length > 0
+        ? responseErrors.slice(0, 2).join('; ')
+        : `Failure (${statusCode}), contact petergibbons7@icloud.com`;
       hasAnyData.forEach((isDataRow, i) => {
-        if (isDataRow) statusValues[i][0] = `Failure (${statusCode}), contact petergibbons7@icloud.com`;
+        if (isDataRow) statusValues[i][0] = genericError;
       });
     }
   } catch (err) {
