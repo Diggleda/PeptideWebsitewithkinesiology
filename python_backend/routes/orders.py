@@ -855,6 +855,11 @@ def delegate_estimate_order_totals():
             str(delegate_token or ""),
             count_page_load=False,
         )
+        capabilities = delegate_info.get("capabilities") if isinstance(delegate_info, dict) else {}
+        if isinstance(capabilities, dict) and capabilities.get("canViewPricing") is False:
+            err = ValueError("This link is informational only and cannot estimate orders.")
+            setattr(err, "status", 403)
+            raise err
         validated = delegation_service.validate_delegate_items(str(delegate_token or ""), items)
         doctor_id = delegate_info.get("doctorId")
         if not doctor_id:
@@ -904,6 +909,11 @@ def delegate_share_order():
             str(delegate_token or ""),
             count_page_load=False,
         )
+        capabilities = delegate_info.get("capabilities") if isinstance(delegate_info, dict) else {}
+        if isinstance(capabilities, dict) and capabilities.get("canSubmitProposal") is False:
+            err = ValueError("This link is informational only and cannot submit an order proposal.")
+            setattr(err, "status", 403)
+            raise err
         validated = delegation_service.validate_delegate_items(str(delegate_token or ""), items)
         doctor_id = str(delegate_info.get("doctorId") or "").strip()
         doctor_name = str(delegate_info.get("doctorName") or "Doctor").strip() or "Doctor"

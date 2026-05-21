@@ -829,6 +829,14 @@ body[data-delegate-theme="true"] .dev-theme-root {
   display: none;
 }
 
+.admin-commission-sheet-button,
+.admin-commission-sheet-button:hover,
+.admin-commission-sheet-button:focus,
+.admin-commission-sheet-button:focus-visible {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
 @media (min-width: 640px) {
   .admin-commission-header-mobile {
     display: none !important;
@@ -1146,7 +1154,7 @@ body[data-delegate-theme="true"] .dev-theme-root {
 @media (min-width: 640px) {
   .patient-link-item {
     display: grid;
-    grid-template-columns: minmax(0, 35%) minmax(0, 65%);
+    grid-template-columns: minmax(0, 48%) minmax(0, 52%);
     align-items: flex-start;
     column-gap: 1rem;
   }
@@ -3990,6 +3998,22 @@ body {
 .patient-link-item--highlight {
   border-color: rgb(11, 6, 121) !important;
   box-shadow: 0 0 0 2px rgba(11, 6, 121, 0.28) !important;
+}
+
+.patient-link-type-badge {
+  margin-left: -0.25rem;
+  padding-left: 0.375rem !important;
+  padding-right: 0.375rem !important;
+}
+
+@media (min-width: 1024px) {
+  .patient-link-item {
+    grid-template-columns: minmax(0, 52%) minmax(0, 48%);
+  }
+
+  .patient-link-lifespan {
+    white-space: nowrap;
+  }
 }
 
 .glass-strong {
@@ -7778,7 +7802,8 @@ html {
 
 .dev-theme-root.theme-clinical .product-quantity-button[data-slot="button"] {
   background-color: #edf7fb !important;
-  border-color: rgba(148, 163, 184, 0.25) !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
   color: #0f172a !important;
   box-shadow: none !important;
 }
@@ -7786,7 +7811,7 @@ html {
 .dev-theme-root.theme-clinical .product-quantity-button[data-slot="button"]:hover:not(:disabled),
 .dev-theme-root.theme-clinical .product-quantity-button[data-slot="button"]:focus-visible:not(:disabled) {
   background-color: rgba(11, 6, 121, 0.09) !important;
-  border-color: rgba(148, 163, 184, 0.25) !important;
+  border-color: transparent !important;
   color: #0f172a !important;
 }
 
@@ -8686,6 +8711,19 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   margin-top: 0.4rem;
 }
 
+.legal-richtext .legal-license-text {
+  margin-top: 1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(11, 6, 121, 0.16);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.74);
+  padding: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: rgb(51, 65, 85);
+}
+
 .legal-disclaimer {
   text-align: center;
   justify-self: flex-start;
@@ -8823,6 +8861,30 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   min-width: 0;
   margin: 1.7rem auto 0;
   overflow: hidden;
+}
+
+.create-link-dialog-panel {
+  animation: create-link-panel-fade-in 90ms ease-out both;
+}
+
+.create-link-dialog-back-button {
+  pointer-events: auto !important;
+  z-index: 10070 !important;
+}
+
+@keyframes create-link-panel-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .create-link-dialog-panel {
+    animation: none;
+  }
 }
 
 .create-link-type-button {
@@ -10930,6 +10992,18 @@ a[href^="mailto:"]:hover {
   background-color: var(--delegate-accent-80) !important;
 }
 
+[data-delegate-theme="true"] .manufacturing-standards-dialog-layer .manufacturing-standards-close.dialog-close-btn,
+[data-delegate-theme="true"] .manufacturing-standards-dialog-layer .manufacturing-standards-close.dialog-close-btn:hover,
+[data-delegate-theme="true"] .manufacturing-standards-dialog-layer .manufacturing-standards-close.dialog-close-btn:focus-visible {
+  background-color: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+}
+
+.manufacturing-standards-dialog-layer .manufacturing-standards-close.dialog-close-btn > span {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
 [data-delegate-theme="true"] .account-tab-underline-indicator {
   background: var(--delegate-accent) !important;
   box-shadow: none !important;
@@ -10944,21 +11018,29 @@ a[href^="mailto:"]:hover {
   color: var(--delegate-accent) !important;
 }
 
+[data-delegate-theme="true"] :is(.brand-checkbox, .shop-filter-checkbox, [data-slot="checkbox"], input[type="checkbox"]) {
+  --checkbox-control-check-color: var(--white-label-primary-color, var(--delegate-accent));
+  --checkbox-control-checked-border-color: var(--white-label-primary-color, var(--delegate-accent));
+  --checkbox-control-focus-ring: var(--white-label-primary-color-25, var(--delegate-accent-25));
+  --shop-filter-checkbox-accent: var(--white-label-primary-color, var(--delegate-accent));
+  accent-color: var(--white-label-primary-color, var(--delegate-accent));
+}
+
 [data-delegate-theme="true"] .brand-checkbox::after {
-  background: var(--checkbox-control-check-color, var(--delegate-accent)) !important;
+  background: var(--checkbox-control-check-color, var(--white-label-primary-color, var(--delegate-accent))) !important;
 }
 
 [data-delegate-theme="true"] .brand-checkbox:focus-visible {
-  box-shadow: 0 0 0 3px var(--checkbox-control-focus-ring, var(--delegate-accent-25)) !important;
+  box-shadow: 0 0 0 3px var(--checkbox-control-focus-ring, var(--white-label-primary-color-25, var(--delegate-accent-25))) !important;
 }
 
 [data-delegate-theme="true"] .brand-checkbox:checked {
-  border-color: var(--checkbox-control-checked-border-color, var(--delegate-accent)) !important;
-  background: var(--checkbox-control-checked-background, var(--delegate-accent-08)) !important;
+  border-color: var(--checkbox-control-checked-border-color, var(--white-label-primary-color, var(--delegate-accent))) !important;
+  background: var(--checkbox-control-checked-background, var(--white-label-primary-color-08, var(--delegate-accent-08))) !important;
 }
 
 [data-delegate-theme="true"] .shop-filter-checkbox {
-  --shop-filter-checkbox-accent: var(--checkbox-control-check-color, var(--delegate-accent));
+  --shop-filter-checkbox-accent: var(--checkbox-control-check-color, var(--white-label-primary-color, var(--delegate-accent)));
   background-color: var(--checkbox-control-background, rgba(255, 255, 255, 0.88)) !important;
 }
 
@@ -11482,8 +11564,77 @@ a[href^="mailto:"]:hover {
   margin-top: 0 !important;
 }
 
+.delegate-white-label-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.delegate-white-label-details > summary {
+  list-style: none;
+}
+
+.delegate-white-label-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.delegate-white-label-summary-copy {
+  min-width: 0;
+}
+
+.delegate-white-label-summary-icon {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  position: relative;
+}
+
+.delegate-white-label-summary-icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' aria-hidden='true'%3E%3Cpath d='M8 6l4 4-4 4' stroke='%230b0679' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 1.8rem 1.8rem;
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+}
+
+.delegate-white-label-details[open] .delegate-white-label-summary-icon::before {
+  transform: rotate(90deg);
+}
+
+.delegate-white-label-preview-card {
+  --delegate-preview-surface-height: 5rem;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+
 .delegate-preview-label {
   margin-bottom: 0.35rem;
+}
+
+.delegate-auth-controls {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.delegate-auth-label {
+  margin-left: auto;
+  text-align: right;
+}
+
+.delegate-auth-label > span {
+  text-align: right;
+}
+
+.delegate-mobile-search-toggle {
+  flex: 0 0 auto;
 }
 
 .delegate-header-preview-scroll {
@@ -11502,6 +11653,7 @@ a[href^="mailto:"]:hover {
   box-sizing: border-box;
   container-type: inline-size;
   display: block;
+  height: var(--delegate-preview-surface-height);
   margin-inline: auto;
   max-width: none;
   width: 20rem;
@@ -11576,7 +11728,8 @@ a[href^="mailto:"]:hover {
   background-size: cover !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
-  min-height: 8rem;
+  height: var(--delegate-preview-surface-height);
+  min-height: var(--delegate-preview-surface-height);
 }
 
 .delegate-color-controls-grid {
@@ -11587,6 +11740,10 @@ a[href^="mailto:"]:hover {
 
 .delegate-color-control {
   min-width: 0;
+}
+
+.delegate-color-control-label {
+  font-weight: 700 !important;
 }
 
 .delegate-color-value-row {
@@ -11679,14 +11836,20 @@ a[href^="mailto:"]:hover {
 }
 
 @media (min-width: 1024px) {
+  .delegate-white-label-preview-card {
+    --delegate-preview-surface-height: 5.5rem;
+  }
+
   .delegate-header-preview-canvas {
     width: 100%;
     min-width: 0;
   }
+}
 
-  .delegate-session-background-preview {
-    min-height: 11rem;
-  }
+.delegate-white-label-preview-card .delegate-header-preview-canvas,
+.delegate-white-label-preview-card .delegate-session-background-preview {
+  width: 100%;
+  min-width: 0;
 }
 
 /* Development theme comparison: remove this block with DevThemeShell in App.tsx. */
@@ -15361,7 +15524,7 @@ body:not([data-delegate-theme="true"]) :is(
   button.glass-brand-subtle,
   button.glass,
   button.glass-card
-):not([role="switch"]):not(.admin-dashboard-link-button):not(.header-home-button--clear):not(.checkout-quantity-button):not(.delegate-header-preview-search-button):not(.delegate-product-picker-trigger):not(.landing-login-container button):not(.landing-create-account-container button):not(.legal-footer-link-button) {
+):not([role="switch"]):not(.admin-dashboard-link-button):not(.header-home-button--clear):not(.checkout-quantity-button):not(.product-quantity-button):not(.product-detail-quantity-button):not(.delegate-header-preview-search-button):not(.delegate-product-picker-trigger):not(.landing-login-container button):not(.landing-create-account-container button):not(.legal-footer-link-button) {
   border-style: solid !important;
   border-width: 2px !important;
   border-color: rgb(11, 6, 121) !important;
@@ -15381,21 +15544,61 @@ body:not([data-delegate-theme="true"]) button.legal-footer-link-button.btn-hover
 .checkout-quantity-button:focus,
 .checkout-quantity-button:focus-visible,
 .checkout-quantity-button:disabled,
+.product-quantity-button,
+.product-quantity-button:hover,
+.product-quantity-button:focus,
+.product-quantity-button:focus-visible,
+.product-quantity-button:disabled,
+.product-detail-quantity-button,
+.product-detail-quantity-button:hover,
+.product-detail-quantity-button:focus,
+.product-detail-quantity-button:focus-visible,
+.product-detail-quantity-button:disabled,
 button.checkout-quantity-button,
 button.checkout-quantity-button:hover,
 button.checkout-quantity-button:focus,
 button.checkout-quantity-button:focus-visible,
 button.checkout-quantity-button:disabled,
+button.product-quantity-button,
+button.product-quantity-button:hover,
+button.product-quantity-button:focus,
+button.product-quantity-button:focus-visible,
+button.product-quantity-button:disabled,
+button.product-detail-quantity-button,
+button.product-detail-quantity-button:hover,
+button.product-detail-quantity-button:focus,
+button.product-detail-quantity-button:focus-visible,
+button.product-detail-quantity-button:disabled,
 body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"],
 body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:hover,
 body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:focus,
 body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:focus-visible,
 body:not([data-delegate-theme="true"]) button.checkout-quantity-button[data-slot="button"]:disabled,
+body:not([data-delegate-theme="true"]) button.product-quantity-button[data-slot="button"],
+body:not([data-delegate-theme="true"]) button.product-quantity-button[data-slot="button"]:hover,
+body:not([data-delegate-theme="true"]) button.product-quantity-button[data-slot="button"]:focus,
+body:not([data-delegate-theme="true"]) button.product-quantity-button[data-slot="button"]:focus-visible,
+body:not([data-delegate-theme="true"]) button.product-quantity-button[data-slot="button"]:disabled,
+body:not([data-delegate-theme="true"]) button.product-detail-quantity-button[data-slot="button"],
+body:not([data-delegate-theme="true"]) button.product-detail-quantity-button[data-slot="button"]:hover,
+body:not([data-delegate-theme="true"]) button.product-detail-quantity-button[data-slot="button"]:focus,
+body:not([data-delegate-theme="true"]) button.product-detail-quantity-button[data-slot="button"]:focus-visible,
+body:not([data-delegate-theme="true"]) button.product-detail-quantity-button[data-slot="button"]:disabled,
 .dev-theme-root button.checkout-quantity-button[data-slot="button"],
 .dev-theme-root button.checkout-quantity-button[data-slot="button"]:hover,
 .dev-theme-root button.checkout-quantity-button[data-slot="button"]:focus,
 .dev-theme-root button.checkout-quantity-button[data-slot="button"]:focus-visible,
-.dev-theme-root button.checkout-quantity-button[data-slot="button"]:disabled {
+.dev-theme-root button.checkout-quantity-button[data-slot="button"]:disabled,
+.dev-theme-root button.product-quantity-button[data-slot="button"],
+.dev-theme-root button.product-quantity-button[data-slot="button"]:hover,
+.dev-theme-root button.product-quantity-button[data-slot="button"]:focus,
+.dev-theme-root button.product-quantity-button[data-slot="button"]:focus-visible,
+.dev-theme-root button.product-quantity-button[data-slot="button"]:disabled,
+.dev-theme-root button.product-detail-quantity-button[data-slot="button"],
+.dev-theme-root button.product-detail-quantity-button[data-slot="button"]:hover,
+.dev-theme-root button.product-detail-quantity-button[data-slot="button"]:focus,
+.dev-theme-root button.product-detail-quantity-button[data-slot="button"]:focus-visible,
+.dev-theme-root button.product-detail-quantity-button[data-slot="button"]:disabled {
   border: 0 !important;
   border-color: transparent !important;
   border-style: none !important;
@@ -15943,6 +16146,59 @@ body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.deleg
   pointer-events: auto !important;
 }
 
+.create-link-legal-backdrop {
+  z-index: 2147483001;
+}
+
+.create-link-legal-modal {
+  width: min(760px, 100%);
+  height: min(720px, calc(100dvh - 2rem));
+  max-height: min(720px, calc(100vh - 2rem));
+  max-height: min(720px, calc(100dvh - 2rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(11, 6, 121, 0.28);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 70px -32px rgba(2, 6, 23, 0.55);
+  overscroll-behavior: contain;
+  pointer-events: auto !important;
+}
+
+.create-link-legal-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(11, 6, 121, 0.16);
+  background: rgba(255, 255, 255, 0.98);
+  padding: 1rem 1.1rem;
+}
+
+.create-link-legal-title {
+  min-width: 0;
+  color: rgb(11, 6, 121);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.create-link-legal-modal .create-link-legal-close.dialog-close-btn {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  flex: 0 0 auto;
+}
+
+.create-link-legal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
 .delegate-product-picker-header,
 .delegate-product-picker-footer {
   position: relative;
@@ -16174,4 +16430,72 @@ body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.deleg
   .delegate-product-picker-tool-button {
     flex: 1 1 0;
   }
+}
+
+body[data-delegate-theme="true"] :is(.brand-checkbox, .glass-checkbox, .shop-filter-checkbox, [data-slot="checkbox"], input[type="checkbox"]),
+[data-delegate-theme="true"] :is(.brand-checkbox, .glass-checkbox, .shop-filter-checkbox, [data-slot="checkbox"], input[type="checkbox"]) {
+  --checkbox-control-check-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  --checkbox-control-checked-border-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  --checkbox-control-focus-ring: var(--white-label-primary-color-25, var(--delegate-accent-25, rgba(11, 6, 121, 0.25))) !important;
+  --shop-filter-checkbox-accent: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  accent-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+}
+
+body[data-delegate-theme="true"] .brand-checkbox::after,
+[data-delegate-theme="true"] .brand-checkbox::after {
+  background: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  background-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+}
+
+body[data-delegate-theme="true"] .brand-checkbox:focus-visible,
+[data-delegate-theme="true"] .brand-checkbox:focus-visible {
+  box-shadow: 0 0 0 3px var(--white-label-primary-color-25, var(--delegate-accent-25, rgba(11, 6, 121, 0.25))) !important;
+}
+
+body[data-delegate-theme="true"] .brand-checkbox:checked,
+[data-delegate-theme="true"] .brand-checkbox:checked {
+  border-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  background: var(--white-label-primary-color-08, var(--delegate-accent-08, rgba(11, 6, 121, 0.08))) !important;
+}
+
+body[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox),
+[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox) {
+  border-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+}
+
+body[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox)[data-state="checked"],
+[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox)[data-state="checked"] {
+  border-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  background: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  color: #ffffff !important;
+}
+
+body[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox)[data-state="checked"] [data-slot="checkbox-indicator"],
+body[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox)[data-state="checked"] [data-slot="checkbox-indicator"] svg,
+[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox)[data-state="checked"] [data-slot="checkbox-indicator"],
+[data-delegate-theme="true"] :is(.glass-checkbox, [data-slot="checkbox"]):not(.shop-filter-checkbox)[data-state="checked"] [data-slot="checkbox-indicator"] svg {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+body[data-delegate-theme="true"] .shop-filter-checkbox,
+[data-delegate-theme="true"] .shop-filter-checkbox {
+  border-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  box-shadow: inset 0 0 0 1px var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+}
+
+body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"],
+[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] {
+  border-color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  background: var(--checkbox-control-checked-background, #ffffff) !important;
+  color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+}
+
+body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [data-slot="checkbox-indicator"],
+body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [data-slot="checkbox-indicator"] svg,
+[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [data-slot="checkbox-indicator"],
+[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [data-slot="checkbox-indicator"] svg {
+  color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
+  stroke: currentColor !important;
 }

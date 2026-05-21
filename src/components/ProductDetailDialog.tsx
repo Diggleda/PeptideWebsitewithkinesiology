@@ -436,7 +436,7 @@ export function ProductDetailDialog({
                         size="icon"
                         onClick={() => handleQuantityChange(quantity - 1)}
                         disabled={quantity <= 1}
-                        className="h-12 w-12 rounded-xl border-2 bg-slate-50"
+                        className="product-detail-quantity-button h-12 w-12 rounded-xl bg-slate-50"
                       >
                         <Minus className="h-5 w-5" />
                       </Button>
@@ -455,7 +455,7 @@ export function ProductDetailDialog({
                         variant="outline"
                         size="icon"
                         onClick={() => handleQuantityChange(quantity + 1)}
-                        className="h-12 w-12 rounded-xl border-2 bg-slate-50"
+                        className="product-detail-quantity-button h-12 w-12 rounded-xl bg-slate-50"
                       >
                         <Plus className="h-5 w-5" />
                       </Button>

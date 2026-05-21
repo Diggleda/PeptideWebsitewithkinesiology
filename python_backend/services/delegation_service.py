@@ -6,6 +6,7 @@ import re
 import secrets
 import threading
 import math
+import hashlib
 from datetime import timedelta
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -58,6 +59,26 @@ RESTRICTED_LEGACY_DELEGATE_PERMISSIONS = {
 }
 DEFAULT_PRODUCT_SCOPE = "all_physician_approved"
 DEFAULT_DELEGATE_PERMISSION = "submit_for_physician_review"
+SUPPORTED_LINK_TYPES = {"delegate", "brochure"}
+BROCHURE_PERMISSION = "view_products_only"
+BROCHURE_CAPABILITIES = {
+    "canViewProducts": True,
+    "canViewPricing": False,
+    "canAddToCart": False,
+    "canCheckout": False,
+    "canSubmitProposal": False,
+    "canViewCOA": True,
+    "canViewInventory": False,
+}
+DELEGATE_CAPABILITIES = {
+    "canViewProducts": True,
+    "canViewPricing": True,
+    "canAddToCart": True,
+    "canCheckout": False,
+    "canSubmitProposal": True,
+    "canViewCOA": True,
+    "canViewInventory": True,
+}
 _PHI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "SSN"),
     (re.compile(r"\b(?:dob|date of birth)\b", re.IGNORECASE), "DOB"),
@@ -207,6 +228,22 @@ def _normalize_delegate_permission(value: Any) -> str:
         enabled=ENABLED_DELEGATE_PERMISSIONS,
         default=DEFAULT_DELEGATE_PERMISSION,
     )
+
+
+def _normalize_link_type(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in SUPPORTED_LINK_TYPES else "delegate"
+
+
+def capabilities_for_link_type(value: Any) -> Dict[str, bool]:
+    return dict(BROCHURE_CAPABILITIES if _normalize_link_type(value) == "brochure" else DELEGATE_CAPABILITIES)
+
+
+def _hash_public_view_value(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _normalize_delegate_role(value: Any) -> Optional[str]:
@@ -425,6 +462,10 @@ def _research_supply_disclosures(markup_percent: object) -> List[str]:
         "TrufusionLabs does not direct or control physician activities.",
         _compensation_disclosure(markup_percent),
     ]
+
+
+def _brochure_disclosures() -> List[str]:
+    return _research_supply_disclosures(0)[:-1]
 
 
 def _audit_key_is_blocked(key: object) -> bool:
@@ -889,13 +930,18 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
 def create_link(
     doctor_id: str,
     *,
+    link_type: Optional[str] = None,
+    created_by_user_id: Optional[str] = None,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     subject_label: Optional[str] = None,
     study_label: Optional[str] = None,
     patient_reference: Optional[str] = None,
+    brochure_name: Optional[str] = None,
     delegate_name: Optional[str] = None,
     delegate_contact: Optional[str] = None,
+    recipient_name: Optional[str] = None,
+    recipient_contact: Optional[str] = None,
     delegate_role: Optional[str] = None,
     product_scope: Optional[str] = None,
     product_scope_items: Optional[Any] = None,
@@ -920,9 +966,22 @@ def create_link(
     doctor_id = str(doctor_id or "").strip()
     if not doctor_id:
         raise ValueError("doctor_id is required")
+    link_type_value = _normalize_link_type(link_type)
+    capabilities = capabilities_for_link_type(link_type_value)
+    tracking_name = recipient_name if link_type_value == "brochure" else delegate_name
+    tracking_contact = recipient_contact if link_type_value == "brochure" else delegate_contact
+    brochure_name_value = (
+        _validate_non_phi_label(brochure_name, field_name="brochureName")
+        if link_type_value == "brochure"
+        else None
+    )
+    if link_type_value == "brochure" and not brochure_name_value:
+        err = ValueError("brochureName is required for brochure links.")
+        setattr(err, "status", 400)
+        raise err
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        markup_value = None if markup_percent is None else _normalize_capped_markup_percent(markup_percent)
+        markup_value = 0.0 if link_type_value == "brochure" else (None if markup_percent is None else _normalize_capped_markup_percent(markup_percent))
         effective_expires_in_hours = _normalize_link_limit(
             expires_in_hours,
             field_name="expiresInHours",
@@ -930,40 +989,43 @@ def create_link(
         )
         created = patient_links_repository.create_link(
             doctor_id,
+            link_type=link_type_value,
+            created_by_user_id=created_by_user_id or doctor_id,
             reference_label=_validate_non_phi_label(reference_label, field_name="referenceLabel"),
             patient_id=_validate_non_phi_label(patient_id, field_name="patientId"),
             subject_label=_validate_non_phi_label(subject_label, field_name="subjectLabel"),
             study_label=_validate_non_phi_label(study_label, field_name="studyLabel"),
             patient_reference=_validate_non_phi_label(patient_reference, field_name="patientReference"),
-            delegate_name=_validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190),
-            delegate_contact=_validate_sensitive_session_text(delegate_contact, field_name="delegateContact", max_len=190),
-            delegate_role=_normalize_delegate_role(delegate_role),
+            brochure_name=brochure_name_value,
+            delegate_name=_validate_sensitive_session_text(tracking_name, field_name="recipientName" if link_type_value == "brochure" else "delegateName", max_len=190),
+            delegate_contact=_validate_sensitive_session_text(tracking_contact, field_name="recipientContact" if link_type_value == "brochure" else "delegateContact", max_len=190),
+            delegate_role=None if link_type_value == "brochure" else _normalize_delegate_role(delegate_role),
             product_scope=_normalize_product_scope(product_scope),
             product_scope_items=_normalize_allowed_products(product_scope_items),
-            delegate_permission=_normalize_delegate_permission(delegate_permission),
+            delegate_permission=BROCHURE_PERMISSION if link_type_value == "brochure" else _normalize_delegate_permission(delegate_permission),
             markup_percent=markup_value,
             pricing_disclosure=_validate_sensitive_session_text(
-                pricing_disclosure or DEFAULT_PRICING_DISCLOSURE,
+                None if link_type_value == "brochure" else (pricing_disclosure or DEFAULT_PRICING_DISCLOSURE),
                 field_name="pricingDisclosure",
                 max_len=1000,
             ),
             zelle_recipient_name=_validate_sensitive_session_text(
-                zelle_recipient_name,
+                None if link_type_value == "brochure" else zelle_recipient_name,
                 field_name="zelleRecipientName",
                 max_len=190,
             ),
-            payment_confirmation_required=_normalize_bool(payment_confirmation_required, default=True),
-            delegate_instructions=_validate_research_note(delegate_instructions, field_name="delegateInstructions"),
+            payment_confirmation_required=False if link_type_value == "brochure" else _normalize_bool(payment_confirmation_required, default=True),
+            delegate_instructions=None if link_type_value == "brochure" else _validate_research_note(delegate_instructions, field_name="delegateInstructions"),
             internal_physician_note=_validate_research_note(internal_physician_note, field_name="internalPhysicianNote"),
             terms_version=_validate_policy_version(terms_version, field_name="termsVersion"),
             shipping_policy_version=_validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion"),
             privacy_policy_version=_validate_policy_version(privacy_policy_version, field_name="privacyPolicyVersion"),
-            instructions=_validate_research_note(instructions, field_name="instructions"),
+            instructions=None if link_type_value == "brochure" else _validate_research_note(instructions, field_name="instructions"),
             allowed_products=_normalize_allowed_products(allowed_products),
             expires_in_hours=effective_expires_in_hours,
             usage_limit=None,
-            payment_method=payment_method,
-            payment_instructions=_validate_research_note(payment_instructions, field_name="paymentInstructions"),
+            payment_method=None if link_type_value == "brochure" else payment_method,
+            payment_instructions=None if link_type_value == "brochure" else _validate_research_note(payment_instructions, field_name="paymentInstructions"),
             physician_certified=physician_certified,
         )
         _audit_event(
@@ -972,6 +1034,7 @@ def create_link(
             doctor_id=doctor_id,
             payload={
                 "allowedProductsCount": len(created.get("allowedProducts") or []),
+                "linkType": created.get("linkType") or link_type_value,
                 "productScope": created.get("productScope"),
                 "delegatePermission": created.get("delegatePermission"),
                 "expiresAt": created.get("expiresAt"),
@@ -988,7 +1051,7 @@ def create_link(
     token = secrets.token_urlsafe(24)
     now = datetime.now(timezone.utc).isoformat()
     config = get_doctor_config(doctor_id)
-    markup_value = (
+    markup_value = 0.0 if link_type_value == "brochure" else (
         _normalize_capped_markup_percent(config.get("markupPercent"))
         if markup_percent is None
         else _normalize_capped_markup_percent(markup_percent)
@@ -1008,33 +1071,41 @@ def create_link(
         else None
     )
     product_scope_value = _normalize_product_scope(product_scope)
-    delegate_permission_value = _normalize_delegate_permission(delegate_permission)
+    delegate_permission_value = BROCHURE_PERMISSION if link_type_value == "brochure" else _normalize_delegate_permission(delegate_permission)
     link = {
         "token": token,
+        "linkType": link_type_value,
+        "link_type": link_type_value,
+        "capabilities": capabilities,
+        "createdByUserId": created_by_user_id or doctor_id,
         "patientId": subject_value,
         "patientReference": patient_reference_value,
         "referenceLabel": patient_reference_value or study_value,
-        "label": patient_reference_value or study_value,
+        "brochureName": brochure_name_value,
+        "brochure_name": brochure_name_value,
+        "label": brochure_name_value or patient_reference_value or study_value,
         "subjectLabel": subject_value,
         "studyLabel": study_value,
-        "delegateName": _validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190),
-        "delegateContact": _validate_sensitive_session_text(delegate_contact, field_name="delegateContact", max_len=190),
-        "delegateRole": _normalize_delegate_role(delegate_role),
+        "recipientName": _validate_sensitive_session_text(tracking_name, field_name="recipientName", max_len=190) if link_type_value == "brochure" else None,
+        "recipientContact": _validate_sensitive_session_text(tracking_contact, field_name="recipientContact", max_len=190) if link_type_value == "brochure" else None,
+        "delegateName": _validate_sensitive_session_text(tracking_name, field_name="delegateName", max_len=190) if link_type_value != "brochure" else None,
+        "delegateContact": _validate_sensitive_session_text(tracking_contact, field_name="delegateContact", max_len=190) if link_type_value != "brochure" else None,
+        "delegateRole": None if link_type_value == "brochure" else _normalize_delegate_role(delegate_role),
         "createdAt": now,
         "expiresAt": expires_at,
         "markupPercent": float(markup_value or 0.0),
         "pricingDisclosure": _validate_sensitive_session_text(
-            pricing_disclosure or DEFAULT_PRICING_DISCLOSURE,
+            None if link_type_value == "brochure" else (pricing_disclosure or DEFAULT_PRICING_DISCLOSURE),
             field_name="pricingDisclosure",
             max_len=1000,
         ),
         "zelleRecipientName": _validate_sensitive_session_text(
-            zelle_recipient_name,
+            None if link_type_value == "brochure" else zelle_recipient_name,
             field_name="zelleRecipientName",
             max_len=190,
         ),
-        "paymentConfirmationRequired": _normalize_bool(payment_confirmation_required, default=True),
-        "delegateInstructions": _validate_research_note(delegate_instructions, field_name="delegateInstructions"),
+        "paymentConfirmationRequired": False if link_type_value == "brochure" else _normalize_bool(payment_confirmation_required, default=True),
+        "delegateInstructions": None if link_type_value == "brochure" else _validate_research_note(delegate_instructions, field_name="delegateInstructions"),
         "internalPhysicianNote": _validate_research_note(internal_physician_note, field_name="internalPhysicianNote"),
         "termsVersion": _validate_policy_version(terms_version, field_name="termsVersion"),
         "shippingPolicyVersion": _validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion"),
@@ -1042,16 +1113,19 @@ def create_link(
         "productScope": product_scope_value,
         "productScopeItems": _normalize_allowed_products(product_scope_items),
         "delegatePermission": delegate_permission_value,
-        "instructions": _validate_research_note(instructions, field_name="instructions"),
+        "instructions": None if link_type_value == "brochure" else _validate_research_note(instructions, field_name="instructions"),
         "allowedProducts": allowed_products_value,
         "usageLimit": None,
         "usageCount": 0,
         "openCount": 0,
+        "viewCount": 0,
         "status": "active",
         "receivedPayment": False,
         "physicianCertified": bool(physician_certified),
         "lastUsedAt": None,
         "lastOpenedAt": None,
+        "firstViewedAt": None,
+        "lastViewedAt": None,
         "lastOrderAt": None,
         "revokedAt": None,
     }
@@ -1074,6 +1148,7 @@ def update_link(
     subject_label: Optional[str] = None,
     study_label: Optional[str] = None,
     patient_reference: Optional[str] = None,
+    brochure_name: Optional[str] = None,
     delegate_name: Optional[str] = None,
     delegate_contact: Optional[str] = None,
     delegate_role: Optional[str] = None,
@@ -1115,6 +1190,7 @@ def update_link(
             subject_label=_validate_non_phi_label(subject_label, field_name="subjectLabel") if subject_label is not None else None,
             study_label=_validate_non_phi_label(study_label, field_name="studyLabel") if study_label is not None else None,
             patient_reference=_validate_non_phi_label(patient_reference, field_name="patientReference") if patient_reference is not None else None,
+            brochure_name=_validate_non_phi_label(brochure_name, field_name="brochureName") if brochure_name is not None else None,
             delegate_name=(
                 _validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190)
                 if delegate_name is not None
@@ -1208,6 +1284,9 @@ def update_link(
             entry["patientId"] = _validate_non_phi_label(subject_label or patient_id, field_name="subjectLabel")
         if study_label is not None:
             entry["studyLabel"] = _validate_non_phi_label(study_label, field_name="studyLabel")
+        if brochure_name is not None:
+            entry["brochureName"] = _validate_non_phi_label(brochure_name, field_name="brochureName")
+            entry["label"] = entry.get("brochureName") or entry.get("patientReference") or entry.get("studyLabel")
         if delegate_name is not None:
             entry["delegateName"] = _validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190)
         if delegate_contact is not None:
@@ -1326,7 +1405,13 @@ def delete_link(doctor_id: str, token: str) -> Dict[str, Any]:
     return {"deleted": True, "token": token}
 
 
-def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[str, Any]:
+def resolve_delegate_token(
+    token: str,
+    *,
+    count_page_load: bool = True,
+    view_context: Optional[Dict[str, Any]] = None,
+    include_brochure_scope: bool = False,
+) -> Dict[str, Any]:
     token = _normalize_token(token)
     if not token:
         err = ValueError("token is required")
@@ -1369,7 +1454,11 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
 
         if count_page_load:
             try:
-                patient_links_repository.touch_last_used(token)
+                patient_links_repository.touch_last_used(
+                    token,
+                    ip_hash=_hash_public_view_value((view_context or {}).get("ip")),
+                    user_agent_hash=_hash_public_view_value((view_context or {}).get("userAgent")),
+                )
             except Exception:
                 pass
             opened_at = datetime.now(timezone.utc).isoformat()
@@ -1379,6 +1468,13 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
                 link["openCount"] = 1
             link["lastUsedAt"] = opened_at
             link["lastOpenedAt"] = opened_at
+            try:
+                link["viewCount"] = int(link.get("viewCount") or 0) + 1
+            except Exception:
+                link["viewCount"] = int(link.get("openCount") or 1)
+            link["lastViewedAt"] = opened_at
+            if not link.get("firstViewedAt"):
+                link["firstViewedAt"] = opened_at
             _audit_event(
                 "link_opened",
                 token=token,
@@ -1393,50 +1489,66 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
         doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
 
         review_status = _delegate_proposal_review_status(link)
+        link_type = _normalize_link_type(link.get("linkType") or link.get("link_type"))
+        capabilities = capabilities_for_link_type(link_type)
+        expose_scope_items = link_type != "brochure" or include_brochure_scope
+        brochure_title = (
+            _validate_non_phi_label(link.get("brochureName") or link.get("brochure_name"), field_name="brochureTitle")
+            if link_type == "brochure"
+            else None
+        )
 
         return {
             "token": token,
-            "doctorId": doctor_id,
+            "linkType": link_type,
+            "link_type": link_type,
+            "capabilities": capabilities,
+            "brochureTitle": brochure_title,
+            "pageTitle": brochure_title,
+            "doctorId": "" if link_type == "brochure" else doctor_id,
             "doctorName": doctor_name,
-            "markupPercent": _normalize_capped_markup_percent(link.get("markupPercent")),
+            "markupPercent": 0.0 if link_type == "brochure" else _normalize_capped_markup_percent(link.get("markupPercent")),
             "doctorLogoUrl": doctor.get("delegateLogoUrl") if isinstance(doctor, dict) else None,
             "doctorSecondaryColor": doctor.get("delegateSecondaryColor") if isinstance(doctor, dict) else None,
             "doctorBackgroundImageUrl": doctor.get("delegateBackgroundImageUrl") if isinstance(doctor, dict) else None,
             "doctorBackgroundColor": doctor.get("delegateBackgroundColor") if isinstance(doctor, dict) else None,
-            "subjectLabel": link.get("subjectLabel"),
-            "studyLabel": link.get("studyLabel"),
-            "patientReference": link.get("patientReference"),
-            "delegateName": link.get("delegateName"),
-            "delegateRole": link.get("delegateRole"),
+            "subjectLabel": None if link_type == "brochure" else link.get("subjectLabel"),
+            "studyLabel": None if link_type == "brochure" else link.get("studyLabel"),
+            "patientReference": None if link_type == "brochure" else link.get("patientReference"),
+            "delegateName": link.get("delegateName") if link_type != "brochure" else None,
+            "delegateRole": link.get("delegateRole") if link_type != "brochure" else None,
             "productScope": link.get("productScope") or DEFAULT_PRODUCT_SCOPE,
-            "productScopeItems": link.get("productScopeItems") or [],
-            "delegatePermission": link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION,
-            "pricingDisclosure": link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE,
-            "paymentConfirmationRequired": link.get("paymentConfirmationRequired"),
-            "delegateInstructions": link.get("delegateInstructions"),
+            "productScopeItems": (link.get("productScopeItems") or []) if expose_scope_items else [],
+            "delegatePermission": BROCHURE_PERMISSION if link_type == "brochure" else (link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION),
+            "pricingDisclosure": None if link_type == "brochure" else (link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE),
+            "paymentConfirmationRequired": False if link_type == "brochure" else link.get("paymentConfirmationRequired"),
+            "delegateInstructions": None if link_type == "brochure" else link.get("delegateInstructions"),
             "termsVersion": link.get("termsVersion"),
             "shippingPolicyVersion": link.get("shippingPolicyVersion"),
             "privacyPolicyVersion": link.get("privacyPolicyVersion"),
-            "instructions": link.get("instructions"),
-            "allowedProducts": link.get("allowedProducts") or [],
+            "instructions": None if link_type == "brochure" else link.get("instructions"),
+            "allowedProducts": (link.get("allowedProducts") or []) if expose_scope_items else [],
             "usageLimit": None,
             "usageCount": link.get("usageCount"),
             "openCount": link.get("openCount"),
+            "viewCount": link.get("viewCount") or link.get("openCount"),
+            "firstViewedAt": link.get("firstViewedAt"),
+            "lastViewedAt": link.get("lastViewedAt") or link.get("lastOpenedAt"),
             "status": link.get("status") or "active",
-            "paymentMethod": link.get("paymentMethod") if isinstance(link, dict) else None,
-            "paymentInstructions": link.get("paymentInstructions") if isinstance(link, dict) else None,
+            "paymentMethod": None if link_type == "brochure" else (link.get("paymentMethod") if isinstance(link, dict) else None),
+            "paymentInstructions": None if link_type == "brochure" else (link.get("paymentInstructions") if isinstance(link, dict) else None),
             "createdAt": link.get("createdAt"),
             "expiresAt": link.get("expiresAt"),
             "lastUsedAt": link.get("lastUsedAt"),
             "lastOpenedAt": link.get("lastOpenedAt"),
-            "delegateSharedAt": link.get("delegateSharedAt"),
-            "delegateOrderId": link.get("delegateOrderId"),
-            "proposalStatus": review_status,
-            "proposalReviewedAt": link.get("delegateReviewedAt"),
-            "proposalReviewOrderId": link.get("delegateReviewOrderId"),
-            "proposalReviewNotes": link.get("delegateReviewNotes"),
-            "disclosures": _research_supply_disclosures(link.get("markupPercent")),
-            "compensationDisclosure": _compensation_disclosure(link.get("markupPercent")),
+            "delegateSharedAt": None if link_type == "brochure" else link.get("delegateSharedAt"),
+            "delegateOrderId": None if link_type == "brochure" else link.get("delegateOrderId"),
+            "proposalStatus": None if link_type == "brochure" else review_status,
+            "proposalReviewedAt": None if link_type == "brochure" else link.get("delegateReviewedAt"),
+            "proposalReviewOrderId": None if link_type == "brochure" else link.get("delegateReviewOrderId"),
+            "proposalReviewNotes": None if link_type == "brochure" else link.get("delegateReviewNotes"),
+            "disclosures": _brochure_disclosures() if link_type == "brochure" else _research_supply_disclosures(link.get("markupPercent")),
+            "compensationDisclosure": None if link_type == "brochure" else _compensation_disclosure(link.get("markupPercent")),
         }
 
     index = _load_index()
@@ -1458,10 +1570,17 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
         now = datetime.now(timezone.utc).isoformat()
         link["lastUsedAt"] = now
         link["lastOpenedAt"] = now
+        link["lastViewedAt"] = now
+        if not link.get("firstViewedAt"):
+            link["firstViewedAt"] = now
         try:
             link["openCount"] = int(link.get("openCount") or 0) + 1
         except Exception:
             link["openCount"] = 1
+        try:
+            link["viewCount"] = int(link.get("viewCount") or 0) + 1
+        except Exception:
+            link["viewCount"] = link.get("openCount") or 1
         _persist_links(doctor_id, links)
 
     doctor = user_repository.find_by_id(doctor_id) or None
@@ -1480,35 +1599,51 @@ def resolve_delegate_token(token: str, *, count_page_load: bool = True) -> Dict[
         raise err
 
     doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
+    link_type = _normalize_link_type(link.get("linkType") or link.get("link_type"))
+    capabilities = capabilities_for_link_type(link_type)
+    expose_scope_items = link_type != "brochure" or include_brochure_scope
+    brochure_title = (
+        _validate_non_phi_label(link.get("brochureName") or link.get("brochure_name"), field_name="brochureTitle")
+        if link_type == "brochure"
+        else None
+    )
     return {
         "token": token,
-        "doctorId": doctor_id,
+        "linkType": link_type,
+        "link_type": link_type,
+        "capabilities": capabilities,
+        "brochureTitle": brochure_title,
+        "pageTitle": brochure_title,
+        "doctorId": "" if link_type == "brochure" else doctor_id,
         "doctorName": doctor_name,
-        "markupPercent": float(_normalize_capped_markup_percent(link.get("markupPercent")) or 0.0),
-        "allowedProducts": link.get("allowedProducts") or [],
-        "subjectLabel": link.get("subjectLabel"),
-        "studyLabel": link.get("studyLabel"),
-        "patientReference": link.get("patientReference"),
-        "delegateName": link.get("delegateName"),
-        "delegateRole": link.get("delegateRole"),
+        "markupPercent": 0.0 if link_type == "brochure" else float(_normalize_capped_markup_percent(link.get("markupPercent")) or 0.0),
+        "allowedProducts": (link.get("allowedProducts") or []) if expose_scope_items else [],
+        "subjectLabel": None if link_type == "brochure" else link.get("subjectLabel"),
+        "studyLabel": None if link_type == "brochure" else link.get("studyLabel"),
+        "patientReference": None if link_type == "brochure" else link.get("patientReference"),
+        "delegateName": link.get("delegateName") if link_type != "brochure" else None,
+        "delegateRole": link.get("delegateRole") if link_type != "brochure" else None,
         "productScope": link.get("productScope") or DEFAULT_PRODUCT_SCOPE,
-        "productScopeItems": link.get("productScopeItems") or [],
-        "delegatePermission": link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION,
-        "pricingDisclosure": link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE,
-        "paymentConfirmationRequired": link.get("paymentConfirmationRequired"),
-        "delegateInstructions": link.get("delegateInstructions"),
+        "productScopeItems": (link.get("productScopeItems") or []) if expose_scope_items else [],
+        "delegatePermission": BROCHURE_PERMISSION if link_type == "brochure" else (link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION),
+        "pricingDisclosure": None if link_type == "brochure" else (link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE),
+        "paymentConfirmationRequired": False if link_type == "brochure" else link.get("paymentConfirmationRequired"),
+        "delegateInstructions": None if link_type == "brochure" else link.get("delegateInstructions"),
         "termsVersion": link.get("termsVersion"),
         "shippingPolicyVersion": link.get("shippingPolicyVersion"),
         "privacyPolicyVersion": link.get("privacyPolicyVersion"),
-        "instructions": link.get("instructions"),
+        "instructions": None if link_type == "brochure" else link.get("instructions"),
         "usageLimit": None,
         "usageCount": link.get("usageCount"),
         "openCount": link.get("openCount"),
+        "viewCount": link.get("viewCount") or link.get("openCount"),
         "status": link.get("status") or "active",
         "lastUsedAt": link.get("lastUsedAt"),
         "lastOpenedAt": link.get("lastOpenedAt"),
-        "disclosures": _research_supply_disclosures(link.get("markupPercent")),
-        "compensationDisclosure": _compensation_disclosure(link.get("markupPercent")),
+        "firstViewedAt": link.get("firstViewedAt"),
+        "lastViewedAt": link.get("lastViewedAt") or link.get("lastOpenedAt"),
+        "disclosures": _brochure_disclosures() if link_type == "brochure" else _research_supply_disclosures(link.get("markupPercent")),
+        "compensationDisclosure": None if link_type == "brochure" else _compensation_disclosure(link.get("markupPercent")),
     }
 
 

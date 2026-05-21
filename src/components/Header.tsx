@@ -7,8 +7,8 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUturnLeftIcon, CursorArrowRippleIcon } from '@heroicons/react/24/outline';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCircle2, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle, Plus, FileText, Truck } from 'lucide-react';
+import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUturnLeftIcon, BookOpenIcon, CursorArrowRippleIcon, SwatchIcon } from '@heroicons/react/24/outline';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCircle2, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle, Plus, Truck } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -24,7 +24,11 @@ import { DoctorProfileForm } from './DoctorProfileForm';
 import { BrandLogoImage } from './BrandLogoImage';
 import delegateLinkBetaImage1 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage1.png';
 import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage2.png';
+import legalTermsHtml from '../content/legal/terms.html?raw';
+import legalPrivacyHtml from '../content/legal/privacy.html?raw';
+import legalShippingHtml from '../content/legal/shipping.html?raw';
 import {
+  buildBrochureLinkUrl,
   buildResearchSupplyLinkUrl,
 } from '../lib/researchSupplyLinks';
 
@@ -110,11 +114,33 @@ const getSalesPartnerLabel = (allowedRetail?: unknown) => {
 
 type PatientLinkPaymentMethod = 'none' | 'zelle';
 type DelegateRole = 'patient' | 'caregiver' | 'staff' | 'research_participant' | 'authorized_representative' | 'other';
-type DelegateProductScope = 'all_physician_approved' | 'specific_cart_only';
+type DelegateProductScope = 'all_physician_approved' | 'specific_cart_only' | 'specific_products';
 type DelegatePermission = 'view_products_only' | 'submit_for_physician_review';
 type CreateLinkDialogMode = 'select' | 'delegate' | 'brochure';
+type CreateLinkLegalDocumentKey = 'terms' | 'shipping' | 'privacy';
 type PatientLinkType = 'delegate' | 'brochure';
 type PatientLinkTypeFilter = 'all' | PatientLinkType;
+type PatientLinkConfirmAction = {
+  action: 'revoke' | 'delete';
+  token: string;
+  label: string;
+  linkType: PatientLinkType;
+};
+
+const CREATE_LINK_LEGAL_DOCUMENTS: Record<CreateLinkLegalDocumentKey, { title: string; html: string }> = {
+  terms: {
+    title: 'Terms of Service',
+    html: legalTermsHtml,
+  },
+  shipping: {
+    title: 'Shipping Policy',
+    html: legalShippingHtml,
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    html: legalPrivacyHtml,
+  },
+};
 
 const DEFAULT_DELEGATE_LINK_EXPIRY_HOURS = '72';
 const DEFAULT_DELEGATE_PRICING_DISCLOSURE =
@@ -197,51 +223,10 @@ const getPatientLinkTypeLabel = (type: PatientLinkType) =>
 const getPatientLinkTrackingPrefix = (type: PatientLinkType) =>
   type === 'brochure' ? 'brochure_link' : 'delegate_link';
 
-const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: string | null) => {
-  const createdAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  return {
-    token: 'node-ui-dummy-link',
-    referenceLabel: 'Subject A104',
-    patientReference: 'RS-UI-001',
-    patientId: 'Subject A104',
-    subjectLabel: 'Subject A104',
-    studyLabel: 'GH response pilot',
-    createdAt,
-    expiresAt: null,
-    usageLimit: null,
-    usageCount: 0,
-    openCount: 0,
-    status: 'active',
-    markupPercent: 15,
-    paymentMethod: 'zelle',
-    paymentInstructions: buildPatientLinkDefaultInstructions('zelle', zelleContact, doctorName),
-    receivedPayment: false,
-    lastUsedAt: null,
-    lastOpenedAt: null,
-    revokedAt: null,
-  };
-};
-
-const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: string | null) => {
-  const base = createNodeDummyPatientLink(zelleContact, doctorName);
-  const proposalCreatedAt = new Date(Date.now() - 45 * 60 * 1000).toISOString();
-  return [
-    base,
-    {
-      ...base,
-      token: 'node-ui-dummy-link-2',
-      referenceLabel: 'Subject B205',
-      patientReference: 'RS-UI-002',
-      patientId: 'Subject B205',
-      subjectLabel: 'Subject B205',
-      studyLabel: 'GH response pilot',
-      createdAt: new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString(),
-      lastUsedAt: proposalCreatedAt,
-      delegateSharedAt: proposalCreatedAt,
-      delegateReviewStatus: 'pending',
-      receivedPayment: false,
-    },
-  ];
+const createNodeDummyPatientLinks = (_zelleContact?: string | null, _doctorName?: string | null) => {
+  void _zelleContact;
+  void _doctorName;
+  return [];
 };
 
 const DEFAULT_DELEGATE_SECONDARY_COLOR = '#0b0679';
@@ -2084,7 +2069,8 @@ export function Header({
   const [deleteAccountDeleting, setDeleteAccountDeleting] = useState(false);
   const [accountTab, setAccountTab] = useState<AccountTabId>('details');
   const [physicianDashboardTab, setPhysicianDashboardTab] = useState<PhysicianDashboardTabId>('links');
-  const [physicianDashboardPortalTarget, setPhysicianDashboardPortalTarget] = useState<HTMLElement | null>(null);
+  const [physicianDashboardPortalReady, setPhysicianDashboardPortalReady] = useState(false);
+  const physicianDashboardPortalReadyRef = useRef(false);
   const physicianDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const [physicianDashboardTabIndicator, setPhysicianDashboardTabIndicator] = useState({
     left: 0,
@@ -2112,10 +2098,14 @@ export function Header({
   const [patientLinkReferenceDraft, setPatientLinkReferenceDraft] = useState('');
   const [patientLinkDelegateNameDraft, setPatientLinkDelegateNameDraft] = useState('');
   const [patientLinkDelegateContactDraft, setPatientLinkDelegateContactDraft] = useState('');
+  const [patientLinkBrochureNameDraft, setPatientLinkBrochureNameDraft] = useState('');
+  const [patientLinkRecipientNameDraft, setPatientLinkRecipientNameDraft] = useState('');
+  const [patientLinkRecipientContactDraft, setPatientLinkRecipientContactDraft] = useState('');
   const [patientLinkDelegateRoleDraft, setPatientLinkDelegateRoleDraft] = useState<DelegateRole>('patient');
   const [patientLinkProductScopeDraft, setPatientLinkProductScopeDraft] = useState<DelegateProductScope>('all_physician_approved');
   const [patientLinkApprovedProductIds, setPatientLinkApprovedProductIds] = useState<string[]>([]);
   const [patientLinkProductPickerOpen, setPatientLinkProductPickerOpen] = useState(false);
+  const [createLinkLegalDocumentKey, setCreateLinkLegalDocumentKey] = useState<CreateLinkLegalDocumentKey | null>(null);
   const [patientLinkProductPickerQuery, setPatientLinkProductPickerQuery] = useState('');
   const [patientLinkProductPickerDomain, setPatientLinkProductPickerDomain] = useState('all');
   const [patientLinkDelegatePermissionDraft, setPatientLinkDelegatePermissionDraft] = useState<DelegatePermission>('submit_for_physician_review');
@@ -2129,12 +2119,16 @@ export function Header({
   const [patientLinkTermsAccepted, setPatientLinkTermsAccepted] = useState(false);
   const [patientLinkPaymentMethodDraft, setPatientLinkPaymentMethodDraft] = useState<PatientLinkPaymentMethod>('zelle');
   const [patientLinkInstructionsDraft, setPatientLinkInstructionsDraft] = useState<string>('');
+  const createLinkLegalDocument = createLinkLegalDocumentKey
+    ? CREATE_LINK_LEGAL_DOCUMENTS[createLinkLegalDocumentKey]
+    : null;
   const [patientLinksCreating, setPatientLinksCreating] = useState(false);
   const [patientLinksUpdatingToken, setPatientLinksUpdatingToken] = useState<string | null>(null);
   const [patientLinksDeletingToken, setPatientLinksDeletingToken] = useState<string | null>(null);
   const [patientLinksSavingPaymentToken, setPatientLinksSavingPaymentToken] = useState<string | null>(null);
   const [patientLinksPaymentReceivedToken, setPatientLinksPaymentReceivedToken] = useState<string | null>(null);
   const [patientLinksSavingReviewNotesToken, setPatientLinksSavingReviewNotesToken] = useState<string | null>(null);
+  const [patientLinkConfirmAction, setPatientLinkConfirmAction] = useState<PatientLinkConfirmAction | null>(null);
   const [createLinkDialogOpen, setCreateLinkDialogOpen] = useState(false);
   const [createLinkDialogMode, setCreateLinkDialogMode] = useState<CreateLinkDialogMode>('select');
   const [delegateProductPickerBrokenImages, setDelegateProductPickerBrokenImages] = useState<Set<string>>(() => new Set());
@@ -2171,6 +2165,15 @@ export function Header({
     }
   }, [suppressSearch]);
 
+  useEffect(() => {
+    return () => {
+      if (patientLinksScrollRestoreRafRef.current !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(patientLinksScrollRestoreRafRef.current);
+        patientLinksScrollRestoreRafRef.current = null;
+      }
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (!createLinkDialogOpen) {
       return;
@@ -2182,6 +2185,12 @@ export function Header({
     dialogContent.scrollTop = 0;
     dialogContent.scrollLeft = 0;
   }, [createLinkDialogMode, createLinkDialogOpen]);
+
+  useEffect(() => {
+    if (!createLinkDialogOpen) {
+      setCreateLinkLegalDocumentKey(null);
+    }
+  }, [createLinkDialogOpen]);
 
   const captureCreateLinkDialogScrollPosition = useCallback(() => {
     const dialogContent = createLinkDialogContentRef.current;
@@ -2308,6 +2317,9 @@ export function Header({
   const accountModalScrollRef = useRef<HTMLDivElement | null>(null);
   const accountTabScrollTopRef = useRef<Partial<Record<AccountTabId, number>>>({});
   const restoreAccountTabScrollRef = useRef<Partial<Record<AccountTabId, boolean>>>({});
+  const patientLinksScrollRestoreRef = useRef<{ accountTop: number | null; windowY: number | null } | null>(null);
+  const patientLinksScrollRestoreRafRef = useRef<number | null>(null);
+  const patientLinksPreserveScrollOnNextLoadRef = useRef(false);
   const researchOverlayTimeoutRef = useRef<number | null>(null);
   const isResearchFullscreen = false;
   const modalFullscreenHeight =
@@ -2335,6 +2347,51 @@ export function Header({
       restoreAccountTabScrollRef.current[tabId] = false;
     }
   }, [accountTab]);
+
+  const capturePatientLinksScrollPosition = useCallback(() => {
+    patientLinksScrollRestoreRef.current = {
+      accountTop: accountModalScrollRef.current?.scrollTop ?? null,
+      windowY: typeof window !== 'undefined' ? window.scrollY : null,
+    };
+  }, []);
+
+  const restorePatientLinksScrollPosition = useCallback(() => {
+    const restore = () => {
+      const saved = patientLinksScrollRestoreRef.current;
+      if (!saved) {
+        return;
+      }
+      if (saved.accountTop !== null && accountModalScrollRef.current) {
+        accountModalScrollRef.current.scrollTop = saved.accountTop;
+      }
+      if (saved.windowY !== null && typeof window !== 'undefined') {
+        window.scrollTo({
+          top: saved.windowY,
+          left: window.scrollX,
+          behavior: 'auto',
+        });
+      }
+    };
+
+    if (typeof window === 'undefined') {
+      restore();
+      patientLinksScrollRestoreRef.current = null;
+      return;
+    }
+
+    if (patientLinksScrollRestoreRafRef.current !== null) {
+      window.cancelAnimationFrame(patientLinksScrollRestoreRafRef.current);
+    }
+
+    patientLinksScrollRestoreRafRef.current = window.requestAnimationFrame(() => {
+      restore();
+      patientLinksScrollRestoreRafRef.current = window.requestAnimationFrame(() => {
+        restore();
+        patientLinksScrollRestoreRafRef.current = null;
+        patientLinksScrollRestoreRef.current = null;
+      });
+    });
+  }, []);
 
   const clearResearchOverlayTimeout = useCallback(() => {
     if (researchOverlayTimeoutRef.current !== null) {
@@ -3073,6 +3130,7 @@ export function Header({
     }
 
     setPatientLinkInstructionsDraftByToken((prev) => {
+      let changed = false;
       const next = { ...prev };
       for (const link of patientLinks || []) {
         const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
@@ -3088,10 +3146,14 @@ export function Header({
           || existing.trim() === prevDefault.trim()
           || isGeneratedPatientLinkDefaultInstructions(existing, localUser?.name ?? user?.name ?? null);
         if (shouldReplace) {
-          next[token] = buildPatientLinkDefaultInstructions('zelle', nextZelleContact, localUser?.name ?? user?.name ?? null);
+          const nextDefault = buildPatientLinkDefaultInstructions('zelle', nextZelleContact, localUser?.name ?? user?.name ?? null);
+          if (next[token] !== nextDefault) {
+            next[token] = nextDefault;
+            changed = true;
+          }
         }
       }
-      return next;
+      return changed ? next : prev;
     });
 
     lastZelleContactRef.current = nextZelleContact || null;
@@ -3159,16 +3221,17 @@ export function Header({
       setAccountTab('details');
     }
   }, [welcomeOpen]);
-  const accountRole = localUser?.role ?? user?.role ?? null;
-  const accountPartnerFlag = coerceOptionalBoolean(localUser?.salesRep?.isPartner ?? user?.salesRep?.isPartner ?? null);
-  const accountAllowedRetail = coerceOptionalBoolean(localUser?.salesRep?.allowedRetail ?? user?.salesRep?.allowedRetail ?? null);
+  const accountSourceUser = delegateMode ? null : (localUser ?? user ?? null);
+  const accountRole = accountSourceUser?.role ?? null;
+  const accountPartnerFlag = coerceOptionalBoolean(accountSourceUser?.salesRep?.isPartner ?? null);
+  const accountAllowedRetail = coerceOptionalBoolean(accountSourceUser?.salesRep?.allowedRetail ?? null);
   const accountIsAdmin = isAdmin(accountRole);
   const accountIsSalesRep = isRep(accountRole) || isSalesLead(accountRole);
   const accountIsDoctor = isDoctorRole(accountRole);
   const accountIsPartner = !accountIsDoctor && isSalesPartner(accountRole, accountPartnerFlag);
   const accountPartnerLabel = accountIsPartner ? getSalesPartnerLabel(accountAllowedRetail) : null;
   const accountCanUploadResellerPermit = accountIsDoctor || accountIsPartner;
-  const accountModalBaseName = (localUser?.name || user?.name || 'Account').trim();
+  const accountModalBaseName = (accountSourceUser?.name || 'Account').trim();
   const accountModalDisplayName =
     accountIsDoctor && accountModalBaseName && !/^(dr\.?|doctor)\s+/i.test(accountModalBaseName)
       ? `Dr. ${accountModalBaseName}`
@@ -3182,21 +3245,19 @@ export function Header({
         : accountIsSalesRep
           ? 'Sales'
           : null;
-  const headerDisplayName = localUser
+  const headerDisplayName = accountSourceUser
     ? accountIsAdmin
-      ? `Admin: ${localUser.name}`
+      ? `Admin: ${accountSourceUser.name}`
       : isSalesLead(accountRole)
-        ? `Lead: ${localUser.name}`
+        ? `Lead: ${accountSourceUser.name}`
       : accountIsPartner && accountPartnerLabel
-        ? `${accountPartnerLabel}: ${localUser.name}`
+        ? `${accountPartnerLabel}: ${accountSourceUser.name}`
       : accountIsSalesRep
-        ? `Rep: ${localUser.name}`
-        : localUser.name
+        ? `Rep: ${accountSourceUser.name}`
+        : accountSourceUser.name
     : '';
-  const profileImageUrl = localUser
-    ? (localUser.profileImageUrl ?? null)
-    : (user?.profileImageUrl ?? null);
-  const userInitials = getInitials(localUser?.name || user?.name || headerDisplayName);
+  const profileImageUrl = accountSourceUser?.profileImageUrl ?? null;
+  const userInitials = getInitials(accountSourceUser?.name || headerDisplayName);
   const normalizedReferralCodes = Array.isArray(referralCodes)
     ? referralCodes
         .map((code) => {
@@ -3216,17 +3277,44 @@ export function Header({
     (welcomeOpen && accountTab === 'patient_links') ||
     (accountIsDoctor && physicianDashboardTab === 'links');
 
-  useEffect(() => {
-    if (typeof document === 'undefined' || !accountIsDoctor) {
-      setPhysicianDashboardPortalTarget((current) => (current === null ? current : null));
+  useLayoutEffect(() => {
+    const setPortalReady = (nextReady: boolean) => {
+      if (physicianDashboardPortalReadyRef.current === nextReady) {
+        return;
+      }
+      physicianDashboardPortalReadyRef.current = nextReady;
+      setPhysicianDashboardPortalReady(nextReady);
+    };
+    const syncPortalReady = () => {
+      const nextReady = Boolean(document.getElementById(PHYSICIAN_DASHBOARD_PORTAL_ID));
+      setPortalReady(nextReady);
+    };
+
+    if (delegateMode || typeof document === 'undefined' || !accountIsDoctor || suppressHomeButton) {
+      setPortalReady(false);
       return;
     }
-    const target = document.getElementById(PHYSICIAN_DASHBOARD_PORTAL_ID);
-    setPhysicianDashboardPortalTarget((current) => (current === target ? current : target));
-  }, [accountIsDoctor, suppressHomeButton, user?.id]);
+
+    syncPortalReady();
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const raf = window.requestAnimationFrame(() => {
+      syncPortalReady();
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [accountIsDoctor, delegateMode, suppressHomeButton, user?.id]);
+
+  const physicianDashboardPortalTarget =
+    physicianDashboardPortalReady && typeof document !== 'undefined'
+      ? document.getElementById(PHYSICIAN_DASHBOARD_PORTAL_ID)
+      : null;
 
   useEffect(() => {
-    if (!accountIsDoctor || !physicianDashboardPortalTarget || !user) {
+    if (delegateMode || !accountIsDoctor || !physicianDashboardPortalTarget || !user) {
       physicianDashboardRefreshKeyRef.current = null;
       return;
     }
@@ -3257,7 +3345,7 @@ export function Header({
         console.warn('[Header] Failed to refresh physician dashboard user', error);
       }
     })();
-  }, [accountIsDoctor, physicianDashboardPortalTarget, user]);
+  }, [accountIsDoctor, delegateMode, physicianDashboardPortalTarget, user]);
 
   const updatePhysicianDashboardTabIndicator = useCallback(() => {
     const container = physicianDashboardTabsContainerRef.current;
@@ -3288,25 +3376,26 @@ export function Header({
   }, [physicianDashboardTab]);
 
   useLayoutEffect(() => {
-    if (!accountIsDoctor || !physicianDashboardPortalTarget) {
+    if (delegateMode || !accountIsDoctor || !physicianDashboardPortalTarget) {
       return;
     }
     updatePhysicianDashboardTabIndicator();
   }, [
     accountIsDoctor,
+    delegateMode,
     physicianDashboardPortalTarget,
     physicianDashboardTab,
     updatePhysicianDashboardTabIndicator,
   ]);
 
   useEffect(() => {
-    if (!accountIsDoctor || !physicianDashboardPortalTarget) {
+    if (delegateMode || !accountIsDoctor || !physicianDashboardPortalTarget) {
       return undefined;
     }
     const handleResize = () => updatePhysicianDashboardTabIndicator();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [accountIsDoctor, physicianDashboardPortalTarget, updatePhysicianDashboardTabIndicator]);
+  }, [accountIsDoctor, delegateMode, physicianDashboardPortalTarget, updatePhysicianDashboardTabIndicator]);
 
   // Account tab underline indicator (shared bar that moves to active tab)
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -5217,22 +5306,41 @@ export function Header({
       setPatientLinksError(message);
       setPatientLinks([]);
     } finally {
+      const shouldRestorePatientLinksScroll = patientLinksPreserveScrollOnNextLoadRef.current;
+      patientLinksPreserveScrollOnNextLoadRef.current = false;
       setPatientLinksLoading(false);
       patientLinksLoadInFlightRef.current = false;
+      if (shouldRestorePatientLinksScroll) {
+        restorePatientLinksScrollPosition();
+      }
       if (patientLinksQueuedReloadRef.current) {
         patientLinksQueuedReloadRef.current = false;
+        if (shouldRestorePatientLinksScroll) {
+          patientLinksPreserveScrollOnNextLoadRef.current = true;
+        }
         void loadPatientLinksRef.current?.();
       }
     }
-  }, [localUser?.name, localUser?.zelleContact, normalizeMarkupPercent, showPatientLinksTab, user?.name]);
+  }, [
+    localUser?.name,
+    localUser?.zelleContact,
+    normalizeMarkupPercent,
+    restorePatientLinksScrollPosition,
+    showPatientLinksTab,
+    user?.name,
+  ]);
 
   useEffect(() => {
     loadPatientLinksRef.current = loadPatientLinks;
   }, [loadPatientLinks]);
 
-  const requestPatientLinksRefresh = useCallback((options?: { force?: boolean }) => {
+  const requestPatientLinksRefresh = useCallback((options?: { force?: boolean; preserveScroll?: boolean }) => {
     if (!showPatientLinksTab) {
       return;
+    }
+    if (options?.preserveScroll) {
+      capturePatientLinksScrollPosition();
+      patientLinksPreserveScrollOnNextLoadRef.current = true;
     }
     if (patientLinksLoadInFlightRef.current) {
       if (options?.force) {
@@ -5241,7 +5349,7 @@ export function Header({
       return;
     }
     void loadPatientLinks();
-  }, [loadPatientLinks, showPatientLinksTab]);
+  }, [capturePatientLinksScrollPosition, loadPatientLinks, showPatientLinksTab]);
 
   const patientLinksTypeCounts = useMemo(() => {
     const counts: Record<PatientLinkTypeFilter, number> = {
@@ -5268,6 +5376,7 @@ export function Header({
     }
 
     setPatientLinkPaymentMethodDraftByToken((prev) => {
+      let changed = false;
       const next: Record<string, PatientLinkPaymentMethod> = { ...prev };
       for (const link of patientLinks) {
         const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
@@ -5278,11 +5387,13 @@ export function Header({
           (link as any)?.payment_method_id ??
           null;
         next[token] = normalizePatientLinkPaymentMethod(raw);
+        changed = true;
       }
-      return next;
+      return changed ? next : prev;
     });
 
     setPatientLinkInstructionsDraftByToken((prev) => {
+      let changed = false;
       const next: Record<string, string> = { ...prev };
       for (const link of patientLinks) {
         const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
@@ -5301,11 +5412,13 @@ export function Header({
         next[token] = text.trim()
           ? text
           : buildPatientLinkDefaultInstructions(method, localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null);
+        changed = true;
       }
-      return next;
+      return changed ? next : prev;
     });
 
     setPatientLinkReviewNotesDraftByToken((prev) => {
+      let changed = false;
       const next: Record<string, string> = { ...prev };
       for (const link of patientLinks) {
         const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
@@ -5317,8 +5430,9 @@ export function Header({
           (link as any)?.proposal_review_notes ??
           null;
         next[token] = typeof raw === 'string' ? raw : '';
+        changed = true;
       }
-      return next;
+      return changed ? next : prev;
     });
   }, [localUser?.name, localUser?.zelleContact, patientLinks, user?.name]);
 
@@ -5343,7 +5457,7 @@ export function Header({
           paymentInstructions,
         });
         toast.success('Payment settings saved.');
-        requestPatientLinksRefresh({ force: true });
+        requestPatientLinksRefresh({ force: true, preserveScroll: true });
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()
@@ -5418,12 +5532,13 @@ export function Header({
   }, [patientLinks]);
 
   useLayoutEffect(() => {
-    if (!accountIsDoctor || !physicianDashboardPortalTarget) {
+    if (delegateMode || !accountIsDoctor || !physicianDashboardPortalTarget) {
       return;
     }
     updatePhysicianDashboardTabIndicator();
   }, [
     accountIsDoctor,
+    delegateMode,
     outstandingPatientProposalCount,
     physicianDashboardPortalTarget,
     updatePhysicianDashboardTabIndicator,
@@ -5437,10 +5552,15 @@ export function Header({
     return counts;
   }, [outstandingPatientProposalCount, showPatientLinksTab]);
 
-  const accountButtonIndicatorTotal = useMemo(
-    () => Object.values(accountTabIndicatorCounts).reduce((sum, count) => sum + (Number(count) || 0), 0),
-    [accountTabIndicatorCounts],
-  );
+  const accountButtonIndicatorTotal = useMemo(() => {
+    const visibleAccountTabIds = new Set(accountHeaderTabs.map((tab) => tab.id));
+    return Object.entries(accountTabIndicatorCounts).reduce((sum, [tabId, count]) => {
+      if (!visibleAccountTabIds.has(tabId as AccountTabId)) {
+        return sum;
+      }
+      return sum + (Number(count) || 0);
+    }, 0);
+  }, [accountHeaderTabs, accountTabIndicatorCounts]);
 
   useEffect(() => {
     onAccountIndicatorTotalChange?.(accountButtonIndicatorTotal);
@@ -5627,10 +5747,31 @@ export function Header({
     event?.preventDefault();
     event?.stopPropagation();
     setCreateLinkDialogOpen(true);
-    setCreateLinkDialogMode('delegate');
+    setCreateLinkDialogMode(createLinkDialogMode === 'brochure' ? 'brochure' : 'delegate');
     setPatientLinkProductPickerOpen(false);
     restoreCreateLinkDialogScrollPosition();
-  }, [restoreCreateLinkDialogScrollPosition]);
+  }, [createLinkDialogMode, restoreCreateLinkDialogScrollPosition]);
+
+  const handleCreateLinkBackToSelect = useCallback((event?: {
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setPatientLinkProductPickerOpen(false);
+    setCreateLinkDialogOpen(true);
+    setCreateLinkDialogMode('select');
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        const dialogContent = createLinkDialogContentRef.current;
+        if (!dialogContent) {
+          return;
+        }
+        dialogContent.scrollTop = 0;
+        dialogContent.scrollLeft = 0;
+      });
+    }
+  }, []);
 
   const handleCreatePatientLink = useCallback(async () => {
     if (!showPatientLinksTab || patientLinksCreating) {
@@ -5781,23 +5922,106 @@ export function Header({
     zelleContactDraft,
   ]);
 
-  const getPatientLinkUrl = useCallback((token: string): string => {
+  const handleCreateBrochureLink = useCallback(async () => {
+    if (!showPatientLinksTab || patientLinksCreating) {
+      return;
+    }
+    const expiresInHours = Number(patientLinkExpiryHoursDraft);
+    if (!Number.isFinite(expiresInHours) || expiresInHours <= 0) {
+      toast.error('Expiration hours must be greater than zero.');
+      return;
+    }
+    const brochureName = patientLinkBrochureNameDraft.trim();
+    if (!brochureName) {
+      toast.error('Brochure name is required.');
+      return;
+    }
+    setPatientLinksCreating(true);
+    try {
+      const api = await import('../services/api');
+      const recipientName = patientLinkRecipientNameDraft.trim();
+      const recipientContact = patientLinkRecipientContactDraft.trim();
+      const studyLabel = patientLinkStudyLabelDraft.trim();
+      const patientReference = patientLinkReferenceDraft.trim();
+      const approvedProductTokensForPayload =
+        patientLinkProductScopeDraft === 'specific_products'
+          ? patientLinkApprovedProductTokens
+          : [];
+      if (patientLinkProductScopeDraft === 'specific_products' && approvedProductTokensForPayload.length === 0) {
+        toast.error('Choose at least one product for this brochure.');
+        setPatientLinksCreating(false);
+        return;
+      }
+      await api.delegationAPI.createLink({
+        linkType: 'brochure',
+        brochureName: brochureName ? brochureName : null,
+        studyLabel: studyLabel ? studyLabel : null,
+        patientReference: patientReference ? patientReference : null,
+        referenceLabel: patientReference ? patientReference : studyLabel ? studyLabel : null,
+        recipientName: recipientName ? recipientName : null,
+        recipientContact: recipientContact ? recipientContact : null,
+        productScope: patientLinkProductScopeDraft,
+        productScopeItems: approvedProductTokensForPayload,
+        allowedProducts: approvedProductTokensForPayload,
+        delegatePermission: 'view_products_only',
+        expiresInHours,
+      });
+      setPatientLinkBrochureNameDraft('');
+      setPatientLinkRecipientNameDraft('');
+      setPatientLinkRecipientContactDraft('');
+      setPatientLinkStudyLabelDraft('');
+      setPatientLinkReferenceDraft('');
+      setPatientLinkProductScopeDraft('all_physician_approved');
+      setPatientLinkApprovedProductIds([]);
+      setPatientLinkProductPickerQuery('');
+      setPatientLinkProductPickerOpen(false);
+      setPatientLinkExpiryHoursDraft(DEFAULT_DELEGATE_LINK_EXPIRY_HOURS);
+      setCreateLinkDialogOpen(false);
+      setCreateLinkDialogMode('select');
+      toast.success('Brochure link created.');
+      requestPatientLinksRefresh({ force: true });
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to create a brochure link right now.',
+      );
+    } finally {
+      setPatientLinksCreating(false);
+    }
+  }, [
+    patientLinkApprovedProductTokens,
+    patientLinkBrochureNameDraft,
+    patientLinkExpiryHoursDraft,
+    patientLinkProductScopeDraft,
+    patientLinkRecipientContactDraft,
+    patientLinkRecipientNameDraft,
+    patientLinkReferenceDraft,
+    patientLinkStudyLabelDraft,
+    patientLinksCreating,
+    requestPatientLinksRefresh,
+    showPatientLinksTab,
+  ]);
+
+  const getPatientLinkUrl = useCallback((token: string, linkType: PatientLinkType = 'delegate'): string => {
     if (typeof window === 'undefined') return '';
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) return '';
+    if (linkType === 'brochure') {
+      return buildBrochureLinkUrl(window.location.origin, normalized, localUser?.name ?? user?.name ?? null);
+    }
     return buildResearchSupplyLinkUrl(window.location.origin, normalized, localUser?.name ?? user?.name ?? null);
   }, [localUser?.name, user?.name]);
 
-  const openLegalDocument = useCallback((key: 'terms' | 'shipping' | 'privacy') => {
-    if (typeof window === 'undefined') return;
-    storeAccountTabScrollPosition();
-    setLegalModalOpen(true);
-    window.dispatchEvent(
-      new CustomEvent('trufusion:open-legal', {
-        detail: { key, preserveDialogs: true },
-      }),
-    );
-  }, [storeAccountTabScrollPosition]);
+  const openLegalDocument = useCallback((key: CreateLinkLegalDocumentKey) => {
+    setCreateLinkLegalDocumentKey(key);
+  }, []);
+
+  const closeCreateLinkLegalDocument = useCallback((event?: MouseEvent<HTMLElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    setCreateLinkLegalDocumentKey(null);
+  }, []);
 
   const trackUsageEvent = useCallback((event: string, metadata?: Record<string, unknown>) => {
     const normalizedEvent = typeof event === 'string' ? event.trim() : '';
@@ -5890,7 +6114,7 @@ export function Header({
   }, [trackPatientLinkUsageEvent]);
 
   const handleCopyPatientLink = useCallback(async (token: string, linkType: PatientLinkType = 'delegate') => {
-    const url = getPatientLinkUrl(token);
+    const url = getPatientLinkUrl(token, linkType);
     if (!url) return;
     try {
       if (!navigator?.clipboard) {
@@ -5908,7 +6132,7 @@ export function Header({
 
   const handleViewPatientLink = useCallback((token: string, linkType: PatientLinkType = 'delegate') => {
     if (typeof window === 'undefined') return;
-    const url = getPatientLinkUrl(token);
+    const url = getPatientLinkUrl(token, linkType);
     if (!url) return;
     if (linkType !== 'brochure') {
       trackPatientLinkUsageEvent(linkType, 'preview_opened', { source: 'manage_links' });
@@ -5926,7 +6150,7 @@ export function Header({
       const api = await import('../services/api');
       await api.delegationAPI.updateLink(normalized, { revoke: true });
       toast.success('Link revoked.');
-      requestPatientLinksRefresh({ force: true });
+      requestPatientLinksRefresh({ force: true, preserveScroll: true });
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
@@ -5948,7 +6172,7 @@ export function Header({
       const api = await import('../services/api');
       await api.delegationAPI.updateLink(normalized, { delete: true });
       toast.success('Link deleted.');
-      requestPatientLinksRefresh({ force: true });
+      requestPatientLinksRefresh({ force: true, preserveScroll: true });
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
@@ -5960,17 +6184,64 @@ export function Header({
     }
   }, [patientLinksDeletingToken, requestPatientLinksRefresh]);
 
+  const handleRequestPatientLinkConfirmAction = useCallback((
+    action: PatientLinkConfirmAction['action'],
+    token: string,
+    label: string,
+    linkType: PatientLinkType,
+  ) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized) return;
+    const displayLabel = typeof label === 'string' && label.trim()
+      ? label.trim()
+      : `${getPatientLinkTypeLabel(linkType)} link`;
+    setPatientLinkConfirmAction({
+      action,
+      token: normalized,
+      label: displayLabel,
+      linkType,
+    });
+  }, []);
+
+  const patientLinkConfirmBusy = Boolean(
+    patientLinkConfirmAction
+      && (patientLinkConfirmAction.action === 'delete'
+        ? patientLinksDeletingToken === patientLinkConfirmAction.token
+        : patientLinksUpdatingToken === patientLinkConfirmAction.token),
+  );
+
+  const handlePatientLinkConfirmOpenChange = useCallback((open: boolean) => {
+    if (open || patientLinkConfirmBusy) return;
+    setPatientLinkConfirmAction(null);
+  }, [patientLinkConfirmBusy]);
+
+  const handleConfirmPatientLinkAction = useCallback(async () => {
+    if (!patientLinkConfirmAction || patientLinkConfirmBusy) return;
+    const pending = patientLinkConfirmAction;
+    if (pending.action === 'delete') {
+      await handleDeletePatientLink(pending.token);
+    } else {
+      await handleRevokePatientLink(pending.token);
+    }
+    setPatientLinkConfirmAction(null);
+  }, [
+    handleDeletePatientLink,
+    handleRevokePatientLink,
+    patientLinkConfirmAction,
+    patientLinkConfirmBusy,
+  ]);
+
   const handleSetPatientLinkPaymentReceived = useCallback(
     async (token: string, received: boolean) => {
       const normalized = typeof token === 'string' ? token.trim() : '';
       if (!normalized || patientLinksPaymentReceivedToken) {
         return;
       }
-      const preservedScrollTop = accountModalScrollRef.current?.scrollTop ?? null;
       setPatientLinksPaymentReceivedToken(normalized);
       try {
         const api = await import('../services/api');
         await api.delegationAPI.updateLink(normalized, { receivedPayment: received ? 1 : 0 });
+        capturePatientLinksScrollPosition();
         setPatientLinks((prev) => {
           if (!Array.isArray(prev)) {
             return prev;
@@ -5988,17 +6259,7 @@ export function Header({
             };
           });
         });
-        if (preservedScrollTop !== null && typeof window !== 'undefined') {
-          window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(() => {
-              const scrollContainer = accountModalScrollRef.current;
-              if (!scrollContainer) {
-                return;
-              }
-              scrollContainer.scrollTop = preservedScrollTop;
-            });
-          });
-        }
+        restorePatientLinksScrollPosition();
         toast.success(received ? 'Marked as paid.' : 'Marked as unpaid.');
       } catch (error: any) {
         toast.error(
@@ -6010,7 +6271,7 @@ export function Header({
         setPatientLinksPaymentReceivedToken(null);
       }
     },
-    [patientLinksPaymentReceivedToken],
+    [capturePatientLinksScrollPosition, patientLinksPaymentReceivedToken, restorePatientLinksScrollPosition],
   );
 
   const [patientLinksProposalToken, setPatientLinksProposalToken] = useState<string | null>(null);
@@ -6125,7 +6386,7 @@ export function Header({
         const api = await import('../services/api');
         await api.delegationAPI.reviewLinkProposal(normalized, { status: 'rejected' });
         toast.success('Proposal rejected.');
-        requestPatientLinksRefresh({ force: true });
+        requestPatientLinksRefresh({ force: true, preserveScroll: true });
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()
@@ -6158,7 +6419,7 @@ export function Header({
           notes,
         });
         toast.success('Proposal notes saved.');
-        requestPatientLinksRefresh({ force: true });
+        requestPatientLinksRefresh({ force: true, preserveScroll: true });
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()
@@ -7529,12 +7790,11 @@ export function Header({
 
 	    return (
 	      <div className="space-y-4 pb-4">
-	      {visibleOrders.map((order) => {
-	        const status = describeOrderStatus(order);
-	        const trackingNumber = resolveTrackingNumber(order);
-	        const statusDisplay = trackingNumber ? `${status} - ${trackingNumber}` : status;
-            const statusNormalized = String(order.status || '').trim().toLowerCase();
-            const statusNormalizedKey = statusNormalized.replace(/_/g, '-');
+		      {visibleOrders.map((order) => {
+		        const status = describeOrderStatus(order);
+		        const trackingNumber = resolveTrackingNumber(order);
+	            const statusNormalized = String(order.status || '').trim().toLowerCase();
+	            const statusNormalizedKey = statusNormalized.replace(/_/g, '-');
             const isCanceled = statusNormalized.includes('cancel') || statusNormalized.includes('refund') || statusNormalized === 'trash';
             const isProcessing = statusNormalized.includes('processing');
             const canCancel =
@@ -7567,11 +7827,23 @@ export function Header({
             const delegateOrderLabel = resolveDelegateOrderLabel(order as any);
             const showDelegateOrderLabel = Boolean(delegateOrderLabel);
             const showDelegateOrderJumpButton = showDelegateOrderLabel && showPatientLinksTab;
-            const wooShippingLine =
-              (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
-              (wooPayload?.shipping_lines && wooPayload.shipping_lines[0]);
-            const wooLineItems = Array.isArray(wooResponse?.line_items)
-              ? wooResponse.line_items
+	            const wooShippingLine =
+	              (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
+	              (wooPayload?.shipping_lines && wooPayload.shipping_lines[0]);
+	            const wooService = wooShippingLine?.method_title || wooShippingLine?.method_id || '';
+	            const trackingCarrierCode =
+	              normalizeStringField((order.shippingEstimate as any)?.carrierId) ||
+	              normalizeStringField((order.shippingEstimate as any)?.carrier_id) ||
+	              normalizeStringField((order.shippingEstimate as any)?.carrierCode) ||
+	              normalizeStringField((order.shippingEstimate as any)?.carrier_code) ||
+	              normalizeStringField(integrationDetails?.shipStation?.carrierCode) ||
+	              normalizeStringField(integrationDetails?.shipStation?.carrier_code) ||
+	              normalizeStringField(integrationDetails?.shipstation?.carrierCode) ||
+	              normalizeStringField(integrationDetails?.shipstation?.carrier_code) ||
+	              (wooService.toLowerCase().includes('ups') ? 'ups' : null);
+	            const trackingHref = trackingNumber ? buildTrackingUrl(trackingNumber, trackingCarrierCode) : null;
+	            const wooLineItems = Array.isArray(wooResponse?.line_items)
+	              ? wooResponse.line_items
               : Array.isArray(wooPayload?.line_items)
                 ? wooPayload.line_items
                 : [];
@@ -7689,12 +7961,29 @@ export function Header({
                         {formatCurrency(displayTotal, order.currency || 'USD')}
                       </p>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
-                      <p className="order-status-row flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
-                        <span>{statusDisplay}</span>
-                      </p>
-                    </div>
+	                    <div className="space-y-1">
+	                      <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
+	                      <p className="order-status-row flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+	                        <span>{status}</span>
+	                        {trackingNumber ? (
+	                          <>
+	                            <span aria-hidden="true">-</span>
+	                            {trackingHref ? (
+	                              <a
+	                                href={trackingHref}
+	                                target="_blank"
+	                                rel="noreferrer"
+	                                className="text-[rgb(11,6,121)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.25)]"
+	                              >
+	                                {trackingNumber}
+	                              </a>
+	                            ) : (
+	                              <span>{trackingNumber}</span>
+	                            )}
+	                          </>
+	                        ) : null}
+	                      </p>
+	                    </div>
                     {showExpectedDelivery && (
                       <div className="space-y-1">
                         <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
@@ -8665,7 +8954,7 @@ export function Header({
 
   const delegateOptInStep = (
     <div className="space-y-5">
-      <DialogHeader className="pr-10 text-left">
+      <DialogHeader className="pr-36 text-left">
         <DialogTitle className="text-xl font-semibold text-slate-900">
           Welcome to Delegate Links!
         </DialogTitle>
@@ -8727,17 +9016,6 @@ export function Header({
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button
           type="button"
-          variant="outline"
-          onClick={() => {
-            setCreateLinkDialogOpen(true);
-            setCreateLinkDialogMode('select');
-          }}
-          className="header-home-button squircle-sm bg-white text-slate-900"
-        >
-          Back
-        </Button>
-        <Button
-          type="button"
           onClick={async () => {
             if (delegateOptInSaving) {
               return;
@@ -8783,12 +9061,16 @@ export function Header({
         </p>
       </div>
       <Dialog
-        modal={!patientLinkProductPickerOpen}
+        modal={!patientLinkProductPickerOpen && !createLinkLegalDocument}
         open={createLinkDialogOpen}
         onOpenChange={(open) => {
+          if (!open && createLinkLegalDocument) {
+            setCreateLinkDialogOpen(true);
+            return;
+          }
           if (!open && patientLinkProductPickerOpen) {
             setCreateLinkDialogOpen(true);
-            setCreateLinkDialogMode('delegate');
+            setCreateLinkDialogMode(createLinkDialogMode === 'brochure' ? 'brochure' : 'delegate');
             return;
           }
           setCreateLinkDialogOpen(open);
@@ -8799,18 +9081,26 @@ export function Header({
       >
         <DialogContent
           ref={createLinkDialogContentRef}
+          trapFocus={!createLinkLegalDocument && !patientLinkProductPickerOpen}
+          disableOutsidePointerEvents={false}
+          onEscapeKeyDown={(event) => {
+            if (createLinkLegalDocument) {
+              event.preventDefault();
+              setCreateLinkLegalDocumentKey(null);
+            }
+          }}
           onPointerDownOutside={(event) => {
-            if (patientLinkProductPickerOpen) {
+            if (patientLinkProductPickerOpen || createLinkLegalDocument) {
               event.preventDefault();
             }
           }}
           onInteractOutside={(event) => {
-            if (patientLinkProductPickerOpen) {
+            if (patientLinkProductPickerOpen || createLinkLegalDocument) {
               event.preventDefault();
             }
           }}
           onFocusOutside={(event) => {
-            if (patientLinkProductPickerOpen) {
+            if (patientLinkProductPickerOpen || createLinkLegalDocument) {
               event.preventDefault();
             }
           }}
@@ -8837,8 +9127,25 @@ export function Header({
                 : 'min(920px, calc(100vw - 2rem))',
           }}
         >
+          {createLinkDialogMode !== 'select' && (
+            <Button
+              type="button"
+              variant="outline"
+              onPointerDown={(event) => {
+                if (event.pointerType === 'mouse' && event.button !== 0) {
+                  return;
+                }
+                handleCreateLinkBackToSelect(event);
+              }}
+              onClick={handleCreateLinkBackToSelect}
+              className="create-link-dialog-back-button header-home-button squircle-sm absolute top-4 z-[10070] !h-[38px] min-h-[38px] bg-white px-4 text-slate-900"
+              style={{ right: 'calc(1rem + 38px + 0.5rem)' }}
+            >
+              Back
+            </Button>
+          )}
           {createLinkDialogMode === 'select' ? (
-            <div className="space-y-5">
+            <div key="create-link-select" className="create-link-dialog-panel space-y-5">
               <DialogHeader className="pr-10 text-left">
                 <DialogTitle className="text-xl font-semibold text-slate-900">
                   What kind of link would you like to create?
@@ -8853,11 +9160,13 @@ export function Header({
                     type="button"
                     onClick={() => {
                       trackPatientLinkUsageEvent('brochure', 'button_clicked', { source: 'create_link_dialog' });
+                      setPatientLinkBrochureNameDraft('');
+                      setPatientLinkProductScopeDraft('all_physician_approved');
                       setCreateLinkDialogMode('brochure');
                     }}
                     className="create-link-type-button"
                   >
-                    <FileText className="create-link-type-button__icon" aria-hidden="true" />
+                    <BookOpenIcon className="create-link-type-button__icon" aria-hidden="true" />
                     <span className="create-link-type-button__copy">
                       <span className="create-link-type-button__label">Product Brochure</span>
                       <span className="create-link-type-button__subtext">
@@ -8871,6 +9180,9 @@ export function Header({
                     type="button"
                     onClick={() => {
                       trackPatientLinkUsageEvent('delegate', 'create_started', { source: 'create_link_dialog' });
+                      if (patientLinkProductScopeDraft === 'specific_products') {
+                        setPatientLinkProductScopeDraft('all_physician_approved');
+                      }
                       setCreateLinkDialogMode('delegate');
                     }}
                     className="create-link-type-button"
@@ -8890,40 +9202,155 @@ export function Header({
               </div>
             </div>
           ) : createLinkDialogMode === 'brochure' ? (
-            <div className="space-y-5">
-              <DialogHeader className="pr-10 text-left">
-                <DialogTitle className="text-xl font-semibold text-slate-900">
-                  Create a product brochure link
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Product brochure links are coming soon.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="rounded-xl bg-white/55 px-8 py-14 text-center sm:px-10">
-                <p className="inline-flex px-4 py-2 text-lg font-semibold text-slate-900">Coming soon</p>
+            <div key="create-link-brochure" className="create-link-dialog-panel space-y-5">
+              <div className="delegate-link-create-form patient-link-form patient-link-form--generate patient-link-form--grouped">
+                <div className="patient-link-group rounded-xl bg-white/55 px-0 py-4 sm:px-5">
+                  <div className="pt-1">
+                    <p className="text-base font-semibold uppercase text-[rgb(11,6,121)]">
+                      Brochure, Recipient & Scope
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Brochure links are view-only and never show pricing, cart, or checkout.
+                    </p>
+                  </div>
+                  <Label htmlFor="brochure-name" className="patient-link-form__label text-sm font-semibold text-slate-700">
+                    Brochure name
+                  </Label>
+                  <Input
+                    id="brochure-name"
+                    required
+                    value={patientLinkBrochureNameDraft}
+                    onChange={(event) => {
+                      setPatientLinkBrochureNameDraft(event.target.value);
+                      trackPatientLinkFieldEntry('brochure_name', event.target.value, 'brochure');
+                    }}
+                    className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <Label htmlFor="brochure-recipient-name" className="patient-link-form__label patient-link-form__label--optional-row text-sm font-semibold text-slate-700">
+                    Recipient name or alias <span className="label-paren label-paren--right">(optional)</span>
+                  </Label>
+                  <Input
+                    id="brochure-recipient-name"
+                    value={patientLinkRecipientNameDraft}
+                    onChange={(event) => {
+                      setPatientLinkRecipientNameDraft(event.target.value);
+                      trackPatientLinkFieldEntry('recipient_name', event.target.value, 'brochure');
+                    }}
+                    className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <Label htmlFor="brochure-recipient-contact" className="patient-link-form__label patient-link-form__label--optional-row text-sm font-semibold text-slate-700">
+                    Recipient email or phone <span className="label-paren label-paren--right">(optional)</span>
+                  </Label>
+                  <Input
+                    id="brochure-recipient-contact"
+                    value={patientLinkRecipientContactDraft}
+                    onChange={(event) => {
+                      setPatientLinkRecipientContactDraft(event.target.value);
+                      trackPatientLinkFieldEntry('recipient_contact', event.target.value, 'brochure');
+                    }}
+                    className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <Label htmlFor="brochure-study-label" className="patient-link-form__label patient-link-form__label--optional-row text-sm font-semibold text-slate-700">
+                    Study label <span className="label-paren label-paren--right">(optional)</span>
+                  </Label>
+                  <Input
+                    id="brochure-study-label"
+                    value={patientLinkStudyLabelDraft}
+                    onChange={(event) => {
+                      setPatientLinkStudyLabelDraft(event.target.value);
+                      trackPatientLinkFieldEntry('study_label', event.target.value, 'brochure');
+                    }}
+                    className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <Label htmlFor="brochure-reference" className="patient-link-form__label patient-link-form__label--optional-row text-sm font-semibold text-slate-700">
+                    Internal reference <span className="label-paren label-paren--right">(optional)</span>
+                  </Label>
+                  <Input
+                    id="brochure-reference"
+                    value={patientLinkReferenceDraft}
+                    onChange={(event) => {
+                      setPatientLinkReferenceDraft(event.target.value);
+                      trackPatientLinkFieldEntry('internal_reference', event.target.value, 'brochure');
+                    }}
+                    className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <Label htmlFor="brochure-product-scope" className="patient-link-form__label text-sm font-semibold text-slate-700">
+                    Brochure product scope
+                  </Label>
+                  <select
+                    id="brochure-product-scope"
+                    value={patientLinkProductScopeDraft}
+                    onChange={(event) => {
+                      const nextScope = event.target.value as DelegateProductScope;
+                      setPatientLinkProductScopeDraft(nextScope);
+                      trackPatientLinkFieldEntry('product_scope', event.target.value, 'brochure');
+                    }}
+                    className="patient-link-form__select h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  >
+                    <option value="all_physician_approved">All brochure-safe products</option>
+                    <option value="specific_products">Selected products only</option>
+                  </select>
+                  {patientLinkProductScopeDraft === 'specific_products' && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        captureCreateLinkDialogScrollPosition();
+                        setPatientLinkProductPickerOpen(true);
+                      }}
+                      className="delegate-product-picker-trigger h-10 w-full justify-between squircle-sm border-0 !border-0 bg-transparent text-slate-900 shadow-none focus-visible:!border-transparent focus-visible:!ring-0"
+                    >
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <Package className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span className="truncate">
+                          {patientLinkApprovedProductIds.length > 0
+                            ? `${patientLinkApprovedProductIds.length} selected product${patientLinkApprovedProductIds.length === 1 ? '' : 's'}`
+                            : 'Choose selected products'}
+                        </span>
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        {catalogLoading ? 'Loading' : `${delegateProductPickerItems.length}`}
+                      </span>
+                    </Button>
+                  )}
+                  <Label htmlFor="brochure-expiry-hours" className="patient-link-form__label text-sm font-semibold text-slate-700">
+                    Expiration hours
+                  </Label>
+                  <Input
+                    id="brochure-expiry-hours"
+                    type="text"
+                    inputMode="numeric"
+                    value={patientLinkExpiryHoursDraft}
+                    onChange={(event) => {
+                      const next = event.target.value.replace(/[^\d]/g, '');
+                      setPatientLinkExpiryHoursDraft(next);
+                      trackPatientLinkFieldEntry('expiration_hours', next, 'brochure');
+                    }}
+                    className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
+                  />
+                </div>
               </div>
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setCreateLinkDialogOpen(true);
-                    setCreateLinkDialogMode('select');
-                  }}
+                  onClick={() => void handleCreateBrochureLink()}
+                  disabled={!showPatientLinksTab || patientLinksCreating}
                   className="header-home-button squircle-sm bg-white text-slate-900"
                 >
-                  Back
+                  {patientLinksCreating ? 'Creating…' : 'Create brochure link'}
                 </Button>
               </div>
             </div>
           ) : !delegateOptInEnabled ? (
             delegateOptInStep
           ) : (
-      <div>
-        <h3 className="text-lg font-semibold leading-tight text-slate-900">Create a delegate link</h3>
-        <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
-          This tool is intended to help you fascilate independent peptide research. You can demo your own links before sharing by clicking the "View" button.
-        </p>
+      <div key="create-link-delegate" className="create-link-dialog-panel">
+        <div className="pr-36">
+          <h3 className="text-lg font-semibold leading-tight text-slate-900">Create a delegate link</h3>
+          <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
+            This tool is intended to help you fascilate independent peptide research. You can demo your own links before sharing by clicking the "View" button.
+          </p>
+        </div>
 	        <div className="delegate-link-create-form mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
             <div className="patient-link-group rounded-xl bg-white/55 px-0 py-4 sm:px-5">
             <div className="pt-1">
@@ -9330,7 +9757,7 @@ export function Header({
 	          />
 	          </div>
 		          <div className="patient-link-submit-row delegate-link-submit-row mt-2 pt-3 pb-3">
-		            <div className="delegate-link-certification-account rounded-lg border border-slate-200 bg-white/60 px-3 py-2 text-sm text-slate-700">
+		            <div className="delegate-link-certification-account rounded-lg border border-slate-200 bg-white/60 py-2 pl-0 pr-3 text-sm text-slate-700">
 		              <span className="font-semibold text-slate-900">Physician/account holder:</span>{' '}
 		              {localUser?.name || user?.name || localUser?.email || user?.email || 'Current account'}
 		            </div>
@@ -9385,17 +9812,6 @@ export function Header({
 	            <div className="patient-link-submit-action delegate-link-submit-action flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 	              <Button
 	                type="button"
-	                variant="outline"
-	                onClick={() => {
-	                  setCreateLinkDialogOpen(true);
-	                  setCreateLinkDialogMode('select');
-	                }}
-	                className="header-home-button patient-link-form__button delegate-link-submit-button delegate-link-submit-button--back !h-11 min-h-[44px] w-full mb-0 squircle-sm bg-white text-slate-900 px-7 sm:w-auto"
-	              >
-	                Back
-	              </Button>
-	              <Button
-	                type="button"
 	                onClick={() => void handleCreatePatientLink()}
 	                disabled={!showPatientLinksTab || patientLinksCreating}
 	                className="header-home-button patient-link-form__button delegate-link-submit-button delegate-link-submit-button--primary !h-11 min-h-[44px] w-full mb-0 squircle-sm bg-white text-slate-900 px-7 sm:w-auto"
@@ -9409,6 +9825,47 @@ export function Header({
           )}
         </DialogContent>
 	      </Dialog>
+
+	      {createLinkLegalDocument && typeof document !== 'undefined' && createPortal(
+	        <div
+	          className="delegate-product-picker-backdrop create-link-legal-backdrop"
+	          role="presentation"
+	          onMouseDown={(event) => {
+	            if (event.target === event.currentTarget) {
+	              closeCreateLinkLegalDocument(event);
+	            }
+	          }}
+	        >
+	          <div
+	            className="create-link-legal-modal"
+	            role="dialog"
+	            aria-modal="true"
+	            aria-labelledby="create-link-legal-title"
+	            onMouseDown={(event) => event.stopPropagation()}
+	          >
+	            <div className="create-link-legal-header">
+	              <h3 id="create-link-legal-title" className="create-link-legal-title">
+	                {createLinkLegalDocument.title}
+	              </h3>
+	              <button
+	                type="button"
+	                className="create-link-legal-close dialog-close-btn"
+	                onClick={closeCreateLinkLegalDocument}
+	                aria-label="Close legal document"
+	              >
+	                <X className="h-5 w-5" aria-hidden="true" />
+	              </button>
+	            </div>
+	            <div className="create-link-legal-body">
+	              <div
+	                className="legal-richtext text-sm leading-relaxed text-slate-700"
+	                dangerouslySetInnerHTML={{ __html: createLinkLegalDocument.html }}
+	              />
+	            </div>
+	          </div>
+	        </div>,
+	        document.body,
+	      )}
 
 	      {patientLinkProductPickerOpen && typeof document !== 'undefined' && createPortal(
 	        <div
@@ -9564,115 +10021,24 @@ export function Header({
 	        document.body,
 	      )}
 
-			      <div
-            className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7"
-            style={{ order: 3 }}
-          >
-	        <h3 className="text-lg font-semibold text-slate-900">White label your sessions</h3>
-	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
-	          Customize the logo, colors, and background your patients see in delegate sessions.
-	        </p>
-	        <div className="mt-2 space-y-2">
-	          <div className="glass-card squircle-lg p-3 !border-0">
-	            <p className="delegate-preview-label text-xs font-semibold text-slate-700">Header preview</p>
-	            <div className="delegate-header-preview-scroll w-full max-w-full overflow-x-auto overflow-y-hidden">
-	              <div
-	                className="delegate-header-preview-canvas app-header-blur shadow-sm rounded-xl px-4 sm:px-6 py-4"
-	                style={{
-	                  '--delegate-header-preview-primary-color': delegatePreviewSecondaryColor,
-	                  '--header-search-border-color': delegatePreviewSecondaryColor,
-	                } as CSSProperties}
-	              >
-	                <div className="flex flex-col gap-3 md:gap-4">
-	                  <div className="flex w-full min-w-0 items-center gap-3 sm:gap-4 justify-between flex-nowrap">
-	                    <div className="flex items-center gap-3 min-w-0">
-	                      <div
-	                        className="brand-logo relative flex items-center justify-start flex-shrink min-w-0"
-	                        style={{ height: logoSizing.heightPx, maxWidth: logoSizing.maxWidth }}
-	                      >
-	                        <img
-		                          src={
-		                            typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
-		                              ? localUser.delegateLogoUrl
-		                              : withStaticAssetStamp('/TrufusionLabs_PhysiciansPortal.png')
-		                          }
-	                          alt="Delegate header logo preview"
-	                          className="relative z-[1] flex-shrink-0"
-	                          style={{
-	                            display: 'block',
-	                            width: '100%',
-	                            height: '100%',
-	                            maxHeight: '100%',
-	                            objectFit: 'contain',
-	                          }}
-	                          loading="eager"
-	                          decoding="async"
-	                        />
-	                      </div>
-	                    </div>
-
-	                    <div className="delegate-header-preview-search-field flex flex-1 justify-center min-w-0 pointer-events-none">
-	                        <div className="w-full min-w-0 max-w-md">
-	                          {renderSearchField('delegate-header-preview-search-input', {
-	                            value: '',
-	                            readOnly: true,
-	                            showClearButton: false,
-	                            borderColor: delegatePreviewSecondaryColor,
-	                            textColor: HEADER_SEARCH_TEXT_GREY,
-		                          })}
-	                        </div>
-	                      </div>
-
-	                    <div className="ml-auto flex w-auto items-center justify-end gap-2 min-w-0 max-w-full">
-	                      <div
-	                        className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent"
-	                        aria-label="Delegate header preview"
-	                        style={{
-	                          border: '0',
-	                          backgroundColor: 'transparent',
-	                          color: delegatePreviewSecondaryColor,
-	                        }}
-	                      >
-	                        <User className={delegateUserIconClassName} aria-hidden="true" style={{ color: delegatePreviewSecondaryColor }} />
-	                        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
-	                          localUser?.name ? `Dr. ${localUser.name}` : 'Physician'
-	                        }`}</span>
-	                      </div>
-	                      <Button
-	                          type="button"
-	                          variant="outline"
-	                          size="icon"
-	                          aria-hidden="true"
-	                          tabIndex={-1}
-	                          className="delegate-header-preview-search-button glass squircle-sm pointer-events-none"
-	                          style={{
-	                            '--delegate-header-preview-primary-color': delegatePreviewSecondaryColor,
-	                            color: HEADER_SEARCH_TEXT_GREY,
-	                            borderColor: delegatePreviewSecondaryColor,
-	                          } as CSSProperties}
-	                        >
-	                          <Search className="h-4 w-4" style={{ color: HEADER_SEARCH_TEXT_GREY }} />
-	                        </Button>
-	                    </div>
-	                  </div>
-	                </div>
-	              </div>
-	            </div>
-	          </div>
-
-	          <div className="glass-card squircle-lg p-3 !border-0">
-	            <p className="delegate-preview-label text-xs font-semibold text-slate-700">Background preview</p>
-	            <div
-	              className="delegate-session-background-preview overflow-hidden rounded-xl shadow-sm"
-	              aria-hidden="true"
-	              style={{
-	                '--delegate-preview-background-color': delegatePreviewBackgroundColorHex,
-	                '--delegate-preview-background-image': delegatePreviewBackgroundImageCss,
-	              } as CSSProperties}
-	            />
-	          </div>
-
-	          <div className="delegate-logo-summary-row rounded-xl px-4 py-4">
+				      <details
+	            className="delegate-white-label-details glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7"
+	            style={{ order: 3 }}
+	          >
+		        <summary className="delegate-white-label-summary">
+		          <span className="delegate-white-label-summary-copy">
+		            <span className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+		              <SwatchIcon className="h-5 w-5" aria-hidden="true" />
+		              <span>White label your sessions</span>
+		            </span>
+		            <span className="mb-1 block text-sm leading-relaxed text-slate-700">
+		              Customize the logo, colors, and background your patients see in delegate sessions.
+		            </span>
+		          </span>
+		          <span className="delegate-white-label-summary-icon" aria-hidden="true" />
+		        </summary>
+		        <div className="delegate-white-label-content mt-4 space-y-2">
+		          <div className="delegate-logo-summary-row rounded-xl px-4 py-4">
 	            <div className="delegate-logo-summary-copy">
 	              <p className="text-sm font-semibold text-slate-900 truncate">
 	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
@@ -9753,8 +10119,8 @@ export function Header({
 	          <div className="delegate-session-appearance rounded-xl px-4 py-4">
 	            <div className="delegate-color-controls-grid">
 	              <div className="delegate-color-control">
-	                <Label htmlFor="delegate-background-color" className="text-sm font-bold text-slate-700">
-	                  Your Background color
+	                <Label htmlFor="delegate-background-color" className="delegate-color-control-label text-sm font-bold text-slate-700">
+	                  Your background color
 	                </Label>
 	                <p className="mt-1 text-xs text-slate-500">Visible as a substitute or supplement to the background image.</p>
 	                <div className="delegate-color-value-row">
@@ -9776,8 +10142,8 @@ export function Header({
 	                </div>
 	              </div>
 	              <div className="delegate-color-control">
-	                <Label htmlFor="delegate-secondary-color" className="text-sm font-bold text-slate-700">
-	                  Your Primary color
+	                <Label htmlFor="delegate-secondary-color" className="delegate-color-control-label text-sm font-bold text-slate-700">
+	                  Your primary color
 	                </Label>
 	                <p className="mt-1 text-xs text-slate-500">Used for header accents and session highlights.</p>
 	                <div className="delegate-color-value-row">
@@ -9794,14 +10160,113 @@ export function Header({
 	                    <p className="text-sm font-semibold text-slate-900">{delegatePreviewSecondaryHex.toUpperCase()}</p>
 	                    {delegateSecondaryColorSaving ? (
 	                      <p className="text-xs text-slate-600">Saving color…</p>
-	                    ) : null}
-	                  </div>
-	                </div>
-	              </div>
-	            </div>
-	          </div>
-	        </div>
-	      </div>
+		                    ) : null}
+			              </div>
+			            </div>
+			          </div>
+		            </div>
+		          </div>
+
+			          <div className="delegate-white-label-preview-card glass-card squircle-lg p-3 !border-0">
+			            <p className="delegate-preview-label text-xs font-semibold text-slate-700">Header preview</p>
+			            <div className="delegate-header-preview-scroll w-full max-w-full overflow-x-auto overflow-y-hidden">
+	              <div
+	                className="delegate-header-preview-canvas app-header-blur shadow-sm rounded-xl px-4 sm:px-6 py-4"
+	                style={{
+	                  '--delegate-header-preview-primary-color': delegatePreviewSecondaryColor,
+	                  '--header-search-border-color': delegatePreviewSecondaryColor,
+	                } as CSSProperties}
+	              >
+	                <div className="flex flex-col gap-3 md:gap-4">
+	                  <div className="flex w-full min-w-0 items-center gap-3 sm:gap-4 justify-between flex-nowrap">
+	                    <div className="flex items-center gap-3 min-w-0">
+	                      <div
+	                        className="brand-logo relative flex items-center justify-start flex-shrink min-w-0"
+	                        style={{ height: logoSizing.heightPx, maxWidth: logoSizing.maxWidth }}
+	                      >
+	                        <img
+		                          src={
+		                            typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
+		                              ? localUser.delegateLogoUrl
+		                              : withStaticAssetStamp('/TrufusionLabs_PhysiciansPortal.png')
+		                          }
+	                          alt="Delegate header logo preview"
+	                          className="relative z-[1] flex-shrink-0"
+	                          style={{
+	                            display: 'block',
+	                            width: '100%',
+	                            height: '100%',
+	                            maxHeight: '100%',
+	                            objectFit: 'contain',
+	                          }}
+	                          loading="eager"
+	                          decoding="async"
+	                        />
+	                      </div>
+	                    </div>
+
+	                    <div className="delegate-header-preview-search-field flex flex-1 justify-center min-w-0 pointer-events-none">
+	                        <div className="w-full min-w-0 max-w-md">
+	                          {renderSearchField('delegate-header-preview-search-input', {
+	                            value: '',
+	                            readOnly: true,
+	                            showClearButton: false,
+	                            borderColor: delegatePreviewSecondaryColor,
+	                            textColor: HEADER_SEARCH_TEXT_GREY,
+		                          })}
+	                        </div>
+	                      </div>
+
+                    <div className="delegate-auth-controls delegate-auth-controls--preview ml-auto flex w-auto items-center justify-end gap-2 min-w-0 max-w-full">
+                      <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                          className="delegate-header-preview-search-button glass squircle-sm pointer-events-none"
+                          style={{
+                            '--delegate-header-preview-primary-color': delegatePreviewSecondaryColor,
+                            color: HEADER_SEARCH_TEXT_GREY,
+                            borderColor: delegatePreviewSecondaryColor,
+                          } as CSSProperties}
+                        >
+                          <Search className="h-4 w-4" style={{ color: HEADER_SEARCH_TEXT_GREY }} />
+                        </Button>
+                      <div
+                        className="delegate-auth-label squircle-sm inline-flex items-center justify-end gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent"
+                        aria-label="Delegate header preview"
+                        style={{
+                          border: '0',
+                          backgroundColor: 'transparent',
+	                          color: delegatePreviewSecondaryColor,
+	                        }}
+	                      >
+	                        <User className={delegateUserIconClassName} aria-hidden="true" style={{ color: delegatePreviewSecondaryColor }} />
+                        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
+                          localUser?.name ? `Dr. ${localUser.name}` : 'Physician'
+                        }`}</span>
+                      </div>
+				            </div>
+			          </div>
+			        </div>
+			      </div>
+		            </div>
+		          </div>
+
+			          <div className="delegate-white-label-preview-card glass-card squircle-lg p-3 !border-0">
+			            <p className="delegate-preview-label text-xs font-semibold text-slate-700">Background preview</p>
+		            <div
+		              className="delegate-session-background-preview overflow-hidden rounded-xl shadow-sm"
+		              aria-hidden="true"
+		              style={{
+		                '--delegate-preview-background-color': delegatePreviewBackgroundColorHex,
+		                '--delegate-preview-background-image': delegatePreviewBackgroundImageCss,
+		              } as CSSProperties}
+			            />
+			          </div>
+		        </div>
+	      </details>
 
 		      <div className="space-y-3" style={{ order: 2 }}>
 		        <div
@@ -9859,7 +10324,7 @@ export function Header({
           </div>
         )}
 
-	        {patientLinksLoading ? (
+	        {patientLinksLoading && patientLinks.length === 0 ? (
 	          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
 	            <p className="text-sm text-slate-600">Loading links…</p>
 	          </div>
@@ -9906,14 +10371,23 @@ export function Header({
 		                      ? link.referenceLabel.trim()
 		                      : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
 		                        ? (link as any).reference_label.trim()
-		                        : (typeof link?.label === 'string' && link.label.trim())
+		                      : (typeof link?.label === 'string' && link.label.trim())
 		                          ? link.label.trim()
 		                          : '';
+                  const brochureName =
+                    typeof (link as any)?.brochureName === 'string' && (link as any).brochureName.trim()
+                      ? (link as any).brochureName.trim()
+                      : typeof (link as any)?.brochure_name === 'string' && (link as any).brochure_name.trim()
+                        ? (link as any).brochure_name.trim()
+                        : '';
 			              const linkType = normalizePatientLinkType(link);
 			              const linkTypeLabel = getPatientLinkTypeLabel(linkType);
-				              const LinkTypeIcon = linkType === 'brochure' ? FileText : CursorArrowRippleIcon;
+					              const LinkTypeIcon = linkType === 'brochure' ? BookOpenIcon : CursorArrowRippleIcon;
 			              const isDelegateLinkType = linkType === 'delegate';
-			              const label = patientReference || studyLabel || subjectLabel || `${linkTypeLabel} link`;
+			              const label =
+                      linkType === 'brochure'
+                        ? (brochureName || patientReference || studyLabel || `${linkTypeLabel} link`)
+                        : (patientReference || studyLabel || subjectLabel || `${linkTypeLabel} link`);
 		              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
 		              const markupPercentValueRaw =
 		                typeof (link as any)?.markupPercent === 'number'
@@ -9928,6 +10402,12 @@ export function Header({
 		              const markupPercentValue = Number.isFinite(markupPercentValueRaw) ? markupPercentValueRaw : 0;
 		              const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
 		              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
+                  const linkLifespanLabel =
+                    createdAt || expiresAt
+                      ? `${createdAt ? (formatLinkDateTime(createdAt) || createdAt) : 'Unknown'} - ${
+                          expiresAt ? (formatLinkDateTime(expiresAt) || expiresAt) : 'No expiration'
+                        }`
+                      : '';
 		              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
 		              const statusRaw =
 		                typeof (link as any)?.status === 'string' && (link as any).status.trim()
@@ -9959,6 +10439,35 @@ export function Header({
 		                        : 0;
 		              const usageCountValue = Number.isFinite(usageCountRaw) ? Number(usageCountRaw) : 0;
 		              const openCountValue = Number.isFinite(openCountRaw) ? Number(openCountRaw) : 0;
+		              const viewCountRaw =
+		                typeof (link as any)?.viewCount === 'number'
+		                  ? (link as any).viewCount
+		                  : typeof (link as any)?.viewCount === 'string'
+		                    ? Number((link as any).viewCount)
+		                    : typeof (link as any)?.view_count === 'number'
+		                      ? (link as any).view_count
+		                      : typeof (link as any)?.view_count === 'string'
+		                        ? Number((link as any).view_count)
+		                        : openCountValue;
+		              const viewCountValue = Number.isFinite(viewCountRaw) ? Number(viewCountRaw) : openCountValue;
+                  const lastViewedAt =
+                    typeof (link as any)?.lastViewedAt === 'string' && (link as any).lastViewedAt.trim()
+                      ? (link as any).lastViewedAt.trim()
+                      : typeof (link as any)?.last_viewed_at === 'string' && (link as any).last_viewed_at.trim()
+                        ? (link as any).last_viewed_at.trim()
+                        : lastUsedAt;
+                  const recipientName =
+                    typeof (link as any)?.recipientName === 'string' && (link as any).recipientName.trim()
+                      ? (link as any).recipientName.trim()
+                      : typeof (link as any)?.recipient_name === 'string' && (link as any).recipient_name.trim()
+                        ? (link as any).recipient_name.trim()
+                        : '';
+                  const recipientContact =
+                    typeof (link as any)?.recipientContact === 'string' && (link as any).recipientContact.trim()
+                      ? (link as any).recipientContact.trim()
+                      : typeof (link as any)?.recipient_contact === 'string' && (link as any).recipient_contact.trim()
+                        ? (link as any).recipient_contact.trim()
+                        : '';
 	              const delegateSharedAt =
 	                typeof link?.delegateSharedAt === 'string' && link.delegateSharedAt.trim()
 	                  ? link.delegateSharedAt.trim()
@@ -10102,21 +10611,25 @@ export function Header({
 				                    <div className="flex items-center gap-2">
 					                      <LinkTypeIcon className="h-5 w-5 text-[rgb(11,6,121)] shrink-0" aria-hidden="true" />
 					                      <span className="font-semibold text-slate-900 truncate">{label}</span>
-                                  <Badge variant="outline" className="border-[rgba(11,6,121,0.25)] bg-white/70 text-[rgb(11,6,121)]">
+                                  <Badge variant="outline" className="patient-link-type-badge border-[rgba(11,6,121,0.25)] bg-white/70 text-[rgb(11,6,121)]">
                                     {linkTypeLabel}
                                   </Badge>
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
 		                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
 			                      {subjectLabel && <div>Subject: {subjectLabel}</div>}
+			                      {linkType === 'brochure' && recipientName && <div>Recipient: {recipientName}</div>}
+			                      {linkType === 'brochure' && recipientContact && <div>Recipient contact: {recipientContact}</div>}
 			                      {studyLabel && <div>Study: {studyLabel}</div>}
 			                      {patientReference && <div>Reference: {patientReference}</div>}
-			                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
-			                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
-			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
-			                      <div>Open Count: {openCountValue}</div>
-			                      <div>Uses: {usageCountValue}</div>
+			                      {linkLifespanLabel && <div className="patient-link-lifespan">Link lifespan: {linkLifespanLabel}</div>}
+			                      {linkType === 'brochure'
+                              ? lastViewedAt && <div>Last viewed: {formatLinkDateTime(lastViewedAt) || lastViewedAt}</div>
+                              : lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
+			                      {linkType === 'brochure' ? <div>Viewed: {viewCountValue}</div> : <div>Open Count: {openCountValue}</div>}
+			                      {isDelegateLinkType && <div>Uses: {usageCountValue}</div>}
 			                      {allowedProductsDisplay.length > 0 && <div>Allowed SKUs: {allowedProductsDisplay.join(', ')}</div>}
+			                      {linkType === 'brochure' && <div>View-only product information. No pricing, cart, or checkout.</div>}
 			                      {isDelegateLinkType && <div>Payment: {paymentMethodLabel}</div>}
 			                      {isDelegateLinkType && <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>}
 			                      {statusRaw && <div>Status: {statusRaw.replace(/_/g, ' ')}</div>}
@@ -10160,7 +10673,7 @@ export function Header({
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
 	                      <Eye className="h-4 w-4" aria-hidden="true" />
-	                      View
+	                      {linkType === 'brochure' ? 'Preview brochure' : 'View'}
 	                    </Button>
 		                      <Button
 		                        type="button"
@@ -10171,7 +10684,7 @@ export function Header({
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
 	                      <Copy className="h-4 w-4" aria-hidden="true" />
-	                      Copy link
+	                      {linkType === 'brochure' ? 'Copy brochure link' : 'Copy link'}
 	                    </Button>
 	                      <Button
 	                        type="button"
@@ -10179,10 +10692,10 @@ export function Header({
 		                      size="sm"
 		                      onClick={() => {
                             if (isRevoked) {
-                              void handleDeletePatientLink(token);
+                              handleRequestPatientLinkConfirmAction('delete', token, label, linkType);
                               return;
                             }
-                            void handleRevokePatientLink(token);
+                            handleRequestPatientLinkConfirmAction('revoke', token, label, linkType);
                           }}
 		                      disabled={!token || isUpdating || isDeleting}
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
@@ -10457,23 +10970,23 @@ export function Header({
   })();
 
 		  const authControls = delegateMode ? (
-		    <div className="flex items-center gap-2 min-w-0 max-w-full">
-		      <div
-		        className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent"
-		        aria-label={`Delegate of ${delegateDoctorLabel}`}
-		        title={`Delegate of ${delegateDoctorLabel}`}
-		        style={{
+		    <div className="delegate-auth-controls ml-auto flex items-center justify-end gap-2 min-w-0 max-w-full">
+	      {renderCartButton()}
+			      <div
+			        className="delegate-auth-label squircle-sm inline-flex items-center justify-end gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent"
+			        aria-label={`Delegate of ${delegateDoctorLabel}`}
+			        title={`Delegate of ${delegateDoctorLabel}`}
+			        style={{
 		          border: '0',
 		          backgroundColor: 'transparent',
 		          color: secondaryColor,
 		        }}
-		      >
-		        <User className={delegateUserIconClassName} aria-hidden="true" style={{ color: secondaryColor }} />
-		        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
-      </div>
-      {renderCartButton()}
-    </div>
-  ) : user ? (
+			      >
+			        <User className={delegateUserIconClassName} aria-hidden="true" style={{ color: secondaryColor }} />
+			        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
+	      </div>
+	    </div>
+	  ) : user ? (
     <>
       {showInfoHeaderWelcome && (
         <div className="info-header-welcome">
@@ -10731,6 +11244,82 @@ export function Header({
 	          </div>
 	        </DialogContent>
         </Dialog>
+      <Dialog open={Boolean(patientLinkConfirmAction)} onOpenChange={handlePatientLinkConfirmOpenChange}>
+        <DialogContent
+          className="glass-card squircle-lg w-full !max-w-[min(448px,calc(100vw-3rem))] sm:!max-w-[min(448px,calc(100vw-3rem))] lg:!max-w-[min(448px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 overflow-hidden"
+          overlayClassName="bg-slate-950/40"
+          containerClassName="account-modal-layer fixed inset-0 z-[14000] flex items-center justify-center p-4 sm:p-6"
+          style={{
+            backdropFilter: "blur(32px) saturate(1.45)",
+            backgroundColor: "rgba(245, 251, 255, 0.98)",
+            width: "min(448px, calc(100vw - 3rem))",
+            maxWidth: "min(448px, calc(100vw - 3rem))",
+          }}
+        >
+          <DialogHeader className="border-b border-[var(--brand-glass-border-1)] px-6 py-4">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <DialogTitle className="text-lg font-semibold text-slate-900">
+                  {patientLinkConfirmAction?.action === 'delete' ? 'Delete this link?' : 'Revoke this link?'}
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm leading-6 text-slate-600">
+                  {patientLinkConfirmAction?.action === 'delete'
+                    ? 'This permanently removes the revoked link from your dashboard. This cannot be undone.'
+                    : 'This immediately disables the public URL. Anyone with the link will no longer be able to open it.'}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4 px-6 py-5">
+            <div className="rounded-xl border border-slate-200 bg-white/75 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">
+                {patientLinkConfirmAction?.label || 'Link'}
+              </p>
+              <p className="mt-1 text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
+                {patientLinkConfirmAction
+                  ? `${getPatientLinkTypeLabel(patientLinkConfirmAction.linkType)} Link`
+                  : 'Link'}
+              </p>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="header-home-button squircle-sm bg-white text-slate-900"
+                disabled={patientLinkConfirmBusy}
+                onClick={() => {
+                  if (!patientLinkConfirmBusy) {
+                    setPatientLinkConfirmAction(null);
+                  }
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="squircle-sm border-red-200 bg-red-50 text-red-700 hover:bg-red-600 hover:text-white"
+                disabled={!patientLinkConfirmAction || patientLinkConfirmBusy}
+                onClick={() => void handleConfirmPatientLinkAction()}
+              >
+                {patientLinkConfirmBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
+                {patientLinkConfirmBusy
+                  ? patientLinkConfirmAction?.action === 'delete'
+                    ? 'Deleting...'
+                    : 'Revoking...'
+                  : patientLinkConfirmAction?.action === 'delete'
+                    ? 'Delete link'
+                    : 'Revoke link'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 	      <Dialog open={deleteAccountModalOpen} onOpenChange={handleDeleteAccountModalOpenChange}>
 	        <DialogContent
 	          className="glass-card squircle-lg w-full !max-w-[min(468px,calc(100vw-3rem))] sm:!max-w-[min(468px,calc(100vw-3rem))] lg:!max-w-[min(468px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 overflow-hidden"
@@ -11521,7 +12110,7 @@ export function Header({
                 </h2>
                 <p className="text-sm text-slate-600">
                   {canSeePhysicianThreePlTab
-                    ? 'Manage your delegate links, orders, 3PL, colleague referrals, and account tools.'
+                    ? 'Manage your delegate links, orders, 3PL, colleague referrals, and settings'
                     : 'Manage your delegate links, orders, colleague referrals, and account tools.'}
                 </p>
               </div>
@@ -11757,7 +12346,10 @@ export function Header({
                   aria-expanded={mobileSearchOpen}
                   disabled={Boolean(catalogLoading)}
                   aria-disabled={Boolean(catalogLoading)}
-                  className="header-cart-button mobile-search-toggle-button squircle-sm transition-all duration-300"
+	                  className={clsx(
+                      "header-cart-button mobile-search-toggle-button squircle-sm transition-all duration-300",
+                      delegateMode && "delegate-mobile-search-toggle",
+                    )}
                   style={delegateMode ? { borderColor: secondaryColor, color: secondaryColor } : undefined}
                 >
                   {mobileSearchOpen ? (

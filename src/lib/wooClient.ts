@@ -239,6 +239,11 @@ async function catalogGet<T = unknown>(endpoint: string, params: QueryParams = {
 export const listProducts = <T = unknown>(opts: QueryParams = {}) =>
   WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : catalogGet<T>('products', { per_page: 100, ...opts });
 
+export const listBrochureProducts = <T = unknown>(token: string, opts: QueryParams = {}) =>
+  WOO_DISABLED
+    ? (Promise.resolve({ products: [] }) as unknown as Promise<T>)
+    : catalogGet<T>('brochure-products', { ...opts, token });
+
 export const listCategories = <T = unknown>(opts: QueryParams = {}) =>
   WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : catalogGet<T>('categories', { per_page: 100, ...opts });
 

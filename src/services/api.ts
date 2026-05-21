@@ -3024,13 +3024,17 @@ export const delegationAPI = {
   },
 
   createLink: async (payload?: {
+    linkType?: string | null;
     referenceLabel?: string | null;
     patientId?: string | null;
     subjectLabel?: string | null;
     studyLabel?: string | null;
     patientReference?: string | null;
+    brochureName?: string | null;
     delegateName?: string | null;
     delegateContact?: string | null;
+    recipientName?: string | null;
+    recipientContact?: string | null;
     delegateRole?: string | null;
     productScope?: string | null;
     productScopeItems?: string[] | string | null;
@@ -3066,6 +3070,7 @@ export const delegationAPI = {
 	      subjectLabel?: string | null;
 	      studyLabel?: string | null;
 	      patientReference?: string | null;
+	      brochureName?: string | null;
 	      delegateName?: string | null;
 	      delegateContact?: string | null;
 	      delegateRole?: string | null;

@@ -202,7 +202,7 @@ export function DoctorProfileForm({
     ? 'flex items-center gap-3'
     : 'flex flex-col gap-3 sm:min-w-[220px] sm:max-w-[260px]';
   const avatarButtonClassName = isCompactCircleAvatar
-    ? 'squircle-sm h-8 px-3 text-xs'
+    ? 'squircle-sm h-8 shrink-0 whitespace-nowrap px-3 text-xs'
     : 'squircle-sm';
   const profileFieldClassName =
     'border-slate-200 text-slate-900 placeholder:text-slate-500';
@@ -482,8 +482,8 @@ export function DoctorProfileForm({
               </div>
             </div>
           </div>
-          <div className={isCompactCircleAvatar ? 'flex flex-wrap items-center gap-2' : 'space-y-2'}>
-            <div className={isCompactCircleAvatar ? undefined : 'flex items-center gap-3 flex-wrap'}>
+          <div className={isCompactCircleAvatar ? 'flex items-center gap-2' : 'space-y-2'}>
+            <div className="flex flex-nowrap items-center gap-3">
               <Button
                 type="button"
                 variant="outline"

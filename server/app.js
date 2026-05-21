@@ -458,7 +458,13 @@ const createApp = () => {
         app.use('/content', express.static(contentRoot));
       }
       app.use(express.static(frontendRoot));
-      app.get(/^\/(?!api\/).*/, (req, res, next) => res.sendFile(path.join(frontendRoot, 'index.html')));
+      app.get(/^\/(?!api\/).*/, (req, res, next) => {
+        if (/^\/brochure\/[^/]+\/[^/]+\/?$/i.test(req.path || '')) {
+          res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+          res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        }
+        return res.sendFile(path.join(frontendRoot, 'index.html'));
+      });
     }
   }
 

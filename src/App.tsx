@@ -140,6 +140,7 @@ import type {
 import {
   physicianCompensationDisclosure,
   productMatchesAllowedSku,
+  isBrochureLocation,
   readDelegateTokenFromLocation,
   RESEARCH_SUPPLY_DISCLOSURES,
 } from "./lib/researchSupplyLinks";
@@ -149,13 +150,14 @@ import {
   SalesRepDashboard,
   CreditLedgerEntry,
 } from "./types/referral";
-	import {
-    CATALOG_SNAPSHOT_ACTIVE,
-	  listProducts,
-	  listCategories,
-	  listProductVariations,
-	  getProduct,
-	} from "./lib/wooClient";
+import {
+  CATALOG_SNAPSHOT_ACTIVE,
+  listBrochureProducts,
+  listProducts,
+  listCategories,
+  listProductVariations,
+  getProduct,
+} from "./lib/wooClient";
 import { proxifyWooMediaUrl } from "./lib/mediaProxy";
 import {
   beginPasskeyAuthentication,
@@ -5845,6 +5847,55 @@ const mapWooProductToProduct = (
   };
 };
 
+const mapBrochureProductToProduct = (product: any): Product => {
+  const rawWooProductId = product?.wooProductId ?? product?.woo_product_id ?? null;
+  const wooProductId =
+    typeof rawWooProductId === "number" && Number.isFinite(rawWooProductId)
+      ? rawWooProductId
+      : typeof rawWooProductId === "string" && /^\d+$/.test(rawWooProductId.trim())
+        ? Number.parseInt(rawWooProductId.trim(), 10)
+        : typeof product?.id === "string" && /^woo-\d+$/i.test(product.id.trim())
+          ? Number.parseInt(product.id.trim().replace(/[^\d]/g, ""), 10)
+          : NaN;
+  const image = normalizeWooImageUrl(product?.imageUrl) ?? WOO_PLACEHOLDER_IMAGE;
+  const category =
+    typeof product?.category === "string" && product.category.trim()
+      ? product.category.trim()
+      : Array.isArray(product?.categories) && typeof product.categories[0]?.name === "string"
+        ? product.categories[0].name.trim()
+        : "";
+  return {
+    id: Number.isFinite(wooProductId) ? `woo-${wooProductId}` : String(product?.id || product?.sku || product?.name || "brochure-product"),
+    wooId: Number.isFinite(wooProductId) ? wooProductId : undefined,
+    name: stripHtml(String(product?.name || "Product")),
+    category,
+    price: 0,
+    rating: 5,
+    reviews: 0,
+    image,
+    images: [image],
+    image_loaded: false,
+    inStock: true,
+    stockQuantity: null,
+    prescription: false,
+    dosage: "",
+    manufacturer: "",
+    type: "brochure",
+    isSubscription: false,
+    description: [product?.productDescription, product?.productInformation]
+      .map((entry) => stripHtml(String(entry || "")).trim())
+      .filter(Boolean)
+      .join(" "),
+    brochureDescription: stripHtml(String(product?.productDescription || "")).trim() || undefined,
+    brochureInformation: stripHtml(String(product?.productInformation || "")).trim() || undefined,
+    coaAvailable: Boolean(product?.coaAvailable || product?.documentation?.coaAvailable),
+    sku: typeof product?.sku === "string" ? product.sku.trim() : undefined,
+    variants: undefined,
+    hasVariants: false,
+    tags: undefined,
+  };
+};
+
 const normalizeCatalogFilterKey = (value: string | null | undefined) =>
   (value ?? "")
     .trim()
@@ -6035,6 +6086,73 @@ const LazyCatalogProductCard = ({
   );
 };
 
+const BrochureCatalogProductCard = ({ product }: { product: Product }) => {
+  const description = product.brochureDescription || product.description || "";
+  const information = product.brochureInformation || "";
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const openDocumentation = async () => {
+    const productId = product.wooId;
+    if (documentLoading) return;
+    if (!productId) {
+      toast.error("Documentation is unavailable for this product.");
+      return;
+    }
+    setDocumentLoading(true);
+    try {
+      const blob = await wooAPI.getCertificateOfAnalysis(productId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("Documentation is unavailable for this product.");
+    } finally {
+      setDocumentLoading(false);
+    }
+  };
+  return (
+    <article className="glass-card squircle-xl overflow-hidden border border-[rgba(148,163,184,0.35)] bg-white/85">
+      <div className="product-image-frame product-image-frame--flush">
+        <ImageWithFallback
+          src={product.image || WOO_PLACEHOLDER_IMAGE}
+          alt={product.name}
+          loading="lazy"
+          decoding="async"
+          className="product-image-frame__img"
+        />
+      </div>
+      <div className="flex flex-col gap-4 p-4 sm:p-5">
+        <div className="px-1">
+          <p className="text-xs font-semibold uppercase text-slate-500">
+            {product.category || "Product information"}
+          </p>
+          <h3 className="mt-1 text-base font-semibold leading-snug text-slate-950">
+            {product.name}
+          </h3>
+          <button
+            type="button"
+            onClick={() => void openDocumentation()}
+            disabled={documentLoading}
+            className="mt-1 line-clamp-2 text-left hover:underline disabled:cursor-wait disabled:opacity-70"
+            style={{ color: 'var(--white-label-primary-color, var(--primary, rgb(11, 6, 121)))' }}
+          >
+            {documentLoading ? "Loading..." : "Documentation and Analysis"}
+          </button>
+        </div>
+        {description && (
+          <p className="px-1 text-sm leading-relaxed text-slate-700">
+            {description}
+          </p>
+        )}
+        {information && (
+          <p className="px-1 text-sm leading-relaxed text-slate-700">
+            {information}
+          </p>
+        )}
+      </div>
+    </article>
+  );
+};
+
 // (Removed eager variation prefetching for faster catalog loads.)
 
 function MainApp() {
@@ -6087,6 +6205,16 @@ function MainApp() {
   const [delegateNowMs, setDelegateNowMs] = useState(() => Date.now());
   const [delegateContext, setDelegateContext] = useState<{
     token: string;
+    linkType?: "delegate" | "brochure";
+    capabilities?: {
+      canViewProducts?: boolean;
+      canViewPricing?: boolean;
+      canAddToCart?: boolean;
+      canCheckout?: boolean;
+      canSubmitProposal?: boolean;
+      canViewCOA?: boolean;
+      canViewInventory?: boolean;
+    };
     doctorId: string;
     doctorName: string;
     markupPercent: number;
@@ -6094,6 +6222,7 @@ function MainApp() {
     doctorSecondaryColor?: string | null;
     doctorBackgroundImageUrl?: string | null;
     doctorBackgroundColor?: string | null;
+    brochureTitle?: string | null;
     subjectLabel?: string | null;
     studyLabel?: string | null;
     patientReference?: string | null;
@@ -6124,6 +6253,8 @@ function MainApp() {
   const [delegateLoading, setDelegateLoading] = useState(false);
   const [delegateError, setDelegateError] = useState<string | null>(null);
   const isDelegateMode = Boolean(delegateToken);
+  const isBrochureRoute = typeof window !== "undefined" ? isBrochureLocation(window.location) : false;
+  const isBrochureMode = Boolean(isDelegateMode && (delegateContext?.linkType === "brochure" || isBrochureRoute));
   const delegateIsValidated = !delegateToken || delegateValidatedToken === delegateToken;
   const delegatePricingMarkupPercent = isDelegateMode
     ? Number(delegateContext?.markupPercent) || 0
@@ -6132,7 +6263,7 @@ function MainApp() {
     delegateContext?.delegatePermission || "submit_for_physician_review",
   ).trim().toLowerCase();
   const delegateCanSubmitProposal =
-    !isDelegateMode || delegatePermission === "submit_for_physician_review";
+    !isDelegateMode || (!isBrochureMode && delegatePermission === "submit_for_physician_review" && delegateContext?.capabilities?.canSubmitProposal !== false);
   const delegateSubmitDisabledMessage =
     "This delegate session is view only. Proposal submission is disabled.";
   const delegateDoctorNameForShare = useMemo(() => {
@@ -6141,6 +6272,13 @@ function MainApp() {
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
     return stripped || "Physician";
   }, [delegateContext?.doctorName]);
+  const brochureTitleForShare = useMemo(() => {
+    const raw =
+      typeof delegateContext?.brochureTitle === "string"
+        ? delegateContext.brochureTitle.trim()
+        : "";
+    return raw || "Product Brochure";
+  }, [delegateContext?.brochureTitle]);
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegateSecondaryColor = hexToRgbCss(delegateSecondaryColorHex);
@@ -6156,6 +6294,13 @@ function MainApp() {
     () => [
       ['--delegate-accent', delegateSecondaryColor],
       ['--delegate-accent-rgb', delegateSecondaryColorChannels],
+      ['--white-label-primary-color', delegateSecondaryColor],
+      ['--white-label-primary-color-rgb', delegateSecondaryColorChannels],
+      ['--white-label-primary-color-08', hexToRgbaCss(delegateSecondaryColorHex, 0.08)],
+      ['--white-label-primary-color-25', hexToRgbaCss(delegateSecondaryColorHex, 0.25)],
+      ['--checkbox-control-check-color', delegateSecondaryColor],
+      ['--checkbox-control-checked-border-color', delegateSecondaryColor],
+      ['--checkbox-control-focus-ring', hexToRgbaCss(delegateSecondaryColorHex, 0.25)],
       ['--delegate-accent-08', hexToRgbaCss(delegateSecondaryColorHex, 0.08)],
       ['--delegate-accent-10', hexToRgbaCss(delegateSecondaryColorHex, 0.10)],
       ['--delegate-accent-12', hexToRgbaCss(delegateSecondaryColorHex, 0.12)],
@@ -6611,15 +6756,46 @@ function MainApp() {
     if (!isDelegateMode || !delegateIsValidated || delegateLoading || delegateError) {
       return;
     }
+    if (isBrochureMode) {
+      document.title = `${brochureTitleForShare} - ${delegateDoctorNameForShare || "Physician"}${DELEGATE_TAB_TITLE_SUFFIX}`;
+      return;
+    }
     document.title = `${delegateDoctorNameForShare || "Physician"}${DELEGATE_TAB_TITLE_SUFFIX}`;
   }, [
+    brochureTitleForShare,
     delegateDoctorNameForShare,
     delegateError,
     delegateIsValidated,
     delegateLoading,
     isDelegateMode,
+    isBrochureMode,
     isMaintenanceMode,
   ]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    let meta = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    const previous = meta?.getAttribute("content") || null;
+    if (!isBrochureMode) {
+      return;
+    }
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "robots";
+      document.head.appendChild(meta);
+    }
+    meta.content = "noindex, nofollow";
+    return () => {
+      if (!meta) return;
+      if (previous) {
+        meta.content = previous;
+      } else if (meta.parentNode) {
+        meta.parentNode.removeChild(meta);
+      }
+    };
+  }, [isBrochureMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -7136,6 +7312,14 @@ function MainApp() {
 	        }
 		        setDelegateContext({
 		          token: delegateToken,
+		          linkType:
+                String(resolved?.linkType || resolved?.link_type || '').trim().toLowerCase() === 'brochure'
+                  ? 'brochure'
+                  : 'delegate',
+              capabilities:
+                resolved?.capabilities && typeof resolved.capabilities === 'object'
+                  ? resolved.capabilities
+                  : undefined,
 		          doctorId: String(resolved?.doctorId || resolved?.doctor_id || ""),
 		          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
 		          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
@@ -7158,6 +7342,14 @@ function MainApp() {
 	              : typeof resolved?.doctor_background_color === 'string'
 	                ? resolved.doctor_background_color
 	                : null,
+	          brochureTitle:
+	            typeof resolved?.brochureTitle === 'string' && resolved.brochureTitle.trim()
+	              ? resolved.brochureTitle.trim()
+	              : typeof resolved?.pageTitle === 'string' && resolved.pageTitle.trim()
+	                ? resolved.pageTitle.trim()
+	                : typeof resolved?.brochure_title === 'string' && resolved.brochure_title.trim()
+	                  ? resolved.brochure_title.trim()
+	                  : null,
 	          subjectLabel:
 	            typeof resolved?.subjectLabel === 'string'
 	              ? resolved.subjectLabel
@@ -21399,6 +21591,7 @@ function MainApp() {
     const leaderTtlMs = 25_000;
     const MAX_PER_TICK = 2;
     const timer = window.setInterval(() => {
+      if (isBrochureMode) return;
       if (!isPageVisible()) return;
       if (!isTabLeader(leaderKey, leaderTtlMs)) return;
       logLeaderActivity(leaderKey, "catalog-media-repair", 6500);
@@ -21483,7 +21676,7 @@ function MainApp() {
       releaseTabLeadership(leaderKey);
       window.clearInterval(timer);
     };
-  }, [refreshCatalogProductMedia]);
+  }, [isBrochureMode, refreshCatalogProductMedia]);
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
   const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
   const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
@@ -26196,6 +26389,33 @@ function MainApp() {
 			      try {
             ensureVariationCacheReady();
 
+            if (isBrochureMode && delegateToken) {
+              const payload = await listBrochureProducts<{ products?: any[] }>(delegateToken);
+              if (cancelled) {
+                return;
+              }
+              const brochureProducts = Array.isArray(payload?.products)
+                ? payload.products.map(mapBrochureProductToProduct).filter((product) => Boolean(product.name))
+                : [];
+              setCatalogProducts(brochureProducts);
+              const categoriesFromBrochure = Array.from(
+                new Set(
+                  brochureProducts
+                    .map((product) => product.category)
+                    .filter((category): category is string => Boolean(category)),
+                ),
+              );
+              setCatalogCategories(categoriesFromBrochure);
+              setCatalogTypes(['brochure']);
+              if (!background) {
+                setCatalogLoading(false);
+                setCatalogEmptyReady(true);
+                setCatalogTransientIssue(false);
+                catalogFailureCountRef.current = 0;
+              }
+              return;
+            }
+
 		            const fetchAllPublishedProducts = async (): Promise<WooProduct[]> => {
 		              const perPage = 100;
 		              const maxPages = 25;
@@ -26500,6 +26720,15 @@ function MainApp() {
                     : null;
                 const errorName =
                   typeof (error as any)?.name === "string" ? (error as any).name : "";
+                if (isBrochureMode) {
+                  setCatalogError(message);
+                  setCatalogTransientIssue(false);
+                  if (!background) {
+                    setCatalogLoading(false);
+                    setCatalogEmptyReady(true);
+                  }
+                  return;
+                }
                 const shouldBackoff =
                   status === 429 ||
                   status === 500 ||
@@ -26575,7 +26804,7 @@ function MainApp() {
 	      }
 	      window.clearInterval(intervalId);
 	    };
-		  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateIsValidated, delegateLoading, delegateError, delegateContext?.allowedProducts, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches, user?.id, user?.role]);
+		  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, isBrochureMode, delegateToken, delegateIsValidated, delegateLoading, delegateError, delegateContext?.allowedProducts, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches, user?.id, user?.role]);
 
   useEffect(() => {
     if (catalogEmptyTimerRef.current) {
@@ -26797,7 +27026,8 @@ function MainApp() {
       );
       if (
         nextCategories.length === prev.categories.length &&
-        prev.types.length === 0
+        prev.types.length === 0 &&
+        (!isBrochureMode || prev.tags.length === 0)
       ) {
         return prev;
       }
@@ -26805,9 +27035,10 @@ function MainApp() {
         ...prev,
         categories: nextCategories,
         types: [],
+        tags: isBrochureMode ? [] : prev.tags,
       };
     });
-  }, [catalogCategories]);
+  }, [catalogCategories, isBrochureMode]);
 
   useEffect(() => {
 	    if (shouldPauseAdminBackgroundSync && user?.role && isAdmin(user.role)) {
@@ -30642,7 +30873,6 @@ function MainApp() {
               </div>
             </div>
           )}
-
           {showSkeletonGrid ? (
             <div className="grid gap-6 w-full px-4 sm:px-6 lg:px-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {productSkeletons.map((_, index) => (
@@ -30652,25 +30882,29 @@ function MainApp() {
 	          ) : filteredProducts.length > 0 ? (
 	            <div className="grid gap-6 w-full px-4 sm:px-6 lg:px-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
 			              {filteredProducts.map((product) => (
-			                <LazyCatalogProductCard
-			                  key={product.id}
-			                  product={product}
-                        personalizedRecommendation={
-                          shouldUseProductRecommendations &&
-                          getCatalogRecommendationScore(product) > 0
-                        }
-                        personalizedRecommendationReason={getCatalogRecommendationReason(product)}
-	                      pricingMarkupPercent={delegatePricingMarkupPercent}
-	                      proposalMode={isDelegateMode}
-                        proposalActionsDisabled={isDelegateMode && !delegateCanSubmitProposal}
-			                  onEnsureVariants={ensureCatalogProductHasVariants}
-                        onProductView={(viewedProduct) => {
-                          trackPhysicianProductEvent("product_view", viewedProduct);
-                        }}
-			                  onAddToCart={(productId, variationId, qty) =>
-			                    handleAddToCart(productId, qty, undefined, variationId)
-			                  }
-			                />
+                      isBrochureMode ? (
+                        <BrochureCatalogProductCard key={product.id} product={product} />
+                      ) : (
+                        <LazyCatalogProductCard
+                          key={product.id}
+                          product={product}
+                          personalizedRecommendation={
+                            shouldUseProductRecommendations &&
+                            getCatalogRecommendationScore(product) > 0
+                          }
+                          personalizedRecommendationReason={getCatalogRecommendationReason(product)}
+                          pricingMarkupPercent={delegatePricingMarkupPercent}
+                          proposalMode={isDelegateMode}
+                          proposalActionsDisabled={isDelegateMode && !delegateCanSubmitProposal}
+                          onEnsureVariants={ensureCatalogProductHasVariants}
+                          onProductView={(viewedProduct) => {
+                            trackPhysicianProductEvent("product_view", viewedProduct);
+                          }}
+                          onAddToCart={(productId, variationId, qty) =>
+                            handleAddToCart(productId, qty, undefined, variationId)
+                          }
+                        />
+                      )
 			              ))}
 	            </div>
 	          ) : (
@@ -36976,7 +37210,7 @@ function MainApp() {
                                       type="button"
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 rounded-full"
+                                      className="admin-commission-sheet-button h-8 w-8 rounded-full"
                                       title="Open Google Sheet"
                                     >
                                       <a
@@ -37021,7 +37255,7 @@ function MainApp() {
                                       type="button"
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 shrink-0 rounded-full"
+                                      className="admin-commission-sheet-button h-8 w-8 shrink-0 rounded-full"
                                       title="Open Google Sheet"
                                     >
                                       <a
@@ -40026,6 +40260,7 @@ function MainApp() {
 			        {user && !isDelegateMode && (
 			          <div>
 			                  <Header
+                            key={`account-header-${user.id || user.email || 'user'}`}
 					              user={user}
 					              researchDashboardEnabled={researchDashboardEnabled}
                       physicianThreePlEnabled={physicianThreePlEnabled}
@@ -40088,6 +40323,7 @@ function MainApp() {
 	              {isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError && (
 	                <div style={{ display: postLoginHold ? "none" : undefined }}>
 	                  <Header
+	                    key={`delegate-header-${delegateToken || 'session'}`}
 	                    user={null}
 	                    delegateMode
 	                    delegateLogoUrl={delegateContext?.doctorLogoUrl ?? null}
@@ -40097,9 +40333,9 @@ function MainApp() {
 	                    patientLinksEnabled={false}
                       patientLinksDoctorUserIds={[]}
                       betaServices={[]}
-	                    cartItems={totalCartItems}
+	                    cartItems={isBrochureMode ? 0 : totalCartItems}
 	                    onSearch={handleSearch}
-	                    onCartClick={handleHeaderCartClick}
+	                    onCartClick={isBrochureMode ? undefined : handleHeaderCartClick}
 	                    catalogLoading={catalogLoading}
 	                  />
 	                </div>
@@ -42057,7 +42293,7 @@ function MainApp() {
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
 			                  <p className="text-lg font-semibold text-slate-900">Loading…</p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-			                    Validating your delegate link.
+			                    Validating your {isBrochureMode ? "brochure" : "delegate"} link.
 			                  </p>
 			                </div>
 			              </main>
@@ -42065,11 +42301,13 @@ function MainApp() {
 			              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
 			                  <p className="text-lg font-semibold text-slate-900">
-                          {delegateErrorLooksExpired ? "This delegate link has expired." : "Unable to load this delegate session."}
+                          {delegateErrorLooksExpired
+                            ? `This ${isBrochureMode ? "brochure" : "delegate"} link has expired.`
+                            : `Unable to load this ${isBrochureMode ? "brochure" : "delegate"} session.`}
                         </p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
 			                    {delegateErrorLooksExpired
-                                ? "Please request a new delegate link from your physician and try again."
+                                ? `Please request a new ${isBrochureMode ? "brochure" : "delegate"} link from your physician and try again.`
                                 : delegateError}
 			                  </p>
 			                </div>
@@ -42224,7 +42462,7 @@ function MainApp() {
         isAuthenticated={Boolean(user)}
         onRequireLogin={handleRequireLogin}
         allowUnauthenticatedCheckout={Boolean(
-          isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError,
+          isDelegateMode && !isBrochureMode && delegateIsValidated && !delegateLoading && !delegateError,
         )}
         delegateDoctorName={isDelegateMode ? delegateDoctorNameForShare : null}
         delegatePaymentMethod={isDelegateMode ? (delegateContext?.paymentMethod ?? null) : null}
@@ -42233,8 +42471,8 @@ function MainApp() {
         delegateSessionInstructions={isDelegateMode ? (delegateContext?.delegateInstructions ?? null) : null}
         delegateCanSubmitProposal={delegateCanSubmitProposal}
         delegateSubmitDisabledMessage={isDelegateMode ? delegateSubmitDisabledMessage : null}
-	        estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
-	        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
+	        estimateTotals={isDelegateMode && !isBrochureMode ? estimateTotalsForDelegateCheckout : undefined}
+	        pricingMarkupPercent={isDelegateMode && !isBrochureMode ? delegatePricingMarkupPercent : null}
 	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}
 	        onRejectProposal={isProposalReviewMode ? handleRejectActiveDelegationProposal : null}
 	        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}

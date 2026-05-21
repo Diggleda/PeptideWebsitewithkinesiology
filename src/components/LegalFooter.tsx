@@ -14,10 +14,17 @@ import privacyHtml from '../content/legal/privacy.html?raw';
 import shippingHtml from '../content/legal/shipping.html?raw';
 import returnsHtml from '../content/legal/returns.html?raw';
 import contactHtml from '../content/legal/contact.html?raw';
+import openSourceNoticesHtml from '../content/legal/open-source-notices.html?raw';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
 import { api, usageTrackingAPI } from '../services/api';
 
-type LegalDocumentKey = 'terms' | 'privacy' | 'shipping' | 'returns' | 'contact';
+type LegalDocumentKey =
+  | 'terms'
+  | 'privacy'
+  | 'shipping'
+  | 'returns'
+  | 'contact'
+  | 'open_source_notices';
 
 interface LegalDocumentContent {
   title: string;
@@ -103,6 +110,10 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, LegalDocumentContent> = {
   contact: {
     title: 'Contact',
     html: contactHtml,
+  },
+  open_source_notices: {
+    title: 'Open Source Notices',
+    html: openSourceNoticesHtml,
   },
 };
 
@@ -209,6 +220,7 @@ export function LegalFooter({
       { key: 'terms' as LegalDocumentKey, label: 'Terms of Service' },
       { key: 'privacy' as LegalDocumentKey, label: 'Privacy Policy' },
       { key: 'shipping' as LegalDocumentKey, label: 'Shipping Policy' },
+      { key: 'open_source_notices' as LegalDocumentKey, label: 'Open Source Notices' },
     ],
     [],
   );

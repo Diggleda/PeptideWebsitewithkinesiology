@@ -612,8 +612,29 @@ def get_certificate_of_analysis_delegate(product_id: int):
             setattr(err, "status", 400)
             raise err
 
-        # Validate delegate session (expiry, revoked, and settings gating).
-        delegation_service.resolve_delegate_token(token, count_page_load=False)
+        # Validate public session (expiry, revoked, settings gating, and link capabilities).
+        resolved_link = delegation_service.resolve_delegate_token(token, count_page_load=False)
+        capabilities = resolved_link.get("capabilities") if isinstance(resolved_link, dict) else {}
+        if isinstance(capabilities, dict) and capabilities.get("canViewCOA") is False:
+            err = RuntimeError("Certificate of analysis not found")
+            setattr(err, "status", 404)
+            raise err
+        if str((resolved_link or {}).get("linkType") or "").strip().lower() == "brochure":
+            from ..services import brochure_catalog_service
+
+            brochure_payload = brochure_catalog_service.get_brochure_products(token)
+            allowed_ids = set()
+            for item in brochure_payload.get("products", []):
+                if not isinstance(item, dict) or item.get("wooProductId") is None:
+                    continue
+                try:
+                    allowed_ids.add(int(item.get("wooProductId")))
+                except Exception:
+                    continue
+            if int(product_id) not in allowed_ids:
+                err = RuntimeError("Certificate of analysis not found")
+                setattr(err, "status", 404)
+                raise err
 
         row = product_document_repository.get_document(
             int(product_id),

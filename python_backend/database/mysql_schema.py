@@ -448,12 +448,15 @@ CREATE_TABLE_STATEMENTS = [
         token_version SMALLINT NOT NULL DEFAULT 1,
         token_ciphertext LONGTEXT NULL,
         token_hint VARCHAR(32) NULL,
+        link_type VARCHAR(32) NOT NULL DEFAULT 'delegate',
         doctor_id VARCHAR(32) NOT NULL,
+        created_by_user_id VARCHAR(32) NULL,
         patient_id LONGTEXT NULL,
         reference_label LONGTEXT NULL,
         subject_label LONGTEXT NULL,
         study_label LONGTEXT NULL,
         patient_reference LONGTEXT NULL,
+        brochure_name LONGTEXT NULL,
         delegate_name LONGTEXT NULL,
         delegate_contact LONGTEXT NULL,
         delegate_role VARCHAR(64) NULL,
@@ -476,6 +479,7 @@ CREATE_TABLE_STATEMENTS = [
         usage_limit INT NULL,
         usage_count INT NOT NULL DEFAULT 0,
         open_count INT NOT NULL DEFAULT 0,
+        view_count INT NOT NULL DEFAULT 0,
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         payment_method VARCHAR(32) NULL,
         payment_instructions LONGTEXT NULL,
@@ -483,6 +487,10 @@ CREATE_TABLE_STATEMENTS = [
         received_payment TINYINT(1) NOT NULL DEFAULT 0,
         last_used_at DATETIME NULL,
         last_opened_at DATETIME NULL,
+        first_viewed_at DATETIME NULL,
+        last_viewed_at DATETIME NULL,
+        last_user_agent_hash CHAR(64) NULL,
+        last_ip_hash CHAR(64) NULL,
         last_order_at DATETIME NULL,
         revoked_at DATETIME NULL,
         delegate_cart_json LONGTEXT NULL,
@@ -495,6 +503,7 @@ CREATE_TABLE_STATEMENTS = [
         delegate_review_order_id VARCHAR(32) NULL,
         delegate_review_notes LONGTEXT NULL,
         KEY idx_patient_links_doctor (doctor_id),
+        KEY idx_patient_links_type (link_type),
         KEY idx_patient_links_expires (expires_at),
         KEY idx_patient_links_status (status)
     ) CHARACTER SET utf8mb4
@@ -546,12 +555,18 @@ CREATE_TABLE_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS product_brochure_info (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         product_name VARCHAR(255) NOT NULL,
+        product_id BIGINT UNSIGNED NULL,
+        parent_product_id BIGINT UNSIGNED NULL,
+        variation_id BIGINT UNSIGNED NULL,
         product_sku VARCHAR(128) NOT NULL,
+        parent_sku VARCHAR(128) NULL,
         product_description LONGTEXT NULL,
         product_information LONGTEXT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY uq_product_brochure_info_sku (product_sku),
+        INDEX idx_product_brochure_info_product_id (product_id),
+        INDEX idx_product_brochure_info_variation_id (variation_id),
         INDEX idx_product_brochure_info_updated (updated_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
@@ -844,6 +859,9 @@ def ensure_schema() -> None:
         "ALTER TABLE tax_tracking ADD COLUMN IF NOT EXISTS example_tax_on_100k_sales_buffered DECIMAL(12,2) NULL",
         "ALTER TABLE tax_tracking ADD COLUMN IF NOT EXISTS tax_nexus_applied TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS physician_certified TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS link_type VARCHAR(32) NOT NULL DEFAULT 'delegate'",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS created_by_user_id VARCHAR(32) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS brochure_name LONGTEXT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL",
@@ -863,6 +881,10 @@ def ensure_schema() -> None:
         "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS product_sku VARCHAR(64) NULL",
         "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS woo_synced_at DATETIME NULL",
         "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS mime_type VARCHAR(64) NULL",
+        "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS product_id BIGINT UNSIGNED NULL",
+        "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS parent_product_id BIGINT UNSIGNED NULL",
+        "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS variation_id BIGINT UNSIGNED NULL",
+        "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS parent_sku VARCHAR(128) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN mime_type VARCHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN sha256 CHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
@@ -886,6 +908,7 @@ def ensure_schema() -> None:
         "ALTER TABLE physician_product_recommendations ADD COLUMN IF NOT EXISTS updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS brochure_name LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_name LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_contact LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_role VARCHAR(64) NULL",
@@ -907,6 +930,11 @@ def ensure_schema() -> None:
         "ALTER TABLE patient_links MODIFY COLUMN study_label LONGTEXT NULL",
         "ALTER TABLE patient_links MODIFY COLUMN patient_reference LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS received_payment TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS view_count INT NOT NULL DEFAULT 0",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS first_viewed_at DATETIME NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS last_viewed_at DATETIME NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS last_user_agent_hash CHAR(64) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS last_ip_hash CHAR(64) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS patient_id LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS reference_label LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
@@ -1252,6 +1280,8 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN study_label LONGTEXT NULL")
         if not _column_exists("patient_links", "patient_reference"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_reference LONGTEXT NULL")
+        if not _column_exists("patient_links", "brochure_name"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN brochure_name LONGTEXT NULL")
         if not _column_exists("patient_links", "delegate_name"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_name LONGTEXT NULL")
         if not _column_exists("patient_links", "delegate_contact"):
@@ -1325,6 +1355,7 @@ def ensure_schema() -> None:
         _copy_legacy_ciphertext("patient_links", "subject_label", "subject_label_encrypted")
         _copy_legacy_ciphertext("patient_links", "study_label", "study_label_encrypted")
         _copy_legacy_ciphertext("patient_links", "patient_reference", "patient_reference_encrypted")
+        _copy_legacy_ciphertext("patient_links", "brochure_name", "brochure_name_encrypted")
         _copy_legacy_ciphertext("patient_links", "instructions", "instructions_encrypted")
         _copy_legacy_ciphertext("patient_links", "payment_instructions", "payment_instructions_encrypted")
         _copy_legacy_ciphertext("patient_links", "delegate_name", "delegate_name_encrypted")
@@ -1342,6 +1373,7 @@ def ensure_schema() -> None:
         _drop_column_if_exists("patient_links", "subject_label_encrypted")
         _drop_column_if_exists("patient_links", "study_label_encrypted")
         _drop_column_if_exists("patient_links", "patient_reference_encrypted")
+        _drop_column_if_exists("patient_links", "brochure_name_encrypted")
         _drop_column_if_exists("patient_links", "instructions_encrypted")
         _drop_column_if_exists("patient_links", "payment_instructions_encrypted")
         _drop_column_if_exists("patient_links", "delegate_name_encrypted")
@@ -1473,6 +1505,12 @@ def ensure_schema() -> None:
     try:
         if not _index_exists("patient_links", "idx_patient_links_status"):
             mysql_client.execute("ALTER TABLE patient_links ADD INDEX idx_patient_links_status (status)")
+    except Exception:
+        pass
+
+    try:
+        if not _index_exists("patient_links", "idx_patient_links_type"):
+            mysql_client.execute("ALTER TABLE patient_links ADD INDEX idx_patient_links_type (link_type)")
     except Exception:
         pass
 

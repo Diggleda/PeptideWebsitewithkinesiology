@@ -134,6 +134,10 @@ def create_link():
             if "patientReference" in payload
             else payload.get("patient_reference")
         )
+        brochure_name = _payload_value(payload, "brochureName", "brochure_name")
+        link_type = _payload_value(payload, "linkType", "link_type")
+        recipient_name = _payload_value(payload, "recipientName", "recipient_name")
+        recipient_contact = _payload_value(payload, "recipientContact", "recipient_contact")
         delegate_name = _payload_value(payload, "delegateName", "delegate_name")
         delegate_contact = _payload_value(payload, "delegateContact", "delegate_contact")
         delegate_role = _payload_value(payload, "delegateRole", "delegate_role")
@@ -177,11 +181,16 @@ def create_link():
         )
         link = delegation_service.create_link(
             doctor_id,
+            link_type=link_type if isinstance(link_type, str) else None,
+            created_by_user_id=str(actor.get("id") or doctor_id),
             reference_label=reference_label if isinstance(reference_label, str) else None,
             patient_id=patient_id if isinstance(patient_id, str) else None,
             subject_label=subject_label if isinstance(subject_label, str) else None,
             study_label=study_label if isinstance(study_label, str) else None,
             patient_reference=patient_reference if isinstance(patient_reference, str) else None,
+            brochure_name=brochure_name if isinstance(brochure_name, str) else None,
+            recipient_name=recipient_name if isinstance(recipient_name, str) else None,
+            recipient_contact=recipient_contact if isinstance(recipient_contact, str) else None,
             delegate_name=delegate_name if isinstance(delegate_name, str) else None,
             delegate_contact=delegate_contact if isinstance(delegate_contact, str) else None,
             delegate_role=delegate_role if isinstance(delegate_role, str) else None,
@@ -205,10 +214,10 @@ def create_link():
             physician_certified=physician_certified,
         )
         usage_tracking_service.track_event(
-            "delegate_link_created",
+            "brochure_link_created" if str(link.get("linkType") or "").lower() == "brochure" else "delegate_link_created",
             actor=getattr(g, "current_user", None) or {},
             metadata={
-                "linkType": "delegate",
+                "linkType": link.get("linkType") or "delegate",
                 "token": link.get("token"),
                 "productScope": link.get("productScope"),
                 "delegatePermission": link.get("delegatePermission"),
@@ -248,6 +257,7 @@ def update_link(token: str):
             if "patient_reference" in payload
             else None
         )
+        brochure_name = _payload_value(payload, "brochureName", "brochure_name")
         delegate_name = _payload_value(payload, "delegateName", "delegate_name")
         delegate_contact = _payload_value(payload, "delegateContact", "delegate_contact")
         delegate_role = _payload_value(payload, "delegateRole", "delegate_role")
@@ -327,6 +337,7 @@ def update_link(token: str):
             subject_label=subject_label if isinstance(subject_label, str) else None,
             study_label=study_label if isinstance(study_label, str) else None,
             patient_reference=patient_reference if isinstance(patient_reference, str) else None,
+            brochure_name=brochure_name if isinstance(brochure_name, str) else None,
             delegate_name=delegate_name if isinstance(delegate_name, str) else None,
             delegate_contact=delegate_contact if isinstance(delegate_contact, str) else None,
             delegate_role=delegate_role if isinstance(delegate_role, str) else None,
@@ -400,7 +411,22 @@ def resolve_token():
     count_page_load = _should_count_resolve_page_load(request.args)
 
     def action():
-        resolved = delegation_service.resolve_delegate_token(token, count_page_load=count_page_load)
+        ip = (
+            request.headers.get("CF-Connecting-IP")
+            or request.headers.get("X-Forwarded-For")
+            or request.remote_addr
+            or ""
+        )
+        if isinstance(ip, str) and "," in ip:
+            ip = ip.split(",", 1)[0].strip()
+        view_context = {
+            "ip": ip,
+            "userAgent": request.headers.get("User-Agent") or "",
+        }
+        kwargs = {"count_page_load": count_page_load}
+        if any(str(value or "").strip() for value in view_context.values()):
+            kwargs["view_context"] = view_context
+        resolved = delegation_service.resolve_delegate_token(token, **kwargs)
         if count_page_load:
             _track_delegate_usage(
                 "delegate_link_opened",

@@ -45,6 +45,7 @@ FACILITY_PICKUP_LOCATION = {
 FACILITY_PICKUP_LABEL = "Facility pickup"
 FACILITY_PICKUP_NOTICE = None
 FACILITY_PICKUP_SERVICE_CODE = "facility_pickup"
+FACILITY_PICKUP_SHIPPED_STATUS = "Pick up"
 HAND_DELIVERY_LABEL = "Hand Delivered"
 HAND_DELIVERY_SERVICE_CODE = "hand_delivery"
 _CA_FIXED_TAX_RATE = 0.0875
@@ -812,6 +813,35 @@ def _is_facility_pickup_recipient_placeholder(value: object) -> bool:
 
 def _is_facility_pickup_request(*, shipping_estimate: object, shipping_address: object) -> bool:
     return _is_facility_pickup_shipping_estimate(shipping_estimate) or _is_facility_pickup_address(shipping_address)
+
+
+def _is_facility_pickup_order(order: object) -> bool:
+    if not isinstance(order, dict):
+        return False
+    if any(
+        _normalize_bool(value)
+        for value in (
+            order.get("facilityPickup"),
+            order.get("facility_pickup"),
+            order.get("fascility_pickup"),
+        )
+    ):
+        return True
+    candidates = [
+        order.get("shippingService"),
+        order.get("shipping_service"),
+        order.get("fulfillmentMethod"),
+        order.get("fulfillment_method"),
+    ]
+    estimate = _ensure_dict(order.get("shippingEstimate") or order.get("shipping_rate"))
+    candidates.extend(
+        [
+            estimate.get("serviceType"),
+            estimate.get("serviceCode"),
+            estimate.get("carrierId"),
+        ]
+    )
+    return bool({"facility_pickup", "fascility_pickup"} & {_normalize_fulfillment_selector(value) for value in candidates})
 
 
 def _normalize_optional_text(value: object) -> Optional[str]:
@@ -4535,6 +4565,13 @@ def _persist_shipping_update(
         integrations["shipStation"] = shipstation_info
     merged["integrationDetails"] = integrations
 
+    if (
+        isinstance(shipstation_info, dict)
+        and _normalize_fulfillment_selector(shipstation_info.get("status")) == "shipped"
+        and _is_facility_pickup_order(merged)
+    ):
+        merged["status"] = FACILITY_PICKUP_SHIPPED_STATUS
+
     try:
         order_repository.update(merged)
     except Exception:
@@ -4619,6 +4656,8 @@ def _enrich_with_shipstation(order: Dict) -> None:
         order["shippingEstimate"] = estimate
     if info.get("trackingNumber"):
         order["trackingNumber"] = info["trackingNumber"]
+    if _normalize_fulfillment_selector(info.get("status")) == "shipped" and _is_facility_pickup_order(order):
+        order["status"] = FACILITY_PICKUP_SHIPPED_STATUS
 
     trufusion_order_id = _extract_trufusion_order_id_from_integrations(
         order.get("integrationDetails") or order.get("integrations"),
@@ -5044,6 +5083,11 @@ def get_sales_rep_order_detail(
             mapped["shippingService"] = service_code
         if shipstation_info.get("trackingNumber"):
             mapped["trackingNumber"] = shipstation_info["trackingNumber"]
+        if (
+            _normalize_fulfillment_selector(shipstation_info.get("status")) == "shipped"
+            and (_is_facility_pickup_order(mapped) or _is_facility_pickup_order(local_order))
+        ):
+            mapped["status"] = FACILITY_PICKUP_SHIPPED_STATUS
         trufusion_order_id = _extract_trufusion_order_id_from_integrations(
             mapped.get("integrationDetails") or mapped.get("integrations"),
             fallback=mapped.get("id"),

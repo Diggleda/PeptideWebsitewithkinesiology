@@ -32,6 +32,7 @@ const RESTRICTED_LEGACY_DELEGATE_PERMISSIONS = new Set([
   'submit_payment_info_only',
   'direct_checkout',
 ]);
+const SUPPORTED_LINK_TYPES = new Set(['delegate', 'brochure']);
 
 const normalizeOptionalString = (value, maxLength = 4000) => {
   if (typeof value !== 'string') return null;
@@ -79,6 +80,13 @@ const normalizeDelegatePermission = (value) => {
   return ENABLED_DELEGATE_PERMISSIONS.has(normalized) ? normalized : 'submit_for_physician_review';
 };
 
+const normalizeLinkType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return SUPPORTED_LINK_TYPES.has(normalized) ? normalized : 'delegate';
+};
+
+const capabilitiesForLinkType = (value) => patientLinksRepository.capabilitiesForLinkType(value);
+
 const normalizeBool = (value, fallback = false) => {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value === 'boolean') return value;
@@ -103,17 +111,46 @@ const shouldCountResolvePageLoad = (query = {}) => {
   return !['0', 'false', 'no', 'off', 'read', 'readonly', 'poll'].includes(normalized);
 };
 
-const recordResolveOpenFallback = (link, nowMs = Date.now()) => {
+const hashPublicViewValue = (value) => {
+  const text = String(value || '').trim();
+  return text ? crypto.createHash('sha256').update(text).digest('hex') : null;
+};
+
+const resolvePublicViewContext = (req) => {
+  const ipRaw = req.headers['cf-connecting-ip']
+    || req.headers['x-forwarded-for']
+    || req.socket?.remoteAddress
+    || req.ip
+    || '';
+  const ip = Array.isArray(ipRaw)
+    ? String(ipRaw[0] || '').split(',')[0].trim()
+    : String(ipRaw || '').split(',')[0].trim();
+  return {
+    ipHash: hashPublicViewValue(ip),
+    userAgentHash: hashPublicViewValue(req.headers['user-agent'] || ''),
+  };
+};
+
+const recordResolveOpenFallback = (link, nowMs = Date.now(), viewContext = {}) => {
   if (!link || typeof link !== 'object') return null;
   const nextOpenCount = normalizeUsageCount(link.openCount ?? link.open_count) + 1;
+  const nextViewCount = normalizeUsageCount(link.viewCount ?? link.view_count ?? link.openCount ?? link.open_count) + 1;
   const timestamp = new Date(nowMs).toISOString();
   link.openCount = nextOpenCount;
+  link.viewCount = nextViewCount;
   link.lastUsedAt = timestamp;
   link.lastOpenedAt = timestamp;
+  link.firstViewedAt = link.firstViewedAt || timestamp;
+  link.lastViewedAt = timestamp;
+  if (viewContext.ipHash) link.lastIpHash = viewContext.ipHash;
+  if (viewContext.userAgentHash) link.lastUserAgentHash = viewContext.userAgentHash;
   return {
     openCount: nextOpenCount,
+    viewCount: nextViewCount,
     lastUsedAt: timestamp,
     lastOpenedAt: timestamp,
+    firstViewedAt: link.firstViewedAt,
+    lastViewedAt: timestamp,
   };
 };
 
@@ -145,11 +182,11 @@ const mergePatientLinkSqlMetrics = async (links) => {
   }
 };
 
-const recordResolveOpen = async (token, link, doctorId, nowMs = Date.now()) => {
+const recordResolveOpen = async (token, link, doctorId, nowMs = Date.now(), viewContext = {}) => {
   if (patientLinksRepository.isEnabled()) {
     try {
       await patientLinksRepository.createLinkSnapshot(link, doctorId);
-      const metrics = await patientLinksRepository.touchLastUsed(token);
+      const metrics = await patientLinksRepository.touchLastUsed(token, viewContext);
       if (metrics) {
         Object.assign(link, metrics);
         return metrics;
@@ -158,7 +195,7 @@ const recordResolveOpen = async (token, link, doctorId, nowMs = Date.now()) => {
       // Fall back to local JSON counters when MySQL is unavailable during dev.
     }
   }
-  return recordResolveOpenFallback(link, nowMs);
+  return recordResolveOpenFallback(link, nowMs, viewContext);
 };
 
 const getState = () => {
@@ -222,10 +259,9 @@ const buildNodeDummyResolvePayload = (
     paymentInstructions: buildDummyPaymentInstructions(normalizedDoctorName),
     createdAt: baseCreatedAt,
     expiresAt: baseExpiresAt,
-    subjectLabel: 'Subject A104',
-    studyLabel: 'GH response pilot',
-    patientReference: 'RS-UI-001',
-    referenceLabel: 'Subject A104',
+    subjectLabel: null,
+    studyLabel: null,
+    referenceLabel: null,
     delegateName: 'Demo delegate',
     delegateRole: 'patient',
     productScope: 'all_physician_approved',
@@ -249,9 +285,8 @@ const buildNodeDummyResolvePayload = (
     return {
       ...base,
       token: 'node-ui-dummy-link-2',
-      subjectLabel: 'Subject B205',
-      patientReference: 'RS-UI-002',
-      referenceLabel: 'Subject B205',
+      subjectLabel: null,
+      referenceLabel: null,
       createdAt: new Date(now - 36 * 60 * 60 * 1000).toISOString(),
       delegateSharedAt: proposalCreatedAt,
       proposalStatus: 'pending',
@@ -288,43 +323,61 @@ router.post('/links', authenticate, async (req, res) => {
     req.body?.markupPercent,
     normalizeMarkupPercent(bucket?.config?.markupPercent, DEFAULT_MARKUP_PERCENT),
   );
+  const linkType = normalizeLinkType(req.body?.linkType ?? req.body?.link_type);
   const expiresInHours = normalizeRequiredLinkLimit(req.body?.expiresInHours ?? req.body?.expires_in_hours, LINK_EXPIRY_HOURS, 'expiresInHours');
   if (expiresInHours.error) return res.status(400).json({ error: expiresInHours.error });
   const paymentMethod = normalizeOptionalString(req.body?.paymentMethod ?? req.body?.payment_method, 32) || 'none';
+  const brochureName = linkType === 'brochure'
+    ? normalizeOptionalString(req.body?.brochureName ?? req.body?.brochure_name ?? req.body?.name)
+    : null;
+  if (linkType === 'brochure' && !brochureName) {
+    return res.status(400).json({ error: 'brochureName is required for brochure links.' });
+  }
   const link = {
     token: makeToken(),
+    linkType,
+    link_type: linkType,
+    capabilities: capabilitiesForLinkType(linkType),
+    createdByUserId: String(req.user?.id || doctorId || '').trim() || null,
     referenceLabel: normalizeOptionalString(req.body?.referenceLabel),
     patientId: normalizeOptionalString(req.body?.patientId),
     subjectLabel: normalizeOptionalString(req.body?.subjectLabel),
     studyLabel: normalizeOptionalString(req.body?.studyLabel),
     patientReference: normalizeOptionalString(req.body?.patientReference),
-    delegateName: normalizeOptionalString(req.body?.delegateName ?? req.body?.delegate_name),
-    delegateContact: normalizeOptionalString(req.body?.delegateContact ?? req.body?.delegate_contact),
-    delegateRole: normalizeOptionalString(req.body?.delegateRole ?? req.body?.delegate_role, 64),
+    brochureName,
+    recipientName: linkType === 'brochure'
+      ? normalizeOptionalString(req.body?.recipientName ?? req.body?.recipient_name ?? req.body?.delegateName ?? req.body?.delegate_name)
+      : null,
+    recipientContact: linkType === 'brochure'
+      ? normalizeOptionalString(req.body?.recipientContact ?? req.body?.recipient_contact ?? req.body?.delegateContact ?? req.body?.delegate_contact)
+      : null,
+    delegateName: linkType === 'brochure' ? null : normalizeOptionalString(req.body?.delegateName ?? req.body?.delegate_name),
+    delegateContact: linkType === 'brochure' ? null : normalizeOptionalString(req.body?.delegateContact ?? req.body?.delegate_contact),
+    delegateRole: linkType === 'brochure' ? null : normalizeOptionalString(req.body?.delegateRole ?? req.body?.delegate_role, 64),
     productScope: normalizeProductScope(req.body?.productScope ?? req.body?.product_scope),
     productScopeItems: normalizeAllowedProducts(req.body?.productScopeItems ?? req.body?.product_scope_items),
-    delegatePermission: normalizeDelegatePermission(req.body?.delegatePermission ?? req.body?.delegate_permission),
+    delegatePermission: linkType === 'brochure' ? 'view_products_only' : normalizeDelegatePermission(req.body?.delegatePermission ?? req.body?.delegate_permission),
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + expiresInHours.value * 60 * 60 * 1000).toISOString(),
-    markupPercent,
-    pricingDisclosure: normalizeOptionalString(req.body?.pricingDisclosure ?? req.body?.pricing_disclosure, 1000) || DEFAULT_PRICING_DISCLOSURE,
-    zelleRecipientName: normalizeOptionalString(req.body?.zelleRecipientName ?? req.body?.zelle_recipient_name),
-    paymentConfirmationRequired: normalizeBool(
+    markupPercent: linkType === 'brochure' ? 0 : markupPercent,
+    pricingDisclosure: linkType === 'brochure' ? null : (normalizeOptionalString(req.body?.pricingDisclosure ?? req.body?.pricing_disclosure, 1000) || DEFAULT_PRICING_DISCLOSURE),
+    zelleRecipientName: linkType === 'brochure' ? null : normalizeOptionalString(req.body?.zelleRecipientName ?? req.body?.zelle_recipient_name),
+    paymentConfirmationRequired: linkType === 'brochure' ? false : normalizeBool(
       req.body?.paymentConfirmationRequired ?? req.body?.payment_confirmation_required,
       true,
     ),
-    delegateInstructions: normalizeOptionalString(req.body?.delegateInstructions ?? req.body?.delegate_instructions, 4000),
+    delegateInstructions: linkType === 'brochure' ? null : normalizeOptionalString(req.body?.delegateInstructions ?? req.body?.delegate_instructions, 4000),
     internalPhysicianNote: normalizeOptionalString(req.body?.internalPhysicianNote ?? req.body?.internal_physician_note, 4000),
     termsVersion: normalizeOptionalString(req.body?.termsVersion ?? req.body?.terms_version, 64),
     shippingPolicyVersion: normalizeOptionalString(req.body?.shippingPolicyVersion ?? req.body?.shipping_policy_version, 64),
     privacyPolicyVersion: normalizeOptionalString(req.body?.privacyPolicyVersion ?? req.body?.privacy_policy_version, 64),
-    instructions: normalizeOptionalString(req.body?.instructions),
+    instructions: linkType === 'brochure' ? null : normalizeOptionalString(req.body?.instructions),
     allowedProducts: normalizeAllowedProducts(req.body?.allowedProducts),
     usageLimit: null,
     usageCount: 0,
     openCount: 0,
-    paymentMethod,
-    paymentInstructions: normalizeOptionalString(req.body?.paymentInstructions) || '',
+    paymentMethod: linkType === 'brochure' ? null : paymentMethod,
+    paymentInstructions: linkType === 'brochure' ? '' : (normalizeOptionalString(req.body?.paymentInstructions) || ''),
     receivedPayment: false,
     lastUsedAt: null,
     lastOpenedAt: null,
@@ -371,6 +424,14 @@ router.patch('/links/:token', authenticate, async (req, res) => {
   }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'patientReference')) {
     link.patientReference = normalizeOptionalString(req.body.patientReference);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'brochureName')
+    || Object.prototype.hasOwnProperty.call(req.body || {}, 'brochure_name')) {
+    const nextBrochureName = normalizeOptionalString(req.body.brochureName ?? req.body.brochure_name);
+    if (normalizeLinkType(link.linkType ?? link.link_type) === 'brochure' && !nextBrochureName) {
+      return res.status(400).json({ error: 'brochureName is required for brochure links.' });
+    }
+    link.brochureName = nextBrochureName;
   }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'delegateName')) {
     link.delegateName = normalizeOptionalString(req.body.delegateName);
@@ -533,42 +594,59 @@ router.get('/resolve', authenticateOptional, async (req, res) => {
       return res.status(404).json({ error: 'Invalid or expired delegation link.' });
     }
     if (countPageLoad) {
-      await recordResolveOpen(token, link, doctorId, nowMs);
+      await recordResolveOpen(token, link, doctorId, nowMs, resolvePublicViewContext(req));
       saveState(state);
     }
     const doctor = userRepository.findById(doctorId);
+    const linkType = normalizeLinkType(link.linkType ?? link.link_type);
+    const capabilities = capabilitiesForLinkType(linkType);
+    const exposeScopeItems = linkType !== 'brochure';
+    const brochureTitle = linkType === 'brochure'
+      ? normalizeOptionalString(link.brochureName ?? link.brochure_name)
+      : null;
     return res.json({
       token: link.token,
-      doctorId,
+      linkType,
+      link_type: linkType,
+      capabilities,
+      brochureTitle,
+      pageTitle: brochureTitle,
+      doctorId: linkType === 'brochure' ? '' : doctorId,
       doctorName: doctor?.name || 'Doctor',
       doctorLogoUrl: doctor?.delegateLogoUrl || null,
       doctorSecondaryColor: doctor?.delegateSecondaryColor || DEFAULT_DELEGATE_SECONDARY_COLOR,
       doctorBackgroundImageUrl: doctor?.delegateBackgroundImageUrl || null,
       doctorBackgroundColor: doctor?.delegateBackgroundColor || null,
-      markupPercent: normalizeMarkupPercent(link.markupPercent, DEFAULT_MARKUP_PERCENT),
-      paymentMethod: link.paymentMethod || 'none',
-      paymentInstructions: link.paymentInstructions || '',
-      delegateName: link.delegateName || null,
-      delegateRole: link.delegateRole || null,
+      markupPercent: linkType === 'brochure' ? 0 : normalizeMarkupPercent(link.markupPercent, DEFAULT_MARKUP_PERCENT),
+      paymentMethod: linkType === 'brochure' ? null : (link.paymentMethod || 'none'),
+      paymentInstructions: linkType === 'brochure' ? null : (link.paymentInstructions || ''),
+      delegateName: linkType === 'brochure' ? null : (link.delegateName || null),
+      delegateRole: linkType === 'brochure' ? null : (link.delegateRole || null),
       productScope: link.productScope || 'all_physician_approved',
-      productScopeItems: link.productScopeItems || [],
-      delegatePermission: link.delegatePermission || 'submit_for_physician_review',
-      pricingDisclosure: link.pricingDisclosure || DEFAULT_PRICING_DISCLOSURE,
-      paymentConfirmationRequired: link.paymentConfirmationRequired !== false,
-      delegateInstructions: link.delegateInstructions || null,
+      productScopeItems: exposeScopeItems ? (link.productScopeItems || []) : [],
+      delegatePermission: linkType === 'brochure' ? 'view_products_only' : (link.delegatePermission || 'submit_for_physician_review'),
+      pricingDisclosure: linkType === 'brochure' ? null : (link.pricingDisclosure || DEFAULT_PRICING_DISCLOSURE),
+      paymentConfirmationRequired: linkType === 'brochure' ? false : link.paymentConfirmationRequired !== false,
+      delegateInstructions: linkType === 'brochure' ? null : (link.delegateInstructions || null),
       termsVersion: link.termsVersion || null,
       shippingPolicyVersion: link.shippingPolicyVersion || null,
       privacyPolicyVersion: link.privacyPolicyVersion || null,
+      subjectLabel: linkType === 'brochure' ? null : (link.subjectLabel || null),
+      studyLabel: linkType === 'brochure' ? null : (link.studyLabel || null),
+      patientReference: linkType === 'brochure' ? null : (link.patientReference || null),
       createdAt: link.createdAt || null,
       expiresAt: link.expiresAt || null,
       usageLimit: null,
       usageCount: normalizeUsageCount(link.usageCount ?? link.usage_count),
       openCount: normalizeUsageCount(link.openCount ?? link.open_count),
+      viewCount: normalizeUsageCount(link.viewCount ?? link.view_count ?? link.openCount ?? link.open_count),
       lastUsedAt: link.lastUsedAt || null,
       lastOpenedAt: link.lastOpenedAt || null,
-      delegateSharedAt: link.delegateSharedAt || null,
-      delegateOrderId: link.delegateOrderId || null,
-      proposalStatus: link.proposalStatus || null,
+      firstViewedAt: link.firstViewedAt || null,
+      lastViewedAt: link.lastViewedAt || link.lastOpenedAt || null,
+      delegateSharedAt: linkType === 'brochure' ? null : (link.delegateSharedAt || null),
+      delegateOrderId: linkType === 'brochure' ? null : (link.delegateOrderId || null),
+      proposalStatus: linkType === 'brochure' ? null : (link.proposalStatus || null),
     });
   }
   return res.status(404).json({ error: 'Invalid or expired delegation link.' });

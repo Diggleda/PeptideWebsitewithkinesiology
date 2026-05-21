@@ -6,6 +6,7 @@ import { formatOrderStatusLabel } from '../../src/lib/orderStatusLabels.mjs';
 test('formats requested canonical order and tracking labels', () => {
   assert.equal(formatOrderStatusLabel('on-hold'), 'On-Hold');
   assert.equal(formatOrderStatusLabel('processing'), 'Processing');
+  assert.equal(formatOrderStatusLabel('Pick up'), 'Pick up');
   assert.equal(formatOrderStatusLabel('label_created'), 'Label Created');
   assert.equal(formatOrderStatusLabel('shipment_information_received'), 'Label Created');
   assert.equal(formatOrderStatusLabel('shipped'), 'Shipped');

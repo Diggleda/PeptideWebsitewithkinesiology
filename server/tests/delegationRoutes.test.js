@@ -31,12 +31,18 @@ test('delegate resolve page-load counter records opens without consuming uses', 
   recordResolveOpenFallback(link, Date.parse('2026-05-07T12:00:00.000Z'));
   assert.equal(link.usageCount, 2);
   assert.equal(link.openCount, 6);
+  assert.equal(link.viewCount, 6);
+  assert.equal(link.firstViewedAt, '2026-05-07T12:00:00.000Z');
+  assert.equal(link.lastViewedAt, '2026-05-07T12:00:00.000Z');
   assert.equal(link.lastUsedAt, '2026-05-07T12:00:00.000Z');
   assert.equal(link.lastOpenedAt, '2026-05-07T12:00:00.000Z');
 
   recordResolveOpenFallback(link, Date.parse('2026-05-07T12:05:00.000Z'));
   assert.equal(link.usageCount, 2);
   assert.equal(link.openCount, 7);
+  assert.equal(link.viewCount, 7);
+  assert.equal(link.firstViewedAt, '2026-05-07T12:00:00.000Z');
+  assert.equal(link.lastViewedAt, '2026-05-07T12:05:00.000Z');
   assert.equal(link.lastUsedAt, '2026-05-07T12:05:00.000Z');
   assert.equal(link.lastOpenedAt, '2026-05-07T12:05:00.000Z');
 });

@@ -37,6 +37,7 @@ const bucketFor = (path) => {
   if (path.startsWith('/api/auth')) return 'auth';
   if (path.startsWith('/api/orders/sales-rep')) return 'orders_sales_rep';
   if (path.startsWith('/api/woo')) return 'woo';
+  if (path.startsWith('/api/catalog/brochure-products')) return 'woo';
   if (path.startsWith('/api/shipping')) return 'shipping';
   return 'default';
 };

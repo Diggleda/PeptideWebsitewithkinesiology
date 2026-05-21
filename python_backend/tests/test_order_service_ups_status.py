@@ -237,6 +237,67 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
             service._find_order_by_woo_id = original_find_by_woo_id
             service.storage.order_store = original_order_store
 
+    def test_enrich_with_shipstation_marks_facility_pickup_as_pick_up(self):
+        service = self.order_service
+        original_shipstation = service.ship_station.fetch_order_status
+        original_find_by_id = service.order_repository.find_by_id
+        original_find_by_identifier = service.order_repository.find_by_order_identifier
+        original_update = service.order_repository.update
+        original_find_by_woo_id = service._find_order_by_woo_id
+        original_order_store = service.storage.order_store
+        try:
+            order = {
+                "id": "9003",
+                "number": "1493",
+                "wooOrderNumber": "1493",
+                "shippingEstimate": {"carrierId": "facility_pickup", "serviceCode": "facility_pickup"},
+            }
+            local_order = {
+                "id": "local-1493",
+                "wooOrderId": "9003",
+                "wooOrderNumber": "1493",
+                "status": "processing",
+                "facilityPickup": True,
+                "facility_pickup": True,
+                "fulfillmentMethod": "facility_pickup",
+                "shippingEstimate": {
+                    "carrierId": "facility_pickup",
+                    "serviceCode": "facility_pickup",
+                    "serviceType": "Facility pickup",
+                },
+            }
+            persisted = []
+
+            service.ship_station.fetch_order_status = lambda _order_number: {
+                "status": "shipped",
+                "trackingNumber": None,
+                "carrierCode": "facility_pickup",
+                "serviceCode": "facility_pickup",
+                "shipDate": "2026-04-03",
+                "orderNumber": "1493",
+                "orderId": "9003",
+            }
+            service.order_repository.find_by_id = lambda value: local_order if str(value) == "local-1493" else None
+            service.order_repository.find_by_order_identifier = (
+                lambda value: local_order if str(value) in {"1493", "9003"} else None
+            )
+            service.order_repository.update = lambda value: persisted.append(dict(value)) or value
+            service._find_order_by_woo_id = lambda value: local_order if str(value) in {"1493", "9003"} else None
+            service.storage.order_store = None
+
+            service._enrich_with_shipstation(order)
+
+            self.assertTrue(persisted)
+            self.assertEqual(persisted[-1]["id"], "local-1493")
+            self.assertEqual(persisted[-1]["status"], "Pick up")
+        finally:
+            service.ship_station.fetch_order_status = original_shipstation
+            service.order_repository.find_by_id = original_find_by_id
+            service.order_repository.find_by_order_identifier = original_find_by_identifier
+            service.order_repository.update = original_update
+            service._find_order_by_woo_id = original_find_by_woo_id
+            service.storage.order_store = original_order_store
+
     def test_refresh_ups_status_resolves_local_order_by_hash_prefixed_woo_number(self):
         service = self.order_service
         original_find_identifier = service.order_repository.find_by_order_identifier

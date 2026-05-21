@@ -11,12 +11,18 @@ _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS product_brochure_info (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     product_name VARCHAR(255) NOT NULL,
+    product_id BIGINT UNSIGNED NULL,
+    parent_product_id BIGINT UNSIGNED NULL,
+    variation_id BIGINT UNSIGNED NULL,
     product_sku VARCHAR(128) NOT NULL,
+    parent_sku VARCHAR(128) NULL,
     product_description LONGTEXT NULL,
     product_information LONGTEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_product_brochure_info_sku (product_sku),
+    INDEX idx_product_brochure_info_product_id (product_id),
+    INDEX idx_product_brochure_info_variation_id (variation_id),
     INDEX idx_product_brochure_info_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 """
@@ -34,6 +40,16 @@ def _normalize_optional_text(value: Any) -> str | None:
     return text or None
 
 
+def _normalize_optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(float(str(value).strip()))
+    except Exception:
+        return None
+    return parsed if parsed > 0 else None
+
+
 def _sheet_row(row: Dict[str, Any], index: int) -> int:
     try:
         value = int(row.get("sheetRow") or row.get("sheet_row") or 0)
@@ -46,6 +62,9 @@ def _normalize_product(row: Dict[str, Any], index: int) -> Dict[str, Any]:
     sheet_row = _sheet_row(row, index)
     product_name = _normalize_text(row.get("productName") or row.get("name") or row.get("product_name"), 255)
     product_sku = _normalize_text(row.get("productSku") or row.get("sku") or row.get("product_sku"), 128)
+    parent_sku = _normalize_optional_text(row.get("parentSku") or row.get("parent_sku"))
+    if parent_sku:
+        parent_sku = parent_sku[:128]
     product_description = _normalize_optional_text(
         row.get("productDescription") or row.get("description") or row.get("product_description")
     )
@@ -74,7 +93,11 @@ def _normalize_product(row: Dict[str, Any], index: int) -> Dict[str, Any]:
             "request_index": index,
             "sheet_row": sheet_row,
             "product_name": product_name,
+            "product_id": _normalize_optional_int(row.get("productId") or row.get("product_id")),
+            "parent_product_id": _normalize_optional_int(row.get("parentProductId") or row.get("parent_product_id")),
+            "variation_id": _normalize_optional_int(row.get("variationId") or row.get("variation_id")),
             "product_sku": product_sku,
+            "parent_sku": parent_sku,
             "product_description": product_description,
             "product_information": product_information,
         },
@@ -145,30 +168,53 @@ def replace_from_webhook(rows: List[Dict[str, Any]], *, full_sync: bool = True) 
     deleted_skus: List[str] = []
     with mysql_client.cursor() as cur:
         cur.execute(_CREATE_TABLE_SQL)
+        for column_sql in (
+            "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS product_id BIGINT UNSIGNED NULL",
+            "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS parent_product_id BIGINT UNSIGNED NULL",
+            "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS variation_id BIGINT UNSIGNED NULL",
+            "ALTER TABLE product_brochure_info ADD COLUMN IF NOT EXISTS parent_sku VARCHAR(128) NULL",
+        ):
+            cur.execute(column_sql)
 
         for product in clean:
             cur.execute(
                 """
                 INSERT INTO product_brochure_info (
                     product_name,
+                    product_id,
+                    parent_product_id,
+                    variation_id,
                     product_sku,
+                    parent_sku,
                     product_description,
                     product_information
                 ) VALUES (
                     %(product_name)s,
+                    %(product_id)s,
+                    %(parent_product_id)s,
+                    %(variation_id)s,
                     %(product_sku)s,
+                    %(parent_sku)s,
                     %(product_description)s,
                     %(product_information)s
                 )
                 ON DUPLICATE KEY UPDATE
                     product_name = VALUES(product_name),
+                    product_id = VALUES(product_id),
+                    parent_product_id = VALUES(parent_product_id),
+                    variation_id = VALUES(variation_id),
+                    parent_sku = VALUES(parent_sku),
                     product_description = VALUES(product_description),
                     product_information = VALUES(product_information),
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 {
                     "product_name": product["product_name"],
+                    "product_id": product["product_id"],
+                    "parent_product_id": product["parent_product_id"],
+                    "variation_id": product["variation_id"],
                     "product_sku": product["product_sku"],
+                    "parent_sku": product["parent_sku"],
                     "product_description": product["product_description"],
                     "product_information": product["product_information"],
                 },

@@ -404,6 +404,89 @@ class DelegationServiceTests(unittest.TestCase):
             service._audit_event = original_audit
             service.settings_service.get_settings = original_get_settings
 
+    def test_create_brochure_link_forces_view_only_profile(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_create = service.patient_links_repository.create_link
+        original_audit = service._audit_event
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            captured: dict[str, object] = {}
+
+            def fake_create_link(doctor_id, **kwargs):
+                captured.update(kwargs)
+                return {
+                    "token": "tok-brochure",
+                    "linkType": kwargs.get("link_type"),
+                    "capabilities": service.capabilities_for_link_type(kwargs.get("link_type")),
+                    "brochureName": kwargs.get("brochure_name"),
+                    "recipientName": kwargs.get("delegate_name"),
+                    "recipientContact": kwargs.get("delegate_contact"),
+                    "delegatePermission": kwargs.get("delegate_permission"),
+                    "markupPercent": kwargs.get("markup_percent"),
+                    "pricingDisclosure": kwargs.get("pricing_disclosure"),
+                    "allowedProducts": kwargs.get("allowed_products") or [],
+                    "productScope": kwargs.get("product_scope"),
+                    "expiresAt": "future",
+                }
+
+            service.patient_links_repository.create_link = fake_create_link
+            service._audit_event = lambda *_args, **_kwargs: None
+
+            result = service.create_link(
+                "doc-1",
+                link_type="brochure",
+                brochure_name="Recovery Overview",
+                recipient_name="Recipient A",
+                recipient_contact="recipient@example.com",
+                delegate_permission="submit_for_physician_review",
+                markup_percent=35,
+                pricing_disclosure="Should be suppressed.",
+                payment_method="zelle",
+                payment_instructions="Should be suppressed.",
+                instructions="Should be suppressed.",
+                product_scope="specific_products",
+                product_scope_items=["BPC-157"],
+                allowed_products=["BPC-157"],
+            )
+
+            self.assertEqual(captured.get("link_type"), "brochure")
+            self.assertEqual(captured.get("brochure_name"), "Recovery Overview")
+            self.assertEqual(result.get("brochureName"), "Recovery Overview")
+            self.assertEqual(captured.get("delegate_name"), "Recipient A")
+            self.assertEqual(captured.get("delegate_contact"), "recipient@example.com")
+            self.assertEqual(captured.get("delegate_permission"), "view_products_only")
+            self.assertEqual(captured.get("markup_percent"), 0.0)
+            self.assertIsNone(captured.get("pricing_disclosure"))
+            self.assertIsNone(captured.get("payment_method"))
+            self.assertIsNone(captured.get("payment_instructions"))
+            self.assertIsNone(captured.get("instructions"))
+            self.assertEqual(result.get("capabilities", {}).get("canViewPricing"), False)
+            self.assertEqual(result.get("capabilities", {}).get("canSubmitProposal"), False)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.create_link = original_create
+            service._audit_event = original_audit
+
+    def test_create_brochure_link_requires_name(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+
+            with self.assertRaises(ValueError) as ctx:
+                service.create_link("doc-1", link_type="brochure", brochure_name="   ")
+
+            self.assertEqual(getattr(ctx.exception, "status", None), 400)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+
     def test_resolve_delegate_token_can_skip_page_load_count_for_polling(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
@@ -488,6 +571,126 @@ class DelegationServiceTests(unittest.TestCase):
             self.assertEqual(resolved.get("doctorSecondaryColor"), "#0b0679")
             self.assertEqual(resolved.get("doctorBackgroundImageUrl"), "data:image/jpeg;base64,BACKGROUND")
             self.assertEqual(resolved.get("doctorBackgroundColor"), "#edf7fb")
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.user_repository.find_by_id = original_find_user
+            service.patient_links_repository.touch_last_used = original_touch_last_used
+            service._audit_event = original_audit
+            service.settings_service.get_settings = original_get_settings
+
+    def test_resolve_brochure_token_returns_privacy_safe_view_only_profile(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_find_user = service.user_repository.find_by_id
+        original_touch_last_used = service.patient_links_repository.touch_last_used
+        original_audit = service._audit_event
+        original_get_settings = service.settings_service.get_settings
+        touched = []
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
+                "token": "tok-brochure",
+                "doctorId": "doc-1",
+                "linkType": "brochure",
+                "revokedAt": None,
+                "status": "active",
+                "markupPercent": 45,
+                "brochureName": "Recovery Overview",
+                "allowedProducts": ["BPC-157"],
+                "subjectLabel": "Subject A",
+                "studyLabel": "Study A",
+                "patientReference": "Internal Ref",
+                "delegateName": "Delegate A",
+                "delegateRole": "caregiver",
+                "delegatePermission": "submit_for_physician_review",
+                "pricingDisclosure": "Private price disclosure.",
+                "paymentConfirmationRequired": True,
+                "delegateInstructions": "Private instructions.",
+                "paymentMethod": "zelle",
+                "paymentInstructions": "Private payment instructions.",
+                "instructions": "Private brochure instructions.",
+                "delegateSharedAt": "2026-05-21T12:00:00+00:00",
+                "delegateOrderId": "order-1",
+                "delegateReviewStatus": "pending",
+                "delegateReviewedAt": "2026-05-21T12:05:00+00:00",
+                "delegateReviewOrderId": "order-2",
+                "delegateReviewNotes": "Private notes.",
+                "openCount": 2,
+                "viewCount": 2,
+            }
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "role": "doctor",
+                "name": "Dr. Test",
+                "delegateLogoUrl": "data:image/png;base64,LOGO",
+                "delegateSecondaryColor": "#0b0679",
+                "delegateBackgroundImageUrl": "data:image/jpeg;base64,BACKGROUND",
+                "delegateBackgroundColor": "#edf7fb",
+            }
+            service.patient_links_repository.touch_last_used = lambda *args, **kwargs: touched.append((args, kwargs))
+            service._audit_event = lambda *_args, **_kwargs: None
+            service.settings_service.get_settings = lambda: {"patientLinksEnabled": True}
+
+            resolved = service.resolve_delegate_token(
+                "tok-brochure",
+                count_page_load=True,
+                view_context={"ip": "203.0.113.8", "userAgent": "UnitTestBrowser/1.0"},
+            )
+
+            self.assertEqual(resolved.get("linkType"), "brochure")
+            self.assertEqual(resolved.get("doctorId"), "")
+            self.assertEqual(resolved.get("doctorName"), "Dr. Test")
+            self.assertEqual(resolved.get("doctorLogoUrl"), "data:image/png;base64,LOGO")
+            self.assertEqual(resolved.get("doctorBackgroundImageUrl"), "data:image/jpeg;base64,BACKGROUND")
+            self.assertEqual(resolved.get("capabilities", {}).get("canViewProducts"), True)
+            self.assertEqual(resolved.get("capabilities", {}).get("canViewPricing"), False)
+            self.assertEqual(resolved.get("capabilities", {}).get("canAddToCart"), False)
+            self.assertEqual(resolved.get("capabilities", {}).get("canCheckout"), False)
+            self.assertEqual(resolved.get("capabilities", {}).get("canSubmitProposal"), False)
+            self.assertEqual(resolved.get("capabilities", {}).get("canViewCOA"), True)
+            self.assertEqual(resolved.get("capabilities", {}).get("canViewInventory"), False)
+            self.assertEqual(resolved.get("markupPercent"), 0.0)
+            self.assertIsNone(resolved.get("subjectLabel"))
+            self.assertIsNone(resolved.get("studyLabel"))
+            self.assertIsNone(resolved.get("patientReference"))
+            self.assertIsNone(resolved.get("brochureName"))
+            self.assertIsNone(resolved.get("brochure_name"))
+            self.assertEqual(resolved.get("brochureTitle"), "Recovery Overview")
+            self.assertEqual(resolved.get("pageTitle"), "Recovery Overview")
+            self.assertIsNone(resolved.get("delegateName"))
+            self.assertIsNone(resolved.get("delegateRole"))
+            self.assertEqual(resolved.get("delegatePermission"), "view_products_only")
+            self.assertEqual(resolved.get("allowedProducts"), [])
+            self.assertEqual(resolved.get("productScopeItems"), [])
+            self.assertIsNone(resolved.get("pricingDisclosure"))
+            self.assertFalse(resolved.get("paymentConfirmationRequired"))
+            self.assertIsNone(resolved.get("delegateInstructions"))
+            self.assertIsNone(resolved.get("paymentMethod"))
+            self.assertIsNone(resolved.get("paymentInstructions"))
+            self.assertIsNone(resolved.get("instructions"))
+            self.assertIsNone(resolved.get("delegateSharedAt"))
+            self.assertIsNone(resolved.get("delegateOrderId"))
+            self.assertIsNone(resolved.get("proposalStatus"))
+            self.assertIsNone(resolved.get("proposalReviewedAt"))
+            self.assertIsNone(resolved.get("proposalReviewOrderId"))
+            self.assertIsNone(resolved.get("proposalReviewNotes"))
+            self.assertIsNone(resolved.get("compensationDisclosure"))
+            self.assertFalse(
+                any("compensation" in str(disclosure).lower() for disclosure in resolved.get("disclosures") or [])
+            )
+            self.assertEqual(resolved.get("openCount"), 3)
+            self.assertEqual(resolved.get("viewCount"), 3)
+            self.assertEqual(len(touched), 1)
+            self.assertEqual(touched[0][0], ("tok-brochure",))
+            self.assertNotEqual(touched[0][1].get("ip_hash"), "203.0.113.8")
+            self.assertNotEqual(touched[0][1].get("user_agent_hash"), "UnitTestBrowser/1.0")
+            self.assertEqual(len(touched[0][1].get("ip_hash") or ""), 64)
+            self.assertEqual(len(touched[0][1].get("user_agent_hash") or ""), 64)
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate

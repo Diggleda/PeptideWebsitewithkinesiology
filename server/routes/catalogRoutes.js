@@ -1,9 +1,16 @@
 const { Router } = require('express');
+const fs = require('fs');
+const path = require('path');
 const wooController = require('../controllers/wooController');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const { authenticate } = require('../middleware/authenticate');
+const mysqlClient = require('../database/mysqlClient');
 const orderRepository = require('../repositories/orderRepository');
+const patientLinksRepository = require('../repositories/patientLinksRepository');
 const userRepository = require('../repositories/userRepository');
+const { env } = require('../config/env');
+const { logger } = require('../config/logger');
+const { JsonStore } = require('../storage/jsonStore');
 
 const router = Router();
 const MODEL_VERSION = 'heuristic-v1-node-fallback';
@@ -13,6 +20,17 @@ const DEFAULT_RECOMMENDATION_LIMIT = 12;
 const MAX_RECOMMENDATION_LIMIT = 24;
 const DEFAULT_SIMULATION_LIMIT = 6;
 const MAX_SIMULATION_LIMIT = 12;
+let delegationStore = null;
+
+const getDelegationStore = () => {
+  if (!delegationStore) {
+    delegationStore = new JsonStore(env.dataDir, 'delegation-links.json', {
+      byDoctorId: {},
+    });
+    delegationStore.init();
+  }
+  return delegationStore;
+};
 
 const recommendationsEnabled = () => {
   const raw = String(process.env.RECOMMENDATIONS_ENABLED || 'true').trim().toLowerCase();
@@ -103,6 +121,79 @@ const normalizeFilterKey = (value) => String(value || '')
   .replace(/&/g, 'and')
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
+const normalizeLinkType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'brochure' ? 'brochure' : 'delegate';
+};
+const toIsoDateTime = (value) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString();
+};
+const isInactiveLink = (link) => {
+  if (!link || typeof link !== 'object') return true;
+  const status = String(link.status || '').trim().toLowerCase();
+  if (status === 'revoked' || status === 'expired') return true;
+  if (link.revokedAt || link.revoked_at) return true;
+  const expiresAtMs = Date.parse(link.expiresAt || link.expires_at || '');
+  return Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs;
+};
+const normalizeLocalLink = (link, doctorId) => {
+  const linkType = normalizeLinkType(link?.linkType ?? link?.link_type);
+  const productScopeItemsSource = link?.productScopeItems
+    ?? link?.product_scope_items
+    ?? link?.allowedProducts
+    ?? link?.allowed_products;
+  const productScopeItems = Array.isArray(productScopeItemsSource)
+    ? productScopeItemsSource
+    : typeof productScopeItemsSource === 'string'
+      ? productScopeItemsSource.replace(/\n/g, ',').split(',').map((entry) => entry.trim()).filter(Boolean)
+      : [];
+  return {
+    ...link,
+    doctorId: String(doctorId || link?.doctorId || link?.doctor_id || '').trim(),
+    linkType,
+    link_type: linkType,
+    capabilities: patientLinksRepository.capabilitiesForLinkType(linkType),
+    productScope: String(link?.productScope || link?.product_scope || 'all_physician_approved').trim() || 'all_physician_approved',
+    productScopeItems,
+    expiresAt: toIsoDateTime(link?.expiresAt || link?.expires_at),
+    revokedAt: toIsoDateTime(link?.revokedAt || link?.revoked_at),
+  };
+};
+const findLocalLinkByTokenFromState = (state, token) => {
+  const normalizedToken = String(token || '').trim();
+  if (!normalizedToken || !state?.byDoctorId || typeof state.byDoctorId !== 'object') return null;
+  for (const [doctorId, bucket] of Object.entries(state.byDoctorId)) {
+    const links = Array.isArray(bucket?.links) ? bucket.links : [];
+    const link = links.find((candidate) => String(candidate?.token || '').trim() === normalizedToken);
+    if (!link || isInactiveLink(link)) continue;
+    return normalizeLocalLink(link, doctorId);
+  }
+  return null;
+};
+const findLocalLinkByToken = (token) => {
+  const state = getDelegationStore().read() || {};
+  return findLocalLinkByTokenFromState(state, token);
+};
+const resolveBrochureCatalogLink = async (token) => {
+  let link = null;
+  if (patientLinksRepository.isEnabled()) {
+    try {
+      link = await patientLinksRepository.findByToken(token);
+    } catch (error) {
+      logger.warn({ err: error }, 'Brochure catalog: SQL token lookup failed; trying local link store');
+    }
+  }
+  if (!link) {
+    link = findLocalLinkByToken(token);
+  }
+  if (!link || normalizeLinkType(link.linkType ?? link.link_type) !== 'brochure' || link.capabilities?.canViewProducts !== true) {
+    return null;
+  }
+  return link;
+};
 
 const containsSubscription = (value) => String(value || '').trim().toLowerCase().includes('subscription');
 
@@ -119,6 +210,596 @@ const isExcludedCatalogProduct = (product) => {
   }
 
   return normalizeFilterKey(product?.sku) === 'add-on' || normalizeFilterKey(product?.slug) === 'add-on';
+};
+
+const normalizeSkuKey = (value) => String(value || '').trim().toLowerCase();
+const normalizeSkuLoose = (value) => normalizeSkuKey(value).replace(/[^a-z0-9]+/g, '');
+
+const firstProductImage = (product) => {
+  if (product?.image && typeof product.image === 'object' && String(product.image.src || '').trim()) {
+    return String(product.image.src).trim();
+  }
+  if (typeof product?.image === 'string' && product.image.trim()) {
+    return product.image.trim();
+  }
+  for (const image of Array.isArray(product?.images) ? product.images : []) {
+    if (image && typeof image === 'object' && String(image.src || '').trim()) return String(image.src).trim();
+    if (typeof image === 'string' && image.trim()) return image.trim();
+  }
+  return null;
+};
+
+const productCategories = (product) => (Array.isArray(product?.categories) ? product.categories : [])
+  .filter((category) => category && typeof category === 'object' && String(category.name || '').trim())
+  .map((category) => ({
+    id: parsePositiveInt(category.id),
+    name: String(category.name || '').trim(),
+    slug: String(category.slug || '').trim() || null,
+  }));
+
+const primaryCategoryName = (product) => {
+  const names = productCategories(product).map((category) => category.name).filter(Boolean);
+  const preferred = names.filter((name) => name.toLowerCase() !== 'uncategorized');
+  return (preferred[0] || names[0] || null);
+};
+
+const brochureScopeTokens = (link) => {
+  const values = [];
+  for (const key of ['productScopeItems', 'product_scope_items', 'allowedProducts', 'allowed_products']) {
+    const raw = link?.[key];
+    if (Array.isArray(raw)) values.push(...raw);
+    else if (typeof raw === 'string') values.push(...raw.replace(/\n/g, ',').split(','));
+  }
+  return new Set(values.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean));
+};
+
+const brochureScopeTokenVariants = (value) => {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return [];
+  const variants = new Set([
+    text,
+    normalizeSkuKey(text),
+    normalizeSkuLoose(text),
+    normalizeFilterKey(text),
+  ].filter(Boolean));
+  const id = parsePositiveInt(text);
+  if (id) {
+    variants.add(String(id));
+    variants.add(`woo-${id}`);
+    variants.add(`woo-product-${id}`);
+    variants.add(`product-${id}`);
+  }
+  const variationMatch = text.match(/^woo-variation-(\d+)$/i) || text.match(/^variation-(\d+)$/i);
+  if (variationMatch) {
+    const variationId = Number.parseInt(variationMatch[1], 10);
+    if (variationId > 0) {
+      variants.add(String(variationId));
+      variants.add(`woo-${variationId}`);
+      variants.add(`variation-${variationId}`);
+      variants.add(`woo-variation-${variationId}`);
+    }
+  }
+  return [...variants];
+};
+
+const brochureScopeMatches = (product, link) => {
+  const tokens = brochureScopeTokens(link);
+  const scope = String(link?.productScope || link?.product_scope || 'all_physician_approved').trim().toLowerCase();
+  if (tokens.size === 0 && ['specific_products', 'specific_cart_only'].includes(scope)) return false;
+  if (tokens.size === 0 || scope === 'all_physician_approved') return true;
+  const productId = String(product?.id || '').trim().toLowerCase();
+  const sku = normalizeSkuKey(product?.sku);
+  const candidates = new Set([
+    productId,
+    productId ? `woo-${productId}` : '',
+    sku,
+    normalizeSkuLoose(sku),
+    String(product?.name || '').trim().toLowerCase(),
+    ...productCategories(product).flatMap((category) => [
+      String(category.name || '').trim().toLowerCase(),
+      String(category.slug || '').trim().toLowerCase(),
+    ]),
+  ].filter(Boolean));
+  for (const variation of Array.isArray(product?.variations) ? product.variations : []) {
+    const variationId = typeof variation === 'object'
+      ? String(variation?.id || '').trim().toLowerCase()
+      : String(variation || '').trim().toLowerCase();
+    const variationSku = typeof variation === 'object' ? normalizeSkuKey(variation?.sku) : '';
+    if (variationId) {
+      candidates.add(variationId);
+      candidates.add(`woo-${variationId}`);
+      candidates.add(`variation-${variationId}`);
+      candidates.add(`woo-variation-${variationId}`);
+    }
+    if (variationSku) {
+      candidates.add(variationSku);
+      candidates.add(normalizeSkuLoose(variationSku));
+    }
+  }
+  return [...tokens].some((token) => brochureScopeTokenVariants(token).some((variant) => candidates.has(variant)));
+};
+
+const BROCHURE_CSV_DEFAULT_PATH = path.resolve(__dirname, '../config/product-brochure-info.csv');
+
+const normalizeCsvHeader = (value) => String(value || '')
+  .replace(/^\uFEFF/, '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '');
+
+const parseCsvText = (text) => {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  const source = String(text || '').replace(/^\uFEFF/, '');
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '"') {
+      if (inQuotes && source[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === ',' && !inQuotes) {
+      row.push(field);
+      field = '';
+      continue;
+    }
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && source[index + 1] === '\n') {
+        index += 1;
+      }
+      row.push(field);
+      if (row.some((entry) => String(entry || '').trim())) {
+        rows.push(row);
+      }
+      row = [];
+      field = '';
+      continue;
+    }
+    field += char;
+  }
+
+  row.push(field);
+  if (row.some((entry) => String(entry || '').trim())) {
+    rows.push(row);
+  }
+  return rows;
+};
+
+const brochureCsvFieldAliases = {
+  productname: 'product_name',
+  name: 'product_name',
+  productsku: 'product_sku',
+  sku: 'product_sku',
+  productdescription: 'product_description',
+  description: 'product_description',
+  productinformation: 'product_information',
+  information: 'product_information',
+  productinfo: 'product_information',
+  productid: 'product_id',
+  wooproductid: 'product_id',
+  parentproductid: 'parent_product_id',
+  variationid: 'variation_id',
+  woovariationid: 'variation_id',
+  parentsku: 'parent_sku',
+  syncstatus: 'sync_status',
+};
+
+const normalizeBrochureCsvRows = (csvText) => {
+  const records = parseCsvText(csvText);
+  if (records.length < 2) return [];
+  const headers = records[0].map((header) => brochureCsvFieldAliases[normalizeCsvHeader(header)] || null);
+  const rows = [];
+  for (const record of records.slice(1)) {
+    const raw = {};
+    headers.forEach((key, index) => {
+      if (!key) return;
+      raw[key] = String(record[index] || '').trim();
+    });
+    const productSku = String(raw.product_sku || '').trim();
+    const productDescription = String(raw.product_description || '').trim();
+    const productInformation = String(raw.product_information || '').trim();
+    if (!productSku || (!productDescription && !productInformation)) continue;
+    rows.push({
+      product_name: String(raw.product_name || '').trim() || productSku,
+      product_id: parsePositiveInt(raw.product_id),
+      parent_product_id: parsePositiveInt(raw.parent_product_id),
+      variation_id: parsePositiveInt(raw.variation_id),
+      product_sku: productSku,
+      parent_sku: String(raw.parent_sku || '').trim() || productSku,
+      product_description: productDescription || null,
+      product_information: productInformation || null,
+      sync_status: String(raw.sync_status || '').trim() || null,
+      source: 'csv',
+    });
+  }
+  return rows;
+};
+
+const brochureCsvCandidatePaths = () => {
+  const configured = String(process.env.BROCHURE_CATALOG_CSV_PATH || '').trim();
+  return [
+    configured ? path.resolve(configured) : null,
+    BROCHURE_CSV_DEFAULT_PATH,
+    path.resolve(env.dataDir, 'product-brochure-info.csv'),
+  ].filter(Boolean);
+};
+
+const loadBrochureRowsFromCsv = () => {
+  for (const csvPath of brochureCsvCandidatePaths()) {
+    try {
+      if (!fs.existsSync(csvPath)) continue;
+      const rows = normalizeBrochureCsvRows(fs.readFileSync(csvPath, 'utf8'));
+      if (rows.length > 0) {
+        logger.info({ path: csvPath, count: rows.length }, 'Brochure catalog: loaded CSV brochure data');
+      }
+      return rows;
+    } catch (error) {
+      logger.warn({ err: error, path: csvPath }, 'Brochure catalog: failed to load CSV brochure data');
+    }
+  }
+  return [];
+};
+
+const brochureCsvDirectCatalogEnabled = () => {
+  const raw = String(process.env.BROCHURE_CATALOG_CSV_DIRECT || '').trim().toLowerCase();
+  return !['0', 'false', 'no', 'off', 'disabled'].includes(raw);
+};
+
+const brochureRowScopeMatches = (row, link) => {
+  const tokens = brochureScopeTokens(link);
+  const scope = String(link?.productScope || link?.product_scope || 'all_physician_approved').trim().toLowerCase();
+  if (tokens.size === 0 && ['specific_products', 'specific_cart_only'].includes(scope)) return false;
+  if (tokens.size === 0 || scope === 'all_physician_approved') return true;
+  const sku = String(row?.product_sku || '').trim();
+  const parentSku = String(row?.parent_sku || '').trim();
+  const name = String(row?.product_name || '').trim();
+  const productId = parsePositiveInt(row?.product_id) || parsePositiveInt(row?.parent_product_id);
+  const variationId = parsePositiveInt(row?.variation_id);
+  const candidates = new Set([
+    productId ? String(productId) : '',
+    productId ? `woo-${productId}` : '',
+    productId ? `woo-product-${productId}` : '',
+    productId ? `product-${productId}` : '',
+    variationId ? String(variationId) : '',
+    variationId ? `woo-${variationId}` : '',
+    variationId ? `variation-${variationId}` : '',
+    variationId ? `woo-variation-${variationId}` : '',
+    normalizeSkuKey(sku),
+    normalizeSkuLoose(sku),
+    normalizeSkuKey(parentSku),
+    normalizeSkuLoose(parentSku),
+    name.toLowerCase(),
+    normalizeFilterKey(name),
+    normalizeSkuLoose(name),
+  ].filter(Boolean));
+  return [...tokens].some((token) => brochureScopeTokenVariants(token).some((variant) => candidates.has(variant)));
+};
+
+const loadBrochureRows = async () => {
+  if (!mysqlClient.isEnabled()) return loadBrochureRowsFromCsv();
+  return mysqlClient.fetchAll(
+    `
+      SELECT *
+      FROM product_brochure_info
+      WHERE COALESCE(TRIM(product_description), '') <> ''
+         OR COALESCE(TRIM(product_information), '') <> ''
+    `,
+  );
+};
+
+const buildBrochureMatcher = (rows) => {
+  const byExactSku = new Map();
+  const byLooseSku = new Map();
+  const byExactName = new Map();
+  const byLooseName = new Map();
+  const byFilterName = new Map();
+  const byProductId = new Map();
+  const byVariationId = new Map();
+  for (const row of rows || []) {
+    const sku = String(row?.product_sku || '').trim();
+    if (sku) {
+      if (!byExactSku.has(normalizeSkuKey(sku))) byExactSku.set(normalizeSkuKey(sku), row);
+      if (!byLooseSku.has(normalizeSkuLoose(sku))) byLooseSku.set(normalizeSkuLoose(sku), row);
+    }
+    const name = String(row?.product_name || '').trim();
+    if (name) {
+      const exactName = name.toLowerCase();
+      const looseName = normalizeSkuLoose(name);
+      const filterName = normalizeFilterKey(name);
+      if (exactName && !byExactName.has(exactName)) byExactName.set(exactName, row);
+      if (looseName && !byLooseName.has(looseName)) byLooseName.set(looseName, row);
+      if (filterName && !byFilterName.has(filterName)) byFilterName.set(filterName, row);
+    }
+    const productId = parsePositiveInt(row?.product_id) || parsePositiveInt(row?.parent_product_id);
+    const variationId = parsePositiveInt(row?.variation_id);
+    if (productId && !byProductId.has(productId)) byProductId.set(productId, row);
+    if (variationId && !byVariationId.has(variationId)) byVariationId.set(variationId, row);
+  }
+  return {
+    byExactSku,
+    byLooseSku,
+    byExactName,
+    byLooseName,
+    byFilterName,
+    byProductId,
+    byVariationId,
+    rowCount: Array.isArray(rows) ? rows.length : 0,
+  };
+};
+
+const matchBrochureRowsForCatalogItem = (item, matcher, { variation = false } = {}) => {
+  if (!matcher?.rowCount) return [];
+  const matches = [];
+  const add = (row) => {
+    if (row && !matches.includes(row)) matches.push(row);
+  };
+  const itemId = parsePositiveInt(item?.id);
+  if (itemId && variation && matcher.byVariationId.has(itemId)) add(matcher.byVariationId.get(itemId));
+  if (itemId && !variation && matcher.byProductId.has(itemId)) add(matcher.byProductId.get(itemId));
+  const sku = String(item?.sku || '').trim();
+  if (sku) {
+    const bySku = matcher.byExactSku.get(normalizeSkuKey(sku)) || matcher.byLooseSku.get(normalizeSkuLoose(sku));
+    add(bySku);
+  }
+  const name = String(item?.name || '').trim();
+  if (name) {
+    const byName = matcher.byExactName.get(name.toLowerCase())
+      || matcher.byLooseName.get(normalizeSkuLoose(name))
+      || matcher.byFilterName.get(normalizeFilterKey(name));
+    add(byName);
+  }
+  return matches;
+};
+
+const matchBrochureRowsForProduct = async (product, matcher) => {
+  const entries = await matchBrochureRowEntriesForProduct(product, matcher);
+  const rows = [];
+  for (const entry of entries) {
+    if (entry?.row && !rows.includes(entry.row)) rows.push(entry.row);
+  }
+  return rows;
+};
+
+const matchBrochureRowEntriesForProduct = async (product, matcher) => {
+  if (!matcher?.rowCount) return [];
+  const matches = [];
+  const add = (row, item) => {
+    if (row && !matches.some((entry) => entry.row === row)) {
+      matches.push({ row, item: item || product, product });
+    }
+  };
+  for (const row of matchBrochureRowsForCatalogItem(product, matcher)) add(row, product);
+  const productId = parsePositiveInt(product?.id);
+  if (productId && String(product?.type || '').toLowerCase() === 'variable') {
+    const variations = await wooCommerceClient.fetchCatalog(`products/${productId}/variations`, { per_page: 100, status: 'publish' }).catch(() => []);
+    for (const variation of Array.isArray(variations) ? variations : []) {
+      for (const row of matchBrochureRowsForCatalogItem(variation, matcher, { variation: true })) add(row, variation);
+    }
+  }
+  return matches;
+};
+
+const matchBrochureRow = async (product, matcher) => {
+  const matches = await matchBrochureRowsForProduct(product, matcher);
+  return matches[0] || null;
+};
+
+const filterBrochureCsvRowsForScope = async (rows, link) => {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const tokens = brochureScopeTokens(link);
+  const scope = String(link?.productScope || link?.product_scope || 'all_physician_approved').trim().toLowerCase();
+  if (tokens.size === 0 && ['specific_products', 'specific_cart_only'].includes(scope)) return [];
+  if (tokens.size === 0 || scope === 'all_physician_approved') return sourceRows;
+
+  const selected = new Map();
+  const selectRow = (row, item = null, product = null) => {
+    if (!row) return;
+    const existing = selected.get(row) || row;
+    const imageUrl = firstProductImage(item) || firstProductImage(product);
+    const productId = parsePositiveInt(product?.id);
+    const itemId = parsePositiveInt(item?.id);
+    const next = { ...existing };
+    if (imageUrl && !String(next.image_url || '').trim()) {
+      next.image_url = imageUrl;
+    }
+    if (productId && !parsePositiveInt(next.product_id)) {
+      next.product_id = productId;
+    }
+    if (itemId && item && item !== product && !parsePositiveInt(next.variation_id)) {
+      next.variation_id = itemId;
+    }
+    selected.set(row, next);
+  };
+  for (const row of sourceRows.filter((entry) => brochureRowScopeMatches(entry, link))) {
+    selectRow(row);
+  }
+  const productIds = [...new Set([...tokens].map((token) => parsePositiveInt(token)).filter(Boolean))];
+  if (productIds.length > 0) {
+    const matcher = buildBrochureMatcher(sourceRows);
+    const matchedRowGroups = await Promise.all(productIds.map(async (productId) => {
+      const product = await wooCommerceClient.fetchCatalog(`products/${productId}`, { status: 'publish' }).catch((error) => {
+        logger.info(
+          { productId, status: error?.status || error?.cause?.status },
+          'Brochure catalog: unable to resolve scoped Woo product for CSV brochure data',
+        );
+        return null;
+      });
+      if (!product || typeof product !== 'object') return [];
+      return matchBrochureRowEntriesForProduct(product, matcher);
+    }));
+    for (const matchedEntries of matchedRowGroups) {
+      for (const entry of matchedEntries) selectRow(entry.row, entry.item, entry.product);
+    }
+  }
+
+  const scopedRows = sourceRows.map((row) => selected.get(row)).filter(Boolean);
+  if (scopedRows.length === 0) {
+    logger.info(
+      { scope, tokens: [...tokens].slice(0, 25) },
+      'Brochure catalog: CSV scope matched no brochure rows',
+    );
+  }
+  return scopedRows;
+};
+
+const coaAvailabilityByProductId = async (productIds) => {
+  if (!mysqlClient.isEnabled()) return new Map();
+  const ids = [...new Set((productIds || []).map((id) => parsePositiveInt(id)).filter(Boolean))];
+  if (ids.length === 0) return new Map();
+  const params = { kind: 'certificate_of_analysis' };
+  const placeholders = ids.map((id, index) => {
+    const key = `pid${index}`;
+    params[key] = id;
+    return `:${key}`;
+  });
+  const rows = await mysqlClient.fetchAll(
+    `
+      SELECT woo_product_id, sha256, OCTET_LENGTH(data) AS data_bytes
+      FROM product_documents
+      WHERE kind = :kind
+        AND woo_product_id IN (${placeholders.join(', ')})
+    `,
+    params,
+  );
+  const result = new Map();
+  for (const row of rows || []) {
+    const productId = parsePositiveInt(row?.woo_product_id);
+    if (productId) result.set(productId, Boolean(Number(row?.data_bytes || 0) > 0 && String(row?.sha256 || '').trim()));
+  }
+  return result;
+};
+
+const stripHtml = (value) => String(value || '')
+  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/&amp;/gi, '&')
+  .replace(/&lt;/gi, '<')
+  .replace(/&gt;/gi, '>')
+  .replace(/&#39;/gi, "'")
+  .replace(/&quot;/gi, '"')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const csvBrochureCategory = (row) => {
+  const sku = String(row?.product_sku || row?.parent_sku || '').trim();
+  const name = String(row?.product_name || '').trim();
+  if (/(?:^|[\s-])v(?:ial)?$/i.test(name) || /-v$/i.test(sku)) {
+    return {
+      id: 18,
+      name: '10ml Amber Glass Vials w/ Silver Top',
+      slug: '10ml-amber-glass-vials-w-silver-top',
+    };
+  }
+  if (/nasal/i.test(name) || /-n$/i.test(sku)) {
+    return {
+      id: 17,
+      name: 'Nasal / Oral Sprays (15ml White Bottle w/ Spray Top)',
+      slug: 'nasal-oral-sprays-15ml-white-bottle-w-spray-top',
+    };
+  }
+  return {
+    id: null,
+    name: 'Product information',
+    slug: 'product-information',
+  };
+};
+
+const brochureDtoFromCsvRow = (row) => {
+  const sku = String(row?.product_sku || '').trim();
+  const category = csvBrochureCategory(row);
+  const imageUrl = String(row?.image_url || row?.imageUrl || '').trim();
+  const wooProductId = parsePositiveInt(row?.product_id) || parsePositiveInt(row?.parent_product_id);
+  return {
+    id: sku ? `csv-${normalizeSkuLoose(sku)}` : `csv-${normalizeFilterKey(row?.product_name) || 'product'}`,
+    wooProductId: wooProductId || null,
+    sku: sku || null,
+    parentSku: String(row?.parent_sku || sku || '').trim() || null,
+    name: String(row?.product_name || sku || 'Product').trim(),
+    category: category.name,
+    categories: [category],
+    imageUrl: imageUrl || null,
+    productDescription: stripHtml(row?.product_description),
+    productInformation: stripHtml(row?.product_information),
+    coaAvailable: Boolean(wooProductId),
+    documentation: { coaAvailable: Boolean(wooProductId) },
+  };
+};
+
+const brochureCatalogLocalFallbackEnabled = () => {
+  const raw = String(process.env.BROCHURE_CATALOG_WOO_FALLBACK || '').trim().toLowerCase();
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(raw)) return false;
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(raw)) return true;
+  return env.nodeEnv !== 'production' && !mysqlClient.isEnabled();
+};
+
+const localBrochureInfoFromProduct = (product) => {
+  if (!product || typeof product !== 'object') return null;
+  const productId = parsePositiveInt(product?.id);
+  const productSku = String(product?.sku || '').trim();
+  const category = primaryCategoryName(product);
+  const description = stripHtml(product?.short_description || product?.description || '');
+  const attributeSummary = (Array.isArray(product?.attributes) ? product.attributes : [])
+    .map((attribute) => {
+      const name = String(attribute?.name || '').trim();
+      const options = Array.isArray(attribute?.options)
+        ? attribute.options.map((entry) => String(entry || '').trim()).filter(Boolean).join(', ')
+        : '';
+      return name && options ? `${name}: ${options}` : '';
+    })
+    .filter(Boolean)
+    .join(' | ');
+  const tagSummary = (Array.isArray(product?.tags) ? product.tags : [])
+    .map((tag) => String(tag?.name || '').trim())
+    .filter(Boolean)
+    .join(', ');
+  const longDescription = stripHtml(product?.description || '');
+  const productInformation = [
+    longDescription && longDescription !== description ? longDescription : '',
+    attributeSummary,
+    tagSummary ? `Focus: ${tagSummary}` : '',
+    category ? `Category: ${category}` : '',
+  ].map((entry) => String(entry || '').trim()).filter(Boolean).join(' ');
+  if (!description && !productInformation) return null;
+  return {
+    product_name: String(product?.name || '').trim(),
+    product_id: productId,
+    parent_product_id: productId,
+    variation_id: null,
+    product_sku: productSku,
+    parent_sku: productSku || null,
+    product_description: description || null,
+    product_information: productInformation || null,
+  };
+};
+
+const brochureDto = (product, info, coaMap) => {
+  const productId = parsePositiveInt(product?.id);
+  const productSku = String(product?.sku || '').trim();
+  const brochureSku = String(info?.product_sku || '').trim();
+  const parentSku = String(info?.parent_sku || productSku || '').trim() || null;
+  return {
+    id: productId ? `woo-${productId}` : (brochureSku || productSku || String(product?.name || info?.product_name || 'Product').trim()),
+    wooProductId: productId || null,
+    sku: brochureSku || productSku || null,
+    parentSku,
+    name: String(product?.name || info?.product_name || 'Product').trim(),
+    category: primaryCategoryName(product),
+    categories: productCategories(product),
+    imageUrl: firstProductImage(product),
+    productDescription: String(info?.product_description || '').trim() || null,
+    productInformation: String(info?.product_information || '').trim() || null,
+    coaAvailable: Boolean(productId && coaMap.get(productId)),
+    documentation: { coaAvailable: Boolean(productId && coaMap.get(productId)) },
+  };
 };
 
 const fetchCatalogSimulationCandidates = async (limit) => {
@@ -330,6 +1011,79 @@ router.post('/events', authenticate, (req, res) => {
   return res.status(201).json({ ok: true, tracked: false, eventType });
 });
 
+router.get('/brochure-products', async (req, res, next) => {
+  try {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Cache-Control', 'private, no-store');
+    const token = String(req.query?.token || req.query?.brochure || req.query?.delegate || '').trim();
+    if (!token) return res.status(400).json({ error: 'token is required' });
+
+    const link = await resolveBrochureCatalogLink(token);
+    if (!link) {
+      return res.status(404).json({ error: 'Invalid or expired brochure link.' });
+    }
+
+    const allowLocalFallback = brochureCatalogLocalFallbackEnabled();
+    if (!mysqlClient.isEnabled() && !allowLocalFallback) {
+      return res.status(503).json({ error: 'MySQL is required for brochure catalog.' });
+    }
+    const brochureRows = await loadBrochureRows();
+    if (!mysqlClient.isEnabled() && brochureCsvDirectCatalogEnabled() && brochureRows.some((row) => row?.source === 'csv')) {
+      const scopedRows = await filterBrochureCsvRowsForScope(brochureRows, link);
+      const products = scopedRows.map((row) => brochureDtoFromCsvRow(row));
+      return res.json({
+        products,
+        capabilities: link.capabilities,
+        linkType: 'brochure',
+        source: 'csv',
+      });
+    }
+    const matcher = buildBrochureMatcher(brochureRows);
+    const productList = [];
+    for (let page = 1; page <= 25; page += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const products = await wooCommerceClient.fetchCatalog('products', {
+        per_page: 100,
+        page,
+        status: 'publish',
+        orderby: 'id',
+        order: 'asc',
+      });
+      const batch = Array.isArray(products) ? products.filter((product) => product && typeof product === 'object') : [];
+      productList.push(...batch);
+      if (batch.length < 100) break;
+    }
+    const coaMap = await coaAvailabilityByProductId(productList.map((product) => product.id));
+    const items = [];
+    const unmatched = [];
+    for (const product of productList) {
+      if (isExcludedCatalogProduct(product) || !brochureScopeMatches(product, link)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const info = await matchBrochureRow(product, matcher) || (allowLocalFallback ? localBrochureInfoFromProduct(product) : null);
+      if (!info) {
+        const sku = String(product?.sku || product?.id || product?.name || '').trim();
+        if (sku) unmatched.push(sku);
+        continue;
+      }
+      items.push(brochureDto(product, info, coaMap));
+    }
+    if (unmatched.length > 0) {
+      logger.info(
+        { count: unmatched.length, sampleSkus: unmatched.slice(0, 25) },
+        'Brochure catalog: products missing brochure copy',
+      );
+    }
+    return res.json({
+      products: items,
+      capabilities: link.capabilities,
+      linkType: 'brochure',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/media', wooController.proxyMedia);
 
 router.use(wooController.proxyCatalog);
@@ -338,4 +1092,16 @@ module.exports = router;
 module.exports.__test__ = {
   resolveRecommendationLimit,
   resolveSimulationLimit,
+  brochureScopeMatches,
+  findLocalLinkByTokenFromState,
+  parseCsvText,
+  normalizeBrochureCsvRows,
+  loadBrochureRowsFromCsv,
+  brochureRowScopeMatches,
+  filterBrochureCsvRowsForScope,
+  brochureDtoFromCsvRow,
+  buildBrochureMatcher,
+  matchBrochureRow,
+  localBrochureInfoFromProduct,
+  brochureDto,
 };

@@ -31,6 +31,9 @@ export const formatOrderStatusLabel = (value) => {
   if (normalized === "processing") {
     return "Processing";
   }
+  if (normalized === "pick_up" || normalized === "pickup") {
+    return "Pick up";
+  }
   if (
     normalized === "label_created" ||
     normalized === "awaiting_shipment" ||

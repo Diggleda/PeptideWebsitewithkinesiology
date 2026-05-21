@@ -49,11 +49,31 @@ class MysqlSchemaTests(unittest.TestCase):
         schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
 
         self.assertIn("CREATE TABLE IF NOT EXISTS product_brochure_info", schema_sql)
+        self.assertIn("product_id BIGINT UNSIGNED NULL", schema_sql)
+        self.assertIn("parent_product_id BIGINT UNSIGNED NULL", schema_sql)
+        self.assertIn("variation_id BIGINT UNSIGNED NULL", schema_sql)
+        self.assertIn("parent_sku VARCHAR(128) NULL", schema_sql)
         self.assertIn("product_name VARCHAR(255) NOT NULL", schema_sql)
         self.assertIn("product_sku VARCHAR(128) NOT NULL", schema_sql)
         self.assertIn("product_description LONGTEXT NULL", schema_sql)
         self.assertIn("product_information LONGTEXT NULL", schema_sql)
         self.assertIn("UNIQUE KEY uq_product_brochure_info_sku (product_sku)", schema_sql)
+        self.assertIn("INDEX idx_product_brochure_info_product_id (product_id)", schema_sql)
+        self.assertIn("INDEX idx_product_brochure_info_variation_id (variation_id)", schema_sql)
+
+    def test_patient_links_schema_supports_link_types_and_public_view_analytics(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS patient_links", schema_sql)
+        self.assertIn("link_type VARCHAR(32) NOT NULL DEFAULT 'delegate'", schema_sql)
+        self.assertIn("created_by_user_id VARCHAR(32) NULL", schema_sql)
+        self.assertIn("brochure_name LONGTEXT NULL", schema_sql)
+        self.assertIn("view_count INT NOT NULL DEFAULT 0", schema_sql)
+        self.assertIn("first_viewed_at DATETIME NULL", schema_sql)
+        self.assertIn("last_viewed_at DATETIME NULL", schema_sql)
+        self.assertIn("last_user_agent_hash CHAR(64) NULL", schema_sql)
+        self.assertIn("last_ip_hash CHAR(64) NULL", schema_sql)
+        self.assertIn("KEY idx_patient_links_type (link_type)", schema_sql)
 
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []

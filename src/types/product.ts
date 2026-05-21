@@ -65,6 +65,9 @@ export interface Product {
   hasVariants?: boolean;
   defaultVariantId?: string;
   variantSummary?: string;
+  brochureDescription?: string;
+  brochureInformation?: string;
+  coaAvailable?: boolean;
   bulkPricingTiers?: BulkPricingTier[];
   tags?: ProductTag[];
 }

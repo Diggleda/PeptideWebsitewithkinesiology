@@ -16,6 +16,7 @@ from . import background_job_supervisor, shipping_notification_service
 
 logger = logging.getLogger(__name__)
 _JOB_NAME = "shipstationStatusSync"
+FACILITY_PICKUP_SHIPPED_STATUS = "Pick up"
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
@@ -258,6 +259,42 @@ def _normalize_shipstation_status(value: Any) -> str:
     return "_".join(text.replace("-", " ").split())
 
 
+def _is_facility_pickup_order(order: Any) -> bool:
+    if not isinstance(order, dict):
+        return False
+    if any(
+        value is True or str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+        for value in (
+            order.get("facilityPickup"),
+            order.get("facility_pickup"),
+            order.get("fascility_pickup"),
+        )
+    ):
+        return True
+
+    candidates = [
+        order.get("shippingService"),
+        order.get("shipping_service"),
+        order.get("fulfillmentMethod"),
+        order.get("fulfillment_method"),
+    ]
+    estimate = order.get("shippingEstimate")
+    if isinstance(estimate, dict):
+        candidates.extend(
+            [
+                estimate.get("serviceType"),
+                estimate.get("serviceCode"),
+                estimate.get("carrierId"),
+            ]
+        )
+    normalized = {
+        str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        for value in candidates
+        if str(value or "").strip()
+    }
+    return bool({"facility_pickup", "fascility_pickup"} & normalized)
+
+
 def _map_shipstation_status_to_woo(status: Any) -> Optional[str]:
     normalized = _normalize_shipstation_status(status)
     if normalized == "shipped":
@@ -279,6 +316,7 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
     merged = dict(local_order)
     estimate = dict(merged.get("shippingEstimate") or {})
     status = shipstation_info.get("status")
+    normalized_status = _normalize_shipstation_status(status)
     ship_date = shipstation_info.get("shipDate")
     tracking = shipstation_info.get("trackingNumber")
     carrier = shipstation_info.get("carrierCode")
@@ -305,13 +343,14 @@ def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Di
         merged["trackingNumber"] = normalized_tracking
     if ship_date:
         merged["shippedAt"] = ship_date
-    if status and not merged.get("status"):
+    if normalized_status == "shipped" and _is_facility_pickup_order(merged):
+        merged["status"] = FACILITY_PICKUP_SHIPPED_STATUS
+    elif status and not merged.get("status"):
         merged["status"] = str(status).strip().lower()
     merged["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     try:
         persisted = order_repository.update(merged)
-        normalized_status = _normalize_shipstation_status(status)
         persisted_order_id = str((persisted or {}).get("id") or local_order.get("id") or "").strip()
         if (
             persisted_order_id

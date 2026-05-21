@@ -74,9 +74,10 @@ export function ManufacturingStandardsModal({
             </DialogHeader>
             <DialogClose
               aria-label="Close manufacturing standards modal"
-              className="dialog-close-btn ml-auto inline-flex shrink-0 items-center justify-center self-start text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+              className="manufacturing-standards-close dialog-close-btn ml-auto inline-flex shrink-0 items-center justify-center self-start text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
               style={{
                 backgroundColor: "rgb(11, 6, 121)",
+                color: "#ffffff",
                 width: "38px",
                 height: "38px",
                 minWidth: "38px",
@@ -84,7 +85,7 @@ export function ManufacturingStandardsModal({
                 borderRadius: "9999px",
               }}
             >
-              <span aria-hidden="true" className="text-xl leading-none">
+              <span aria-hidden="true" className="text-xl leading-none text-white">
                 &times;
               </span>
             </DialogClose>

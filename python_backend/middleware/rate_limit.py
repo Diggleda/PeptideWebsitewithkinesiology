@@ -47,6 +47,8 @@ def _limit_for_path(path: str) -> int:
         return _EXPENSIVE_MAX
     if path.startswith("/api/delegation/resolve") or path.startswith("/api/orders/delegate"):
         return _EXPENSIVE_MAX
+    if path.startswith("/api/catalog/brochure-products"):
+        return _EXPENSIVE_MAX
     return _DEFAULT_MAX
 
 

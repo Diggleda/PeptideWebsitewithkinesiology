@@ -13,6 +13,35 @@ from ..utils.crypto_envelope import decrypt_json, decrypt_text, encrypt_json, en
 TTL_HOURS = 72
 TOKEN_VERSION_HASHED = 2
 ACTIVE_LINK_SQL = "(expires_at IS NULL OR expires_at > UTC_TIMESTAMP())"
+SUPPORTED_LINK_TYPES = {"delegate", "brochure"}
+
+
+def _normalize_link_type(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in SUPPORTED_LINK_TYPES else "delegate"
+
+
+def capabilities_for_link_type(link_type: Any) -> Dict[str, bool]:
+    normalized = _normalize_link_type(link_type)
+    if normalized == "brochure":
+        return {
+            "canViewProducts": True,
+            "canViewPricing": False,
+            "canAddToCart": False,
+            "canCheckout": False,
+            "canSubmitProposal": False,
+            "canViewCOA": True,
+            "canViewInventory": False,
+        }
+    return {
+        "canViewProducts": True,
+        "canViewPricing": True,
+        "canAddToCart": True,
+        "canCheckout": False,
+        "canSubmitProposal": True,
+        "canViewCOA": True,
+        "canViewInventory": True,
+    }
 
 
 def _using_mysql() -> bool:
@@ -235,6 +264,12 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         encrypted_key="patient_reference_encrypted",
         legacy_keys=["patient_reference", "reference_label"],
     )
+    brochure_name = _decrypt_field(
+        row,
+        field_name="brochure_name",
+        encrypted_key="brochure_name_encrypted",
+        legacy_keys=["brochure_name"],
+    )
     delegate_name = _decrypt_field(
         row,
         field_name="delegate_name",
@@ -273,18 +308,27 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         product_scope_items = []
     status = _derive_status(row)
     usage_count = int(row.get("usage_count") or 0)
-    return {
+    link_type = _normalize_link_type(row.get("link_type"))
+    mapped = {
         "token": _resolve_row_public_token(row, fallback=fallback_token),
         "tokenHint": row.get("token_hint") or None,
+        "linkType": link_type,
+        "link_type": link_type,
+        "capabilities": capabilities_for_link_type(link_type),
         "doctorId": row.get("doctor_id"),
+        "createdByUserId": row.get("created_by_user_id") or None,
         "patientId": subject_label,
         "patientReference": patient_reference,
         "referenceLabel": patient_reference or study_label,
-        "label": patient_reference or study_label,
+        "brochureName": brochure_name if link_type == "brochure" else None,
+        "brochure_name": brochure_name if link_type == "brochure" else None,
+        "label": (brochure_name if link_type == "brochure" else None) or patient_reference or study_label,
         "subjectLabel": subject_label,
         "studyLabel": study_label,
-        "delegateName": delegate_name,
-        "delegateContact": delegate_contact,
+        "recipientName": delegate_name if link_type == "brochure" else None,
+        "recipientContact": delegate_contact if link_type == "brochure" else None,
+        "delegateName": delegate_name if link_type != "brochure" else None,
+        "delegateContact": delegate_contact if link_type != "brochure" else None,
         "delegateRole": row.get("delegate_role") or None,
         "productScope": row.get("product_scope") or "all_physician_approved",
         "productScopeItems": product_scope_items,
@@ -310,6 +354,7 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         "usageLimit": None,
         "usageCount": usage_count,
         "openCount": int(row.get("open_count") or 0),
+        "viewCount": int(row.get("view_count") or row.get("open_count") or 0),
         "status": status,
         "paymentMethod": row.get("payment_method") or None,
         "paymentInstructions": _decrypt_field(
@@ -322,6 +367,8 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         "receivedPayment": bool(int(row.get("received_payment") or 0)),
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "lastOpenedAt": _fmt_datetime(row.get("last_opened_at")),
+        "firstViewedAt": _fmt_datetime(row.get("first_viewed_at")),
+        "lastViewedAt": _fmt_datetime(row.get("last_viewed_at") or row.get("last_opened_at")),
         "lastOrderAt": _fmt_datetime(row.get("last_order_at")),
         "revokedAt": _fmt_datetime(row.get("revoked_at")),
         "delegateCart": _decrypt_json_field(
@@ -354,6 +401,7 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
             legacy_keys=["delegate_review_notes"],
         ),
     }
+    return mapped
 
 
 def delete_expired() -> int:
@@ -380,11 +428,14 @@ def delete_expired() -> int:
 def create_link(
     doctor_id: str,
     *,
+    link_type: Optional[str] = None,
+    created_by_user_id: Optional[str] = None,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     subject_label: Optional[str] = None,
     study_label: Optional[str] = None,
     patient_reference: Optional[str] = None,
+    brochure_name: Optional[str] = None,
     delegate_name: Optional[str] = None,
     delegate_contact: Optional[str] = None,
     delegate_role: Optional[str] = None,
@@ -414,9 +465,12 @@ def create_link(
     if not doctor_id:
         raise ValueError("doctor_id is required")
 
+    link_type_value = _normalize_link_type(link_type)
+    created_by_user_id_value = _normalize_optional_text(created_by_user_id, max_len=32)
     subject_label_value = _normalize_optional_text(subject_label or patient_id)
     study_label_value = _normalize_optional_text(study_label)
     patient_reference_value = _normalize_optional_text(patient_reference or reference_label)
+    brochure_name_value = _normalize_optional_text(brochure_name)
     delegate_name_value = _normalize_optional_text(delegate_name)
     delegate_contact_value = _normalize_optional_text(delegate_contact)
     delegate_role_value = _normalize_optional_text(delegate_role, max_len=64)
@@ -440,6 +494,22 @@ def create_link(
     allowed_products_value = _normalize_allowed_products(allowed_products)
     usage_limit_value = None
     delete_expired()
+
+    if link_type_value == "brochure":
+        if not brochure_name_value:
+            raise ValueError("brochure_name is required for brochure links")
+        delegate_role_value = None
+        delegate_permission_value = "view_products_only"
+        markup_percent = 0.0
+        pricing_disclosure_value = None
+        zelle_recipient_name_value = None
+        payment_confirmation_required_value = 0
+        delegate_instructions_value = None
+        payment_method_value = None
+        payment_instructions_value = None
+        instructions_value = None
+    else:
+        brochure_name_value = None
 
     if markup_percent is None:
         markup_percent = 0.0
@@ -465,7 +535,9 @@ def create_link(
             "token_version": TOKEN_VERSION_HASHED,
             "token_ciphertext": token_ciphertext,
             "token_hint": raw_token.split("-")[0],
+            "link_type": link_type_value,
             "doctor_id": doctor_id,
+            "created_by_user_id": created_by_user_id_value or doctor_id,
             "patient_id": _encrypt_field(token_hash, "patient_id", subject_label_value),
             "reference_label": _encrypt_field(
                 token_hash, "reference_label", patient_reference_value or study_label_value
@@ -473,6 +545,11 @@ def create_link(
             "subject_label": _encrypt_field(token_hash, "subject_label", subject_label_value),
             "study_label": _encrypt_field(token_hash, "study_label", study_label_value),
             "patient_reference": _encrypt_field(token_hash, "patient_reference", patient_reference_value),
+            "brochure_name": _encrypt_field(
+                token_hash,
+                "brochure_name",
+                brochure_name_value if link_type_value == "brochure" else None,
+            ),
             "delegate_name": _encrypt_field(token_hash, "delegate_name", delegate_name_value),
             "delegate_contact": _encrypt_field(token_hash, "delegate_contact", delegate_contact_value),
             "delegate_role": delegate_role_value,
@@ -505,11 +582,13 @@ def create_link(
                 """
                 INSERT INTO patient_links (
                     token, token_version, token_ciphertext, token_hint,
-                    doctor_id, patient_id,
+                    link_type,
+                    doctor_id, created_by_user_id, patient_id,
                     reference_label,
                     subject_label,
                     study_label,
                     patient_reference,
+                    brochure_name,
                     delegate_name,
                     delegate_contact,
                     delegate_role,
@@ -531,11 +610,13 @@ def create_link(
                 )
                 VALUES (
                     %(token)s, %(token_version)s, %(token_ciphertext)s, %(token_hint)s,
-                    %(doctor_id)s, %(patient_id)s,
+                    %(link_type)s,
+                    %(doctor_id)s, %(created_by_user_id)s, %(patient_id)s,
                     %(reference_label)s,
                     %(subject_label)s,
                     %(study_label)s,
                     %(patient_reference)s,
+                    %(brochure_name)s,
                     %(delegate_name)s,
                     %(delegate_contact)s,
                     %(delegate_role)s,
@@ -561,14 +642,24 @@ def create_link(
             return {
                 "token": raw_token,
                 "tokenHint": params["token_hint"],
+                "linkType": link_type_value,
+                "link_type": link_type_value,
+                "capabilities": capabilities_for_link_type(link_type_value),
+                "createdByUserId": created_by_user_id_value or doctor_id,
                 "patientId": subject_label_value,
                 "patientReference": patient_reference_value,
                 "referenceLabel": patient_reference_value or study_label_value,
-                "label": patient_reference_value or study_label_value,
+                "brochureName": brochure_name_value if link_type_value == "brochure" else None,
+                "brochure_name": brochure_name_value if link_type_value == "brochure" else None,
+                "label": (brochure_name_value if link_type_value == "brochure" else None)
+                or patient_reference_value
+                or study_label_value,
                 "subjectLabel": subject_label_value,
                 "studyLabel": study_label_value,
-                "delegateName": delegate_name_value,
-                "delegateContact": delegate_contact_value,
+                "recipientName": delegate_name_value if link_type_value == "brochure" else None,
+                "recipientContact": delegate_contact_value if link_type_value == "brochure" else None,
+                "delegateName": delegate_name_value if link_type_value != "brochure" else None,
+                "delegateContact": delegate_contact_value if link_type_value != "brochure" else None,
                 "delegateRole": delegate_role_value,
                 "productScope": product_scope_value,
                 "productScopeItems": product_scope_items_value,
@@ -589,6 +680,7 @@ def create_link(
                 "usageLimit": usage_limit_value,
                 "usageCount": 0,
                 "openCount": 0,
+                "viewCount": 0,
                 "status": "active",
                 "paymentMethod": payment_method_value,
                 "paymentInstructions": payment_instructions_value,
@@ -596,6 +688,8 @@ def create_link(
                 "receivedPayment": False,
                 "lastUsedAt": None,
                 "lastOpenedAt": None,
+                "firstViewedAt": None,
+                "lastViewedAt": None,
                 "lastOrderAt": None,
                 "revokedAt": None,
             }
@@ -655,26 +749,43 @@ def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dic
     return mapped
 
 
-def touch_last_used(token: str) -> None:
+def touch_last_used(
+    token: str,
+    *,
+    ip_hash: Optional[str] = None,
+    user_agent_hash: Optional[str] = None,
+) -> None:
     if not _using_mysql():
         return
     normalized = str(token or "").strip()
     if not normalized:
         return
     try:
+        updates = [
+            "last_used_at = UTC_TIMESTAMP()",
+            "last_opened_at = UTC_TIMESTAMP()",
+            "open_count = COALESCE(open_count, 0) + 1",
+            "view_count = COALESCE(view_count, 0) + 1",
+            "first_viewed_at = COALESCE(first_viewed_at, UTC_TIMESTAMP())",
+            "last_viewed_at = UTC_TIMESTAMP()",
+        ]
+        params = _lookup_params(normalized)
+        if isinstance(ip_hash, str) and ip_hash.strip():
+            updates.append("last_ip_hash = %(last_ip_hash)s")
+            params["last_ip_hash"] = ip_hash.strip()[:64]
+        if isinstance(user_agent_hash, str) and user_agent_hash.strip():
+            updates.append("last_user_agent_hash = %(last_user_agent_hash)s")
+            params["last_user_agent_hash"] = user_agent_hash.strip()[:64]
         mysql_client.execute(
             f"""
             UPDATE patient_links
-            SET
-                last_used_at = UTC_TIMESTAMP(),
-                last_opened_at = UTC_TIMESTAMP(),
-                open_count = COALESCE(open_count, 0) + 1
+            SET {", ".join(updates)}
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND {ACTIVE_LINK_SQL}
               AND revoked_at IS NULL
               AND COALESCE(status, 'active') NOT IN ('revoked', 'expired')
             """,
-            _lookup_params(normalized),
+            params,
         )
     except Exception:
         return
@@ -689,6 +800,7 @@ def update_link(
     subject_label: Optional[str] = None,
     study_label: Optional[str] = None,
     patient_reference: Optional[str] = None,
+    brochure_name: Optional[str] = None,
     delegate_name: Optional[str] = None,
     delegate_contact: Optional[str] = None,
     delegate_role: Optional[str] = None,
@@ -757,6 +869,14 @@ def update_link(
         params["reference_label"] = _encrypt_field(
             token_hash, "reference_label", patient_reference_value
         )
+
+    if brochure_name is not None:
+        params["brochure_name"] = _encrypt_field(
+            token_hash,
+            "brochure_name",
+            _normalize_optional_text(brochure_name),
+        )
+        updates.append("brochure_name = %(brochure_name)s")
 
     if delegate_name is not None:
         params["delegate_name"] = _encrypt_field(

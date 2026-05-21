@@ -32,11 +32,22 @@ export const buildResearchSupplyLinkUrl = (
   return `${origin.replace(/\/+$/, '')}/research/${slug}/${encodeURIComponent(normalizedToken)}`;
 };
 
+export const buildBrochureLinkUrl = (
+  origin: string,
+  token?: string | null,
+  doctorName?: string | null,
+) => {
+  const normalizedToken = normalizeToken(token);
+  if (!normalizedToken) return '';
+  const slug = slugify(doctorName);
+  return `${origin.replace(/\/+$/, '')}/brochure/${slug}/${encodeURIComponent(normalizedToken)}`;
+};
+
 export const readDelegateTokenFromLocation = (location: Location): string | null => {
   const fromQuery = normalizeToken(new URLSearchParams(location.search).get('delegate'));
   if (fromQuery) return fromQuery;
   const pathname = (location.pathname || '').replace(/\/+$/, '');
-  const match = pathname.match(/^\/research\/[^/]+\/([^/]+)$/i);
+  const match = pathname.match(/^\/(?:research|brochure)\/[^/]+\/([^/]+)$/i);
   if (!match || !match[1]) return null;
   try {
     return normalizeToken(decodeURIComponent(match[1]));
@@ -44,6 +55,9 @@ export const readDelegateTokenFromLocation = (location: Location): string | null
     return normalizeToken(match[1]);
   }
 };
+
+export const isBrochureLocation = (location: Location): boolean =>
+  /^\/brochure\/[^/]+\/[^/]+\/?$/i.test(location.pathname || '');
 
 export const normalizeAllowedProductsInput = (value: string): string[] => {
   if (typeof value !== 'string') return [];

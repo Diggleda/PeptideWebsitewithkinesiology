@@ -92,9 +92,17 @@ def _install_test_stubs() -> None:
         requests.put = _blocked
         requests.patch = _blocked
         requests.delete = _blocked
+        requests.RequestException = Exception
+        requests.HTTPError = Exception
+        requests.Timeout = TimeoutError
         requests_auth.HTTPBasicAuth = HTTPBasicAuth
         sys.modules["requests"] = requests
         sys.modules["requests.auth"] = requests_auth
+    else:
+        requests = sys.modules["requests"]
+        requests.RequestException = getattr(requests, "RequestException", Exception)
+        requests.HTTPError = getattr(requests, "HTTPError", Exception)
+        requests.Timeout = getattr(requests, "Timeout", TimeoutError)
 
 
 class ShipStationStatusSyncServiceTests(unittest.TestCase):
@@ -184,6 +192,43 @@ class ShipStationStatusSyncServiceTests(unittest.TestCase):
             self.service._persist_local_order_shipping_update("9510", shipstation_info)
 
         notify_status.assert_called_once_with("local-1510", "in_transit")
+
+    def test_persist_local_order_shipping_update_marks_facility_pickup_as_pick_up(self):
+        local_order = {
+            "id": "local-1512",
+            "wooOrderId": "9512",
+            "wooOrderNumber": "1512",
+            "status": "processing",
+            "facilityPickup": True,
+            "facility_pickup": True,
+            "fulfillmentMethod": "facility_pickup",
+            "shippingEstimate": {
+                "carrierId": "facility_pickup",
+                "serviceCode": "facility_pickup",
+                "serviceType": "Facility pickup",
+            },
+            "integrations": {},
+        }
+        shipstation_info = {
+            "status": "shipped",
+            "trackingNumber": None,
+            "carrierCode": "facility_pickup",
+            "serviceCode": "facility_pickup",
+            "shipDate": "2026-04-15T12:00:00Z",
+        }
+        persisted = []
+
+        with patch.object(self.service.order_repository, "find_by_order_identifier", return_value=local_order), \
+            patch.object(
+                self.service.order_repository,
+                "update",
+                side_effect=lambda value: persisted.append(dict(value)) or value,
+            ), \
+            patch.object(self.service.shipping_notification_service, "notify_customer_order_shipping_status"):
+            self.service._persist_local_order_shipping_update("9512", shipstation_info)
+
+        self.assertTrue(persisted)
+        self.assertEqual(persisted[-1]["status"], "Pick up")
 
 
 if __name__ == "__main__":
