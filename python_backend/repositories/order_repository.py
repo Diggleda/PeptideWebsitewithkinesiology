@@ -164,7 +164,22 @@ def _normalize_ups_tracking_status(value: object) -> Optional[str]:
         )
     ):
         return "label_created"
-    if any(token in text for token in ("exception", "delay", "held", "hold", "error")):
+    if any(
+        token in text
+        for token in (
+            "exception",
+            "delay",
+            "held",
+            "hold",
+            "error",
+            "canceled",
+            "cancelled",
+            "cancelation",
+            "cancellation",
+            "voided",
+            "void",
+        )
+    ):
         return "exception"
     return text
 

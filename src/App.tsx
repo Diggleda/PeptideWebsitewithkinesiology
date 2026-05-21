@@ -10572,6 +10572,11 @@ function MainApp() {
       targetName?: string | null;
       fieldLabel?: string;
     }) => {
+      if (isMaintenanceMode) {
+        toast.error("Unable to edit in maintenance mode because it is read-only.");
+        return Promise.resolve(false);
+      }
+
       const normalizeIdentity = (value: unknown) =>
         String(value ?? "").trim().toLowerCase();
       const normalizedTargetId = normalizeIdentity(targetId);
@@ -10601,7 +10606,7 @@ function MainApp() {
         });
       });
     },
-    [user?.email, user?.id],
+    [isMaintenanceMode, user?.email, user?.id],
   );
   useEffect(() => {
     if (!externalDetailEditConfirm) {
@@ -43567,7 +43572,7 @@ function MainApp() {
                         phoneRows.push({ value: "", isNew: true });
                       }
                       return (
-                        <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
+                        <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-visible no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
                           <div className="space-y-0.5">
                             <div className="min-w-max pl-4 pr-1 space-y-0.5">
                               {emailRows.length > 0 ? emailRows.map((row, index) => (
@@ -43815,7 +43820,7 @@ function MainApp() {
                           },
                         ];
 	                    return (
-	                      <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
+	                      <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-visible no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
 	                        <div className="min-w-max pl-4 pr-1 space-y-0.5">
                             {addressRows.map(({ key, label, autoComplete }) => (
                               <InlineEditableValueRow
@@ -43852,7 +43857,7 @@ function MainApp() {
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
                     </p>
-                    <div className="min-w-0 h-[240px] overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
+                    <div className="sales-doctor-detail-panel min-w-0 min-h-[220px] overflow-x-auto overflow-y-visible no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
                       <div className="min-w-max whitespace-nowrap">
                         <span className="font-semibold text-slate-800">Greater Area: </span>
                         <span>{salesDoctorDetail.greaterArea || "Unavailable"}</span>
@@ -43863,7 +43868,7 @@ function MainApp() {
                       </div>
                       <div className="min-w-max space-y-1">
                         <div className="font-semibold text-slate-800">Bio</div>
-                        <div className="min-w-max overflow-x-auto overflow-y-auto whitespace-pre">
+                        <div className="min-w-max overflow-x-auto overflow-y-visible whitespace-pre">
                           {salesDoctorDetail.bio || "Unavailable"}
                         </div>
                       </div>

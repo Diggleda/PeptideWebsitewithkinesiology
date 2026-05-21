@@ -224,6 +224,57 @@ class TestUpsStatusSyncService(unittest.TestCase):
         )
         notify_status.assert_called_once_with("ups-1", "delivered")
 
+    def test_run_sync_once_persists_canceled_shipments_as_exception(self):
+        from python_backend.services import ups_status_sync_service as svc
+
+        candidate_orders = [
+            {
+                "id": "ups-canceled",
+                "trackingNumber": "1Z1K2B420306284965",
+                "shippingCarrier": "ups",
+                "status": "processing",
+                "createdAt": "2026-05-20T16:24:00Z",
+            }
+        ]
+
+        with patch.object(svc, "_enabled", return_value=True), \
+            patch.object(svc.ups_tracking, "is_configured", return_value=True), \
+            patch.object(svc, "_try_acquire_lease", return_value="lease-1"), \
+            patch.object(svc, "_release_lease"), \
+            patch.object(svc, "_get_last_run_at", return_value=None), \
+            patch.object(svc, "_set_last_run_at"), \
+            patch.object(svc, "_fetch_orders_for_sync", return_value=candidate_orders), \
+            patch.object(svc, "_max_runtime_seconds", return_value=45), \
+            patch.object(svc, "_throttle_ms", return_value=0), \
+            patch.object(
+                svc.ups_tracking,
+                "fetch_tracking_status",
+                return_value={
+                    "trackingStatus": "Shipment Canceled",
+                    "trackingStatusRaw": "The shipper has canceled this shipment.",
+                },
+            ), \
+            patch.object(
+                svc.order_repository,
+                "update_ups_tracking_status",
+                return_value={"id": "ups-canceled"},
+            ) as update_status, \
+            patch.object(svc.shipping_notification_service, "notify_customer_order_shipping_status") as notify_status:
+            result = svc.run_sync_once(ignore_cooldown=True)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["updated"], 1)
+        update_status.assert_called_once_with(
+            "ups-canceled",
+            ups_tracking_status="exception",
+            delivered_at=None,
+            estimated_arrival_date=None,
+            delivery_date_guaranteed=None,
+            expected_shipment_window=None,
+        )
+        notify_status.assert_not_called()
+
     def test_run_sync_once_backfills_delivery_date_from_existing_known_value(self):
         from python_backend.services import ups_status_sync_service as svc
 

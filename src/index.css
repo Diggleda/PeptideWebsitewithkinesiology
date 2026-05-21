@@ -13498,7 +13498,12 @@ input[type="checkbox"].checkbox-on-dark:not(.brand-checkbox):checked::after {
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
   translate: none !important;
-  will-change: left, top;
+  will-change: auto !important;
+}
+
+.sales-dashboard-detail-modal-layer.sales-dashboard-window-layer .sales-doctor-detail-dialog[data-slot="dialog-content"] {
+  -webkit-overflow-scrolling: touch;
+  contain: none !important;
 }
 
 .sales-dashboard-detail-modal-layer.sales-dashboard-window-layer .sales-dashboard-draggable-modal * {

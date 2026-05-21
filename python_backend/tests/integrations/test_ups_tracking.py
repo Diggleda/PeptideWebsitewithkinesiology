@@ -32,7 +32,12 @@ class TestUpsTracking(unittest.TestCase):
     @patch("python_backend.integrations.ups_tracking.http_client.post")
     def test_get_access_token_uses_cached_token_until_expiry(self, mock_post, mock_get_config):
         mock_get_config.return_value = SimpleNamespace(
-            ups={"client_id": "client-id", "client_secret": "client-secret", "merchant_id": "", "use_cie": False}
+            ups={
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "merchant_id": "",
+                "use_cie": False,
+            }
         )
         response = MagicMock()
         response.raise_for_status.return_value = None
@@ -53,7 +58,12 @@ class TestUpsTracking(unittest.TestCase):
         self, mock_get, _mock_token, mock_get_config
     ):
         mock_get_config.return_value = SimpleNamespace(
-            ups={"client_id": "client-id", "client_secret": "client-secret", "merchant_id": "", "use_cie": False}
+            ups={
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "merchant_id": "",
+                "use_cie": False,
+            }
         )
         response = MagicMock()
         response.raise_for_status.return_value = None
@@ -216,6 +226,51 @@ class TestUpsTracking(unittest.TestCase):
             result["trackingStatusRaw"],
             "Shipper created a label, UPS has not received the package yet.",
         )
+
+    @patch("python_backend.integrations.ups_tracking.get_config")
+    @patch("python_backend.integrations.ups_tracking._get_access_token", return_value="token-1")
+    @patch("python_backend.integrations.ups_tracking.http_client.get")
+    def test_fetch_tracking_status_maps_canceled_shipment_to_exception(
+        self, mock_get, _mock_token, mock_get_config
+    ):
+        mock_get_config.return_value = SimpleNamespace(
+            ups={"client_id": "client-id", "client_secret": "client-secret", "merchant_id": "", "use_cie": False}
+        )
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "trackResponse": {
+                "shipment": [
+                    {
+                        "inquiryNumber": "1Z1K2B420306284965",
+                        "package": [
+                            {
+                                "currentStatus": {
+                                    "simplifiedTextDescription": "Shipment Canceled",
+                                    "description": "The shipper has canceled this shipment.",
+                                    "statusCode": "MP",
+                                },
+                                "activity": [
+                                    {
+                                        "status": {
+                                            "description": "The shipper has canceled this shipment.",
+                                        },
+                                        "date": "20260520",
+                                        "time": "162400",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = response
+
+        result = ups_tracking.fetch_tracking_status("1Z1K2B420306284965")
+
+        self.assertEqual(result["trackingStatus"], "exception")
+        self.assertEqual(result["trackingStatusRaw"], "Shipment Canceled")
 
 
 if __name__ == "__main__":

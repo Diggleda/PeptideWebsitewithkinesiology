@@ -113,6 +113,12 @@ def normalize_tracking_status(value: Any) -> Optional[str]:
             "clearance_information_required",
             "rescheduled_delivery",
             "contact_receiver",
+            "canceled",
+            "cancelled",
+            "cancelation",
+            "cancellation",
+            "voided",
+            "void",
         )
     ):
         return "exception"

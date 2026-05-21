@@ -14,7 +14,11 @@ def _install_test_stubs() -> None:
         flask.request = types.SimpleNamespace(method="GET", path="/")
         flask.g = types.SimpleNamespace(current_user=None)
         flask.jsonify = lambda payload=None, *args, **kwargs: payload
+        flask.has_request_context = lambda: False
         sys.modules["flask"] = flask
+    else:
+        flask = sys.modules["flask"]
+        flask.has_request_context = getattr(flask, "has_request_context", lambda: False)
 
     if "werkzeug" not in sys.modules:
         werkzeug = types.ModuleType("werkzeug")
@@ -108,9 +112,17 @@ def _install_test_stubs() -> None:
         requests.put = _blocked
         requests.patch = _blocked
         requests.delete = _blocked
+        requests.RequestException = Exception
+        requests.HTTPError = Exception
+        requests.Timeout = TimeoutError
         requests_auth.HTTPBasicAuth = HTTPBasicAuth
         sys.modules["requests"] = requests
         sys.modules["requests.auth"] = requests_auth
+    else:
+        requests = sys.modules["requests"]
+        requests.RequestException = getattr(requests, "RequestException", Exception)
+        requests.HTTPError = getattr(requests, "HTTPError", Exception)
+        requests.Timeout = getattr(requests, "Timeout", TimeoutError)
 
 
 class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
@@ -289,6 +301,71 @@ class OrderServiceUpsStatusRegressionTests(unittest.TestCase):
             self.assertEqual(order["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
             self.assertEqual(refreshed["upsTrackingStatus"], "delivered")
             self.assertEqual(refreshed["shippingEstimate"]["deliveredAt"], "2026-04-02T10:15:00")
+        finally:
+            service.order_repository.find_by_order_identifier = original_find_identifier
+            service.order_repository.update_ups_tracking_status = original_update_ups_status
+            service.ups_tracking.fetch_tracking_status = original_fetch_tracking_status
+
+    def test_refresh_ups_status_persists_canceled_shipment_as_exception(self):
+        service = self.order_service
+        original_find_identifier = service.order_repository.find_by_order_identifier
+        original_update_ups_status = service.order_repository.update_ups_tracking_status
+        original_fetch_tracking_status = service.ups_tracking.fetch_tracking_status
+        try:
+            local_order = {
+                "id": "local-ups-canceled",
+                "wooOrderNumber": "#2099",
+                "trackingNumber": "1Z1K2B420306284965",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "label_created",
+                "shippingEstimate": {"status": "label_created", "carrierId": "ups"},
+            }
+            persisted = []
+
+            service.order_repository.find_by_order_identifier = (
+                lambda value: local_order if str(value) in {"2099", "#2099"} else None
+            )
+
+            def update_ups_tracking_status(
+                order_id,
+                *,
+                ups_tracking_status,
+                delivered_at=None,
+                estimated_arrival_date=None,
+                delivery_date_guaranteed=None,
+                expected_shipment_window=None,
+            ):
+                persisted.append((order_id, ups_tracking_status, delivered_at))
+                return {
+                    **local_order,
+                    "upsTrackingStatus": ups_tracking_status,
+                    "shippingEstimate": {"status": ups_tracking_status, "carrierId": "ups"},
+                }
+
+            service.order_repository.update_ups_tracking_status = update_ups_tracking_status
+            service.ups_tracking.fetch_tracking_status = lambda _tracking_number: {
+                "carrier": "ups",
+                "trackingNumber": "1Z1K2B420306284965",
+                "trackingStatus": "Shipment Canceled",
+                "trackingStatusRaw": "The shipper has canceled this shipment.",
+            }
+
+            order = {
+                "id": "2099",
+                "wooOrderNumber": "2099",
+                "trackingNumber": "1Z1K2B420306284965",
+                "shippingCarrier": "ups",
+                "upsTrackingStatus": "label_created",
+                "shippingEstimate": {"status": "label_created", "carrierId": "ups"},
+            }
+
+            refreshed = service._refresh_authoritative_ups_status_for_order_view(order, local_order=local_order)
+
+            self.assertEqual(persisted, [("local-ups-canceled", "exception", None)])
+            self.assertEqual(order["upsTrackingStatus"], "exception")
+            self.assertEqual(order["shippingEstimate"]["status"], "exception")
+            self.assertEqual(refreshed["upsTrackingStatus"], "exception")
+            self.assertEqual(refreshed["shippingEstimate"]["status"], "exception")
         finally:
             service.order_repository.find_by_order_identifier = original_find_identifier
             service.order_repository.update_ups_tracking_status = original_update_ups_status
