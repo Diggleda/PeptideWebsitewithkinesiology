@@ -28,6 +28,11 @@ const templates = [
     source: 'python_backend/services/email_service.py::send_order_shipping_status_email',
   },
   {
+    id: 'shipping-facility-pickup',
+    label: 'Shipping: Facility pickup',
+    source: 'python_backend/services/email_service.py::send_order_shipping_status_email',
+  },
+  {
     id: 'password-reset-python',
     label: 'Password reset',
     source: 'python_backend/services/email_service.py::send_password_reset_email',
@@ -108,6 +113,17 @@ elif template == "shipping-delivered":
         carrier_code="ups",
         delivery_label="May 6, 2026",
         base_url=base_url,
+    )
+elif template == "shipping-facility-pickup":
+    subject, html, plain = email_service._build_shipping_status_email(
+        customer_name="Marcus Barrera",
+        order_number="1615",
+        status="shipped",
+        tracking_number=None,
+        carrier_code="facility_pickup",
+        delivery_label=None,
+        base_url=base_url,
+        fulfillment_label="Facility Pickup",
     )
 elif template == "password-reset-python":
     html, plain = email_service._build_password_reset_email(

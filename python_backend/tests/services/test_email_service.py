@@ -106,6 +106,35 @@ class EmailServiceTests(unittest.TestCase):
         )
         self.assertLess(plain.find("Tracking: 1ZSHIP1505"), plain.find("Order: 1505"))
 
+    def test_shipping_status_email_includes_facility_pickup_method(self):
+        from python_backend.services import email_service
+
+        subject, html, plain = email_service._build_shipping_status_email(
+            customer_name="Marcus Barrera",
+            order_number="1615",
+            status="shipped",
+            tracking_number=None,
+            carrier_code="facility_pickup",
+            delivery_label=None,
+            base_url="https://trufusionlabs.com",
+            fulfillment_label="Facility Pickup",
+        )
+
+        self.assertEqual(subject, "TrufusionLabs order 1615 has shipped")
+        self.assertIn("<strong>Delivery method: Facility Pickup</strong>", html)
+        self.assertIn("<strong>Order: 1615</strong>", html)
+        self.assertLess(
+            html.find("<strong>Delivery method: Facility Pickup</strong>"),
+            html.find("<strong>Order: 1615</strong>"),
+        )
+        self.assertNotIn("Tracking:", html)
+        self.assertNotIn(">Track Package</a>", html)
+        self.assertIn("Delivery method: Facility Pickup", plain)
+        self.assertLess(
+            plain.find("Delivery method: Facility Pickup"),
+            plain.find("Order: 1615"),
+        )
+
     def test_email_settings_normalizes_trufusionlabs_sender_name(self):
         from python_backend.services import email_service
 

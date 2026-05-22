@@ -157,6 +157,50 @@ class ShippingNotificationServiceTests(unittest.TestCase):
             sent_payloads[0]["integrations"]["pepProNotifications"]["shippingStatusEmails"],
         )
 
+    def test_notify_customer_order_shipping_status_labels_facility_pickup_email(self):
+        from python_backend.services import shipping_notification_service as svc
+
+        base_order = {
+            "id": "order-pickup",
+            "userId": "lead-1",
+            "wooOrderNumber": "1615",
+            "facilityPickup": True,
+            "facility_pickup": True,
+            "fulfillmentMethod": "facility_pickup",
+            "shippingEstimate": {
+                "status": "shipped",
+                "carrierId": "facility_pickup",
+                "serviceCode": "facility_pickup",
+                "serviceType": "Facility pickup",
+            },
+            "integrations": {
+                "shipStation": {
+                    "status": "shipped",
+                    "trackingNumber": None,
+                    "carrierCode": "facility_pickup",
+                    "serviceCode": "facility_pickup",
+                },
+            },
+        }
+
+        with patch.object(svc.order_repository, "find_by_id", return_value=dict(base_order)), \
+            patch.object(svc.order_repository, "update", return_value=dict(base_order)), \
+            patch.object(svc.user_repository, "find_by_id", return_value={"id": "lead-1", "email": "marcus@example.com", "name": "Marcus Barrera"}), \
+            patch.object(svc.email_service, "send_order_shipping_status_email") as send_email:
+            result = svc.notify_customer_order_shipping_status("order-pickup", "shipped")
+
+        self.assertTrue(result)
+        send_email.assert_called_once_with(
+            "marcus@example.com",
+            status="shipped",
+            customer_name="Marcus Barrera",
+            order_number="1615",
+            tracking_number=None,
+            carrier_code="facility_pickup",
+            delivery_label=None,
+            fulfillment_label="Facility Pickup",
+        )
+
     def test_notify_customer_order_shipping_status_does_not_mark_sent_when_email_fails(self):
         from python_backend.services import shipping_notification_service as svc
 

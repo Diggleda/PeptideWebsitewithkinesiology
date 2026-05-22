@@ -15,6 +15,10 @@ type ResourceVersionNotice = {
 };
 
 const FALLBACK_VERSION_CHECK_MS = 60_000;
+const ENABLE_APP_DATA_SSE = (() => {
+  const raw = String(import.meta.env.VITE_ENABLE_APP_DATA_SSE || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+})();
 
 const buildEventsUrl = () => {
   const params = new URLSearchParams({ resources: appDataResources.join(",") });
@@ -63,19 +67,30 @@ export function AppDataEventsBridge({ enabled }: { enabled: boolean }) {
       setSseFailed(false);
       return undefined;
     }
-    if (typeof EventSource === "undefined") {
+    if (!ENABLE_APP_DATA_SSE || typeof EventSource === "undefined") {
       setSseFailed(true);
       return undefined;
     }
 
     setSseFailed(false);
     const source = new EventSource(buildEventsUrl(), { withCredentials: true });
+    let closed = false;
+    const closeSource = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      source.close();
+    };
 
     source.onopen = () => {
-      setSseFailed(false);
+      if (!closed) {
+        setSseFailed(false);
+      }
     };
     source.onerror = () => {
       setSseFailed(true);
+      closeSource();
     };
 
     const listeners = appDataResources.map((resource) => {
@@ -95,7 +110,7 @@ export function AppDataEventsBridge({ enabled }: { enabled: boolean }) {
       listeners.forEach(({ resource, listener }) => {
         source.removeEventListener(`${resource}.changed`, listener as EventListener);
       });
-      source.close();
+      closeSource();
     };
   }, [enabled, queryClient]);
 

@@ -12,6 +12,7 @@ from . import email_service
 logger = logging.getLogger(__name__)
 
 _EMAIL_ELIGIBLE_STATUSES = {"shipped", "in_transit", "out_for_delivery", "delivered"}
+_FACILITY_PICKUP_LABEL = "Facility Pickup"
 
 
 def _coerce_object(value: Any) -> Dict[str, Any]:
@@ -39,6 +40,22 @@ def _normalize_status(value: Any) -> Optional[str]:
     if not normalized or normalized == "unknown":
         return None
     return normalized
+
+
+def _normalize_selector(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = text.replace("-", "_").replace(" ", "_")
+    while "__" in text:
+        text = text.replace("__", "_")
+    return text
+
+
+def _is_truthy(value: Any) -> bool:
+    if value is True:
+        return True
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _extract_integrations(order: Dict[str, Any]) -> Dict[str, Any]:
@@ -89,6 +106,45 @@ def _extract_carrier_code(order: Dict[str, Any]) -> Optional[str]:
         if text:
             return text
     return None
+
+
+def _is_facility_pickup_order(order: Dict[str, Any]) -> bool:
+    if not isinstance(order, dict):
+        return False
+    if any(
+        _is_truthy(value)
+        for value in (
+            order.get("facilityPickup"),
+            order.get("facility_pickup"),
+            order.get("fascility_pickup"),
+        )
+    ):
+        return True
+
+    estimate = _coerce_object(order.get("shippingEstimate"))
+    integrations = _extract_integrations(order)
+    shipstation = _coerce_object(integrations.get("shipStation") or integrations.get("shipstation"))
+    candidates = (
+        order.get("shippingService"),
+        order.get("shipping_service"),
+        order.get("fulfillmentMethod"),
+        order.get("fulfillment_method"),
+        estimate.get("carrierId"),
+        estimate.get("carrier_id"),
+        estimate.get("serviceCode"),
+        estimate.get("service_code"),
+        estimate.get("serviceType"),
+        estimate.get("service_type"),
+        shipstation.get("carrierCode"),
+        shipstation.get("carrier_code"),
+        shipstation.get("serviceCode"),
+        shipstation.get("service_code"),
+    )
+    return any("facility_pickup" in _normalize_selector(value) for value in candidates)
+
+
+def _extract_fulfillment_label(order: Dict[str, Any]) -> Optional[str]:
+    return _FACILITY_PICKUP_LABEL if _is_facility_pickup_order(order) else None
 
 
 def _extract_recipient(order: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
@@ -214,16 +270,20 @@ def notify_customer_order_shipping_status(order_id: str, status: Any) -> bool:
     tracking_number = _extract_tracking_number(order)
     carrier_code = _extract_carrier_code(order)
     delivery_label = _extract_delivery_label(order, normalized_status)
+    fulfillment_label = _extract_fulfillment_label(order)
 
-    email_service.send_order_shipping_status_email(
-        recipient,
-        status=normalized_status,
-        customer_name=customer_name,
-        order_number=order_number,
-        tracking_number=tracking_number,
-        carrier_code=carrier_code,
-        delivery_label=delivery_label,
-    )
+    email_kwargs = {
+        "status": normalized_status,
+        "customer_name": customer_name,
+        "order_number": order_number,
+        "tracking_number": tracking_number,
+        "carrier_code": carrier_code,
+        "delivery_label": delivery_label,
+    }
+    if fulfillment_label:
+        email_kwargs["fulfillment_label"] = fulfillment_label
+
+    email_service.send_order_shipping_status_email(recipient, **email_kwargs)
     _mark_sent(order, normalized_status, recipient)
     logger.info(
         "Shipping status email sent",

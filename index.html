@@ -3,35 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Trufusion Labs</title>
+    <title>TruFusionLabs | Physician Peptide Research Platform</title>
+    <meta name="description" content="A secure physician-focused platform for peptide education, research resources, product information, events, and compliance-minded practice tools." />
+
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/Trufusionpeptides_icon.png" />
 
     <!-- Share / link previews -->
-    <meta property="og:site_name" content="Trufusion Labs" />
+    <meta property="og:site_name" content="TruFusionLabs" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://trufusionlabs.com/" />
-    <meta property="og:title" content="Trufusion Labs" />
+    <meta property="og:title" content="TruFusionLabs | Physician Peptide Research Platform" />
     <meta
       property="og:description"
-      content="Research-focused products, current events, and resources from Trufusion Labs."
+      content="A secure physician-focused platform for peptide education, research resources, product information, events, and compliance-minded practice tools."
     />
-    <meta property="og:image" content="https://trufusionlabs.com/TrufusionLabs_Share.jpg" />
-    <meta property="og:image:secure_url" content="https://trufusionlabs.com/TrufusionLabs_Share.jpg" />
+    <meta property="og:image" content="https://trufusionlabs.com/og-image.jpg" />
+    <meta property="og:image:secure_url" content="https://trufusionlabs.com/og-image.jpg" />
     <meta property="og:image:type" content="image/jpeg" />
-    <meta property="og:image:alt" content="Trufusion Labs" />
+    <meta property="og:image:alt" content="TruFusionLabs" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Trufusion Labs" />
+    <meta name="twitter:title" content="TruFusionLabs | Physician Peptide Research Platform" />
     <meta
       name="twitter:description"
-      content="Research-focused products, current events, and resources from Trufusion Labs."
+      content="A secure physician-focused platform for peptide education, research resources, product information, events, and compliance-minded practice tools."
     />
-    <meta name="twitter:image" content="https://trufusionlabs.com/TrufusionLabs_Share.jpg" />
-    <meta name="twitter:image:alt" content="Trufusion Labs" />
+    <meta name="twitter:image" content="https://trufusionlabs.com/og-image.jpg" />
+    <meta name="twitter:image:alt" content="TruFusionLabs" />
 
     <!-- iOS / PWA -->
-    <meta name="application-name" content="Trufusion Labs" />
-    <meta name="apple-mobile-web-app-title" content="Trufusion Labs" />
+    <meta name="application-name" content="TruFusionLabs" />
+    <meta name="apple-mobile-web-app-title" content="TruFusionLabs" />
     <meta name="theme-color" content="#0B0679" />
 
     <script>
@@ -61,13 +65,14 @@
           document.documentElement.style.setProperty("--secondary", "rgb(11, 6, 121)");
           document.documentElement.style.setProperty("--secondary-foreground", "#ffffff");
 
-          const title = "Trufusion Labs";
+          const title = "TruFusionLabs | Physician Peptide Research Platform";
+          const appTitle = "TruFusionLabs";
           document.title = title;
 
           const appName = document.querySelector('meta[name="application-name"]');
-          if (appName) appName.setAttribute("content", title);
+          if (appName) appName.setAttribute("content", appTitle);
           const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-          if (appleTitle) appleTitle.setAttribute("content", title);
+          if (appleTitle) appleTitle.setAttribute("content", appTitle);
 
           const ogTitle = document.querySelector('meta[property="og:title"]');
           const twTitle = document.querySelector('meta[name="twitter:title"], meta[property="twitter:title"]');

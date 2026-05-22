@@ -151,7 +151,7 @@ export function ManufacturingStandardsModal({
                   <span>Proprietary Delivery Technology</span>
                 </h3>
                 <p>
-                  TrufusionLabs utilizes the{" "}
+                  TrufusionLabs incorporates the{" "}
                   <img
                     src={withStaticAssetStamp("/protixa.png")}
                     alt="Protixa"

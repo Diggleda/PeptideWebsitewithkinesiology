@@ -15076,10 +15076,21 @@ textarea#bug-report.bug-report-textarea:focus-visible {
   align-items: baseline;
   gap: 1.5rem;
   padding: 1.5rem 0;
+  transition:
+    padding-bottom 180ms ease,
+    background-color 180ms ease;
 }
 
 .marketing-landing__capability > .marketing-landing__number {
   line-height: 1.25;
+  transition: transform 180ms ease;
+}
+
+.marketing-landing__capability:hover,
+.marketing-landing__capability:focus-visible {
+  padding-bottom: 1.9rem;
+  background-color: rgba(255, 255, 255, 0.36);
+  outline: none;
 }
 
 .marketing-landing__number {
@@ -15100,6 +15111,41 @@ textarea#bug-report.bug-report-textarea:focus-visible {
   font-size: clamp(1.125rem, 1.6vw, 1.375rem);
   font-weight: 500;
   line-height: 1.25;
+  transition: transform 180ms ease;
+}
+
+.marketing-landing__capability:hover > .marketing-landing__number,
+.marketing-landing__capability:focus-visible > .marketing-landing__number,
+.marketing-landing__capability:hover .marketing-landing__capability-title,
+.marketing-landing__capability:focus-visible .marketing-landing__capability-title {
+  transform: translateX(0.75rem);
+}
+
+.marketing-landing__capability-copy {
+  min-width: 0;
+}
+
+.marketing-landing__capability-copy p {
+  max-height: 0;
+  margin: 0;
+  overflow: hidden;
+  padding-left: 0.75rem;
+  color: rgba(26, 26, 46, 0.68);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  transition-delay: 0ms;
+  visibility: hidden;
+}
+
+.marketing-landing__capability:hover .marketing-landing__capability-copy p,
+.marketing-landing__capability:focus-visible .marketing-landing__capability-copy p {
+  max-height: 4.5rem;
+  margin-top: 0.65rem;
+  opacity: 1;
+  transition-delay: 115ms;
+  visibility: visible;
 }
 
 .marketing-landing__standard {
@@ -15187,9 +15233,13 @@ textarea#bug-report.bug-report-textarea:focus-visible {
   padding: 1.75rem;
   display: grid;
   grid-template-columns: auto 1fr;
-  align-items: start;
+  align-items: baseline;
   gap: 1.25rem;
   background: #0c1b6e;
+}
+
+.marketing-landing__mechanism > .marketing-landing__number {
+  line-height: 1.5;
 }
 
 .marketing-landing__mechanism p {

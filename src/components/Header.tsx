@@ -1941,36 +1941,6 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
   return humanizeOrderStatus(raw);
 };
 
-const formatRelativeMinutes = (value?: string | null) => {
-  if (!value) return 'Updated a few moments ago';
-  const date = new Date(value);
-  const now = Date.now();
-  const target = date.getTime();
-  if (Number.isNaN(target)) return `Updated ${value}`;
-  const diffMs = Math.max(0, now - target);
-  if (diffMs < 90_000) return 'Updated a few moments ago';
-  const totalSeconds = Math.floor(diffMs / 1000);
-  const units = [
-    { label: 'y', seconds: 365 * 24 * 60 * 60 },
-    { label: 'mo', seconds: 30 * 24 * 60 * 60 },
-    { label: 'd', seconds: 24 * 60 * 60 },
-    { label: 'h', seconds: 60 * 60 },
-    { label: 'm', seconds: 60 },
-  ];
-  let remaining = totalSeconds;
-  const parts: string[] = [];
-  for (const unit of units) {
-    const qty = Math.floor(remaining / unit.seconds);
-    if (qty > 0) {
-      parts.push(`${qty}${unit.label}`);
-      remaining -= qty * unit.seconds;
-    }
-    if (parts.length >= 2) break;
-  }
-  if (!parts.length) return 'Updated a few moments ago';
-  return `Updated ${parts.join(' ')} ago`;
-};
-
 export function Header({
   user,
   delegateMode = false,
@@ -8785,8 +8755,6 @@ export function Header({
 	              className="orders-updated-status-button inline-flex items-center gap-1 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none"
 	              aria-live="polite"
 	            >
-	              <span>{formatRelativeMinutes(ordersLastSyncedAt)}</span>
-	              <span aria-hidden="true">·</span>
 	              <span>{accountOrdersLoading ? 'Updating…' : 'Auto-updating'}</span>
 	            </div>
 	          )}

@@ -10,13 +10,12 @@ import {
   Fragment,
   forwardRef,
   type CSSProperties,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
+import { useQuery } from "@tanstack/react-query";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
+import { appQueryKeys } from "./lib/queryKeys";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
 import { withLegacyMetaKeys } from "./lib/legacyBrandCompatibility";
 import { formatOrderStatusLabel } from "./lib/orderStatusLabels.mjs";
@@ -4069,28 +4068,10 @@ const normalizeAccountOrdersResponse = (
 };
 
 const ON_HOLD_ORDERS_LIMIT = 1200;
-const ON_HOLD_REFRESH_TTL_MS = 25_000;
 const ON_HOLD_ORDERS_GRID_TEMPLATE =
   "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)";
 
 type OnHoldOrdersRefreshOptions = { force?: boolean };
-
-type OnHoldOrdersResourceConfig = {
-  options?: OnHoldOrdersRefreshOptions;
-  allowed: boolean;
-  paused?: boolean;
-  ordersRef: MutableRefObject<AccountOrderSummary[]>;
-  lastFetchAtRef: MutableRefObject<number>;
-  inFlightRef: MutableRefObject<boolean>;
-  endpointUnavailableRef?: MutableRefObject<boolean>;
-  setOrders: Dispatch<SetStateAction<AccountOrderSummary[]>>;
-  setLoading: Dispatch<SetStateAction<boolean>>;
-  setRefreshing: Dispatch<SetStateAction<boolean>>;
-  setHasSettled: Dispatch<SetStateAction<boolean>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  loadOrders: () => Promise<unknown>;
-  fallbackOrders?: () => AccountOrderSummary[];
-};
 
 const isOrderOnHoldStatus = (status?: string | null) => {
   const normalized = String(status || "")
@@ -4124,14 +4105,6 @@ const normalizeOnHoldOrdersResponse = (response: unknown): AccountOrderSummary[]
   return sortOrdersNewestFirst(sourceOrders);
 };
 
-const resetOnHoldOrdersResource = (config: OnHoldOrdersResourceConfig) => {
-  config.setOrders([]);
-  config.setError(null);
-  config.setLoading(false);
-  config.setRefreshing(false);
-  config.setHasSettled(false);
-};
-
 const isOnHoldOrdersAuthFailure = (error: any) => {
   const status = typeof error?.status === "number" ? error.status : null;
   const code = typeof error?.code === "string" ? error.code : null;
@@ -4161,91 +4134,6 @@ const getOnHoldOrdersErrorMessage = (error: any) =>
   typeof error?.message === "string" && error.message
     ? error.message
     : "Unable to load on-hold orders.";
-
-const applyOnHoldOrdersFallback = (
-  config: OnHoldOrdersResourceConfig,
-  existingOrders: AccountOrderSummary[],
-) => {
-  const fallbackOrders = config.fallbackOrders?.() ?? [];
-  config.setOrders(fallbackOrders.length > 0 ? fallbackOrders : existingOrders);
-  config.setError(null);
-};
-
-const refreshOnHoldOrdersResource = async (config: OnHoldOrdersResourceConfig) => {
-  if (config.paused) {
-    return;
-  }
-  if (!config.allowed || !hasAuthToken()) {
-    resetOnHoldOrdersResource(config);
-    return;
-  }
-
-  const now = Date.now();
-  if (
-    !config.options?.force &&
-    now - config.lastFetchAtRef.current < ON_HOLD_REFRESH_TTL_MS
-  ) {
-    return;
-  }
-  if (config.inFlightRef.current) {
-    return;
-  }
-
-  config.inFlightRef.current = true;
-  config.lastFetchAtRef.current = now;
-  const existingOrders = config.ordersRef.current;
-  const hasExisting = existingOrders.length > 0;
-  config.setLoading(!hasExisting);
-  config.setRefreshing(Boolean(config.options?.force && hasExisting));
-  config.setError(null);
-
-  try {
-    if (config.endpointUnavailableRef?.current && config.fallbackOrders) {
-      applyOnHoldOrdersFallback(config, existingOrders);
-      return;
-    }
-
-    const response = await config.loadOrders();
-    const orders = normalizeOnHoldOrdersResponse(response);
-    if (!(hasExisting && orders.length === 0)) {
-      config.setOrders(orders);
-    }
-    config.setError(null);
-  } catch (error: any) {
-    if (isOnHoldOrdersAuthFailure(error)) {
-      config.setError(null);
-      return;
-    }
-
-    if (config.fallbackOrders && isOnHoldOrdersEndpointUnavailable(error)) {
-      if (config.endpointUnavailableRef) {
-        config.endpointUnavailableRef.current = true;
-      }
-      applyOnHoldOrdersFallback(config, existingOrders);
-      return;
-    }
-
-    config.setError(getOnHoldOrdersErrorMessage(error));
-    if (!hasExisting) {
-      config.setOrders([]);
-    }
-  } finally {
-    config.setLoading(false);
-    config.setRefreshing(false);
-    config.setHasSettled(true);
-    config.inFlightRef.current = false;
-  }
-};
-
-const startOnHoldOrdersPolling = (
-  leaderKey: string,
-  refreshOrders: () => Promise<void> | void,
-) => {
-  void Promise.resolve(refreshOrders()).catch((error) => {
-    console.debug("[On Hold Orders] Initial refresh skipped", { leaderKey, error });
-  });
-  return undefined;
-};
 
 const getOnHoldOrderDisplayTotal = (order: AccountOrderSummary) => {
   const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
@@ -12923,17 +12811,12 @@ function MainApp() {
   const [salesOnHoldRefreshing, setSalesOnHoldRefreshing] = useState(false);
   const [salesOnHoldHasSettled, setSalesOnHoldHasSettled] = useState(false);
   const [salesOnHoldError, setSalesOnHoldError] = useState<string | null>(null);
-  const salesOnHoldLastFetchAtRef = useRef(0);
-  const salesOnHoldInFlightRef = useRef(false);
   const [adminOnHoldOrders, setAdminOnHoldOrders] = useState<AccountOrderSummary[]>([]);
   const adminOnHoldOrdersRef = useRef<AccountOrderSummary[]>([]);
   const [adminOnHoldLoading, setAdminOnHoldLoading] = useState(false);
   const [adminOnHoldRefreshing, setAdminOnHoldRefreshing] = useState(false);
   const [adminOnHoldHasSettled, setAdminOnHoldHasSettled] = useState(false);
   const [adminOnHoldError, setAdminOnHoldError] = useState<string | null>(null);
-  const adminOnHoldLastFetchAtRef = useRef(0);
-  const adminOnHoldInFlightRef = useRef(false);
-  const adminOnHoldEndpointUnavailableRef = useRef(false);
   const [pendingResellerPermitApprovals, setPendingResellerPermitApprovals] = useState<
     PendingResellerPermitApprovalItem[]
   >([]);
@@ -24485,55 +24368,174 @@ function MainApp() {
 		    [salesTrackingOrders],
 		  );
 
+		  const hasSessionAuthToken = hasAuthToken();
+		  const adminOnHoldQueryEnabled = Boolean(
+		    userRole &&
+		      isAdmin(userRole) &&
+		      !postLoginHold &&
+		      !shouldPauseAdminBackgroundSync &&
+		      hasSessionAuthToken,
+		  );
+		  const salesOnHoldScope: "mine" | "all" =
+		    userRole && (isAdmin(userRole) || isSalesLead(userRole)) ? "all" : "mine";
+		  const salesOnHoldQueryEnabled = Boolean(
+		    userRole &&
+		      (isRep(userRole) || isSalesLead(userRole) || isAdmin(userRole)) &&
+		      !postLoginHold &&
+		      !(shouldPauseAdminBackgroundSync && isAdmin(userRole)) &&
+		      hasSessionAuthToken,
+		  );
+
+		  const adminOnHoldOrdersQuery = useQuery<AccountOrderSummary[]>({
+		    queryKey: [...appQueryKeys.onHoldOrders, "admin", ON_HOLD_ORDERS_LIMIT],
+		    queryFn: async () =>
+		      normalizeOnHoldOrdersResponse(
+		        await ordersAPI.getAdminOnHoldOrders({ limit: ON_HOLD_ORDERS_LIMIT }),
+		      ),
+		    enabled: adminOnHoldQueryEnabled,
+		    placeholderData: (previous: AccountOrderSummary[] | undefined) => previous,
+		  });
+
+		  const salesOnHoldOrdersQuery = useQuery<AccountOrderSummary[]>({
+		    queryKey: [
+		      ...appQueryKeys.onHoldOrders,
+		      "sales",
+		      salesOnHoldScope,
+		      ON_HOLD_ORDERS_LIMIT,
+		    ],
+		    queryFn: async () =>
+		      normalizeOnHoldOrdersResponse(
+		        await ordersAPI.getOnHoldForSalesRep({
+		          scope: salesOnHoldScope,
+		          limit: ON_HOLD_ORDERS_LIMIT,
+		        }),
+		      ),
+		    enabled: salesOnHoldQueryEnabled,
+		    placeholderData: (previous: AccountOrderSummary[] | undefined) => previous,
+		  });
+
+		  useEffect(() => {
+		    if (!adminOnHoldQueryEnabled) {
+		      setAdminOnHoldOrders([]);
+		      setAdminOnHoldLoading(false);
+		      setAdminOnHoldRefreshing(false);
+		      setAdminOnHoldHasSettled(false);
+		      setAdminOnHoldError(null);
+		      return;
+		    }
+
+		    setAdminOnHoldLoading(adminOnHoldOrdersQuery.isLoading);
+		    setAdminOnHoldRefreshing(
+		      adminOnHoldOrdersQuery.isFetching && !adminOnHoldOrdersQuery.isLoading,
+		    );
+
+		    if (adminOnHoldOrdersQuery.isSuccess) {
+		      setAdminOnHoldOrders(adminOnHoldOrdersQuery.data ?? []);
+		      setAdminOnHoldError(null);
+		      setAdminOnHoldHasSettled(true);
+		      return;
+		    }
+
+		    if (adminOnHoldOrdersQuery.isError) {
+		      const error = adminOnHoldOrdersQuery.error;
+		      if (isOnHoldOrdersAuthFailure(error)) {
+		        setAdminOnHoldError(null);
+		        setAdminOnHoldHasSettled(true);
+		        return;
+		      }
+		      if (isOnHoldOrdersEndpointUnavailable(error)) {
+		        const fallbackOrders = buildAdminOnHoldFallbackOrders();
+		        setAdminOnHoldOrders(
+		          fallbackOrders.length > 0 ? fallbackOrders : adminOnHoldOrdersRef.current,
+		        );
+		        setAdminOnHoldError(null);
+		        setAdminOnHoldHasSettled(true);
+		        return;
+		      }
+		      setAdminOnHoldError(getOnHoldOrdersErrorMessage(error));
+		      if (adminOnHoldOrdersRef.current.length === 0) {
+		        setAdminOnHoldOrders([]);
+		      }
+		      setAdminOnHoldHasSettled(true);
+		    }
+		  }, [
+		    adminOnHoldOrdersQuery.data,
+		    adminOnHoldOrdersQuery.error,
+		    adminOnHoldOrdersQuery.isError,
+		    adminOnHoldOrdersQuery.isFetching,
+		    adminOnHoldOrdersQuery.isLoading,
+		    adminOnHoldOrdersQuery.isSuccess,
+		    adminOnHoldQueryEnabled,
+		    buildAdminOnHoldFallbackOrders,
+		  ]);
+
+		  useEffect(() => {
+		    if (!salesOnHoldQueryEnabled) {
+		      setSalesOnHoldOrders([]);
+		      setSalesOnHoldLoading(false);
+		      setSalesOnHoldRefreshing(false);
+		      setSalesOnHoldHasSettled(false);
+		      setSalesOnHoldError(null);
+		      return;
+		    }
+
+		    setSalesOnHoldLoading(salesOnHoldOrdersQuery.isLoading);
+		    setSalesOnHoldRefreshing(
+		      salesOnHoldOrdersQuery.isFetching && !salesOnHoldOrdersQuery.isLoading,
+		    );
+
+		    if (salesOnHoldOrdersQuery.isSuccess) {
+		      setSalesOnHoldOrders(salesOnHoldOrdersQuery.data ?? []);
+		      setSalesOnHoldError(null);
+		      setSalesOnHoldHasSettled(true);
+		      return;
+		    }
+
+		    if (salesOnHoldOrdersQuery.isError) {
+		      const error = salesOnHoldOrdersQuery.error;
+		      if (isOnHoldOrdersAuthFailure(error)) {
+		        setSalesOnHoldError(null);
+		        setSalesOnHoldHasSettled(true);
+		        return;
+		      }
+		      setSalesOnHoldError(getOnHoldOrdersErrorMessage(error));
+		      if (salesOnHoldOrdersRef.current.length === 0) {
+		        setSalesOnHoldOrders([]);
+		      }
+		      setSalesOnHoldHasSettled(true);
+		    }
+		  }, [
+		    salesOnHoldOrdersQuery.data,
+		    salesOnHoldOrdersQuery.error,
+		    salesOnHoldOrdersQuery.isError,
+		    salesOnHoldOrdersQuery.isFetching,
+		    salesOnHoldOrdersQuery.isLoading,
+		    salesOnHoldOrdersQuery.isSuccess,
+		    salesOnHoldQueryEnabled,
+		  ]);
+
 		  const refreshAdminOnHoldOrders = useCallback(
 		    async (options?: OnHoldOrdersRefreshOptions) => {
-		      const role = user?.role || null;
-		      await refreshOnHoldOrdersResource({
-		        options,
-		        allowed: Boolean(role && isAdmin(role)),
-		        paused: postLoginHold,
-		        ordersRef: adminOnHoldOrdersRef,
-		        lastFetchAtRef: adminOnHoldLastFetchAtRef,
-		        inFlightRef: adminOnHoldInFlightRef,
-		        endpointUnavailableRef: adminOnHoldEndpointUnavailableRef,
-		        setOrders: setAdminOnHoldOrders,
-		        setLoading: setAdminOnHoldLoading,
-		        setRefreshing: setAdminOnHoldRefreshing,
-		        setHasSettled: setAdminOnHoldHasSettled,
-		        setError: setAdminOnHoldError,
-		        loadOrders: () =>
-		          ordersAPI.getAdminOnHoldOrders({ limit: ON_HOLD_ORDERS_LIMIT }),
-		        fallbackOrders: buildAdminOnHoldFallbackOrders,
+		      if (!adminOnHoldQueryEnabled) {
+		        return;
+		      }
+		      await adminOnHoldOrdersQuery.refetch({
+		        cancelRefetch: options?.force === true,
 		      });
 		    },
-		    [buildAdminOnHoldFallbackOrders, postLoginHold, user?.role],
+		    [adminOnHoldOrdersQuery.refetch, adminOnHoldQueryEnabled],
 		  );
 
 		  const refreshSalesOnHoldOrders = useCallback(
 		    async (options?: OnHoldOrdersRefreshOptions) => {
-		      const role = user?.role || null;
-		      const scope: "mine" | "all" =
-		        role && (isAdmin(role) || isSalesLead(role)) ? "all" : "mine";
-		      await refreshOnHoldOrdersResource({
-		        options,
-		        allowed: Boolean(role && (isRep(role) || isSalesLead(role) || isAdmin(role))),
-		        paused: postLoginHold,
-		        ordersRef: salesOnHoldOrdersRef,
-		        lastFetchAtRef: salesOnHoldLastFetchAtRef,
-		        inFlightRef: salesOnHoldInFlightRef,
-		        setOrders: setSalesOnHoldOrders,
-		        setLoading: setSalesOnHoldLoading,
-		        setRefreshing: setSalesOnHoldRefreshing,
-		        setHasSettled: setSalesOnHoldHasSettled,
-		        setError: setSalesOnHoldError,
-		        loadOrders: () =>
-		          ordersAPI.getOnHoldForSalesRep({
-		            scope,
-		            limit: ON_HOLD_ORDERS_LIMIT,
-		          }),
+		      if (!salesOnHoldQueryEnabled) {
+		        return;
+		      }
+		      await salesOnHoldOrdersQuery.refetch({
+		        cancelRefetch: options?.force === true,
 		      });
 		    },
-		    [postLoginHold, user?.role],
+		    [salesOnHoldOrdersQuery.refetch, salesOnHoldQueryEnabled],
 		  );
 
   const refreshPendingResellerPermitApprovals = useCallback(
@@ -24742,31 +24744,6 @@ function MainApp() {
 	      console.debug("[Sales Tracking] Initial refresh skipped", error);
 	    });
   }, [fetchSalesTrackingOrders, userRole, postLoginHold, shouldPauseAdminBackgroundSync]);
-
-			  useEffect(() => {
-			    if (shouldPauseAdminBackgroundSync || postLoginHold || !user || !isAdmin(user.role)) {
-			      return;
-			    }
-		    return startOnHoldOrdersPolling(
-		      "admin-on-hold-poll",
-		      refreshAdminOnHoldOrders,
-		    );
-			  }, [postLoginHold, refreshAdminOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
-
-		  useEffect(() => {
-		    if (
-		      postLoginHold ||
-		      !user ||
-		      (shouldPauseAdminBackgroundSync && isAdmin(user.role)) ||
-		      (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))
-			    ) {
-			      return;
-			    }
-		    return startOnHoldOrdersPolling(
-		      "sales-on-hold-poll",
-		      refreshSalesOnHoldOrders,
-		    );
-			  }, [postLoginHold, refreshSalesOnHoldOrders, shouldPauseAdminBackgroundSync, user?.id, user?.role]);
 
   useEffect(() => {
     if (

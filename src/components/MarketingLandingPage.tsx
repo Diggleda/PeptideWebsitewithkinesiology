@@ -42,11 +42,31 @@ const navLinks = [
 ];
 
 const capabilities = [
-  { n: "01", title: "US-Synthesized Peptides and supplies" },
-  { n: "02", title: "3PL logistics" },
-  { n: "03", title: "White labeling" },
-  { n: "04", title: "Protocol and Research tools" },
-  { n: "05", title: "A dedicated network of physicians and peptide professionals" },
+  {
+    n: "01",
+    title: "US-Synthesized Peptides and supplies",
+    description: "Sourced for physician-led programs that need consistent access to research-focused materials.",
+  },
+  {
+    n: "02",
+    title: "3PL logistics",
+    description: "Coordinated fulfillment support for storage, shipping, tracking, and delivery workflows.",
+  },
+  {
+    n: "03",
+    title: "White labeling",
+    description: "Custom labeling for practices and partners building their own patient-facing experience.",
+  },
+  {
+    n: "04",
+    title: "Protocol and Research tools",
+    description: "Proprietary digital tools that help you reach patients and coordinate support.",
+  },
+  {
+    n: "05",
+    title: "A dedicated network of physicians and peptide professionals",
+    description: "A connected professional network with referrals, collaboration, and novel Peptide Forum educational calls.",
+  },
 ];
 
 const standardGroups: StandardGroup[] = [
@@ -425,13 +445,17 @@ export function MarketingLandingPage({
                 <li
                   key={capability.n}
                   className="marketing-landing__capability"
+                  tabIndex={0}
                 >
                   <span className="marketing-landing__number">
                     {capability.n}
                   </span>
-                  <h3 className="marketing-landing__capability-title">
-                    {capability.title}
-                  </h3>
+                  <div className="marketing-landing__capability-copy">
+                    <h3 className="marketing-landing__capability-title">
+                      {capability.title}
+                    </h3>
+                    <p>{capability.description}</p>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -442,7 +466,7 @@ export function MarketingLandingPage({
           <div className="marketing-landing__section-inner">
             <SectionKicker>Manufacturing & quality standards</SectionKicker>
             <h2 className="marketing-landing__section-title marketing-landing__section-title--narrow">
-              TrufusionLabs manufacturing, testing, delivery, and compliance standards.
+              TrufusionLabs strives for operational excellence.
             </h2>
 
             <div className="marketing-landing__standards">
@@ -492,7 +516,7 @@ export function MarketingLandingPage({
               The Protixa ION System{"\u2122"}
             </h2>
             <p className="marketing-landing__body marketing-landing__body--dark">
-              TrufusionLabs utilizes the Protixa ION System{"\u2122"}, an advanced ionic
+              TrufusionLabs incorporates the Protixa ION System{"\u2122"}, an advanced ionic
               liquid delivery platform designed for needle-free peptide administration. This
               proprietary system enhances bioavailability through five mechanisms:
             </p>

@@ -1108,6 +1108,7 @@ def _build_shipping_status_email(
     carrier_code: Optional[str],
     delivery_label: Optional[str],
     base_url: str,
+    fulfillment_label: Optional[str] = None,
 ) -> Tuple[str, str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
@@ -1119,6 +1120,7 @@ def _build_shipping_status_email(
     order_label = str(order_number or "").strip() or "your order"
     tracking_label = str(tracking_number or "").strip() or None
     carrier_label = str(carrier_code or "").strip().upper() or None
+    fulfillment_display = str(fulfillment_label or "").strip() or None
     tracking_url = _build_tracking_url(tracking_label, carrier_label)
 
     normalized = str(status or "").strip().lower()
@@ -1148,6 +1150,7 @@ def _build_shipping_status_email(
         cta_label = "Track Package"
 
     tracking_line = f"Tracking: {tracking_label}" if tracking_label else None
+    fulfillment_line = f"Delivery method: {fulfillment_display}" if fulfillment_display else None
     cta_block = (
         f'<p style="margin:0 0 32px;text-align:center;">'
         f'<a href="{tracking_url}" class="trufusion-button trufusion-track-button" style="{_EMAIL_ADMIN_REFRESH_BUTTON_STYLE}">{cta_label}</a>'
@@ -1159,7 +1162,7 @@ def _build_shipping_status_email(
         f"</p>"
     )
     order_line = f"Order: {order_label}"
-    detail_lines = [line for line in (extra_line, tracking_line, order_line) if line]
+    detail_lines = [line for line in (extra_line, fulfillment_line, tracking_line, order_line) if line]
     detail_html = "\n".join(
         f'<p style="margin:0{" 0 8px" if index < len(detail_lines) - 1 else ""};'
         f'font-size:14px;line-height:1.5;color:#0f172a;"><strong>{line}</strong></p>'
@@ -1220,6 +1223,8 @@ def _build_shipping_status_email(
     ]
     if extra_line:
         plain_parts.append(extra_line)
+    if fulfillment_line:
+        plain_parts.append(fulfillment_line)
     if tracking_line:
         plain_parts.append(tracking_line)
     plain_parts.append(order_line)
@@ -1323,6 +1328,7 @@ def send_order_shipping_status_email(
     tracking_number: Optional[str] = None,
     carrier_code: Optional[str] = None,
     delivery_label: Optional[str] = None,
+    fulfillment_label: Optional[str] = None,
 ) -> None:
     recipient_email = str(recipient or "").strip()
     if not recipient_email:
@@ -1337,6 +1343,7 @@ def send_order_shipping_status_email(
         carrier_code=carrier_code,
         delivery_label=delivery_label,
         base_url=base_url,
+        fulfillment_label=fulfillment_label,
     )
     _dispatch_email(
         recipient_email,
