@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict
 
-from flask import Blueprint, Response, request, stream_with_context
+from flask import Blueprint, Response, current_app, request, stream_with_context
 
 from ..middleware.auth import require_auth, require_media_auth
 from ..services import resource_version_service
@@ -78,5 +78,5 @@ def app_events():
     response = Response(generate(), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Accel-Buffering"] = "no"
+    response.headers["X-TruFusion-Route-Set"] = str(current_app.config.get("APP_ROUTE_SET") or "")
     return response
-
