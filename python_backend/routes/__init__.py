@@ -21,6 +21,7 @@ def _configure_cors(app: Flask, config) -> None:
         "X-TruFusion-Quote-Pdf-Bytes",
         "X-TruFusion-Quote-Id",
         "X-Request-Id",
+        "X-TruFusion-Route-Set",
     ]
     cors_config = {
         r"/api/*": {
