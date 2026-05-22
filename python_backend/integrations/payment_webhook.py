@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict
 
 from . import stripe_payments
+from ..services import resource_version_service
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,12 @@ def handle_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
     if event_type == "payment_intent.succeeded":
         _finalize_payment_intent_and_woo(data_obj)
+        resource_version_service.bump_safe("orders", metadata={"source": "stripe.webhook", "type": event_type})
     elif event_type == "charge.succeeded":
         pi_id = data_obj.get("payment_intent")
         if pi_id:
             _finalize_payment_intent_and_woo({"id": pi_id})
+            resource_version_service.bump_safe("orders", metadata={"source": "stripe.webhook", "type": event_type})
 
     return {"received": True, "type": event_type}
 

@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 from ..config import get_config
 from ..repositories import credit_ledger_repository, user_repository
-from ..services import order_service
+from ..services import order_service, resource_version_service
 from ..services.email_service import send_template
 from .service_error import ServiceError
 from logging import getLogger
@@ -23,6 +23,15 @@ def handle_order_updated(order_data: Dict[str, Any]) -> Dict[str, Any]:
     # including refunded orders (source of truth is WooCommerce).
     try:
         local_sync = order_service.sync_order_status_from_woo_webhook(order_data)
+        if isinstance(local_sync, dict) and local_sync.get("reason") != "local_order_not_found":
+            resource_version_service.bump_safe(
+                "orders",
+                metadata={
+                    "source": "woo.webhook",
+                    "wooOrderId": str(order_id),
+                    "status": str(order_status),
+                },
+            )
     except Exception:
         logger.warning("Failed to sync local order from Woo webhook", exc_info=True)
         local_sync = {"status": "skipped", "reason": "local_sync_failed"}

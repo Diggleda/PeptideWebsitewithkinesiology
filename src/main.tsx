@@ -2,11 +2,13 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner@2.0.3";
 import App from "./App.tsx";
 import "./index.css";
 import "react-day-picker/dist/style.css";
 import { resolveStaticAssetUrl } from "./lib/assetUrl";
+import { queryClient } from "./lib/queryClient";
 
 // Defensive runtime bridge for any emitted bundle code that still references
 // the React global instead of the imported module binding.
@@ -84,9 +86,9 @@ function ToastPortal() {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <>
+  <QueryClientProvider client={queryClient}>
     <App />
     <ToastPortal />
-  </>
+  </QueryClientProvider>
 );
   

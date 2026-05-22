@@ -586,6 +586,81 @@ const matchBrochureRowEntriesForProduct = async (product, matcher) => {
   return matches;
 };
 
+const brochureRowWithCatalogMedia = (row, item = null, product = null) => {
+  if (!row) return row;
+  const imageUrl = firstProductImage(item) || firstProductImage(product);
+  const productId = parsePositiveInt(product?.id)
+    || (item && item === product ? parsePositiveInt(item?.id) : null)
+    || parsePositiveInt(row?.product_id)
+    || parsePositiveInt(row?.parent_product_id);
+  const itemId = parsePositiveInt(item?.id);
+  const variationId = item && item !== product
+    ? itemId || parsePositiveInt(row?.variation_id)
+    : parsePositiveInt(row?.variation_id);
+  const next = { ...row };
+  if (imageUrl && !String(next.image_url || '').trim()) {
+    next.image_url = imageUrl;
+  }
+  if (productId && !parsePositiveInt(next.product_id)) {
+    next.product_id = productId;
+  }
+  if (variationId && !parsePositiveInt(next.variation_id)) {
+    next.variation_id = variationId;
+  }
+  return next;
+};
+
+const brochureRowHasCatalogImage = (row) => Boolean(String(row?.image_url || row?.imageUrl || '').trim());
+
+const hydrateBrochureCsvRowsWithCatalogImages = async (rows) => {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  if (sourceRows.length === 0 || sourceRows.every(brochureRowHasCatalogImage)) {
+    return sourceRows;
+  }
+  const matcher = buildBrochureMatcher(sourceRows);
+  if (!matcher.rowCount) return sourceRows;
+
+  const hydrated = new Map(sourceRows.map((row) => [row, row]));
+  const unresolvedCount = () => sourceRows.filter((row) => !brochureRowHasCatalogImage(hydrated.get(row))).length;
+
+  try {
+    for (let page = 1; page <= 25 && unresolvedCount() > 0; page += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const products = await wooCommerceClient.fetchCatalog('products', {
+        per_page: 100,
+        page,
+        status: 'publish',
+        orderby: 'id',
+        order: 'asc',
+      }).catch((error) => {
+        logger.info(
+          { page, status: error?.status || error?.cause?.status },
+          'Brochure catalog: unable to hydrate CSV images from Woo products',
+        );
+        return [];
+      });
+      const batch = Array.isArray(products) ? products.filter((product) => product && typeof product === 'object') : [];
+      if (batch.length === 0) break;
+
+      for (const product of batch) {
+        if (unresolvedCount() <= 0) break;
+        if (isExcludedCatalogProduct(product)) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const entries = await matchBrochureRowEntriesForProduct(product, matcher);
+        for (const entry of entries) {
+          const current = hydrated.get(entry.row) || entry.row;
+          hydrated.set(entry.row, brochureRowWithCatalogMedia(current, entry.item, entry.product));
+        }
+      }
+      if (batch.length < 100) break;
+    }
+  } catch (error) {
+    logger.info({ err: error }, 'Brochure catalog: CSV image hydration failed');
+  }
+
+  return sourceRows.map((row) => hydrated.get(row) || row);
+};
+
 const matchBrochureRow = async (product, matcher) => {
   const matches = await matchBrochureRowsForProduct(product, matcher);
   return matches[0] || null;
@@ -602,20 +677,7 @@ const filterBrochureCsvRowsForScope = async (rows, link) => {
   const selectRow = (row, item = null, product = null) => {
     if (!row) return;
     const existing = selected.get(row) || row;
-    const imageUrl = firstProductImage(item) || firstProductImage(product);
-    const productId = parsePositiveInt(product?.id);
-    const itemId = parsePositiveInt(item?.id);
-    const next = { ...existing };
-    if (imageUrl && !String(next.image_url || '').trim()) {
-      next.image_url = imageUrl;
-    }
-    if (productId && !parsePositiveInt(next.product_id)) {
-      next.product_id = productId;
-    }
-    if (itemId && item && item !== product && !parsePositiveInt(next.variation_id)) {
-      next.variation_id = itemId;
-    }
-    selected.set(row, next);
+    selected.set(row, brochureRowWithCatalogMedia(existing, item, product));
   };
   for (const row of sourceRows.filter((entry) => brochureRowScopeMatches(entry, link))) {
     selectRow(row);
@@ -1031,7 +1093,8 @@ router.get('/brochure-products', async (req, res, next) => {
     const brochureRows = await loadBrochureRows();
     if (!mysqlClient.isEnabled() && brochureCsvDirectCatalogEnabled() && brochureRows.some((row) => row?.source === 'csv')) {
       const scopedRows = await filterBrochureCsvRowsForScope(brochureRows, link);
-      const products = scopedRows.map((row) => brochureDtoFromCsvRow(row));
+      const hydratedRows = await hydrateBrochureCsvRowsWithCatalogImages(scopedRows);
+      const products = hydratedRows.map((row) => brochureDtoFromCsvRow(row));
       return res.json({
         products,
         capabilities: link.capabilities,
@@ -1099,6 +1162,7 @@ module.exports.__test__ = {
   loadBrochureRowsFromCsv,
   brochureRowScopeMatches,
   filterBrochureCsvRowsForScope,
+  hydrateBrochureCsvRowsWithCatalogImages,
   brochureDtoFromCsvRow,
   buildBrochureMatcher,
   matchBrochureRow,

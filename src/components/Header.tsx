@@ -13,7 +13,6 @@ import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
-import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { resolveStaticAssetUrl, withStaticAssetStamp } from '../lib/assetUrl';
 import { withLegacyMetaKeys } from '../lib/legacyBrandCompatibility';
 import { formatOrderStatusLabel } from '../lib/orderStatusLabels.mjs';
@@ -4031,43 +4030,15 @@ export function Header({
     }
   }, [cancellingOrderId, cachedAccountOrders, selectedOrder]);
 
-  // Auto-refresh orders when the orders tab is open
+  // Orders are kept current through app data events, focus refreshes, and user actions.
   useEffect(() => {
-		    if (!accountOrdersPanelVisible || !onRefreshOrders || !user) {
-		      return undefined;
-		    }
-	    let cancelled = false;
-	    let inFlight = false;
-	    const leaderKey = 'orders-auto-refresh';
-	    const leaderTtlMs = 45_000;
-
-    const shouldRefresh = () => {
-      if (typeof document !== 'undefined' && document.hidden) return false;
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
-      return true;
-    };
-
-		    const runRefresh = async () => {
-		      if (cancelled || inFlight) return;
-		      if (!shouldRefresh()) return;
-		      if (!isTabLeader(leaderKey, leaderTtlMs)) return;
-		      inFlight = true;
-		      try {
-		        await Promise.resolve(onRefreshOrders());
-		      } finally {
-		        inFlight = false;
-		      }
-		    };
-
-    void runRefresh();
-    const intervalId = window.setInterval(() => {
-      void runRefresh();
-    }, 20000);
-	    return () => {
-	      cancelled = true;
-	      releaseTabLeadership(leaderKey);
-	      window.clearInterval(intervalId);
-	    };
+    if (!accountOrdersPanelVisible || !onRefreshOrders || !user) {
+      return undefined;
+    }
+    void Promise.resolve(onRefreshOrders()).catch((error) => {
+      console.debug('[Orders] Panel refresh skipped', error);
+    });
+    return undefined;
 	  }, [accountOrdersPanelVisible, onRefreshOrders, user]);
 
   useEffect(() => {
@@ -8810,16 +8781,14 @@ export function Header({
 	        
 	        <div className="flex flex-wrap items-center justify-between gap-3">
 	          {ordersLastSyncedAt && (
-	            <button
-	              type="button"
-	              onClick={() => Promise.resolve(onRefreshOrders?.({ force: true }))}
-	              disabled={!onRefreshOrders}
-	              title={onRefreshOrders ? 'Refresh orders' : undefined}
-	              className="orders-updated-status-button inline-flex items-center gap-0 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none disabled:opacity-70 disabled:cursor-default hover:bg-transparent hover:text-slate-700 transition-colors"
+	            <div
+	              className="orders-updated-status-button inline-flex items-center gap-1 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none"
+	              aria-live="polite"
 	            >
-                <RefreshActionIcon />
-	              {formatRelativeMinutes(ordersLastSyncedAt)}
-	            </button>
+	              <span>{formatRelativeMinutes(ordersLastSyncedAt)}</span>
+	              <span aria-hidden="true">·</span>
+	              <span>{accountOrdersLoading ? 'Updating…' : 'Auto-updating'}</span>
+	            </div>
 	          )}
 
           <div
@@ -10289,19 +10258,12 @@ export function Header({
                 <option value="brochure">Brochure ({patientLinksTypeCounts.brochure})</option>
               </select>
               <div className="patient-links-toolbar-button-row flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
-	              <Button
-		                type="button"
-	                variant="outline"
-	                size="sm"
-	                onClick={() => requestPatientLinksRefresh({ force: true })}
-	                disabled={!showPatientLinksTab || patientLinksLoading}
-	                className="patient-links-toolbar-control header-home-button min-w-0 flex-none squircle-sm bg-white text-slate-900 gap-2"
-	                aria-busy={patientLinksLoading}
-	                title="Refresh"
+	              <div
+	                className="patient-links-toolbar-control inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-medium text-slate-500"
+	                aria-live="polite"
 	              >
-                <RefreshActionIcon spinning={patientLinksLoading} />
-                {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
-              </Button>
+	                <span>{patientLinksLoading ? 'Updating…' : 'Auto-updating'}</span>
+	              </div>
 		            <Button
 		              type="button"
 		              onClick={() => {

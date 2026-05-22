@@ -3,11 +3,15 @@ from __future__ import annotations
 from flask import Blueprint, g, request
 
 from ..middleware.auth import require_auth
-from ..services import delegation_service, usage_tracking_service
+from ..services import delegation_service, usage_tracking_service, resource_version_service
 from ..services import settings_service  # type: ignore[attr-defined]
 from ..utils.http import handle_action
 
 blueprint = Blueprint("delegation", __name__, url_prefix="/api/delegation")
+
+
+def _bump_resources(*resources: str, metadata: dict | None = None) -> None:
+    resource_version_service.bump_many_safe(resources, metadata=metadata)
 
 
 def _normalize_role(value: object) -> str:
@@ -223,6 +227,10 @@ def create_link():
                 "delegatePermission": link.get("delegatePermission"),
             },
         )
+        _bump_resources(
+            "patient-links",
+            metadata={"source": "delegation.create", "token": link.get("token")},
+        )
         return {"success": True, "link": link}
 
     return handle_action(action, status=201)
@@ -327,6 +335,10 @@ def update_link(token: str):
                 doctor_id=doctor_id,
                 metadata={"status": "deleted"},
             )
+            _bump_resources(
+                "patient-links",
+                metadata={"source": "delegation.delete", "token": token},
+            )
             return {"success": True, **result}
 
         updated = delegation_service.update_link(
@@ -384,6 +396,10 @@ def update_link(token: str):
                 "receivedPayment": updated.get("receivedPayment") if isinstance(updated, dict) else None,
             },
         )
+        _bump_resources(
+            "patient-links",
+            metadata={"source": "delegation.update", "token": token},
+        )
         return {"success": True, "link": updated}
 
     return handle_action(action)
@@ -400,6 +416,11 @@ def update_config():
         _require_doctor_access(role)
         doctor_id = _resolve_target_doctor_id(role)
         config = delegation_service.update_doctor_config(doctor_id, payload)
+        _bump_resources(
+            "patient-links",
+            "settings",
+            metadata={"source": "delegation.config", "doctorId": doctor_id},
+        )
         return {"success": True, "config": config}
 
     return handle_action(action)
@@ -530,6 +551,11 @@ def review_link_proposal(token: str):
             "delegate_proposal_reviewed",
             actor=getattr(g, "current_user", None) or {},
             metadata={"token": token, "status": str(status).strip()},
+        )
+        _bump_resources(
+            "patient-links",
+            "orders",
+            metadata={"source": "delegation.proposal.review", "token": token},
         )
         return {"success": True, **result}
 

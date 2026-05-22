@@ -18,7 +18,7 @@ from logging import getLogger
 from ..middleware.auth import require_auth
 from ..config import get_config
 from ..integrations import woo_commerce, woo_commerce_webhook
-from ..services import catalog_snapshot_service
+from ..services import catalog_snapshot_service, resource_version_service
 from ..repositories import product_document_repository
 from ..utils.http import handle_action, json_error, require_admin as _require_admin
 from ..utils.security import verify_woocommerce_webhook_signature
@@ -760,6 +760,10 @@ def upsert_certificate_of_analysis(product_id: int):
             mime_type=mime,
             filename=filename,
         )
+        resource_version_service.bump_safe(
+            "catalog",
+            metadata={"source": "woo.coa.upsert", "productId": product_id},
+        )
         return {"ok": True, "document": saved}
 
     from ..utils.http import handle_action
@@ -783,6 +787,11 @@ def delete_certificate_of_analysis(product_id: int):
             product_document_repository.clear_document_payload(
                 int(product_id),
                 kind=product_document_repository.DEFAULT_KIND_COA,
+            )
+        if had_payload:
+            resource_version_service.bump_safe(
+                "catalog",
+                metadata={"source": "woo.coa.delete", "productId": product_id},
             )
         return {"ok": True, "deleted": bool(had_payload)}
 

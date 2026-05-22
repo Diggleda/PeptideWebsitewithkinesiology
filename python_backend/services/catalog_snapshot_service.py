@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from ..database import mysql_client
 from ..integrations import woo_commerce
 from ..repositories import product_document_repository
-from . import get_config
+from . import get_config, resource_version_service
 
 logger = logging.getLogger(__name__)
 
@@ -483,7 +483,7 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
 
         prune_result = _prune_missing_products(seen_ids, fetch_hit_limit=hit_limit)
 
-        return {
+        result = {
             "ok": True,
             "products": product_count,
             "variableProducts": variation_products,
@@ -491,6 +491,11 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
             "prune": prune_result,
             "durationMs": int((_utc_now() - started_at).total_seconds() * 1000),
         }
+        resource_version_service.bump_safe(
+            "catalog",
+            metadata={"source": "catalog.snapshot", "products": product_count},
+        )
+        return result
     finally:
         _release_lock(lock_name)
 

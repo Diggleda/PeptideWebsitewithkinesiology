@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from . import background_job_supervisor
+from . import background_job_supervisor, resource_version_service
 from ..services import get_config
 from ..integrations import woo_commerce
 from ..repositories import product_document_repository
@@ -207,6 +207,11 @@ def sync_woo_products_to_product_documents() -> Dict[str, Any]:
         _set_last_run_at(now)
         products = _fetch_all_products_minimal()
         upserted = product_document_repository.upsert_stubs_for_products(products)
+        if upserted:
+            resource_version_service.bump_safe(
+                "catalog",
+                metadata={"source": "product-documents.sync", "upserted": upserted},
+            )
         return {"ok": True, "products": len(products), "upserted": upserted, "intervalSeconds": interval}
     finally:
         _release_lock(lock_name)

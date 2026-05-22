@@ -13,12 +13,16 @@ from ..middleware.auth import require_auth
 from ..integrations import ship_station
 from ..integrations import woo_commerce
 from ..repositories import order_repository, patient_links_repository, user_repository
-from ..services import order_service, delegation_service, usage_tracking_service, tax_tracking_service, product_recommendation_service
+from ..services import order_service, delegation_service, usage_tracking_service, tax_tracking_service, product_recommendation_service, resource_version_service
 from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action, require_admin as _require_admin_user
 
 blueprint = Blueprint("orders", __name__, url_prefix="/api/orders")
 logger = logging.getLogger(__name__)
+
+def _bump_resources(*resources: str, metadata: dict | None = None) -> None:
+    resource_version_service.bump_many_safe(resources, metadata=metadata)
+
 
 def _round_money(value) -> float:
     try:
@@ -309,6 +313,14 @@ def create_order():
             )
         except Exception:
             logger.exception("Failed to record physician purchase product events")
+        _bump_resources(
+            "orders",
+            *(("patient-links",) if normalized_delegate_token else ()),
+            metadata={
+                "source": "orders.create",
+                "orderId": result.get("id") if isinstance(result, dict) else None,
+            },
+        )
         return result
 
     return handle_action(action)
@@ -427,7 +439,12 @@ def cancel_order(order_id: str):
     payload = request.get_json(force=True, silent=True) or {}
     reason = (payload.get("reason") or "").strip()
     user_id = g.current_user.get("id")
-    return handle_action(lambda: order_service.cancel_order(user_id=user_id, order_id=order_id, reason=reason))
+    def action():
+        result = order_service.cancel_order(user_id=user_id, order_id=order_id, reason=reason)
+        _bump_resources("orders", metadata={"source": "orders.cancel", "orderId": order_id})
+        return result
+
+    return handle_action(action)
 
 
 @blueprint.get("/admin/sales-rep-summary")
@@ -1025,6 +1042,11 @@ def delegate_share_order():
                 "grandTotal": grand_total_value,
             },
         )
+        _bump_resources(
+            "orders",
+            "patient-links",
+            metadata={"source": "orders.delegate.share", "orderId": str(stored_id or order_id)},
+        )
         return {
             "success": True,
             "message": f"Shared with {doctor_name}",
@@ -1045,7 +1067,9 @@ def update_order_notes(order_id: str):
 
     def action():
         actor = g.current_user or {}
-        return order_service.update_order_notes(order_id=str(order_id), actor=actor, notes=notes)
+        result = order_service.update_order_notes(order_id=str(order_id), actor=actor, notes=notes)
+        _bump_resources("orders", metadata={"source": "orders.notes", "orderId": order_id})
+        return result
 
     return handle_action(action)
 
@@ -1063,7 +1087,7 @@ def patch_order(order_id: str):
             setattr(err, "status", 403)
             raise err
 
-        return order_service.update_order_fields(
+        result = order_service.update_order_fields(
             order_id=str(order_id),
             actor=actor,
             tracking_number=payload.get("trackingNumber") if "trackingNumber" in payload else None,
@@ -1072,6 +1096,8 @@ def patch_order(order_id: str):
             status=payload.get("status") if "status" in payload else None,
             expected_shipment_window=payload.get("expectedShipmentWindow") if "expectedShipmentWindow" in payload else None,
         )
+        _bump_resources("orders", metadata={"source": "orders.patch", "orderId": order_id})
+        return result
 
     return handle_action(action)
 

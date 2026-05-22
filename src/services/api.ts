@@ -3784,6 +3784,23 @@ export const seamlessAPI = {
   },
 };
 
+export const resourceVersionsAPI = {
+  get: async (resources?: string[]) => {
+    const params = new URLSearchParams();
+    const normalized = Array.isArray(resources)
+      ? resources.map((resource) => String(resource || '').trim()).filter(Boolean)
+      : [];
+    if (normalized.length > 0) {
+      params.set('resources', normalized.join(','));
+    }
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/resource-versions?${query}`
+      : `${API_BASE_URL}/resource-versions`;
+    return fetchWithAuth(url, { method: 'GET', cache: 'no-store' });
+  },
+};
+
 // Health check
 export const getServerHealth = async (options: { quiet?: boolean } = {}) => {
   return fetchWithAuth(`${API_BASE_URL}/health`, {

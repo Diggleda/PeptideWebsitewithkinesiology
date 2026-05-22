@@ -19,12 +19,17 @@ from ..repositories import sales_prospect_repository
 from ..services import get_config
 from ..services import auth_service
 from ..services import presence_service
+from ..services import resource_version_service
 from ..services import settings_service  # type: ignore[attr-defined]
 from ..services import user_media_service
 from ..utils.http import handle_action, is_admin as _is_admin, require_admin as _require_admin, service_error
 from ..utils.crypto_envelope import decrypt_text
 
 blueprint = Blueprint("settings", __name__, url_prefix="/api/settings")
+
+
+def _bump_resources(*resources: str, metadata: dict | None = None) -> None:
+    resource_version_service.bump_many_safe(resources, metadata=metadata)
 
 _USER_ACTIVITY_CACHE_LOCK = threading.Lock()
 _USER_ACTIVITY_CACHE: dict[str, dict] = {}
@@ -1736,6 +1741,7 @@ def update_shop():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"shopEnabled": enabled})
+        _bump_resources("settings", metadata={"source": "settings.shop"})
         return {
             "shopEnabled": bool(updated.get("shopEnabled", True)),
             "mysqlEnabled": _mysql_enabled(),
@@ -1753,6 +1759,7 @@ def update_beta_services():
         updated = settings_service.update_settings(
             {"betaServices": payload.get("betaServices") or []}
         )
+        _bump_resources("settings", metadata={"source": "settings.beta-services"})
         return {
             "betaServices": updated.get("betaServices") or [],
             "mysqlEnabled": _mysql_enabled(),
@@ -1768,6 +1775,7 @@ def update_forum():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"peptideForumEnabled": enabled})
+        _bump_resources("settings", "forum", metadata={"source": "settings.forum"})
         return {
             "peptideForumEnabled": bool(updated.get("peptideForumEnabled", True)),
             "mysqlEnabled": _mysql_enabled(),
@@ -1783,6 +1791,7 @@ def update_research():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"researchDashboardEnabled": enabled})
+        _bump_resources("settings", metadata={"source": "settings.research"})
         return {
             "researchDashboardEnabled": bool(updated.get("researchDashboardEnabled", False)),
             "mysqlEnabled": _mysql_enabled(),
@@ -1799,6 +1808,7 @@ def update_physician_map():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("physicianMapEnabled", payload.get("enabled", False)))
         updated = settings_service.update_settings({"physicianMapEnabled": enabled})
+        _bump_resources("settings", "users", metadata={"source": "settings.physician-map"})
         return {
             "physicianMapEnabled": bool(updated.get("physicianMapEnabled", False)),
             "mysqlEnabled": _mysql_enabled(),
@@ -1815,6 +1825,7 @@ def update_physician_3pl():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("physicianThreePlEnabled", payload.get("enabled", False)))
         updated = settings_service.update_settings({"physicianThreePlEnabled": enabled})
+        _bump_resources("settings", metadata={"source": "settings.physician-3pl"})
         return {
             "physicianThreePlEnabled": bool(updated.get("physicianThreePlEnabled", False)),
             "mysqlEnabled": _mysql_enabled(),
@@ -1874,6 +1885,7 @@ def update_patient_links():
                 "patientLinksDoctorUserIds": [],
             }
         )
+        _bump_resources("settings", "users", "patient-links", metadata={"source": "settings.patient-links"})
         return {
             "patientLinksEnabled": bool(updated.get("patientLinksEnabled", False)),
             "patientLinksDoctorUserIds": [
@@ -1894,6 +1906,7 @@ def update_crm():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"crmEnabled": enabled})
+        _bump_resources("settings", metadata={"source": "settings.crm"})
         return {
             "crmEnabled": bool(updated.get("crmEnabled", True)),
             "mysqlEnabled": _mysql_enabled(),
@@ -1923,6 +1936,7 @@ def update_test_payments_override():
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
         updated = settings_service.update_settings({"testPaymentsOverrideEnabled": enabled})
+        _bump_resources("settings", metadata={"source": "settings.test-payments-override"})
         return {
             "testPaymentsOverrideEnabled": bool(updated.get("testPaymentsOverrideEnabled", False)),
             "mysqlEnabled": _mysql_enabled(),
@@ -2367,6 +2381,11 @@ def approve_user_reseller_permit(user_id: str):
         updated = auth_service.approve_reseller_permit(target_id)
         reps = sales_rep_repository.get_all() or []
         by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
+        _bump_resources(
+            "users",
+            "referrals",
+            metadata={"source": "settings.reseller-permit.approve", "userId": target_id},
+        )
         return {
             "user": _public_user_profile(
                 updated,
@@ -2606,6 +2625,11 @@ def update_hand_delivery_jurisdiction(user_id: str):
                 "jurisdiction": jurisdiction,
             }
 
+        _bump_resources(
+            "users",
+            "settings",
+            metadata={"source": "settings.hand-delivery.user", "userId": target_id},
+        )
         return {
             "entry": _serialize_hand_delivery_entry(user, updated_rep),
         }
@@ -2703,6 +2727,11 @@ def update_hand_delivery_doctor(doctor_user_id: str):
                 else updated.get("hand_delivered")
             ),
         }
+        _bump_resources(
+            "users",
+            "settings",
+            metadata={"source": "settings.hand-delivery.doctor", "userId": target_id},
+        )
         return {"entry": entry}
 
     return handle_action(action)
@@ -2721,7 +2750,9 @@ def patch_user_profile(user_id: str):
 
         payload = request.get_json(silent=True) or {}
         if _is_admin_role(role):
-            return {"user": auth_service.update_profile(target_id, payload)}
+            updated = auth_service.update_profile(target_id, payload)
+            _bump_resources("users", "settings", metadata={"source": "settings.user.patch", "userId": target_id})
+            return {"user": updated}
 
         if _is_sales_rep_role(role):
             # Sales reps may edit limited profile fields (phone + office address) for their assigned doctors.
@@ -2747,7 +2778,9 @@ def patch_user_profile(user_id: str):
                 "officeCountry",
             )
             patch = {key: payload.get(key) for key in allowed_keys if key in payload}
-            return {"user": auth_service.update_profile(target_id, patch)}
+            updated = auth_service.update_profile(target_id, patch)
+            _bump_resources("users", "settings", metadata={"source": "settings.user.patch", "userId": target_id})
+            return {"user": updated}
 
         err = RuntimeError("Admin access required")
         setattr(err, "status", 403)
@@ -2807,6 +2840,7 @@ def update_stripe():
         settings_logger.info("Stripe mode update requested", extra={"requestedMode": mode, "mysqlEnabled": mysql_enabled, "userId": (getattr(g, "current_user", None) or {}).get("id")})
         settings_service.update_settings({"stripeMode": mode})
         resolved_mode = settings_service.get_effective_stripe_mode()
+        _bump_resources("settings", metadata={"source": "settings.stripe"})
         return {
             "stripeMode": resolved_mode,
             "stripeTestMode": resolved_mode == "test",
@@ -2869,6 +2903,8 @@ def update_reports():
                 )
                 patch["salesLeadSalesBySalesRepCsvDownloadedAt"] = stamp
             updated = settings_service.update_settings(patch) if patch else settings_service.get_settings()
+            if patch:
+                _bump_resources("settings", metadata={"source": "settings.reports"})
             return {
                 "salesLeadSalesBySalesRepCsvDownloadedAt": updated.get("salesLeadSalesBySalesRepCsvDownloadedAt"),
             }
@@ -2915,6 +2951,7 @@ def update_reports():
 
         if patch:
             updated = settings_service.update_settings(patch)
+            _bump_resources("settings", metadata={"source": "settings.reports"})
         else:
             updated = settings_service.get_settings()
         return {

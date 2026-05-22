@@ -24,6 +24,7 @@ import { shouldDisplayShippingStatusForOrder } from "./lib/orderStatusPrecedence
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header, PHYSICIAN_DASHBOARD_PORTAL_ID } from "./components/Header";
+import { AppDataEventsBridge } from "./components/AppDataEventsBridge";
 import { BrandLogoImage } from "./components/BrandLogoImage";
 import { DoctorProfileForm } from "./components/DoctorProfileForm";
 import { FeaturedSection } from "./components/FeaturedSection";
@@ -4069,8 +4070,6 @@ const normalizeAccountOrdersResponse = (
 
 const ON_HOLD_ORDERS_LIMIT = 1200;
 const ON_HOLD_REFRESH_TTL_MS = 25_000;
-const ON_HOLD_POLL_INTERVAL_MS = 25_000;
-const ON_HOLD_POLL_LEADER_TTL_MS = Math.max(45_000, ON_HOLD_POLL_INTERVAL_MS * 2);
 const ON_HOLD_ORDERS_GRID_TEMPLATE =
   "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)";
 
@@ -4242,29 +4241,10 @@ const startOnHoldOrdersPolling = (
   leaderKey: string,
   refreshOrders: () => Promise<void> | void,
 ) => {
-  const runRefresh = () => {
-    void Promise.resolve(refreshOrders()).catch((error) => {
-      console.debug("[On Hold Orders] Refresh skipped", { leaderKey, error });
-    });
-  };
-
-  runRefresh();
-
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
-  const pollHandle = window.setInterval(() => {
-    if (!isPageVisible() || !isTabLeader(leaderKey, ON_HOLD_POLL_LEADER_TTL_MS)) {
-      return;
-    }
-    runRefresh();
-  }, ON_HOLD_POLL_INTERVAL_MS);
-
-  return () => {
-    releaseTabLeadership(leaderKey);
-    window.clearInterval(pollHandle);
-  };
+  void Promise.resolve(refreshOrders()).catch((error) => {
+    console.debug("[On Hold Orders] Initial refresh skipped", { leaderKey, error });
+  });
+  return undefined;
 };
 
 const getOnHoldOrderDisplayTotal = (order: AccountOrderSummary) => {
@@ -4522,7 +4502,6 @@ const CATALOG_RETRY_DELAY_MS = 4000;
 const CATALOG_RETRY_FAST_DELAY_MS = 900;
 const CATALOG_EMPTY_RESULT_RETRY_MAX = 3;
 const CATALOG_EMPTY_RESULT_RETRY_DELAY_MS = 1200;
-const CATALOG_POLL_INTERVAL_MS = 5 * 60 * 1000; // quietly refresh Woo catalog every 5 minutes
 const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
@@ -5847,6 +5826,48 @@ const mapWooProductToProduct = (
   };
 };
 
+const collectBrochureImageUrls = (product: any): string[] => {
+  const candidates: unknown[] = [
+    product?.imageUrl,
+    product?.image_url,
+    product?.image,
+    product?.thumbnail,
+    product?.thumbnailUrl,
+    product?.thumbnail_url,
+  ];
+
+  if (Array.isArray(product?.imageUrls)) {
+    candidates.push(...product.imageUrls);
+  }
+  if (Array.isArray(product?.image_urls)) {
+    candidates.push(...product.image_urls);
+  }
+  if (Array.isArray(product?.images)) {
+    candidates.push(...product.images);
+  }
+
+  const urls: string[] = [];
+  const addCandidate = (candidate: unknown) => {
+    if (!candidate) {
+      return;
+    }
+    if (typeof candidate === "string") {
+      const normalized = normalizeWooImageUrl(candidate);
+      if (normalized && !urls.includes(normalized)) {
+        urls.push(normalized);
+      }
+      return;
+    }
+    if (typeof candidate === "object") {
+      const record = candidate as Record<string, unknown>;
+      addCandidate(record.src ?? record.url ?? record.imageUrl ?? record.image_url);
+    }
+  };
+
+  candidates.forEach(addCandidate);
+  return urls;
+};
+
 const mapBrochureProductToProduct = (product: any): Product => {
   const rawWooProductId = product?.wooProductId ?? product?.woo_product_id ?? null;
   const wooProductId =
@@ -5857,7 +5878,8 @@ const mapBrochureProductToProduct = (product: any): Product => {
         : typeof product?.id === "string" && /^woo-\d+$/i.test(product.id.trim())
           ? Number.parseInt(product.id.trim().replace(/[^\d]/g, ""), 10)
           : NaN;
-  const image = normalizeWooImageUrl(product?.imageUrl) ?? WOO_PLACEHOLDER_IMAGE;
+  const imageUrls = collectBrochureImageUrls(product);
+  const image = imageUrls[0] ?? WOO_PLACEHOLDER_IMAGE;
   const category =
     typeof product?.category === "string" && product.category.trim()
       ? product.category.trim()
@@ -5873,7 +5895,7 @@ const mapBrochureProductToProduct = (product: any): Product => {
     rating: 5,
     reviews: 0,
     image,
-    images: [image],
+    images: imageUrls.length > 0 ? imageUrls : [WOO_PLACEHOLDER_IMAGE],
     image_loaded: false,
     inStock: true,
     stockQuantity: null,
@@ -6089,6 +6111,15 @@ const LazyCatalogProductCard = ({
 const BrochureCatalogProductCard = ({ product }: { product: Product }) => {
   const description = product.brochureDescription || product.description || "";
   const information = product.brochureInformation || "";
+  const galleryImages = useMemo(() => {
+    const baseImages = Array.isArray(product.images) && product.images.length > 0
+      ? product.images
+      : [product.image];
+    return baseImages
+      .map((src) => normalizeWooImageUrl(src) ?? src)
+      .filter((src, index, arr): src is string => Boolean(src) && arr.indexOf(src) === index);
+  }, [product.images, product.image]);
+  const primaryImage = galleryImages[0] || product.image || WOO_PLACEHOLDER_IMAGE;
   const [documentLoading, setDocumentLoading] = useState(false);
   const openDocumentation = async () => {
     const productId = product.wooId;
@@ -6113,10 +6144,8 @@ const BrochureCatalogProductCard = ({ product }: { product: Product }) => {
     <article className="glass-card squircle-xl overflow-hidden border border-[rgba(148,163,184,0.35)] bg-white/85">
       <div className="product-image-frame product-image-frame--flush">
         <ImageWithFallback
-          src={product.image || WOO_PLACEHOLDER_IMAGE}
+          src={primaryImage}
           alt={product.name}
-          loading="lazy"
-          decoding="async"
           className="product-image-frame__img"
         />
       </div>
@@ -9333,18 +9362,11 @@ function MainApp() {
     };
 
     void refreshPatientLinksStatus("mount");
-    const intervalId = window.setInterval(() => {
-      if (!isPageVisible()) {
-        return;
-      }
-      void refreshPatientLinksStatus("interval");
-    }, 30000);
     document.addEventListener("visibilitychange", handleVisibilityOrFocus);
     window.addEventListener("focus", handleVisibilityOrFocus);
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
       window.removeEventListener("focus", handleVisibilityOrFocus);
     };
@@ -21133,8 +21155,10 @@ function MainApp() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogRetryUntil, setCatalogRetryUntil] = useState<number | null>(null);
+  const [catalogRefreshToken, setCatalogRefreshToken] = useState(0);
   const [catalogEmptyReady, setCatalogEmptyReady] = useState(false);
   const [catalogTransientIssue, setCatalogTransientIssue] = useState(false);
+  const pendingDataResourceEventsRef = useRef<Set<string>>(new Set());
   const catalogFailureCountRef = useRef(0);
   const catalogEmptyResultRetryCountRef = useRef(0);
   const catalogEmptyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -24754,22 +24778,7 @@ function MainApp() {
       return;
     }
     void refreshPendingResellerPermitApprovals();
-    const leaderKey = "sales-reseller-permit-approvals-poll";
-    const pollIntervalMs = 25_000;
-    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
-    const pollHandle = window.setInterval(() => {
-      if (!isPageVisible()) {
-        return;
-      }
-      if (!isTabLeader(leaderKey, leaderTtlMs)) {
-        return;
-      }
-      void refreshPendingResellerPermitApprovals();
-    }, pollIntervalMs);
-    return () => {
-      releaseTabLeadership(leaderKey);
-      window.clearInterval(pollHandle);
-    };
+    return undefined;
   }, [
     postLoginHold,
     refreshPendingResellerPermitApprovals,
@@ -26783,28 +26792,13 @@ function MainApp() {
 
 	    void loadCatalog(false);
 
-	    const leaderKey = "catalog-background-poll";
-	    const leaderTtlMs = Math.max(45_000, CATALOG_POLL_INTERVAL_MS * 2);
-	    const intervalId = window.setInterval(() => {
-	      if (!isPageVisible()) {
-	        return;
-	      }
-      if (!isTabLeader(leaderKey, leaderTtlMs)) {
-        return;
-      }
-      logLeaderActivity(leaderKey, "catalog-background-poll", CATALOG_POLL_INTERVAL_MS);
-      void loadCatalog(true);
-    }, CATALOG_POLL_INTERVAL_MS);
-
 	    return () => {
 	      cancelled = true;
-	      releaseTabLeadership(leaderKey);
 	      if (catalogRetryTimeoutRef.current) {
 	        window.clearTimeout(catalogRetryTimeoutRef.current);
 	      }
-	      window.clearInterval(intervalId);
 	    };
-		  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, isBrochureMode, delegateToken, delegateIsValidated, delegateLoading, delegateError, delegateContext?.allowedProducts, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches, user?.id, user?.role]);
+		  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, isBrochureMode, delegateToken, delegateIsValidated, delegateLoading, delegateError, delegateContext?.allowedProducts, shouldPauseAdminBackgroundSync, shouldReduceMaintenanceBackgroundFetches, catalogRefreshToken, user?.id, user?.role]);
 
   useEffect(() => {
     if (catalogEmptyTimerRef.current) {
@@ -27101,13 +27095,7 @@ function MainApp() {
     ) {
       return undefined;
     }
-    const intervalMs = Math.max(REFERRAL_BACKGROUND_MIN_INTERVAL_MS, 45000);
-    const intervalId = window.setInterval(() => {
-      tracedRefreshReferralData("sales-rep-auto-refresh", { showLoading: false });
-    }, intervalMs);
-    return () => {
-      window.clearInterval(intervalId);
-    };
+    return undefined;
   }, [
     user?.id,
     user?.role,
@@ -29241,6 +29229,122 @@ function MainApp() {
     }
   };
 
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const runSilently = (task: Promise<unknown> | void, label: string) => {
+      void Promise.resolve(task).catch((error) => {
+        console.debug(`[Data Events] ${label} refresh skipped`, error);
+      });
+    };
+
+    const refreshForResource = (resource: string) => {
+      if (resource === "orders") {
+        runSilently(loadAccountOrders({ force: true }), "account orders");
+        runSilently(fetchSalesTrackingOrders({ force: true }), "sales tracking");
+        runSilently(refreshAdminOnHoldOrders({ force: true }), "admin on-hold orders");
+        runSilently(refreshSalesOnHoldOrders({ force: true }), "sales on-hold orders");
+        runSilently(refreshSalesBySalesRepSummary({ force: true }), "sales by rep summary");
+        runSilently(refreshAdminTaxesByState(), "tax summary");
+        runSilently(refreshAdminProductsCommission({ force: true }), "product commission summary");
+        return;
+      }
+
+      if (resource === "patient-links") {
+        setPatientLinksRefreshToken((current) => current + 1);
+        return;
+      }
+
+      if (resource === "referrals") {
+        runSilently(
+          tracedRefreshReferralData("resource-event", {
+            showLoading: false,
+            force: true,
+          }),
+          "referrals",
+        );
+        runSilently(
+          refreshPendingResellerPermitApprovals({ force: true }),
+          "pending reseller permits",
+        );
+        return;
+      }
+
+      if (resource === "settings" || resource === "users") {
+        runSilently(
+          authAPI.getCurrentUser({ background: true }).then((nextUser) => {
+            if (nextUser && typeof nextUser === "object") {
+              setUser(nextUser as User);
+            }
+          }),
+          "current user",
+        );
+        if (resource === "users") {
+          runSilently(
+            refreshPendingResellerPermitApprovals({ force: true }),
+            "pending reseller permits",
+          );
+        }
+        return;
+      }
+
+      if (resource === "catalog" || resource === "peptide-products") {
+        setCatalogRefreshToken((current) => current + 1);
+        return;
+      }
+
+      if (resource === "forum") {
+        runSilently(refreshPeptideForum({ force: true }), "forum");
+      }
+    };
+
+    const flushPendingResources = () => {
+      if (!isPageVisible() || pendingDataResourceEventsRef.current.size === 0) {
+        return;
+      }
+      const resources = Array.from(pendingDataResourceEventsRef.current);
+      pendingDataResourceEventsRef.current.clear();
+      resources.forEach(refreshForResource);
+    };
+
+    const handleResourceChanged = (event: Event) => {
+      const resource = String(
+        ((event as CustomEvent<{ resource?: string }>).detail?.resource || ""),
+      );
+      if (!resource) {
+        return;
+      }
+      if (!isPageVisible()) {
+        pendingDataResourceEventsRef.current.add(resource);
+        return;
+      }
+      refreshForResource(resource);
+    };
+
+    window.addEventListener("trufusion:resource-changed", handleResourceChanged);
+    document.addEventListener("visibilitychange", flushPendingResources);
+    window.addEventListener("focus", flushPendingResources);
+    return () => {
+      window.removeEventListener("trufusion:resource-changed", handleResourceChanged);
+      document.removeEventListener("visibilitychange", flushPendingResources);
+      window.removeEventListener("focus", flushPendingResources);
+    };
+  }, [
+    fetchSalesTrackingOrders,
+    loadAccountOrders,
+    refreshAdminOnHoldOrders,
+    refreshAdminProductsCommission,
+    refreshAdminTaxesByState,
+    refreshPendingResellerPermitApprovals,
+    refreshPeptideForum,
+    refreshSalesBySalesRepSummary,
+    refreshSalesOnHoldOrders,
+    tracedRefreshReferralData,
+    user?.id,
+  ]);
+
   const handleSearch = (query: string, options?: { submitted?: boolean }) => {
     setSearchQuery(query);
     const isSubmitted = options?.submitted === true;
@@ -31107,19 +31211,23 @@ function MainApp() {
 		              <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
 		              <p className="text-sm text-slate-600">{description}</p>
 		            </div>
-		            <Button
-		              type="button"
-		              variant="outline"
-		              size="sm"
-		              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
-		              onClick={onRefresh}
-		              disabled={busy}
-		              aria-busy={busy}
-		              title="Refresh on-hold orders"
-		            >
-		              <RefreshActionIcon spinning={busy} />
-		              {busy ? "Refreshing..." : "Refresh"}
-		            </Button>
+		            {error ? (
+		              <Button
+		                type="button"
+		                variant="outline"
+		                size="sm"
+		                className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+		                onClick={onRefresh}
+		                disabled={busy}
+		                aria-busy={busy}
+		              >
+		                Retry
+		              </Button>
+		            ) : (
+		              <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+		                {busy ? "Updating…" : "Auto-updating"}
+		              </span>
+		            )}
 		          </div>
 		          <div
 		            className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
@@ -31345,27 +31453,23 @@ function MainApp() {
               Handle contact form follow-ups and account actions from one place.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0 gap-2"
-            onClick={() => void handleRefreshTodoItems()}
-            disabled={todoItemsRefreshing}
-            aria-busy={todoItemsRefreshing}
-            title="Refresh to-do items"
-          >
-            <ArrowPathIcon
-              className={clsx(
-                "h-4 w-4 shrink-0",
-                todoItemsRefreshing && "animate-spin",
-              )}
-              aria-hidden="true"
-            />
-            {todoItemsRefreshing
-              ? "Refreshing..."
-              : "Refresh"}
-          </Button>
+          {todoError ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+              onClick={() => void handleRefreshTodoItems()}
+              disabled={todoItemsRefreshing}
+              aria-busy={todoItemsRefreshing}
+            >
+              Retry
+            </Button>
+          ) : (
+            <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+              {todoItemsRefreshing ? "Updating…" : "Auto-updating"}
+            </span>
+          )}
         </div>
         <div
           className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
@@ -31564,18 +31668,22 @@ function MainApp() {
                 Physicians assigned to you. Check to enable hand delivery + free shipping messaging.
               </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void fetchSalesRepHandDeliveryDoctors({ force: true })}
-                disabled={salesRepHandDeliveryLoading}
-                className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0 gap-2"
-                title="Refresh hand delivery physicians"
-              >
-                <RefreshActionIcon spinning={salesRepHandDeliveryLoading} />
-                {salesRepHandDeliveryLoading ? "Refreshing…" : "Refresh"}
-              </Button>
+              {salesRepHandDeliveryError ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void fetchSalesRepHandDeliveryDoctors({ force: true })}
+                  disabled={salesRepHandDeliveryLoading}
+                  className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
+                >
+                  Retry
+                </Button>
+              ) : (
+                <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+                  {salesRepHandDeliveryLoading ? "Updating…" : "Auto-updating"}
+                </span>
+              )}
             </div>
           </div>
 
@@ -32721,19 +32829,23 @@ function MainApp() {
 			                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
 			                            {adminDashboardPeriodLabel}
 			                          </span>
-			                          <Button
-			                            type="button"
-			                            variant="outline"
-			                            size="sm"
-			                            className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
-			                            onClick={() => void refreshSalesBySalesRepSummary()}
-			                            disabled={salesRepSalesSummaryLoading}
-			                            aria-busy={salesRepSalesSummaryLoading}
-			                            title="Refresh"
-			                          >
-                              <RefreshActionIcon spinning={salesRepSalesSummaryLoading} />
-			                            {salesRepSalesSummaryLoading ? "Refreshing…" : "Refresh"}
-			                          </Button>
+			                          {salesRepSalesSummaryError ? (
+			                            <Button
+			                              type="button"
+			                              variant="outline"
+			                              size="sm"
+			                              className="header-home-button squircle-sm bg-white text-slate-900"
+			                              onClick={() => void refreshSalesBySalesRepSummary({ force: true })}
+			                              disabled={salesRepSalesSummaryLoading}
+			                              aria-busy={salesRepSalesSummaryLoading}
+			                            >
+			                              Retry
+			                            </Button>
+			                          ) : (
+			                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
+			                              {salesRepSalesSummaryLoading ? "Updating…" : "Auto-updating"}
+			                            </span>
+			                          )}
 			                        </div>
 			                        <div className="flex flex-wrap items-center justify-end gap-2">
 			                          <Button
@@ -32779,7 +32891,7 @@ function MainApp() {
 		                    </div>
 		                  ) : salesRepSalesSummaryLastFetchedAt === null ? (
 		                    <div className="px-4 py-3 text-sm mb-3 text-slate-500">
-		                      Click Refresh to load sales.
+		                      Sales load automatically when this view is available.
 		                    </div>
 		                  ) : salesRepSalesSummary.length === 0 ? (
 		                    <div className="px-4 py-3 text-sm text-slate-500">
@@ -35124,18 +35236,22 @@ function MainApp() {
 	                        </p>
 	                      </div>
                         </button>
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        size="sm"
-	                        onClick={() => void fetchAdminHandDeliveryUsers({ force: true })}
-	                        disabled={adminHandDeliveryLoading}
-	                        className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0 gap-2"
-	                        title="Refresh hand delivery users"
-	                      >
-	                        <RefreshActionIcon spinning={adminHandDeliveryLoading} />
-	                        {adminHandDeliveryLoading ? "Refreshing…" : "Refresh"}
-	                      </Button>
+	                      {adminHandDeliveryError ? (
+	                        <Button
+	                          type="button"
+	                          variant="outline"
+	                          size="sm"
+	                          onClick={() => void fetchAdminHandDeliveryUsers({ force: true })}
+	                          disabled={adminHandDeliveryLoading}
+	                          className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
+	                        >
+	                          Retry
+	                        </Button>
+	                      ) : (
+	                        <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+	                          {adminHandDeliveryLoading ? "Updating…" : "Auto-updating"}
+	                        </span>
+	                      )}
 	                    </div>
                       {adminHandDeliverySectionOpen && (
                         <div id="admin-hand-delivery-structure-panel">
@@ -35728,21 +35844,25 @@ function MainApp() {
 		                        </p>
 		                      </div>
 		                      <div className="flex-shrink-0">
-			                        <Button
-			                          type="button"
-			                          variant="outline"
-			                          size="sm"
-			                          onClick={() => {
-			                            void fetchMissingCertificates({ force: true });
-			                            void fetchCertificateProducts({ force: true });
-			                          }}
-			                          disabled={missingCertificatesLoading || certificateProductsLoading}
-			                          className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
-			                          title="Refresh certificates"
-			                        >
-			                          <RefreshActionIcon spinning={missingCertificatesLoading || certificateProductsLoading} />
-			                          {missingCertificatesLoading || certificateProductsLoading ? "Refreshing…" : "Refresh"}
-			                        </Button>
+			                        {missingCertificatesError || certificateProductsError ? (
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="sm"
+			                            onClick={() => {
+			                              void fetchMissingCertificates({ force: true });
+			                              void fetchCertificateProducts({ force: true });
+			                            }}
+			                            disabled={missingCertificatesLoading || certificateProductsLoading}
+			                            className="header-home-button squircle-sm bg-white text-slate-900"
+			                          >
+			                            Retry
+			                          </Button>
+			                        ) : (
+			                          <span className="text-xs font-medium text-slate-500" aria-live="polite">
+			                            {missingCertificatesLoading || certificateProductsLoading ? "Updating…" : "Auto-updating"}
+			                          </span>
+			                        )}
 		                      </div>
 		                    </div>
 		
@@ -36228,19 +36348,23 @@ function MainApp() {
                                       >
 						                        {adminDashboardPeriodLabel}
 						                      </button>
-							                      <Button
-							                        type="button"
-							                        variant="outline"
-							                        size="sm"
-							                        className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1 gap-2"
-							                        onClick={refreshAdminDashboardReports}
-							                        disabled={adminDashboardRefreshing}
-							                        aria-busy={adminDashboardRefreshing}
-							                        title="Refresh"
-							                      >
-                                  <RefreshActionIcon spinning={adminDashboardRefreshing} />
-							                        {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
-							                      </Button>
+							                      {salesRepSalesSummaryError || adminTaxesByStateError || adminProductsCommissionError ? (
+							                        <Button
+							                          type="button"
+							                          variant="outline"
+							                          size="sm"
+							                          className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1"
+							                          onClick={refreshAdminDashboardReports}
+							                          disabled={adminDashboardRefreshing}
+							                          aria-busy={adminDashboardRefreshing}
+							                        >
+							                          Retry
+							                        </Button>
+							                      ) : (
+							                        <span className="order-2 sm:order-1 text-xs font-medium text-slate-500" aria-live="polite">
+							                          {adminDashboardRefreshing ? "Updating…" : "Auto-updating"}
+							                        </span>
+							                      )}
 						                    </div>
 						                  </div>
 						                </div>
@@ -36318,7 +36442,7 @@ function MainApp() {
                   </div>
                 ) : salesRepSalesSummaryLastFetchedAt === null ? (
                   <div className="px-4 py-3 text-sm mb-3 text-slate-500">
-                    Click Refresh to load sales.
+                    Sales load automatically when this view is available.
                   </div>
 	                ) : salesRepSalesSummary.length === 0 ? (
 	                  <div className="px-4 py-3 text-sm text-slate-500">
@@ -37824,23 +37948,27 @@ function MainApp() {
                           Live orders grouped by your physicians.
                         </p>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void fetchSalesTrackingOrders({ force: true }).catch((error) => {
-                            console.debug("[Sales Tracking] Manual refresh skipped", error);
-                          });
-                        }}
-                        disabled={salesTrackingLoading || salesTrackingRefreshing}
-                        className="sales-metric-refresh-button header-home-button squircle-sm bg-white text-slate-900 gap-2"
-                        title="Refresh your sales data"
-                      >
-                        <RefreshActionIcon spinning={salesTrackingLoading || salesTrackingRefreshing} />
-                        {salesTrackingLoading || salesTrackingRefreshing ? "Refreshing…" : "Refresh"}
-                      </Button>
+                      {salesTrackingError ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void fetchSalesTrackingOrders({ force: true }).catch((error) => {
+                              console.debug("[Sales Tracking] Retry skipped", error);
+                            });
+                          }}
+                          disabled={salesTrackingLoading || salesTrackingRefreshing}
+                          className="sales-metric-refresh-button header-home-button squircle-sm bg-white text-slate-900"
+                        >
+                          Retry
+                        </Button>
+                      ) : (
+                        <span className="sales-metric-refresh-button text-xs font-medium text-slate-500" aria-live="polite">
+                          {salesTrackingLoading || salesTrackingRefreshing ? "Updating…" : "Auto-updating"}
+                        </span>
+                      )}
                     </div>
                     <div className="sales-metric-header-bottom">
                       <div className="sales-metric-controls">
@@ -38264,22 +38392,28 @@ function MainApp() {
                               <Plus className="h-4 w-4" />
                               Add
                             </Button>
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        size="sm"
-	                        onClick={(e) => {
-	                          e.stopPropagation();
-	                          void tracedRefreshReferralData("sales-rep-manual-refresh", {
-	                            showLoading: true,
-	                          });
-	                        }}
-	                        disabled={referralDataLoading}
-	                        className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
-	                      >
-	                        <RefreshActionIcon spinning={referralDataLoading} />
-	                        {referralDataLoading ? "Refreshing…" : "Refresh"}
-	                      </Button>
+	                      {referralDataError ? (
+	                        <Button
+	                          type="button"
+	                          variant="outline"
+	                          size="sm"
+	                          onClick={(e) => {
+	                            e.stopPropagation();
+	                            void tracedRefreshReferralData("sales-rep-retry", {
+	                              showLoading: true,
+	                              force: true,
+	                            });
+	                          }}
+	                          disabled={referralDataLoading}
+	                          className="header-home-button squircle-sm bg-white text-slate-900"
+	                        >
+	                          Retry
+	                        </Button>
+	                      ) : (
+	                        <span className="text-xs font-medium text-slate-500" aria-live="polite">
+	                          {referralDataLoading ? "Updating…" : "Auto-updating"}
+	                        </span>
+	                      )}
                           </div>
                         </div>
                         <div className="active-prospects-filter-layout">
@@ -39035,22 +39169,28 @@ function MainApp() {
 	                          {filteredSalesRepReferrals.length} Referral
 	                          {filteredSalesRepReferrals.length === 1 ? "" : "s"}
 	                        </h4>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void tracedRefreshReferralData("sales-rep-manual-refresh", {
-                                showLoading: true,
-                              });
-                            }}
-                            disabled={referralDataLoading}
-                            className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
-                          >
-                            <RefreshActionIcon spinning={referralDataLoading} />
-                            {referralDataLoading ? "Refreshing…" : "Refresh"}
-                          </Button>
+                          {referralDataError ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void tracedRefreshReferralData("sales-rep-retry", {
+                                  showLoading: true,
+                                  force: true,
+                                });
+                              }}
+                              disabled={referralDataLoading}
+                              className="header-home-button squircle-sm bg-white text-slate-900"
+                            >
+                              Retry
+                            </Button>
+                          ) : (
+                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
+                              {referralDataLoading ? "Updating…" : "Auto-updating"}
+                            </span>
+                          )}
 	                      </div>
 	                      <p className="text-sm text-slate-500 referrals-subtitle">
 	                        Physicians referred to you by your existing clients.
@@ -40006,6 +40146,7 @@ function MainApp() {
           : {}),
       }}
     >
+      <AppDataEventsBridge enabled={Boolean(user)} />
       {isDelegateThemeActive && (
         <div
           className="delegate-session-background-layer"
@@ -40520,18 +40661,22 @@ function MainApp() {
                             >
                               View All
                             </a>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
-                              onClick={handleRefreshNews}
-                              disabled={peptideNewsLoading}
-                              title="Refresh news"
-                            >
-                              <RefreshActionIcon spinning={peptideNewsLoading} />
-                              {peptideNewsLoading ? "Refreshing…" : "Refresh"}
-                            </Button>
+                            {peptideNewsError ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="header-home-button squircle-sm bg-white text-slate-900"
+                                onClick={handleRefreshNews}
+                                disabled={peptideNewsLoading}
+                              >
+                                Retry
+                              </Button>
+                            ) : (
+                              <span className="text-xs font-medium text-slate-500" aria-live="polite">
+                                {peptideNewsLoading ? "Updating…" : "Auto-updating"}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 text-sm text-gray-700 leading-relaxed">
@@ -40755,17 +40900,22 @@ function MainApp() {
 	                                )}
 	                            </div>
 	                            <div className="flex flex-col items-end gap-1">
-	                              <Button
-	                                type="button"
-	                                variant="outline"
-	                                size="sm"
-	                                className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
-	                                onClick={() => void refreshPeptideForum({ force: true })}
-	                                disabled={peptideForumLoading}
-	                              >
-	                                <RefreshActionIcon spinning={peptideForumLoading} />
-	                                {peptideForumLoading ? "Refreshing…" : "Refresh"}
-	                              </Button>
+	                              {peptideForumError ? (
+	                                <Button
+	                                  type="button"
+	                                  variant="outline"
+	                                  size="sm"
+	                                  className="header-home-button squircle-sm bg-white text-slate-900"
+	                                  onClick={() => void refreshPeptideForum({ force: true })}
+	                                  disabled={peptideForumLoading}
+	                                >
+	                                  Retry
+	                                </Button>
+	                              ) : (
+	                                <span className="text-xs font-medium text-slate-500" aria-live="polite">
+	                                  {peptideForumLoading ? "Updating…" : "Auto-updating"}
+	                                </span>
+	                              )}
 	                            </div>
 	                          </div>
 

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from ..database import mysql_client
 from ..integrations import ups_tracking
 from ..repositories import order_repository
-from . import background_job_supervisor, shipping_notification_service
+from . import background_job_supervisor, shipping_notification_service, resource_version_service
 
 logger = logging.getLogger(__name__)
 _JOB_NAME = "upsStatusSync"
@@ -761,6 +761,11 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
             "stoppedEarly": stopped_early,
             "maxRuntimeSeconds": int(max_runtime),
         }
+        if updated > 0:
+            resource_version_service.bump_safe(
+                "orders",
+                metadata={"source": "ups.sync", "updated": updated},
+            )
         _STATE["lastFinishedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         _STATE["lastResult"] = result
         logger.info("[ups-status-sync] finished", extra=result)

@@ -7,11 +7,15 @@ from flask import Blueprint, g, request, send_file
 
 from ..middleware.auth import require_auth
 from ..repositories import referral_code_repository, referral_repository, sales_prospect_repository, user_repository, sales_rep_repository
-from ..services import referral_service, auth_service, sales_prospect_quote_service
+from ..services import referral_service, auth_service, sales_prospect_quote_service, resource_version_service
 from ..utils.http import handle_action
 
 blueprint = Blueprint("referrals", __name__, url_prefix="/api/referrals")
 _DASHBOARD_SCOPE_ALL_ROLES = ("admin",)
+
+
+def _bump_referrals(metadata: dict | None = None) -> None:
+    resource_version_service.bump_safe("referrals", metadata=metadata)
 
 
 def _normalize_role(value) -> str:
@@ -225,6 +229,7 @@ def submit_referral():
                 "notes": notes,
             }
         )
+        _bump_referrals({"source": "referrals.doctor.create", "referralId": referral.get("id")})
         return {"referral": referral}
 
     return handle_action(action, status=201)
@@ -295,6 +300,7 @@ def delete_doctor_referral(referral_id: str):
             sales_prospect_repository.delete_by_referral_id(referral_id)
         except Exception:
             pass
+        _bump_referrals({"source": "referrals.doctor.delete", "referralId": referral_id})
         return {"deleted": True}
 
     return handle_action(action)
@@ -633,6 +639,7 @@ def admin_create_code():
             }
         )
 
+        _bump_referrals({"source": "referrals.code.create", "referralId": referral_id})
         return {"code": record}
 
     return handle_action(action, status=201)
@@ -666,6 +673,7 @@ def admin_create_manual_prospect():
                 "officeCountry": payload.get("officeCountry"),
             }
         )
+        _bump_referrals({"source": "referrals.manual.create", "referralId": referral.get("id")})
         return {"referral": referral}
 
     return handle_action(action, status=201)
@@ -679,6 +687,7 @@ def admin_delete_manual_prospect(referral_id: str):
         user = _ensure_user()
         _require_sales_rep(user)
         referral_service.delete_manual_prospect(referral_id, user["id"])
+        _bump_referrals({"source": "referrals.manual.delete", "referralId": referral_id})
         return {"status": "deleted"}
 
     return handle_action(action)
@@ -706,6 +715,7 @@ def admin_update_referral(referral_id: str):
         }
         sales_rep_id = user.get("salesRepId") or user.get("id")
         referral = referral_service.update_referral_for_sales_rep(referral_id, str(sales_rep_id), updates)
+        _bump_referrals({"source": "referrals.admin.update", "referralId": referral_id})
         return {
             "referral": referral,
             "statuses": referral_service.get_referral_status_choices(),
@@ -772,6 +782,7 @@ def admin_upsert_sales_prospect(identifier: str):
             else None,
             office_address_updates=office_address_updates if office_address_updates else None,
         )
+        _bump_referrals({"source": "referrals.prospect.upsert", "identifier": identifier})
         return {"prospect": prospect}
 
     return handle_action(action)
@@ -796,6 +807,7 @@ def admin_delete_sales_prospect(identifier: str):
             doctor_id=request.args.get("doctorId"),
             is_admin=is_admin,
         )
+        _bump_referrals({"source": "referrals.prospect.delete", "identifier": identifier})
         return result
 
     return handle_action(action)
@@ -814,6 +826,7 @@ def admin_reseller_permit(identifier: str):
                 user["id"],
                 identifier,
             )
+            _bump_referrals({"source": "referrals.reseller_permit.delete", "identifier": identifier})
             return {"prospect": prospect}
 
         if request.method == "POST":
@@ -829,6 +842,7 @@ def admin_reseller_permit(identifier: str):
                 filename=filename,
                 content=content,
             )
+            _bump_referrals({"source": "referrals.reseller_permit.upload", "identifier": identifier})
             return {"prospect": prospect}
 
         prospect = referral_service.get_sales_prospect_for_sales_rep(user["id"], identifier)
@@ -876,12 +890,14 @@ def admin_import_prospect_quote(identifier: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        return sales_prospect_quote_service.import_cart_to_prospect_quote(
+        result = sales_prospect_quote_service.import_cart_to_prospect_quote(
             identifier=identifier,
             user=user,
             query=request.args.to_dict(flat=True),
             payload=payload,
         )
+        _bump_referrals({"source": "referrals.quote.import", "identifier": identifier})
+        return result
 
     return handle_action(action)
 
@@ -895,13 +911,15 @@ def admin_update_prospect_quote(identifier: str, quote_id: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        return sales_prospect_quote_service.update_prospect_quote(
+        result = sales_prospect_quote_service.update_prospect_quote(
             identifier=identifier,
             quote_id=quote_id,
             user=user,
             query=request.args.to_dict(flat=True),
             payload=payload,
         )
+        _bump_referrals({"source": "referrals.quote.update", "identifier": identifier, "quoteId": quote_id})
+        return result
 
     return handle_action(action)
 
@@ -913,12 +931,14 @@ def admin_delete_prospect_quote(identifier: str, quote_id: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        return sales_prospect_quote_service.delete_prospect_quote(
+        result = sales_prospect_quote_service.delete_prospect_quote(
             identifier=identifier,
             quote_id=quote_id,
             user=user,
             query=request.args.to_dict(flat=True),
         )
+        _bump_referrals({"source": "referrals.quote.delete", "identifier": identifier, "quoteId": quote_id})
+        return result
 
     return handle_action(action)
 
@@ -974,6 +994,7 @@ def admin_add_credit():
             created_by=user.get("email") or user["id"],
             referral_id=referral_id,
         )
+        _bump_referrals({"source": "referrals.credit.add", "doctorId": doctor_id, "referralId": referral_id})
         return result
 
     return handle_action(action, status=201)
@@ -999,8 +1020,10 @@ def admin_update_code(code_id):
         next_status = status or record.get("status")
         if next_status in {"revoked", "retired"}:
             rotated = referral_service.regenerate_sales_rep_code(user["id"], created_by=user.get("email") or user["id"])
+            _bump_referrals({"source": "referrals.code.rotate", "codeId": code_id})
             return {"code": rotated}
 
+        _bump_referrals({"source": "referrals.code.update", "codeId": code_id})
         return {"code": record}
 
     return handle_action(action)

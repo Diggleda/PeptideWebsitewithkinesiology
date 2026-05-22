@@ -177,6 +177,47 @@ test('brochure CSV scope resolves Woo product IDs through SKU or name matching',
   }
 });
 
+test('brochure CSV image hydration resolves Woo images for SKU-matched rows', async () => {
+  const rows = __test__.normalizeBrochureCsvRows([
+    'Product Name,Product SKU,Product Description,Product Information,Sync Status',
+    'BPC-157/TB500 10mg/10mg Nasal,Phych-BPC157-10mg-TB500-10mgN,Description,Benefits,UPSERTED',
+  ].join('\n'));
+  const [scopedRow] = rows;
+  const previousFetchCatalog = wooCommerceClient.fetchCatalog;
+  const calls = [];
+  wooCommerceClient.fetchCatalog = async (endpoint) => {
+    calls.push(endpoint);
+    if (endpoint === 'products') {
+      return [{
+        id: 1023,
+        type: 'variable',
+        sku: 'parent-bpc-tb',
+        name: 'Parent product name that does not match directly',
+        images: [{ src: 'https://example.test/parent.jpg' }],
+      }];
+    }
+    if (endpoint === 'products/1023/variations') {
+      return [{
+        id: 1071,
+        sku: 'Phych-BPC157-10mg-TB500-10mgN',
+        name: 'BPC-157 / TB-500 N',
+        image: { src: 'https://example.test/variation.jpg' },
+      }];
+    }
+    return [];
+  };
+  try {
+    const hydratedRows = await __test__.hydrateBrochureCsvRowsWithCatalogImages([scopedRow]);
+    assert.equal(hydratedRows.length, 1);
+    assert.equal(hydratedRows[0].image_url, 'https://example.test/variation.jpg');
+    assert.equal(hydratedRows[0].product_id, 1023);
+    assert.equal(hydratedRows[0].variation_id, 1071);
+    assert.deepEqual(calls, ['products', 'products/1023/variations']);
+  } finally {
+    wooCommerceClient.fetchCatalog = previousFetchCatalog;
+  }
+});
+
 test('local brochure fallback DTO remains brochure-safe', () => {
   const product = {
     id: 1023,

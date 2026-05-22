@@ -75,6 +75,15 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("last_ip_hash CHAR(64) NULL", schema_sql)
         self.assertIn("KEY idx_patient_links_type (link_type)", schema_sql)
 
+    def test_resource_versions_schema_exists(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS resource_versions", schema_sql)
+        self.assertIn("resource_name VARCHAR(64) NOT NULL PRIMARY KEY", schema_sql)
+        self.assertIn("version BIGINT UNSIGNED NOT NULL DEFAULT 0", schema_sql)
+        self.assertIn("metadata_json JSON NULL", schema_sql)
+        self.assertIn("KEY idx_resource_versions_updated (updated_at)", schema_sql)
+
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []
 

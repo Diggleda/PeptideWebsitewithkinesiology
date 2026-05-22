@@ -12,6 +12,7 @@ from ..utils.http import service_error as _service_error
 from . import get_config
 from . import peptide_product_information_service
 from . import peptide_forum_service
+from . import resource_version_service
 
 
 def _sanitize_string(value: str, max_length: int = 190) -> str:
@@ -140,6 +141,11 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
 
         upserted += 1
 
+    if upserted > 0:
+        resource_version_service.bump_many_safe(
+            ("users", "referrals", "settings"),
+            metadata={"source": "google-sheets.sales-reps", "upserted": upserted},
+        )
     return {"success": True, "upserted": upserted, "skipped": skipped, "total": len(rows)}
 
 def sync_peptide_forum(payload: Dict, headers: Dict[str, str]) -> Dict:
@@ -153,6 +159,7 @@ def sync_peptide_forum(payload: Dict, headers: Dict[str, str]) -> Dict:
 
     items: List[Dict] = payload.get("items") if isinstance(payload.get("items"), list) else []
     result = peptide_forum_service.replace_from_webhook(items)
+    resource_version_service.bump_safe("forum", metadata={"source": "google-sheets.forum", "items": len(items)})
     return {"success": True, **result}
 
 
@@ -182,6 +189,10 @@ def sync_peptide_products(payload: Dict, headers: Dict[str, str]) -> Dict | tupl
     result = peptide_product_information_service.replace_from_webhook(products, full_sync=full_sync)
     if not result.get("ok", True):
         return {"success": False, **result}, 422
+    resource_version_service.bump_safe(
+        "peptide-products",
+        metadata={"source": "google-sheets.peptide-products", "products": len(products)},
+    )
     return {"success": True, **result}
 
 

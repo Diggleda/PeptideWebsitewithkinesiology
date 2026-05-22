@@ -389,6 +389,15 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS resource_versions (
+        resource_name VARCHAR(64) NOT NULL PRIMARY KEY,
+        version BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        metadata_json JSON NULL,
+        KEY idx_resource_versions_updated (updated_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS usage_tracking (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         event VARCHAR(128) NOT NULL,
