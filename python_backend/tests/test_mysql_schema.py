@@ -94,13 +94,14 @@ class MysqlSchemaTests(unittest.TestCase):
 
         self.assertIn("CREATE TABLE IF NOT EXISTS legal_acceptances", schema_sql)
         self.assertIn("user_id VARCHAR(64) NOT NULL", schema_sql)
-        self.assertIn("document_key VARCHAR(64) NOT NULL", schema_sql)
-        self.assertIn("document_version VARCHAR(64) NOT NULL", schema_sql)
-        self.assertIn("accepted_at DATETIME NOT NULL", schema_sql)
-        self.assertIn("acceptance_context VARCHAR(64) NULL", schema_sql)
-        self.assertIn("ip_hash CHAR(64) NULL", schema_sql)
-        self.assertIn("user_agent_hash CHAR(64) NULL", schema_sql)
-        self.assertIn("KEY idx_legal_acceptances_user_accepted (user_id, accepted_at)", schema_sql)
+        self.assertIn("acceptances_json JSON NOT NULL", schema_sql)
+        self.assertIn("latest_terms_version VARCHAR(64) NULL", schema_sql)
+        self.assertIn("latest_shipping_policy_version VARCHAR(64) NULL", schema_sql)
+        self.assertIn("latest_privacy_policy_version VARCHAR(64) NULL", schema_sql)
+        self.assertIn("latest_accepted_at DATETIME NULL", schema_sql)
+        self.assertIn("UNIQUE KEY uniq_legal_acceptances_user (user_id)", schema_sql)
+        self.assertIn("KEY idx_legal_acceptances_latest_accepted (latest_accepted_at)", schema_sql)
+        self.assertNotIn("document_key VARCHAR(64) NOT NULL", schema_sql)
 
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []

@@ -40,6 +40,30 @@ const normalizeLegalVersion = (value) => {
   return normalized ? normalized.slice(0, 64) : null;
 };
 
+const parseLegalAcceptanceHistory = (value) => {
+  let parsed = value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      parsed = JSON.parse(value);
+    } catch (_error) {
+      parsed = {};
+    }
+  }
+  const events = Array.isArray(parsed?.events) ? parsed.events : [];
+  return {
+    schemaVersion: 1,
+    events,
+  };
+};
+
+const latestLegalAcceptanceColumn = (documentKey) => {
+  const key = String(documentKey || '').trim().toLowerCase();
+  if (key === 'terms') return 'latestTermsVersion';
+  if (key === 'shipping' || key === 'shipping_policy') return 'latestShippingPolicyVersion';
+  if (key === 'privacy' || key === 'privacy_policy') return 'latestPrivacyPolicyVersion';
+  return null;
+};
+
 const toMysqlDateTime = (value) => {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -758,37 +782,75 @@ const recordLegalAcceptances = async ({
     return 0;
   }
 
-  let inserted = 0;
+  const normalizedDocuments = [];
+  const latestVersions = {
+    latestTermsVersion: null,
+    latestShippingPolicyVersion: null,
+    latestPrivacyPolicyVersion: null,
+  };
   for (const document of documents) {
     const documentKey = normalizeOptionalString(document?.document_key || document?.key)?.slice(0, 64);
     const documentVersion = normalizeLegalVersion(document?.document_version || document?.version);
     if (!documentKey || !documentVersion) {
       continue;
     }
-    await mysqlClient.execute(
-      `
-        INSERT INTO legal_acceptances (
-          id, user_id, document_key, document_version, accepted_at,
-          acceptance_context, ip_hash, user_agent_hash
-        ) VALUES (
-          :id, :userId, :documentKey, :documentVersion, :acceptedAt,
-          :acceptanceContext, :ipHash, :userAgentHash
-        )
-      `,
-      {
-        id: crypto.randomBytes(16).toString('hex'),
-        userId: normalizedUserId,
-        documentKey,
-        documentVersion,
-        acceptedAt: acceptedAtValue,
-        acceptanceContext: normalizeOptionalString(acceptanceContext)?.slice(0, 64) || null,
-        ipHash: normalizeOptionalString(ipHash)?.slice(0, 64) || null,
-        userAgentHash: normalizeOptionalString(userAgentHash)?.slice(0, 64) || null,
-      },
-    );
-    inserted += 1;
+    normalizedDocuments.push({ documentKey, documentVersion });
+    const latestColumn = latestLegalAcceptanceColumn(documentKey);
+    if (latestColumn) {
+      latestVersions[latestColumn] = documentVersion;
+    }
   }
-  return inserted;
+  if (normalizedDocuments.length === 0) {
+    return 0;
+  }
+
+  const existing = await mysqlClient.fetchOne(
+    `
+      SELECT acceptances_json
+      FROM legal_acceptances
+      WHERE user_id = :userId
+      LIMIT 1
+    `,
+    { userId: normalizedUserId },
+  );
+  const history = parseLegalAcceptanceHistory(existing?.acceptances_json);
+  history.events.push({
+    acceptedAt: acceptedAtValue,
+    acceptanceContext: normalizeOptionalString(acceptanceContext)?.slice(0, 64) || null,
+    ipHash: normalizeOptionalString(ipHash)?.slice(0, 64) || null,
+    userAgentHash: normalizeOptionalString(userAgentHash)?.slice(0, 64) || null,
+    documents: normalizedDocuments,
+  });
+
+  await mysqlClient.execute(
+    `
+      INSERT INTO legal_acceptances (
+        id, user_id, acceptances_json,
+        latest_terms_version, latest_shipping_policy_version,
+        latest_privacy_policy_version, latest_accepted_at
+      ) VALUES (
+        :id, :userId, :acceptancesJson,
+        :latestTermsVersion, :latestShippingPolicyVersion,
+        :latestPrivacyPolicyVersion, :latestAcceptedAt
+      )
+      ON DUPLICATE KEY UPDATE
+        acceptances_json = VALUES(acceptances_json),
+        latest_terms_version = COALESCE(VALUES(latest_terms_version), latest_terms_version),
+        latest_shipping_policy_version = COALESCE(VALUES(latest_shipping_policy_version), latest_shipping_policy_version),
+        latest_privacy_policy_version = COALESCE(VALUES(latest_privacy_policy_version), latest_privacy_policy_version),
+        latest_accepted_at = VALUES(latest_accepted_at)
+    `,
+    {
+      id: crypto.randomBytes(16).toString('hex'),
+      userId: normalizedUserId,
+      acceptancesJson: JSON.stringify(history),
+      latestTermsVersion: latestVersions.latestTermsVersion,
+      latestShippingPolicyVersion: latestVersions.latestShippingPolicyVersion,
+      latestPrivacyPolicyVersion: latestVersions.latestPrivacyPolicyVersion,
+      latestAcceptedAt: acceptedAtValue,
+    },
+  );
+  return normalizedDocuments.length;
 };
 
 module.exports = {

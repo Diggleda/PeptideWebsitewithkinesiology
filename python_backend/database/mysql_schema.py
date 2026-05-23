@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 
@@ -135,16 +136,18 @@ CREATE_TABLE_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS legal_acceptances (
         id VARCHAR(32) PRIMARY KEY,
         user_id VARCHAR(64) NOT NULL,
-        document_key VARCHAR(64) NOT NULL,
-        document_version VARCHAR(64) NOT NULL,
-        accepted_at DATETIME NOT NULL,
-        acceptance_context VARCHAR(64) NULL,
-        ip_hash CHAR(64) NULL,
-        user_agent_hash CHAR(64) NULL,
+        acceptances_json JSON NOT NULL,
+        latest_terms_version VARCHAR(64) NULL,
+        latest_shipping_policy_version VARCHAR(64) NULL,
+        latest_privacy_policy_version VARCHAR(64) NULL,
+        latest_accepted_at DATETIME NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        KEY idx_legal_acceptances_user_accepted (user_id, accepted_at),
-        KEY idx_legal_acceptances_document (document_key, document_version),
-        KEY idx_legal_acceptances_context (acceptance_context)
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_legal_acceptances_user (user_id),
+        KEY idx_legal_acceptances_latest_accepted (latest_accepted_at),
+        KEY idx_legal_acceptances_terms_version (latest_terms_version),
+        KEY idx_legal_acceptances_shipping_version (latest_shipping_policy_version),
+        KEY idx_legal_acceptances_privacy_version (latest_privacy_policy_version)
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -748,6 +751,204 @@ def ensure_schema() -> None:
         except Exception:
             pass
 
+    def _create_legal_acceptances_json_table(table: str) -> None:
+        mysql_client.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {table} (
+                id VARCHAR(32) PRIMARY KEY,
+                user_id VARCHAR(64) NOT NULL,
+                acceptances_json JSON NOT NULL,
+                latest_terms_version VARCHAR(64) NULL,
+                latest_shipping_policy_version VARCHAR(64) NULL,
+                latest_privacy_policy_version VARCHAR(64) NULL,
+                latest_accepted_at DATETIME NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_legal_acceptances_user (user_id),
+                KEY idx_legal_acceptances_latest_accepted (latest_accepted_at),
+                KEY idx_legal_acceptances_terms_version (latest_terms_version),
+                KEY idx_legal_acceptances_shipping_version (latest_shipping_policy_version),
+                KEY idx_legal_acceptances_privacy_version (latest_privacy_policy_version)
+            ) CHARACTER SET utf8mb4
+            """
+        )
+
+    def _legal_acceptance_latest_column(document_key: str) -> Optional[str]:
+        key = str(document_key or "").strip().lower()
+        if key == "terms":
+            return "latest_terms_version"
+        if key in {"shipping", "shipping_policy"}:
+            return "latest_shipping_policy_version"
+        if key in {"privacy", "privacy_policy"}:
+            return "latest_privacy_policy_version"
+        return None
+
+    def _legal_acceptance_datetime(value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+        text = str(value).strip()
+        return text[:19] if text else None
+
+    def _ensure_legal_acceptances_json_schema() -> None:
+        try:
+            if not _table_exists("legal_acceptances"):
+                return
+            if not _column_exists("legal_acceptances", "acceptances_json"):
+                suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+                temp_table = "legal_acceptances_json_migration"
+                if _table_exists(temp_table):
+                    temp_table = f"{temp_table}_{suffix}"
+                backup_table = "legal_acceptance_events_legacy"
+                if _table_exists(backup_table):
+                    backup_table = f"{backup_table}_{suffix}"
+
+                _create_legal_acceptances_json_table(temp_table)
+                if _column_exists("legal_acceptances", "document_key"):
+                    rows = mysql_client.fetch_all(
+                        """
+                        SELECT user_id, document_key, document_version, accepted_at,
+                               acceptance_context, ip_hash, user_agent_hash, created_at
+                        FROM legal_acceptances
+                        ORDER BY user_id, accepted_at, created_at
+                        """
+                    )
+                    grouped: dict[str, dict[str, object]] = {}
+                    for row in rows:
+                        user_id = str(row.get("user_id") or "").strip()
+                        document_key = str(row.get("document_key") or "").strip()
+                        document_version = str(row.get("document_version") or "").strip()
+                        accepted_at = _legal_acceptance_datetime(row.get("accepted_at"))
+                        if not user_id or not document_key or not document_version or not accepted_at:
+                            continue
+
+                        user_entry = grouped.setdefault(
+                            user_id,
+                            {
+                                "events": [],
+                                "event_map": {},
+                                "latest_terms_version": None,
+                                "latest_shipping_policy_version": None,
+                                "latest_privacy_policy_version": None,
+                                "latest_accepted_at": None,
+                            },
+                        )
+                        event_key = (
+                            accepted_at,
+                            row.get("acceptance_context"),
+                            row.get("ip_hash"),
+                            row.get("user_agent_hash"),
+                        )
+                        event_map = user_entry["event_map"]
+                        assert isinstance(event_map, dict)
+                        if event_key not in event_map:
+                            event = {
+                                "acceptedAt": accepted_at,
+                                "acceptanceContext": row.get("acceptance_context"),
+                                "ipHash": row.get("ip_hash"),
+                                "userAgentHash": row.get("user_agent_hash"),
+                                "documents": [],
+                            }
+                            event_map[event_key] = event
+                            events = user_entry["events"]
+                            assert isinstance(events, list)
+                            events.append(event)
+                        event = event_map[event_key]
+                        assert isinstance(event, dict)
+                        documents = event["documents"]
+                        assert isinstance(documents, list)
+                        documents.append(
+                            {
+                                "documentKey": document_key,
+                                "documentVersion": document_version,
+                            }
+                        )
+
+                        latest_column = _legal_acceptance_latest_column(document_key)
+                        if latest_column and (
+                            not user_entry.get("latest_accepted_at")
+                            or accepted_at >= str(user_entry.get("latest_accepted_at"))
+                        ):
+                            user_entry[latest_column] = document_version
+                            user_entry["latest_accepted_at"] = accepted_at
+
+                    for user_id, user_entry in grouped.items():
+                        history = {
+                            "schemaVersion": 1,
+                            "events": user_entry.get("events") or [],
+                        }
+                        mysql_client.execute(
+                            f"""
+                            INSERT INTO {temp_table} (
+                                id, user_id, acceptances_json,
+                                latest_terms_version, latest_shipping_policy_version,
+                                latest_privacy_policy_version, latest_accepted_at
+                            ) VALUES (
+                                %(id)s, %(user_id)s, %(acceptances_json)s,
+                                %(latest_terms_version)s, %(latest_shipping_policy_version)s,
+                                %(latest_privacy_policy_version)s, %(latest_accepted_at)s
+                            )
+                            """,
+                            {
+                                "id": hashlib.md5(f"legal:{user_id}".encode("utf-8")).hexdigest(),
+                                "user_id": user_id,
+                                "acceptances_json": json.dumps(history, separators=(",", ":")),
+                                "latest_terms_version": user_entry.get("latest_terms_version"),
+                                "latest_shipping_policy_version": user_entry.get("latest_shipping_policy_version"),
+                                "latest_privacy_policy_version": user_entry.get("latest_privacy_policy_version"),
+                                "latest_accepted_at": user_entry.get("latest_accepted_at"),
+                            },
+                        )
+                mysql_client.execute(
+                    f"RENAME TABLE legal_acceptances TO {backup_table}, {temp_table} TO legal_acceptances"
+                )
+
+            if not _column_exists("legal_acceptances", "latest_terms_version"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD COLUMN latest_terms_version VARCHAR(64) NULL"
+                )
+            if not _column_exists("legal_acceptances", "latest_shipping_policy_version"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD COLUMN latest_shipping_policy_version VARCHAR(64) NULL"
+                )
+            if not _column_exists("legal_acceptances", "latest_privacy_policy_version"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD COLUMN latest_privacy_policy_version VARCHAR(64) NULL"
+                )
+            if not _column_exists("legal_acceptances", "latest_accepted_at"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD COLUMN latest_accepted_at DATETIME NULL"
+                )
+            if not _column_exists("legal_acceptances", "updated_at"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+                )
+            if not _index_exists("legal_acceptances", "uniq_legal_acceptances_user"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD UNIQUE KEY uniq_legal_acceptances_user (user_id)"
+                )
+            if not _index_exists("legal_acceptances", "idx_legal_acceptances_latest_accepted"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_latest_accepted (latest_accepted_at)"
+                )
+            if not _index_exists("legal_acceptances", "idx_legal_acceptances_terms_version"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_terms_version (latest_terms_version)"
+                )
+            if not _index_exists("legal_acceptances", "idx_legal_acceptances_shipping_version"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_shipping_version (latest_shipping_policy_version)"
+                )
+            if not _index_exists("legal_acceptances", "idx_legal_acceptances_privacy_version"):
+                mysql_client.execute(
+                    "ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_privacy_version (latest_privacy_policy_version)"
+                )
+        except Exception:
+            # Best effort; app startup should not fail because an older legal-audit table
+            # needs manual review before migration.
+            pass
+
     def _copy_legacy_ciphertext(table: str, base_column: str, legacy_column: str, *, placeholder: Optional[str] = None) -> None:
         if not _column_exists(table, legacy_column) or not _column_exists(table, base_column):
             return
@@ -768,6 +969,8 @@ def ensure_schema() -> None:
             )
         except Exception:
             pass
+
+    _ensure_legal_acceptances_json_schema()
 
     # Apply lightweight schema evolutions without breaking existing tables
     migrations = [

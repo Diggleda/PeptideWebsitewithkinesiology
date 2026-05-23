@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const mysqlClient = require('./mysqlClient');
 const { logger } = require('../config/logger');
 
@@ -79,16 +80,18 @@ const STATEMENTS = [
     CREATE TABLE IF NOT EXISTS legal_acceptances (
       id VARCHAR(32) PRIMARY KEY,
       user_id VARCHAR(64) NOT NULL,
-      document_key VARCHAR(64) NOT NULL,
-      document_version VARCHAR(64) NOT NULL,
-      accepted_at DATETIME NOT NULL,
-      acceptance_context VARCHAR(64) NULL,
-      ip_hash CHAR(64) NULL,
-      user_agent_hash CHAR(64) NULL,
+      acceptances_json JSON NOT NULL,
+      latest_terms_version VARCHAR(64) NULL,
+      latest_shipping_policy_version VARCHAR(64) NULL,
+      latest_privacy_policy_version VARCHAR(64) NULL,
+      latest_accepted_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_legal_acceptances_user_accepted (user_id, accepted_at),
-      INDEX idx_legal_acceptances_document (document_key, document_version),
-      INDEX idx_legal_acceptances_context (acceptance_context)
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_legal_acceptances_user (user_id),
+      INDEX idx_legal_acceptances_latest_accepted (latest_accepted_at),
+      INDEX idx_legal_acceptances_terms_version (latest_terms_version),
+      INDEX idx_legal_acceptances_shipping_version (latest_shipping_policy_version),
+      INDEX idx_legal_acceptances_privacy_version (latest_privacy_policy_version)
     ) CHARACTER SET utf8mb4
   `,
   `
@@ -473,6 +476,246 @@ const dropColumnIfExists = async (tableName, columnName) => {
       { err: error, table: tableName, column: columnName },
       'Failed to drop MySQL column',
     );
+  }
+};
+
+const tableExists = async (tableName) => {
+  const existing = await mysqlClient.fetchOne(
+    `
+      SELECT TABLE_NAME
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = :tableName
+      LIMIT 1
+    `,
+    { tableName },
+  );
+  return Boolean(existing);
+};
+
+const columnExists = async (tableName, columnName) => {
+  const existing = await mysqlClient.fetchOne(
+    `
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = :tableName
+        AND COLUMN_NAME = :columnName
+      LIMIT 1
+    `,
+    { tableName, columnName },
+  );
+  return Boolean(existing);
+};
+
+const createLegalAcceptancesJsonTable = async (tableName) => {
+  await mysqlClient.execute(
+    `
+      CREATE TABLE IF NOT EXISTS ${tableName} (
+        id VARCHAR(32) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        acceptances_json JSON NOT NULL,
+        latest_terms_version VARCHAR(64) NULL,
+        latest_shipping_policy_version VARCHAR(64) NULL,
+        latest_privacy_policy_version VARCHAR(64) NULL,
+        latest_accepted_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_legal_acceptances_user (user_id),
+        INDEX idx_legal_acceptances_latest_accepted (latest_accepted_at),
+        INDEX idx_legal_acceptances_terms_version (latest_terms_version),
+        INDEX idx_legal_acceptances_shipping_version (latest_shipping_policy_version),
+        INDEX idx_legal_acceptances_privacy_version (latest_privacy_policy_version)
+      ) CHARACTER SET utf8mb4
+    `,
+  );
+};
+
+const latestLegalAcceptanceColumn = (documentKey) => {
+  const key = String(documentKey || '').trim().toLowerCase();
+  if (key === 'terms') return 'latest_terms_version';
+  if (key === 'shipping' || key === 'shipping_policy') return 'latest_shipping_policy_version';
+  if (key === 'privacy' || key === 'privacy_policy') return 'latest_privacy_policy_version';
+  return null;
+};
+
+const formatLegalAcceptanceDateTime = (value) => {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 19).replace('T', ' ');
+  }
+  const text = String(value).trim();
+  return text ? text.slice(0, 19).replace('T', ' ') : null;
+};
+
+const ensureLegalAcceptancesSchema = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  try {
+    if (!(await tableExists('legal_acceptances'))) {
+      return;
+    }
+    if (!(await columnExists('legal_acceptances', 'acceptances_json'))) {
+      const suffix = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+      let tempTable = 'legal_acceptances_json_migration';
+      if (await tableExists(tempTable)) {
+        tempTable = `${tempTable}_${suffix}`;
+      }
+      let backupTable = 'legal_acceptance_events_legacy';
+      if (await tableExists(backupTable)) {
+        backupTable = `${backupTable}_${suffix}`;
+      }
+      await createLegalAcceptancesJsonTable(tempTable);
+
+      if (await columnExists('legal_acceptances', 'document_key')) {
+        const rows = await mysqlClient.fetchAll(
+          `
+            SELECT user_id, document_key, document_version, accepted_at,
+                   acceptance_context, ip_hash, user_agent_hash, created_at
+            FROM legal_acceptances
+            ORDER BY user_id, accepted_at, created_at
+          `,
+        );
+        const grouped = new Map();
+        for (const row of rows || []) {
+          const userId = String(row.user_id || '').trim();
+          const documentKey = String(row.document_key || '').trim();
+          const documentVersion = String(row.document_version || '').trim();
+          const acceptedAt = formatLegalAcceptanceDateTime(row.accepted_at);
+          if (!userId || !documentKey || !documentVersion || !acceptedAt) {
+            continue;
+          }
+          if (!grouped.has(userId)) {
+            grouped.set(userId, {
+              events: [],
+              eventMap: new Map(),
+              latest_terms_version: null,
+              latest_shipping_policy_version: null,
+              latest_privacy_policy_version: null,
+              latest_accepted_at: null,
+            });
+          }
+          const userEntry = grouped.get(userId);
+          const eventKey = JSON.stringify([
+            acceptedAt,
+            row.acceptance_context || null,
+            row.ip_hash || null,
+            row.user_agent_hash || null,
+          ]);
+          let event = userEntry.eventMap.get(eventKey);
+          if (!event) {
+            event = {
+              acceptedAt,
+              acceptanceContext: row.acceptance_context || null,
+              ipHash: row.ip_hash || null,
+              userAgentHash: row.user_agent_hash || null,
+              documents: [],
+            };
+            userEntry.eventMap.set(eventKey, event);
+            userEntry.events.push(event);
+          }
+          event.documents.push({ documentKey, documentVersion });
+
+          const latestColumn = latestLegalAcceptanceColumn(documentKey);
+          if (
+            latestColumn
+            && (!userEntry.latest_accepted_at || acceptedAt >= userEntry.latest_accepted_at)
+          ) {
+            userEntry[latestColumn] = documentVersion;
+            userEntry.latest_accepted_at = acceptedAt;
+          }
+        }
+
+        for (const [userId, userEntry] of grouped.entries()) {
+          await mysqlClient.execute(
+            `
+              INSERT INTO ${tempTable} (
+                id, user_id, acceptances_json,
+                latest_terms_version, latest_shipping_policy_version,
+                latest_privacy_policy_version, latest_accepted_at
+              ) VALUES (
+                :id, :userId, :acceptancesJson,
+                :latestTermsVersion, :latestShippingPolicyVersion,
+                :latestPrivacyPolicyVersion, :latestAcceptedAt
+              )
+            `,
+            {
+              id: crypto.createHash('md5').update(`legal:${userId}`).digest('hex'),
+              userId,
+              acceptancesJson: JSON.stringify({
+                schemaVersion: 1,
+                events: userEntry.events,
+              }),
+              latestTermsVersion: userEntry.latest_terms_version,
+              latestShippingPolicyVersion: userEntry.latest_shipping_policy_version,
+              latestPrivacyPolicyVersion: userEntry.latest_privacy_policy_version,
+              latestAcceptedAt: userEntry.latest_accepted_at,
+            },
+          );
+        }
+      }
+      await mysqlClient.execute(
+        `RENAME TABLE legal_acceptances TO ${backupTable}, ${tempTable} TO legal_acceptances`,
+      );
+      logger.info({ backupTable }, 'MySQL legal_acceptances migrated to per-user JSON storage');
+    }
+
+    const columns = [
+      {
+        name: 'latest_terms_version',
+        ddl: 'ALTER TABLE legal_acceptances ADD COLUMN latest_terms_version VARCHAR(64) NULL',
+      },
+      {
+        name: 'latest_shipping_policy_version',
+        ddl: 'ALTER TABLE legal_acceptances ADD COLUMN latest_shipping_policy_version VARCHAR(64) NULL',
+      },
+      {
+        name: 'latest_privacy_policy_version',
+        ddl: 'ALTER TABLE legal_acceptances ADD COLUMN latest_privacy_policy_version VARCHAR(64) NULL',
+      },
+      {
+        name: 'latest_accepted_at',
+        ddl: 'ALTER TABLE legal_acceptances ADD COLUMN latest_accepted_at DATETIME NULL',
+      },
+      {
+        name: 'updated_at',
+        ddl: 'ALTER TABLE legal_acceptances ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+      },
+    ];
+    for (const column of columns) {
+      if (!(await columnExists('legal_acceptances', column.name))) {
+        await mysqlClient.execute(column.ddl);
+      }
+    }
+
+    await ensureIndex(
+      'legal_acceptances',
+      'uniq_legal_acceptances_user',
+      'ALTER TABLE legal_acceptances ADD UNIQUE KEY uniq_legal_acceptances_user (user_id)',
+    );
+    await ensureIndex(
+      'legal_acceptances',
+      'idx_legal_acceptances_latest_accepted',
+      'ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_latest_accepted (latest_accepted_at)',
+    );
+    await ensureIndex(
+      'legal_acceptances',
+      'idx_legal_acceptances_terms_version',
+      'ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_terms_version (latest_terms_version)',
+    );
+    await ensureIndex(
+      'legal_acceptances',
+      'idx_legal_acceptances_shipping_version',
+      'ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_shipping_version (latest_shipping_policy_version)',
+    );
+    await ensureIndex(
+      'legal_acceptances',
+      'idx_legal_acceptances_privacy_version',
+      'ALTER TABLE legal_acceptances ADD INDEX idx_legal_acceptances_privacy_version (latest_privacy_policy_version)',
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to ensure MySQL legal_acceptances JSON schema');
   }
 };
 
@@ -1732,6 +1975,7 @@ const ensureSchema = async () => {
   for (const statement of STATEMENTS) {
     await mysqlClient.execute(statement);
   }
+  await ensureLegalAcceptancesSchema();
   await ensureUserColumns();
   await ensureSalesRepColumns();
   await ensureOrderColumns();

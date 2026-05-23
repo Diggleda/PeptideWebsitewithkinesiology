@@ -15178,7 +15178,7 @@ textarea#bug-report.bug-report-textarea:focus-visible {
 .marketing-landing__capability:hover .marketing-landing__capability-copy p,
 .marketing-landing__capability:focus-visible .marketing-landing__capability-copy p,
 .marketing-landing__capability.is-active .marketing-landing__capability-copy p {
-  max-height: 4.5rem;
+  max-height: none;
   margin-top: 0.65rem;
   opacity: 1;
   transition-delay: 115ms;
