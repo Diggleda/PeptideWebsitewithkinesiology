@@ -737,6 +737,13 @@ def ensure_schema() -> None:
         except Exception:
             return False
 
+    def _drop_table_if_exists(table: str) -> None:
+        try:
+            if _table_exists(table):
+                mysql_client.execute(f"DROP TABLE {table}")
+        except Exception:
+            pass
+
     def _drop_column_if_exists(table: str, column: str) -> None:
         try:
             if _column_exists(table, column):
@@ -793,6 +800,7 @@ def ensure_schema() -> None:
 
     def _ensure_legal_acceptances_json_schema() -> None:
         try:
+            _drop_table_if_exists("legal_acceptance_events_legacy")
             if not _table_exists("legal_acceptances"):
                 return
             if not _column_exists("legal_acceptances", "acceptances_json"):
@@ -903,6 +911,7 @@ def ensure_schema() -> None:
                 mysql_client.execute(
                     f"RENAME TABLE legal_acceptances TO {backup_table}, {temp_table} TO legal_acceptances"
                 )
+                _drop_table_if_exists(backup_table)
 
             if not _column_exists("legal_acceptances", "latest_terms_version"):
                 mysql_client.execute(

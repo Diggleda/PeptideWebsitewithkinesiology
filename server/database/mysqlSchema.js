@@ -493,6 +493,17 @@ const tableExists = async (tableName) => {
   return Boolean(existing);
 };
 
+const dropTableIfExists = async (tableName) => {
+  try {
+    if (await tableExists(tableName)) {
+      await mysqlClient.execute(`DROP TABLE ${tableName}`);
+      logger.info({ table: tableName }, 'MySQL table dropped');
+    }
+  } catch (error) {
+    logger.error({ err: error, table: tableName }, 'Failed to drop MySQL table');
+  }
+};
+
 const columnExists = async (tableName, columnName) => {
   const existing = await mysqlClient.fetchOne(
     `
@@ -553,6 +564,7 @@ const ensureLegalAcceptancesSchema = async () => {
     return;
   }
   try {
+    await dropTableIfExists('legal_acceptance_events_legacy');
     if (!(await tableExists('legal_acceptances'))) {
       return;
     }
@@ -658,7 +670,11 @@ const ensureLegalAcceptancesSchema = async () => {
       await mysqlClient.execute(
         `RENAME TABLE legal_acceptances TO ${backupTable}, ${tempTable} TO legal_acceptances`,
       );
-      logger.info({ backupTable }, 'MySQL legal_acceptances migrated to per-user JSON storage');
+      await dropTableIfExists(backupTable);
+      logger.info(
+        { droppedTable: backupTable },
+        'MySQL legal_acceptances migrated to per-user JSON storage and legacy table dropped',
+      );
     }
 
     const columns = [

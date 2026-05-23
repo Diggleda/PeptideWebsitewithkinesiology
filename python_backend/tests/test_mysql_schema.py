@@ -103,6 +103,25 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("KEY idx_legal_acceptances_latest_accepted (latest_accepted_at)", schema_sql)
         self.assertNotIn("document_key VARCHAR(64) NOT NULL", schema_sql)
 
+    def test_ensure_schema_drops_legacy_legal_acceptance_events_table(self) -> None:
+        execute_calls = []
+
+        def fake_fetch_one(query, params=None):
+            if params and params.get("table") == "legal_acceptance_events_legacy":
+                return {"cnt": 1}
+            return {"cnt": 1}
+
+        def fake_execute(query, params=None):
+            execute_calls.append(" ".join(str(query).split()))
+            return 1
+
+        with patch.object(mysql_schema, "CREATE_TABLE_STATEMENTS", []), \
+            patch("python_backend.database.mysql_schema.mysql_client.fetch_one", side_effect=fake_fetch_one), \
+            patch("python_backend.database.mysql_schema.mysql_client.execute", side_effect=fake_execute):
+            mysql_schema.ensure_schema()
+
+        self.assertIn("DROP TABLE legal_acceptance_events_legacy", execute_calls)
+
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []
 
