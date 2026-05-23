@@ -35,6 +35,12 @@ const documents = [
   },
 ];
 
+const staticMirrors = [
+  'src/content/legal/contact.html',
+  'src/content/legal/returns.html',
+  'src/content/legal/open-source-notices.html',
+];
+
 const force = process.argv.includes('--force');
 
 function convertWithTextutil(inputPath) {
@@ -127,6 +133,85 @@ function normalizeBrandTerms(html) {
     .replace(/peppro/g, 'trufusion');
 }
 
+function cleanInlineHtml(html) {
+  return String(html || '')
+    .replace(/<span\b[^>]*>/gi, '')
+    .replace(/<\/span>/gi, '')
+    .replace(/class="[^"]*"/gi, '')
+    .replace(/style="[^"]*"/gi, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function textFromHtml(html) {
+  return cleanInlineHtml(html)
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .trim();
+}
+
+function formatMetadataLine(line) {
+  const match = textFromHtml(line).match(/^(Effective Date|Last Updated|Version):\s*(.+)$/i);
+  if (!match) {
+    return cleanInlineHtml(line);
+  }
+  const canonicalLabel = match[1].toLowerCase() === 'version'
+    ? 'Version'
+    : match[1].toLowerCase() === 'last updated'
+      ? 'Last Updated'
+      : 'Effective Date';
+  return `<strong>${canonicalLabel}:</strong> ${match[2].trim()}`;
+}
+
+function formatLegalParagraph(innerHtml) {
+  const lines = String(innerHtml || '')
+    .split(/<br\s*\/?>/gi)
+    .map(cleanInlineHtml)
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return null;
+  }
+
+  const plainLines = lines.map(textFromHtml);
+  const isMetadataBlock = plainLines.every((line) =>
+    /^(Effective Date|Last Updated|Version):\s*.+$/i.test(line),
+  );
+  if (isMetadataBlock) {
+    return `<p>${lines.map(formatMetadataLine).join('<br>')}</p>`;
+  }
+
+  const joined = lines.join('<br>');
+  const plainText = textFromHtml(joined);
+  if (/^(Terms of Service|Privacy Policy|Shipping Policy)$/i.test(plainText)) {
+    return `<p><strong>${plainText}</strong></p>`;
+  }
+  if (/^\d+\.\s+\S/.test(plainText) && plainText.length <= 140) {
+    return `<p><strong>${joined}</strong></p>`;
+  }
+  return `<p>${joined}</p>`;
+}
+
+function formatLegalDocumentHtml(content) {
+  const paragraphs = [];
+  const paragraphRegex = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+  let match;
+  while ((match = paragraphRegex.exec(content)) !== null) {
+    const paragraph = formatLegalParagraph(match[1]);
+    if (paragraph) {
+      paragraphs.push(`  ${paragraph}`);
+    }
+  }
+
+  if (paragraphs.length === 0) {
+    return `<div class="legal-docx-content">\n  ${cleanInlineHtml(content)}\n</div>\n`;
+  }
+
+  return `<div class="legal-docx-content">\n${paragraphs.join('\n')}\n</div>\n`;
+}
+
 async function convertDocument({ docx, html }) {
   const inputPath = path.join(projectRoot, docx);
   const outputPath = path.join(projectRoot, html);
@@ -148,18 +233,9 @@ async function convertDocument({ docx, html }) {
   const content = bodyMatch ? bodyMatch[1].trim() : rawHtml.trim();
   const normalizedContent = normalizeBrandTerms(normalizeSupportEmails(replaceRegionalAdministrator(linkifyEmails(content))));
   const isLegalDoc = html.includes('src/content/legal/');
-  const lexendScopedStyle = isLegalDoc
-    ? `<style>
-.legal-docx-content,
-.legal-docx-content * {
-  font-family: "Lexend", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-}
-</style>`
-    : '';
-  const wrappedContent = isLegalDoc
-    ? `<div class="legal-docx-content">${normalizedContent}</div>`
-    : normalizedContent;
-  const finalHtml = `${styles ? `${styles}\n` : ''}${lexendScopedStyle ? `${lexendScopedStyle}\n` : ''}${wrappedContent}\n`;
+  const finalHtml = isLegalDoc
+    ? formatLegalDocumentHtml(normalizedContent)
+    : `${styles ? `${styles}\n` : ''}${normalizedContent}\n`;
 
   await fs.writeFile(outputPath, finalHtml, 'utf8');
 
@@ -216,6 +292,23 @@ async function getPublicMirrorTargets(html) {
   return targets;
 }
 
+async function mirrorStaticHtml(relativeSource) {
+  const sourcePath = path.join(projectRoot, relativeSource);
+  const publicContentRoot = path.join(projectRoot, 'public', 'content');
+  const marker = path.join('src', 'content') + path.sep;
+  const normalizedSource = relativeSource.split('/').join(path.sep);
+  const idx = normalizedSource.indexOf(marker);
+  if (idx < 0) {
+    return;
+  }
+  const relative = normalizedSource.slice(idx + marker.length);
+  const publicPath = path.join(publicContentRoot, relative);
+  const content = await fs.readFile(sourcePath, 'utf8');
+  await fs.mkdir(path.dirname(publicPath), { recursive: true });
+  await fs.writeFile(publicPath, content, 'utf8');
+  console.log(`Mirrored ${relativeSource} -> ${path.relative(projectRoot, publicPath)}`);
+}
+
 async function needsConversion({ docx, html }) {
   if (force) {
     return true;
@@ -266,10 +359,11 @@ async function run() {
   const pending = decisions.filter((entry) => entry.shouldConvert).map((entry) => entry.doc);
   if (pending.length === 0) {
     console.log('DOCX content is up to date; skipping conversion.');
-    return;
+  } else {
+    await Promise.all(pending.map((doc) => convertDocument(doc)));
   }
 
-  await Promise.all(pending.map((doc) => convertDocument(doc)));
+  await Promise.all(staticMirrors.map((source) => mirrorStaticHtml(source)));
 }
 
 run().catch((error) => {

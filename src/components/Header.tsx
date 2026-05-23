@@ -7,7 +7,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowUturnLeftIcon, BookOpenIcon, CursorArrowRippleIcon, SwatchIcon } from '@heroicons/react/24/outline';
+import { AdjustmentsHorizontalIcon, ArrowDownTrayIcon, ArrowPathIcon, ArrowUturnLeftIcon, BookOpenIcon, CursorArrowRippleIcon, SwatchIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCircle2, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, WifiOff, Maximize2, Minimize2, Link2, Upload, Trash2, Mail, AlertTriangle, Plus, Truck } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
@@ -23,9 +23,7 @@ import { DoctorProfileForm } from './DoctorProfileForm';
 import { BrandLogoImage } from './BrandLogoImage';
 import delegateLinkBetaImage1 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage1.png';
 import delegateLinkBetaImage2 from '../content/marketing/DelegateLinks/DelegateLinkBetaImage2.png';
-import legalTermsHtml from '../content/legal/terms.html?raw';
-import legalPrivacyHtml from '../content/legal/privacy.html?raw';
-import legalShippingHtml from '../content/legal/shipping.html?raw';
+import { CURRENT_LEGAL_DOCUMENT_VERSIONS, LEGAL_DOCUMENTS } from '../lib/legalDocuments';
 import {
   buildBrochureLinkUrl,
   buildResearchSupplyLinkUrl,
@@ -127,26 +125,17 @@ type PatientLinkConfirmAction = {
 };
 
 const CREATE_LINK_LEGAL_DOCUMENTS: Record<CreateLinkLegalDocumentKey, { title: string; html: string }> = {
-  terms: {
-    title: 'Terms of Service',
-    html: legalTermsHtml,
-  },
-  shipping: {
-    title: 'Shipping Policy',
-    html: legalShippingHtml,
-  },
-  privacy: {
-    title: 'Privacy Policy',
-    html: legalPrivacyHtml,
-  },
+  terms: LEGAL_DOCUMENTS.terms,
+  shipping: LEGAL_DOCUMENTS.shipping,
+  privacy: LEGAL_DOCUMENTS.privacy,
 };
 
 const DEFAULT_DELEGATE_LINK_EXPIRY_HOURS = '72';
 const DEFAULT_DELEGATE_PRICING_DISCLOSURE =
   'Prices may include physician-directed service, handling, administrative, or research coordination fees.';
-const CURRENT_TERMS_VERSION = 'current';
-const CURRENT_SHIPPING_POLICY_VERSION = 'current';
-const CURRENT_PRIVACY_POLICY_VERSION = 'current';
+const CURRENT_TERMS_VERSION = CURRENT_LEGAL_DOCUMENT_VERSIONS.terms;
+const CURRENT_SHIPPING_POLICY_VERSION = CURRENT_LEGAL_DOCUMENT_VERSIONS.shipping;
+const CURRENT_PRIVACY_POLICY_VERSION = CURRENT_LEGAL_DOCUMENT_VERSIONS.privacy;
 
 const patientLinkPaymentMethodOptions: Array<{ value: PatientLinkPaymentMethod; label: string }> = [
   { value: 'none', label: 'Hosted checkout' },
@@ -478,7 +467,12 @@ interface HeaderUser {
   officeCity?: string | null;
   officeState?: string | null;
   officePostalCode?: string | null;
+  receivePatientLinkUpdateEmails?: boolean;
   researchTermsAgreement?: boolean;
+  researchTermsAgreementVersion?: string | null;
+  researchShippingPolicyVersion?: string | null;
+  researchPrivacyPolicyVersion?: string | null;
+  researchTermsAgreementAcceptedAt?: string | null;
   delegateOptIn?: boolean;
 }
 
@@ -2097,6 +2091,7 @@ export function Header({
   const [patientLinksSavingPaymentToken, setPatientLinksSavingPaymentToken] = useState<string | null>(null);
   const [patientLinksPaymentReceivedToken, setPatientLinksPaymentReceivedToken] = useState<string | null>(null);
   const [patientLinksSavingReviewNotesToken, setPatientLinksSavingReviewNotesToken] = useState<string | null>(null);
+  const [patientLinkUpdateEmailSaving, setPatientLinkUpdateEmailSaving] = useState(false);
   const [patientLinkConfirmAction, setPatientLinkConfirmAction] = useState<PatientLinkConfirmAction | null>(null);
   const [createLinkDialogOpen, setCreateLinkDialogOpen] = useState(false);
   const [createLinkDialogMode, setCreateLinkDialogMode] = useState<CreateLinkDialogMode>('select');
@@ -6433,6 +6428,23 @@ export function Header({
     [setLocalUser, onUserUpdated, localUser],
   );
 
+  const handlePatientLinkUpdateEmailToggle = useCallback(
+    async (checked: boolean) => {
+      if (patientLinkUpdateEmailSaving) {
+        return;
+      }
+      setPatientLinkUpdateEmailSaving(true);
+      try {
+        await saveProfileField('Patient link update emails', {
+          receivePatientLinkUpdateEmails: checked,
+        });
+      } finally {
+        setPatientLinkUpdateEmailSaving(false);
+      }
+    },
+    [patientLinkUpdateEmailSaving, saveProfileField],
+  );
+
   const handleAccountResellerPermitUpload = useCallback(
     async (file: File | null) => {
       if (!file || resellerPermitUploading || resellerPermitDeleting) {
@@ -6879,49 +6891,71 @@ export function Header({
           ref={resellerPermitInputRef}
           type="file"
           accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.gif"
-          className="bg-slate-100 file:mr-4 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900"
+          className="hidden"
           disabled={resellerPermitBusy}
           onChange={(event) => {
             void handleAccountResellerPermitUpload(event.target.files?.[0] || null);
           }}
         />
-        <p className="text-xs text-slate-500">
-          Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
-        </p>
-        {accountHasResellerPermitFile && (
-          <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            <button
-              type="button"
-              className="block w-full min-w-0 flex-1 text-left transition-colors hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={resellerPermitBusy}
-              aria-label="Download uploaded reseller permit"
-              title="Download uploaded reseller permit"
-              onClick={() => {
-                void handleAccountResellerPermitDownload();
-              }}
-            >
-              <span className="font-medium text-slate-900">On file:</span>{' '}
-              <span className="break-all underline decoration-dotted underline-offset-2">
-                {accountResellerPermitDisplayName}
-              </span>
-              {accountResellerPermitUploadedLabel
-                ? ` • Uploaded ${accountResellerPermitUploadedLabel}`
-                : ''}
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-transparent text-slate-500 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={resellerPermitBusy}
-              aria-label="Delete uploaded reseller permit"
-              title="Delete uploaded permit"
-              onClick={() => {
-                void handleAccountResellerPermitDelete();
-              }}
-            >
-              <Trash2 className="h-4 w-4" aria-hidden="true" />
-            </button>
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm text-slate-700">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              {accountHasResellerPermitFile ? (
+                <button
+                  type="button"
+                  className="block w-full min-w-0 whitespace-normal text-left [overflow-wrap:anywhere] [text-align:left] transition-colors hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  style={{ textAlign: 'left' }}
+                  disabled={resellerPermitBusy}
+                  aria-label="Download uploaded reseller permit"
+                  title="Download uploaded reseller permit"
+                  onClick={() => {
+                    void handleAccountResellerPermitDownload();
+                  }}
+                >
+                  <span className="font-medium text-slate-900">On file:</span>{' '}
+                  <span className="reseller-permit-file-name underline decoration-dotted underline-offset-2">
+                    {accountResellerPermitDisplayName}
+                  </span>
+                  <ArrowDownTrayIcon className="ml-1 inline h-4 w-4 shrink-0 align-[-2px] text-slate-700" aria-hidden="true" />
+                  {accountResellerPermitUploadedLabel
+                    ? ` Uploaded ${accountResellerPermitUploadedLabel}`
+                    : ''}
+                </button>
+              ) : (
+                <span className="block text-slate-500">No reseller permit on file.</span>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="header-home-button squircle-sm bg-white text-slate-900"
+                disabled={resellerPermitBusy}
+                onClick={() => resellerPermitInputRef.current?.click()}
+              >
+                Choose file
+              </Button>
+              {accountHasResellerPermitFile && (
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-transparent text-black transition-colors hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={resellerPermitBusy}
+                  aria-label="Delete uploaded reseller permit"
+                  title="Delete uploaded permit"
+                  onClick={() => {
+                    void handleAccountResellerPermitDelete();
+                  }}
+                >
+                  <TrashIcon className="h-4 w-4 text-black" aria-hidden="true" />
+                </button>
+              )}
+            </div>
           </div>
-        )}
+          <p className="mt-2 text-xs text-slate-500">
+            Accepted file types: PDF, PNG, JPG, WEBP, HEIC, GIF. Maximum 25MB.
+          </p>
+        </div>
         {resellerPermitUploading && (
           <p className="text-sm text-slate-600">Uploading reseller permit…</p>
         )}
@@ -6935,8 +6969,39 @@ export function Header({
     </div>
   ) : null;
 
+  const receivePatientLinkUpdateEmails = localUser?.receivePatientLinkUpdateEmails !== false;
+
   const physicianDashboardSettingsPanel = accountIsDoctor ? (
     <div className="physician-dashboard-settings-panel space-y-4">
+      <div className="glass-card squircle-md border border-[var(--brand-glass-border-2)] bg-white/80 p-4">
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            id="physician-patient-link-update-emails"
+            checked={receivePatientLinkUpdateEmails}
+            disabled={patientLinkUpdateEmailSaving}
+            onChange={(event) => {
+              void handlePatientLinkUpdateEmailToggle(event.target.checked);
+            }}
+            className="brand-checkbox mt-0.5"
+          />
+          <Label
+            htmlFor="physician-patient-link-update-emails"
+            className="min-w-0 cursor-pointer text-sm leading-5 text-slate-700"
+          >
+            <span className="block font-semibold text-slate-900">
+              Receive patient link update emails
+            </span>
+            <span className="block text-xs text-slate-500">
+              {patientLinkUpdateEmailSaving
+                ? 'Saving preference...'
+                : receivePatientLinkUpdateEmails
+                  ? 'Enabled'
+                  : 'Disabled'}
+            </span>
+          </Label>
+        </div>
+      </div>
       {resellerPermitUploadPanel}
     </div>
   ) : (
@@ -8043,24 +8108,22 @@ export function Header({
 		                          return (
 		                            <div
 		                              key={line.id || `${line.sku}-${idx}`}
-		                              className="order-line-item flex items-center gap-4 min-h-[60px]"
+		                              className="order-line-item flex items-center gap-3 min-h-[48px]"
 		                            >
                               <div
-                                className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
-                                style={{ maxHeight: '120px' }}
+                                className="h-12 w-12 rounded-lg border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
                               >
                                 {lineImage ? (
                                   <img
                                     src={lineImage}
                                     alt={line.name || 'Item thumbnail'}
-                                    className="object-contain"
-                                    style={{ width: '100%', height: '100%', maxHeight: '120px' }}
+                                    className="h-full w-full object-contain"
                                     onError={(event) => {
                                       event.currentTarget.style.display = 'none';
                                     }}
                                   />
                                 ) : (
-                                  <Package className="h-6 w-6 text-black" />
+                                  <Package className="h-5 w-5 text-black" />
                                 )}
                               </div>
                               <div className="flex-1 space-y-1">
@@ -8750,14 +8813,14 @@ export function Header({
       <div className="flex flex-col gap-4">
 	        
 	        <div className="flex flex-wrap items-center justify-between gap-3">
-	          {ordersLastSyncedAt && (
-	            <div
-	              className="orders-updated-status-button inline-flex items-center gap-1 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none"
-	              aria-live="polite"
-	            >
-	              <span>{accountOrdersLoading ? 'Updating…' : 'Auto-updating'}</span>
-	            </div>
-	          )}
+		          {accountOrdersLoading && (
+		            <div
+		              className="orders-updated-status-button inline-flex items-center gap-1 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none"
+		              aria-live="polite"
+		            >
+		              <span>Updating…</span>
+		            </div>
+		          )}
 
           <div
             className="header-search-field relative isolate w-full sm:w-[16rem] md:w-[18rem]"
@@ -9743,7 +9806,7 @@ export function Header({
 	                >
 	                  Privacy Policy
 	                </button>
-	                .
+	                . Current versions: Terms {CURRENT_TERMS_VERSION}, Shipping {CURRENT_SHIPPING_POLICY_VERSION}, Privacy {CURRENT_PRIVACY_POLICY_VERSION}.
 	              </label>
 	            </div>
 	            <div className="patient-link-submit-action delegate-link-submit-action flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -10226,12 +10289,14 @@ export function Header({
                 <option value="brochure">Brochure ({patientLinksTypeCounts.brochure})</option>
               </select>
               <div className="patient-links-toolbar-button-row flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
-	              <div
-	                className="patient-links-toolbar-control inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-medium text-slate-500"
-	                aria-live="polite"
-	              >
-	                <span>{patientLinksLoading ? 'Updating…' : 'Auto-updating'}</span>
-	              </div>
+		              {patientLinksLoading && (
+		                <div
+		                  className="patient-links-toolbar-control inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-medium text-slate-500"
+		                  aria-live="polite"
+		                >
+		                  <span>Updating…</span>
+		                </div>
+		              )}
 		            <Button
 		              type="button"
 		              onClick={() => {

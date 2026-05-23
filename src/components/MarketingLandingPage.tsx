@@ -123,6 +123,14 @@ const deliveryMechanisms = [
   "Cation exchange improving permeability",
 ];
 
+const shouldPersistCapabilityRows = () => {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+
+  return window.matchMedia("(hover: none), (pointer: coarse), (max-width: 767px)").matches;
+};
+
 const SectionKicker = ({ children, dark = false }: { children: string; dark?: boolean }) => (
   <p className={`marketing-landing__kicker${dark ? " marketing-landing__kicker--dark" : ""}`}>
     {children}
@@ -155,8 +163,10 @@ export function MarketingLandingPage({
 }: MarketingLandingPageProps) {
   const headerRef = useRef<HTMLElement | null>(null);
   const heroLogoRef = useRef<HTMLDivElement | null>(null);
+  const capabilitiesRef = useRef<HTMLUListElement | null>(null);
   const [showHeaderIcon, setShowHeaderIcon] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeCapability, setActiveCapability] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -256,6 +266,26 @@ export function MarketingLandingPage({
     mediaQuery.addListener(closeOnDesktop);
     return () => mediaQuery.removeListener(closeOnDesktop);
   }, [isMobileMenuOpen]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || activeCapability === null) {
+      return undefined;
+    }
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (!capabilitiesRef.current?.contains(target)) {
+        setActiveCapability(null);
+      }
+    };
+
+    document.addEventListener("click", closeOnOutsideClick);
+    return () => document.removeEventListener("click", closeOnOutsideClick);
+  }, [activeCapability]);
 
   return (
     <div
@@ -421,7 +451,7 @@ export function MarketingLandingPage({
             </p>
 
             <div className="marketing-landing__actions">
-              <PrimaryAction onClick={onJoinNetwork}>Join physician network</PrimaryAction>
+              <PrimaryAction onClick={onJoinNetwork}>Join the physician network</PrimaryAction>
               <button
                 type="button"
                 onClick={onReferralCode}
@@ -440,12 +470,17 @@ export function MarketingLandingPage({
               Five capabilities under one physician portal.
             </h2>
 
-            <ul className="marketing-landing__capabilities">
+            <ul ref={capabilitiesRef} className="marketing-landing__capabilities">
               {capabilities.map((capability) => (
                 <li
                   key={capability.n}
-                  className="marketing-landing__capability"
+                  className={`marketing-landing__capability${activeCapability === capability.n ? " is-active" : ""}`}
                   tabIndex={0}
+                  onClick={() => {
+                    if (shouldPersistCapabilityRows()) {
+                      setActiveCapability(capability.n);
+                    }
+                  }}
                 >
                   <span className="marketing-landing__number">
                     {capability.n}

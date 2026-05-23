@@ -425,6 +425,17 @@ def _send_delegate_proposal_ready_email_for_link(
 
     try:
         doctor = user_repository.find_by_id(doctor_id) or {}
+        if not _normalize_bool(
+            doctor.get("receivePatientLinkUpdateEmails")
+            if "receivePatientLinkUpdateEmails" in doctor
+            else doctor.get("receive_patient_link_update_emails"),
+            default=True,
+        ):
+            logger.info(
+                "[Delegation] Skipping delegate proposal email by physician preference",
+                extra={"token": token, "doctorId": doctor_id},
+            )
+            return False
         recipient = str(doctor.get("email") or "").strip()
         if not recipient:
             logger.warning(

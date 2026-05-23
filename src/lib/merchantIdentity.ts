@@ -3,12 +3,12 @@ import { BRAND } from './brand';
 export const MERCHANT_IDENTITY = {
   brand: BRAND.name,
   dba: BRAND.name,
-  legalEntity: '[LEGAL ENTITY NAME]',
-  address: '640 S Grand Ave, Santa Ana, Ca 92705, Unit #107',
+  legalEntity: 'Figurehead LLC',
+  address: '640 S Grand Ave, Santa Ana, CA 92705, Unit #107',
   phone: '(714) 932-0232',
   email: BRAND.supportEmail,
   legacyEmail: BRAND.legacySupportEmail,
-  businessHours: 'Mon–Fri, 9am–5pm CT',
+  businessHours: 'Mon-Fri, 9am-5pm CT',
 } as const;
 
 export type MerchantIdentity = typeof MERCHANT_IDENTITY;

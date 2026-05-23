@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 import os
 import re
 import secrets
@@ -16,6 +17,7 @@ import requests
 
 from ..repositories import (
     email_verification_token_repository,
+    legal_acceptance_repository,
     password_reset_token_repository,
     sales_rep_repository,
     user_repository,
@@ -44,6 +46,51 @@ def _normalize_optional_string(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_legal_version(value: Any) -> Optional[str]:
+    text = _normalize_optional_string(value)
+    return text[:64] if text else None
+
+
+def _first_present(source: Dict, *keys: str) -> Any:
+    for key in keys:
+        if key in source:
+            return source.get(key)
+    return None
+
+
+def _sha256_optional(value: Any) -> Optional[str]:
+    text = _normalize_optional_string(value)
+    if not text:
+        return None
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _record_research_terms_acceptance_history(
+    *,
+    user_id: str,
+    terms_version: Optional[str],
+    shipping_policy_version: Optional[str],
+    privacy_policy_version: Optional[str],
+    accepted_at: Any,
+    request_context: Optional[Dict[str, Any]],
+    acceptance_context: Optional[str] = None,
+) -> int:
+    documents = [
+        {"document_key": "terms", "document_version": terms_version},
+        {"document_key": "shipping", "document_version": shipping_policy_version},
+        {"document_key": "privacy", "document_version": privacy_policy_version},
+    ]
+    context = request_context if isinstance(request_context, dict) else {}
+    return legal_acceptance_repository.record_acceptances(
+        user_id=user_id,
+        documents=documents,
+        accepted_at=accepted_at,
+        acceptance_context=acceptance_context or "research_terms_agreement",
+        ip_hash=_sha256_optional(context.get("ip")),
+        user_agent_hash=_sha256_optional(context.get("userAgent")),
+    )
 
 
 def _normalize_bool(value: Any) -> bool:
@@ -781,7 +828,12 @@ def register(data: Dict) -> Dict:
             "npiStatus": npi_status,
             "npiCheckError": None,
             "researchTermsAgreement": False,
+            "researchTermsAgreementVersion": None,
+            "researchShippingPolicyVersion": None,
+            "researchPrivacyPolicyVersion": None,
+            "researchTermsAgreementAcceptedAt": None,
             "delegateOptIn": False,
+            "receivePatientLinkUpdateEmails": True,
             "profileOnboarding": False,
             "networkPresenceAgreement": True,
             "resellerPermitOnboardingPresented": False,
@@ -1183,7 +1235,12 @@ def verify_npi(npi_number: Optional[str]) -> Dict:
         raise err from exc
 
 
-def update_profile(user_id: str, data: Dict) -> Dict:
+def update_profile(
+    user_id: str,
+    data: Dict,
+    *,
+    legal_acceptance_context: Optional[Dict[str, Any]] = None,
+) -> Dict:
     user = user_repository.find_by_id(user_id)
     if not user:
         raise _not_found("User not found")
@@ -1274,11 +1331,95 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         if "receiveClientOrderUpdateEmails" in data
         else _normalize_bool(user.get("receiveClientOrderUpdateEmails"))
     )
-    research_terms_agreement = (
-        _normalize_bool(data.get("researchTermsAgreement"))
-        if "researchTermsAgreement" in data
-        else _normalize_bool(user.get("researchTermsAgreement"))
+    receive_patient_link_update_emails = (
+        _normalize_bool(data.get("receivePatientLinkUpdateEmails"))
+        if "receivePatientLinkUpdateEmails" in data
+        else _normalize_bool(data.get("receive_patient_link_update_emails"))
+        if "receive_patient_link_update_emails" in data
+        else (
+            _normalize_bool(user.get("receivePatientLinkUpdateEmails"))
+            if "receivePatientLinkUpdateEmails" in user
+            and user.get("receivePatientLinkUpdateEmails") is not None
+            else _normalize_bool(
+                user.get("receive_patient_link_update_emails")
+                if user.get("receive_patient_link_update_emails") is not None
+                else True
+            )
+        )
     )
+    has_research_terms_update = (
+        "researchTermsAgreement" in data or "research_terms_agreement" in data
+    )
+    research_terms_agreement = (
+        _normalize_bool(_first_present(data, "researchTermsAgreement", "research_terms_agreement"))
+        if has_research_terms_update
+        else _normalize_bool(
+            user.get("researchTermsAgreement")
+            if "researchTermsAgreement" in user
+            else user.get("research_terms_agreement")
+        )
+    )
+    research_terms_version = _normalize_legal_version(
+        _first_present(
+            user,
+            "researchTermsAgreementVersion",
+            "research_terms_agreement_version",
+        )
+    )
+    research_shipping_policy_version = _normalize_legal_version(
+        _first_present(
+            user,
+            "researchShippingPolicyVersion",
+            "research_shipping_policy_version",
+        )
+    )
+    research_privacy_policy_version = _normalize_legal_version(
+        _first_present(
+            user,
+            "researchPrivacyPolicyVersion",
+            "research_privacy_policy_version",
+        )
+    )
+    research_terms_accepted_at = _first_present(
+        user,
+        "researchTermsAgreementAcceptedAt",
+        "research_terms_agreement_accepted_at",
+    )
+    if has_research_terms_update:
+        if research_terms_agreement:
+            research_terms_version = _normalize_legal_version(
+                _first_present(
+                    data,
+                    "researchTermsAgreementVersion",
+                    "research_terms_agreement_version",
+                    "termsVersion",
+                    "terms_version",
+                )
+            )
+            research_shipping_policy_version = _normalize_legal_version(
+                _first_present(
+                    data,
+                    "researchShippingPolicyVersion",
+                    "research_shipping_policy_version",
+                    "shippingPolicyVersion",
+                    "shipping_policy_version",
+                )
+            )
+            research_privacy_policy_version = _normalize_legal_version(
+                _first_present(
+                    data,
+                    "researchPrivacyPolicyVersion",
+                    "research_privacy_policy_version",
+                    "privacyPolicyVersion",
+                    "privacy_policy_version",
+                )
+            )
+            research_terms_accepted_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        else:
+            research_terms_version = None
+            research_shipping_policy_version = None
+            research_privacy_policy_version = None
+            research_terms_accepted_at = None
     delegate_opt_in = (
         _normalize_bool(data.get("delegateOptIn"))
         if "delegateOptIn" in data
@@ -1337,7 +1478,12 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "delegateBackgroundColor": delegate_background_color,
         "zelleContact": zelle_contact,
         "receiveClientOrderUpdateEmails": receive_client_order_update_emails,
+        "receivePatientLinkUpdateEmails": receive_patient_link_update_emails,
         "researchTermsAgreement": research_terms_agreement,
+        "researchTermsAgreementVersion": research_terms_version,
+        "researchShippingPolicyVersion": research_shipping_policy_version,
+        "researchPrivacyPolicyVersion": research_privacy_policy_version,
+        "researchTermsAgreementAcceptedAt": research_terms_accepted_at,
         "delegateOptIn": delegate_opt_in,
         "profileOnboarding": profile_onboarding,
         "networkPresenceAgreement": network_presence_agreement,
@@ -1361,6 +1507,19 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     )
 
     saved = user_repository.update(updated) or updated
+    if has_research_terms_update and research_terms_agreement:
+        _record_research_terms_acceptance_history(
+            user_id=str(saved.get("id") or user_id),
+            terms_version=research_terms_version,
+            shipping_policy_version=research_shipping_policy_version,
+            privacy_policy_version=research_privacy_policy_version,
+            accepted_at=research_terms_accepted_at,
+            request_context=legal_acceptance_context,
+            acceptance_context=_normalize_legal_version(
+                data.get("acceptanceContext") or data.get("acceptance_context")
+            )
+            or "research_terms_agreement",
+        )
     try:
         role = _normalize_role(saved.get("role"))
         if role in ("doctor", "test_doctor"):
@@ -1569,6 +1728,39 @@ def _sanitize_user(user: Dict) -> Dict:
         sanitized.get("delegateOptIn")
         if "delegateOptIn" in sanitized
         else sanitized.get("delegate_opt_in")
+    )
+    sanitized["researchTermsAgreement"] = _normalize_bool(
+        sanitized.get("researchTermsAgreement")
+        if "researchTermsAgreement" in sanitized
+        else sanitized.get("research_terms_agreement")
+    )
+    sanitized["receivePatientLinkUpdateEmails"] = _normalize_bool(
+        sanitized.get("receivePatientLinkUpdateEmails")
+        if "receivePatientLinkUpdateEmails" in sanitized
+        and sanitized.get("receivePatientLinkUpdateEmails") is not None
+        else sanitized.get("receive_patient_link_update_emails")
+        if sanitized.get("receive_patient_link_update_emails") is not None
+        else True
+    )
+    sanitized["researchTermsAgreementVersion"] = _normalize_legal_version(
+        sanitized.get("researchTermsAgreementVersion")
+        if "researchTermsAgreementVersion" in sanitized
+        else sanitized.get("research_terms_agreement_version")
+    )
+    sanitized["researchShippingPolicyVersion"] = _normalize_legal_version(
+        sanitized.get("researchShippingPolicyVersion")
+        if "researchShippingPolicyVersion" in sanitized
+        else sanitized.get("research_shipping_policy_version")
+    )
+    sanitized["researchPrivacyPolicyVersion"] = _normalize_legal_version(
+        sanitized.get("researchPrivacyPolicyVersion")
+        if "researchPrivacyPolicyVersion" in sanitized
+        else sanitized.get("research_privacy_policy_version")
+    )
+    sanitized["researchTermsAgreementAcceptedAt"] = (
+        sanitized.get("researchTermsAgreementAcceptedAt")
+        if "researchTermsAgreementAcceptedAt" in sanitized
+        else sanitized.get("research_terms_agreement_accepted_at")
     )
     sanitized["profileOnboarding"] = _normalize_bool(
         sanitized.get("profileOnboarding")

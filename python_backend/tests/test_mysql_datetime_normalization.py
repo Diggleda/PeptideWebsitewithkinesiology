@@ -221,6 +221,44 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
         self.assertEqual(executed[0][1]["network_presence_agreement"], 1)
         self.assertTrue(updated["networkPresenceAgreement"])
 
+    def test_user_repository_mysql_update_persists_research_terms_acceptance_metadata(self) -> None:
+        existing = {
+            "id": "u1",
+            "name": "Test",
+            "email": "test@example.com",
+            "password": "pw",
+            "role": "doctor",
+            "status": "active",
+            "researchTermsAgreement": False,
+        }
+        accepted_at = "2026-05-23T19:30:00Z"
+        executed = []
+
+        def fake_execute(query, params):
+            executed.append((query, params))
+            return 1
+
+        with patch("python_backend.repositories.user_repository.find_by_id", side_effect=[existing, {**existing, "researchTermsAgreement": True}]), \
+            patch("python_backend.repositories.user_repository.mysql_client.execute", side_effect=fake_execute):
+            user_repository._mysql_update(
+                {
+                    "id": "u1",
+                    "researchTermsAgreement": True,
+                    "researchTermsAgreementVersion": "2026.05.23",
+                    "researchShippingPolicyVersion": "2026.05.23",
+                    "researchPrivacyPolicyVersion": "2026.05.23",
+                    "researchTermsAgreementAcceptedAt": accepted_at,
+                }
+            )
+
+        self.assertEqual(len(executed), 1)
+        params = executed[0][1]
+        self.assertEqual(params["research_terms_agreement"], 1)
+        self.assertEqual(params["research_terms_agreement_version"], "2026.05.23")
+        self.assertEqual(params["research_shipping_policy_version"], "2026.05.23")
+        self.assertEqual(params["research_privacy_policy_version"], "2026.05.23")
+        self.assertIsNotNone(params["research_terms_agreement_accepted_at"])
+
     def test_user_repository_record_successful_login_uses_targeted_mysql_update(self) -> None:
         executed = []
         fetched = []

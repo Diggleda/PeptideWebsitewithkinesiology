@@ -1542,7 +1542,11 @@ export type UpdateProfilePayload = {
   officeState?: string | null;
   officePostalCode?: string | null;
   receiveClientOrderUpdateEmails?: boolean;
+  receivePatientLinkUpdateEmails?: boolean;
   researchTermsAgreement?: boolean;
+  researchTermsAgreementVersion?: string | null;
+  researchShippingPolicyVersion?: string | null;
+  researchPrivacyPolicyVersion?: string | null;
   delegateOptIn?: boolean;
 };
 

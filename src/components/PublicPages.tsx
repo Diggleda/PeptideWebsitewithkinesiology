@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { listProducts } from '../lib/wooClient';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
+import { LEGAL_DOCUMENTS } from '../lib/legalDocuments';
 import { LegalFooter } from './LegalFooter';
 import { BrandLogoImage } from './BrandLogoImage';
 
@@ -52,6 +53,9 @@ const PublicTopNav = () => (
 const ContactPage = () => (
   <PageContainer title="Contact">
     <div className="space-y-6 text-sm leading-relaxed text-slate-800">
+      <p className="text-xs text-slate-600">
+        Last updated: {LEGAL_DOCUMENTS.contact.lastUpdated} | Version: {LEGAL_DOCUMENTS.contact.version}
+      </p>
       <div className="space-y-2">
         <p className="font-semibold text-slate-900">Merchant identity</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
@@ -68,12 +72,12 @@ const ContactPage = () => (
       <div className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-white/70 p-4">
         <p className="font-semibold text-slate-900">Customer service</p>
         <p className="mt-1">
-          For assistance, email <a className="text-[rgb(11,6,121)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a> or call {MERCHANT_IDENTITY.phone}.
+          For order support, billing questions, shipping or returns help, account questions, privacy requests, or general inquiries, email <a className="text-[rgb(11,6,121)] underline" href={`mailto:${MERCHANT_IDENTITY.email}`}>{MERCHANT_IDENTITY.email}</a> or call {MERCHANT_IDENTITY.phone}.
         </p>
       </div>
 
       <p className="text-xs text-slate-600">
-        TrufusionLabs peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
+        TrufusionLabs provides research-use-only products and physician-directed research commerce workflows. Please do not submit protected health information through ordinary contact or support channels unless a separate written agreement permits it.
       </p>
     </div>
   </PageContainer>
@@ -82,20 +86,28 @@ const ContactPage = () => (
 const ReturnsRefundsPage = () => (
   <PageContainer title="Returns & Refunds Policy">
     <div className="space-y-4 text-sm leading-relaxed text-slate-800">
-      <p className="text-xs text-slate-600">Last updated: February 3, 2026</p>
+      <p className="text-xs text-slate-600">
+        Last updated: {LEGAL_DOCUMENTS.returns.lastUpdated} | Version: {LEGAL_DOCUMENTS.returns.version}
+      </p>
       <div className="space-y-2">
-        <p className="font-semibold text-slate-900">Returns</p>
+        <p className="font-semibold text-slate-900">Final sale baseline</p>
         <p>
-          All sales are final unless the product arrives damaged or incorrect.
+          All sales are final unless TrufusionLabs approves a return, refund, replacement, or credit in writing.
         </p>
         <p>
-          Requests must be submitted within <span className="font-semibold">7 days</span> of delivery.
+          We review requests involving damaged shipments, incorrect products, missing items, incomplete orders, fulfillment errors, duplicate charges, or other issues we determine are eligible.
         </p>
       </div>
       <div className="space-y-2">
-        <p className="font-semibold text-slate-900">Refunds</p>
+        <p className="font-semibold text-slate-900">Reporting window</p>
         <p>
-          Refunds, if approved, will be issued to the original form of payment.
+          Requests must be submitted within <span className="font-semibold">7 days</span> of delivery or pickup availability.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <p className="font-semibold text-slate-900">Approved resolutions</p>
+        <p>
+          If approved, we may issue a refund to the original payment method, provide a replacement shipment, apply account credit, correct the order, or take another reasonable action.
         </p>
       </div>
       <div className="space-y-2">
@@ -192,11 +204,11 @@ const PricingPage = () => {
     <PageContainer title="Pricing (USD)">
       <div className="space-y-5">
         <p className="text-sm text-slate-700">
-          Sample product pricing is shown below. Purchase may require login, but pricing is visible here.
+          Sample product pricing is shown below in USD. Final pricing, discounts, credits, taxes, shipping, and availability may vary by account, product, quantity, location, verification status, and permitted workflow configuration.
         </p>
         {content}
         <p className="text-xs text-slate-600">
-          Research Use Only. No medical claims are made or implied.
+          Research use only. Pricing and catalog information are not medical advice, prescribing guidance, treatment recommendations, or claims of safety, efficacy, or suitability.
         </p>
       </div>
     </PageContainer>

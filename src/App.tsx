@@ -18,6 +18,10 @@ import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing
 import { appQueryKeys } from "./lib/queryKeys";
 import { resolveStaticAssetUrl, withStaticAssetStamp } from "./lib/assetUrl";
 import { withLegacyMetaKeys } from "./lib/legacyBrandCompatibility";
+import {
+  CURRENT_LEGAL_DOCUMENT_VERSIONS,
+  hasCurrentResearchTermsAgreement,
+} from "./lib/legalDocuments";
 import { formatOrderStatusLabel } from "./lib/orderStatusLabels.mjs";
 import { shouldDisplayShippingStatusForOrder } from "./lib/orderStatusPrecedence.mjs";
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
@@ -83,6 +87,7 @@ import {
 					CheckCircle2,
 	        AlertTriangle,
           Mail,
+          X,
 					XCircle,
 					} from "lucide-react";
 import { DayPicker, type DateRange } from "react-day-picker";
@@ -477,8 +482,13 @@ interface User {
   officeState?: string | null;
   officePostalCode?: string | null;
   receiveClientOrderUpdateEmails?: boolean;
+  receivePatientLinkUpdateEmails?: boolean;
   handDelivered?: boolean;
   researchTermsAgreement?: boolean;
+  researchTermsAgreementVersion?: string | null;
+  researchShippingPolicyVersion?: string | null;
+  researchPrivacyPolicyVersion?: string | null;
+  researchTermsAgreementAcceptedAt?: string | null;
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
@@ -6350,8 +6360,11 @@ function MainApp() {
   const doctorResellerPermitInputRef = useRef<HTMLInputElement | null>(null);
   const doctorProfileGateRefreshSeqRef = useRef(0);
   const handleLogoutRef = useRef<() => void>(() => {});
+  const hasCurrentResearchAgreement = Boolean(
+    user && hasCurrentResearchTermsAgreement(user),
+  );
   const showResearchTermsAgreementModal = Boolean(
-    user && isDoctorRole(user.role) && !user.researchTermsAgreement,
+    user && isDoctorRole(user.role) && !hasCurrentResearchAgreement,
   );
   const doctorProfileMeetsMinimumRequirements = Boolean(
     user && isDoctorRole(user.role) && hasRequiredDoctorProfileFields(user),
@@ -6360,7 +6373,7 @@ function MainApp() {
     user &&
       isDoctorRole(user.role) &&
       doctorProfileGateReady &&
-      user.researchTermsAgreement === true &&
+      hasCurrentResearchAgreement &&
       !hasUploadedResellerPermit(user) &&
       user.resellerPermitOnboardingPresented !== true,
   );
@@ -6376,7 +6389,7 @@ function MainApp() {
     user &&
       isDoctorRole(user.role) &&
       doctorProfileGateArmed &&
-      user.researchTermsAgreement === true &&
+      hasCurrentResearchAgreement &&
       doctorProfileGateReady &&
       !doctorProfileMeetsMinimumRequirements &&
       !doctorProfileBuilderDismissed &&
@@ -8728,6 +8741,9 @@ function MainApp() {
     try {
       const updated = (await authAPI.updateMe({
         researchTermsAgreement: true,
+        researchTermsAgreementVersion: CURRENT_LEGAL_DOCUMENT_VERSIONS.terms,
+        researchShippingPolicyVersion: CURRENT_LEGAL_DOCUMENT_VERSIONS.shipping,
+        researchPrivacyPolicyVersion: CURRENT_LEGAL_DOCUMENT_VERSIONS.privacy,
       })) as User;
       setUser(updated);
     } catch (error: any) {
@@ -30491,21 +30507,22 @@ function MainApp() {
                 <div className="space-y-4">
                   <div className="referral-toolbar">
                     <div
-                      className="referral-toolbar__search header-search-field relative"
+                      className="referral-toolbar__search header-search-field relative isolate"
                       style={{
                         "--header-search-border-color": "rgb(11, 6, 121)",
-                        "--app-header-refresh-bg": "transparent",
-                        "--app-header-refresh-text": "rgb(11, 6, 121)",
-                        "--app-header-refresh-border": "rgb(11, 6, 121)",
-                        "--app-header-refresh-hover-bg": "rgb(11, 6, 121)",
-                        "--app-header-refresh-hover-text": "#ffffff",
-                        color: "rgb(11, 6, 121)",
+                        "--header-search-text-color": "rgb(100, 116, 139)",
+                        color: "rgb(100, 116, 139)",
                       } as CSSProperties}
                     >
                       <Search
-                        className="header-search-icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform"
-                        style={{ color: "rgb(11, 6, 121)" }}
+                        className="header-search-icon pointer-events-none absolute left-3 top-1/2 z-20 block h-4 w-4 -translate-y-1/2 transform"
+                        style={{
+                          color: "rgb(100, 116, 139)",
+                          stroke: "rgb(100, 116, 139)",
+                          zIndex: 20,
+                        }}
                         aria-hidden="true"
+                        focusable="false"
                       />
                       <Input
                         type="search"
@@ -30517,13 +30534,23 @@ function MainApp() {
                         }
                         placeholder="Search by name or email"
                         aria-label="Search referrals"
-                        className="header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 focus-visible:outline-none focus-visible:!ring-0"
+                        className="header-search-input relative z-0 squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
                         style={{
                           minWidth: "100%",
-                          color: "rgb(11, 6, 121)",
-                          caretColor: "rgb(11, 6, 121)",
+                          color: "rgb(100, 116, 139)",
+                          caretColor: "rgb(100, 116, 139)",
                         }}
                       />
+                      {referralSearchTerm.trim().length > 0 && (
+                        <button
+                          type="button"
+                          aria-label="Clear referral search"
+                          onClick={() => setReferralSearchTerm("")}
+                          className="header-search-clear-button absolute right-3 left-auto top-1/2 z-20 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                     <Button
                       type="button"
@@ -31200,11 +31227,11 @@ function MainApp() {
 		              >
 		                Retry
 		              </Button>
-		            ) : (
+		            ) : busy ? (
 		              <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-		                {busy ? "Updating…" : "Auto-updating"}
+		                Updating…
 		              </span>
-		            )}
+		            ) : null}
 		          </div>
 		          <div
 		            className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
@@ -31442,11 +31469,11 @@ function MainApp() {
             >
               Retry
             </Button>
-          ) : (
-            <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-              {todoItemsRefreshing ? "Updating…" : "Auto-updating"}
-            </span>
-          )}
+	          ) : todoItemsRefreshing ? (
+	            <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+	              Updating…
+	            </span>
+	          ) : null}
         </div>
         <div
           className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
@@ -31656,11 +31683,11 @@ function MainApp() {
                 >
                   Retry
                 </Button>
-              ) : (
-                <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-                  {salesRepHandDeliveryLoading ? "Updating…" : "Auto-updating"}
-                </span>
-              )}
+	              ) : salesRepHandDeliveryLoading ? (
+	                <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+	                  Updating…
+	                </span>
+	              ) : null}
             </div>
           </div>
 
@@ -32329,7 +32356,12 @@ function MainApp() {
 				
 				    return (
 	          <div className="w-full space-y-3">
-			      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(11,6,121,0.6)] w-full sales-rep-dashboard">
+			      <section
+              className={clsx(
+                "glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(11,6,121,0.6)] w-full sales-rep-dashboard",
+                isAdmin(user?.role) && "admin-dashboard-container",
+              )}
+            >
 		        <div className="flex flex-col gap-4">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 		            <div>
@@ -32818,11 +32850,11 @@ function MainApp() {
 			                            >
 			                              Retry
 			                            </Button>
-			                          ) : (
-			                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
-			                              {salesRepSalesSummaryLoading ? "Updating…" : "Auto-updating"}
-			                            </span>
-			                          )}
+				                          ) : salesRepSalesSummaryLoading ? (
+				                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
+				                              Updating…
+				                            </span>
+				                          ) : null}
 			                        </div>
 			                        <div className="flex flex-wrap items-center justify-end gap-2">
 			                          <Button
@@ -33519,7 +33551,7 @@ function MainApp() {
                                   </p>
                                 </div>
                                 <div className="flex w-full sm:w-[280px] sm:flex-none">
-                                  <label className="relative flex min-w-0 items-center text-xs text-slate-600">
+                                  <label className="admin-beta-filter-select relative flex min-w-0 items-center text-xs text-slate-600">
                                     <select
                                       value={adminDelegateFunnelActorFilter}
                                       onChange={(e) => setAdminDelegateFunnelActorFilter(e.target.value)}
@@ -34707,7 +34739,7 @@ function MainApp() {
                           Enable systems accessible to the physician network.
                         </p>
                       </div>
-                      <div className="pt-2">
+                      <div className="admin-settings-row-list pt-2">
 			                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
 			                    <div
 			                      className={`flex items-start justify-between gap-3 ${isAdmin(user.role) ? "" : "cursor-not-allowed opacity-80"}`}
@@ -34763,7 +34795,7 @@ function MainApp() {
                             />
                             <span className="min-w-0">
                               <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                                <span>Delegate Links tab (physicians)</span>
+                                <span>Delegate Links</span>
                                 <span className="text-xs font-semibold text-slate-500">
                                   {"\u00A0"}(
                                   {settingsSaving.patientLinks
@@ -34789,12 +34821,12 @@ function MainApp() {
                                 onClick={() => {
                                   setPatientLinksDoctorsOpen((current) => !current);
                                 }}
-                                className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(11,6,121,0.10)] transition-colors hover:bg-[rgba(11,6,121,0.16)] sm:hidden"
+                                className="admin-settings-dropdown-arrow-button mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors sm:hidden"
                               >
                                 <ChevronRight
                                   className="h-5 w-5 transition-transform duration-200"
                                   style={{
-                                    color: "#ffffff",
+                                    color: "rgb(11, 6, 121)",
                                     transform: patientLinksDoctorsOpen
                                       ? "rotate(90deg)"
                                       : "rotate(0deg)",
@@ -34843,12 +34875,12 @@ function MainApp() {
                                   onClick={() => {
                                     setPatientLinksDoctorsOpen((current) => !current);
                                   }}
-                                  className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgba(11,6,121,0.10)] transition-colors hover:bg-[rgba(11,6,121,0.16)]"
+                                  className="admin-settings-dropdown-arrow-button mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors"
                                 >
                                   <ChevronRight
                                     className="h-5 w-5 transition-transform duration-200"
                                     style={{
-                                      color: "#ffffff",
+                                      color: "rgb(11, 6, 121)",
                                       transform: patientLinksDoctorsOpen
                                         ? "rotate(90deg)"
                                         : "rotate(0deg)",
@@ -34863,7 +34895,7 @@ function MainApp() {
 	                        </div>
                         {patientLinksEnabled && patientLinksDoctorsOpen && (
                           <div className="mt-3 pl-8">
-                            <div className="rounded-2xl bg-[rgba(11,6,121,0.06)] px-4 py-3">
+                            <div className="admin-settings-delegate-links-dropdown rounded-2xl px-4 py-3">
                               <div className="mb-3 mt-2 sm:hidden">
                                 <div className="relative w-full">
                                   <Search
@@ -35224,11 +35256,11 @@ function MainApp() {
 	                        >
 	                          Retry
 	                        </Button>
-	                      ) : (
-	                        <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-	                          {adminHandDeliveryLoading ? "Updating…" : "Auto-updating"}
-	                        </span>
-	                      )}
+		                      ) : adminHandDeliveryLoading ? (
+		                        <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+		                          Updating…
+		                        </span>
+		                      ) : null}
 	                    </div>
                       {adminHandDeliverySectionOpen && (
                         <div id="admin-hand-delivery-structure-panel">
@@ -35835,11 +35867,11 @@ function MainApp() {
 			                          >
 			                            Retry
 			                          </Button>
-			                        ) : (
-			                          <span className="text-xs font-medium text-slate-500" aria-live="polite">
-			                            {missingCertificatesLoading || certificateProductsLoading ? "Updating…" : "Auto-updating"}
-			                          </span>
-			                        )}
+				                        ) : missingCertificatesLoading || certificateProductsLoading ? (
+				                          <span className="text-xs font-medium text-slate-500" aria-live="polite">
+				                            Updating…
+				                          </span>
+				                        ) : null}
 		                      </div>
 		                    </div>
 		
@@ -36337,11 +36369,11 @@ function MainApp() {
 							                        >
 							                          Retry
 							                        </Button>
-							                      ) : (
+							                      ) : adminDashboardRefreshing ? (
 							                        <span className="order-2 sm:order-1 text-xs font-medium text-slate-500" aria-live="polite">
-							                          {adminDashboardRefreshing ? "Updating…" : "Auto-updating"}
+							                          Updating…
 							                        </span>
-							                      )}
+							                      ) : null}
 						                    </div>
 						                  </div>
 						                </div>
@@ -37941,11 +37973,11 @@ function MainApp() {
                         >
                           Retry
                         </Button>
-                      ) : (
-                        <span className="sales-metric-refresh-button text-xs font-medium text-slate-500" aria-live="polite">
-                          {salesTrackingLoading || salesTrackingRefreshing ? "Updating…" : "Auto-updating"}
-                        </span>
-                      )}
+	                      ) : salesTrackingLoading || salesTrackingRefreshing ? (
+	                        <span className="sales-metric-refresh-button text-xs font-medium text-slate-500" aria-live="polite">
+	                          Updating…
+	                        </span>
+	                      ) : null}
                     </div>
                     <div className="sales-metric-header-bottom">
                       <div className="sales-metric-controls">
@@ -38386,11 +38418,11 @@ function MainApp() {
 	                        >
 	                          Retry
 	                        </Button>
-	                      ) : (
+	                      ) : referralDataLoading ? (
 	                        <span className="text-xs font-medium text-slate-500" aria-live="polite">
-	                          {referralDataLoading ? "Updating…" : "Auto-updating"}
+	                          Updating…
 	                        </span>
-	                      )}
+	                      ) : null}
                           </div>
                         </div>
                         <div className="active-prospects-filter-layout">
@@ -39163,11 +39195,11 @@ function MainApp() {
                             >
                               Retry
                             </Button>
-                          ) : (
-                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
-                              {referralDataLoading ? "Updating…" : "Auto-updating"}
-                            </span>
-                          )}
+	                          ) : referralDataLoading ? (
+	                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
+	                              Updating…
+	                            </span>
+	                          ) : null}
 	                      </div>
 	                      <p className="text-sm text-slate-500 referrals-subtitle">
 	                        Physicians referred to you by your existing clients.
@@ -40217,6 +40249,11 @@ function MainApp() {
               </button>
               .
             </div>
+            <p className="text-xs leading-relaxed text-slate-500">
+              Current versions: Terms {CURRENT_LEGAL_DOCUMENT_VERSIONS.terms}, Shipping{" "}
+              {CURRENT_LEGAL_DOCUMENT_VERSIONS.shipping}, Privacy{" "}
+              {CURRENT_LEGAL_DOCUMENT_VERSIONS.privacy}.
+            </p>
             {researchTermsError && (
               <p className="text-sm text-red-600" role="alert">
                 {researchTermsError}
@@ -40649,11 +40686,11 @@ function MainApp() {
                               >
                                 Retry
                               </Button>
-                            ) : (
+                            ) : peptideNewsLoading ? (
                               <span className="text-xs font-medium text-slate-500" aria-live="polite">
-                                {peptideNewsLoading ? "Updating…" : "Auto-updating"}
+                                Updating…
                               </span>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                         <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 text-sm text-gray-700 leading-relaxed">
@@ -40888,11 +40925,11 @@ function MainApp() {
 	                                >
 	                                  Retry
 	                                </Button>
-	                              ) : (
+	                              ) : peptideForumLoading ? (
 	                                <span className="text-xs font-medium text-slate-500" aria-live="polite">
-	                                  {peptideForumLoading ? "Updating…" : "Auto-updating"}
+	                                  Updating…
 	                                </span>
-	                              )}
+	                              ) : null}
 	                            </div>
 	                          </div>
 

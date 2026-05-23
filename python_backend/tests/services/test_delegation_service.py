@@ -966,6 +966,58 @@ class DelegationServiceTests(unittest.TestCase):
             service.user_repository.find_by_id = original_find_user
             service.email_service.send_delegate_proposal_ready_email = original_send_email
 
+    def test_store_delegate_submission_respects_physician_email_preference(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_store = service.patient_links_repository.store_delegate_payload
+        original_audit = service._audit_event
+        original_find_user = service.user_repository.find_by_id
+        original_send_email = service.email_service.send_delegate_proposal_ready_email
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
+                "doctorId": "doc-1",
+                "referenceLabel": "Study Alpha",
+                "allowedProducts": ["BPC-157-5MG"],
+                "delegateSharedAt": "2026-03-12T15:30:00+00:00",
+                "delegateReviewStatus": "pending",
+            }
+            service.patient_links_repository.store_delegate_payload = lambda *_args, **_kwargs: True
+            service._audit_event = lambda *_args, **_kwargs: None
+            service.user_repository.find_by_id = lambda doctor_id: {
+                "id": doctor_id,
+                "name": "Dr. Test",
+                "email": "doctor@example.com",
+                "receivePatientLinkUpdateEmails": False,
+            }
+
+            email_calls = []
+            service.email_service.send_delegate_proposal_ready_email = (
+                lambda recipient, **kwargs: email_calls.append((recipient, kwargs))
+            )
+
+            service.store_delegate_submission(
+                "tok-1",
+                cart={"items": [{"name": "BPC-157", "quantity": 1}]},
+                shipping={"shippingAddress": {"country": "US"}},
+                payment={"paymentMethod": "zelle"},
+                order_id="order-1",
+                shared_at=datetime(2026, 3, 12, 15, 30, tzinfo=timezone.utc),
+            )
+
+            self.assertEqual(email_calls, [])
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.patient_links_repository.store_delegate_payload = original_store
+            service._audit_event = original_audit
+            service.user_repository.find_by_id = original_find_user
+            service.email_service.send_delegate_proposal_ready_email = original_send_email
+
     def test_resolve_delegate_token_rejects_expired_link(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql

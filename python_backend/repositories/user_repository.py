@@ -28,6 +28,15 @@ def _normalize_identifier(value: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _normalize_optional_text(value, *, max_len: Optional[int] = None) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text[:max_len] if max_len is not None else text
+
+
 def _normalize_lookup_email(email: str) -> str:
     candidate = (email or "").strip()
     if candidate.lower().startswith("mailto:"):
@@ -144,6 +153,26 @@ def _ensure_defaults(user: Dict) -> Dict:
         normalized["researchTermsAgreement"] = _normalize_bool(normalized.get("researchTermsAgreement"))
     else:
         normalized["researchTermsAgreement"] = _normalize_bool(normalized.get("research_terms_agreement"))
+    normalized["researchTermsAgreementVersion"] = _normalize_optional_text(
+        normalized.get("researchTermsAgreementVersion")
+        or normalized.get("research_terms_agreement_version"),
+        max_len=64,
+    )
+    normalized["researchShippingPolicyVersion"] = _normalize_optional_text(
+        normalized.get("researchShippingPolicyVersion")
+        or normalized.get("research_shipping_policy_version"),
+        max_len=64,
+    )
+    normalized["researchPrivacyPolicyVersion"] = _normalize_optional_text(
+        normalized.get("researchPrivacyPolicyVersion")
+        or normalized.get("research_privacy_policy_version"),
+        max_len=64,
+    )
+    normalized["researchTermsAgreementAcceptedAt"] = (
+        normalized.get("researchTermsAgreementAcceptedAt")
+        or normalized.get("research_terms_agreement_accepted_at")
+        or None
+    )
     if "delegateOptIn" in normalized:
         normalized["delegateOptIn"] = _normalize_bool(normalized.get("delegateOptIn"))
     else:
@@ -161,6 +190,10 @@ def _ensure_defaults(user: Dict) -> Dict:
             normalized.get("reseller_permit_onboarding_presented")
         )
     normalized["research_terms_agreement"] = 1 if normalized.get("researchTermsAgreement") else 0
+    normalized["research_terms_agreement_version"] = normalized.get("researchTermsAgreementVersion")
+    normalized["research_shipping_policy_version"] = normalized.get("researchShippingPolicyVersion")
+    normalized["research_privacy_policy_version"] = normalized.get("researchPrivacyPolicyVersion")
+    normalized["research_terms_agreement_accepted_at"] = normalized.get("researchTermsAgreementAcceptedAt")
     normalized["delegate_opt_in"] = 1 if normalized.get("delegateOptIn") else 0
     normalized["profile_onboarding"] = 1 if normalized.get("profileOnboarding") else 0
     normalized["network_presence_agreement"] = 1 if normalized.get("networkPresenceAgreement") else 0
@@ -246,6 +279,22 @@ def _ensure_defaults(user: Dict) -> Dict:
         normalized["receiveClientOrderUpdateEmails"] = _normalize_bool(
             normalized.get("receive_client_order_update_emails")
         )
+    if "receivePatientLinkUpdateEmails" in normalized and normalized.get("receivePatientLinkUpdateEmails") is not None:
+        normalized["receivePatientLinkUpdateEmails"] = _normalize_bool(
+            normalized.get("receivePatientLinkUpdateEmails")
+        )
+    elif (
+        "receive_patient_link_update_emails" in normalized
+        and normalized.get("receive_patient_link_update_emails") is not None
+    ):
+        normalized["receivePatientLinkUpdateEmails"] = _normalize_bool(
+            normalized.get("receive_patient_link_update_emails")
+        )
+    else:
+        normalized["receivePatientLinkUpdateEmails"] = True
+    normalized["receive_patient_link_update_emails"] = (
+        1 if normalized.get("receivePatientLinkUpdateEmails") else 0
+    )
     if "handDelivered" in normalized:
         normalized["handDelivered"] = _normalize_bool(normalized.get("handDelivered"))
     else:
@@ -311,6 +360,10 @@ _PROFILE_SELECT_FIELDS = """
     delegate_background_color,
     delegate_links_enabled,
     research_terms_agreement,
+    research_terms_agreement_version,
+    research_shipping_policy_version,
+    research_privacy_policy_version,
+    research_terms_agreement_accepted_at,
     delegate_opt_in,
     zelle_contact,
     cart,
@@ -334,7 +387,8 @@ _PROFILE_SELECT_FIELDS = """
     reseller_permit_file_name,
     reseller_permit_uploaded_at,
     reseller_permit_approved_by_rep,
-    receive_client_order_update_emails
+    receive_client_order_update_emails,
+    receive_patient_link_update_emails
 """
 
 _AUTH_SELECT_FIELDS = """
@@ -371,6 +425,10 @@ _SESSION_SELECT_FIELDS = """
     network_presence_agreement,
     delegate_links_enabled,
     research_terms_agreement,
+    research_terms_agreement_version,
+    research_shipping_policy_version,
+    research_privacy_policy_version,
+    research_terms_agreement_accepted_at,
     delegate_opt_in,
     markup_percent,
     created_at,
@@ -383,7 +441,8 @@ _SESSION_SELECT_FIELDS = """
     is_tax_exempt,
     tax_exempt_source,
     tax_exempt_reason,
-    receive_client_order_update_emails
+    receive_client_order_update_emails,
+    receive_patient_link_update_emails
 """
 
 _REFERRAL_DASHBOARD_SELECT_FIELDS = """
@@ -1078,9 +1137,11 @@ def _mysql_insert(user: Dict) -> Dict:
             network_presence_agreement,
             reseller_permit_onboarding_presented,
             delegate_secondary_color, delegate_links_enabled,
-            research_terms_agreement, delegate_opt_in,
+            research_terms_agreement, research_terms_agreement_version,
+            research_shipping_policy_version, research_privacy_policy_version,
+            research_terms_agreement_accepted_at, delegate_opt_in,
             referral_credits, total_referrals, visits,
-            receive_client_order_update_emails,
+            receive_client_order_update_emails, receive_patient_link_update_emails,
             markup_percent,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error,
@@ -1097,9 +1158,12 @@ def _mysql_insert(user: Dict) -> Dict:
             %(profile_image_url)s, %(profile_onboarding)s, %(greater_area)s, %(study_focus)s, %(bio)s,
             %(delegate_logo_url)s, %(delegate_background_url)s, %(delegate_background_color)s, %(zelle_contact)s, %(cart)s, %(downloads)s,
             %(network_presence_agreement)s,
-            %(reseller_permit_onboarding_presented)s, %(delegate_secondary_color)s, %(delegate_links_enabled)s, %(research_terms_agreement)s, %(delegate_opt_in)s,
+            %(reseller_permit_onboarding_presented)s, %(delegate_secondary_color)s, %(delegate_links_enabled)s,
+            %(research_terms_agreement)s, %(research_terms_agreement_version)s,
+            %(research_shipping_policy_version)s, %(research_privacy_policy_version)s,
+            %(research_terms_agreement_accepted_at)s, %(delegate_opt_in)s,
             %(referral_credits)s,
-            %(total_referrals)s, %(visits)s, %(receive_client_order_update_emails)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
+            %(total_referrals)s, %(visits)s, %(receive_client_order_update_emails)s, %(receive_patient_link_update_emails)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s,
             %(is_tax_exempt)s, %(tax_exempt_source)s, %(tax_exempt_reason)s,
@@ -1149,11 +1213,16 @@ def _mysql_insert(user: Dict) -> Dict:
             delegate_secondary_color = VALUES(delegate_secondary_color),
             delegate_links_enabled = VALUES(delegate_links_enabled),
             research_terms_agreement = VALUES(research_terms_agreement),
+            research_terms_agreement_version = VALUES(research_terms_agreement_version),
+            research_shipping_policy_version = VALUES(research_shipping_policy_version),
+            research_privacy_policy_version = VALUES(research_privacy_policy_version),
+            research_terms_agreement_accepted_at = VALUES(research_terms_agreement_accepted_at),
             delegate_opt_in = VALUES(delegate_opt_in),
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
             visits = VALUES(visits),
             receive_client_order_update_emails = VALUES(receive_client_order_update_emails),
+            receive_patient_link_update_emails = VALUES(receive_patient_link_update_emails),
             markup_percent = VALUES(markup_percent),
             created_at = VALUES(created_at),
             last_login_at = VALUES(last_login_at),
@@ -1230,11 +1299,16 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             delegate_secondary_color = %(delegate_secondary_color)s,
             delegate_links_enabled = %(delegate_links_enabled)s,
             research_terms_agreement = %(research_terms_agreement)s,
+            research_terms_agreement_version = %(research_terms_agreement_version)s,
+            research_shipping_policy_version = %(research_shipping_policy_version)s,
+            research_privacy_policy_version = %(research_privacy_policy_version)s,
+            research_terms_agreement_accepted_at = %(research_terms_agreement_accepted_at)s,
             delegate_opt_in = %(delegate_opt_in)s,
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
             visits = %(visits)s,
             receive_client_order_update_emails = %(receive_client_order_update_emails)s,
+            receive_patient_link_update_emails = %(receive_patient_link_update_emails)s,
             markup_percent = %(markup_percent)s,
             created_at = %(created_at)s,
             last_login_at = %(last_login_at)s,
@@ -1321,10 +1395,14 @@ def _row_to_user(row: Dict) -> Dict:
             "delegateLogoUrl": row.get("delegate_logo_url"),
             "delegateSecondaryColor": row.get("delegate_secondary_color"),
             "delegateBackgroundImageUrl": row.get("delegate_background_url") or row.get("delegate_background_image_url"),
-            "delegateBackgroundColor": row.get("delegate_background_color"),
-            "delegateLinksEnabled": bool(row.get("delegate_links_enabled")),
-            "researchTermsAgreement": bool(row.get("research_terms_agreement")),
-            "delegateOptIn": bool(row.get("delegate_opt_in")),
+        "delegateBackgroundColor": row.get("delegate_background_color"),
+        "delegateLinksEnabled": bool(row.get("delegate_links_enabled")),
+        "researchTermsAgreement": bool(row.get("research_terms_agreement")),
+        "researchTermsAgreementVersion": row.get("research_terms_agreement_version") or None,
+        "researchShippingPolicyVersion": row.get("research_shipping_policy_version") or None,
+        "researchPrivacyPolicyVersion": row.get("research_privacy_policy_version") or None,
+        "researchTermsAgreementAcceptedAt": fmt_datetime(row.get("research_terms_agreement_accepted_at")),
+        "delegateOptIn": bool(row.get("delegate_opt_in")),
             "zelleContact": row.get("zelle_contact") or None,
             "cart": row.get("cart"),
             "downloads": downloads,
@@ -1351,6 +1429,7 @@ def _row_to_user(row: Dict) -> Dict:
             "resellerPermitApprovedByRep": bool(row.get("reseller_permit_approved_by_rep")),
             "devCommission": row.get("dev_commission"),
             "receiveClientOrderUpdateEmails": row.get("receive_client_order_update_emails"),
+            "receivePatientLinkUpdateEmails": row.get("receive_patient_link_update_emails"),
         }
     )
 
@@ -1363,6 +1442,13 @@ def _to_db_params(user: Dict) -> Dict:
         user.get("networkPresenceAgreement")
         if "networkPresenceAgreement" in user
         else user.get("network_presence_agreement")
+    )
+    receive_patient_link_update_emails = _normalize_bool(
+        user.get("receivePatientLinkUpdateEmails")
+        if "receivePatientLinkUpdateEmails" in user and user.get("receivePatientLinkUpdateEmails") is not None
+        else user.get("receive_patient_link_update_emails")
+        if user.get("receive_patient_link_update_emails") is not None
+        else True
     )
 
     return {
@@ -1406,6 +1492,16 @@ def _to_db_params(user: Dict) -> Dict:
         "delegate_background_color": user.get("delegateBackgroundColor"),
         "delegate_links_enabled": 1 if _normalize_bool(user.get("delegateLinksEnabled")) else 0,
         "research_terms_agreement": 1 if _normalize_bool(user.get("researchTermsAgreement")) else 0,
+        "research_terms_agreement_version": _normalize_optional_text(
+            user.get("researchTermsAgreementVersion"), max_len=64
+        ),
+        "research_shipping_policy_version": _normalize_optional_text(
+            user.get("researchShippingPolicyVersion"), max_len=64
+        ),
+        "research_privacy_policy_version": _normalize_optional_text(
+            user.get("researchPrivacyPolicyVersion"), max_len=64
+        ),
+        "research_terms_agreement_accepted_at": parse_dt(user.get("researchTermsAgreementAcceptedAt")),
         "delegate_opt_in": 1 if _normalize_bool(user.get("delegateOptIn")) else 0,
         "zelle_contact": user.get("zelleContact"),
         "cart": json.dumps(_normalize_cart_items(user.get("cart"))),
@@ -1414,6 +1510,7 @@ def _to_db_params(user: Dict) -> Dict:
         "total_referrals": int(user.get("totalReferrals") or 0),
         "visits": int(user.get("visits") or 0),
         "receive_client_order_update_emails": 1 if _normalize_bool(user.get("receiveClientOrderUpdateEmails")) else 0,
+        "receive_patient_link_update_emails": 1 if receive_patient_link_update_emails else 0,
         "markup_percent": float(user.get("markupPercent") or 0.0),
         "created_at": parse_dt(user.get("createdAt")),
         "last_login_at": parse_dt(user.get("lastLoginAt")),

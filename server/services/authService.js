@@ -117,6 +117,16 @@ const normalizeOptionalString = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeLegalVersion = (value) => {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? normalized.slice(0, 64) : null;
+};
+
+const hashOptional = (value) => {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? crypto.createHash('sha256').update(normalized, 'utf8').digest('hex') : null;
+};
+
 const deleteStoredResellerPermitFile = async (user) => {
   const relativePath = normalizeOptionalString(user?.resellerPermitFilePath);
   if (!relativePath) {
@@ -324,6 +334,18 @@ const sanitizeUser = (user) => {
     role: normalizeRole(user.role),
     researchTermsAgreement: normalizeBooleanFlag(
       user.researchTermsAgreement ?? user.research_terms_agreement,
+    ),
+    researchTermsAgreementVersion: normalizeLegalVersion(
+      user.researchTermsAgreementVersion ?? user.research_terms_agreement_version,
+    ),
+    researchShippingPolicyVersion: normalizeLegalVersion(
+      user.researchShippingPolicyVersion ?? user.research_shipping_policy_version,
+    ),
+    researchPrivacyPolicyVersion: normalizeLegalVersion(
+      user.researchPrivacyPolicyVersion ?? user.research_privacy_policy_version,
+    ),
+    researchTermsAgreementAcceptedAt: normalizeOptionalString(
+      user.researchTermsAgreementAcceptedAt ?? user.research_terms_agreement_accepted_at,
     ),
     delegateOptIn: normalizeBooleanFlag(
       user.delegateOptIn ?? user.delegate_opt_in,
@@ -624,6 +646,10 @@ const register = async ({
     taxExemptSource,
     taxExemptReason,
     researchTermsAgreement: false,
+    researchTermsAgreementVersion: null,
+    researchShippingPolicyVersion: null,
+    researchPrivacyPolicyVersion: null,
+    researchTermsAgreementAcceptedAt: null,
     delegateOptIn: false,
     profileOnboarding: false,
     networkPresenceAgreement: true,
@@ -758,7 +784,7 @@ const getProfile = async (userId) => {
   return sanitizeUser(await hydrateUserCartFromSql(user));
 };
 
-const updateProfile = async (userId, data) => {
+const updateProfile = async (userId, data, legalAcceptanceContext = {}) => {
   const user = userRepository.findById(userId);
   if (!user) {
     const error = new Error('User not found');
@@ -817,6 +843,23 @@ const updateProfile = async (userId, data) => {
   }
   if (Object.prototype.hasOwnProperty.call(data, 'researchTermsAgreement')) {
     next.researchTermsAgreement = normalizeBooleanFlag(data.researchTermsAgreement);
+    if (next.researchTermsAgreement) {
+      next.researchTermsAgreementVersion = normalizeLegalVersion(
+        data.researchTermsAgreementVersion ?? data.termsVersion,
+      );
+      next.researchShippingPolicyVersion = normalizeLegalVersion(
+        data.researchShippingPolicyVersion ?? data.shippingPolicyVersion,
+      );
+      next.researchPrivacyPolicyVersion = normalizeLegalVersion(
+        data.researchPrivacyPolicyVersion ?? data.privacyPolicyVersion,
+      );
+      next.researchTermsAgreementAcceptedAt = new Date().toISOString();
+    } else {
+      next.researchTermsAgreementVersion = null;
+      next.researchShippingPolicyVersion = null;
+      next.researchPrivacyPolicyVersion = null;
+      next.researchTermsAgreementAcceptedAt = null;
+    }
   }
   if (Object.prototype.hasOwnProperty.call(data, 'delegateOptIn')) {
     next.delegateOptIn = normalizeBooleanFlag(data.delegateOptIn);
@@ -846,6 +889,21 @@ const updateProfile = async (userId, data) => {
   }
   const updated = userRepository.update(next, { syncToSql: false }) || next;
   await userRepository.syncDirectShippingToSql(updated, { throwOnError: true });
+  if (Object.prototype.hasOwnProperty.call(data, 'researchTermsAgreement') && next.researchTermsAgreement) {
+    await userRepository.recordLegalAcceptances({
+      userId: updated.id || userId,
+      documents: [
+        { document_key: 'terms', document_version: next.researchTermsAgreementVersion },
+        { document_key: 'shipping', document_version: next.researchShippingPolicyVersion },
+        { document_key: 'privacy', document_version: next.researchPrivacyPolicyVersion },
+      ],
+      acceptedAt: next.researchTermsAgreementAcceptedAt,
+      acceptanceContext: normalizeLegalVersion(data.acceptanceContext || data.acceptance_context)
+        || 'research_terms_agreement',
+      ipHash: hashOptional(legalAcceptanceContext.ip),
+      userAgentHash: hashOptional(legalAcceptanceContext.userAgent),
+    });
+  }
   logger.debug(
     {
       userId: updated.id,

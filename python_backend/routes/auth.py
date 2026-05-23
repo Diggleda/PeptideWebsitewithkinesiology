@@ -40,6 +40,14 @@ def _wants_quiet_login_failure() -> bool:
     return value in ("1", "true", "yes", "on")
 
 
+def _request_acceptance_context() -> dict:
+    forwarded_for = str(request.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip()
+    return {
+        "ip": forwarded_for or request.remote_addr,
+        "userAgent": request.headers.get("User-Agent"),
+    }
+
+
 def _login_action(payload: dict):
     try:
         return auth_service.login(payload)
@@ -358,7 +366,13 @@ def verify_npi():
 def update_me():
     user_id = g.current_user.get("id")
     payload = request.get_json(force=True, silent=True) or {}
-    return handle_action(lambda: auth_service.update_profile(user_id, payload))
+    return handle_action(
+        lambda: auth_service.update_profile(
+            user_id,
+            payload,
+            legal_acceptance_context=_request_acceptance_context(),
+        )
+    )
 
 
 @blueprint.get("/me/reseller-permit")

@@ -5408,16 +5408,17 @@ html {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
-  border: 2px solid rgb(11, 6, 121) !important;
+  border: 2px solid var(--header-search-border-color, rgb(11, 6, 121)) !important;
   box-shadow: none !important;
-  color: rgb(11, 6, 121) !important;
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  caret-color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
   filter: none !important;
   transform: none !important;
 }
 
 .referral-toolbar__search.header-search-field .header-search-input::placeholder,
 .dev-theme-root .referral-toolbar__search.header-search-field .header-search-input::placeholder {
-  color: rgba(11, 6, 121, 0.64) !important;
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
   opacity: 1 !important;
 }
 
@@ -5425,29 +5426,29 @@ html {
 .referral-toolbar__search.header-search-field:focus-within .header-search-input,
 .dev-theme-root .referral-toolbar__search.header-search-field:hover .header-search-input,
 .dev-theme-root .referral-toolbar__search.header-search-field:focus-within .header-search-input {
-  background: rgb(11, 6, 121) !important;
-  background-color: rgb(11, 6, 121) !important;
-  border-color: rgb(11, 6, 121) !important;
-  color: #ffffff !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: var(--header-search-border-color, rgb(11, 6, 121)) !important;
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  caret-color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
 }
 
 .referral-toolbar__search.header-search-field:hover .header-search-input::placeholder,
 .referral-toolbar__search.header-search-field:focus-within .header-search-input::placeholder,
 .dev-theme-root .referral-toolbar__search.header-search-field:hover .header-search-input::placeholder,
 .dev-theme-root .referral-toolbar__search.header-search-field:focus-within .header-search-input::placeholder {
-  color: rgba(255, 255, 255, 0.82) !important;
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
 }
 
-.referral-toolbar__search.header-search-field .header-search-icon,
-.dev-theme-root .referral-toolbar__search.header-search-field .header-search-icon {
-  color: rgb(11, 6, 121) !important;
-}
-
-.referral-toolbar__search.header-search-field:hover .header-search-icon,
-.referral-toolbar__search.header-search-field:focus-within .header-search-icon,
-.dev-theme-root .referral-toolbar__search.header-search-field:hover .header-search-icon,
-.dev-theme-root .referral-toolbar__search.header-search-field:focus-within .header-search-icon {
-  color: #ffffff !important;
+.referral-toolbar__search.header-search-field :is(.header-search-icon, .header-search-clear-button, .header-search-clear-button svg),
+.referral-toolbar__search.header-search-field:hover :is(.header-search-icon, .header-search-clear-button, .header-search-clear-button svg),
+.referral-toolbar__search.header-search-field:focus-within :is(.header-search-icon, .header-search-clear-button, .header-search-clear-button svg),
+.dev-theme-root .referral-toolbar__search.header-search-field :is(.header-search-icon, .header-search-clear-button, .header-search-clear-button svg),
+.dev-theme-root .referral-toolbar__search.header-search-field:hover :is(.header-search-icon, .header-search-clear-button, .header-search-clear-button svg),
+.dev-theme-root .referral-toolbar__search.header-search-field:focus-within :is(.header-search-icon, .header-search-clear-button, .header-search-clear-button svg) {
+  color: var(--header-search-text-color, rgb(100, 116, 139)) !important;
+  stroke: currentColor !important;
 }
 
 .referral-toolbar__search .header-search-input {
@@ -7798,6 +7799,38 @@ html {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+.admin-beta-filter-select .product-card-select__chevron {
+  color: rgb(11, 6, 121) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.admin-settings-dropdown-arrow-button,
+.admin-settings-dropdown-arrow-button:hover,
+.admin-settings-dropdown-arrow-button:focus,
+.admin-settings-dropdown-arrow-button:focus-visible,
+.admin-settings-dropdown-arrow-button[aria-expanded="true"] {
+  color: rgb(11, 6, 121) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.admin-settings-dropdown-arrow-button svg {
+  color: rgb(11, 6, 121) !important;
+  stroke: currentColor !important;
+}
+
+.admin-settings-delegate-links-dropdown {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 .dev-theme-root.theme-clinical .product-quantity-button[data-slot="button"] {
@@ -15087,7 +15120,8 @@ textarea#bug-report.bug-report-textarea:focus-visible {
 }
 
 .marketing-landing__capability:hover,
-.marketing-landing__capability:focus-visible {
+.marketing-landing__capability:focus-visible,
+.marketing-landing__capability.is-active {
   padding-bottom: 1.9rem;
   background-color: rgba(255, 255, 255, 0.36);
   outline: none;
@@ -15116,8 +15150,10 @@ textarea#bug-report.bug-report-textarea:focus-visible {
 
 .marketing-landing__capability:hover > .marketing-landing__number,
 .marketing-landing__capability:focus-visible > .marketing-landing__number,
+.marketing-landing__capability.is-active > .marketing-landing__number,
 .marketing-landing__capability:hover .marketing-landing__capability-title,
-.marketing-landing__capability:focus-visible .marketing-landing__capability-title {
+.marketing-landing__capability:focus-visible .marketing-landing__capability-title,
+.marketing-landing__capability.is-active .marketing-landing__capability-title {
   transform: translateX(0.75rem);
 }
 
@@ -15134,13 +15170,14 @@ textarea#bug-report.bug-report-textarea:focus-visible {
   font-size: 1.0625rem;
   line-height: 1.55;
   opacity: 0;
-  transition: opacity 160ms ease;
+  transition: opacity 240ms ease;
   transition-delay: 0ms;
   visibility: hidden;
 }
 
 .marketing-landing__capability:hover .marketing-landing__capability-copy p,
-.marketing-landing__capability:focus-visible .marketing-landing__capability-copy p {
+.marketing-landing__capability:focus-visible .marketing-landing__capability-copy p,
+.marketing-landing__capability.is-active .marketing-landing__capability-copy p {
   max-height: 4.5rem;
   margin-top: 0.65rem;
   opacity: 1;
@@ -15531,6 +15568,365 @@ textarea#bug-report.bug-report-textarea:focus-visible {
 .dev-theme-root:not(.theme-biotech) .sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card:hover,
 .dev-theme-root:not(.theme-biotech) .sales-rep-dashboard.physician-dashboard-container .physician-dashboard-panel .account-order-card:focus-within {
   border-color: rgb(11, 6, 121) !important;
+}
+
+.sales-rep-dashboard.admin-dashboard-container,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(244, 251, 255, 0.82)) !important;
+  border-color: rgba(255, 255, 255, 0.78) !important;
+  box-shadow: 0 18px 38px -34px rgba(15, 23, 42, 0.34) !important;
+}
+
+.sales-rep-dashboard.admin-dashboard-container :is(
+  .sales-rep-leads-card,
+  .sales-tracking-card,
+  .admin-dashboard-list-card,
+  .sales-tracking-summary-item
+),
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container :is(
+  .sales-rep-leads-card,
+  .sales-tracking-card,
+  .admin-dashboard-list-card,
+  .sales-tracking-summary-item
+) {
+  -webkit-backdrop-filter: blur(40px) saturate(1.7) !important;
+  backdrop-filter: blur(40px) saturate(1.7) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 251, 255, 0.92)) !important;
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  border-color: rgba(11, 6, 121, 0.55) !important;
+  box-shadow:
+    0 6px 14px -10px rgba(15, 23, 42, 0.18),
+    inset 0 1px rgba(255, 255, 255, 0.82) !important;
+  color: rgb(15, 23, 42) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container :is(
+  .sales-rep-leads-card,
+  .sales-tracking-card,
+  .admin-dashboard-list-card,
+  .sales-tracking-summary-item
+) :is(
+  p,
+  span,
+  small,
+  em,
+  label,
+  summary,
+  [class*="text-slate-700"],
+  [class*="text-slate-600"],
+  [class*="text-slate-500"],
+  [class*="text-gray"]
+):not(:where(
+  .sales-rep-table-wrapper *,
+  .admin-dashboard-list *,
+  .admin-revenue-outlook-summary-card__stat *,
+  .sales-metric-pill *,
+  .sales-tracking-row *,
+  .sales-rep-lead-grid .lead-panel,
+  .sales-rep-lead-grid .lead-panel *,
+  .lead-list-item *,
+  .referrals-table-container *,
+  .referrals-table__row *,
+  .admin-todo-list__item *,
+  .patient-links-doctor-option,
+  .patient-links-doctor-option *,
+  .admin-dashboard-link-button,
+  .admin-dashboard-link-button *,
+  .header-home-button,
+  .header-home-button *,
+  .database-visualizer-card *,
+  input,
+  input *,
+  select,
+  select *,
+  textarea,
+  textarea *,
+  option
+)) {
+  color: rgb(71, 85, 105) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container :is(
+  .sales-rep-leads-card,
+  .sales-tracking-card,
+  .admin-dashboard-list-card,
+  .sales-tracking-summary-item
+) :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  strong,
+  a,
+  [class*="text-slate-950"],
+  [class*="text-slate-900"],
+  [class*="text-slate-800"],
+  [class*="text-[rgb(15,23,42)]"]
+):not(:where(
+  .sales-rep-table-wrapper *,
+  .admin-dashboard-list *,
+  .admin-revenue-outlook-summary-card__stat *,
+  .sales-metric-pill *,
+  .sales-tracking-row *,
+  .sales-rep-lead-grid .lead-panel,
+  .sales-rep-lead-grid .lead-panel *,
+  .lead-list-item *,
+  .referrals-table-container *,
+  .referrals-table__row *,
+  .admin-todo-list__item *,
+  .patient-links-doctor-option,
+  .patient-links-doctor-option *,
+  .admin-dashboard-link-button,
+  .admin-dashboard-link-button *,
+  .header-home-button,
+  .header-home-button *,
+  .database-visualizer-card *,
+  input,
+  input *,
+  select,
+  select *,
+  textarea,
+  textarea *,
+  option
+)) {
+  color: rgb(15, 23, 42) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .admin-revenue-outlook-summary-card__value {
+  color: rgb(15, 23, 42) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .admin-revenue-outlook-card .sales-rep-chart-body :is(
+  .recharts-cartesian-axis-tick text,
+  .recharts-label,
+  .recharts-text,
+  text
+) {
+  color: rgb(51, 65, 85) !important;
+  fill: rgb(51, 65, 85) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .header-search-input {
+  --header-search-border-color: rgb(11, 6, 121);
+  border-color: rgb(11, 6, 121) !important;
+  caret-color: rgb(100, 116, 139) !important;
+  color: rgb(100, 116, 139) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button) {
+  border-color: rgba(11, 6, 121, 0.55) !important;
+  color: rgb(15, 23, 42) !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button):hover,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button):focus-visible {
+  border-color: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+}
+
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button):hover *,
+.dev-theme-root.theme-clinical .sales-rep-dashboard.admin-dashboard-container .header-home-button:not(.header-account-button):not(.admin-dashboard-link-button):focus-visible * {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+.admin-settings-row-list > div,
+.admin-settings-row-list > div:last-child {
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+}
+
+.admin-settings-row-list > div:not(:last-child) {
+  border-bottom: 1px solid rgba(11, 6, 121, 0.36) !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  .brand-checkbox,
+  .glass-checkbox,
+  .shop-filter-checkbox,
+  [data-slot="checkbox"],
+  input[type="checkbox"]
+) {
+  --checkbox-control-border-color: rgb(11, 6, 121);
+  --checkbox-control-background: rgba(255, 255, 255, 0.96);
+  --checkbox-control-check-color: #ffffff;
+  --checkbox-control-checked-border-color: rgb(11, 6, 121);
+  --checkbox-control-checked-background: rgb(11, 6, 121);
+  --checkbox-control-focus-ring: rgba(11, 6, 121, 0.26);
+  --checkbox-control-hover-background: rgba(11, 6, 121, 0.08);
+  --shop-filter-checkbox-accent: rgb(11, 6, 121);
+  accent-color: rgb(11, 6, 121);
+  border-color: rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  .brand-checkbox:checked,
+  .glass-checkbox[data-state="checked"],
+  .shop-filter-checkbox[data-state="checked"],
+  [data-slot="checkbox"][data-state="checked"]
+) {
+  background: rgb(11, 6, 121) !important;
+  background-color: rgb(11, 6, 121) !important;
+  background-image: none !important;
+  border-color: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  .brand-checkbox,
+  .glass-checkbox,
+  .shop-filter-checkbox,
+  [data-slot="checkbox"],
+  input[type="checkbox"]
+):is(:hover, :focus, :focus-visible, :active, :checked, [data-state="checked"]) {
+  box-shadow: none !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  .brand-checkbox,
+  .glass-checkbox,
+  .shop-filter-checkbox,
+  [data-slot="checkbox"],
+  input[type="checkbox"]
+):focus-visible {
+  outline: 2px solid rgba(11, 6, 121, 0.65) !important;
+  outline-offset: 2px;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) .brand-checkbox:checked::after {
+  background: #ffffff !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  .glass-checkbox[data-state="checked"],
+  [data-slot="checkbox"][data-state="checked"]
+)::before,
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  .glass-checkbox[data-state="checked"],
+  [data-slot="checkbox"][data-state="checked"]
+)::after {
+  opacity: 0 !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  [data-slot="checkbox"][data-state="checked"] [data-slot="checkbox-indicator"],
+  [data-slot="checkbox"][data-state="checked"] [data-slot="checkbox-indicator"] svg
+) {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+.physician-dashboard-settings-panel :is(
+  .brand-checkbox,
+  .glass-checkbox,
+  .shop-filter-checkbox,
+  [data-slot="checkbox"],
+  input[type="checkbox"]
+) {
+  --checkbox-control-border-color: rgb(11, 6, 121);
+  --checkbox-control-background: rgba(255, 255, 255, 0.96);
+  --checkbox-control-check-color: #ffffff;
+  --checkbox-control-checked-border-color: rgb(11, 6, 121);
+  --checkbox-control-checked-background: rgb(11, 6, 121);
+  --checkbox-control-focus-ring: rgba(11, 6, 121, 0.26);
+  --checkbox-control-hover-background: rgba(11, 6, 121, 0.08);
+  --shop-filter-checkbox-accent: rgb(11, 6, 121);
+  accent-color: rgb(11, 6, 121);
+  border-color: rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+}
+
+.physician-dashboard-settings-panel :is(
+  .brand-checkbox:checked,
+  .glass-checkbox[data-state="checked"],
+  .shop-filter-checkbox[data-state="checked"],
+  [data-slot="checkbox"][data-state="checked"]
+) {
+  background: rgb(11, 6, 121) !important;
+  background-color: rgb(11, 6, 121) !important;
+  background-image: none !important;
+  border-color: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.physician-dashboard-settings-panel :is(
+  .brand-checkbox,
+  .glass-checkbox,
+  .shop-filter-checkbox,
+  [data-slot="checkbox"],
+  input[type="checkbox"]
+):is(:hover, :focus, :focus-visible, :active, :checked, [data-state="checked"]) {
+  box-shadow: none !important;
+}
+
+.physician-dashboard-settings-panel :is(
+  .brand-checkbox,
+  .glass-checkbox,
+  .shop-filter-checkbox,
+  [data-slot="checkbox"],
+  input[type="checkbox"]
+):focus-visible {
+  outline: 2px solid rgba(11, 6, 121, 0.65) !important;
+  outline-offset: 2px;
+}
+
+.physician-dashboard-settings-panel .brand-checkbox:checked::after {
+  background: #ffffff !important;
+}
+
+.physician-dashboard-settings-panel :is(
+  .glass-checkbox[data-state="checked"],
+  [data-slot="checkbox"][data-state="checked"]
+)::before,
+.physician-dashboard-settings-panel :is(
+  .glass-checkbox[data-state="checked"],
+  [data-slot="checkbox"][data-state="checked"]
+)::after {
+  opacity: 0 !important;
+}
+
+.physician-dashboard-settings-panel :is(
+  [data-slot="checkbox"][data-state="checked"] [data-slot="checkbox-indicator"],
+  [data-slot="checkbox"][data-state="checked"] [data-slot="checkbox-indicator"] svg
+) {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  select,
+  [role="combobox"],
+  .patient-link-form__select,
+  .patient-link-payment-method-select,
+  .lead-status-select,
+  .database-visualizer-select-field
+) {
+  box-shadow:
+    0 8px 18px rgba(15, 23, 42, 0.12),
+    inset 0 1px rgba(255, 255, 255, 0.9) !important;
+}
+
+.sales-rep-dashboard:not(.physician-dashboard-container) :is(
+  select,
+  [role="combobox"],
+  .patient-link-form__select,
+  .patient-link-payment-method-select,
+  .lead-status-select,
+  .database-visualizer-select-field
+):is(:hover, :focus, :focus-visible, [data-state="open"]) {
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.14),
+    0 0 0 3px rgba(11, 6, 121, 0.16),
+    inset 0 1px rgba(255, 255, 255, 0.94) !important;
 }
 
 .sales-rep-dashboard .account-tab-underline-indicator,
@@ -16548,4 +16944,9 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
 [data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [data-slot="checkbox-indicator"] svg {
   color: var(--white-label-primary-color, var(--delegate-accent, rgb(11, 6, 121))) !important;
   stroke: currentColor !important;
+}
+
+.reseller-permit-file-name {
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }

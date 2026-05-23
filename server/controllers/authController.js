@@ -92,7 +92,11 @@ const updateProfile = async (req, res, next) => {
         'Received profile image update payload',
       );
     }
-    const updated = await authService.updateProfile(req.user.id, req.body || {});
+    const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    const updated = await authService.updateProfile(req.user.id, req.body || {}, {
+      ip: forwardedFor || req.ip || req.socket?.remoteAddress || null,
+      userAgent: req.headers['user-agent'] || null,
+    });
     res.json(updated);
   } catch (error) {
     next(error);

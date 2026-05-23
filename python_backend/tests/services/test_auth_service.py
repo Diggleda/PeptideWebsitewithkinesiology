@@ -5,7 +5,7 @@ import types
 import unittest
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 sys.modules.setdefault("bcrypt", types.SimpleNamespace())
 sys.modules.setdefault("jwt", types.SimpleNamespace())
@@ -473,6 +473,7 @@ class AuthServiceTests(unittest.TestCase):
         with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
             patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
             patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.legal_acceptance_repository, "record_acceptances", return_value=3) as record_acceptances, \
             patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
             patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
             patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
@@ -674,6 +675,92 @@ class AuthServiceTests(unittest.TestCase):
         self.assertTrue(saved_payloads[0]["networkPresenceAgreement"])
         self.assertEqual(saved_payloads[0]["network_presence_agreement"], 1)
         self.assertTrue(updated["networkPresenceAgreement"])
+
+    def test_update_profile_records_research_terms_versions_and_timestamp(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "researchTermsAgreement": False,
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.legal_acceptance_repository, "record_acceptances", return_value=3) as record_acceptances, \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.update_profile(
+                "doctor-1",
+                {
+                    "researchTermsAgreement": True,
+                    "researchTermsAgreementVersion": "2026.05.23",
+                    "researchShippingPolicyVersion": "2026.05.23",
+                    "researchPrivacyPolicyVersion": "2026.05.23",
+                },
+                legal_acceptance_context={
+                    "ip": "203.0.113.10",
+                    "userAgent": "UnitTest/1.0",
+                },
+            )
+
+        self.assertEqual(len(saved_payloads), 1)
+        self.assertTrue(saved_payloads[0]["researchTermsAgreement"])
+        self.assertEqual(saved_payloads[0]["researchTermsAgreementVersion"], "2026.05.23")
+        self.assertEqual(saved_payloads[0]["researchShippingPolicyVersion"], "2026.05.23")
+        self.assertEqual(saved_payloads[0]["researchPrivacyPolicyVersion"], "2026.05.23")
+        self.assertRegex(saved_payloads[0]["researchTermsAgreementAcceptedAt"], r"^\d{4}-\d{2}-\d{2}T")
+        self.assertTrue(updated["researchTermsAgreement"])
+        record_acceptances.assert_called_once_with(
+            user_id="doctor-1",
+            documents=[
+                {"document_key": "terms", "document_version": "2026.05.23"},
+                {"document_key": "shipping", "document_version": "2026.05.23"},
+                {"document_key": "privacy", "document_version": "2026.05.23"},
+            ],
+            accepted_at=saved_payloads[0]["researchTermsAgreementAcceptedAt"],
+            acceptance_context="research_terms_agreement",
+            ip_hash=ANY,
+            user_agent_hash=ANY,
+        )
+        self.assertEqual(len(record_acceptances.call_args.kwargs["ip_hash"]), 64)
+        self.assertEqual(len(record_acceptances.call_args.kwargs["user_agent_hash"]), 64)
+
+    def test_update_profile_persists_patient_link_email_preference(self) -> None:
+        user = {
+            "id": "doctor-1",
+            "role": "doctor",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "receivePatientLinkUpdateEmails": True,
+        }
+        saved_payloads = []
+
+        def fake_update(payload):
+            saved_payloads.append(payload)
+            return payload
+
+        with patch.object(auth_service.user_repository, "find_by_id", return_value=user), \
+            patch.object(auth_service.user_repository, "find_by_email", return_value=None), \
+            patch.object(auth_service.user_repository, "update", side_effect=fake_update), \
+            patch.object(auth_service.sales_prospect_repository, "sync_contact_for_doctor"), \
+            patch.object(auth_service.referral_repository, "sync_referred_contact_for_account"), \
+            patch.object(auth_service, "_sanitize_user", side_effect=lambda value: value):
+            updated = auth_service.update_profile(
+                "doctor-1",
+                {"receivePatientLinkUpdateEmails": False},
+            )
+
+        self.assertEqual(len(saved_payloads), 1)
+        self.assertFalse(saved_payloads[0]["receivePatientLinkUpdateEmails"])
+        self.assertFalse(updated["receivePatientLinkUpdateEmails"])
 
     def test_update_profile_normalizes_greater_area(self) -> None:
         user = {

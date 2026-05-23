@@ -33,6 +33,11 @@ class MysqlSchemaTests(unittest.TestCase):
 
         self.assertIn("delegate_background_url LONGTEXT NULL", schema_sql)
         self.assertIn("delegate_background_color VARCHAR(16) NULL", schema_sql)
+        self.assertIn("receive_patient_link_update_emails TINYINT(1) NOT NULL DEFAULT 1", schema_sql)
+        self.assertIn("research_terms_agreement_version VARCHAR(64) NULL", schema_sql)
+        self.assertIn("research_shipping_policy_version VARCHAR(64) NULL", schema_sql)
+        self.assertIn("research_privacy_policy_version VARCHAR(64) NULL", schema_sql)
+        self.assertIn("research_terms_agreement_accepted_at DATETIME NULL", schema_sql)
         self.assertNotIn("delegate_background_image_url LONGTEXT NULL", schema_sql)
 
     def test_email_verification_schema_exists(self) -> None:
@@ -83,6 +88,19 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("version BIGINT UNSIGNED NOT NULL DEFAULT 0", schema_sql)
         self.assertIn("metadata_json JSON NULL", schema_sql)
         self.assertIn("KEY idx_resource_versions_updated (updated_at)", schema_sql)
+
+    def test_legal_acceptances_schema_exists(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS legal_acceptances", schema_sql)
+        self.assertIn("user_id VARCHAR(64) NOT NULL", schema_sql)
+        self.assertIn("document_key VARCHAR(64) NOT NULL", schema_sql)
+        self.assertIn("document_version VARCHAR(64) NOT NULL", schema_sql)
+        self.assertIn("accepted_at DATETIME NOT NULL", schema_sql)
+        self.assertIn("acceptance_context VARCHAR(64) NULL", schema_sql)
+        self.assertIn("ip_hash CHAR(64) NULL", schema_sql)
+        self.assertIn("user_agent_hash CHAR(64) NULL", schema_sql)
+        self.assertIn("KEY idx_legal_acceptances_user_accepted (user_id, accepted_at)", schema_sql)
 
     def test_network_presence_backfill_runs_once_and_records_marker(self) -> None:
         execute_calls = []

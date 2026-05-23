@@ -9,27 +9,9 @@ import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react@0.487.0';
 import clsx from 'clsx';
-import termsHtml from '../content/legal/terms.html?raw';
-import privacyHtml from '../content/legal/privacy.html?raw';
-import shippingHtml from '../content/legal/shipping.html?raw';
-import returnsHtml from '../content/legal/returns.html?raw';
-import contactHtml from '../content/legal/contact.html?raw';
-import openSourceNoticesHtml from '../content/legal/open-source-notices.html?raw';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
+import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '../lib/legalDocuments';
 import { api, usageTrackingAPI } from '../services/api';
-
-type LegalDocumentKey =
-  | 'terms'
-  | 'privacy'
-  | 'shipping'
-  | 'returns'
-  | 'contact'
-  | 'open_source_notices';
-
-interface LegalDocumentContent {
-  title: string;
-  html: string;
-}
 
 type ContactFormSource = 'question' | 'join_network' | 'partner_application';
 type ToolRequestSource = 'research_tab';
@@ -88,33 +70,6 @@ const normalizeContactFormSource = (value: unknown): ContactFormSource => {
     return 'partner_application';
   }
   return 'question';
-};
-
-const LEGAL_DOCUMENTS: Record<LegalDocumentKey, LegalDocumentContent> = {
-  terms: {
-    title: 'Terms of Service',
-    html: termsHtml,
-  },
-  privacy: {
-    title: 'Privacy Policy',
-    html: privacyHtml,
-  },
-  shipping: {
-    title: 'Shipping Policy',
-    html: shippingHtml,
-  },
-  returns: {
-    title: 'Returns & Refunds',
-    html: returnsHtml,
-  },
-  contact: {
-    title: 'Contact',
-    html: contactHtml,
-  },
-  open_source_notices: {
-    title: 'Open Source Notices',
-    html: openSourceNoticesHtml,
-  },
 };
 
 interface LegalFooterProps {

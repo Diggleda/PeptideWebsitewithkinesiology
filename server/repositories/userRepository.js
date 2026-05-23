@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { userStore } = require('../storage');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
@@ -32,6 +33,18 @@ const normalizeOptionalString = (value) => {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeLegalVersion = (value) => {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? normalized.slice(0, 64) : null;
+};
+
+const toMysqlDateTime = (value) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 19).replace('T', ' ');
 };
 
 const normalizeEmail = (value) => {
@@ -143,6 +156,10 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
     delegateBackgroundColor: normalizeOptionalString(user.delegateBackgroundColor),
     delegateLinksEnabled: user.delegateLinksEnabled ? 1 : 0,
     researchTermsAgreement: user.researchTermsAgreement ? 1 : 0,
+    researchTermsAgreementVersion: normalizeLegalVersion(user.researchTermsAgreementVersion),
+    researchShippingPolicyVersion: normalizeLegalVersion(user.researchShippingPolicyVersion),
+    researchPrivacyPolicyVersion: normalizeLegalVersion(user.researchPrivacyPolicyVersion),
+    researchTermsAgreementAcceptedAt: normalizeOptionalString(user.researchTermsAgreementAcceptedAt),
     delegateOptIn: user.delegateOptIn ? 1 : 0,
     npiNumber: user.npiNumber || null,
     npiProviderName: user.npiVerification?.name || null,
@@ -203,6 +220,10 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           delegate_background_color,
           delegate_links_enabled,
           research_terms_agreement,
+          research_terms_agreement_version,
+          research_shipping_policy_version,
+          research_privacy_policy_version,
+          research_terms_agreement_accepted_at,
           delegate_opt_in,
           npi_number,
           npi_provider_name,
@@ -245,6 +266,10 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           :delegateBackgroundColor,
           :delegateLinksEnabled,
           :researchTermsAgreement,
+          :researchTermsAgreementVersion,
+          :researchShippingPolicyVersion,
+          :researchPrivacyPolicyVersion,
+          :researchTermsAgreementAcceptedAt,
           :delegateOptIn,
           :npiNumber,
           :npiProviderName,
@@ -287,6 +312,10 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           delegate_background_color = VALUES(delegate_background_color),
           delegate_links_enabled = VALUES(delegate_links_enabled),
           research_terms_agreement = VALUES(research_terms_agreement),
+          research_terms_agreement_version = VALUES(research_terms_agreement_version),
+          research_shipping_policy_version = VALUES(research_shipping_policy_version),
+          research_privacy_policy_version = VALUES(research_privacy_policy_version),
+          research_terms_agreement_accepted_at = VALUES(research_terms_agreement_accepted_at),
           delegate_opt_in = VALUES(delegate_opt_in),
           npi_number = VALUES(npi_number),
           npi_provider_name = VALUES(npi_provider_name),
@@ -497,6 +526,18 @@ const ensureUserDefaults = (user) => {
   } else {
     normalized.researchTermsAgreement = normalizeBooleanFlag(normalized.researchTermsAgreement);
   }
+  normalized.researchTermsAgreementVersion = normalizeLegalVersion(
+    normalized.researchTermsAgreementVersion ?? normalized.research_terms_agreement_version,
+  );
+  normalized.researchShippingPolicyVersion = normalizeLegalVersion(
+    normalized.researchShippingPolicyVersion ?? normalized.research_shipping_policy_version,
+  );
+  normalized.researchPrivacyPolicyVersion = normalizeLegalVersion(
+    normalized.researchPrivacyPolicyVersion ?? normalized.research_privacy_policy_version,
+  );
+  normalized.researchTermsAgreementAcceptedAt = normalizeOptionalString(
+    normalized.researchTermsAgreementAcceptedAt ?? normalized.research_terms_agreement_accepted_at,
+  );
   if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateOptIn')) {
     normalized.delegateOptIn = normalizeBooleanFlag(normalized.delegate_opt_in);
   } else {
@@ -514,6 +555,10 @@ const ensureUserDefaults = (user) => {
   }
   normalized.delegate_links_enabled = normalized.delegateLinksEnabled ? 1 : 0;
   normalized.research_terms_agreement = normalized.researchTermsAgreement ? 1 : 0;
+  normalized.research_terms_agreement_version = normalized.researchTermsAgreementVersion;
+  normalized.research_shipping_policy_version = normalized.researchShippingPolicyVersion;
+  normalized.research_privacy_policy_version = normalized.researchPrivacyPolicyVersion;
+  normalized.research_terms_agreement_accepted_at = normalized.researchTermsAgreementAcceptedAt;
   normalized.delegate_opt_in = normalized.delegateOptIn ? 1 : 0;
   if (!Object.prototype.hasOwnProperty.call(normalized, 'delegateLogoUrl')) {
     normalized.delegateLogoUrl = normalizeOptionalString(normalized.delegate_logo_url);
@@ -696,6 +741,56 @@ const removeById = (id) => {
   return removed || null;
 };
 
+const recordLegalAcceptances = async ({
+  userId,
+  documents,
+  acceptedAt,
+  acceptanceContext,
+  ipHash,
+  userAgentHash,
+}) => {
+  if (!mysqlClient.isEnabled()) {
+    return 0;
+  }
+  const normalizedUserId = normalizeOptionalString(userId)?.slice(0, 64);
+  const acceptedAtValue = toMysqlDateTime(acceptedAt);
+  if (!normalizedUserId || !acceptedAtValue || !Array.isArray(documents)) {
+    return 0;
+  }
+
+  let inserted = 0;
+  for (const document of documents) {
+    const documentKey = normalizeOptionalString(document?.document_key || document?.key)?.slice(0, 64);
+    const documentVersion = normalizeLegalVersion(document?.document_version || document?.version);
+    if (!documentKey || !documentVersion) {
+      continue;
+    }
+    await mysqlClient.execute(
+      `
+        INSERT INTO legal_acceptances (
+          id, user_id, document_key, document_version, accepted_at,
+          acceptance_context, ip_hash, user_agent_hash
+        ) VALUES (
+          :id, :userId, :documentKey, :documentVersion, :acceptedAt,
+          :acceptanceContext, :ipHash, :userAgentHash
+        )
+      `,
+      {
+        id: crypto.randomBytes(16).toString('hex'),
+        userId: normalizedUserId,
+        documentKey,
+        documentVersion,
+        acceptedAt: acceptedAtValue,
+        acceptanceContext: normalizeOptionalString(acceptanceContext)?.slice(0, 64) || null,
+        ipHash: normalizeOptionalString(ipHash)?.slice(0, 64) || null,
+        userAgentHash: normalizeOptionalString(userAgentHash)?.slice(0, 64) || null,
+      },
+    );
+    inserted += 1;
+  }
+  return inserted;
+};
+
 module.exports = {
   getAll,
   insert,
@@ -708,4 +803,5 @@ module.exports = {
   findByNpiNumber,
   findByPasskeyId,
   syncDirectShippingToSql,
+  recordLegalAcceptances,
 };

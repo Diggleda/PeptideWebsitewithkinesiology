@@ -76,6 +76,22 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
   `
+    CREATE TABLE IF NOT EXISTS legal_acceptances (
+      id VARCHAR(32) PRIMARY KEY,
+      user_id VARCHAR(64) NOT NULL,
+      document_key VARCHAR(64) NOT NULL,
+      document_version VARCHAR(64) NOT NULL,
+      accepted_at DATETIME NOT NULL,
+      acceptance_context VARCHAR(64) NULL,
+      ip_hash CHAR(64) NULL,
+      user_agent_hash CHAR(64) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_legal_acceptances_user_accepted (user_id, accepted_at),
+      INDEX idx_legal_acceptances_document (document_key, document_version),
+      INDEX idx_legal_acceptances_context (acceptance_context)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
     CREATE TABLE IF NOT EXISTS user_passkeys (
       id VARCHAR(32) PRIMARY KEY,
       user_id VARCHAR(64) NOT NULL,
@@ -704,6 +720,34 @@ const ensureUserColumns = async () => {
       ddl: `
         ALTER TABLE users
         ADD COLUMN research_terms_agreement TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
+      name: 'research_terms_agreement_version',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN research_terms_agreement_version VARCHAR(64) NULL
+      `,
+    },
+    {
+      name: 'research_shipping_policy_version',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN research_shipping_policy_version VARCHAR(64) NULL
+      `,
+    },
+    {
+      name: 'research_privacy_policy_version',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN research_privacy_policy_version VARCHAR(64) NULL
+      `,
+    },
+    {
+      name: 'research_terms_agreement_accepted_at',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN research_terms_agreement_accepted_at DATETIME NULL
       `,
     },
     {

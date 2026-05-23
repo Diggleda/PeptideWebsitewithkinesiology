@@ -97,6 +97,10 @@ CREATE_TABLE_STATEMENTS = [
         delegate_background_color VARCHAR(16) NULL,
         delegate_links_enabled TINYINT(1) NOT NULL DEFAULT 0,
         research_terms_agreement TINYINT(1) NOT NULL DEFAULT 0,
+        research_terms_agreement_version VARCHAR(64) NULL,
+        research_shipping_policy_version VARCHAR(64) NULL,
+        research_privacy_policy_version VARCHAR(64) NULL,
+        research_terms_agreement_accepted_at DATETIME NULL,
         zelle_contact VARCHAR(190) NULL,
         cart JSON NULL,
         downloads LONGTEXT NULL,
@@ -104,6 +108,7 @@ CREATE_TABLE_STATEMENTS = [
         total_referrals INT NOT NULL DEFAULT 0,
         visits INT NOT NULL DEFAULT 0,
         receive_client_order_update_emails TINYINT(1) NOT NULL DEFAULT 0,
+        receive_patient_link_update_emails TINYINT(1) NOT NULL DEFAULT 1,
         markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
         created_at DATETIME NULL,
         last_login_at DATETIME NULL,
@@ -124,6 +129,22 @@ CREATE_TABLE_STATEMENTS = [
         KEY idx_users_role (role),
         KEY idx_users_sales_rep_id (sales_rep_id),
         KEY idx_users_lead_type (lead_type)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS legal_acceptances (
+        id VARCHAR(32) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        document_key VARCHAR(64) NOT NULL,
+        document_version VARCHAR(64) NOT NULL,
+        accepted_at DATETIME NOT NULL,
+        acceptance_context VARCHAR(64) NULL,
+        ip_hash CHAR(64) NULL,
+        user_agent_hash CHAR(64) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_legal_acceptances_user_accepted (user_id, accepted_at),
+        KEY idx_legal_acceptances_document (document_key, document_version),
+        KEY idx_legal_acceptances_context (acceptance_context)
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -844,10 +865,15 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_secondary_color VARCHAR(16) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_links_enabled TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS research_terms_agreement TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS research_terms_agreement_version VARCHAR(64) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS research_shipping_policy_version VARCHAR(64) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS research_privacy_policy_version VARCHAR(64) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS research_terms_agreement_accepted_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_opt_in TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS zelle_contact VARCHAR(190) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS cart JSON NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS receive_client_order_update_emails TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS receive_patient_link_update_emails TINYINT(1) NOT NULL DEFAULT 1",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS npi_number VARCHAR(20) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS npi_last_verified_at DATETIME NULL",
@@ -1207,6 +1233,14 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("users", "markup_percent"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("users", "receive_patient_link_update_emails"):
+            mysql_client.execute(
+                "ALTER TABLE users ADD COLUMN receive_patient_link_update_emails TINYINT(1) NOT NULL DEFAULT 1"
+            )
     except Exception:
         pass
 
