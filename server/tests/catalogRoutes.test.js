@@ -183,6 +183,8 @@ test('brochure CSV image hydration resolves Woo images for SKU-matched rows', as
     'BPC-157/TB500 10mg/10mg Nasal,Phych-BPC157-10mg-TB500-10mgN,Description,Benefits,UPSERTED',
   ].join('\n'));
   const [scopedRow] = rows;
+  scopedRow.product_id = 1023;
+  scopedRow.variation_id = 1071;
   const previousFetchCatalog = wooCommerceClient.fetchCatalog;
   const calls = [];
   wooCommerceClient.fetchCatalog = async (endpoint) => {
@@ -216,6 +218,36 @@ test('brochure CSV image hydration resolves Woo images for SKU-matched rows', as
   } finally {
     wooCommerceClient.fetchCatalog = previousFetchCatalog;
   }
+});
+
+test('brochure DTO exposes storefront image arrays and prefers matched variation media', () => {
+  const product = {
+    id: 1023,
+    name: 'BPC-157 / TB-500 N',
+    sku: 'PARENT-BPC-TB',
+    images: [{ src: 'https://example.test/parent.jpg' }],
+    categories: [{ name: 'Nasal Sprays', slug: 'nasals' }],
+  };
+  const variation = {
+    id: 1071,
+    sku: 'Phych-BPC157-10mg-TB500-10mgN',
+    image: { src: 'https://example.test/variation.jpg' },
+  };
+  const info = {
+    product_sku: variation.sku,
+    parent_sku: product.sku,
+    product_description: 'Description',
+    product_information: 'Benefits',
+  };
+
+  const dto = __test__.brochureDto(product, info, new Map([[1023, true]]), variation);
+
+  assert.equal(dto.imageUrl, 'https://example.test/variation.jpg');
+  assert.deepEqual(dto.imageUrls, [
+    'https://example.test/variation.jpg',
+    'https://example.test/parent.jpg',
+  ]);
+  assert.deepEqual(dto.images, dto.imageUrls);
 });
 
 test('local brochure fallback DTO remains brochure-safe', () => {

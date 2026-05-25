@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ..database import mysql_client
 from ..repositories import product_document_repository
@@ -51,15 +51,30 @@ def _int_value(value: Any) -> Optional[int]:
     return parsed if parsed > 0 else None
 
 
-def _first_image(product: Dict[str, Any]) -> Optional[str]:
-    images = product.get("images")
-    if isinstance(images, list):
-        for image in images:
-            if isinstance(image, dict) and _text(image.get("src")):
-                return _text(image.get("src"))
-            if isinstance(image, str) and image.strip():
-                return image.strip()
-    return None
+def _image_urls(*items: Optional[Dict[str, Any]]) -> List[str]:
+    urls: List[str] = []
+
+    def add(value: Any) -> None:
+        src = _text(value)
+        if src and src not in urls:
+            urls.append(src)
+
+    for product in items:
+        if not isinstance(product, dict):
+            continue
+        image = product.get("image")
+        if isinstance(image, dict):
+            add(image.get("src") or image.get("url"))
+        else:
+            add(image)
+        images = product.get("images")
+        if isinstance(images, list):
+            for entry in images:
+                if isinstance(entry, dict):
+                    add(entry.get("src") or entry.get("url"))
+                else:
+                    add(entry)
+    return urls
 
 
 def _categories(product: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -249,17 +264,18 @@ def _build_brochure_matcher(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _match_brochure_row(product: Dict[str, Any], matcher: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _match_brochure_entry(product: Dict[str, Any], matcher: Dict[str, Any]) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    product_match: Optional[Dict[str, Any]] = None
     product_id = _int_value(product.get("id"))
     if product_id is not None:
         matched = matcher["by_product_id"].get(product_id)
         if matched:
-            return matched
+            product_match = matched
     sku = _text(product.get("sku"))
-    if sku:
+    if sku and product_match is None:
         matched = matcher["by_exact_sku"].get(_exact_key(sku)) or matcher["by_normalized_sku"].get(_normalize_sku(sku))
         if matched:
-            return matched
+            product_match = matched
     variations = product.get("variations")
     if isinstance(variations, list):
         for variation in variations:
@@ -269,21 +285,35 @@ def _match_brochure_row(product: Dict[str, Any], matcher: Dict[str, Any]) -> Opt
             if variation_id is not None:
                 matched = matcher["by_variation_id"].get(variation_id)
                 if matched:
-                    return matched
+                    return matched, variation
             variation_sku = _text(variation.get("sku"))
             if variation_sku:
                 matched = matcher["by_exact_sku"].get(_exact_key(variation_sku)) or matcher["by_normalized_sku"].get(_normalize_sku(variation_sku))
                 if matched:
-                    return matched
+                    return matched, variation
+    if product_match:
+        return product_match, product
     return None
 
 
-def _brochure_dto(product: Dict[str, Any], info: Dict[str, Any], *, coa_available: bool) -> Dict[str, Any]:
+def _match_brochure_row(product: Dict[str, Any], matcher: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    matched = _match_brochure_entry(product, matcher)
+    return matched[0] if matched else None
+
+
+def _brochure_dto(
+    product: Dict[str, Any],
+    info: Dict[str, Any],
+    *,
+    coa_available: bool,
+    image_item: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     product_id = _int_value(product.get("id"))
     categories = _categories(product)
     product_sku = _text(product.get("sku"))
     brochure_sku = _text(info.get("product_sku"))
     parent_sku = _text(info.get("parent_sku")) or product_sku or None
+    image_urls = _image_urls(image_item, product)
     return {
         "id": f"woo-{product_id}" if product_id is not None else brochure_sku or product_sku or _text(product.get("name")),
         "wooProductId": product_id,
@@ -292,7 +322,9 @@ def _brochure_dto(product: Dict[str, Any], info: Dict[str, Any], *, coa_availabl
         "name": _text(product.get("name")) or _text(info.get("product_name")) or "Product",
         "category": _primary_category(product),
         "categories": categories,
-        "imageUrl": _first_image(product),
+        "imageUrl": image_urls[0] if image_urls else None,
+        "imageUrls": image_urls,
+        "images": image_urls,
         "productDescription": _text(info.get("product_description")) or None,
         "productInformation": _text(info.get("product_information")) or None,
         "coaAvailable": bool(coa_available),
@@ -335,14 +367,22 @@ def get_brochure_products(token: str) -> Dict[str, Any]:
     for product in products:
         if not _product_scope_matches(product, link):
             continue
-        info = _match_brochure_row(product, matcher)
-        if not info:
+        matched = _match_brochure_entry(product, matcher)
+        if not matched:
             sku = _text(product.get("sku"))
             if sku:
                 unmatched.append(sku)
             continue
+        info, image_item = matched
         product_id = _int_value(product.get("id"))
-        items.append(_brochure_dto(product, info, coa_available=bool(product_id and coa_map.get(product_id))))
+        items.append(
+            _brochure_dto(
+                product,
+                info,
+                coa_available=bool(product_id and coa_map.get(product_id)),
+                image_item=image_item,
+            )
+        )
 
     if unmatched:
         logger.info("[brochure-catalog] products missing brochure copy", extra={"count": len(unmatched), "sampleSkus": unmatched[:25]})

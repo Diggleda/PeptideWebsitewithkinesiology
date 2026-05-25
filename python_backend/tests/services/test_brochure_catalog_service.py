@@ -28,7 +28,21 @@ def _install_test_stubs() -> None:
     if "requests" not in sys.modules:
         requests = types.ModuleType("requests")
         requests_auth = types.ModuleType("requests.auth")
+        class RequestException(Exception):
+            pass
+
+        class Timeout(RequestException):
+            pass
+
+        class HTTPError(RequestException):
+            pass
+
         requests.get = lambda *_args, **_kwargs: None
+        requests.post = lambda *_args, **_kwargs: None
+        requests.put = lambda *_args, **_kwargs: None
+        requests.RequestException = RequestException
+        requests.Timeout = Timeout
+        requests.HTTPError = HTTPError
         requests_auth.HTTPBasicAuth = lambda *_args, **_kwargs: None
         sys.modules["requests"] = requests
         sys.modules["requests.auth"] = requests_auth
@@ -213,6 +227,60 @@ class BrochureCatalogServiceTests(unittest.TestCase):
             service._match_brochure_row({"id": 303, "sku": "TB-500-10MG"}, matcher).get("product_description"),
             "Normalized SKU match",
         )
+
+    def test_get_brochure_products_prefers_matched_variation_image_arrays(self):
+        service = self.brochure_catalog_service
+        fake_config = types.SimpleNamespace(mysql={"enabled": True})
+        link = {
+            "linkType": "brochure",
+            "capabilities": {"canViewProducts": True},
+            "productScope": "all_physician_approved",
+            "productScopeItems": [],
+        }
+        products = [
+            {
+                "id": 1023,
+                "name": "BPC-157 / TB-500",
+                "sku": "PARENT-BPC-TB",
+                "categories": [{"id": 17, "name": "Nasals", "slug": "nasals"}],
+                "images": [{"src": "https://example.test/parent.jpg"}],
+                "variations": [
+                    {
+                        "id": 1071,
+                        "sku": "Phych-BPC157-10mg-TB500-10mgN",
+                        "image": {"src": "https://example.test/variation.jpg"},
+                    }
+                ],
+            }
+        ]
+        brochure_rows = [
+            {
+                "product_id": 1023,
+                "variation_id": 1071,
+                "product_sku": "Phych-BPC157-10mg-TB500-10mgN",
+                "product_name": "BPC-157 / TB-500",
+                "product_description": "Brochure description",
+                "product_information": "Brochure information",
+            }
+        ]
+
+        with patch.object(service, "get_config", return_value=fake_config), \
+            patch.object(service, "resolve_brochure_link", return_value=link), \
+            patch.object(service, "_load_brochure_rows", return_value=brochure_rows), \
+            patch.object(service, "_load_snapshot_products", return_value=products), \
+            patch.object(service, "_coa_available_by_product_id", return_value={1023: True}):
+            result = service.get_brochure_products("tok-brochure")
+
+        product = result["products"][0]
+        self.assertEqual(product.get("imageUrl"), "https://example.test/variation.jpg")
+        self.assertEqual(
+            product.get("imageUrls"),
+            [
+                "https://example.test/variation.jpg",
+                "https://example.test/parent.jpg",
+            ],
+        )
+        self.assertEqual(product.get("images"), product.get("imageUrls"))
 
 
 if __name__ == "__main__":

@@ -461,6 +461,14 @@ def resolve_token():
                     "proposalStatus": resolved.get("proposalStatus") if isinstance(resolved, dict) else None,
                 },
             )
+            _bump_resources(
+                "patient-links",
+                metadata={
+                    "source": "delegation.resolve",
+                    "token": token,
+                    "linkType": resolved.get("linkType") if isinstance(resolved, dict) else None,
+                },
+            )
         return {"success": True, **resolved}
 
     return handle_action(action)

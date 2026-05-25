@@ -215,19 +215,25 @@ const isExcludedCatalogProduct = (product) => {
 const normalizeSkuKey = (value) => String(value || '').trim().toLowerCase();
 const normalizeSkuLoose = (value) => normalizeSkuKey(value).replace(/[^a-z0-9]+/g, '');
 
-const firstProductImage = (product) => {
-  if (product?.image && typeof product.image === 'object' && String(product.image.src || '').trim()) {
-    return String(product.image.src).trim();
+const productImageUrls = (...items) => {
+  const urls = [];
+  const add = (value) => {
+    const src = String(value || '').trim();
+    if (src && !urls.includes(src)) urls.push(src);
+  };
+  for (const product of items) {
+    if (!product || typeof product !== 'object') continue;
+    if (product.image && typeof product.image === 'object') add(product.image.src || product.image.url);
+    else if (typeof product.image === 'string') add(product.image);
+    for (const image of Array.isArray(product.images) ? product.images : []) {
+      if (image && typeof image === 'object') add(image.src || image.url);
+      else if (typeof image === 'string') add(image);
+    }
   }
-  if (typeof product?.image === 'string' && product.image.trim()) {
-    return product.image.trim();
-  }
-  for (const image of Array.isArray(product?.images) ? product.images : []) {
-    if (image && typeof image === 'object' && String(image.src || '').trim()) return String(image.src).trim();
-    if (typeof image === 'string' && image.trim()) return image.trim();
-  }
-  return null;
+  return urls;
 };
+
+const firstProductImage = (product) => productImageUrls(product)[0] || null;
 
 const productCategories = (product) => (Array.isArray(product?.categories) ? product.categories : [])
   .filter((category) => category && typeof category === 'object' && String(category.name || '').trim())
@@ -570,17 +576,25 @@ const matchBrochureRowsForProduct = async (product, matcher) => {
 const matchBrochureRowEntriesForProduct = async (product, matcher) => {
   if (!matcher?.rowCount) return [];
   const matches = [];
-  const add = (row, item) => {
-    if (row && !matches.some((entry) => entry.row === row)) {
-      matches.push({ row, item: item || product, product });
+  const add = (row, item, { preferItem = false } = {}) => {
+    if (!row) return;
+    const existingIndex = matches.findIndex((entry) => entry.row === row);
+    if (existingIndex >= 0) {
+      if (preferItem && item && item !== product) {
+        matches[existingIndex] = { row, item, product };
+      }
+      return;
     }
+    matches.push({ row, item: item || product, product });
   };
   for (const row of matchBrochureRowsForCatalogItem(product, matcher)) add(row, product);
   const productId = parsePositiveInt(product?.id);
   if (productId && String(product?.type || '').toLowerCase() === 'variable') {
     const variations = await wooCommerceClient.fetchCatalog(`products/${productId}/variations`, { per_page: 100, status: 'publish' }).catch(() => []);
     for (const variation of Array.isArray(variations) ? variations : []) {
-      for (const row of matchBrochureRowsForCatalogItem(variation, matcher, { variation: true })) add(row, variation);
+      for (const row of matchBrochureRowsForCatalogItem(variation, matcher, { variation: true })) {
+        add(row, variation, { preferItem: true });
+      }
     }
   }
   return matches;
@@ -662,7 +676,12 @@ const hydrateBrochureCsvRowsWithCatalogImages = async (rows) => {
 };
 
 const matchBrochureRow = async (product, matcher) => {
-  const matches = await matchBrochureRowsForProduct(product, matcher);
+  const match = await matchBrochureRowEntry(product, matcher);
+  return match?.row || null;
+};
+
+const matchBrochureRowEntry = async (product, matcher) => {
+  const matches = await matchBrochureRowEntriesForProduct(product, matcher);
   return matches[0] || null;
 };
 
@@ -779,6 +798,7 @@ const brochureDtoFromCsvRow = (row) => {
   const sku = String(row?.product_sku || '').trim();
   const category = csvBrochureCategory(row);
   const imageUrl = String(row?.image_url || row?.imageUrl || '').trim();
+  const imageUrls = imageUrl ? [imageUrl] : [];
   const wooProductId = parsePositiveInt(row?.product_id) || parsePositiveInt(row?.parent_product_id);
   return {
     id: sku ? `csv-${normalizeSkuLoose(sku)}` : `csv-${normalizeFilterKey(row?.product_name) || 'product'}`,
@@ -789,6 +809,8 @@ const brochureDtoFromCsvRow = (row) => {
     category: category.name,
     categories: [category],
     imageUrl: imageUrl || null,
+    imageUrls,
+    images: imageUrls,
     productDescription: stripHtml(row?.product_description),
     productInformation: stripHtml(row?.product_information),
     coaAvailable: Boolean(wooProductId),
@@ -843,11 +865,12 @@ const localBrochureInfoFromProduct = (product) => {
   };
 };
 
-const brochureDto = (product, info, coaMap) => {
+const brochureDto = (product, info, coaMap, imageItem = null) => {
   const productId = parsePositiveInt(product?.id);
   const productSku = String(product?.sku || '').trim();
   const brochureSku = String(info?.product_sku || '').trim();
   const parentSku = String(info?.parent_sku || productSku || '').trim() || null;
+  const imageUrls = productImageUrls(imageItem, product);
   return {
     id: productId ? `woo-${productId}` : (brochureSku || productSku || String(product?.name || info?.product_name || 'Product').trim()),
     wooProductId: productId || null,
@@ -856,7 +879,9 @@ const brochureDto = (product, info, coaMap) => {
     name: String(product?.name || info?.product_name || 'Product').trim(),
     category: primaryCategoryName(product),
     categories: productCategories(product),
-    imageUrl: firstProductImage(product),
+    imageUrl: imageUrls[0] || null,
+    imageUrls,
+    images: imageUrls,
     productDescription: String(info?.product_description || '').trim() || null,
     productInformation: String(info?.product_information || '').trim() || null,
     coaAvailable: Boolean(productId && coaMap.get(productId)),
@@ -1123,13 +1148,14 @@ router.get('/brochure-products', async (req, res, next) => {
     for (const product of productList) {
       if (isExcludedCatalogProduct(product) || !brochureScopeMatches(product, link)) continue;
       // eslint-disable-next-line no-await-in-loop
-      const info = await matchBrochureRow(product, matcher) || (allowLocalFallback ? localBrochureInfoFromProduct(product) : null);
+      const matchedEntry = await matchBrochureRowEntry(product, matcher);
+      const info = matchedEntry?.row || (allowLocalFallback ? localBrochureInfoFromProduct(product) : null);
       if (!info) {
         const sku = String(product?.sku || product?.id || product?.name || '').trim();
         if (sku) unmatched.push(sku);
         continue;
       }
-      items.push(brochureDto(product, info, coaMap));
+      items.push(brochureDto(product, info, coaMap, matchedEntry?.item || null));
     }
     if (unmatched.length > 0) {
       logger.info(

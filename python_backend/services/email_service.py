@@ -25,11 +25,16 @@ _EMAIL_DEFAULT_DOMAIN = "trufusionlabs.com"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
+_EMAIL_PATIENT_LINKS_DASHBOARD_CID = "patient-links-dashboard"
+_EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID = "patient-links-create-dialog"
 _EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
 _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
+_EMAIL_PATIENT_LINKS_DASHBOARD_SRC = f"cid:{_EMAIL_PATIENT_LINKS_DASHBOARD_CID}"
+_EMAIL_PATIENT_LINKS_CREATE_DIALOG_SRC = f"cid:{_EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID}"
 _EMAIL_LOGO_WIDTH = 360
 _EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
+_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH = 616
 _EMAIL_BACKGROUND_COLOR = "#ffffff"
 _EMAIL_BACKGROUND_HEX = "#ffffff"
 _EMAIL_CONTACT_CARD_COLOR = "#ffffff"
@@ -272,6 +277,26 @@ _EMAIL_INLINE_IMAGE_SPECS = (
             "public/delegate-links-white-label-email.png",
             "src/content/marketing/DelegateLinks/DelegateLinkBetaImage1.png",
             "src/generated/runtime-assets/delegate-links-white-label-email.png",
+        ),
+    },
+    {
+        "content_id": _EMAIL_PATIENT_LINKS_DASHBOARD_CID,
+        "filename": "PatientLinks2.png",
+        "mime_type": "image/png",
+        "maintype": "image",
+        "subtype": "png",
+        "paths": (
+            "public/PatientLinks2.png",
+        ),
+    },
+    {
+        "content_id": _EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID,
+        "filename": "PatientLinks1.png",
+        "mime_type": "image/png",
+        "maintype": "image",
+        "subtype": "png",
+        "paths": (
+            "public/PatientLinks1.png",
         ),
     },
 )
@@ -977,15 +1002,30 @@ def _build_delegate_proposal_ready_email(
 def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    white_label_sessions_url = _EMAIL_WHITE_LABEL_SESSIONS_SRC
-    delegate_font_family = "'Lexend', Arial, Helvetica, sans-serif"
-    body_style = f"{_email_body_style()}font-family:{delegate_font_family};font-weight:300;"
+    dashboard_screenshot_url = _EMAIL_PATIENT_LINKS_DASHBOARD_SRC
+    create_dialog_screenshot_url = _EMAIL_PATIENT_LINKS_CREATE_DIALOG_SRC
+    patient_links_font_family = "Arial, Helvetica, sans-serif"
+    body_style = f"{_email_body_style()}font-family:{patient_links_font_family};font-weight:400;"
     outer_table_style = _email_outer_table_style()
-    container_style = _email_container_style(640)
-    title_style = f"margin:0 0 6px;font-family:{delegate_font_family};font-size:30px;font-weight:700;line-height:1.2;color:#0B274B;"
-    lead_style = f"margin:0 0 12px;font-family:{delegate_font_family};font-size:21px;font-weight:300;line-height:1.45;color:#111827;"
-    step_number_style = f"padding:0 16px 14px 0;font-family:{delegate_font_family};font-size:30px;font-weight:700;line-height:1.05;color:#0B274B;vertical-align:top;white-space:nowrap;"
-    step_text_style = f"padding:2px 0 14px;font-family:{delegate_font_family};font-size:15px;font-weight:300;color:#111827;line-height:1.62;vertical-align:top;"
+    container_style = _email_container_style(680)
+    title_style = f"margin:0 0 10px;font-family:{patient_links_font_family};font-size:30px;font-weight:700;line-height:1.18;color:#0B274B;"
+    lead_style = f"margin:0 0 18px;font-family:{patient_links_font_family};font-size:18px;font-weight:400;line-height:1.5;color:#334155;"
+    eyebrow_style = f"margin:0 0 8px;font-family:{patient_links_font_family};font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:{_EMAIL_BRAND_BLUE};"
+    section_title_style = f"margin:0 0 10px;font-family:{patient_links_font_family};font-size:20px;font-weight:700;line-height:1.25;color:#0B274B;"
+    screenshot_image_style = (
+        f"width:{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}px;"
+        "max-width:100%;"
+        "height:auto;"
+        "display:block;"
+        "margin:0 auto 22px;"
+        "border:1px solid rgba(11,6,121,0.28);"
+        "border-radius:22px;"
+        "outline:none;"
+        "text-decoration:none;"
+        "box-shadow:0 16px 38px -28px rgba(15,23,42,0.55);"
+    )
+    step_number_style = f"padding:0 16px 16px 0;font-family:{patient_links_font_family};font-size:24px;font-weight:700;line-height:1.05;color:#0B274B;vertical-align:top;white-space:nowrap;"
+    step_text_style = f"padding:1px 0 16px;font-family:{patient_links_font_family};font-size:15px;font-weight:400;color:#334155;line-height:1.6;vertical-align:top;"
     cta_style = (
         "display:inline-block;"
         "padding:14px 28px;"
@@ -993,21 +1033,18 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
         f"background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE});"
         "color:#ffffff;"
         "-webkit-text-fill-color:#ffffff;"
-        f"font-family:{delegate_font_family};"
+        f"font-family:{patient_links_font_family};"
         "font-size:15px;"
-        "font-weight:300;"
+        "font-weight:700;"
         f"border-radius:{_EMAIL_BUTTON_BORDER_RADIUS};"
         "text-decoration:none;"
     )
-    footer_style = f"padding:24px 32px 32px;font-family:{delegate_font_family};font-size:12px;font-weight:300;color:#6b7280;line-height:1.5;text-align:center;"
+    footer_style = f"padding:24px 32px 32px;font-family:{patient_links_font_family};font-size:12px;font-weight:400;color:#6b7280;line-height:1.5;text-align:center;"
     html = f"""<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Welcome to the Delegate Links Beta</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300&display=swap" rel="stylesheet" />
+    <title>Welcome to Patient Links</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
 {_EMAIL_LIGHT_MODE_LOCK_CSS}
@@ -1023,40 +1060,40 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
               </td>
             </tr>
             <tr>
-              <td style="padding:44px 32px 8px;font-family:{delegate_font_family};font-weight:300;">
-                      <table role="presentation" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" cellpadding="0" cellspacing="0" align="center" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;margin:0 auto;border-collapse:collapse;">
-                        <tr>
-                          <td style="font-family:{delegate_font_family};font-weight:300;">
-                            <h1 style="{title_style}">Welcome to the Delegate Links Beta</h1>
-                            <p style="{lead_style}">
-                              Create branded, patient-specific order proposals your delegate can submit for your review.
-                            </p>
+              <td style="padding:40px 32px 8px;font-family:{patient_links_font_family};font-weight:400;">
+                <p style="{eyebrow_style}">Patient Links</p>
+                <h1 style="{title_style}">Create brochure and delegate links from one workspace</h1>
+                <p style="{lead_style}">
+                  Patient Links now brings Product Brochure links and Delegate links together in your physician dashboard. Use brochure links for view-only product education, and delegate links when a patient session needs to build an order proposal for your review.
+                </p>
 
-                            <div style="margin:22px 0 24px;text-align:center;">
-                              <img src="{white_label_sessions_url}" width="{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}" alt="White label your delegate sessions" style="width:{_EMAIL_WHITE_LABEL_SESSIONS_WIDTH}px;max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid rgba(148,163,184,0.28);border-radius:16px;outline:none;text-decoration:none;" />
-                            </div>
+                <img src="{dashboard_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Patient Links dashboard with manage links and white-label session controls" style="{screenshot_image_style}" />
 
-                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-collapse:collapse;">
-                              <tr>
-                                <td style="{step_number_style}">1.</td>
-                                <td style="{step_text_style}">Set up your brand: add your logo and primary color.</td>
-                              </tr>
-                              <tr>
-                                <td style="{step_number_style}">2.</td>
-                                <td style="{step_text_style}">Create and share a link: add details, markup, optional limits, notes, and payment instructions, then copy the link to your delegate.</td>
-                              </tr>
-                              <tr>
-                                <td style="{step_number_style}">3.</td>
-                                <td style="{step_text_style}">Review the proposal: approve the order or reject it with notes. Shipping and delegate payment stay between you and your delegate.</td>
-                              </tr>
-                            </table>
+                <img src="{create_dialog_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Create link dialog showing Product Brochure and Delegate link options" style="{screenshot_image_style}" />
 
-                            <p style="margin:28px 0 32px;text-align:center;">
-                              <a class="trufusion-button" href="{safe_base_url}" style="{cta_style}">Open Delegate Links Beta</a>
-                            </p>
-                          </td>
-                        </tr>
-                      </table>
+                <h2 style="{section_title_style}">How to use Patient Links</h2>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;border-collapse:collapse;">
+                  <tr>
+                    <td style="{step_number_style}">1.</td>
+                    <td style="{step_text_style}"><strong style="color:#111827;">Open Patient Links</strong> in your physician dashboard, then choose <strong style="color:#111827;">Create a link</strong>.</td>
+                  </tr>
+                  <tr>
+                    <td style="{step_number_style}">2.</td>
+                    <td style="{step_text_style}"><strong style="color:#111827;">Product Brochure</strong> creates a view-only product information page with no pricing, cart, or checkout.</td>
+                  </tr>
+                  <tr>
+                    <td style="{step_number_style}">3.</td>
+                    <td style="{step_text_style}"><strong style="color:#111827;">Delegate</strong> creates a patient session that can build an order proposal for physician review.</td>
+                  </tr>
+                  <tr>
+                    <td style="{step_number_style}">4.</td>
+                    <td style="{step_text_style}">Use <strong style="color:#111827;">Manage your links</strong> to preview, copy, track, revoke, and review proposal activity.</td>
+                  </tr>
+                </table>
+
+                <p style="margin:10px 0 32px;text-align:center;">
+                  <a class="trufusion-button" href="{safe_base_url}" style="{cta_style}">Open Patient Links</a>
+                </p>
               </td>
             </tr>
             <tr>
@@ -1071,12 +1108,14 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
   </body>
 </html>"""
     plain = (
-        "Welcome to the Delegate Links Beta\n\n"
-        "Create branded, patient-specific order proposals your delegate can submit for your review.\n\n"
-        "1. Set up your brand. Add your logo and primary color.\n"
-        "2. Create and share a link. Add subject details, markup, optional limits, notes, and payment instructions, then copy the link to your delegate.\n"
-        "3. Review the proposal. Approve the order or reject it with notes. Shipping and delegate payment remain between you and your delegate.\n\n"
-        f"Open Delegate Links Beta: {safe_base_url}\n"
+        "Welcome to Patient Links\n\n"
+        "Patient Links now brings Product Brochure links and Delegate links together in your physician dashboard.\n\n"
+        "Product Brochure: create a shareable, view-only product brochure page with descriptions. No pricing, cart, or checkout.\n"
+        "Delegate: create a patient session capable of building order proposals for physician review.\n\n"
+        "1. Open Patient Links in your physician dashboard and choose Create a link.\n"
+        "2. Pick Product Brochure for view-only product education, or Delegate for proposal workflows.\n"
+        "3. Use Manage your links to preview, copy, track, revoke, and review proposal activity.\n\n"
+        f"Open Patient Links: {safe_base_url}\n"
         "Need help? Contact support@trufusionlabs.com."
     )
     return html, plain

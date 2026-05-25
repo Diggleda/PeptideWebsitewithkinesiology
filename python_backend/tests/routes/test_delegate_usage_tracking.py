@@ -38,7 +38,10 @@ class DelegateUsageTrackingRouteTests(unittest.TestCase):
                 delegation.usage_tracking_service,
                 "track_event",
                 return_value=True,
-            ) as track_event:
+            ) as track_event, patch.object(
+                delegation.resource_version_service,
+                "bump_many_safe",
+            ) as bump_resources:
                 delegation.resolve_token()
 
         resolve_delegate_token.assert_called_once_with("tok-1", count_page_load=True)
@@ -49,6 +52,9 @@ class DelegateUsageTrackingRouteTests(unittest.TestCase):
         self.assertEqual(kwargs["actor"], {"id": "doc-1", "role": "doctor"})
         self.assertEqual(kwargs["metadata"]["linkType"], "delegate")
         self.assertEqual(kwargs["metadata"]["openCount"], 3)
+        bump_resources.assert_called_once()
+        self.assertEqual(bump_resources.call_args.args[0], ("patient-links",))
+        self.assertEqual(bump_resources.call_args.kwargs["metadata"]["source"], "delegation.resolve")
 
     def test_resolve_does_not_track_delegate_open_for_readonly_resolve(self):
         with self.app.test_request_context("/api/delegation/resolve?token=tok-1&countPageLoad=0"):
@@ -60,11 +66,15 @@ class DelegateUsageTrackingRouteTests(unittest.TestCase):
                 delegation.usage_tracking_service,
                 "track_event",
                 return_value=True,
-            ) as track_event:
+            ) as track_event, patch.object(
+                delegation.resource_version_service,
+                "bump_many_safe",
+            ) as bump_resources:
                 delegation.resolve_token()
 
         resolve_delegate_token.assert_called_once_with("tok-1", count_page_load=False)
         track_event.assert_not_called()
+        bump_resources.assert_not_called()
 
     def test_delegate_estimate_tracks_successful_estimate(self):
         payload = {

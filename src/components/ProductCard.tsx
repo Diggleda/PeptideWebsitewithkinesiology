@@ -182,6 +182,9 @@ interface ProductCardProps {
   proposalActionsDisabled?: boolean;
   personalizedRecommendation?: boolean;
   personalizedRecommendationReason?: string | null;
+  brochureMode?: boolean;
+  brochureDescription?: string | null;
+  brochureInformation?: string | null;
 }
 
 const pickDefaultVariation = (variations: ProductVariation[] | undefined | null) => {
@@ -734,8 +737,12 @@ export function ProductCard({
   proposalActionsDisabled = false,
   personalizedRecommendation = false,
   personalizedRecommendationReason = null,
+  brochureMode = false,
+  brochureDescription = null,
+  brochureInformation = null,
 }: ProductCardProps) {
   type DocumentationTabId = 'certificate' | 'nasals';
+  const isBrochureMode = brochureMode === true;
   const isCheckoutAddOnCategory = useMemo(() => {
     const normalizedCategory = String(product.category || '')
       .trim()
@@ -1301,16 +1308,16 @@ export function ProductCard({
     link.click();
     link.remove();
 
-    try {
+    if (!isBrochureMode) {
       void api.post('/settings/downloads/track', {
         kind: 'coa',
         wooProductId,
         productId: product?.id,
         filename,
         at: new Date().toISOString(),
+      }).catch(() => {
+        // Best-effort telemetry only.
       });
-    } catch {
-      // Best-effort telemetry only.
     }
   };
 
@@ -1353,6 +1360,9 @@ export function ProductCard({
 
 			  const productMeta = (
 			    <>
+      {isBrochureMode && product.category && (
+        <p className="text-xs font-semibold uppercase text-slate-500">{product.category}</p>
+      )}
 	      <h3 className="product-card-title line-clamp-2 text-slate-900">{product.name}</h3>
       {!isCheckoutAddOnCategory && (
         <button
@@ -1518,6 +1528,17 @@ export function ProductCard({
     <div className="glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">{bulkContent}</div>
   ) : null;
 
+  const brochureDetails = isBrochureMode ? (
+    <div className="space-y-3">
+      {brochureDescription && (
+        <p className="text-sm leading-relaxed text-slate-700">{brochureDescription}</p>
+      )}
+      {brochureInformation && (
+        <p className="text-sm leading-relaxed text-slate-700">{brochureInformation}</p>
+      )}
+    </div>
+  ) : null;
+
   const addToCartButton = (
 	    <Button
       onClick={() => {
@@ -1571,13 +1592,21 @@ export function ProductCard({
           </div>
           <div className="p-4 pb-3 space-y-3">
             <div className="space-y-1">{productMeta}</div>
-            {variationSelector}
-            {quantitySelector}
-            {pricingSummary}
-            {gridBulkSection}
+            {isBrochureMode ? (
+              brochureDetails
+            ) : (
+              <>
+                {variationSelector}
+                {quantitySelector}
+                {pricingSummary}
+                {gridBulkSection}
+              </>
+            )}
           </div>
         </CardContent>
-        <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
+        {!isBrochureMode && (
+          <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
+        )}
       </Card>
 
       {!isCheckoutAddOnCategory && (

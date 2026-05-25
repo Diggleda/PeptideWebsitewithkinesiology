@@ -6009,74 +6009,15 @@ const LazyCatalogProductCard = ({
 const BrochureCatalogProductCard = ({ product }: { product: Product }) => {
   const description = product.brochureDescription || product.description || "";
   const information = product.brochureInformation || "";
-  const galleryImages = useMemo(() => {
-    const baseImages = Array.isArray(product.images) && product.images.length > 0
-      ? product.images
-      : [product.image];
-    return baseImages
-      .map((src) => normalizeWooImageUrl(src) ?? src)
-      .filter((src, index, arr): src is string => Boolean(src) && arr.indexOf(src) === index);
-  }, [product.images, product.image]);
-  const primaryImage = galleryImages[0] || product.image || WOO_PLACEHOLDER_IMAGE;
-  const [documentLoading, setDocumentLoading] = useState(false);
-  const openDocumentation = async () => {
-    const productId = product.wooId;
-    if (documentLoading) return;
-    if (!productId) {
-      toast.error("Documentation is unavailable for this product.");
-      return;
-    }
-    setDocumentLoading(true);
-    try {
-      const blob = await wooAPI.getCertificateOfAnalysis(productId);
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast.error("Documentation is unavailable for this product.");
-    } finally {
-      setDocumentLoading(false);
-    }
-  };
+  const cardProduct = useMemo(() => toCardProduct(product), [product]);
   return (
-    <article className="glass-card squircle-xl overflow-hidden border border-[rgba(148,163,184,0.35)] bg-white/85">
-      <div className="product-image-frame product-image-frame--flush">
-        <ImageWithFallback
-          src={primaryImage}
-          alt={product.name}
-          className="product-image-frame__img"
-        />
-      </div>
-      <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <div className="px-1">
-          <p className="text-xs font-semibold uppercase text-slate-500">
-            {product.category || "Product information"}
-          </p>
-          <h3 className="mt-1 text-base font-semibold leading-snug text-slate-950">
-            {product.name}
-          </h3>
-          <button
-            type="button"
-            onClick={() => void openDocumentation()}
-            disabled={documentLoading}
-            className="mt-1 line-clamp-2 text-left hover:underline disabled:cursor-wait disabled:opacity-70"
-            style={{ color: 'var(--white-label-primary-color, var(--primary, rgb(11, 6, 121)))' }}
-          >
-            {documentLoading ? "Loading..." : "Documentation and Analysis"}
-          </button>
-        </div>
-        {description && (
-          <p className="px-1 text-sm leading-relaxed text-slate-700">
-            {description}
-          </p>
-        )}
-        {information && (
-          <p className="px-1 text-sm leading-relaxed text-slate-700">
-            {information}
-          </p>
-        )}
-      </div>
-    </article>
+    <ProductCard
+      product={cardProduct}
+      brochureMode
+      brochureDescription={description}
+      brochureInformation={information}
+      onAddToCart={() => undefined}
+    />
   );
 };
 

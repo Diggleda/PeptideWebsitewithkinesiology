@@ -293,29 +293,30 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_args.kwargs["reply_to"], "support@trufusionlabs.com")
         self.assertNotIn("raise_on_failure", dispatch_email.call_args.kwargs)
 
-    def test_delegate_links_beta_info_email_includes_badge_image(self):
+    def test_delegate_links_beta_info_email_describes_patient_links(self):
         from python_backend.services import email_service
 
         html, plain = email_service._build_delegate_links_beta_info_email(base_url="https://trufusionlabs.com")
 
-        self.assertIn('src="cid:delegate-white-label-sessions"', html)
-        self.assertIn('alt="White label your delegate sessions"', html)
-        self.assertIn('width="560" cellpadding="0" cellspacing="0" align="center"', html)
-        self.assertIn("Welcome to the Delegate Links Beta", html)
-        self.assertIn("Set up your brand", html)
-        self.assertIn("font-family:'Lexend'", html)
-        self.assertIn("font-size:21px", html)
+        self.assertIn("Welcome to Patient Links", html)
+        self.assertIn("Product Brochure", html)
+        self.assertIn("Delegate links", html)
+        self.assertIn('src="cid:patient-links-dashboard"', html)
+        self.assertIn('src="cid:patient-links-create-dialog"', html)
+        self.assertIn("Patient Links dashboard with manage links and white-label session controls", html)
+        self.assertIn("Create link dialog showing Product Brochure and Delegate link options", html)
         self.assertIn("font-size:30px", html)
         self.assertIn("font-weight:700", html)
-        self.assertIn("font-weight:300", html)
-        self.assertIn('<td style="padding:0 16px 14px 0;', html)
         self.assertIn(">1.</td>", html)
         self.assertIn(">2.</td>", html)
         self.assertIn(">3.</td>", html)
         self.assertNotIn("Set up your brand: add your logo and primary color in Account > Delegate Links Beta.", html)
-        self.assertNotIn("Managing Delegate Links", html)
-        self.assertIn("Open Delegate Links Beta", html)
-        self.assertIn("1. Set up your brand", plain)
+        self.assertNotIn("Welcome to the Delegate Links Beta", html)
+        self.assertNotIn("M12 6.042", html)
+        self.assertNotIn("What kind of link would you like to create?</td>", html)
+        self.assertIn("Open Patient Links", html)
+        self.assertIn("Product Brochure: create a shareable", plain)
+        self.assertIn("Delegate: create a patient session", plain)
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service
