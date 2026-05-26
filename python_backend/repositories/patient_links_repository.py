@@ -120,6 +120,56 @@ def _normalize_optional_int(value: Any) -> Optional[int]:
     return max(1, min(parsed, 10_000))
 
 
+def _coerce_int(value: Any, *, default: int = 0) -> int:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return default
+    try:
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def _coerce_float(value: Any, *, default: float = 0.0) -> float:
+    if value in (None, ""):
+        return default
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return default
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _coerce_bool(value: Any, *, default: bool = False) -> bool:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "paid"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "unpaid"}:
+            return False
+        return default
+    return _coerce_int(value, default=1 if default else 0) == 1
+
+
 def _normalize_bool_flag(value: Any) -> bool:
     if value is True or value is False:
         return value
@@ -174,6 +224,42 @@ def _encrypt_field(token_hash: Optional[str], field_name: str, value: Optional[s
     return encrypt_text(value, aad=_field_aad(token_hash, field_name))
 
 
+def _looks_like_encrypted_value(value: Any) -> bool:
+    if value in (None, ""):
+        return False
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return False
+    if not isinstance(value, str):
+        return False
+    try:
+        payload = json.loads(value.strip())
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return bool(
+        (payload.get("version") == 1 and payload.get("wrapped_data_key"))
+        or ("iv" in payload and ("ciphertext" in payload or "payload" in payload))
+    )
+
+
+def _safe_decrypt_text(value: Any, *, aad: Dict[str, Any]) -> Optional[str]:
+    try:
+        return decrypt_text(value, aad=aad)
+    except Exception:
+        return None
+
+
+def _safe_decrypt_json(value: Any, *, aad: Dict[str, Any]) -> Any:
+    try:
+        return decrypt_json(value, aad=aad)
+    except Exception:
+        return None
+
+
 def _decrypt_field(
     row: Dict[str, Any],
     *,
@@ -182,16 +268,19 @@ def _decrypt_field(
     legacy_keys: List[str],
 ) -> Optional[str]:
     token_hash = str(row.get("token") or "").strip() or None
-    decrypted = decrypt_text(row.get(field_name), aad=_field_aad(token_hash, field_name))
+    aad = _field_aad(token_hash, field_name)
+    decrypted = _safe_decrypt_text(row.get(field_name), aad=aad)
     if decrypted:
         return decrypted
     if encrypted_key:
-        decrypted = decrypt_text(row.get(encrypted_key), aad=_field_aad(token_hash, field_name))
+        decrypted = _safe_decrypt_text(row.get(encrypted_key), aad=aad)
         if decrypted:
             return decrypted
     for legacy_key in legacy_keys:
         legacy_value = row.get(legacy_key)
         if legacy_value not in (None, ""):
+            if _looks_like_encrypted_value(legacy_value):
+                continue
             return str(legacy_value)
     return None
 
@@ -204,13 +293,16 @@ def _decrypt_json_field(
     legacy_key: str,
 ) -> Any:
     token_hash = str(row.get("token") or "").strip() or None
-    decrypted = decrypt_json(row.get(legacy_key), aad=_field_aad(token_hash, field_name))
+    aad = _field_aad(token_hash, field_name)
+    decrypted = _safe_decrypt_json(row.get(legacy_key), aad=aad)
     if decrypted is not None:
         return decrypted
     if encrypted_key:
-        decrypted = decrypt_json(row.get(encrypted_key), aad=_field_aad(token_hash, field_name))
+        decrypted = _safe_decrypt_json(row.get(encrypted_key), aad=aad)
         if decrypted is not None:
             return decrypted
+    if _looks_like_encrypted_value(row.get(legacy_key)):
+        return None
     return _parse_json(row.get(legacy_key))
 
 
@@ -223,10 +315,13 @@ def _lookup_params(raw_token: str) -> Dict[str, Any]:
 
 
 def _resolve_row_public_token(row: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
-    version = int(row.get("token_version") or 1)
+    version = _coerce_int(row.get("token_version"), default=1)
     token_value = str(row.get("token") or "").strip()
     if version >= TOKEN_VERSION_HASHED:
-        decrypted = decrypt_text(row.get("token_ciphertext"))
+        decrypted = _safe_decrypt_text(
+            row.get("token_ciphertext"),
+            aad=_field_aad(token_value or None, "token"),
+        )
         if decrypted:
             return decrypted
         return fallback
@@ -319,7 +414,7 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
     if not isinstance(product_scope_items, list):
         product_scope_items = []
     status = _derive_status(row)
-    usage_count = int(row.get("usage_count") or 0)
+    usage_count = _coerce_int(row.get("usage_count"), default=0)
     link_type = _normalize_link_type(row.get("link_type"))
     display_link_name = (
         link_name
@@ -357,10 +452,10 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         "delegatePermission": row.get("delegate_permission") or "submit_for_physician_review",
         "createdAt": _fmt_datetime(row.get("created_at")),
         "expiresAt": _fmt_datetime(row.get("expires_at")),
-        "markupPercent": float(row.get("markup_percent") or 0.0),
+        "markupPercent": _coerce_float(row.get("markup_percent"), default=0.0),
         "pricingDisclosure": pricing_disclosure,
         "zelleRecipientName": zelle_recipient_name,
-        "paymentConfirmationRequired": bool(int(row.get("payment_confirmation_required") if row.get("payment_confirmation_required") is not None else 1)),
+        "paymentConfirmationRequired": _coerce_bool(row.get("payment_confirmation_required"), default=True),
         "delegateInstructions": delegate_instructions,
         "internalPhysicianNote": internal_physician_note,
         "termsVersion": row.get("terms_version") or None,
@@ -375,8 +470,8 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         "allowedProducts": allowed_products,
         "usageLimit": _normalize_optional_int(row.get("usage_limit")),
         "usageCount": usage_count,
-        "openCount": int(row.get("open_count") or 0),
-        "viewCount": int(row.get("view_count") or row.get("open_count") or 0),
+        "openCount": _coerce_int(row.get("open_count"), default=0),
+        "viewCount": _coerce_int(row.get("view_count"), default=_coerce_int(row.get("open_count"), default=0)),
         "status": status,
         "paymentMethod": row.get("payment_method") or None,
         "paymentInstructions": _decrypt_field(
@@ -385,8 +480,8 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
             encrypted_key="payment_instructions_encrypted",
             legacy_keys=["payment_instructions"],
         ),
-        "physicianCertified": bool(int(row.get("physician_certified") or 0)),
-        "receivedPayment": bool(int(row.get("received_payment") or 0)),
+        "physicianCertified": _coerce_bool(row.get("physician_certified"), default=False),
+        "receivedPayment": _coerce_bool(row.get("received_payment"), default=False),
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "lastOpenedAt": _fmt_datetime(row.get("last_opened_at")),
         "firstViewedAt": _fmt_datetime(row.get("first_viewed_at")),
@@ -743,7 +838,15 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
         """,
         {"doctor_id": doctor_id},
     )
-    return [_map_row(row) for row in (rows or [])]
+    mapped: List[Dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            mapped.append(_map_row(row))
+        except Exception:
+            continue
+    return mapped
 
 
 def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dict[str, Any]]:

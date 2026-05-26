@@ -7,6 +7,13 @@ const shouldProxyMedia =
 
 const apiBase = API_BASE_URL.replace(/\/+$/, "");
 const WOO_MEDIA_PROXY_PATH_PATTERN = /\/woo\/media$/i;
+const defaultWooMediaProxyHosts = new Set(["shop.trufusionlabs.com"]);
+const configuredWooMediaProxyHosts = new Set(
+  String(import.meta.env?.VITE_WOO_MEDIA_PROXY_HOSTS || "")
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean),
+);
 const proxyParseBase =
   typeof window !== "undefined" && typeof window.location?.origin === "string" && window.location.origin
     ? window.location.origin
@@ -54,6 +61,18 @@ const unwrapWooMediaProxySource = (value?: string | null): string | null => {
   return candidate || null;
 };
 
+const shouldProxyWooMediaHost = (source: string): boolean => {
+  try {
+    const parsed = new URL(source, proxyParseBase);
+    const hostname = parsed.hostname.toLowerCase();
+    return configuredWooMediaProxyHosts.size > 0
+      ? configuredWooMediaProxyHosts.has(hostname)
+      : defaultWooMediaProxyHosts.has(hostname);
+  } catch {
+    return false;
+  }
+};
+
 export const proxifyWooMediaUrl = (url?: string | null): string | null => {
   const source = unwrapWooMediaProxySource(url);
   if (!source) {
@@ -66,6 +85,9 @@ export const proxifyWooMediaUrl = (url?: string | null): string | null => {
     return source;
   }
   if (!/^https?:\/\//i.test(source)) {
+    return source;
+  }
+  if (!shouldProxyWooMediaHost(source)) {
     return source;
   }
   return `${apiBase}/woo/media?src=${encodeURIComponent(source)}`;

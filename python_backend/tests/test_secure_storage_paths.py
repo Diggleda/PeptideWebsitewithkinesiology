@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import types
 import unittest
@@ -400,6 +401,45 @@ class SecureStorageWriteTests(unittest.TestCase):
 
 
 class PatientLinkEncryptionTests(unittest.TestCase):
+    def test_map_row_tolerates_unreadable_encrypted_optional_fields(self) -> None:
+        bad_envelope = json.dumps(
+            {
+                "version": 1,
+                "wrapped_data_key": {"iv": "bad", "ciphertext": "bad"},
+                "iv": "bad",
+                "ciphertext": "bad",
+            }
+        )
+        row = {
+            "token": "hashed-token",
+            "doctor_id": "doctor-9",
+            "link_type": "delegate",
+            "link_name": bad_envelope,
+            "reference_label": "Fallback Link",
+            "delegate_cart_json": bad_envelope,
+            "payment_confirmation_required": "yes",
+            "physician_certified": "false",
+            "received_payment": "paid",
+            "usage_count": "not-a-number",
+            "open_count": "2",
+            "view_count": "",
+            "markup_percent": "not-a-number",
+        }
+
+        with patch.object(patient_links_repository, "decrypt_text", side_effect=RuntimeError("bad decrypt")), \
+            patch.object(patient_links_repository, "decrypt_json", side_effect=RuntimeError("bad decrypt")):
+            mapped = patient_links_repository._map_row(row)
+
+        self.assertEqual(mapped["linkName"], "Fallback Link")
+        self.assertEqual(mapped["usageCount"], 0)
+        self.assertEqual(mapped["openCount"], 2)
+        self.assertEqual(mapped["viewCount"], 2)
+        self.assertEqual(mapped["markupPercent"], 0.0)
+        self.assertTrue(mapped["paymentConfirmationRequired"])
+        self.assertFalse(mapped["physicianCertified"])
+        self.assertTrue(mapped["receivedPayment"])
+        self.assertIsNone(mapped["delegateCart"])
+
     def test_create_link_stores_ciphertext_inline_in_existing_columns(self) -> None:
         calls: List[Tuple[str, Dict[str, Any]]] = []
 

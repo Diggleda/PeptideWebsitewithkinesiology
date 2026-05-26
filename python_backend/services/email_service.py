@@ -1078,19 +1078,19 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;border-collapse:collapse;">
                   <tr>
                     <td style="{step_number_style}">1.</td>
-                    <td style="{step_text_style}"><strong style="color:#111827;">Open Delegate Links</strong> in your physician dashboard, then choose <strong style="color:#111827;">Create a link</strong>.</td>
+                    <td style="{step_text_style}">Go to your physician dashboard and see the "Delegate Links" tab.</td>
                   </tr>
                   <tr>
                     <td style="{step_number_style}">2.</td>
-                    <td style="{step_text_style}"><strong style="color:#111827;">Brochure</strong> creates a view-only product information page with no pricing, cart, or checkout.</td>
+                    <td style="{step_text_style}">Click "Create a link" and choose your link type.</td>
                   </tr>
                   <tr>
                     <td style="{step_number_style}">3.</td>
-                    <td style="{step_text_style}"><strong style="color:#111827;">Proposal</strong> creates a delegate session that can submit selections for physician review.</td>
+                    <td style="{step_text_style}">Define the link parameters and send the link to your client.</td>
                   </tr>
                   <tr>
                     <td style="{step_number_style}">4.</td>
-                    <td style="{step_text_style}">Use <strong style="color:#111827;">Manage your links</strong> to preview, copy, track, revoke, and review proposal activity.</td>
+                    <td style="{step_text_style}">Manage your links with preview, copy, track, revoke, and review controls.</td>
                   </tr>
                 </table>
 
@@ -1116,10 +1116,10 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
         "Brochure: create a shareable, view-only product brochure page with descriptions. No pricing, cart, or checkout.\n"
         "Proposal: create a delegate session capable of submitting selections for physician review.\n\n"
         "How to use Delegate Links\n\n"
-        "1. Open Delegate Links in your physician dashboard, then choose Create a link.\n"
-        "2. Brochure creates a view-only product information page with no pricing, cart, or checkout.\n"
-        "3. Proposal creates a delegate session that can submit selections for physician review.\n"
-        "4. Use Manage your links to preview, copy, track, revoke, and review proposal activity.\n\n"
+        "1. Go to your physician dashboard and see the \"Delegate Links\" tab.\n"
+        "2. Click \"Create a link\" and choose your link type.\n"
+        "3. Define the link parameters and send the link to your client.\n"
+        "4. Manage your links with preview, copy, track, revoke, and review controls.\n\n"
         f"Open Delegate Links: {safe_base_url}\n"
         "Need help? Contact support@trufusionlabs.com."
     )

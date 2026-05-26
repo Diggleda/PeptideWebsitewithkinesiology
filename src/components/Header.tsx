@@ -9641,6 +9641,20 @@ export function Header({
                 : 'min(920px, calc(100vw - 2rem))',
           }}
         >
+          {createLinkDialogMode !== 'select' && (
+            <VisuallyHidden>
+              <DialogTitle>
+                {createLinkDialogMode === 'brochure'
+                  ? patientLinkEditing ? 'Modify brochure link' : 'Create brochure link'
+                  : patientLinkEditing ? 'Modify proposal link' : 'Create proposal link'}
+              </DialogTitle>
+              <DialogDescription>
+                {createLinkDialogMode === 'brochure'
+                  ? 'Configure a view-only brochure link.'
+                  : 'Configure a delegate proposal link.'}
+              </DialogDescription>
+            </VisuallyHidden>
+          )}
           {createLinkDialogMode !== 'select' && !patientLinkEditing && (
             <Button
               type="button"
