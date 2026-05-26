@@ -3110,20 +3110,20 @@ const normalizeDelegateOrderLabel = (value: unknown): string | null => {
     normalized === "delegate" ||
     normalized === "delegate order";
   if (isGenericLabel) {
-    return "Delegate order";
+    return "Delegate proposal";
   }
 
   const delegatePrefix = trimmed.match(/^delegate\s*:\s*(.+)$/i);
   if (delegatePrefix && delegatePrefix[1]?.trim()) {
-    return `Delegate: ${delegatePrefix[1].trim()}`;
+    return `Proposal: ${delegatePrefix[1].trim()}`;
   }
 
   const delegateOf = trimmed.match(/^delegate\s+of\s+(.+)$/i);
   if (delegateOf && delegateOf[1]?.trim()) {
-    return `Delegate: ${delegateOf[1].trim()}`;
+    return `Proposal: ${delegateOf[1].trim()}`;
   }
 
-  return `Delegate: ${trimmed}`;
+  return `Proposal: ${trimmed}`;
 };
 
 const resolveDelegateOrderLabel = (order: any): string | null => {
@@ -6145,7 +6145,7 @@ function MainApp() {
       typeof delegateContext?.brochureTitle === "string"
         ? delegateContext.brochureTitle.trim()
         : "";
-    return raw || "Product Brochure";
+    return raw || "Brochure";
   }, [delegateContext?.brochureTitle]);
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
@@ -13175,7 +13175,7 @@ function MainApp() {
   const PORTAL_BETA_SERVICE_LABELS: Record<PortalBetaServiceKey, string> = {
 	    shop: "Enter Dashboard",
     patientLinks: "Delegate Links",
-    brochureLinks: "Product Brochure Links",
+    brochureLinks: "Brochure Links",
     crm: "CRM",
     forum: "The Peptide Forum",
     research: "Research Dashboard",
@@ -13190,18 +13190,18 @@ function MainApp() {
   const ADMIN_DELEGATE_LINK_TRACKED_STAGES = [
     { event: "delegate_link_tab_clicked", label: "Tab Clicked", shortLabel: "Tab" },
     { event: "delegate_link_text_field_entry", label: "Text Field Entry", shortLabel: "Field" },
-    { event: "delegate_link_create_started", label: "Delegate Started", shortLabel: "Del. Start" },
+    { event: "delegate_link_create_started", label: "Proposal Started", shortLabel: "Proposal" },
     { event: "brochure_link_button_clicked", label: "Brochure Button Clicked", shortLabel: "Brochure" },
-    { event: "delegate_link_created", label: "Delegate Created", shortLabel: "Del. Created" },
-    { event: "delegate_link_copied", label: "Delegate Copied", shortLabel: "Del. Copy" },
-    { event: "delegate_link_preview_opened", label: "Delegate Preview Opened", shortLabel: "Del. Preview" },
-    { event: "delegate_link_opened", label: "Delegate Opened", shortLabel: "Open" },
-    { event: "delegate_order_estimated", label: "Order Estimated", shortLabel: "Estimate" },
+    { event: "delegate_link_created", label: "Proposal Created", shortLabel: "Created" },
+    { event: "delegate_link_copied", label: "Proposal Copied", shortLabel: "Copied" },
+    { event: "delegate_link_preview_opened", label: "Proposal Preview Opened", shortLabel: "Preview" },
+    { event: "delegate_link_opened", label: "Proposal Opened", shortLabel: "Open" },
+    { event: "delegate_order_estimated", label: "Proposal Estimated", shortLabel: "Estimate" },
     { event: "delegate_proposal_shared", label: "Proposal Shared", shortLabel: "Shared" },
     { event: "delegate_proposal_review_clicked", label: "Review Clicked", shortLabel: "Review" },
     { event: "delegate_proposal_review_loaded", label: "Review Loaded", shortLabel: "Loaded" },
     { event: "delegate_proposal_reviewed", label: "Proposal Reviewed", shortLabel: "Done" },
-    { event: "delegate_order_placed", label: "Delegate Order Placed", shortLabel: "Order" },
+    { event: "delegate_order_placed", label: "Proposal Submitted", shortLabel: "Submit" },
   ] as const;
   const ADMIN_DELEGATE_LINK_FUNNEL_STAGES = [
     ...ADMIN_DELEGATE_LINK_BASELINE_STAGES,
@@ -29694,7 +29694,7 @@ function MainApp() {
           });
           const delegateOrderLabel =
             resolveOrderAsDelegateLabel(created) ||
-            (delegationProposalReview ? "Delegate Order" : null);
+            (delegationProposalReview ? "Delegate Proposal" : null);
           const delegateOrderField =
             normalizeStringField(created?.as_delegate) ||
             normalizeStringField(created?.asDelegate) ||
@@ -38241,7 +38241,7 @@ function MainApp() {
                                           className="sales-tracking-row-status"
                                           title={delegateOrderLabel}
                                         >
-                                          Delegate Order
+                                          Delegate Proposal
                                         </span>
                                       ) : null}
                                     </div>
@@ -44504,7 +44504,7 @@ function MainApp() {
                                     className="sales-tracking-row-status shrink-0"
                                     title={delegateOrderLabel}
                                   >
-                                    Delegate Order
+                                    Delegate Proposal
                                   </span>
                                 ) : null}
 	                              <span className="sales-tracking-row-status shrink-0">
@@ -44966,7 +44966,7 @@ function MainApp() {
                       className="uppercase"
                       title={resolveDelegateOrderLabel(salesOrderDetail as any) || undefined}
                     >
-                      Delegate Order
+                      Delegate Proposal
                     </Badge>
                   ) : null}
                 </DialogTitle>

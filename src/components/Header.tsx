@@ -143,7 +143,7 @@ const patientLinkPaymentMethodOptions: Array<{ value: PatientLinkPaymentMethod; 
 ];
 
 const delegateRoleOptions: Array<{ value: DelegateRole; label: string }> = [
-  { value: 'patient', label: 'Patient' },
+  { value: 'patient', label: 'Authorized delegate' },
   { value: 'caregiver', label: 'Caregiver' },
   { value: 'staff', label: 'Staff' },
   { value: 'research_participant', label: 'Research participant' },
@@ -153,6 +153,7 @@ const delegateRoleOptions: Array<{ value: DelegateRole; label: string }> = [
 
 const delegateProductScopeOptions: Array<{ value: DelegateProductScope; label: string }> = [
   { value: 'all_physician_approved', label: 'All physician-approved products' },
+  { value: 'specific_products', label: 'Selected products only' },
   { value: 'specific_cart_only', label: 'Specific cart only' },
 ];
 
@@ -206,7 +207,7 @@ const normalizePatientLinkType = (link: unknown): PatientLinkType => {
 };
 
 const getPatientLinkTypeLabel = (type: PatientLinkType) =>
-  type === 'brochure' ? 'Product Brochure' : 'Delegate';
+  type === 'brochure' ? 'Brochure' : 'Proposal';
 
 const getPatientLinkTrackingPrefix = (type: PatientLinkType) =>
   type === 'brochure' ? 'brochure_link' : 'delegate_link';
@@ -300,18 +301,18 @@ export const PHYSICIAN_DASHBOARD_PORTAL_ID = 'physician-dashboard-root';
 const DELEGATE_LINK_FUNNEL_STAGES = [
   { event: 'delegate_link_tab_clicked', label: 'Tab Clicked' },
   { event: 'delegate_link_text_field_entry', label: 'Text Field Entry' },
-  { event: 'delegate_link_create_started', label: 'Delegate Started' },
+  { event: 'delegate_link_create_started', label: 'Proposal Started' },
   { event: 'brochure_link_button_clicked', label: 'Brochure Button Clicked' },
-  { event: 'delegate_link_created', label: 'Delegate Created' },
-  { event: 'delegate_link_copied', label: 'Delegate Copied' },
-  { event: 'delegate_link_preview_opened', label: 'Delegate Preview Opened' },
-  { event: 'delegate_link_opened', label: 'Delegate Opened' },
-  { event: 'delegate_order_estimated', label: 'Order Estimated' },
+  { event: 'delegate_link_created', label: 'Proposal Created' },
+  { event: 'delegate_link_copied', label: 'Proposal Copied' },
+  { event: 'delegate_link_preview_opened', label: 'Proposal Preview Opened' },
+  { event: 'delegate_link_opened', label: 'Proposal Opened' },
+  { event: 'delegate_order_estimated', label: 'Proposal Estimated' },
   { event: 'delegate_proposal_shared', label: 'Proposal Shared' },
   { event: 'delegate_proposal_review_clicked', label: 'Review Clicked' },
   { event: 'delegate_proposal_review_loaded', label: 'Review Loaded' },
   { event: 'delegate_proposal_reviewed', label: 'Proposal Reviewed' },
-  { event: 'delegate_order_placed', label: 'Delegate Order Placed' },
+  { event: 'delegate_order_placed', label: 'Proposal Submitted' },
 ] as const;
 
 const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
@@ -5752,9 +5753,19 @@ export function Header({
       const approvedProductTokensForPayload =
         patientLinkProductScopeDraft === 'specific_cart_only'
           ? patientLinkCartProductTokens
-          : patientLinkProductScopeDraft === 'all_physician_approved'
+          : patientLinkProductScopeDraft === 'all_physician_approved' || patientLinkProductScopeDraft === 'specific_products'
           ? patientLinkApprovedProductTokens
           : [];
+      if (patientLinkProductScopeDraft === 'specific_products' && approvedProductTokensForPayload.length === 0) {
+        toast.error('Choose at least one product for this proposal.');
+        setPatientLinksCreating(false);
+        return;
+      }
+      if (patientLinkProductScopeDraft === 'specific_cart_only' && approvedProductTokensForPayload.length === 0) {
+        toast.error('Add at least one cart product for this proposal.');
+        setPatientLinksCreating(false);
+        return;
+      }
       const markupPercent = normalizeMarkupPercent(patientLinkMarkupDraft);
       const paymentMethod = patientLinkPaymentMethodDraft === 'zelle' ? 'zelle' : '';
       const paymentInstructionsDraft = patientLinkInstructionsDraft.trim();
@@ -5810,13 +5821,13 @@ export function Header({
       setPatientLinkTermsAccepted(false);
       setCreateLinkDialogOpen(false);
       setCreateLinkDialogMode('select');
-      toast.success('Delegate link created.');
+      toast.success('Proposal link created.');
       requestPatientLinksRefresh({ force: true });
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
           ? error.message
-          : 'Unable to create a delegate link right now.',
+          : 'Unable to create a proposal link right now.',
       );
     } finally {
       setPatientLinksCreating(false);
@@ -7431,19 +7442,19 @@ export function Header({
       normalized === 'label'
       || normalized === 'delegate'
       || normalized === 'delegate order';
-    if (isGenericLabel) return 'Delegate order';
+    if (isGenericLabel) return 'Delegate proposal';
 
     const delegatePrefix = trimmed.match(/^delegate\s*:\s*(.+)$/i);
     if (delegatePrefix && delegatePrefix[1]?.trim()) {
-      return `Delegate: ${delegatePrefix[1].trim()}`;
+      return `Proposal: ${delegatePrefix[1].trim()}`;
     }
 
     const delegateOf = trimmed.match(/^delegate\s+of\s+(.+)$/i);
     if (delegateOf && delegateOf[1]?.trim()) {
-      return `Delegate: ${delegateOf[1].trim()}`;
+      return `Proposal: ${delegateOf[1].trim()}`;
     }
 
-    return `Delegate: ${trimmed}`;
+    return `Proposal: ${trimmed}`;
   };
   const resolveDelegateOrderLabel = (order: any): string => {
     const direct =
@@ -8066,7 +8077,7 @@ export function Header({
                                       onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
                                       title={delegateOrderLabel || "Open associated delegate link"}
                                     >
-                                      Delegate Order
+                                      Delegate Proposal
                                     </button>
                                   </Badge>
                                 ) : (
@@ -8075,7 +8086,7 @@ export function Header({
                                     className="uppercase"
                                     title={delegateOrderLabel || undefined}
                                   >
-                                    Delegate Order
+                                    Delegate Proposal
                                   </Badge>
                                 )
                               )}
@@ -8547,7 +8558,7 @@ export function Header({
                       className="uppercase"
                       title={resolveDelegateOrderLabel(selectedOrder as any) || undefined}
                     >
-                      Delegate Order
+                      Delegate Proposal
                     </Badge>
                   ) : null}
                 </div>
@@ -8900,7 +8911,7 @@ export function Header({
           <div className="glass-card squircle-md p-4 border border-[rgba(11,6,121,0.35)] bg-white/80 flex items-center gap-3">
             <RefreshActionIcon spinning />
             <div>
-              <p className="text-sm font-semibold text-slate-900">Loading product and order catelogue…</p>
+              <p className="text-sm font-semibold text-slate-900">Loading product and order catalog…</p>
               <p className="text-xs text-slate-600">Please hold while we sync the catalog data.</p>
             </div>
           </div>
@@ -8965,7 +8976,7 @@ export function Header({
       <div className="rounded-xl bg-white/55 px-5 py-5 sm:px-6">
         <div className="space-y-4">
           <p className="text-sm leading-relaxed text-slate-700">
-            This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate sessions for patient-specific order proposals. This means you can send your patients links to allow them to create a proposal of products for your approval and ordering or rejection.
+            This service has been enabled for your account in a beta capacity. Delegate Links allows you to initiate and manage white-labeled delegate proposal sessions. A trusted delegate can review physician-authorized research material information and submit selections for your review, approval, modification, or rejection.
           </p>
           <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
             {[
@@ -8985,7 +8996,7 @@ export function Header({
             ))}
           </div>
           <p className="text-sm leading-relaxed text-slate-700">
-            The intention for this tool is to empower your clinical reach by minimizing friction in your patient research workflow. By enabling Delegate Links, you understand that you are solely responsible for its appropriate use within your independent research and professional context. Links can be viewed and tested before being sent out to your patients.
+            The intention for this tool is to reduce administrative friction in your physician-directed research workflow. By enabling Delegate Links, you understand that you are solely responsible for its appropriate use within your independent research and professional context. Links can be viewed and tested before being shared with authorized delegates.
           </p>
           <p className="text-sm leading-relaxed text-slate-700">
             If you have any questions or recommendations, please contact{' '}
@@ -9168,7 +9179,7 @@ export function Header({
                   >
                     <BookOpenIcon className="create-link-type-button__icon" aria-hidden="true" />
                     <span className="create-link-type-button__copy">
-                      <span className="create-link-type-button__label">Product Brochure</span>
+                      <span className="create-link-type-button__label">Brochure</span>
                       <span className="create-link-type-button__subtext">
                         Create a shareable product brochure page with descriptions.
                       </span>
@@ -9180,9 +9191,6 @@ export function Header({
                     type="button"
                     onClick={() => {
                       trackPatientLinkUsageEvent('delegate', 'create_started', { source: 'create_link_dialog' });
-                      if (patientLinkProductScopeDraft === 'specific_products') {
-                        setPatientLinkProductScopeDraft('all_physician_approved');
-                      }
                       setCreateLinkDialogMode('delegate');
                     }}
                     className="create-link-type-button"
@@ -9190,11 +9198,11 @@ export function Header({
                     <CursorArrowRippleIcon className="create-link-type-button__icon" aria-hidden="true" />
                     <span className="create-link-type-button__copy">
 	                      <span className="create-link-type-button__label">
-	                        Delegate
+	                        Proposal
 	                        <span className="create-link-type-button__beta">Beta</span>
 	                      </span>
                       <span className="create-link-type-button__subtext">
-                        Create a patient session capable of building order proposals.
+                        Create a delegate proposal session for physician review.
                       </span>
                     </span>
                   </button>
@@ -9346,9 +9354,9 @@ export function Header({
           ) : (
       <div key="create-link-delegate" className="create-link-dialog-panel">
         <div className="pr-36">
-          <h3 className="text-lg font-semibold leading-tight text-slate-900">Create a delegate link</h3>
+          <h3 className="text-lg font-semibold leading-tight text-slate-900">Create a proposal link</h3>
           <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
-            This tool is intended to help you facilitate independent peptide research. You can demo your own links before sharing by clicking the "Preview session" button.
+            This tool is intended to support physician-directed research material proposal workflows. You can preview links before sharing them with an authorized delegate.
           </p>
         </div>
 	        <div className="delegate-link-create-form mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
@@ -9358,7 +9366,7 @@ export function Header({
                 Subject & Access
               </p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Define research metadata for this delegate session.
+                Define research metadata for this proposal session.
               </p>
             </div>
 	          <Label
@@ -9476,7 +9484,7 @@ export function Header({
 	              </option>
 	            ))}
 	          </select>
-	          {(patientLinkProductScopeDraft === 'all_physician_approved' || patientLinkProductScopeDraft === 'specific_cart_only') && (
+	          {(patientLinkProductScopeDraft === 'all_physician_approved' || patientLinkProductScopeDraft === 'specific_products' || patientLinkProductScopeDraft === 'specific_cart_only') && (
 	            <Button
 	              type="button"
 	              variant="ghost"
@@ -9494,6 +9502,8 @@ export function Header({
 	                <span className="truncate">
 	                  {patientLinkProductScopeDraft === 'specific_cart_only'
 	                    ? `${patientLinkCartProductCount} cart product${patientLinkCartProductCount === 1 ? '' : 's'} selected`
+	                    : patientLinkProductScopeDraft === 'specific_products' && patientLinkApprovedProductIds.length === 0
+	                    ? 'Choose selected products'
 	                    : patientLinkApprovedProductIds.length > 0
 	                    ? `${patientLinkApprovedProductIds.length} approved product${patientLinkApprovedProductIds.length === 1 ? '' : 's'} selected`
 	                    : 'Choose approved products'}
@@ -9770,7 +9780,7 @@ export function Header({
 	                onChange={(event) => setPatientLinkTermsAccepted(event.target.checked)}
 	              />
 		              <label htmlFor="delegate-link-terms" className="text-sm text-slate-700 leading-snug flex-1 min-w-0">
-		                I certify that I am the authorized physician or authorized account holder creating this delegate session. I understand that I remain responsible for the delegate session configuration, product access, pricing settings, payment instructions, and any resulting order review or approval. I agree to TrufusionLabs&apos;s{' '}
+		                I certify that I am the licensed physician or authorized clinic representative responsible for this link. I understand that TrufusionLabs does not provide medical advice, diagnosis, treatment, prescriptions, dosing guidance, patient instructions, or clinical decision support. I am solely responsible for any research protocol, delegate communication, consent, review, approval, purchase decision, and use of any information submitted through this link. I agree not to include PHI in non-identifying label fields and to comply with TrufusionLabs&apos;s{' '}
 	                <button
 	                  type="button"
 	                  className="legal-inline-link"
@@ -9816,7 +9826,7 @@ export function Header({
 	                disabled={!showPatientLinksTab || patientLinksCreating}
 	                className="header-home-button patient-link-form__button delegate-link-submit-button delegate-link-submit-button--primary !h-11 min-h-[44px] w-full mb-0 squircle-sm bg-white text-slate-900 px-7 sm:w-auto"
 	              >
-	                {patientLinksCreating ? 'Creating…' : 'Create delegate link'}
+	                {patientLinksCreating ? 'Creating…' : 'Create proposal link'}
 	              </Button>
 	            </div>
 	          </div>
@@ -10032,7 +10042,7 @@ export function Header({
 		              <span>White label your sessions</span>
 		            </span>
 		            <span className="mb-1 block text-sm leading-relaxed text-slate-700">
-		              Customize the logo, colors, and background your patients see in delegate sessions.
+		              Customize the logo, colors, and background authorized delegates see in proposal sessions.
 		            </span>
 		          </span>
 		          <span className="delegate-white-label-summary-icon" aria-hidden="true" />
@@ -10285,7 +10295,7 @@ export function Header({
                 className="patient-links-toolbar-control patient-link-payment-method-select patient-links-type-filter-shadow h-9 min-w-[10.5rem] squircle-sm bg-white text-sm font-semibold"
               >
                 <option value="all">All links ({patientLinksTypeCounts.all})</option>
-                <option value="delegate">Delegate ({patientLinksTypeCounts.delegate})</option>
+                <option value="delegate">Proposal ({patientLinksTypeCounts.delegate})</option>
                 <option value="brochure">Brochure ({patientLinksTypeCounts.brochure})</option>
               </select>
               <div className="patient-links-toolbar-button-row flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
@@ -10334,7 +10344,7 @@ export function Header({
 	          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
 	            <div className="flex items-center justify-between gap-3">
 		              <p className="text-sm font-semibold text-slate-900">
-                    {patientLinksTypeFilter === 'brochure' ? 'No brochure links.' : 'No delegate links.'}
+                    {patientLinksTypeFilter === 'brochure' ? 'No brochure links.' : 'No proposal links.'}
                   </p>
 		              <p className="text-sm text-slate-600">Change the filter to view other link types.</p>
 	            </div>
@@ -10646,7 +10656,7 @@ export function Header({
                               if (proposalActionLabel === 'Review Proposal') {
                                 trackUsageEvent('delegate_proposal_review_clicked', {
                                   linkType: 'delegate',
-                                  token,
+                                  tokenHint: token ? token.split('-', 1)[0].slice(0, 16) : undefined,
                                   status: proposalStatus || 'pending',
                                 });
                               }
@@ -10679,7 +10689,7 @@ export function Header({
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
 	                      <Copy className="h-4 w-4" aria-hidden="true" />
-	                      {linkType === 'brochure' ? 'Copy brochure link' : 'Copy delegate link'}
+	                      {linkType === 'brochure' ? 'Copy brochure link' : 'Copy proposal link'}
 	                    </Button>
 	                      <Button
 	                        type="button"
@@ -10728,7 +10738,7 @@ export function Header({
                               )}
                               {!paymentTrackerAmountLabel && proposalReviewOrderId && (
                                 <span className="mt-1 text-xs font-medium text-slate-500 whitespace-normal break-words">
-                                  Final delegate amount will appear after this link refreshes.
+                                  Final proposal amount will appear after this link refreshes.
                                 </span>
                               )}
 		                        </div>
@@ -10842,7 +10852,7 @@ export function Header({
 				                    {isDelegateLinkType && (
 				                    <details className="patient-link-settings-details mt-0 w-full rounded-xl bg-white/70 px-3 py-2">
 			                      <summary className="patient-link-settings-summary">
-			                        Payment settings (delegate)
+			                        Payment settings (proposal)
 			                      </summary>
 	                      <div className="mt-3 space-y-3">
 	                        <div className="space-y-1">
@@ -12065,7 +12075,7 @@ export function Header({
     Icon: ElementType;
     count?: number;
   }> = [
-    { id: 'links', label: 'Patient Links', Icon: Link2, count: outstandingPatientProposalCount },
+    { id: 'links', label: 'Delegate Links', Icon: Link2, count: outstandingPatientProposalCount },
     { id: 'orders', label: 'Your Orders', Icon: Package },
     ...(canSeePhysicianThreePlTab
       ? [{ id: '3pl' as const, label: '3PL', Icon: Truck }]

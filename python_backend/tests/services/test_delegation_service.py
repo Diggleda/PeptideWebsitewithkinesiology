@@ -146,7 +146,28 @@ class DelegationServiceTests(unittest.TestCase):
             service.patient_links_repository.find_by_token = original_find
             service._audit_event = original_audit
 
-    def test_get_doctor_config_preserves_markup_above_legacy_twenty_percent(self):
+    def test_validate_delegate_items_rejects_scoped_link_without_acl(self):
+        service = self.delegation_service
+        original_find = service.patient_links_repository.find_by_token
+        try:
+            service.patient_links_repository.find_by_token = lambda *_args, **_kwargs: {
+                "doctorId": "doc-1",
+                "productScope": "specific_products",
+                "allowedProducts": [],
+                "productScopeItems": [],
+            }
+
+            with self.assertRaises(ValueError) as ctx:
+                service.validate_delegate_items(
+                    "abc123",
+                    [{"sku": "BPC-157-5MG", "name": "BPC-157", "quantity": 1}],
+                )
+
+            self.assertEqual(getattr(ctx.exception, "status", None), 403)
+        finally:
+            service.patient_links_repository.find_by_token = original_find
+
+    def test_get_doctor_config_caps_markup_at_admin_limit(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
@@ -163,7 +184,7 @@ class DelegationServiceTests(unittest.TestCase):
 
             config = service.get_doctor_config("doc-1")
 
-            self.assertEqual(config.get("markupPercent"), 37.5)
+            self.assertEqual(config.get("markupPercent"), 20.0)
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
@@ -195,7 +216,7 @@ class DelegationServiceTests(unittest.TestCase):
             service.user_repository.find_by_id = original_find_user
             service.settings_service.get_settings = original_get_settings
 
-    def test_create_link_preserves_explicit_markup_above_legacy_twenty_percent(self):
+    def test_create_link_caps_explicit_markup_at_admin_limit(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
@@ -227,15 +248,15 @@ class DelegationServiceTests(unittest.TestCase):
             )
 
             self.assertEqual(captured.get("doctor_id"), "doc-1")
-            self.assertEqual(captured.get("markup_percent"), 37.5)
-            self.assertEqual(result.get("markupPercent"), 37.5)
+            self.assertEqual(captured.get("markup_percent"), 20.0)
+            self.assertEqual(result.get("markupPercent"), 20.0)
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
             service.patient_links_repository.create_link = original_create
             service._audit_event = original_audit
 
-    def test_create_link_defaults_expiry_and_leaves_usage_unlimited(self):
+    def test_create_link_defaults_expiry_and_delegate_usage_limit(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
@@ -267,8 +288,8 @@ class DelegationServiceTests(unittest.TestCase):
 
             self.assertEqual(captured.get("doctor_id"), "doc-1")
             self.assertEqual(captured.get("expires_in_hours"), 72)
-            self.assertIsNone(captured.get("usage_limit"))
-            self.assertIsNone(result.get("usageLimit"))
+            self.assertEqual(captured.get("usage_limit"), 1)
+            self.assertEqual(result.get("usageLimit"), 1)
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
@@ -276,10 +297,12 @@ class DelegationServiceTests(unittest.TestCase):
             service._audit_event = original_audit
             service.settings_service.get_settings = original_get_settings
 
-    def test_create_link_rejects_explicit_non_positive_expiry_but_ignores_usage_limit(self):
+    def test_create_link_rejects_explicit_non_positive_expiry_and_normalizes_usage_limit(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
+        original_create = service.patient_links_repository.create_link
+        original_audit = service._audit_event
         try:
             service._using_mysql = lambda: True
             service._migrate_legacy_links_to_table = lambda: None
@@ -294,10 +317,12 @@ class DelegationServiceTests(unittest.TestCase):
             }
             service._audit_event = lambda *_args, **_kwargs: None
             result = service.create_link("doc-1", usage_limit=-1, physician_certified=True)
-            self.assertIsNone(result.get("usageLimit"))
+            self.assertEqual(result.get("usageLimit"), 1)
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.create_link = original_create
+            service._audit_event = original_audit
 
     def test_create_link_passes_hardened_delegate_session_fields(self):
         service = self.delegation_service
@@ -364,7 +389,7 @@ class DelegationServiceTests(unittest.TestCase):
             service.patient_links_repository.create_link = original_create
             service._audit_event = original_audit
 
-    def test_resolve_delegate_token_preserves_markup_above_legacy_twenty_percent(self):
+    def test_resolve_delegate_token_caps_markup_at_admin_limit(self):
         service = self.delegation_service
         original_using_mysql = service._using_mysql
         original_migrate = service._migrate_legacy_links_to_table
@@ -394,7 +419,7 @@ class DelegationServiceTests(unittest.TestCase):
 
             resolved = service.resolve_delegate_token("tok-1")
 
-            self.assertEqual(resolved.get("markupPercent"), 37.5)
+            self.assertEqual(resolved.get("markupPercent"), 20.0)
         finally:
             service._using_mysql = original_using_mysql
             service._migrate_legacy_links_to_table = original_migrate
@@ -915,9 +940,15 @@ class DelegationServiceTests(unittest.TestCase):
 
             def fake_find_by_token(*_args, **_kwargs):
                 if not find_state["stored"]:
-                    return {}
+                    return {
+                        "doctorId": "doc-1",
+                        "linkType": "delegate",
+                        "usageCount": 0,
+                        "usageLimit": 1,
+                    }
                 return {
                     "doctorId": "doc-1",
+                    "linkType": "delegate",
                     "subjectLabel": "Subject A",
                     "delegateSharedAt": "2026-03-12T15:30:00+00:00",
                     "delegateReviewStatus": "pending",
@@ -1017,6 +1048,50 @@ class DelegationServiceTests(unittest.TestCase):
             service._audit_event = original_audit
             service.user_repository.find_by_id = original_find_user
             service.email_service.send_delegate_proposal_ready_email = original_send_email
+
+    def test_store_delegate_submission_rejects_exhausted_usage_limit_before_store(self):
+        service = self.delegation_service
+        original_using_mysql = service._using_mysql
+        original_migrate = service._migrate_legacy_links_to_table
+        original_find = service.patient_links_repository.find_by_token
+        original_store = service.patient_links_repository.store_delegate_payload
+        try:
+            service._using_mysql = lambda: True
+            service._migrate_legacy_links_to_table = lambda: None
+            find_calls = []
+
+            def fake_find_by_token(*args, **kwargs):
+                find_calls.append((args, kwargs))
+                return {
+                    "doctorId": "doc-1",
+                    "linkType": "delegate",
+                    "usageLimit": 1,
+                    "usageCount": 1,
+                }
+
+            service.patient_links_repository.find_by_token = fake_find_by_token
+            service.patient_links_repository.store_delegate_payload = lambda *_args, **_kwargs: self.fail(
+                "store_delegate_payload should not be called for exhausted delegate links"
+            )
+
+            with self.assertRaises(ValueError) as ctx:
+                service.store_delegate_submission(
+                    "tok-1",
+                    cart={"items": [{"name": "BPC-157", "quantity": 1}]},
+                    shipping={"shippingAddress": {"country": "US"}},
+                    payment={"paymentMethod": "zelle"},
+                    order_id="order-1",
+                    shared_at=datetime(2026, 3, 12, 15, 30, tzinfo=timezone.utc),
+                )
+
+            self.assertEqual(getattr(ctx.exception, "status", None), 403)
+            self.assertTrue(find_calls)
+            self.assertNotEqual(find_calls[0][1].get("include_inactive"), True)
+        finally:
+            service._using_mysql = original_using_mysql
+            service._migrate_legacy_links_to_table = original_migrate
+            service.patient_links_repository.find_by_token = original_find
+            service.patient_links_repository.store_delegate_payload = original_store
 
     def test_resolve_delegate_token_rejects_expired_link(self):
         service = self.delegation_service

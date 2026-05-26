@@ -293,23 +293,26 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_args.kwargs["reply_to"], "support@trufusionlabs.com")
         self.assertNotIn("raise_on_failure", dispatch_email.call_args.kwargs)
 
-    def test_delegate_links_beta_info_email_describes_patient_links(self):
+    def test_delegate_links_beta_info_email_describes_delegate_links(self):
         from python_backend.services import email_service
 
         html, plain = email_service._build_delegate_links_beta_info_email(base_url="https://trufusionlabs.com")
 
-        self.assertIn("Welcome to Patient Links", html)
-        self.assertIn("Product Brochure", html)
-        self.assertIn("Delegate links", html)
+        self.assertIn("Welcome to Delegate Links", html)
+        self.assertIn("Create brochure and proposal links from one workspace", html)
+        self.assertIn("Distribute and manage white-labeled research material sessions.", html)
+        self.assertIn("trusted delegate needs to submit selections for physician review", html)
+        self.assertIn("Brochure", html)
+        self.assertIn("Proposal", html)
         self.assertIn('src="cid:patient-links-delegate-session"', html)
         self.assertIn('src="cid:patient-links-create-dialog"', html)
-        self.assertIn("Delegate patient session with branded catalog and product cards", html)
-        self.assertIn("Create link dialog showing Product Brochure and Delegate link options", html)
-        self.assertIn("Create and track your brochures and delegate sessions", html)
+        self.assertIn("Delegate proposal session with branded catalog and product cards", html)
+        self.assertIn("Create link dialog showing Brochure and Proposal link options", html)
+        self.assertIn("Create and track your brochures and proposal sessions", html)
         self.assertIn("Setup white-labeled sessions for your clients.", html)
         self.assertIn("text-align:left", html)
         self.assertLess(
-            html.index("Create and track your brochures and delegate sessions"),
+            html.index("Create and track your brochures and proposal sessions"),
             html.index('src="cid:patient-links-create-dialog"'),
         )
         self.assertLess(
@@ -329,9 +332,12 @@ class EmailServiceTests(unittest.TestCase):
         self.assertNotIn("Welcome to the Delegate Links Beta", html)
         self.assertNotIn("M12 6.042", html)
         self.assertNotIn("What kind of link would you like to create?</td>", html)
-        self.assertIn("Open Patient Links", html)
-        self.assertIn("Product Brochure: create a shareable", plain)
-        self.assertIn("Delegate: create a patient session", plain)
+        self.assertIn("Open Delegate Links", html)
+        self.assertIn("Brochure: create a shareable", plain)
+        self.assertIn("Proposal: create a delegate session", plain)
+        self.assertNotIn("Patient Links", html)
+        self.assertNotIn("Product Brochure", html)
+        self.assertNotIn("Delegate: create a patient session", plain)
 
     def test_smtp_relay_can_skip_login_when_auth_disabled(self):
         from python_backend.services import email_service

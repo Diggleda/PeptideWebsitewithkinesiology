@@ -51,10 +51,15 @@ class DelegateUsageTrackingRouteTests(unittest.TestCase):
         self.assertEqual(event_name, "delegate_link_opened")
         self.assertEqual(kwargs["actor"], {"id": "doc-1", "role": "doctor"})
         self.assertEqual(kwargs["metadata"]["linkType"], "delegate")
+        self.assertNotIn("token", kwargs["metadata"])
+        self.assertEqual(kwargs["metadata"]["tokenHint"], "tok")
+        self.assertEqual(len(kwargs["metadata"]["tokenHash"]), 64)
         self.assertEqual(kwargs["metadata"]["openCount"], 3)
         bump_resources.assert_called_once()
         self.assertEqual(bump_resources.call_args.args[0], ("patient-links",))
         self.assertEqual(bump_resources.call_args.kwargs["metadata"]["source"], "delegation.resolve")
+        self.assertNotIn("token", bump_resources.call_args.kwargs["metadata"])
+        self.assertEqual(len(bump_resources.call_args.kwargs["metadata"]["tokenHash"]), 64)
 
     def test_resolve_does_not_track_delegate_open_for_readonly_resolve(self):
         with self.app.test_request_context("/api/delegation/resolve?token=tok-1&countPageLoad=0"):
@@ -116,6 +121,9 @@ class DelegateUsageTrackingRouteTests(unittest.TestCase):
         self.assertEqual(event_name, "delegate_order_estimated")
         self.assertEqual(kwargs["actor"], {"id": "doc-1", "role": "doctor"})
         self.assertEqual(kwargs["metadata"]["linkType"], "delegate")
+        self.assertNotIn("token", kwargs["metadata"])
+        self.assertEqual(kwargs["metadata"]["tokenHint"], "tok")
+        self.assertEqual(len(kwargs["metadata"]["tokenHash"]), 64)
         self.assertEqual(kwargs["metadata"]["grandTotal"], 123.45)
 
     def test_brochure_token_cannot_access_delegate_estimate(self):

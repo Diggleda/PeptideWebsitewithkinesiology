@@ -72,7 +72,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "1763997887996",
@@ -82,9 +90,9 @@
     "referralCode": "57F8DC",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 495,
+    "visits": 496,
     "createdAt": "2025-11-24T15:24:47.996Z",
-    "lastLoginAt": "2026-05-22T20:13:16.671Z",
+    "lastLoginAt": "2026-05-26T15:32:23.218Z",
     "role": "test_doctor",
     "salesRepId": "rep1",
     "npiNumber": "1063837144",
@@ -108,10 +116,10 @@
     "isTaxExempt": true,
     "taxExemptSource": "RESELLER_PERMIT",
     "taxExemptReason": "Reseller permit on file",
-    "lastSeenAt": "2026-05-22T20:14:52.792Z",
-    "lastInteractionAt": "2026-05-22T20:14:51.703Z",
+    "lastSeenAt": "2026-05-26T15:33:56.843Z",
+    "lastInteractionAt": "2026-05-26T15:33:25.064Z",
     "isOnline": true,
-    "isIdle": false,
+    "isIdle": true,
     "devCommission": false,
     "receiveClientOrderUpdateEmails": false,
     "handDelivered": false,
@@ -144,7 +152,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": "#000000",
     "delegate_background_url": null,
-    "delegate_background_color": "#ffffff"
+    "delegate_background_color": "#ffffff",
+    "researchTermsAgreementVersion": "2026.05.23",
+    "researchShippingPolicyVersion": "2026.05.23",
+    "researchPrivacyPolicyVersion": "2026.05.23",
+    "researchTermsAgreementAcceptedAt": "2026-05-26T15:32:25.406Z",
+    "research_terms_agreement_version": "2026.05.23",
+    "research_shipping_policy_version": "2026.05.23",
+    "research_privacy_policy_version": "2026.05.23",
+    "research_terms_agreement_accepted_at": "2026-05-26T15:32:25.406Z"
   },
   {
     "id": "1764556043938",
@@ -210,7 +226,15 @@
     "delegate_secondary_color": null,
     "delegate_background_url": null,
     "delegate_background_color": null,
-    "officeCountry": "US"
+    "officeCountry": "US",
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "1765228144842",
@@ -281,7 +305,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "1771871579569",
@@ -346,7 +378,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "1774899000000",
@@ -421,7 +461,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "1776480600000",
@@ -496,7 +544,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "1776484200000",
@@ -571,7 +627,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-001",
@@ -646,7 +710,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-002",
@@ -721,7 +793,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-003",
@@ -796,7 +876,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-001",
@@ -871,7 +959,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-002",
@@ -946,7 +1042,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-003",
@@ -1021,7 +1125,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-001",
@@ -1096,7 +1208,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-002",
@@ -1171,7 +1291,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-003",
@@ -1246,7 +1374,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-001",
@@ -1321,7 +1457,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-002",
@@ -1396,7 +1540,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-003",
@@ -1471,7 +1623,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ny-001",
@@ -1546,7 +1706,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ny-002",
@@ -1621,7 +1789,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-wa-001",
@@ -1696,7 +1872,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-co-001",
@@ -1771,7 +1955,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-az-001",
@@ -1846,7 +2038,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ga-001",
@@ -1921,7 +2121,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-nc-001",
@@ -1996,7 +2204,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-oh-001",
@@ -2071,7 +2287,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-pa-001",
@@ -2146,7 +2370,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ma-001",
@@ -2221,7 +2453,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tn-001",
@@ -2296,7 +2536,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-nv-001",
@@ -2371,7 +2619,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-mo-001",
@@ -2446,7 +2702,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-mn-001",
@@ -2521,7 +2785,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ut-001",
@@ -2596,7 +2868,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-or-001",
@@ -2671,7 +2951,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-in-001",
@@ -2746,7 +3034,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-nj-001",
@@ -2821,7 +3117,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-004",
@@ -2896,7 +3200,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-005",
@@ -2971,7 +3283,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-006",
@@ -3046,7 +3366,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-007",
@@ -3121,7 +3449,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-008",
@@ -3196,7 +3532,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-009",
@@ -3271,7 +3615,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-il-010",
@@ -3346,7 +3698,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-004",
@@ -3421,7 +3781,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-005",
@@ -3496,7 +3864,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-006",
@@ -3571,7 +3947,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-007",
@@ -3646,7 +4030,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-008",
@@ -3721,7 +4113,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-009",
@@ -3796,7 +4196,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-ca-010",
@@ -3871,7 +4279,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-004",
@@ -3946,7 +4362,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-005",
@@ -4021,7 +4445,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-006",
@@ -4096,7 +4528,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-007",
@@ -4171,7 +4611,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-008",
@@ -4246,7 +4694,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-009",
@@ -4321,7 +4777,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-tx-010",
@@ -4396,7 +4860,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-004",
@@ -4471,7 +4943,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-005",
@@ -4546,7 +5026,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-006",
@@ -4621,7 +5109,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-007",
@@ -4696,7 +5192,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-008",
@@ -4771,7 +5275,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-009",
@@ -4846,7 +5358,15 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   },
   {
     "id": "dummy-physician-fl-010",
@@ -4921,6 +5441,14 @@
     "delegate_logo_url": null,
     "delegate_secondary_color": null,
     "delegate_background_url": null,
-    "delegate_background_color": null
+    "delegate_background_color": null,
+    "researchTermsAgreementVersion": null,
+    "researchShippingPolicyVersion": null,
+    "researchPrivacyPolicyVersion": null,
+    "researchTermsAgreementAcceptedAt": null,
+    "research_terms_agreement_version": null,
+    "research_shipping_policy_version": null,
+    "research_privacy_policy_version": null,
+    "research_terms_agreement_accepted_at": null
   }
 ]

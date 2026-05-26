@@ -496,6 +496,36 @@ class PatientLinkEncryptionTests(unittest.TestCase):
 
         self.assertTrue(deleted)
 
+    def test_store_delegate_payload_filters_revoked_status_and_usage_limit(self) -> None:
+        calls: List[Tuple[str, Dict[str, Any]]] = []
+
+        def fake_encrypt_json(value: Any, *, aad: Dict[str, Any]) -> str:
+            return f"cipher:{aad['field']}:{value}"
+
+        def fake_execute(query: str, params: Dict[str, Any] | None = None) -> int:
+            calls.append((query, params or {}))
+            return 1
+
+        with patch.object(patient_links_repository, "_using_mysql", return_value=True), \
+            patch.object(patient_links_repository, "delete_expired"), \
+            patch.object(patient_links_repository, "encrypt_json", side_effect=fake_encrypt_json), \
+            patch.object(patient_links_repository.mysql_client, "execute", side_effect=fake_execute):
+            stored = patient_links_repository.store_delegate_payload(
+                "token-1234",
+                cart={"items": []},
+                shipping={"shippingAddress": {"country": "US"}},
+                payment={"paymentMethod": "zelle"},
+                order_id="order-1",
+            )
+
+        self.assertTrue(stored)
+        self.assertEqual(len(calls), 1)
+        query = calls[0][0]
+        self.assertIn("AND revoked_at IS NULL", query)
+        self.assertIn("COALESCE(status, 'active') NOT IN ('revoked', 'expired')", query)
+        self.assertIn("(usage_limit IS NULL OR COALESCE(usage_count, 0) < usage_limit)", query)
+        self.assertIn("COALESCE(link_type, 'delegate') <> 'brochure'", query)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ import secrets
 import threading
 import math
 import hashlib
+import hmac
 from datetime import timedelta
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,6 +29,9 @@ _INDEX_KEY = "delegation_link_index_v1"
 _LEGACY_MIGRATED = False
 _LEGACY_MIGRATION_LOCK = threading.Lock()
 DEFAULT_DELEGATE_LINK_EXPIRY_HOURS = 72
+MAX_DELEGATE_LINK_EXPIRY_HOURS = 168
+MAX_BROCHURE_LINK_EXPIRY_HOURS = 10_000
+DEFAULT_DELEGATE_USAGE_LIMIT = 1
 DEFAULT_PRICING_DISCLOSURE = (
     "Prices may include physician-directed service, handling, administrative, or research coordination fees."
 )
@@ -40,6 +44,7 @@ ALLOWED_PRODUCT_SCOPES = {
 ENABLED_PRODUCT_SCOPES = {
     "all_physician_approved",
     "specific_cart_only",
+    "specific_products",
 }
 ALLOWED_DELEGATE_PERMISSIONS = {
     "view_products_only",
@@ -160,9 +165,19 @@ def _patient_link_max_markup_percent() -> float:
 
 
 def _normalize_capped_markup_percent(value: object) -> float:
-    # Delegate link pricing should reflect the physician's configured markup
-    # exactly; do not silently clamp it to the legacy default 20% cap.
-    return _normalize_markup_percent(value)
+    return min(_normalize_markup_percent(value), _patient_link_max_markup_percent())
+
+
+def _doctor_default_markup_percent(doctor_id: str) -> float:
+    try:
+        return _normalize_capped_markup_percent(get_doctor_config(doctor_id).get("markupPercent"))
+    except Exception:
+        logger.debug(
+            "[Delegation] Unable to load doctor markup default for doctor_id=%s",
+            doctor_id,
+            exc_info=True,
+        )
+        return 0.0
 
 
 def _normalize_usage_limit(value: Any) -> Optional[int]:
@@ -175,7 +190,14 @@ def _normalize_usage_limit(value: Any) -> Optional[int]:
     return max(1, min(parsed, 10_000))
 
 
-def _normalize_link_limit(value: Any, *, field_name: str, default: int, allow_missing: bool = True) -> int:
+def _normalize_link_limit(
+    value: Any,
+    *,
+    field_name: str,
+    default: int,
+    allow_missing: bool = True,
+    max_value: int = MAX_DELEGATE_LINK_EXPIRY_HOURS,
+) -> int:
     if value is None or value == "":
         if allow_missing:
             return default
@@ -192,13 +214,28 @@ def _normalize_link_limit(value: Any, *, field_name: str, default: int, allow_mi
         err = ValueError(f"{field_name} must be greater than zero")
         setattr(err, "status", 400)
         raise err
-    return max(1, min(parsed, 10_000))
+    if parsed > max_value:
+        err = ValueError(f"{field_name} cannot exceed {max_value} hours")
+        setattr(err, "status", 400)
+        raise err
+    return max(1, parsed)
 
 
-def _normalize_optional_link_limit(value: Any, *, field_name: str) -> Optional[int]:
+def _normalize_optional_link_limit(
+    value: Any,
+    *,
+    field_name: str,
+    max_value: int = MAX_DELEGATE_LINK_EXPIRY_HOURS,
+) -> Optional[int]:
     if value is None or value == "":
         return None
-    return _normalize_link_limit(value, field_name=field_name, default=1, allow_missing=False)
+    return _normalize_link_limit(
+        value,
+        field_name=field_name,
+        default=1,
+        allow_missing=False,
+        max_value=max_value,
+    )
 
 
 def _normalize_choice(value: Any, *, allowed: set[str], default: str, enabled: Optional[set[str]] = None) -> str:
@@ -211,11 +248,14 @@ def _normalize_choice(value: Any, *, allowed: set[str], default: str, enabled: O
 
 
 def _normalize_product_scope(value: Any) -> str:
-    return _normalize_choice(
-        value,
-        allowed=ALLOWED_PRODUCT_SCOPES,
-        default=DEFAULT_PRODUCT_SCOPE,
-    )
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return DEFAULT_PRODUCT_SCOPE
+    if normalized in ALLOWED_PRODUCT_SCOPES and normalized not in ENABLED_PRODUCT_SCOPES:
+        err = ValueError("This product scope is not enabled for delegate links.")
+        setattr(err, "status", 400)
+        raise err
+    return normalized if normalized in ENABLED_PRODUCT_SCOPES else DEFAULT_PRODUCT_SCOPE
 
 
 def _normalize_delegate_permission(value: Any) -> str:
@@ -239,11 +279,111 @@ def capabilities_for_link_type(value: Any) -> Dict[str, bool]:
     return dict(BROCHURE_CAPABILITIES if _normalize_link_type(value) == "brochure" else DELEGATE_CAPABILITIES)
 
 
-def _hash_public_view_value(value: Any) -> Optional[str]:
+def _patient_link_hmac_secret() -> bytes:
+    try:
+        config = get_config()
+        encryption = getattr(config, "encryption", {}) or {}
+        candidates = [
+            encryption.get("blind_index_key") if isinstance(encryption, dict) else None,
+            encryption.get("key") if isinstance(encryption, dict) else None,
+            getattr(config, "jwt_secret", None),
+        ]
+    except Exception:
+        candidates = []
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text:
+            return text.encode("utf-8")
+    return b"local-delegate-link-hmac-secret"
+
+
+def _hmac_sha256(value: Any, *, label: str) -> Optional[str]:
     text = str(value or "").strip()
     if not text:
         return None
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return hmac.new(
+        _patient_link_hmac_secret(),
+        f"{label}:{text}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _link_token_hint(token: Any, link: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    if isinstance(link, dict):
+        existing = str(link.get("tokenHint") or link.get("token_hint") or "").strip()
+        if existing:
+            return existing[:16]
+    text = str(token or "").strip()
+    if not text:
+        return None
+    first_segment = text.split("-", 1)[0].strip()
+    return (first_segment or text)[:16]
+
+
+def safe_link_token_metadata(
+    token: Any,
+    link: Optional[Dict[str, Any]] = None,
+    *,
+    doctor_id: Any = None,
+    link_type: Any = None,
+) -> Dict[str, Any]:
+    token_hash = _hmac_sha256(token, label="delegate-link-token")
+    metadata: Dict[str, Any] = {}
+    token_hint = _link_token_hint(token, link)
+    if token_hint:
+        metadata["tokenHint"] = token_hint
+    if token_hash:
+        metadata["tokenHash"] = token_hash
+    resolved_link_type = str(
+        link_type
+        or ((link or {}).get("linkType") if isinstance(link, dict) else None)
+        or ((link or {}).get("link_type") if isinstance(link, dict) else None)
+        or ""
+    ).strip().lower()
+    if resolved_link_type:
+        metadata["linkType"] = _normalize_link_type(resolved_link_type)
+    resolved_doctor_id = str(
+        doctor_id
+        or ((link or {}).get("doctorId") if isinstance(link, dict) else None)
+        or ((link or {}).get("doctor_id") if isinstance(link, dict) else None)
+        or ""
+    ).strip()
+    if resolved_doctor_id:
+        metadata["doctorId"] = resolved_doctor_id
+    return metadata
+
+
+def _hash_public_view_value(value: Any) -> Optional[str]:
+    return _hmac_sha256(value, label="delegate-public-view")
+
+
+def _usage_limit_for_link(link_type: Any, value: Any = None) -> Optional[int]:
+    if _normalize_link_type(link_type) == "brochure":
+        return None
+    return _normalize_usage_limit(value) or DEFAULT_DELEGATE_USAGE_LIMIT
+
+
+def _expiry_max_for_link_type(link_type: Any) -> int:
+    return MAX_BROCHURE_LINK_EXPIRY_HOURS if _normalize_link_type(link_type) == "brochure" else MAX_DELEGATE_LINK_EXPIRY_HOURS
+
+
+def _link_usage_limit_for_response(link: Optional[Dict[str, Any]]) -> Optional[int]:
+    if not isinstance(link, dict):
+        return None
+    return _usage_limit_for_link(link.get("linkType") or link.get("link_type"), link.get("usageLimit"))
+
+
+def _require_explicit_product_scope(product_scope: str, *product_lists: Any) -> None:
+    if product_scope not in {"specific_products", "specific_cart_only", "category_or_protocol"}:
+        return
+    allowed: List[str] = []
+    for product_list in product_lists:
+        allowed.extend(_normalize_allowed_products(product_list))
+    if allowed:
+        return
+    err = ValueError("This link has no approved product scope.")
+    setattr(err, "status", 403)
+    raise err
 
 
 def _normalize_delegate_role(value: Any) -> Optional[str]:
@@ -433,14 +573,14 @@ def _send_delegate_proposal_ready_email_for_link(
         ):
             logger.info(
                 "[Delegation] Skipping delegate proposal email by physician preference",
-                extra={"token": token, "doctorId": doctor_id},
+                extra={**safe_link_token_metadata(token, candidate, doctor_id=doctor_id), "doctorId": doctor_id},
             )
             return False
         recipient = str(doctor.get("email") or "").strip()
         if not recipient:
             logger.warning(
                 "[Delegation] Delegate proposal awaiting review has no physician email",
-                extra={"token": token, "doctorId": doctor_id},
+                extra={**safe_link_token_metadata(token, candidate, doctor_id=doctor_id), "doctorId": doctor_id},
             )
             return False
 
@@ -460,7 +600,7 @@ def _send_delegate_proposal_ready_email_for_link(
     except Exception:
         logger.exception(
             "[Delegation] Failed to send delegate proposal ready email",
-            extra={"token": token, "doctorId": doctor_id},
+            extra={**safe_link_token_metadata(token, candidate, doctor_id=doctor_id), "doctorId": doctor_id},
         )
         return False
 
@@ -554,13 +694,14 @@ def _audit_event(
         or request.remote_addr
         or ""
     )
+    token_metadata = safe_link_token_metadata(token, doctor_id=doctor_id)
     patient_links_repository.insert_audit_event(
-        token=token,
+        token_hash=token_metadata.get("tokenHash"),
         doctor_id=doctor_id,
         actor_user_id=str(actor.get("id") or "").strip() or None,
         actor_role=str(actor.get("role") or "").strip() or None,
         event_type=event_type,
-        resource_ref=str(token or "").strip() or None,
+        resource_ref=token_metadata.get("tokenHash") or token_metadata.get("tokenHint"),
         purpose="delegate_link_workflow",
         result="success",
         request_ip=request_ip.split(",")[0].strip() if request_ip else None,
@@ -929,7 +1070,20 @@ def update_doctor_config(doctor_id: str, patch: Dict[str, Any]) -> Dict[str, Any
 def list_links(doctor_id: str) -> List[Dict[str, Any]]:
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        return patient_links_repository.list_links(doctor_id)
+        links = patient_links_repository.list_links(doctor_id)
+        normalized: List[Dict[str, Any]] = []
+        for link in links or []:
+            if not isinstance(link, dict):
+                continue
+            link_type = _normalize_link_type(link.get("linkType") or link.get("link_type"))
+            normalized.append(
+                {
+                    **link,
+                    "markupPercent": 0.0 if link_type == "brochure" else _normalize_capped_markup_percent(link.get("markupPercent")),
+                    "usageLimit": _link_usage_limit_for_response(link),
+                }
+            )
+        return normalized
     links = _load_links(doctor_id)
     # Sort most recent first.
     def sort_key(entry: Dict[str, Any]) -> str:
@@ -992,11 +1146,22 @@ def create_link(
         raise err
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        markup_value = 0.0 if link_type_value == "brochure" else (None if markup_percent is None else _normalize_capped_markup_percent(markup_percent))
         effective_expires_in_hours = _normalize_link_limit(
             expires_in_hours,
             field_name="expiresInHours",
             default=DEFAULT_DELEGATE_LINK_EXPIRY_HOURS,
+            max_value=_expiry_max_for_link_type(link_type_value),
+        )
+        product_scope_value = _normalize_product_scope(product_scope)
+        usage_limit_value = _usage_limit_for_link(link_type_value, usage_limit)
+        product_scope_items_value = _normalize_allowed_products(product_scope_items)
+        allowed_products_value = _normalize_allowed_products(allowed_products)
+        _require_explicit_product_scope(product_scope_value, product_scope_items_value, allowed_products_value)
+        default_markup = 0.0
+        if link_type_value != "brochure" and markup_percent is None:
+            default_markup = _doctor_default_markup_percent(doctor_id)
+        markup_value = 0.0 if link_type_value == "brochure" else _normalize_capped_markup_percent(
+            default_markup if markup_percent is None else markup_percent
         )
         created = patient_links_repository.create_link(
             doctor_id,
@@ -1011,8 +1176,8 @@ def create_link(
             delegate_name=_validate_sensitive_session_text(tracking_name, field_name="recipientName" if link_type_value == "brochure" else "delegateName", max_len=190),
             delegate_contact=_validate_sensitive_session_text(tracking_contact, field_name="recipientContact" if link_type_value == "brochure" else "delegateContact", max_len=190),
             delegate_role=None if link_type_value == "brochure" else _normalize_delegate_role(delegate_role),
-            product_scope=_normalize_product_scope(product_scope),
-            product_scope_items=_normalize_allowed_products(product_scope_items),
+            product_scope=product_scope_value,
+            product_scope_items=product_scope_items_value,
             delegate_permission=BROCHURE_PERMISSION if link_type_value == "brochure" else _normalize_delegate_permission(delegate_permission),
             markup_percent=markup_value,
             pricing_disclosure=_validate_sensitive_session_text(
@@ -1032,9 +1197,9 @@ def create_link(
             shipping_policy_version=_validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion"),
             privacy_policy_version=_validate_policy_version(privacy_policy_version, field_name="privacyPolicyVersion"),
             instructions=None if link_type_value == "brochure" else _validate_research_note(instructions, field_name="instructions"),
-            allowed_products=_normalize_allowed_products(allowed_products),
+            allowed_products=allowed_products_value,
             expires_in_hours=effective_expires_in_hours,
-            usage_limit=None,
+            usage_limit=usage_limit_value,
             payment_method=None if link_type_value == "brochure" else payment_method,
             payment_instructions=None if link_type_value == "brochure" else _validate_research_note(payment_instructions, field_name="paymentInstructions"),
             physician_certified=physician_certified,
@@ -1075,6 +1240,7 @@ def create_link(
         expires_in_hours,
         field_name="expiresInHours",
         default=DEFAULT_DELEGATE_LINK_EXPIRY_HOURS,
+        max_value=_expiry_max_for_link_type(link_type_value),
     )
     expires_at = (
         (datetime.now(timezone.utc) + timedelta(hours=expires_hours_value)).isoformat()
@@ -1082,7 +1248,10 @@ def create_link(
         else None
     )
     product_scope_value = _normalize_product_scope(product_scope)
+    product_scope_items_value = _normalize_allowed_products(product_scope_items)
+    _require_explicit_product_scope(product_scope_value, product_scope_items_value, allowed_products_value)
     delegate_permission_value = BROCHURE_PERMISSION if link_type_value == "brochure" else _normalize_delegate_permission(delegate_permission)
+    usage_limit_value = _usage_limit_for_link(link_type_value, usage_limit)
     link = {
         "token": token,
         "linkType": link_type_value,
@@ -1122,11 +1291,11 @@ def create_link(
         "shippingPolicyVersion": _validate_policy_version(shipping_policy_version, field_name="shippingPolicyVersion"),
         "privacyPolicyVersion": _validate_policy_version(privacy_policy_version, field_name="privacyPolicyVersion"),
         "productScope": product_scope_value,
-        "productScopeItems": _normalize_allowed_products(product_scope_items),
+        "productScopeItems": product_scope_items_value,
         "delegatePermission": delegate_permission_value,
         "instructions": None if link_type_value == "brochure" else _validate_research_note(instructions, field_name="instructions"),
         "allowedProducts": allowed_products_value,
-        "usageLimit": None,
+        "usageLimit": usage_limit_value,
         "usageCount": 0,
         "openCount": 0,
         "viewCount": 0,
@@ -1193,6 +1362,30 @@ def update_link(
     if _using_mysql():
         _migrate_legacy_links_to_table()
         markup_value = None if markup_percent is None else _normalize_capped_markup_percent(markup_percent)
+        existing_link_type = "delegate"
+        existing_link: Dict[str, Any] = {}
+        if (
+            expires_in_hours is not None
+            or usage_limit is not None
+            or product_scope is not None
+            or product_scope_items is not None
+            or allowed_products is not None
+        ):
+            try:
+                existing_link = patient_links_repository.find_by_token(token, include_inactive=True) or {}
+                existing_link_type = str(existing_link.get("linkType") or existing_link.get("link_type") or "delegate")
+            except Exception:
+                existing_link = {}
+                existing_link_type = "delegate"
+        product_scope_value = _normalize_product_scope(product_scope) if product_scope is not None else None
+        product_scope_items_value = _normalize_allowed_products(product_scope_items) if product_scope_items is not None else None
+        allowed_products_value = _normalize_allowed_products(allowed_products) if allowed_products is not None else None
+        if product_scope_value is not None:
+            _require_explicit_product_scope(
+                product_scope_value,
+                product_scope_items_value if product_scope_items_value is not None else existing_link.get("productScopeItems"),
+                allowed_products_value if allowed_products_value is not None else existing_link.get("allowedProducts"),
+            )
         updated = patient_links_repository.update_link(
             doctor_id,
             token,
@@ -1213,8 +1406,8 @@ def update_link(
                 else None
             ),
             delegate_role=_normalize_delegate_role(delegate_role) if delegate_role is not None else None,
-            product_scope=_normalize_product_scope(product_scope) if product_scope is not None else None,
-            product_scope_items=_normalize_allowed_products(product_scope_items) if product_scope_items is not None else None,
+            product_scope=product_scope_value,
+            product_scope_items=product_scope_items_value,
             delegate_permission=(
                 _normalize_delegate_permission(delegate_permission)
                 if delegate_permission is not None
@@ -1255,9 +1448,17 @@ def update_link(
                 else None
             ),
             instructions=_validate_research_note(instructions, field_name="instructions") if instructions is not None else None,
-            allowed_products=_normalize_allowed_products(allowed_products) if allowed_products is not None else None,
-            expires_in_hours=_normalize_optional_link_limit(expires_in_hours, field_name="expiresInHours") if expires_in_hours is not None else None,
-            usage_limit=None,
+            allowed_products=allowed_products_value,
+            expires_in_hours=(
+                _normalize_optional_link_limit(
+                    expires_in_hours,
+                    field_name="expiresInHours",
+                    max_value=_expiry_max_for_link_type(existing_link_type),
+                )
+                if expires_in_hours is not None
+                else None
+            ),
+            usage_limit=_usage_limit_for_link(existing_link_type, usage_limit) if usage_limit is not None else None,
             payment_method=payment_method,
             payment_instructions=_validate_research_note(payment_instructions, field_name="paymentInstructions") if payment_instructions is not None else None,
             received_payment=received_payment,
@@ -1341,12 +1542,18 @@ def update_link(
         if allowed_products is not None:
             entry["allowedProducts"] = _normalize_allowed_products(allowed_products)
         if expires_in_hours is not None:
-            normalized_expiry_hours = _normalize_optional_link_limit(expires_in_hours, field_name="expiresInHours")
+            normalized_expiry_hours = _normalize_optional_link_limit(
+                expires_in_hours,
+                field_name="expiresInHours",
+                max_value=_expiry_max_for_link_type(entry.get("linkType") or entry.get("link_type")),
+            )
             entry["expiresAt"] = (
                 (datetime.now(timezone.utc) + timedelta(hours=normalized_expiry_hours)).isoformat()
                 if normalized_expiry_hours is not None
                 else None
             )
+        if usage_limit is not None:
+            entry["usageLimit"] = _usage_limit_for_link(entry.get("linkType") or entry.get("link_type"), usage_limit)
         if received_payment is not None:
             if isinstance(received_payment, bool):
                 entry["receivedPayment"] = bool(received_payment)
@@ -1431,8 +1638,6 @@ def resolve_delegate_token(
 
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        # Revoked/expired links remain inaccessible. Usage is tracked but
-        # never exhausts a delegate session.
         link = patient_links_repository.find_by_token(token, include_inactive=True)
         if not isinstance(link, dict):
             err = ValueError("Invalid or expired delegate link")
@@ -1442,7 +1647,7 @@ def resolve_delegate_token(
         if (
             not doctor_id
             or str(link.get("revokedAt") or "").strip()
-            or str(link.get("status") or "").strip().lower() == "expired"
+            or str(link.get("status") or "").strip().lower() in {"revoked", "expired"}
         ):
             err = ValueError("Invalid or expired delegate link")
             setattr(err, "status", 404)
@@ -1539,7 +1744,7 @@ def resolve_delegate_token(
             "privacyPolicyVersion": link.get("privacyPolicyVersion"),
             "instructions": None if link_type == "brochure" else link.get("instructions"),
             "allowedProducts": (link.get("allowedProducts") or []) if expose_scope_items else [],
-            "usageLimit": None,
+            "usageLimit": _link_usage_limit_for_response(link),
             "usageCount": link.get("usageCount"),
             "openCount": link.get("openCount"),
             "viewCount": link.get("viewCount") or link.get("openCount"),
@@ -1644,7 +1849,7 @@ def resolve_delegate_token(
         "shippingPolicyVersion": link.get("shippingPolicyVersion"),
         "privacyPolicyVersion": link.get("privacyPolicyVersion"),
         "instructions": None if link_type == "brochure" else link.get("instructions"),
-        "usageLimit": None,
+        "usageLimit": _link_usage_limit_for_response(link),
         "usageCount": link.get("usageCount"),
         "openCount": link.get("openCount"),
         "viewCount": link.get("viewCount") or link.get("openCount"),
@@ -1671,7 +1876,26 @@ def store_delegate_submission(
         return
     _migrate_legacy_links_to_table()
     submitted_at = shared_at.astimezone(timezone.utc) if isinstance(shared_at, datetime) else datetime.now(timezone.utc)
-    link = patient_links_repository.find_by_token(token, include_inactive=True) or {}
+    link = patient_links_repository.find_by_token(token) or {}
+    if not isinstance(link, dict) or not link:
+        err = ValueError("Invalid or expired delegate link")
+        setattr(err, "status", 404)
+        raise err
+    link_type = _normalize_link_type(link.get("linkType") or link.get("link_type"))
+    capabilities = capabilities_for_link_type(link_type)
+    if link_type == "brochure" or capabilities.get("canSubmitProposal") is not True:
+        err = ValueError("This link cannot submit an order proposal.")
+        setattr(err, "status", 403)
+        raise err
+    usage_limit_value = _link_usage_limit_for_response(link)
+    try:
+        usage_count_value = int(link.get("usageCount") or 0)
+    except Exception:
+        usage_count_value = 0
+    if usage_limit_value is not None and usage_count_value >= usage_limit_value:
+        err = ValueError("This delegate link has already submitted its allowed proposal.")
+        setattr(err, "status", 403)
+        raise err
     ok = patient_links_repository.store_delegate_payload(
         token,
         cart=cart,
@@ -1713,7 +1937,7 @@ def store_delegate_submission(
                 "delegatePermission": link.get("delegatePermission"),
             },
         )
-        updated_link = patient_links_repository.find_by_token(token, include_inactive=True) or link
+        updated_link = patient_links_repository.find_by_token(token) or link
         _send_delegate_proposal_ready_email_for_link(token, updated_link, submitted_at=submitted_at)
         return
     err = RuntimeError("Unable to persist delegate payload")
@@ -1767,7 +1991,7 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         "productScope": link.get("productScope") or DEFAULT_PRODUCT_SCOPE,
         "productScopeItems": link.get("productScopeItems") or [],
         "delegatePermission": link.get("delegatePermission") or DEFAULT_DELEGATE_PERMISSION,
-        "markupPercent": link.get("markupPercent"),
+        "markupPercent": _normalize_capped_markup_percent(link.get("markupPercent")),
         "pricingDisclosure": link.get("pricingDisclosure") or DEFAULT_PRICING_DISCLOSURE,
         "zelleRecipientName": link.get("zelleRecipientName"),
         "paymentConfirmationRequired": link.get("paymentConfirmationRequired"),
@@ -1778,7 +2002,7 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         "privacyPolicyVersion": link.get("privacyPolicyVersion"),
         "instructions": link.get("instructions"),
         "allowedProducts": link.get("allowedProducts") or [],
-        "usageLimit": None,
+        "usageLimit": _link_usage_limit_for_response(link),
         "usageCount": link.get("usageCount"),
         "status": link.get("status"),
         "delegateCart": link.get("delegateCart"),
@@ -1889,7 +2113,7 @@ def review_link_proposal(
             str(updated.get("referenceLabel") or "").strip()
             or str(updated.get("reference_label") or "").strip()
             or str(updated.get("label") or "").strip()
-            or "Delegate Order"
+            or "Delegate Proposal"
         )
         try:
             linked_order = order_repository.find_by_order_identifier(resolved_order_id)
@@ -1903,10 +2127,12 @@ def review_link_proposal(
                     linked_order["asDelegate"] = as_delegate_label[:190]
                     order_repository.update(linked_order)
         except Exception:
+            token_metadata = safe_link_token_metadata(token, updated, doctor_id=doctor_id)
             logger.debug(
-                "[Delegation] Unable to backfill as_delegate label for order_id=%s token=%s",
+                "[Delegation] Unable to backfill as_delegate label for order_id=%s tokenHint=%s tokenHash=%s",
                 resolved_order_id,
-                token,
+                token_metadata.get("tokenHint"),
+                token_metadata.get("tokenHash"),
                 exc_info=True,
             )
     return {
@@ -1939,10 +2165,20 @@ def validate_delegate_items(token: str, items: List[Dict[str, Any]]) -> Dict[str
         err = ValueError("Invalid or expired delegate link")
         setattr(err, "status", 404)
         raise err
+    raw_product_scope = str(link.get("productScope") or DEFAULT_PRODUCT_SCOPE).strip().lower()
+    if raw_product_scope == "category_or_protocol":
+        err = ValueError("Category or protocol scoped delegate links are not enabled.")
+        setattr(err, "status", 403)
+        raise err
+    product_scope = _normalize_product_scope(raw_product_scope)
     allowed_products = _normalize_allowed_products(link.get("allowedProducts") or [])
     if not allowed_products:
         allowed_products = _normalize_allowed_products(link.get("productScopeItems") or [])
     if not allowed_products:
+        if product_scope in {"specific_products", "specific_cart_only", "category_or_protocol"}:
+            err = ValueError("This link has no approved product scope.")
+            setattr(err, "status", 403)
+            raise err
         return {"link": link, "allowedProducts": [], "validatedItems": items or []}
     allowed_set = {entry.upper() for entry in allowed_products}
     validated_items: List[Dict[str, Any]] = []

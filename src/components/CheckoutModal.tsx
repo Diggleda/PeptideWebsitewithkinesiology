@@ -906,7 +906,7 @@ export function CheckoutModal({
   }, [paymentMethod]);
 
   let checkoutButtonLabel = isDelegateFlow
-    ? `Share with ${delegateDoctorDisplayName}`
+    ? 'Submit for physician review'
     : `Place Order (${displayTotal.toFixed(2)})`;
   if (delegateSubmitBlocked) {
     checkoutButtonLabel = 'View only';
@@ -917,7 +917,7 @@ export function CheckoutModal({
   } else if (taxEstimatePending && shouldFetchTax) {
     checkoutButtonLabel = 'Calculating taxes…';
   } else if (isProcessing) {
-    checkoutButtonLabel = 'Processing order...';
+    checkoutButtonLabel = isDelegateFlow ? 'Submitting proposal...' : 'Processing order...';
   }
 
   const canRejectProposalInCheckout =
@@ -1269,7 +1269,7 @@ export function CheckoutModal({
 	          result && typeof result === 'object' && 'message' in result && (result as any).message
 	            ? String((result as any).message)
 	            : null;
-	        const successMessage = candidateMessage || `Shared with ${delegateDoctorDisplayName || 'Physician'}`;
+	        const successMessage = candidateMessage || 'Submitted for physician review.';
 	        setPlacedOrderNumber(null);
 	        setCheckoutStatus('success');
 	        setCheckoutStatusMessage(successMessage);
@@ -1386,7 +1386,7 @@ export function CheckoutModal({
       return;
     }
     if (!delegateShippingHandledByPhysician && !shippingAddressComplete) {
-      toast.error('Enter the full shipping address before placing your order.');
+      toast.error(isDelegateFlow ? 'Enter the full shipping address before submitting this proposal.' : 'Enter the full shipping address before placing your order.');
       return;
     }
     if (!delegateShippingHandledByPhysician && !hasSelectedShippingRate) {
@@ -1817,7 +1817,7 @@ export function CheckoutModal({
 	              <DialogDescription>
 	                {proposalMode
 	                  ? (isDelegateFlow
-	                    ? `Review your proposal and share it with ${delegateDoctorDisplayName || 'the physician'}.`
+	                    ? `This link was created by ${delegateDoctorDisplayName || 'your physician or clinic'}. You may review physician-authorized information and submit selections for physician review. Submitting information through this page does not create an order, prescription, treatment plan, or medical instruction from TrufusionLabs.`
 	                    : 'Review this proposal and place your order.')
 	                  : 'Review and place your order.'}
 	              </DialogDescription>
@@ -1990,7 +1990,7 @@ export function CheckoutModal({
 	                                          ) : null}
 	                                        </span>
 	                                        <span className="text-[rgb(11,6,121)] font-semibold tabular-nums text-[12px]">
-	                                          <span className="text-[11px] font-semibold text-slate-500 mr-1">Delegate:</span>
+	                                          <span className="text-[11px] font-semibold text-slate-500 mr-1">Base:</span>
 	                                          ${delegateUnitPrice.toFixed(2)}
 	                                        </span>
 	                                      </div>
@@ -2091,7 +2091,7 @@ export function CheckoutModal({
 	                                  </p>
 	                                  {showDualPricing && delegateLineTotal != null && (
 	                                    <p className="text-[12px] font-semibold text-[rgb(11,6,121)] tabular-nums">
-	                                      Delegate: ${delegateLineTotal.toFixed(2)}
+	                                      Base: ${delegateLineTotal.toFixed(2)}
 	                                    </p>
 	                                  )}
 	                                </div>
@@ -2189,7 +2189,7 @@ export function CheckoutModal({
                                                 ) : null}
                                               </span>
                                               <span className="text-[rgb(11,6,121)] font-semibold tabular-nums text-[12px]">
-                                                <span className="text-[11px] font-semibold text-slate-500 mr-1">Delegate:</span>
+                                                <span className="text-[11px] font-semibold text-slate-500 mr-1">Base:</span>
                                                 ${delegateUnitPrice.toFixed(2)}
                                               </span>
                                             </div>
@@ -2505,7 +2505,7 @@ export function CheckoutModal({
 	                        Payment method is configured by {delegateDoctorDisplayName || 'the physician'} for this proposal.
 	                      </p>
 	                      <p className="mt-1">
-	                        They apply a markup to the subtotal in the form of a service fee.
+	                        Any physician-directed service or research coordination fee is shown separately where applicable.
 	                      </p>
 	                      {delegatePricingDisclosureText ? (
 	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
@@ -2662,7 +2662,7 @@ export function CheckoutModal({
 	                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
 	                  {isDelegateFlow ? (
 	                    <>
-	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Physician'}), and I agree to TrufusionLabs&apos;s{' '}
+	                      I understand I am submitting a delegate proposal for physician review. This is not an order, prescription, treatment plan, or medical instruction from TrufusionLabs, and I agree to TrufusionLabs&apos;s{' '}
 	                    </>
 	                  ) : typeof agreementTextPrefix === 'string' && agreementTextPrefix.trim().length > 0 ? (
 	                    <>
@@ -2723,7 +2723,7 @@ export function CheckoutModal({
 			                </div>
 			                {showDualPricing && delegateSubtotal != null && (
 		                  <div className="flex justify-between text-sm text-slate-700">
-		                    <span>Delegate subtotal:</span>
+		                    <span>Base research material price:</span>
 		                    <span className="tabular-nums text-[rgb(11,6,121)] font-semibold">
 		                      ${delegateSubtotal.toFixed(2)}
 		                    </span>
@@ -2806,7 +2806,7 @@ export function CheckoutModal({
 			                </div>
 		                {showDualPricing && delegateTotal != null && (
 		                  <div className="flex justify-between text-sm font-semibold text-[rgb(11,6,121)]">
-		                    <span>Delegate pays you:</span>
+		                    <span>Physician-directed service/research coordination fee:</span>
 		                    <span className="tabular-nums">
 		                      ${delegateTotal.toFixed(2)}
 		                    </span>

@@ -1045,7 +1045,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Welcome to Patient Links</title>
+    <title>Welcome to Delegate Links</title>
     <meta name="color-scheme" content="light" />
     <meta name="supported-color-schemes" content="light" />
 {_EMAIL_LIGHT_MODE_LOCK_CSS}
@@ -1062,31 +1062,31 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
             </tr>
             <tr>
               <td style="padding:40px 32px 8px;font-family:{patient_links_font_family};font-weight:400;">
-                <p style="{eyebrow_style}">Patient Links</p>
-                <h1 style="{title_style}">Create brochure and delegate links from one workspace</h1>
+                <p style="{eyebrow_style}">Delegate Links</p>
+                <h1 style="{title_style}">Create brochure and proposal links from one workspace</h1>
                 <p style="{lead_style}">
-                  Patient Links now brings Product Brochure links and Delegate links together in your physician dashboard. Use brochure links for view-only product education, and delegate links when a patient session needs to build an order proposal for your review.
+                  Distribute and manage white-labeled research material sessions. Use brochure links for view-only product education, and proposal links when a trusted delegate needs to submit selections for physician review.
                 </p>
 
-                <p style="{screenshot_title_style}">Create and track your brochures and delegate sessions</p>
-                <img src="{create_dialog_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Create link dialog showing Product Brochure and Delegate link options" style="{screenshot_image_style}" />
+                <p style="{screenshot_title_style}">Create and track your brochures and proposal sessions</p>
+                <img src="{create_dialog_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Create link dialog showing Brochure and Proposal link options" style="{screenshot_image_style}" />
 
                 <p style="{screenshot_title_style}">Setup white-labeled sessions for your clients.</p>
-                <img src="{session_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Delegate patient session with branded catalog and product cards" style="{screenshot_image_style}" />
+                <img src="{session_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Delegate proposal session with branded catalog and product cards" style="{screenshot_image_style}" />
 
-                <h2 style="{section_title_style}">How to use Patient Links</h2>
+                <h2 style="{section_title_style}">How to use Delegate Links</h2>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;border-collapse:collapse;">
                   <tr>
                     <td style="{step_number_style}">1.</td>
-                    <td style="{step_text_style}"><strong style="color:#111827;">Open Patient Links</strong> in your physician dashboard, then choose <strong style="color:#111827;">Create a link</strong>.</td>
+                    <td style="{step_text_style}"><strong style="color:#111827;">Open Delegate Links</strong> in your physician dashboard, then choose <strong style="color:#111827;">Create a link</strong>.</td>
                   </tr>
                   <tr>
                     <td style="{step_number_style}">2.</td>
-                    <td style="{step_text_style}"><strong style="color:#111827;">Product Brochure</strong> creates a view-only product information page with no pricing, cart, or checkout.</td>
+                    <td style="{step_text_style}"><strong style="color:#111827;">Brochure</strong> creates a view-only product information page with no pricing, cart, or checkout.</td>
                   </tr>
                   <tr>
                     <td style="{step_number_style}">3.</td>
-                    <td style="{step_text_style}"><strong style="color:#111827;">Delegate</strong> creates a patient session that can build an order proposal for physician review.</td>
+                    <td style="{step_text_style}"><strong style="color:#111827;">Proposal</strong> creates a delegate session that can submit selections for physician review.</td>
                   </tr>
                   <tr>
                     <td style="{step_number_style}">4.</td>
@@ -1095,7 +1095,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
                 </table>
 
                 <p style="margin:10px 0 32px;text-align:center;">
-                  <a class="trufusion-button" href="{safe_base_url}" style="{cta_style}">Open Patient Links</a>
+                  <a class="trufusion-button" href="{safe_base_url}" style="{cta_style}">Open Delegate Links</a>
                 </p>
               </td>
             </tr>
@@ -1111,14 +1111,14 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
   </body>
 </html>"""
     plain = (
-        "Welcome to Patient Links\n\n"
-        "Patient Links now brings Product Brochure links and Delegate links together in your physician dashboard.\n\n"
-        "Product Brochure: create a shareable, view-only product brochure page with descriptions. No pricing, cart, or checkout.\n"
-        "Delegate: create a patient session capable of building order proposals for physician review.\n\n"
-        "1. Open Patient Links in your physician dashboard and choose Create a link.\n"
-        "2. Pick Product Brochure for view-only product education, or Delegate for proposal workflows.\n"
+        "Welcome to Delegate Links\n\n"
+        "Distribute and manage white-labeled research material sessions. Use brochure links for view-only product education, and proposal links when a trusted delegate needs to submit selections for physician review.\n\n"
+        "Brochure: create a shareable, view-only product brochure page with descriptions. No pricing, cart, or checkout.\n"
+        "Proposal: create a delegate session capable of submitting selections for physician review.\n\n"
+        "1. Open Delegate Links in your physician dashboard and choose Create a link.\n"
+        "2. Pick Brochure for view-only product education, or Proposal for delegate proposal workflows.\n"
         "3. Use Manage your links to preview, copy, track, revoke, and review proposal activity.\n\n"
-        f"Open Patient Links: {safe_base_url}\n"
+        f"Open Delegate Links: {safe_base_url}\n"
         "Need help? Contact support@trufusionlabs.com."
     )
     return html, plain

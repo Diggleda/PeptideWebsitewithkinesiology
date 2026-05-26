@@ -68,11 +68,27 @@ def _delegate_usage_actor(doctor_id: object = None) -> dict:
     return {}
 
 
-def _track_delegate_usage(event: str, *, doctor_id: object = None, metadata: dict | None = None) -> None:
+def _track_delegate_usage(
+    event: str,
+    *,
+    doctor_id: object = None,
+    token: object = None,
+    metadata: dict | None = None,
+) -> None:
     normalized_event = str(event or "").strip()
     if not normalized_event:
         return
-    event_metadata = {"linkType": "delegate", **(metadata or {})}
+    raw_metadata = dict(metadata or {})
+    raw_token = token or raw_metadata.pop("token", None) or raw_metadata.pop("delegateToken", None) or raw_metadata.pop("delegateProposalToken", None)
+    event_metadata = {"linkType": "delegate", **raw_metadata}
+    if raw_token:
+        event_metadata.update(
+            delegation_service.safe_link_token_metadata(
+                raw_token,
+                doctor_id=doctor_id,
+                link_type=event_metadata.get("linkType") or "delegate",
+            )
+        )
     usage_tracking_service.track_event(
         normalized_event,
         actor=_delegate_usage_actor(doctor_id),
@@ -252,10 +268,12 @@ def create_order():
     )
     as_delegate_label = payload.get("asDelegate") or payload.get("as_delegate") or None
     normalized_delegate_token = str(delegate_proposal_token or "").strip()
+    delegate_link_for_metadata = {}
     if normalized_delegate_token:
-        as_delegate_label = "Delegate Order"
+        as_delegate_label = "Delegate Proposal"
         try:
             link = patient_links_repository.find_by_token(normalized_delegate_token) or {}
+            delegate_link_for_metadata = link if isinstance(link, dict) else {}
             reference_label = (
                 str(link.get("referenceLabel") or "").strip()
                 or str(link.get("reference_label") or "").strip()
@@ -264,7 +282,7 @@ def create_order():
             if reference_label:
                 as_delegate_label = reference_label
         except Exception:
-            as_delegate_label = "Delegate Order"
+            as_delegate_label = "Delegate Proposal"
     if isinstance(as_delegate_label, str):
         as_delegate_label = as_delegate_label.strip()[:190] or None
     expected_shipment_window = payload.get("expectedShipmentWindow") or None
@@ -297,8 +315,12 @@ def create_order():
                 "delegate_order_placed",
                 actor=getattr(g, "current_user", None) or {},
                 metadata={
-                    "linkType": "delegate",
-                    "delegateProposalToken": normalized_delegate_token,
+                    **delegation_service.safe_link_token_metadata(
+                        normalized_delegate_token,
+                        delegate_link_for_metadata,
+                        doctor_id=user_id,
+                        link_type="delegate",
+                    ),
                     "orderId": result.get("id") if isinstance(result, dict) else None,
                     "itemCount": len(items or []),
                     "paymentMethod": payment_method,
@@ -317,6 +339,16 @@ def create_order():
             "orders",
             *(("patient-links",) if normalized_delegate_token else ()),
             metadata={
+                **(
+                    delegation_service.safe_link_token_metadata(
+                        normalized_delegate_token,
+                        delegate_link_for_metadata,
+                        doctor_id=user_id,
+                        link_type="delegate",
+                    )
+                    if normalized_delegate_token
+                    else {}
+                ),
                 "source": "orders.create",
                 "orderId": result.get("id") if isinstance(result, dict) else None,
             },
@@ -897,6 +929,7 @@ def delegate_estimate_order_totals():
         _track_delegate_usage(
             "delegate_order_estimated",
             doctor_id=doctor_id,
+            token=delegate_token,
             metadata={
                 "itemCount": len(validated.get("validatedItems") or items or []),
                 "productScope": delegate_info.get("productScope"),
@@ -1033,6 +1066,7 @@ def delegate_share_order():
         _track_delegate_usage(
             "delegate_proposal_shared",
             doctor_id=doctor_id,
+            token=delegate_info.get("token") or delegate_token,
             metadata={
                 "orderId": str(stored_id or order_id),
                 "itemCount": len(validated.get("validatedItems") or items or []),
@@ -1045,7 +1079,16 @@ def delegate_share_order():
         _bump_resources(
             "orders",
             "patient-links",
-            metadata={"source": "orders.delegate.share", "orderId": str(stored_id or order_id)},
+            metadata={
+                "source": "orders.delegate.share",
+                "orderId": str(stored_id or order_id),
+                **delegation_service.safe_link_token_metadata(
+                    delegate_info.get("token") or delegate_token,
+                    delegate_info if isinstance(delegate_info, dict) else None,
+                    doctor_id=doctor_id,
+                    link_type=delegate_info.get("linkType") if isinstance(delegate_info, dict) else "delegate",
+                ),
+            },
         )
         return {
             "success": True,

@@ -351,7 +351,7 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
             legacy_keys=["instructions"],
         ),
         "allowedProducts": allowed_products,
-        "usageLimit": None,
+        "usageLimit": _normalize_optional_int(row.get("usage_limit")),
         "usageCount": usage_count,
         "openCount": int(row.get("open_count") or 0),
         "viewCount": int(row.get("view_count") or row.get("open_count") or 0),
@@ -492,7 +492,7 @@ def create_link(
     physician_certified_value = 1 if _normalize_bool_flag(physician_certified) else 0
     instructions_value = _normalize_optional_text(instructions, max_len=4000)
     allowed_products_value = _normalize_allowed_products(allowed_products)
-    usage_limit_value = None
+    usage_limit_value = _normalize_optional_int(usage_limit)
     delete_expired()
 
     if link_type_value == "brochure":
@@ -508,6 +508,7 @@ def create_link(
         payment_method_value = None
         payment_instructions_value = None
         instructions_value = None
+        usage_limit_value = None
     else:
         brochure_name_value = None
 
@@ -986,6 +987,10 @@ def update_link(
         params["allowed_products_json"] = _serialize_json(_normalize_allowed_products(allowed_products))
         updates.append("allowed_products_json = %(allowed_products_json)s")
 
+    if usage_limit is not None:
+        params["usage_limit"] = _normalize_optional_int(usage_limit)
+        updates.append("usage_limit = %(usage_limit)s")
+
     if expires_in_hours is not None:
         hours = _normalize_optional_int(expires_in_hours)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=hours) if hours is not None else None
@@ -1158,6 +1163,10 @@ def store_delegate_payload(
                 END
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND {ACTIVE_LINK_SQL}
+              AND revoked_at IS NULL
+              AND COALESCE(status, 'active') NOT IN ('revoked', 'expired')
+              AND COALESCE(link_type, 'delegate') <> 'brochure'
+              AND (usage_limit IS NULL OR COALESCE(usage_count, 0) < usage_limit)
             """,
             {
                 **_lookup_params(normalized),

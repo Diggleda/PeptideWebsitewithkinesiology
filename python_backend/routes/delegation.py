@@ -84,11 +84,27 @@ def _delegate_usage_actor(doctor_id: object = None) -> dict:
     return {}
 
 
-def _track_delegate_usage(event: str, *, doctor_id: object = None, metadata: dict | None = None) -> None:
+def _track_delegate_usage(
+    event: str,
+    *,
+    doctor_id: object = None,
+    token: object = None,
+    metadata: dict | None = None,
+) -> None:
     normalized_event = str(event or "").strip()
     if not normalized_event:
         return
-    event_metadata = {"linkType": "delegate", **(metadata or {})}
+    raw_metadata = dict(metadata or {})
+    raw_token = token or raw_metadata.pop("token", None) or raw_metadata.pop("delegateToken", None) or raw_metadata.pop("delegateProposalToken", None)
+    event_metadata = {"linkType": "delegate", **raw_metadata}
+    if raw_token:
+        event_metadata.update(
+            delegation_service.safe_link_token_metadata(
+                raw_token,
+                doctor_id=doctor_id,
+                link_type=event_metadata.get("linkType") or "delegate",
+            )
+        )
     usage_tracking_service.track_event(
         normalized_event,
         actor=_delegate_usage_actor(doctor_id),
@@ -172,6 +188,7 @@ def create_link():
             if "expiresInHours" in payload
             else payload.get("expires_in_hours")
         )
+        usage_limit = payload.get("usageLimit") if "usageLimit" in payload else payload.get("usage_limit")
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
             payload.get("paymentInstructions")
@@ -213,6 +230,7 @@ def create_link():
             instructions=instructions if isinstance(instructions, str) else None,
             allowed_products=allowed_products,
             expires_in_hours=expires_in_hours,
+            usage_limit=usage_limit if usage_limit is not None else None,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
             physician_certified=physician_certified,
@@ -221,15 +239,27 @@ def create_link():
             "brochure_link_created" if str(link.get("linkType") or "").lower() == "brochure" else "delegate_link_created",
             actor=getattr(g, "current_user", None) or {},
             metadata={
-                "linkType": link.get("linkType") or "delegate",
-                "token": link.get("token"),
+                **delegation_service.safe_link_token_metadata(
+                    link.get("token"),
+                    link,
+                    doctor_id=doctor_id,
+                    link_type=link.get("linkType") or "delegate",
+                ),
                 "productScope": link.get("productScope"),
                 "delegatePermission": link.get("delegatePermission"),
             },
         )
         _bump_resources(
             "patient-links",
-            metadata={"source": "delegation.create", "token": link.get("token")},
+            metadata={
+                "source": "delegation.create",
+                **delegation_service.safe_link_token_metadata(
+                    link.get("token"),
+                    link,
+                    doctor_id=doctor_id,
+                    link_type=link.get("linkType") or "delegate",
+                ),
+            },
         )
         return {"success": True, "link": link}
 
@@ -311,6 +341,13 @@ def update_link(token: str):
             else None
         )
         has_expires_in_hours = "expiresInHours" in payload or "expires_in_hours" in payload
+        usage_limit = (
+            payload.get("usageLimit")
+            if "usageLimit" in payload
+            else payload.get("usage_limit")
+            if "usage_limit" in payload
+            else None
+        )
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
           payload.get("paymentInstructions")
@@ -333,11 +370,15 @@ def update_link(token: str):
             _track_delegate_usage(
                 "delegate_link_deleted",
                 doctor_id=doctor_id,
+                token=token,
                 metadata={"status": "deleted"},
             )
             _bump_resources(
                 "patient-links",
-                metadata={"source": "delegation.delete", "token": token},
+                metadata={
+                    "source": "delegation.delete",
+                    **delegation_service.safe_link_token_metadata(token, doctor_id=doctor_id, link_type="delegate"),
+                },
             )
             return {"success": True, **result}
 
@@ -375,6 +416,7 @@ def update_link(token: str):
                 if has_expires_in_hours
                 else None
             ),
+            usage_limit=usage_limit if usage_limit is not None else None,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
             received_payment=received_payment if received_payment is not None else None,
@@ -389,6 +431,7 @@ def update_link(token: str):
         _track_delegate_usage(
             event_name,
             doctor_id=doctor_id,
+            token=token,
             metadata={
                 "productScope": updated.get("productScope") if isinstance(updated, dict) else None,
                 "delegatePermission": updated.get("delegatePermission") if isinstance(updated, dict) else None,
@@ -398,7 +441,15 @@ def update_link(token: str):
         )
         _bump_resources(
             "patient-links",
-            metadata={"source": "delegation.update", "token": token},
+            metadata={
+                "source": "delegation.update",
+                **delegation_service.safe_link_token_metadata(
+                    token,
+                    updated if isinstance(updated, dict) else None,
+                    doctor_id=doctor_id,
+                    link_type=updated.get("linkType") if isinstance(updated, dict) else "delegate",
+                ),
+            },
         )
         return {"success": True, "link": updated}
 
@@ -452,6 +503,7 @@ def resolve_token():
             _track_delegate_usage(
                 "delegate_link_opened",
                 doctor_id=resolved.get("doctorId") if isinstance(resolved, dict) else None,
+                token=token,
                 metadata={
                     "productScope": resolved.get("productScope") if isinstance(resolved, dict) else None,
                     "delegatePermission": resolved.get("delegatePermission") if isinstance(resolved, dict) else None,
@@ -465,8 +517,12 @@ def resolve_token():
                 "patient-links",
                 metadata={
                     "source": "delegation.resolve",
-                    "token": token,
-                    "linkType": resolved.get("linkType") if isinstance(resolved, dict) else None,
+                    **delegation_service.safe_link_token_metadata(
+                        token,
+                        resolved if isinstance(resolved, dict) else None,
+                        doctor_id=resolved.get("doctorId") if isinstance(resolved, dict) else None,
+                        link_type=resolved.get("linkType") if isinstance(resolved, dict) else None,
+                    ),
                 },
             )
         return {"success": True, **resolved}
@@ -558,12 +614,18 @@ def review_link_proposal(token: str):
         usage_tracking_service.track_event(
             "delegate_proposal_reviewed",
             actor=getattr(g, "current_user", None) or {},
-            metadata={"token": token, "status": str(status).strip()},
+            metadata={
+                **delegation_service.safe_link_token_metadata(token, doctor_id=doctor_id, link_type="delegate"),
+                "status": str(status).strip(),
+            },
         )
         _bump_resources(
             "patient-links",
             "orders",
-            metadata={"source": "delegation.proposal.review", "token": token},
+            metadata={
+                "source": "delegation.proposal.review",
+                **delegation_service.safe_link_token_metadata(token, doctor_id=doctor_id, link_type="delegate"),
+            },
         )
         return {"success": True, **result}
 

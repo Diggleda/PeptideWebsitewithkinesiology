@@ -18,6 +18,14 @@ def _should_track(path: str) -> bool:
     return path.startswith("/api")
 
 
+def _is_long_lived_request(method: str, path: str) -> bool:
+    normalized_method = str(method or "").upper()
+    normalized_path = str(path or "").split("?", 1)[0].rstrip("/").lower()
+    if normalized_method == "GET" and normalized_path == "/api/events":
+        return True
+    return "/longpoll" in normalized_path
+
+
 def _best_client_ip() -> str:
     raw = (
         request.headers.get("CF-Connecting-IP")
@@ -160,7 +168,7 @@ def init_request_logging(app: Flask) -> None:
                     "path": request.path,
                     "route": _route_label(),
                     "clientIp": _best_client_ip(),
-                    "longPoll": "/longpoll" in request.path.lower(),
+                    "longPoll": _is_long_lived_request(request.method, request.path),
                 }
 
     @app.after_request
