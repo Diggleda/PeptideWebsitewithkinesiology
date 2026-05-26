@@ -419,6 +419,7 @@ class PatientLinkEncryptionTests(unittest.TestCase):
             patch.object(patient_links_repository.uuid, "uuid4", return_value="token-1234"):
             link = patient_links_repository.create_link(
                 "doctor-9",
+                link_name="Link Alpha",
                 patient_id="PAT-123",
                 subject_label="PAT-123",
                 study_label="Study A",
@@ -446,11 +447,15 @@ class PatientLinkEncryptionTests(unittest.TestCase):
 
         self.assertEqual(link["patientId"], "PAT-123")
         self.assertEqual(link["patientReference"], "REF-7")
+        self.assertEqual(link["linkName"], "Link Alpha")
+        self.assertEqual(link["referenceLabel"], "Link Alpha")
+        self.assertEqual(link["label"], "Link Alpha")
         self.assertEqual(len(calls), 1)
 
         _query, params = calls[0]
+        self.assertEqual(params["link_name"], "cipher:link_name:Link Alpha")
         self.assertEqual(params["patient_id"], "cipher:patient_id:PAT-123")
-        self.assertEqual(params["reference_label"], "cipher:reference_label:REF-7")
+        self.assertEqual(params["reference_label"], "cipher:reference_label:Link Alpha")
         self.assertEqual(params["subject_label"], "cipher:subject_label:PAT-123")
         self.assertEqual(params["study_label"], "cipher:study_label:Study A")
         self.assertEqual(params["patient_reference"], "cipher:patient_reference:REF-7")
@@ -474,6 +479,7 @@ class PatientLinkEncryptionTests(unittest.TestCase):
             "cipher:payment_instructions:Pay by Friday",
         )
         self.assertNotIn("patient_id_encrypted", params)
+        self.assertNotIn("link_name_encrypted", params)
         self.assertNotIn("reference_label_encrypted", params)
         self.assertNotIn("subject_label_encrypted", params)
         self.assertNotIn("study_label_encrypted", params)

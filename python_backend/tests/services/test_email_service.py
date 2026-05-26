@@ -65,6 +65,30 @@ class EmailServiceTests(unittest.TestCase):
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertNotIn("cc", dispatch_email.call_args.kwargs)
 
+    def test_all_shipping_status_update_emails_bcc_pgibbons_trufusionlabs(self):
+        from python_backend.services import email_service
+
+        statuses = ("shipped", "in_transit", "out_for_delivery", "delivered")
+        with patch.object(
+            email_service,
+            "get_config",
+            return_value=SimpleNamespace(frontend_base_url="https://trufusionlabs.com"),
+        ), patch.object(email_service, "_dispatch_email") as dispatch_email:
+            for status in statuses:
+                email_service.send_order_shipping_status_email(
+                    "holly@example.com",
+                    status=status,
+                    customer_name="Holly O'Quin",
+                    order_number="1505",
+                    tracking_number="1ZSHIP1505",
+                    carrier_code="ups",
+                )
+
+        self.assertEqual(dispatch_email.call_count, len(statuses))
+        for call in dispatch_email.call_args_list:
+            self.assertEqual(call.kwargs["bcc"], ("pgibbons@trufusionlabs.com",))
+            self.assertTrue(call.kwargs["raise_on_failure"])
+
     def test_shipping_status_email_uses_in_transit_copy(self):
         from python_backend.services import email_service
 

@@ -29,6 +29,7 @@ import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header, PHYSICIAN_DASHBOARD_PORTAL_ID } from "./components/Header";
 import { AppDataEventsBridge } from "./components/AppDataEventsBridge";
 import { BrandLogoImage } from "./components/BrandLogoImage";
+import { CatalogProductGrid } from "./components/CatalogProductGrid";
 import { DoctorProfileForm } from "./components/DoctorProfileForm";
 import { FeaturedSection } from "./components/FeaturedSection";
 import {
@@ -6090,6 +6091,7 @@ function MainApp() {
     doctorSecondaryColor?: string | null;
     doctorBackgroundImageUrl?: string | null;
     doctorBackgroundColor?: string | null;
+    linkName?: string | null;
     brochureTitle?: string | null;
     subjectLabel?: string | null;
     studyLabel?: string | null;
@@ -6144,9 +6146,11 @@ function MainApp() {
     const raw =
       typeof delegateContext?.brochureTitle === "string"
         ? delegateContext.brochureTitle.trim()
+        : typeof delegateContext?.linkName === "string"
+          ? delegateContext.linkName.trim()
         : "";
     return raw || "Brochure";
-  }, [delegateContext?.brochureTitle]);
+  }, [delegateContext?.brochureTitle, delegateContext?.linkName]);
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegateSecondaryColor = hexToRgbCss(delegateSecondaryColorHex);
@@ -7220,7 +7224,25 @@ function MainApp() {
 	                ? resolved.pageTitle.trim()
 	                : typeof resolved?.brochure_title === 'string' && resolved.brochure_title.trim()
 	                  ? resolved.brochure_title.trim()
-	                  : null,
+	                  : typeof resolved?.linkName === 'string' && resolved.linkName.trim()
+	                    ? resolved.linkName.trim()
+	                    : typeof resolved?.link_name === 'string' && resolved.link_name.trim()
+	                      ? resolved.link_name.trim()
+	                      : null,
+	          linkName:
+	            typeof resolved?.linkName === 'string' && resolved.linkName.trim()
+	              ? resolved.linkName.trim()
+	              : typeof resolved?.link_name === 'string' && resolved.link_name.trim()
+	                ? resolved.link_name.trim()
+	                : typeof resolved?.subjectLabel === 'string' && resolved.subjectLabel.trim()
+	                  ? resolved.subjectLabel.trim()
+	                  : typeof resolved?.subject_label === 'string' && resolved.subject_label.trim()
+	                    ? resolved.subject_label.trim()
+	                    : typeof resolved?.referenceLabel === 'string' && resolved.referenceLabel.trim()
+	                      ? resolved.referenceLabel.trim()
+	                      : typeof resolved?.label === 'string' && resolved.label.trim()
+	                        ? resolved.label.trim()
+	                        : null,
 	          subjectLabel:
 	            typeof resolved?.subjectLabel === 'string'
 	              ? resolved.subjectLabel
@@ -30929,7 +30951,7 @@ function MainApp() {
               ))}
             </div>
 	          ) : filteredProducts.length > 0 ? (
-	            <div className="grid gap-6 w-full px-4 sm:px-6 lg:px-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+	            <CatalogProductGrid products={filteredProducts}>
 			              {filteredProducts.map((product) => (
                       isBrochureMode ? (
                         <BrochureCatalogProductCard key={product.id} product={product} />
@@ -30955,7 +30977,7 @@ function MainApp() {
                         />
                       )
 			              ))}
-	            </div>
+	            </CatalogProductGrid>
 	          ) : (
 	            <div className="catalog-loading-state py-12">
 	              <div className="glass-card squircle-lg p-8 max-w-md text-center">

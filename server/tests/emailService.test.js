@@ -78,20 +78,58 @@ test('node password reset email uses TrufusionLabs logo, white background, and s
 });
 
 test('payment instructions email uses shared white TrufusionLabs styling', async () => {
-  await withFreshEmailService(async (emailService, sent) => {
-    await emailService.sendOrderPaymentInstructionsEmail({
-      to: 'doctor@example.com',
-      customerName: 'Dr. Test',
-      orderId: 'order-1',
-      wooOrderNumber: '1505',
-      total: 125.5,
-      discountCode: null,
-      discountCodeAmount: 0,
-    });
+  const previousBcc = process.env.PAYMENT_INSTRUCTIONS_BCC;
+  process.env.PAYMENT_INSTRUCTIONS_BCC = '';
+  try {
+    await withFreshEmailService(async (emailService, sent) => {
+      await emailService.sendOrderPaymentInstructionsEmail({
+        to: 'doctor@example.com',
+        customerName: 'Dr. Test',
+        orderId: 'order-1',
+        wooOrderNumber: '1505',
+        total: 125.5,
+        discountCode: null,
+        discountCodeAmount: 0,
+      });
 
-    assert.equal(sent.length, 1);
-    assertSharedEmailStyling(sent[0].html);
-  });
+      assert.equal(sent.length, 1);
+      assertSharedEmailStyling(sent[0].html);
+      assert.equal(sent[0].bcc, 'pgibbons@trufusionlabs.com');
+    });
+  } finally {
+    if (previousBcc === undefined) {
+      delete process.env.PAYMENT_INSTRUCTIONS_BCC;
+    } else {
+      process.env.PAYMENT_INSTRUCTIONS_BCC = previousBcc;
+    }
+  }
+});
+
+test('payment instructions email keeps pgibbons BCC when env bcc is also configured', async () => {
+  const previousBcc = process.env.PAYMENT_INSTRUCTIONS_BCC;
+  process.env.PAYMENT_INSTRUCTIONS_BCC = 'finance@trufusionlabs.com;pgibbons@trufusionlabs.com';
+  try {
+    await withFreshEmailService(async (emailService, sent) => {
+      await emailService.sendOrderPaymentInstructionsEmail({
+        to: 'doctor@example.com',
+        customerName: 'Dr. Test',
+        orderId: 'order-1',
+        wooOrderNumber: '1505',
+        total: 125.5,
+        discountCode: null,
+        discountCodeAmount: 0,
+      });
+
+      assert.equal(sent.length, 1);
+      assert.equal(sent[0].bcc, 'pgibbons@trufusionlabs.com, finance@trufusionlabs.com');
+    });
+  } finally {
+    if (previousBcc === undefined) {
+      delete process.env.PAYMENT_INSTRUCTIONS_BCC;
+    } else {
+      process.env.PAYMENT_INSTRUCTIONS_BCC = previousBcc;
+    }
+  }
 });
 
 test('manual refund review email uses shared white TrufusionLabs styling', async () => {

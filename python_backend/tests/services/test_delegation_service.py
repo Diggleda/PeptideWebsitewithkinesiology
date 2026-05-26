@@ -446,6 +446,7 @@ class DelegationServiceTests(unittest.TestCase):
                     "token": "tok-brochure",
                     "linkType": kwargs.get("link_type"),
                     "capabilities": service.capabilities_for_link_type(kwargs.get("link_type")),
+                    "linkName": kwargs.get("link_name"),
                     "brochureName": kwargs.get("brochure_name"),
                     "recipientName": kwargs.get("delegate_name"),
                     "recipientContact": kwargs.get("delegate_contact"),
@@ -478,7 +479,10 @@ class DelegationServiceTests(unittest.TestCase):
             )
 
             self.assertEqual(captured.get("link_type"), "brochure")
+            self.assertEqual(captured.get("link_name"), "Recovery Overview")
+            self.assertEqual(captured.get("reference_label"), "Recovery Overview")
             self.assertEqual(captured.get("brochure_name"), "Recovery Overview")
+            self.assertEqual(result.get("linkName"), "Recovery Overview")
             self.assertEqual(result.get("brochureName"), "Recovery Overview")
             self.assertEqual(captured.get("delegate_name"), "Recipient A")
             self.assertEqual(captured.get("delegate_contact"), "recipient@example.com")
@@ -685,6 +689,9 @@ class DelegationServiceTests(unittest.TestCase):
             self.assertIsNone(resolved.get("patientReference"))
             self.assertIsNone(resolved.get("brochureName"))
             self.assertIsNone(resolved.get("brochure_name"))
+            self.assertEqual(resolved.get("linkName"), "Recovery Overview")
+            self.assertEqual(resolved.get("referenceLabel"), "Recovery Overview")
+            self.assertEqual(resolved.get("label"), "Recovery Overview")
             self.assertEqual(resolved.get("brochureTitle"), "Recovery Overview")
             self.assertEqual(resolved.get("pageTitle"), "Recovery Overview")
             self.assertIsNone(resolved.get("delegateName"))

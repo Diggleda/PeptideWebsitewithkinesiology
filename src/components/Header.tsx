@@ -5741,7 +5741,7 @@ export function Header({
         setLocalUser(nextUserState);
         onUserUpdated?.(nextUserState);
       }
-      const subjectLabel = patientLinkSubjectLabelDraft.trim();
+      const linkName = patientLinkSubjectLabelDraft.trim();
       const studyLabel = patientLinkStudyLabelDraft.trim();
       const patientReference = patientLinkReferenceDraft.trim();
       const delegateName = patientLinkDelegateNameDraft.trim();
@@ -5773,11 +5773,12 @@ export function Header({
         ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', zelleContact || null, localUser?.name ?? user?.name ?? null))
         : '';
       await api.delegationAPI.createLink({
-        patientId: subjectLabel ? subjectLabel : null,
-        subjectLabel: subjectLabel ? subjectLabel : null,
+        linkName: linkName ? linkName : null,
+        referenceLabel: linkName ? linkName : null,
+        patientId: null,
+        subjectLabel: null,
         studyLabel: studyLabel ? studyLabel : null,
         patientReference: patientReference ? patientReference : null,
-        referenceLabel: patientReference ? patientReference : studyLabel ? studyLabel : null,
         delegateName: delegateName ? delegateName : null,
         delegateContact: delegateContact ? delegateContact : null,
         delegateRole: patientLinkDelegateRoleDraft,
@@ -5880,7 +5881,7 @@ export function Header({
     }
     const brochureName = patientLinkBrochureNameDraft.trim();
     if (!brochureName) {
-      toast.error('Brochure name is required.');
+      toast.error('Link name is required.');
       return;
     }
     setPatientLinksCreating(true);
@@ -5901,10 +5902,11 @@ export function Header({
       }
       await api.delegationAPI.createLink({
         linkType: 'brochure',
+        linkName: brochureName ? brochureName : null,
+        referenceLabel: brochureName ? brochureName : null,
         brochureName: brochureName ? brochureName : null,
         studyLabel: studyLabel ? studyLabel : null,
         patientReference: patientReference ? patientReference : null,
-        referenceLabel: patientReference ? patientReference : studyLabel ? studyLabel : null,
         recipientName: recipientName ? recipientName : null,
         recipientContact: recipientContact ? recipientContact : null,
         productScope: patientLinkProductScopeDraft,
@@ -5961,14 +5963,20 @@ export function Header({
   }, [localUser?.name, user?.name]);
 
   const openLegalDocument = useCallback((key: CreateLinkLegalDocumentKey) => {
+    captureCreateLinkDialogScrollPosition();
     setCreateLinkLegalDocumentKey(key);
-  }, []);
+    restoreCreateLinkDialogScrollPosition();
+  }, [captureCreateLinkDialogScrollPosition, restoreCreateLinkDialogScrollPosition]);
 
-  const closeCreateLinkLegalDocument = useCallback((event?: MouseEvent<HTMLElement>) => {
-    event?.preventDefault();
-    event?.stopPropagation();
+  const closeCreateLinkLegalDocument = useCallback((event?: {
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     setCreateLinkLegalDocumentKey(null);
-  }, []);
+    restoreCreateLinkDialogScrollPosition();
+  }, [restoreCreateLinkDialogScrollPosition]);
 
   const trackUsageEvent = useCallback((event: string, metadata?: Record<string, unknown>) => {
     const normalizedEvent = typeof event === 'string' ? event.trim() : '';
@@ -9097,7 +9105,7 @@ export function Header({
           onEscapeKeyDown={(event) => {
             if (createLinkLegalDocument) {
               event.preventDefault();
-              setCreateLinkLegalDocumentKey(null);
+              closeCreateLinkLegalDocument(event);
             }
           }}
           onPointerDownOutside={(event) => {
@@ -9222,7 +9230,7 @@ export function Header({
                     </p>
                   </div>
                   <Label htmlFor="brochure-name" className="patient-link-form__label text-sm font-semibold text-slate-700">
-                    Brochure name
+                    Link name
                   </Label>
                   <Input
                     id="brochure-name"
@@ -9230,7 +9238,7 @@ export function Header({
                     value={patientLinkBrochureNameDraft}
                     onChange={(event) => {
                       setPatientLinkBrochureNameDraft(event.target.value);
-                      trackPatientLinkFieldEntry('brochure_name', event.target.value, 'brochure');
+                      trackPatientLinkFieldEntry('link_name', event.target.value, 'brochure');
                     }}
                     className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
                   />
@@ -9373,14 +9381,14 @@ export function Header({
 	            htmlFor="patient-link-subject-label"
 	            className="patient-link-form__label patient-link-form__label--patient-id patient-link-form__label--optional-row text-sm font-semibold text-slate-700"
 	          >
-		            Link Name <span className="label-paren label-paren--right">(optional)</span>
+		            Link name <span className="label-paren label-paren--right">(optional)</span>
 	          </Label>
 	          <Input
 	            id="patient-link-subject-label"
 	            value={patientLinkSubjectLabelDraft}
 	            onChange={(event) => {
                 setPatientLinkSubjectLabelDraft(event.target.value);
-                trackPatientLinkFieldEntry('subject_label', event.target.value);
+                trackPatientLinkFieldEntry('link_name', event.target.value);
               }}
             className="patient-link-form__patient-id-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(11,6,121)] focus-visible:ring-[rgba(11,6,121,0.25)]"
 	          />
@@ -10361,6 +10369,20 @@ export function Header({
 		                    : (typeof (link as any)?.patient_id === 'string' && (link as any).patient_id.trim())
 		                      ? (link as any).patient_id.trim()
 		                      : '';
+                  const linkName =
+                    (typeof (link as any)?.linkName === 'string' && (link as any).linkName.trim())
+                      ? (link as any).linkName.trim()
+                      : (typeof (link as any)?.link_name === 'string' && (link as any).link_name.trim())
+                        ? (link as any).link_name.trim()
+                        : subjectLabel
+                          ? subjectLabel
+                          : (typeof link?.referenceLabel === 'string' && link.referenceLabel.trim())
+                            ? link.referenceLabel.trim()
+                            : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
+                              ? (link as any).reference_label.trim()
+                              : (typeof link?.label === 'string' && link.label.trim())
+                                ? link.label.trim()
+                                : '';
 		              const studyLabel =
 		                (typeof (link as any)?.studyLabel === 'string' && (link as any).studyLabel.trim())
 		                  ? (link as any).studyLabel.trim()
@@ -10372,13 +10394,7 @@ export function Header({
 		                  ? (link as any).patientReference.trim()
 		                  : (typeof (link as any)?.patient_reference === 'string' && (link as any).patient_reference.trim())
 		                    ? (link as any).patient_reference.trim()
-		                    : (typeof link?.referenceLabel === 'string' && link.referenceLabel.trim())
-		                      ? link.referenceLabel.trim()
-		                      : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
-		                        ? (link as any).reference_label.trim()
-		                      : (typeof link?.label === 'string' && link.label.trim())
-		                          ? link.label.trim()
-		                          : '';
+		                    : '';
                   const brochureName =
                     typeof (link as any)?.brochureName === 'string' && (link as any).brochureName.trim()
                       ? (link as any).brochureName.trim()
@@ -10391,8 +10407,8 @@ export function Header({
 			              const isDelegateLinkType = linkType === 'delegate';
 			              const label =
                       linkType === 'brochure'
-                        ? (brochureName || patientReference || studyLabel || `${linkTypeLabel} link`)
-                        : (patientReference || studyLabel || subjectLabel || `${linkTypeLabel} link`);
+                        ? (linkName || brochureName || studyLabel || `${linkTypeLabel} link`)
+                        : (linkName || studyLabel || subjectLabel || patientReference || `${linkTypeLabel} link`);
 		              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
 		              const markupPercentValueRaw =
 		                typeof (link as any)?.markupPercent === 'number'

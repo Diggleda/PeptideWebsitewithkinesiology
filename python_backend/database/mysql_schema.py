@@ -489,6 +489,7 @@ CREATE_TABLE_STATEMENTS = [
         subject_label LONGTEXT NULL,
         study_label LONGTEXT NULL,
         patient_reference LONGTEXT NULL,
+        link_name LONGTEXT NULL,
         brochure_name LONGTEXT NULL,
         delegate_name LONGTEXT NULL,
         delegate_contact LONGTEXT NULL,
@@ -1108,6 +1109,7 @@ def ensure_schema() -> None:
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS physician_certified TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS link_type VARCHAR(32) NOT NULL DEFAULT 'delegate'",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS created_by_user_id VARCHAR(32) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS link_name LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS brochure_name LONGTEXT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL",
@@ -1184,6 +1186,7 @@ def ensure_schema() -> None:
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS last_ip_hash CHAR(64) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS patient_id LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS reference_label LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS link_name LONGTEXT NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_review_status VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_reviewed_at DATETIME NULL",
@@ -1535,6 +1538,8 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN study_label LONGTEXT NULL")
         if not _column_exists("patient_links", "patient_reference"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_reference LONGTEXT NULL")
+        if not _column_exists("patient_links", "link_name"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN link_name LONGTEXT NULL")
         if not _column_exists("patient_links", "brochure_name"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN brochure_name LONGTEXT NULL")
         if not _column_exists("patient_links", "delegate_name"):
@@ -1610,6 +1615,7 @@ def ensure_schema() -> None:
         _copy_legacy_ciphertext("patient_links", "subject_label", "subject_label_encrypted")
         _copy_legacy_ciphertext("patient_links", "study_label", "study_label_encrypted")
         _copy_legacy_ciphertext("patient_links", "patient_reference", "patient_reference_encrypted")
+        _copy_legacy_ciphertext("patient_links", "link_name", "link_name_encrypted")
         _copy_legacy_ciphertext("patient_links", "brochure_name", "brochure_name_encrypted")
         _copy_legacy_ciphertext("patient_links", "instructions", "instructions_encrypted")
         _copy_legacy_ciphertext("patient_links", "payment_instructions", "payment_instructions_encrypted")
@@ -1628,6 +1634,7 @@ def ensure_schema() -> None:
         _drop_column_if_exists("patient_links", "subject_label_encrypted")
         _drop_column_if_exists("patient_links", "study_label_encrypted")
         _drop_column_if_exists("patient_links", "patient_reference_encrypted")
+        _drop_column_if_exists("patient_links", "link_name_encrypted")
         _drop_column_if_exists("patient_links", "brochure_name_encrypted")
         _drop_column_if_exists("patient_links", "instructions_encrypted")
         _drop_column_if_exists("patient_links", "payment_instructions_encrypted")

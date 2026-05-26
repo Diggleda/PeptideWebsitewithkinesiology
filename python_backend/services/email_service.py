@@ -16,8 +16,8 @@ from . import get_config
 
 logger = logging.getLogger(__name__)
 
-# Visibility requirement for shipping lifecycle emails only.
-_SHIPPING_STATUS_BCC = ("pgibbons@trufusionlabs.com",)
+# Visibility requirement for customer-facing order update emails.
+_ORDER_UPDATE_BCC = ("pgibbons@trufusionlabs.com",)
 _EMAIL_DEFAULT_FROM = "TrufusionLabs <support@trufusionlabs.com>"
 _EMAIL_DEFAULT_REPLY_TO = "support@trufusionlabs.com"
 _CONTACT_FORM_RECEIVED_CC = (_EMAIL_DEFAULT_REPLY_TO,)
@@ -1392,7 +1392,7 @@ def send_order_shipping_status_email(
         subject,
         html,
         plain_text,
-        bcc=_SHIPPING_STATUS_BCC,
+        bcc=_ORDER_UPDATE_BCC,
         raise_on_failure=True,
     )
 

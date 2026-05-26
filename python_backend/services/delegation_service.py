@@ -533,11 +533,30 @@ def _delegate_proposal_review_status(link: Optional[Dict[str, Any]]) -> Optional
     return "pending" if str(link.get("delegateSharedAt") or "").strip() else None
 
 
+def _link_display_name(link: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(link, dict):
+        return None
+    for key in (
+        "linkName",
+        "link_name",
+        "brochureName",
+        "brochure_name",
+        "subjectLabel",
+        "subject_label",
+        "referenceLabel",
+        "label",
+    ):
+        value = str(link.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
 def _delegate_proposal_label(link: Optional[Dict[str, Any]]) -> str:
     if not isinstance(link, dict):
         return "Delegate proposal"
     return (
-        str(link.get("referenceLabel") or "").strip()
+        _link_display_name(link)
         or str(link.get("patientReference") or "").strip()
         or str(link.get("studyLabel") or "").strip()
         or str(link.get("subjectLabel") or "").strip()
@@ -1097,6 +1116,7 @@ def create_link(
     *,
     link_type: Optional[str] = None,
     created_by_user_id: Optional[str] = None,
+    link_name: Optional[str] = None,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     subject_label: Optional[str] = None,
@@ -1135,13 +1155,17 @@ def create_link(
     capabilities = capabilities_for_link_type(link_type_value)
     tracking_name = recipient_name if link_type_value == "brochure" else delegate_name
     tracking_contact = recipient_contact if link_type_value == "brochure" else delegate_contact
+    link_name_value = _validate_non_phi_label(
+        link_name or reference_label or (brochure_name if link_type_value == "brochure" else None),
+        field_name="linkName",
+    )
     brochure_name_value = (
-        _validate_non_phi_label(brochure_name, field_name="brochureName")
+        _validate_non_phi_label(brochure_name or link_name_value, field_name="brochureName")
         if link_type_value == "brochure"
         else None
     )
-    if link_type_value == "brochure" and not brochure_name_value:
-        err = ValueError("brochureName is required for brochure links.")
+    if link_type_value == "brochure" and not (link_name_value or brochure_name_value):
+        err = ValueError("linkName is required for brochure links.")
         setattr(err, "status", 400)
         raise err
     if _using_mysql():
@@ -1167,7 +1191,8 @@ def create_link(
             doctor_id,
             link_type=link_type_value,
             created_by_user_id=created_by_user_id or doctor_id,
-            reference_label=_validate_non_phi_label(reference_label, field_name="referenceLabel"),
+            link_name=link_name_value,
+            reference_label=link_name_value,
             patient_id=_validate_non_phi_label(patient_id, field_name="patientId"),
             subject_label=_validate_non_phi_label(subject_label, field_name="subjectLabel"),
             study_label=_validate_non_phi_label(study_label, field_name="studyLabel"),
@@ -1234,7 +1259,7 @@ def create_link(
     )
     subject_value = _validate_non_phi_label(subject_label or patient_id, field_name="subjectLabel")
     study_value = _validate_non_phi_label(study_label, field_name="studyLabel")
-    patient_reference_value = _validate_non_phi_label(patient_reference or reference_label, field_name="patientReference")
+    patient_reference_value = _validate_non_phi_label(patient_reference, field_name="patientReference")
     allowed_products_value = _normalize_allowed_products(allowed_products)
     expires_hours_value = _normalize_link_limit(
         expires_in_hours,
@@ -1258,12 +1283,14 @@ def create_link(
         "link_type": link_type_value,
         "capabilities": capabilities,
         "createdByUserId": created_by_user_id or doctor_id,
+        "linkName": link_name_value or brochure_name_value,
+        "link_name": link_name_value or brochure_name_value,
         "patientId": subject_value,
         "patientReference": patient_reference_value,
-        "referenceLabel": patient_reference_value or study_value,
+        "referenceLabel": link_name_value or brochure_name_value,
         "brochureName": brochure_name_value,
         "brochure_name": brochure_name_value,
-        "label": brochure_name_value or patient_reference_value or study_value,
+        "label": link_name_value or brochure_name_value,
         "subjectLabel": subject_value,
         "studyLabel": study_value,
         "recipientName": _validate_sensitive_session_text(tracking_name, field_name="recipientName", max_len=190) if link_type_value == "brochure" else None,
@@ -1323,6 +1350,7 @@ def update_link(
     doctor_id: str,
     token: str,
     *,
+    link_name: Optional[str] = None,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     subject_label: Optional[str] = None,
@@ -1389,7 +1417,22 @@ def update_link(
         updated = patient_links_repository.update_link(
             doctor_id,
             token,
-            reference_label=_validate_non_phi_label(reference_label, field_name="referenceLabel") if reference_label is not None else None,
+            link_name=(
+                _validate_non_phi_label(
+                    link_name if link_name is not None else reference_label,
+                    field_name="linkName",
+                )
+                if link_name is not None or reference_label is not None
+                else None
+            ),
+            reference_label=(
+                _validate_non_phi_label(
+                    link_name if link_name is not None else reference_label,
+                    field_name="linkName",
+                )
+                if link_name is not None or reference_label is not None
+                else None
+            ),
             patient_id=_validate_non_phi_label(patient_id, field_name="patientId") if patient_id is not None else None,
             subject_label=_validate_non_phi_label(subject_label, field_name="subjectLabel") if subject_label is not None else None,
             study_label=_validate_non_phi_label(study_label, field_name="studyLabel") if study_label is not None else None,
@@ -1488,17 +1531,34 @@ def update_link(
     for entry in links:
         if str(entry.get("token") or "") != token:
             continue
-        if reference_label is not None or patient_reference is not None:
-            patient_reference_value = _validate_non_phi_label(patient_reference or reference_label, field_name="patientReference")
+        if patient_reference is not None:
+            patient_reference_value = _validate_non_phi_label(patient_reference, field_name="patientReference")
             entry["patientReference"] = patient_reference_value
-            entry["referenceLabel"] = patient_reference_value
         if patient_id is not None or subject_label is not None:
             entry["patientId"] = _validate_non_phi_label(subject_label or patient_id, field_name="subjectLabel")
         if study_label is not None:
             entry["studyLabel"] = _validate_non_phi_label(study_label, field_name="studyLabel")
         if brochure_name is not None:
-            entry["brochureName"] = _validate_non_phi_label(brochure_name, field_name="brochureName")
-            entry["label"] = entry.get("brochureName") or entry.get("patientReference") or entry.get("studyLabel")
+            next_brochure_name = _validate_non_phi_label(brochure_name, field_name="brochureName")
+            entry["brochureName"] = next_brochure_name
+            if (
+                _normalize_link_type(entry.get("linkType") or entry.get("link_type")) == "brochure"
+                and link_name is None
+                and reference_label is None
+            ):
+                entry["linkName"] = next_brochure_name
+                entry["link_name"] = next_brochure_name
+                entry["referenceLabel"] = next_brochure_name
+                entry["label"] = next_brochure_name
+        if link_name is not None or reference_label is not None:
+            next_link_name = _validate_non_phi_label(
+                link_name if link_name is not None else reference_label,
+                field_name="linkName",
+            )
+            entry["linkName"] = next_link_name
+            entry["link_name"] = next_link_name
+            entry["referenceLabel"] = next_link_name
+            entry["label"] = next_link_name
         if delegate_name is not None:
             entry["delegateName"] = _validate_sensitive_session_text(delegate_name, field_name="delegateName", max_len=190)
         if delegate_contact is not None:
@@ -1708,8 +1768,9 @@ def resolve_delegate_token(
         link_type = _normalize_link_type(link.get("linkType") or link.get("link_type"))
         capabilities = capabilities_for_link_type(link_type)
         expose_scope_items = link_type != "brochure" or include_brochure_scope
+        display_link_name = _link_display_name(link)
         brochure_title = (
-            _validate_non_phi_label(link.get("brochureName") or link.get("brochure_name"), field_name="brochureTitle")
+            _validate_non_phi_label(display_link_name, field_name="brochureTitle")
             if link_type == "brochure"
             else None
         )
@@ -1719,6 +1780,10 @@ def resolve_delegate_token(
             "linkType": link_type,
             "link_type": link_type,
             "capabilities": capabilities,
+            "linkName": display_link_name,
+            "link_name": display_link_name,
+            "referenceLabel": display_link_name,
+            "label": display_link_name,
             "brochureTitle": brochure_title,
             "pageTitle": brochure_title,
             "doctorId": "" if link_type == "brochure" else doctor_id,
@@ -1818,8 +1883,9 @@ def resolve_delegate_token(
     link_type = _normalize_link_type(link.get("linkType") or link.get("link_type"))
     capabilities = capabilities_for_link_type(link_type)
     expose_scope_items = link_type != "brochure" or include_brochure_scope
+    display_link_name = _link_display_name(link)
     brochure_title = (
-        _validate_non_phi_label(link.get("brochureName") or link.get("brochure_name"), field_name="brochureTitle")
+        _validate_non_phi_label(display_link_name, field_name="brochureTitle")
         if link_type == "brochure"
         else None
     )
@@ -1828,6 +1894,10 @@ def resolve_delegate_token(
         "linkType": link_type,
         "link_type": link_type,
         "capabilities": capabilities,
+        "linkName": display_link_name,
+        "link_name": display_link_name,
+        "referenceLabel": display_link_name,
+        "label": display_link_name,
         "brochureTitle": brochure_title,
         "pageTitle": brochure_title,
         "doctorId": "" if link_type == "brochure" else doctor_id,
@@ -1973,6 +2043,7 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         raise err
 
     review_status = _delegate_proposal_review_status(link)
+    display_link_name = _link_display_name(link)
 
     return {
         "token": token,
@@ -1983,8 +2054,10 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         "patientReference": link.get("patientReference"),
         "subjectLabel": link.get("subjectLabel"),
         "studyLabel": link.get("studyLabel"),
-        "referenceLabel": link.get("referenceLabel") or link.get("label"),
-        "label": link.get("referenceLabel") or link.get("label"),
+        "linkName": display_link_name,
+        "link_name": display_link_name,
+        "referenceLabel": display_link_name,
+        "label": display_link_name,
         "delegateName": link.get("delegateName"),
         "delegateContact": link.get("delegateContact"),
         "delegateRole": link.get("delegateRole"),
@@ -2109,12 +2182,7 @@ def review_link_proposal(
         or str(updated.get("delegateReviewOrderId") or "").strip()
     )
     if resolved_order_id:
-        as_delegate_label = (
-            str(updated.get("referenceLabel") or "").strip()
-            or str(updated.get("reference_label") or "").strip()
-            or str(updated.get("label") or "").strip()
-            or "Delegate Proposal"
-        )
+        as_delegate_label = _link_display_name(updated) or "Delegate proposal"
         try:
             linked_order = order_repository.find_by_order_identifier(resolved_order_id)
             if isinstance(linked_order, dict):

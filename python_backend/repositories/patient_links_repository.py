@@ -262,7 +262,19 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         row,
         field_name="patient_reference",
         encrypted_key="patient_reference_encrypted",
-        legacy_keys=["patient_reference", "reference_label"],
+        legacy_keys=["patient_reference"],
+    )
+    link_name = _decrypt_field(
+        row,
+        field_name="link_name",
+        encrypted_key="link_name_encrypted",
+        legacy_keys=["link_name"],
+    )
+    legacy_reference_label = _decrypt_field(
+        row,
+        field_name="reference_label",
+        encrypted_key="reference_label_encrypted",
+        legacy_keys=["reference_label"],
     )
     brochure_name = _decrypt_field(
         row,
@@ -309,6 +321,14 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
     status = _derive_status(row)
     usage_count = int(row.get("usage_count") or 0)
     link_type = _normalize_link_type(row.get("link_type"))
+    display_link_name = (
+        link_name
+        or (brochure_name if link_type == "brochure" else None)
+        or subject_label
+        or legacy_reference_label
+        or study_label
+        or patient_reference
+    )
     mapped = {
         "token": _resolve_row_public_token(row, fallback=fallback_token),
         "tokenHint": row.get("token_hint") or None,
@@ -319,10 +339,12 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         "createdByUserId": row.get("created_by_user_id") or None,
         "patientId": subject_label,
         "patientReference": patient_reference,
-        "referenceLabel": patient_reference or study_label,
+        "linkName": display_link_name,
+        "link_name": display_link_name,
+        "referenceLabel": display_link_name,
         "brochureName": brochure_name if link_type == "brochure" else None,
         "brochure_name": brochure_name if link_type == "brochure" else None,
-        "label": (brochure_name if link_type == "brochure" else None) or patient_reference or study_label,
+        "label": display_link_name,
         "subjectLabel": subject_label,
         "studyLabel": study_label,
         "recipientName": delegate_name if link_type == "brochure" else None,
@@ -430,6 +452,7 @@ def create_link(
     *,
     link_type: Optional[str] = None,
     created_by_user_id: Optional[str] = None,
+    link_name: Optional[str] = None,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     subject_label: Optional[str] = None,
@@ -467,10 +490,11 @@ def create_link(
 
     link_type_value = _normalize_link_type(link_type)
     created_by_user_id_value = _normalize_optional_text(created_by_user_id, max_len=32)
+    link_name_value = _normalize_optional_text(link_name or reference_label)
     subject_label_value = _normalize_optional_text(subject_label or patient_id)
     study_label_value = _normalize_optional_text(study_label)
-    patient_reference_value = _normalize_optional_text(patient_reference or reference_label)
-    brochure_name_value = _normalize_optional_text(brochure_name)
+    patient_reference_value = _normalize_optional_text(patient_reference)
+    brochure_name_value = _normalize_optional_text(brochure_name or link_name_value)
     delegate_name_value = _normalize_optional_text(delegate_name)
     delegate_contact_value = _normalize_optional_text(delegate_contact)
     delegate_role_value = _normalize_optional_text(delegate_role, max_len=64)
@@ -496,6 +520,8 @@ def create_link(
     delete_expired()
 
     if link_type_value == "brochure":
+        if not link_name_value and brochure_name_value:
+            link_name_value = brochure_name_value
         if not brochure_name_value:
             raise ValueError("brochure_name is required for brochure links")
         delegate_role_value = None
@@ -539,10 +565,9 @@ def create_link(
             "link_type": link_type_value,
             "doctor_id": doctor_id,
             "created_by_user_id": created_by_user_id_value or doctor_id,
+            "link_name": _encrypt_field(token_hash, "link_name", link_name_value),
             "patient_id": _encrypt_field(token_hash, "patient_id", subject_label_value),
-            "reference_label": _encrypt_field(
-                token_hash, "reference_label", patient_reference_value or study_label_value
-            ),
+            "reference_label": _encrypt_field(token_hash, "reference_label", link_name_value),
             "subject_label": _encrypt_field(token_hash, "subject_label", subject_label_value),
             "study_label": _encrypt_field(token_hash, "study_label", study_label_value),
             "patient_reference": _encrypt_field(token_hash, "patient_reference", patient_reference_value),
@@ -584,7 +609,7 @@ def create_link(
                 INSERT INTO patient_links (
                     token, token_version, token_ciphertext, token_hint,
                     link_type,
-                    doctor_id, created_by_user_id, patient_id,
+                    doctor_id, created_by_user_id, link_name, patient_id,
                     reference_label,
                     subject_label,
                     study_label,
@@ -612,7 +637,7 @@ def create_link(
                 VALUES (
                     %(token)s, %(token_version)s, %(token_ciphertext)s, %(token_hint)s,
                     %(link_type)s,
-                    %(doctor_id)s, %(created_by_user_id)s, %(patient_id)s,
+                    %(doctor_id)s, %(created_by_user_id)s, %(link_name)s, %(patient_id)s,
                     %(reference_label)s,
                     %(subject_label)s,
                     %(study_label)s,
@@ -647,14 +672,14 @@ def create_link(
                 "link_type": link_type_value,
                 "capabilities": capabilities_for_link_type(link_type_value),
                 "createdByUserId": created_by_user_id_value or doctor_id,
+                "linkName": link_name_value or brochure_name_value,
+                "link_name": link_name_value or brochure_name_value,
                 "patientId": subject_label_value,
                 "patientReference": patient_reference_value,
-                "referenceLabel": patient_reference_value or study_label_value,
+                "referenceLabel": link_name_value or brochure_name_value,
                 "brochureName": brochure_name_value if link_type_value == "brochure" else None,
                 "brochure_name": brochure_name_value if link_type_value == "brochure" else None,
-                "label": (brochure_name_value if link_type_value == "brochure" else None)
-                or patient_reference_value
-                or study_label_value,
+                "label": link_name_value or brochure_name_value,
                 "subjectLabel": subject_label_value,
                 "studyLabel": study_label_value,
                 "recipientName": delegate_name_value if link_type_value == "brochure" else None,
@@ -796,6 +821,7 @@ def update_link(
     doctor_id: str,
     token: str,
     *,
+    link_name: Optional[str] = None,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     subject_label: Optional[str] = None,
@@ -838,7 +864,8 @@ def update_link(
     token_hash = str(params.get("hashed_token") or "").strip() or None
 
     next_subject_label = subject_label if subject_label is not None else patient_id
-    next_patient_reference = patient_reference if patient_reference is not None else reference_label
+    next_link_name = link_name if link_name is not None else reference_label
+    next_patient_reference = patient_reference
 
     if next_subject_label is not None:
         subject_label_value = _normalize_optional_text(next_subject_label)
@@ -851,6 +878,19 @@ def update_link(
         params["subject_label"] = _encrypt_field(token_hash, "subject_label", subject_label_value)
         params["patient_id"] = _encrypt_field(token_hash, "patient_id", subject_label_value)
 
+    if next_link_name is not None:
+        link_name_value = _normalize_optional_text(next_link_name)
+        updates.extend(
+            [
+                "link_name = %(link_name)s",
+                "reference_label = %(reference_label)s",
+            ]
+        )
+        params["link_name"] = _encrypt_field(token_hash, "link_name", link_name_value)
+        params["reference_label"] = _encrypt_field(
+            token_hash, "reference_label", link_name_value
+        )
+
     if study_label is not None:
         study_label_value = _normalize_optional_text(study_label)
         updates.append("study_label = %(study_label)s")
@@ -858,17 +898,9 @@ def update_link(
 
     if next_patient_reference is not None:
         patient_reference_value = _normalize_optional_text(next_patient_reference)
-        updates.extend(
-            [
-                "patient_reference = %(patient_reference)s",
-                "reference_label = %(reference_label)s",
-            ]
-        )
+        updates.append("patient_reference = %(patient_reference)s")
         params["patient_reference"] = _encrypt_field(
             token_hash, "patient_reference", patient_reference_value
-        )
-        params["reference_label"] = _encrypt_field(
-            token_hash, "reference_label", patient_reference_value
         )
 
     if brochure_name is not None:

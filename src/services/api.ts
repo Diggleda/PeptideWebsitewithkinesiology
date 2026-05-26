@@ -3029,6 +3029,7 @@ export const delegationAPI = {
 
   createLink: async (payload?: {
     linkType?: string | null;
+    linkName?: string | null;
     referenceLabel?: string | null;
     patientId?: string | null;
     subjectLabel?: string | null;
@@ -3069,6 +3070,7 @@ export const delegationAPI = {
 	  updateLink: async (
 	    token: string,
 	    payload: {
+	      linkName?: string | null;
 	      referenceLabel?: string | null;
 	      patientId?: string | null;
 	      subjectLabel?: string | null;

@@ -68,6 +68,7 @@ const normalizeFromAddress = (value) => {
 const FROM_ADDRESS = normalizeFromAddress(process.env.MAIL_FROM);
 const EMAIL_BACKGROUND_COLOR = '#ffffff';
 const EMAIL_LOGO_FILENAME = 'FullLogo_Transparent_NoBuffer%20(18).png';
+const ORDER_UPDATE_BCC = 'pgibbons@trufusionlabs.com';
 
 const getFrontendBaseUrl = () => String(env.frontendBaseUrl || 'https://www.trufusionlabs.com').replace(/\/+$/, '');
 const buildEmailLogoUrl = () => `${getFrontendBaseUrl()}/${EMAIL_LOGO_FILENAME}`;
@@ -76,6 +77,23 @@ const normalizeEmailAddress = (value) => {
   if (!value) return null;
   const normalized = String(value).trim();
   return normalized && normalized.includes('@') ? normalized : null;
+};
+
+const normalizeEmailList = (value) => {
+  const values = Array.isArray(value) ? value : String(value || '').split(/[;,]/g);
+  return values
+    .map((entry) => normalizeEmailAddress(entry))
+    .filter(Boolean);
+};
+
+const mergeEmailLists = (...values) => {
+  const merged = [];
+  values.flatMap(normalizeEmailList).forEach((email) => {
+    if (!merged.includes(email)) {
+      merged.push(email);
+    }
+  });
+  return merged;
 };
 
 const escapeHtml = (value) => String(value ?? '')
@@ -245,12 +263,12 @@ const sendOrderPaymentInstructionsEmail = async ({
 
   const subjectBase = process.env.PAYMENT_INSTRUCTIONS_SUBJECT || 'TrufusionLabs payment instructions';
   const subject = displayOrderNumber ? `${subjectBase} — Order ${displayOrderNumber}` : subjectBase;
-  const bcc = normalizeEmailAddress(process.env.PAYMENT_INSTRUCTIONS_BCC);
+  const bcc = mergeEmailLists(ORDER_UPDATE_BCC, process.env.PAYMENT_INSTRUCTIONS_BCC);
 
   const mailOptions = {
     from: FROM_ADDRESS,
     to: recipient,
-    ...(bcc ? { bcc } : {}),
+    ...(bcc.length ? { bcc: bcc.join(', ') } : {}),
     subject,
     html,
   };

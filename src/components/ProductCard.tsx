@@ -1358,22 +1358,24 @@ export function ProductCard({
   const nasalsPreviewPercent = Math.round(nasalsPreviewScale * 100);
   const coaPreviewPercent = Math.round(coaPreviewScale * 100);
 
-			  const productMeta = (
-			    <>
+  const documentationButton = !isCheckoutAddOnCategory ? (
+    <button
+      type="button"
+      onClick={openDocumentationModal}
+      className={`line-clamp-2 hover:underline${isBrochureMode ? ' mx-auto text-center' : ' text-left'}`}
+      style={{ color: 'var(--brand-color, rgb(11, 6, 121))' }}
+    >
+      Documentation and Analysis
+    </button>
+  ) : null;
+
+  const productMeta = (
+    <>
       {isBrochureMode && product.category && (
         <p className="text-xs font-semibold uppercase text-slate-500">{product.category}</p>
       )}
-	      <h3 className="product-card-title line-clamp-2 text-slate-900">{product.name}</h3>
-      {!isCheckoutAddOnCategory && (
-        <button
-	        type="button"
-	        onClick={openDocumentationModal}
-          className="line-clamp-2 text-left hover:underline"
-          style={{ color: 'var(--brand-color, rgb(11, 6, 121))' }}
-        >
-          Documentation and Analysis
-        </button>
-      )}
+      <h3 className="product-card-title line-clamp-2 text-slate-900">{product.name}</h3>
+      {!isBrochureMode && documentationButton}
       {product.manufacturer && <p className="text-xs text-gray-500">{product.manufacturer}</p>}
     </>
   );
@@ -1606,6 +1608,9 @@ export function ProductCard({
         </CardContent>
         {!isBrochureMode && (
           <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
+        )}
+        {isBrochureMode && documentationButton && (
+          <CardFooter className="mt-auto justify-center p-4 pt-0 text-center">{documentationButton}</CardFooter>
         )}
       </Card>
 

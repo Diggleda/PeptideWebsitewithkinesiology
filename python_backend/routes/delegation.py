@@ -139,12 +139,13 @@ def create_link():
         role = _normalize_role(actor.get("role"))
         _require_doctor_access(role)
         doctor_id = _resolve_target_doctor_id(role)
+        link_name = _payload_value(payload, "linkName", "link_name", "label")
         reference_label = (
             payload.get("referenceLabel")
             if "referenceLabel" in payload
             else payload.get("reference_label")
             if "reference_label" in payload
-            else payload.get("label")
+            else None
         )
         patient_id = payload.get("patientId") if "patientId" in payload else payload.get("patient_id")
         subject_label = payload.get("subjectLabel") if "subjectLabel" in payload else payload.get("subject_label")
@@ -204,6 +205,7 @@ def create_link():
             doctor_id,
             link_type=link_type if isinstance(link_type, str) else None,
             created_by_user_id=str(actor.get("id") or doctor_id),
+            link_name=link_name if isinstance(link_name, str) else None,
             reference_label=reference_label if isinstance(reference_label, str) else None,
             patient_id=patient_id if isinstance(patient_id, str) else None,
             subject_label=subject_label if isinstance(subject_label, str) else None,
@@ -276,13 +278,12 @@ def update_link(token: str):
         role = _normalize_role(actor.get("role"))
         _require_doctor_access(role)
         doctor_id = _resolve_target_doctor_id(role)
+        link_name = _payload_value(payload, "linkName", "link_name", "label")
         reference_label = (
             payload.get("referenceLabel")
             if "referenceLabel" in payload
             else payload.get("reference_label")
             if "reference_label" in payload
-            else payload.get("label")
-            if "label" in payload
             else None
         )
         patient_id = payload.get("patientId") if "patientId" in payload else payload.get("patient_id") if "patient_id" in payload else None
@@ -385,6 +386,7 @@ def update_link(token: str):
         updated = delegation_service.update_link(
             doctor_id,
             token,
+            link_name=link_name if isinstance(link_name, str) else None,
             reference_label=reference_label if isinstance(reference_label, str) else None,
             patient_id=patient_id if isinstance(patient_id, str) else None,
             subject_label=subject_label if isinstance(subject_label, str) else None,
