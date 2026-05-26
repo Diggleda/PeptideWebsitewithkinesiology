@@ -161,8 +161,8 @@ else:
 html = html.replace("cid:trufusion-logo", "/assets/FullLogo_Transparent_NoBuffer%20(18).png")
 html = html.replace("cid:trufusion-leaf", "/assets/leafTexture.jpg")
 html = html.replace("cid:delegate-white-label-sessions", "/assets/delegate-links-white-label-email.png")
-html = html.replace("cid:patient-links-dashboard", "/assets/PatientLinks2.png")
-html = html.replace("cid:patient-links-create-dialog", "/assets/PatientLinks1.png")
+html = html.replace("cid:patient-links-delegate-session", "/assets/PatientLinks4.png")
+html = html.replace("cid:patient-links-create-dialog", "/assets/PatientLinks3.png")
 
 print(json.dumps({"subject": subject, "html": html, "plain": plain}))
 `;

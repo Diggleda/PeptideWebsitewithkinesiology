@@ -301,10 +301,25 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("Welcome to Patient Links", html)
         self.assertIn("Product Brochure", html)
         self.assertIn("Delegate links", html)
-        self.assertIn('src="cid:patient-links-dashboard"', html)
+        self.assertIn('src="cid:patient-links-delegate-session"', html)
         self.assertIn('src="cid:patient-links-create-dialog"', html)
-        self.assertIn("Patient Links dashboard with manage links and white-label session controls", html)
+        self.assertIn("Delegate patient session with branded catalog and product cards", html)
         self.assertIn("Create link dialog showing Product Brochure and Delegate link options", html)
+        self.assertIn("Create and track your brochures and delegate sessions", html)
+        self.assertIn("Setup white-labeled sessions for your clients.", html)
+        self.assertIn("text-align:left", html)
+        self.assertLess(
+            html.index("Create and track your brochures and delegate sessions"),
+            html.index('src="cid:patient-links-create-dialog"'),
+        )
+        self.assertLess(
+            html.index("Setup white-labeled sessions for your clients."),
+            html.index('src="cid:patient-links-delegate-session"'),
+        )
+        self.assertLess(
+            html.index('src="cid:patient-links-create-dialog"'),
+            html.index('src="cid:patient-links-delegate-session"'),
+        )
         self.assertIn("font-size:30px", html)
         self.assertIn("font-weight:700", html)
         self.assertIn(">1.</td>", html)

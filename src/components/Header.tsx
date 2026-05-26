@@ -9348,7 +9348,7 @@ export function Header({
         <div className="pr-36">
           <h3 className="text-lg font-semibold leading-tight text-slate-900">Create a delegate link</h3>
           <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
-            This tool is intended to help you fascilate independent peptide research. You can demo your own links before sharing by clicking the "View" button.
+            This tool is intended to help you facilitate independent peptide research. You can demo your own links before sharing by clicking the "Preview session" button.
           </p>
         </div>
 	        <div className="delegate-link-create-form mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
@@ -9365,7 +9365,7 @@ export function Header({
 	            htmlFor="patient-link-subject-label"
 	            className="patient-link-form__label patient-link-form__label--patient-id patient-link-form__label--optional-row text-sm font-semibold text-slate-700"
 	          >
-		            Subject alias / study ID <span className="label-paren label-paren--right">(optional)</span>
+		            Link Name <span className="label-paren label-paren--right">(optional)</span>
 	          </Label>
 	          <Input
 	            id="patient-link-subject-label"
@@ -10668,7 +10668,7 @@ export function Header({
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
 	                      <Eye className="h-4 w-4" aria-hidden="true" />
-	                      {linkType === 'brochure' ? 'Preview brochure' : 'View'}
+	                      {linkType === 'brochure' ? 'Preview brochure' : 'Preview session'}
 	                    </Button>
 		                      <Button
 		                        type="button"
@@ -10679,7 +10679,7 @@ export function Header({
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
 	                      <Copy className="h-4 w-4" aria-hidden="true" />
-	                      {linkType === 'brochure' ? 'Copy brochure link' : 'Copy link'}
+	                      {linkType === 'brochure' ? 'Copy brochure link' : 'Copy delegate link'}
 	                    </Button>
 	                      <Button
 	                        type="button"

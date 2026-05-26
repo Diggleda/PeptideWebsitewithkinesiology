@@ -25,12 +25,12 @@ _EMAIL_DEFAULT_DOMAIN = "trufusionlabs.com"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
-_EMAIL_PATIENT_LINKS_DASHBOARD_CID = "patient-links-dashboard"
+_EMAIL_PATIENT_LINKS_SESSION_CID = "patient-links-delegate-session"
 _EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID = "patient-links-create-dialog"
 _EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
 _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
-_EMAIL_PATIENT_LINKS_DASHBOARD_SRC = f"cid:{_EMAIL_PATIENT_LINKS_DASHBOARD_CID}"
+_EMAIL_PATIENT_LINKS_SESSION_SRC = f"cid:{_EMAIL_PATIENT_LINKS_SESSION_CID}"
 _EMAIL_PATIENT_LINKS_CREATE_DIALOG_SRC = f"cid:{_EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID}"
 _EMAIL_LOGO_WIDTH = 360
 _EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
@@ -280,23 +280,23 @@ _EMAIL_INLINE_IMAGE_SPECS = (
         ),
     },
     {
-        "content_id": _EMAIL_PATIENT_LINKS_DASHBOARD_CID,
-        "filename": "PatientLinks2.png",
+        "content_id": _EMAIL_PATIENT_LINKS_SESSION_CID,
+        "filename": "PatientLinks4.png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
-            "public/PatientLinks2.png",
+            "public/PatientLinks4.png",
         ),
     },
     {
         "content_id": _EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID,
-        "filename": "PatientLinks1.png",
+        "filename": "PatientLinks3.png",
         "mime_type": "image/png",
         "maintype": "image",
         "subtype": "png",
         "paths": (
-            "public/PatientLinks1.png",
+            "public/PatientLinks3.png",
         ),
     },
 )
@@ -1002,7 +1002,7 @@ def _build_delegate_proposal_ready_email(
 def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    dashboard_screenshot_url = _EMAIL_PATIENT_LINKS_DASHBOARD_SRC
+    session_screenshot_url = _EMAIL_PATIENT_LINKS_SESSION_SRC
     create_dialog_screenshot_url = _EMAIL_PATIENT_LINKS_CREATE_DIALOG_SRC
     patient_links_font_family = "Arial, Helvetica, sans-serif"
     body_style = f"{_email_body_style()}font-family:{patient_links_font_family};font-weight:400;"
@@ -1012,6 +1012,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     lead_style = f"margin:0 0 18px;font-family:{patient_links_font_family};font-size:18px;font-weight:400;line-height:1.5;color:#334155;"
     eyebrow_style = f"margin:0 0 8px;font-family:{patient_links_font_family};font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:{_EMAIL_BRAND_BLUE};"
     section_title_style = f"margin:0 0 10px;font-family:{patient_links_font_family};font-size:20px;font-weight:700;line-height:1.25;color:#0B274B;"
+    screenshot_title_style = f"margin:0 0 10px;font-family:{patient_links_font_family};font-size:16px;font-weight:700;line-height:1.35;color:#0B274B;text-align:left;"
     screenshot_image_style = (
         f"width:{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}px;"
         "max-width:100%;"
@@ -1067,9 +1068,11 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
                   Patient Links now brings Product Brochure links and Delegate links together in your physician dashboard. Use brochure links for view-only product education, and delegate links when a patient session needs to build an order proposal for your review.
                 </p>
 
-                <img src="{dashboard_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Patient Links dashboard with manage links and white-label session controls" style="{screenshot_image_style}" />
-
+                <p style="{screenshot_title_style}">Create and track your brochures and delegate sessions</p>
                 <img src="{create_dialog_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Create link dialog showing Product Brochure and Delegate link options" style="{screenshot_image_style}" />
+
+                <p style="{screenshot_title_style}">Setup white-labeled sessions for your clients.</p>
+                <img src="{session_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Delegate patient session with branded catalog and product cards" style="{screenshot_image_style}" />
 
                 <h2 style="{section_title_style}">How to use Patient Links</h2>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;border-collapse:collapse;">
