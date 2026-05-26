@@ -184,13 +184,16 @@ class AuthServiceTests(unittest.TestCase):
                 {
                     "profileImageUrl": "https://api.example.com/api/auth/me/profile-image?v=abc123",
                     "delegateBackgroundImageUrl": "https://api.example.com/api/auth/me/delegate-background?v=abc123",
+                    "websiteUrl": "clinic.example.com",
                 },
             )
 
         self.assertEqual(saved_payloads[0]["profileImageUrl"], "data:image/png;base64,QUJD")
         self.assertEqual(saved_payloads[0]["delegateBackgroundImageUrl"], "data:image/jpeg;base64,R0hJ")
+        self.assertEqual(saved_payloads[0]["websiteUrl"], "https://clinic.example.com/")
         self.assertEqual(updated["profileImageUrl"], "data:image/png;base64,QUJD")
         self.assertEqual(updated["delegateBackgroundImageUrl"], "data:image/jpeg;base64,R0hJ")
+        self.assertEqual(updated["websiteUrl"], "https://clinic.example.com/")
 
     def test_login_uses_targeted_login_update(self) -> None:
         auth_record = {

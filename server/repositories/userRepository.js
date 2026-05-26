@@ -21,6 +21,7 @@ const DIRECT_SHIPPING_FIELDS = [
 const DOCTOR_PROFILE_TEXT_FIELDS = [
   'greaterArea',
   'studyFocus',
+  'websiteUrl',
   'bio',
 ];
 
@@ -172,6 +173,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
     resellerPermitOnboardingPresented: user.resellerPermitOnboardingPresented ? 1 : 0,
     greaterArea: user.greaterArea || null,
     studyFocus: user.studyFocus || null,
+    websiteUrl: user.websiteUrl || null,
     bio: user.bio || null,
     networkPresenceAgreement: networkPresenceAgreement ? 1 : 0,
     delegateLogoUrl: user.delegateLogoUrl || null,
@@ -236,6 +238,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           reseller_permit_onboarding_presented,
           greater_area,
           study_focus,
+          website_url,
           bio,
           network_presence_agreement,
           delegate_logo_url,
@@ -282,6 +285,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           :resellerPermitOnboardingPresented,
           :greaterArea,
           :studyFocus,
+          :websiteUrl,
           :bio,
           :networkPresenceAgreement,
           :delegateLogoUrl,
@@ -328,6 +332,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           reseller_permit_onboarding_presented = VALUES(reseller_permit_onboarding_presented),
           greater_area = VALUES(greater_area),
           study_focus = VALUES(study_focus),
+          website_url = VALUES(website_url),
           bio = VALUES(bio),
           network_presence_agreement = VALUES(network_presence_agreement),
           delegate_logo_url = VALUES(delegate_logo_url),
@@ -513,7 +518,9 @@ const ensureUserDefaults = (user) => {
   }
   DOCTOR_PROFILE_TEXT_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {
-      normalized[field] = null;
+      normalized[field] = field === 'websiteUrl'
+        ? normalizeOptionalString(normalized.website_url)
+        : null;
     } else {
       normalized[field] = normalizeOptionalString(normalized[field]);
     }
@@ -608,6 +615,7 @@ const ensureUserDefaults = (user) => {
   }
   normalized.profile_onboarding = normalized.profileOnboarding ? 1 : 0;
   normalized.network_presence_agreement = normalized.networkPresenceAgreement ? 1 : 0;
+  normalized.website_url = normalized.websiteUrl;
   normalized.delegate_logo_url = normalized.delegateLogoUrl;
   normalized.delegate_secondary_color = normalized.delegateSecondaryColor;
   normalized.delegate_background_url = normalized.delegateBackgroundImageUrl;

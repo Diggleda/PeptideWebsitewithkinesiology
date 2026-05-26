@@ -121,11 +121,13 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
                 "status": "active",
                 "delegateBackgroundImageUrl": "data:image/jpeg;base64,AAA",
                 "delegateBackgroundColor": "#edf7fb",
+                "websiteUrl": "https://clinic.example.com/",
             }
         )
 
         self.assertEqual(params["delegate_background_url"], "data:image/jpeg;base64,AAA")
         self.assertEqual(params["delegate_background_color"], "#edf7fb")
+        self.assertEqual(params["website_url"], "https://clinic.example.com/")
         self.assertNotIn("delegate_background_image_url", params)
 
     def test_user_repository_reads_delegate_background_from_requested_sql_column(self) -> None:
@@ -138,11 +140,13 @@ class MysqlDatetimeNormalizationTests(unittest.TestCase):
                 "role": "doctor",
                 "delegate_background_url": "data:image/jpeg;base64,AAA",
                 "delegate_background_color": "#edf7fb",
+                "website_url": "https://clinic.example.com/",
             }
         )
 
         self.assertEqual(user["delegateBackgroundImageUrl"], "data:image/jpeg;base64,AAA")
         self.assertEqual(user["delegateBackgroundColor"], "#edf7fb")
+        self.assertEqual(user["websiteUrl"], "https://clinic.example.com/")
 
     def test_user_repository_find_by_email_prefers_exact_mysql_lookup(self) -> None:
         row = {

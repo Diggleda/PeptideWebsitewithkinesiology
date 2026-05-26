@@ -495,6 +495,7 @@ interface HeaderUser {
   resellerPermitApprovedByRep?: boolean;
   greaterArea?: string | null;
   studyFocus?: string | null;
+  websiteUrl?: string | null;
   bio?: string | null;
   networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
@@ -7315,10 +7316,11 @@ export function Header({
     }
   }, [accountTab, showPatientLinksTab]);
 
-  const identityFields: Array<{ key: 'name' | 'email' | 'phone'; label: string; type?: string; autoComplete?: string }> = [
+  const identityFields: Array<{ key: 'name' | 'email' | 'phone' | 'websiteUrl'; label: string; type?: string; autoComplete?: string }> = [
     { key: 'name', label: 'Full Name', autoComplete: 'name' },
     { key: 'email', label: 'Email', type: 'email', autoComplete: 'email' },
     { key: 'phone', label: 'Phone', autoComplete: 'tel' },
+    { key: 'websiteUrl', label: 'Website URL', type: 'url', autoComplete: 'url' },
   ];
 
   const directShippingFields: Array<{ key: DirectShippingField; label: string; type?: string; autoComplete?: string }> = [
@@ -11545,7 +11547,6 @@ export function Header({
 
 		  const authControls = delegateMode ? (
 		    <div className="delegate-auth-controls ml-auto flex items-center justify-end gap-2 min-w-0 max-w-full">
-	      {renderCartButton()}
 			      <div
 			        className="delegate-auth-label squircle-sm inline-flex items-center justify-end gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent"
 			        aria-label={`Delegate of ${delegateDoctorLabel}`}
@@ -11559,6 +11560,7 @@ export function Header({
 			        <User className={delegateUserIconClassName} aria-hidden="true" style={{ color: secondaryColor }} />
 			        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
 	      </div>
+	      {renderCartButton()}
 	    </div>
 	  ) : user ? (
     <>

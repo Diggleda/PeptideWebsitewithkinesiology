@@ -71,8 +71,8 @@ const getProfile = async (req, res, next) => {
 
 const verifyNpi = async (req, res, next) => {
   try {
-    await verifyDoctorNpi(req.body?.npiNumber);
-    res.json({ status: 'verified' });
+    const verification = await verifyDoctorNpi(req.body?.npiNumber);
+    res.json({ status: 'verified', ...verification });
   } catch (error) {
     next(error);
   }

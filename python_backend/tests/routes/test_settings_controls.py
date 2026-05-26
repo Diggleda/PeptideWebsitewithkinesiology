@@ -436,6 +436,7 @@ class TestSettingsControls(unittest.TestCase):
             "role": "sales_rep",
             "status": "active",
             "profileImageUrl": "data:image/png;base64,QUJD",
+            "websiteUrl": "https://rep.example.com/",
             "salesRepId": None,
             "phone": None,
             "officeAddressLine1": "123 Main St",
@@ -483,6 +484,7 @@ class TestSettingsControls(unittest.TestCase):
         self.assertEqual(payload["isPartner"], True)
         self.assertEqual(payload["allowedRetail"], False)
         self.assertEqual(payload["jurisdiction"], "local")
+        self.assertEqual(payload["websiteUrl"], "https://rep.example.com/")
         payload_profile_url = urlparse(str(payload["profileImageUrl"]))
         self.assertTrue(payload_profile_url.path.endswith("/api/settings/users/rep-user-7/profile-image"))
         self.assertTrue(parse_qs(payload_profile_url.query).get("v"))
@@ -494,6 +496,7 @@ class TestSettingsControls(unittest.TestCase):
         self.assertEqual(users_payload[0]["isPartner"], True)
         self.assertEqual(users_payload[0]["allowedRetail"], False)
         self.assertEqual(users_payload[0]["jurisdiction"], "local")
+        self.assertEqual(users_payload[0]["websiteUrl"], "https://rep.example.com/")
         self.assertEqual(users_payload[0]["officeAddressLine1"], "123 Main St")
         self.assertEqual(users_payload[0]["officeAddressLine2"], "Suite 400")
         self.assertEqual(users_payload[0]["officeCity"], "Indianapolis")

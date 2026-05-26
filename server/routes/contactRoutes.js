@@ -4,6 +4,7 @@ const { logger } = require('../config/logger');
 const { ensureAdmin } = require('../middleware/auth');
 const salesRepRepository = require('../repositories/salesRepRepository');
 const salesProspectRepository = require('../repositories/salesProspectRepository');
+const { verifyDoctorNpi } = require('../services/npiService');
 const { computeBlindIndex, decryptText, encryptText } = require('../utils/cryptoEnvelope');
 
 const router = express.Router();
@@ -51,6 +52,106 @@ const sourceToken = (value) => String(value || '').trim().toLowerCase().replace(
 
 const normalizeContactFormSource = (value) => CONTACT_FORM_SOURCE_ALIASES.get(sourceToken(value)) || 'question';
 
+const normalizeNpiNumber = (value) => String(value || '').replace(/[^0-9]/g, '').slice(0, 10);
+
+const normalizeOptionalText = (value, maxLength = 255) => {
+  const text = String(value || '').trim();
+  return text ? text.slice(0, maxLength) : null;
+};
+
+const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
+
+const normalizeWebsiteUrl = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const candidate = URL_SCHEME_PATTERN.test(text) ? text : `https://${text}`;
+  if (/\s/.test(candidate)) {
+    const error = new Error('INVALID_WEBSITE_URL');
+    error.status = 400;
+    throw error;
+  }
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    const error = new Error('INVALID_WEBSITE_URL');
+    error.status = 400;
+    throw error;
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+    const error = new Error('INVALID_WEBSITE_URL');
+    error.status = 400;
+    throw error;
+  }
+  const normalized = parsed.toString();
+  if (normalized.length > 500) {
+    const error = new Error('WEBSITE_URL_TOO_LONG');
+    error.status = 400;
+    throw error;
+  }
+  return normalized;
+};
+
+const normalizeHumanName = (value = '') =>
+  String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+const HONORIFIC_TOKENS = new Set(['mr', 'mrs', 'ms', 'mx', 'dr', 'prof', 'sir', 'madam']);
+const SUFFIX_TOKENS = new Set([
+  'jr', 'sr', 'ii', 'iii', 'iv', 'v',
+  'md', 'do', 'pa', 'pac', 'np', 'fnp', 'aprn', 'crnp', 'dnp',
+  'phd', 'psyd', 'dds', 'dmd', 'rn', 'msn', 'lpn',
+  'lcsw', 'lmsw', 'msw', 'lpc', 'lcpc', 'lmft', 'mft',
+  'pharmd', 'rph', 'od', 'dc', 'dpt', 'pt', 'ot', 'cns', 'cnm', 'crna',
+]);
+
+const tokenizeName = (value = '') =>
+  normalizeHumanName(value)
+    .split(' ')
+    .map((token) => token.replace(/[^a-z0-9]/g, ''))
+    .filter((token) => token && !HONORIFIC_TOKENS.has(token) && !SUFFIX_TOKENS.has(token));
+
+const middleNameTokensMatch = (a = [], b = []) => {
+  if (!a.length || !b.length) return true;
+  if (a.length !== b.length) return false;
+  return a.every((token, index) => {
+    const other = b[index];
+    return token === other || token[0] === other || other[0] === token;
+  });
+};
+
+const namesRoughlyMatch = (a = '', b = '') => {
+  const tokensA = tokenizeName(a);
+  const tokensB = tokenizeName(b);
+  if (!tokensA.length || !tokensB.length) return false;
+  if (tokensA.join(' ') === tokensB.join(' ')) return true;
+  const firstA = tokensA[0];
+  const lastA = tokensA[tokensA.length - 1];
+  const firstB = tokensB[0];
+  const lastB = tokensB[tokensB.length - 1];
+  if (!firstA || !lastA || !firstB || !lastB) return false;
+  if (firstA !== firstB || lastA !== lastB) return false;
+  return middleNameTokensMatch(tokensA.slice(1, -1), tokensB.slice(1, -1));
+};
+
+const npiRegistryNameCandidates = (verification = {}) => {
+  const candidates = [];
+  const add = (value) => {
+    const text = normalizeOptionalText(value);
+    if (text && !candidates.some((candidate) => candidate.toLowerCase() === text.toLowerCase())) {
+      candidates.push(text);
+    }
+  };
+  const rawCandidates = verification?.nameCandidates || verification?.name_candidates;
+  if (Array.isArray(rawCandidates)) {
+    rawCandidates.forEach(add);
+  }
+  add(verification?.registryName);
+  add(verification?.providerName);
+  add(verification?.name);
+  add(verification?.organizationName);
+  return candidates;
+};
+
 const extractSalesCode = (body, rawSource) => {
   const explicit = body?.salesCode || body?.sales_code || body?.referralSource || body?.referral_source;
   const salesCode = String(explicit || '').trim();
@@ -91,7 +192,8 @@ router.get('/', ensureAdmin, async (req, res) => {
   try {
     const submissions = await mysqlClient.fetchAll(
       `
-        SELECT id, name, email, phone, message, message_field_key, message_label, source, created_at
+        SELECT id, name, email, phone, website_url, message, message_field_key, message_label, source,
+               npi_number, npi_provider_name, npi_verification_status, created_at
         FROM contact_forms
         ORDER BY created_at DESC
       `,
@@ -102,6 +204,7 @@ router.get('/', ensureAdmin, async (req, res) => {
         name: readContactField(row, 'name'),
         email: readContactField(row, 'email'),
         phone: readContactField(row, 'phone'),
+        websiteUrl: row.website_url || null,
         message: readContactField(row, 'message'),
       })),
     );
@@ -124,6 +227,25 @@ router.post('/', async (req, res) => {
   const formSource = normalizeContactFormSource(source);
   const messageField = CONTACT_FORM_MESSAGE_FIELDS[formSource] || CONTACT_FORM_MESSAGE_FIELDS.question;
   const salesCode = extractSalesCode(req.body || {}, source);
+  let websiteUrl;
+  try {
+    websiteUrl = normalizeWebsiteUrl(
+      req.body?.websiteUrl || req.body?.website_url || req.body?.website,
+    );
+  } catch (error) {
+    return res.status(Number(error?.status) || 400).json({ error: error?.message || 'INVALID_WEBSITE_URL' });
+  }
+  const npiNumber = normalizeNpiNumber(req.body?.npiNumber || req.body?.npi_number);
+  const npiProviderName = normalizeOptionalText(
+    req.body?.npiProviderName ||
+    req.body?.npi_provider_name ||
+    req.body?.npiName ||
+    req.body?.npi_name,
+  );
+  const npiVerificationStatus = normalizeOptionalText(
+    req.body?.npiVerificationStatus || req.body?.npi_verification_status,
+    32,
+  );
   const trimmed = {
     name: String(name).trim(),
     email: String(email).trim(),
@@ -132,20 +254,49 @@ router.post('/', async (req, res) => {
     messageFieldKey: messageField.key,
     messageLabel: messageField.label,
     source: formSource,
+    websiteUrl,
+    npiNumber: npiNumber || null,
+    npiProviderName,
+    npiVerificationStatus,
   };
+
+  if (formSource === 'join_network' && !/^\d{10}$/.test(npiNumber)) {
+    return res.status(400).json({ error: 'NPI number is required for physician network requests.' });
+  }
 
   if (!mysqlClient.isEnabled()) {
     return res.status(503).json({ error: 'Contact form storage requires MySQL to be enabled.' });
+  }
+
+  if (formSource === 'join_network') {
+    let npiVerification;
+    try {
+      npiVerification = await verifyDoctorNpi(npiNumber);
+    } catch (error) {
+      const status = Number(error?.status) || 502;
+      return res.status(status).json({ error: error?.message || 'NPI_LOOKUP_FAILED' });
+    }
+    const registryNames = npiRegistryNameCandidates(npiVerification);
+    if (!registryNames.length) {
+      return res.status(422).json({ error: 'NPI_NAME_UNAVAILABLE' });
+    }
+    if (!registryNames.some((registryName) => namesRoughlyMatch(trimmed.name, registryName))) {
+      return res.status(422).json({ error: 'NPI_NAME_MISMATCH' });
+    }
+    trimmed.npiProviderName = registryNames[0];
+    trimmed.npiVerificationStatus = 'verified';
   }
 
   try {
     const result = await mysqlClient.execute(
       `
         INSERT INTO contact_forms (
-          name, email, phone, message, message_field_key, message_label, email_blind_index, source
+          name, email, phone, website_url, message, message_field_key, message_label, email_blind_index, source,
+          npi_number, npi_provider_name, npi_verification_status
         )
         VALUES (
-          :name, :email, :phone, :message, :messageFieldKey, :messageLabel, :emailBlindIndex, :source
+          :name, :email, :phone, :websiteUrl, :message, :messageFieldKey, :messageLabel, :emailBlindIndex, :source,
+          :npiNumber, :npiProviderName, :npiVerificationStatus
         )
       `,
       {
@@ -162,6 +313,10 @@ router.post('/', async (req, res) => {
           label: 'contact_forms.email',
           normalizer: (value) => value.trim().toLowerCase(),
         }),
+        websiteUrl: trimmed.websiteUrl,
+        npiNumber: trimmed.npiNumber,
+        npiProviderName: trimmed.npiProviderName,
+        npiVerificationStatus: trimmed.npiVerificationStatus,
       },
     );
 
@@ -188,9 +343,13 @@ router.post('/', async (req, res) => {
             contactName: trimmed.name,
             contactEmail: trimmed.email,
             contactPhone: trimmed.phone || null,
+            websiteUrl: trimmed.websiteUrl,
             message: trimmed.message || null,
             messageFieldKey: trimmed.messageFieldKey,
             messageLabel: trimmed.messageLabel,
+            npiNumber: trimmed.npiNumber,
+            npiProviderName: trimmed.npiProviderName,
+            npiVerificationStatus: trimmed.npiVerificationStatus,
           },
           status: 'contact_form',
           isManual: false,

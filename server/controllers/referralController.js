@@ -1003,10 +1003,14 @@ const getDoctorLedger = (req, res, next) => {
                   name,
                   email,
                   phone,
+                  website_url,
                   message,
                   message_field_key,
                   message_label,
                   source,
+                  npi_number,
+                  npi_provider_name,
+                  npi_verification_status,
                   created_at,
                   NULL AS updated_at,
                   created_at AS createdAt,
@@ -1021,8 +1025,12 @@ const getDoctorLedger = (req, res, next) => {
           const contactName = readContactFormField(row, 'name');
           const contactEmail = normalizeEmail(readContactFormField(row, 'email'));
           const contactPhone = readContactFormField(row, 'phone');
+          const websiteUrl = normalizeOptionalText(row.website_url);
           const contactMessage = normalizeOptionalText(readContactFormField(row, 'message'));
           const messageMetadata = contactFormMessageMetadata(row);
+          const npiNumber = normalizeOptionalText(row.npi_number);
+          const npiProviderName = normalizeOptionalText(row.npi_provider_name);
+          const npiVerificationStatus = normalizeOptionalText(row.npi_verification_status);
           const contactEmails = contactEmail ? [contactEmail] : [];
           const contactPhones = contactPhone ? [contactPhone] : [];
           return {
@@ -1040,9 +1048,17 @@ const getDoctorLedger = (req, res, next) => {
             contactPhones,
             notes: row.source || 'Contact form submission',
             contactFormSource: row.source || null,
+            websiteUrl,
+            contactFormWebsiteUrl: websiteUrl,
             contactFormMessage: contactMessage,
             contactFormMessageFieldKey: messageMetadata.fieldKey,
             contactFormMessageLabel: messageMetadata.label,
+            npiNumber,
+            npiProviderName,
+            npiVerificationStatus,
+            contactFormNpiNumber: npiNumber,
+            contactFormNpiProviderName: npiProviderName,
+            contactFormNpiVerificationStatus: npiVerificationStatus,
             createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
             updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString(),
             source: 'contact_form',
@@ -1076,6 +1092,42 @@ const getDoctorLedger = (req, res, next) => {
             return referral;
           }
 
+          const sourcePayload = parseSourcePayloadObject(
+            prospect?.sourcePayloadJson || prospect?.source_payload_json || null,
+          );
+          const npiNumber = normalizeOptionalText(
+            prospect?.npiNumber
+            || prospect?.npi_number
+            || sourcePayload?.npiNumber
+            || sourcePayload?.npi_number
+            || referral?.npiNumber
+            || referral?.contactFormNpiNumber,
+          );
+          const npiProviderName = normalizeOptionalText(
+            prospect?.npiProviderName
+            || prospect?.npi_provider_name
+            || sourcePayload?.npiProviderName
+            || sourcePayload?.npi_provider_name
+            || referral?.npiProviderName
+            || referral?.contactFormNpiProviderName,
+          );
+          const npiVerificationStatus = normalizeOptionalText(
+            prospect?.npiVerificationStatus
+            || prospect?.npi_verification_status
+            || sourcePayload?.npiVerificationStatus
+            || sourcePayload?.npi_verification_status
+            || referral?.npiVerificationStatus
+            || referral?.contactFormNpiVerificationStatus,
+          );
+          const websiteUrl = normalizeOptionalText(
+            prospect?.websiteUrl
+            || prospect?.website_url
+            || sourcePayload?.websiteUrl
+            || sourcePayload?.website_url
+            || sourcePayload?.website
+            || referral?.websiteUrl
+            || referral?.contactFormWebsiteUrl,
+          );
           const source = normalizeSourceSystem(prospect.sourceSystem || prospect.source_system);
           if (!isProspectVisibleToViewer(prospect)) {
             if (source === 'seamless') {
@@ -1108,6 +1160,14 @@ const getDoctorLedger = (req, res, next) => {
             resellerPermitFilePath: prospect.resellerPermitFilePath || null,
             resellerPermitFileName: prospect.resellerPermitFileName || null,
             resellerPermitUploadedAt: prospect.resellerPermitUploadedAt || null,
+            websiteUrl,
+            contactFormWebsiteUrl: websiteUrl,
+            npiNumber,
+            npiProviderName,
+            npiVerificationStatus,
+            contactFormNpiNumber: npiNumber,
+            contactFormNpiProviderName: npiProviderName,
+            contactFormNpiVerificationStatus: npiVerificationStatus,
           };
         }),
       );

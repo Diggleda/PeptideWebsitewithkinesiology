@@ -11,10 +11,11 @@ import { X } from 'lucide-react@0.487.0';
 import clsx from 'clsx';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
 import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '../lib/legalDocuments';
-import { api, usageTrackingAPI } from '../services/api';
+import { api, authAPI, usageTrackingAPI } from '../services/api';
 
 type ContactFormSource = 'question' | 'join_network' | 'partner_application';
 type ToolRequestSource = 'research_tab';
+type NpiVerificationStatus = 'idle' | 'checking' | 'verified' | 'rejected';
 
 interface ContactFormContent {
   title: string;
@@ -28,19 +29,19 @@ const CONTACT_FORM_CONTENT: Record<ContactFormSource, ContactFormContent> = {
     title: 'Ask a Question',
     fieldKey: 'question',
     prompt: 'Type your question here:',
-    success: 'Thanks. We received your question.',
+    success: 'Thank you. We received your question.',
   },
   join_network: {
-    title: 'Join the Network',
+    title: 'Join the Physician Network',
     fieldKey: 'heard_about_us',
     prompt: 'How did you hear about us?',
-    success: 'Thanks. We received your network request.',
+    success: 'Thank you. We received your network request.',
   },
   partner_application: {
     title: 'Partner Application',
     fieldKey: 'partnership_fit',
     prompt: 'How can we help each other?',
-    success: 'Thanks. We received your partner application.',
+    success: 'Thank you. We received your partner application.',
   },
 };
 
@@ -70,6 +71,241 @@ const normalizeContactFormSource = (value: unknown): ContactFormSource => {
     return 'partner_application';
   }
   return 'question';
+};
+
+const describeNpiVerificationError = (error: unknown): string => {
+  const raw =
+    typeof (error as { code?: unknown })?.code === 'string'
+      ? (error as { code: string }).code
+      : typeof (error as { message?: unknown })?.message === 'string'
+        ? (error as { message: string }).message
+        : '';
+  const normalized = raw.trim().toUpperCase();
+  switch (normalized) {
+    case 'NPI_INVALID':
+      return 'Enter a valid 10-digit NPI number.';
+    case 'NPI_NOT_FOUND':
+      return "We couldn't verify that NPI number in the CMS registry.";
+    case 'NPI_LOOKUP_FAILED':
+      return 'We could not reach the CMS registry. Please try again in a moment.';
+    default:
+      return 'Unable to verify this NPI number. Please double-check and try again.';
+  }
+};
+
+const firstTrimmedString = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+};
+
+const getNpiNameFromBasic = (basic: any): string | null => {
+  if (!basic || typeof basic !== 'object') {
+    return null;
+  }
+  const directName = firstTrimmedString(basic.name, basic.provider_name, basic.providerName);
+  if (directName) {
+    return directName;
+  }
+  const organizationName = firstTrimmedString(
+    basic.organization_name,
+    basic.organizationName,
+  );
+  if (organizationName) {
+    return organizationName;
+  }
+  const nameParts = [
+    basic.first_name || basic.firstName,
+    basic.middle_name || basic.middleName,
+    basic.last_name || basic.lastName,
+  ]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean);
+  return nameParts.length > 0 ? nameParts.join(' ') : null;
+};
+
+const getNpiNameFromParts = (source: any): string | null => {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+  const directName = firstTrimmedString(
+    source.name,
+    source.providerName,
+    source.provider_name,
+    source.fullName,
+    source.full_name,
+  );
+  if (directName) {
+    return directName;
+  }
+  const organizationName = firstTrimmedString(
+    source.organizationName,
+    source.organization_name,
+  );
+  if (organizationName) {
+    return organizationName;
+  }
+  const nameParts = [
+    source.first_name || source.firstName,
+    source.middle_name || source.middleName,
+    source.last_name || source.lastName,
+  ]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean);
+  return nameParts.length > 0 ? nameParts.join(' ') : null;
+};
+
+const getNpiVerificationNames = (record: any): string[] => {
+  const names: string[] = [];
+  const addName = (value: unknown) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text && !names.some((name) => name.toLowerCase() === text.toLowerCase())) {
+      names.push(text);
+    }
+  };
+  const sources = [
+    record,
+    record?.npiVerification,
+    record?.verification,
+    record?.data,
+    record?.provider,
+    record?.result,
+    Array.isArray(record?.results) ? record.results[0] : null,
+    record?.raw,
+    record?.raw?.result,
+    Array.isArray(record?.raw?.results) ? record.raw.results[0] : null,
+  ].filter(Boolean);
+
+  for (const source of sources) {
+    const rawCandidates = source.nameCandidates ?? source.name_candidates;
+    if (Array.isArray(rawCandidates)) {
+      rawCandidates.forEach(addName);
+    }
+    addName(source.registryName);
+    addName(source.providerName);
+    addName(source.provider_name);
+    addName(source.name);
+    addName(source.fullName);
+    addName(source.full_name);
+    addName(source.organizationName);
+    addName(source.organization_name);
+    addName(getNpiNameFromBasic(source.basic));
+    if (Array.isArray(source.other_names)) {
+      source.other_names.forEach((otherName: any) => addName(getNpiNameFromParts(otherName)));
+    }
+    if (Array.isArray(source.otherNames)) {
+      source.otherNames.forEach((otherName: any) => addName(getNpiNameFromParts(otherName)));
+    }
+  }
+
+  return names;
+};
+
+const normalizeHumanName = (value: string) =>
+  (value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const HONORIFIC_TOKENS = new Set([
+  'mr',
+  'mrs',
+  'ms',
+  'mx',
+  'dr',
+  'prof',
+  'sir',
+  'madam',
+]);
+const SUFFIX_TOKENS = new Set([
+  'jr',
+  'sr',
+  'ii',
+  'iii',
+  'iv',
+  'v',
+  'md',
+  'do',
+  'pa',
+  'pac',
+  'np',
+  'fnp',
+  'aprn',
+  'crnp',
+  'dnp',
+  'phd',
+  'psyd',
+  'dds',
+  'dmd',
+  'rn',
+  'msn',
+  'lpn',
+  'lcsw',
+  'lmsw',
+  'msw',
+  'lpc',
+  'lcpc',
+  'lmft',
+  'mft',
+  'pharmd',
+  'rph',
+  'od',
+  'dc',
+  'dpt',
+  'pt',
+  'ot',
+  'cns',
+  'cnm',
+  'crna',
+]);
+
+const tokenizeName = (value: string) =>
+  normalizeHumanName(value)
+    .split(' ')
+    .map((token) => token.replace(/[^a-z0-9]/g, ''))
+    .filter(
+      (token) =>
+        token && !HONORIFIC_TOKENS.has(token) && !SUFFIX_TOKENS.has(token),
+    );
+
+const middleNameTokensMatch = (a: string[], b: string[]) => {
+  if (!a.length || !b.length) {
+    return true;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((token, index) => {
+    const other = b[index];
+    return token === other || token[0] === other || other[0] === token;
+  });
+};
+
+const namesRoughlyMatch = (a: string, b: string) => {
+  const tokensA = tokenizeName(a);
+  const tokensB = tokenizeName(b);
+  if (!tokensA.length || !tokensB.length) {
+    return false;
+  }
+  if (tokensA.join(' ') === tokensB.join(' ')) {
+    return true;
+  }
+  const firstA = tokensA[0];
+  const lastA = tokensA[tokensA.length - 1];
+  const firstB = tokensB[0];
+  const lastB = tokensB[tokensB.length - 1];
+  if (!firstA || !lastA || !firstB || !lastB) {
+    return false;
+  }
+  if (firstA !== firstB || lastA !== lastB) {
+    return false;
+  }
+  return middleNameTokensMatch(tokensA.slice(1, -1), tokensB.slice(1, -1));
 };
 
 interface LegalFooterProps {
@@ -112,8 +348,23 @@ export function LegalFooter({
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [contactSuccess, setContactSuccess] = useState('');
   const [contactError, setContactError] = useState('');
-  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', message: '' });
+  const [contactForm, setContactForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    websiteUrl: '',
+    message: '',
+  });
   const [activeContactFormSource, setActiveContactFormSource] = useState<ContactFormSource>('question');
+  const [contactNpiNumber, setContactNpiNumber] = useState('');
+  const [contactNpiStatus, setContactNpiStatus] = useState<NpiVerificationStatus>('idle');
+  const [contactNpiMessage, setContactNpiMessage] = useState('');
+  const contactNpiCheckIdRef = useRef(0);
+  const contactNpiVerificationRef = useRef<{
+    npiNumber: string;
+    name?: string | null;
+    names?: string[];
+  } | null>(null);
   const [bugOpen, setBugOpen] = useState(false);
   const [bugVisible, setBugVisible] = useState(false);
   const [bugSubmitting, setBugSubmitting] = useState(false);
@@ -137,6 +388,49 @@ export function LegalFooter({
   const toolRequestCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
   const activeContactFormContent = CONTACT_FORM_CONTENT[activeContactFormSource];
+  const contactAllowsWebsiteUrl =
+    activeContactFormSource === 'join_network' || activeContactFormSource === 'partner_application';
+  const contactRequiresNpiVerification = activeContactFormSource === 'join_network';
+  const contactNpiVerificationRecord = contactNpiVerificationRef.current;
+  const contactNpiRegistryNames = (
+    contactNpiVerificationRecord?.names?.length
+      ? contactNpiVerificationRecord.names
+      : contactNpiVerificationRecord?.name
+        ? [contactNpiVerificationRecord.name]
+        : []
+  )
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const contactNpiRegistryName = contactNpiRegistryNames[0] || '';
+  const contactNpiNumberVerified =
+    (
+      contactNpiStatus === 'verified' &&
+      contactNpiVerificationRecord?.npiNumber === contactNpiNumber
+    );
+  const contactNameMatchesNpi =
+    !contactRequiresNpiVerification ||
+    (
+      contactNpiNumberVerified &&
+      contactNpiRegistryNames.length > 0 &&
+      contactNpiRegistryNames.some((registryName) => namesRoughlyMatch(contactForm.name, registryName))
+    );
+  const contactNpiNameMismatch =
+    contactRequiresNpiVerification &&
+    contactNpiNumberVerified &&
+    Boolean(contactNpiRegistryName) &&
+    Boolean(contactForm.name.trim()) &&
+    !contactNameMatchesNpi;
+  const contactNpiNameUnavailable =
+    contactRequiresNpiVerification &&
+    contactNpiNumberVerified &&
+    !contactNpiRegistryName;
+  const contactNpiVerified =
+    !contactRequiresNpiVerification ||
+    (
+      contactNpiNumberVerified &&
+      contactNpiRegistryNames.length > 0 &&
+      contactNameMatchesNpi
+    );
   // Keep this close to the Tailwind `duration-[..]` used below; this controls unmount timing.
   const MODAL_FADE_MS = 65;
   const legalModalState = isClosing ? 'closing' : isVisible ? 'open' : 'closed';
@@ -145,7 +439,58 @@ export function LegalFooter({
   const supportModalPanelStyle = {
     width: 'min(100%, 32rem)',
     maxWidth: '32rem',
+    maxHeight: 'calc(var(--viewport-height, 100dvh) - 3rem)',
   } as const;
+
+  const resetContactNpiState = useCallback(() => {
+    contactNpiCheckIdRef.current += 1;
+    contactNpiVerificationRef.current = null;
+    setContactNpiNumber('');
+    setContactNpiStatus('idle');
+    setContactNpiMessage('');
+  }, []);
+
+  const handleContactNpiChange = useCallback((rawValue: string) => {
+    const digits = String(rawValue || '').replace(/[^0-9]/g, '').slice(0, 10);
+    setContactNpiNumber(digits);
+    contactNpiVerificationRef.current = null;
+
+    if (digits.length < 10) {
+      contactNpiCheckIdRef.current += 1;
+      setContactNpiStatus('idle');
+      setContactNpiMessage('');
+      return;
+    }
+
+    contactNpiCheckIdRef.current += 1;
+    const checkId = contactNpiCheckIdRef.current;
+    setContactNpiStatus('checking');
+    setContactNpiMessage('');
+
+    authAPI
+      .verifyNpi(digits)
+      .then((record: any) => {
+        if (contactNpiCheckIdRef.current !== checkId) {
+          return;
+        }
+        const verifiedNames = getNpiVerificationNames(record);
+        contactNpiVerificationRef.current = {
+          npiNumber: digits,
+          name: verifiedNames[0] || null,
+          names: verifiedNames,
+        };
+        setContactNpiStatus('verified');
+        setContactNpiMessage('NPI verified with the CMS registry.');
+      })
+      .catch((error: unknown) => {
+        if (contactNpiCheckIdRef.current !== checkId) {
+          return;
+        }
+        contactNpiVerificationRef.current = null;
+        setContactNpiStatus('rejected');
+        setContactNpiMessage(describeNpiVerificationError(error));
+      });
+  }, []);
 
   useEffect(() => {
     const body = document.body;
@@ -285,11 +630,12 @@ export function LegalFooter({
       contactCloseTimerRef.current = null;
     }
     setActiveContactFormSource(normalizeContactFormSource(sourceOverride));
+    resetContactNpiState();
     setContactError('');
     setContactSuccess('');
     setContactOpen(true);
     requestAnimationFrame(() => setContactVisible(true));
-  }, []);
+  }, [resetContactNpiState]);
 
   useEffect(() => {
     const openContact = (event: Event) => {
@@ -323,25 +669,81 @@ export function LegalFooter({
     event.preventDefault();
     setContactError('');
     setContactSuccess('');
+    const verifiedNpi = contactNpiVerificationRef.current;
+    if (
+      contactRequiresNpiVerification &&
+      (
+        contactNpiStatus !== 'verified' ||
+        !verifiedNpi ||
+        verifiedNpi.npiNumber !== contactNpiNumber
+      )
+    ) {
+      setContactError('Please verify your NPI before submitting.');
+      return;
+    }
+
+    const verifiedNpiNames = verifiedNpi?.names?.length
+      ? verifiedNpi.names
+      : verifiedNpi?.name
+        ? [verifiedNpi.name]
+        : [];
+    if (
+      contactRequiresNpiVerification &&
+      verifiedNpiNames.length === 0
+    ) {
+      setContactError('NPI verified, but the registry name was unavailable. Please try again or contact support.');
+      return;
+    }
+
+    if (
+      contactRequiresNpiVerification &&
+      !verifiedNpiNames.some((registryName) => namesRoughlyMatch(contactForm.name, registryName))
+    ) {
+      setContactError('Please enter the name exactly as it appears in the CMS NPI registry.');
+      return;
+    }
+
     setContactSubmitting(true);
     try {
       const res = await api.post('/contact', {
         name: contactForm.name.trim(),
         email: contactForm.email.trim(),
         phone: contactForm.phone.trim(),
+        websiteUrl: contactAllowsWebsiteUrl ? contactForm.websiteUrl.trim() || undefined : undefined,
         message: contactForm.message.trim(),
         messageFieldKey: activeContactFormContent.fieldKey,
         messageLabel: activeContactFormContent.prompt,
         source: activeContactFormSource,
+        npiNumber: contactRequiresNpiVerification ? verifiedNpi?.npiNumber : undefined,
+        npiProviderName: contactRequiresNpiVerification ? verifiedNpi?.name ?? undefined : undefined,
+        npiVerificationStatus: contactRequiresNpiVerification ? 'verified' : undefined,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || 'Unable to send your message.');
       }
       setContactSuccess(activeContactFormContent.success);
-      setContactForm({ name: '', email: '', phone: '', message: '' });
+      setContactForm({ name: '', email: '', phone: '', websiteUrl: '', message: '' });
+      resetContactNpiState();
     } catch (error: any) {
-      setContactError(error?.message || 'Unable to send your message. Please try again.');
+      const message = String(error?.message || '').trim();
+      if (message === 'NPI_NAME_MISMATCH') {
+        setContactError('Please enter the name exactly as it appears in the CMS NPI registry.');
+      } else if (message === 'NPI_NAME_UNAVAILABLE') {
+        setContactError('NPI verified, but the registry name was unavailable. Please try again or contact support.');
+      } else if (message === 'NPI_INVALID') {
+        setContactError('Enter a valid 10-digit NPI number.');
+      } else if (message === 'NPI_NOT_FOUND') {
+        setContactError("We couldn't verify that NPI number in the CMS registry.");
+      } else if (message === 'NPI_LOOKUP_FAILED') {
+        setContactError('We could not reach the CMS registry. Please try again in a moment.');
+      } else if (message === 'INVALID_WEBSITE_URL') {
+        setContactError('Enter a valid website URL or leave the field blank.');
+      } else if (message === 'WEBSITE_URL_TOO_LONG') {
+        setContactError('Website URL must be 500 characters or fewer.');
+      } else {
+        setContactError(message || 'Unable to send your message. Please try again.');
+      }
     } finally {
       setContactSubmitting(false);
     }
@@ -801,7 +1203,7 @@ export function LegalFooter({
                 <span className="sr-only">Close</span>
               </button>
             </div>
-            <form className="legal-contact-form px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleContactSubmit}>
+            <form className="legal-contact-form flex-1 overflow-y-auto px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleContactSubmit}>
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700" htmlFor="contact-name">Name</label>
                 <input
@@ -834,6 +1236,90 @@ export function LegalFooter({
                   className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.25)]"
                 />
               </div>
+              {contactAllowsWebsiteUrl && (
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700" htmlFor="contact-website">Website URL <span className="font-normal text-slate-500">(optional)</span></label>
+                  <input
+                    id="contact-website"
+                    type="text"
+                    inputMode="url"
+                    autoComplete="url"
+                    placeholder="https://example.com"
+                    value={contactForm.websiteUrl}
+                    onChange={(e) => setContactForm((prev) => ({ ...prev, websiteUrl: e.target.value }))}
+                    className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.25)]"
+                  />
+                </div>
+              )}
+              {contactRequiresNpiVerification && (
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700" htmlFor="contact-npi">NPI Number</label>
+                  <input
+                    id="contact-npi"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    maxLength={10}
+                    placeholder="10-digit NPI"
+                    value={contactNpiNumber}
+                    onChange={(e) => handleContactNpiChange(e.target.value)}
+                    required
+                    aria-describedby="contact-npi-status"
+                    className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.25)]"
+                  />
+                  <p
+                    id="contact-npi-status"
+                    className={clsx(
+                      'text-xs',
+                      contactNameMatchesNpi
+                        ? 'text-emerald-600'
+                        : contactNpiStatus === 'rejected' || contactNpiNameMismatch || contactNpiNameUnavailable
+                          ? 'text-red-600'
+                          : 'text-slate-500',
+                    )}
+                    role={
+                      contactNpiStatus === 'rejected' || contactNpiNameMismatch || contactNpiNameUnavailable
+                        ? 'alert'
+                        : 'status'
+                    }
+                  >
+                    {contactNpiStatus === 'idle' && contactNpiNumber.length === 0
+                      ? 'Enter your 10-digit NPI to verify with the CMS registry.'
+                      : null}
+                    {contactNpiStatus === 'idle' && contactNpiNumber.length > 0
+                      ? 'Enter all 10 digits to start verification.'
+                      : null}
+                    {contactNpiStatus === 'checking' ? 'Contacting the CMS NPI registry...' : null}
+                    {contactNpiStatus === 'verified' && contactNameMatchesNpi ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="npi-checkmark" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span>
+                          {contactNpiRegistryName
+                            ? 'NPI verified'
+                            : contactNpiMessage}
+                        </span>
+                      </span>
+                    ) : null}
+                    {contactNpiStatus === 'verified' && contactNpiNameMismatch
+                      ? 'NPI verified. Enter the name registered above to submit.'
+                      : null}
+                    {contactNpiStatus === 'verified' && contactNpiNameUnavailable
+                      ? 'NPI verified, but the registry name was unavailable. Please try again or contact support.'
+                      : null}
+                    {contactNpiStatus === 'verified' &&
+                    !contactNameMatchesNpi &&
+                    !contactNpiNameMismatch &&
+                    !contactNpiNameUnavailable
+                      ? contactNpiRegistryName
+                        ? 'NPI verified. Enter the name registered above to submit.'
+                        : contactNpiMessage
+                      : null}
+                    {contactNpiStatus === 'rejected' ? contactNpiMessage : null}
+                  </p>
+                </div>
+              )}
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700" htmlFor="contact-message">
                   {activeContactFormContent.prompt}
@@ -854,7 +1340,7 @@ export function LegalFooter({
                 </div>
                 <button
                   type="submit"
-                  disabled={contactSubmitting}
+                  disabled={contactSubmitting || !contactNpiVerified}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(11,6,121,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed mb-[3px]"
                   style={{ backgroundColor: 'rgb(11, 6, 121)' }}
                 >

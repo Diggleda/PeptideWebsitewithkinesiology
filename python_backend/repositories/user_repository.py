@@ -127,6 +127,10 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized.setdefault("profileImageUrl", None)
     normalized["greaterArea"] = (normalized.get("greaterArea") or None)
     normalized["studyFocus"] = (normalized.get("studyFocus") or None)
+    if "websiteUrl" in normalized:
+        normalized["websiteUrl"] = _normalize_optional_text(normalized.get("websiteUrl"), max_len=500)
+    else:
+        normalized["websiteUrl"] = _normalize_optional_text(normalized.get("website_url"), max_len=500)
     normalized["bio"] = (normalized.get("bio") or None)
     if "networkPresenceAgreement" in normalized:
         normalized["networkPresenceAgreement"] = _normalize_bool(normalized.get("networkPresenceAgreement"))
@@ -197,6 +201,7 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized["delegate_opt_in"] = 1 if normalized.get("delegateOptIn") else 0
     normalized["profile_onboarding"] = 1 if normalized.get("profileOnboarding") else 0
     normalized["network_presence_agreement"] = 1 if normalized.get("networkPresenceAgreement") else 0
+    normalized["website_url"] = normalized.get("websiteUrl")
     normalized["reseller_permit_onboarding_presented"] = (
         1 if normalized.get("resellerPermitOnboardingPresented") else 0
     )
@@ -352,6 +357,7 @@ _PROFILE_SELECT_FIELDS = """
     reseller_permit_onboarding_presented,
     greater_area,
     study_focus,
+    website_url,
     bio,
     network_presence_agreement,
     delegate_logo_url,
@@ -467,6 +473,7 @@ _REFERRAL_DASHBOARD_SELECT_FIELDS = """
     profile_image_url,
     greater_area,
     study_focus,
+    website_url,
     bio,
     created_at,
     last_login_at,
@@ -501,6 +508,7 @@ _PRESENCE_SELECT_FIELDS = """
     profile_image_url,
     greater_area,
     study_focus,
+    website_url,
     bio,
     network_presence_agreement,
     created_at,
@@ -1132,7 +1140,7 @@ def _mysql_insert(user: Dict) -> Dict:
             last_seen_at, last_interaction_at,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
-            office_postal_code, office_country, profile_image_url, profile_onboarding, greater_area, study_focus, bio,
+            office_postal_code, office_country, profile_image_url, profile_onboarding, greater_area, study_focus, website_url, bio,
             delegate_logo_url, delegate_background_url, delegate_background_color, zelle_contact, cart, downloads,
             network_presence_agreement,
             reseller_permit_onboarding_presented,
@@ -1155,7 +1163,7 @@ def _mysql_insert(user: Dict) -> Dict:
             %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
-            %(profile_image_url)s, %(profile_onboarding)s, %(greater_area)s, %(study_focus)s, %(bio)s,
+            %(profile_image_url)s, %(profile_onboarding)s, %(greater_area)s, %(study_focus)s, %(website_url)s, %(bio)s,
             %(delegate_logo_url)s, %(delegate_background_url)s, %(delegate_background_color)s, %(zelle_contact)s, %(cart)s, %(downloads)s,
             %(network_presence_agreement)s,
             %(reseller_permit_onboarding_presented)s, %(delegate_secondary_color)s, %(delegate_links_enabled)s,
@@ -1201,6 +1209,7 @@ def _mysql_insert(user: Dict) -> Dict:
             profile_onboarding = VALUES(profile_onboarding),
             greater_area = VALUES(greater_area),
             study_focus = VALUES(study_focus),
+            website_url = VALUES(website_url),
             bio = VALUES(bio),
             network_presence_agreement = VALUES(network_presence_agreement),
             delegate_logo_url = VALUES(delegate_logo_url),
@@ -1288,6 +1297,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             reseller_permit_onboarding_presented = %(reseller_permit_onboarding_presented)s,
             greater_area = %(greater_area)s,
             study_focus = %(study_focus)s,
+            website_url = %(website_url)s,
             bio = %(bio)s,
             network_presence_agreement = %(network_presence_agreement)s,
             delegate_logo_url = %(delegate_logo_url)s,
@@ -1390,6 +1400,7 @@ def _row_to_user(row: Dict) -> Dict:
             "resellerPermitOnboardingPresented": bool(row.get("reseller_permit_onboarding_presented")),
             "greaterArea": row.get("greater_area"),
             "studyFocus": row.get("study_focus"),
+            "websiteUrl": row.get("website_url"),
             "bio": row.get("bio"),
             "networkPresenceAgreement": bool(row.get("network_presence_agreement")),
             "delegateLogoUrl": row.get("delegate_logo_url"),
@@ -1484,6 +1495,7 @@ def _to_db_params(user: Dict) -> Dict:
         ),
         "greater_area": user.get("greaterArea"),
         "study_focus": user.get("studyFocus"),
+        "website_url": user.get("websiteUrl"),
         "bio": user.get("bio"),
         "network_presence_agreement": 1 if network_presence_agreement else 0,
         "delegate_logo_url": user.get("delegateLogoUrl"),

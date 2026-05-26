@@ -34,6 +34,7 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("delegate_background_url LONGTEXT NULL", schema_sql)
         self.assertIn("delegate_background_color VARCHAR(16) NULL", schema_sql)
         self.assertIn("receive_patient_link_update_emails TINYINT(1) NOT NULL DEFAULT 1", schema_sql)
+        self.assertIn("website_url VARCHAR(500) NULL", schema_sql)
         self.assertIn("research_terms_agreement_version VARCHAR(64) NULL", schema_sql)
         self.assertIn("research_shipping_policy_version VARCHAR(64) NULL", schema_sql)
         self.assertIn("research_privacy_policy_version VARCHAR(64) NULL", schema_sql)
@@ -88,6 +89,15 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("version BIGINT UNSIGNED NOT NULL DEFAULT 0", schema_sql)
         self.assertIn("metadata_json JSON NULL", schema_sql)
         self.assertIn("KEY idx_resource_versions_updated (updated_at)", schema_sql)
+
+    def test_contact_forms_schema_stores_npi_verification_fields(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS contact_forms", schema_sql)
+        self.assertIn("website_url VARCHAR(500) NULL", schema_sql)
+        self.assertIn("npi_number VARCHAR(20) NULL", schema_sql)
+        self.assertIn("npi_provider_name VARCHAR(255) NULL", schema_sql)
+        self.assertIn("npi_verification_status VARCHAR(32) NULL", schema_sql)
 
     def test_legal_acceptances_schema_exists(self) -> None:
         schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)

@@ -13,6 +13,7 @@ export interface DoctorProfileUser {
   profileImageUrl?: string | null;
   greaterArea?: string | null;
   studyFocus?: string | null;
+  websiteUrl?: string | null;
   bio?: string | null;
   networkPresenceAgreement?: boolean;
 }
@@ -23,6 +24,7 @@ export interface DoctorProfilePayload {
   profileImageUrl: string | null;
   greaterArea: string | null;
   studyFocus: string | null;
+  websiteUrl: string | null;
   bio: string | null;
   networkPresenceAgreement: boolean;
 }
@@ -97,6 +99,8 @@ const getInitials = (value?: string | null) => {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WEBSITE_URL_MAX_LENGTH = 500;
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 const resolveNetworkPresenceAgreement = (user: DoctorProfileUser | null | undefined) => (
   user?.networkPresenceAgreement !== false
@@ -111,6 +115,23 @@ const isMaintenanceReadOnlyError = (error: unknown) => {
     ? (error as any).message.trim().toLowerCase()
     : '';
   return code === 'SHADOW_READ_ONLY' || message === 'maintenance mode is read-only';
+};
+
+const normalizeWebsiteUrl = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const candidate = URL_SCHEME_PATTERN.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 };
 
 export function DoctorProfileForm({
@@ -137,6 +158,7 @@ export function DoctorProfileForm({
   const [email, setEmail] = useState(user?.email || '');
   const [greaterArea, setGreaterArea] = useState(user?.greaterArea || '');
   const [studyFocus, setStudyFocus] = useState(user?.studyFocus || '');
+  const [websiteUrl, setWebsiteUrl] = useState(user?.websiteUrl || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [networkPresenceAgreement, setNetworkPresenceAgreement] = useState(
     resolveNetworkPresenceAgreement(user),
@@ -238,6 +260,7 @@ export function DoctorProfileForm({
     setEmail(user?.email || '');
     setGreaterArea(user?.greaterArea || '');
     setStudyFocus(user?.studyFocus || '');
+    setWebsiteUrl(user?.websiteUrl || '');
     setBio(user?.bio || '');
     setProfileImageUrl(user?.profileImageUrl ?? null);
     setError(null);
@@ -246,6 +269,7 @@ export function DoctorProfileForm({
     user?.email,
     user?.greaterArea,
     user?.studyFocus,
+    user?.websiteUrl,
     user?.bio,
     user?.profileImageUrl,
   ]);
@@ -278,6 +302,16 @@ export function DoctorProfileForm({
     }
     if (trimmedFocus.length > 190) {
       return 'Study focus must be 190 characters or fewer.';
+    }
+    const trimmedWebsiteUrl = websiteUrl.trim();
+    if (trimmedWebsiteUrl) {
+      const normalizedWebsiteUrl = normalizeWebsiteUrl(trimmedWebsiteUrl);
+      if (!normalizedWebsiteUrl) {
+        return 'Enter a valid website URL.';
+      }
+      if (normalizedWebsiteUrl.length > WEBSITE_URL_MAX_LENGTH) {
+        return 'Website URL must be 500 characters or fewer.';
+      }
     }
     if (trimmedBio.length > 1000) {
       return 'Bio must be 1000 characters or fewer.';
@@ -375,12 +409,14 @@ export function DoctorProfileForm({
       const trimmedArea = greaterArea.trim();
       const trimmedFocus = studyFocus.trim();
       const trimmedBio = bio.trim();
+      const normalizedWebsiteUrl = normalizeWebsiteUrl(websiteUrl);
       await onSubmit({
         name: name.trim(),
         email: email.trim(),
         profileImageUrl,
         greaterArea: trimmedArea || null,
         studyFocus: trimmedFocus || null,
+        websiteUrl: normalizedWebsiteUrl,
         bio: trimmedBio || null,
         networkPresenceAgreement,
       });
@@ -602,6 +638,22 @@ export function DoctorProfileForm({
                 style={profileFieldStyle}
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="physician-profile-website">Website URL</Label>
+            <Input
+              id="physician-profile-website"
+              type="url"
+              value={websiteUrl}
+              onChange={(event) => setWebsiteUrl(event.target.value)}
+              placeholder="https://yourpractice.com"
+              maxLength={WEBSITE_URL_MAX_LENGTH}
+              autoComplete="url"
+              inputMode="url"
+              disabled={saving}
+              className={profileFieldClassName}
+              style={profileFieldStyle}
+            />
           </div>
         </div>
       </div>

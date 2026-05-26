@@ -158,11 +158,15 @@ const STATEMENTS = [
       name LONGTEXT NOT NULL,
       email LONGTEXT NOT NULL,
       phone LONGTEXT NULL,
+      website_url VARCHAR(500) NULL,
       message LONGTEXT NULL,
       message_field_key VARCHAR(64) NULL,
       message_label VARCHAR(255) NULL,
       email_blind_index CHAR(64) NULL,
       source VARCHAR(255) NULL,
+      npi_number VARCHAR(20) NULL,
+      npi_provider_name VARCHAR(255) NULL,
+      npi_verification_status VARCHAR(32) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_contact_forms_email_blind (email_blind_index),
       INDEX idx_contact_forms_created_at (created_at)
@@ -913,6 +917,13 @@ const ensureUserColumns = async () => {
       ddl: `
         ALTER TABLE users
         ADD COLUMN study_focus VARCHAR(190) NULL
+      `,
+    },
+    {
+      name: 'website_url',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN website_url VARCHAR(500) NULL
       `,
     },
     {
@@ -1764,12 +1775,28 @@ const ensureContactFormIndexes = async () => {
       ddl: 'ALTER TABLE contact_forms ADD COLUMN message LONGTEXT NULL',
     },
     {
+      name: 'website_url',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN website_url VARCHAR(500) NULL',
+    },
+    {
       name: 'message_field_key',
       ddl: 'ALTER TABLE contact_forms ADD COLUMN message_field_key VARCHAR(64) NULL',
     },
     {
       name: 'message_label',
       ddl: 'ALTER TABLE contact_forms ADD COLUMN message_label VARCHAR(255) NULL',
+    },
+    {
+      name: 'npi_number',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN npi_number VARCHAR(20) NULL',
+    },
+    {
+      name: 'npi_provider_name',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN npi_provider_name VARCHAR(255) NULL',
+    },
+    {
+      name: 'npi_verification_status',
+      ddl: 'ALTER TABLE contact_forms ADD COLUMN npi_verification_status VARCHAR(32) NULL',
     },
   ];
   for (const column of columns) {
@@ -1796,9 +1823,13 @@ const ensureContactFormIndexes = async () => {
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL');
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL');
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN website_url VARCHAR(500) NULL');
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN message LONGTEXT NULL');
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN message_field_key VARCHAR(64) NULL');
     await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN message_label VARCHAR(255) NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN npi_number VARCHAR(20) NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN npi_provider_name VARCHAR(255) NULL');
+    await mysqlClient.execute('ALTER TABLE contact_forms MODIFY COLUMN npi_verification_status VARCHAR(32) NULL');
     await mysqlClient.execute(`
       UPDATE contact_forms
       SET message_field_key = CASE

@@ -89,6 +89,10 @@ class SecureStorageWriteTests(unittest.TestCase):
             patch.object(self.contact.sales_rep_repository, "find_by_sales_code", return_value={"id": "rep-7"}) as find_sales_code, \
             patch.object(self.contact.user_repository, "find_by_email", return_value=None), \
             patch.object(self.contact.sales_prospect_repository, "find_by_contact_email", return_value=None), \
+            patch.object(self.contact.npi_service, "verify_npi", return_value={
+                "npiNumber": "1234567890",
+                "name": "Jane Example",
+            }) as verify_npi, \
             patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
             patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email") as mark_origin, \
             patch.object(self.contact.email_service, "send_contact_form_received_email") as send_received_email:
@@ -96,12 +100,14 @@ class SecureStorageWriteTests(unittest.TestCase):
                 "/api/contact",
                 method="POST",
                 json={
-                    "name": "Dr. Jane Example",
+                    "name": "Dr. Jane Example LCSW",
                     "email": "Doctor@Example.com",
                     "phone": "555-0100",
+                    "websiteUrl": "exampleclinic.com",
                     "message": "I would like to join the network.",
                     "source": "join-network",
                     "salesCode": "PEPPR7",
+                    "npiNumber": "1234567890",
                 },
             ):
                 response = self._make_response(self.contact.submit_contact())
@@ -111,17 +117,22 @@ class SecureStorageWriteTests(unittest.TestCase):
         self.assertEqual(len(cursor.calls), 1)
 
         _query, params = cursor.calls[0]
-        self.assertEqual(params["name"], "cipher:name:Dr. Jane Example")
+        self.assertEqual(params["name"], "cipher:name:Dr. Jane Example LCSW")
         self.assertEqual(params["email"], "cipher:email:Doctor@Example.com")
         self.assertEqual(params["phone"], "cipher:phone:555-0100")
+        self.assertEqual(params["website_url"], "https://exampleclinic.com")
         self.assertEqual(params["message"], "cipher:message:I would like to join the network.")
         self.assertEqual(params["message_field_key"], "heard_about_us")
         self.assertEqual(params["message_label"], "How did you hear about us?")
+        self.assertEqual(params["npi_number"], "1234567890")
+        self.assertEqual(params["npi_provider_name"], "Jane Example")
+        self.assertEqual(params["npi_verification_status"], "verified")
         self.assertNotIn("name_encrypted", params)
         self.assertNotIn("email_encrypted", params)
         self.assertNotIn("phone_encrypted", params)
         self.assertEqual(params["email_blind_index"], "blind:doctor@example.com")
         self.assertEqual(params["source"], "join_network")
+        verify_npi.assert_called_once_with("1234567890")
         find_sales_code.assert_called_once_with("PEPPR7")
 
         upsert.assert_called_once()
@@ -135,7 +146,7 @@ class SecureStorageWriteTests(unittest.TestCase):
         self.assertEqual(prospect_payload["sourceExternalId"], "321")
         self.assertEqual(prospect_payload["status"], "contact_form")
         self.assertEqual(prospect_payload["isManual"], False)
-        self.assertEqual(prospect_payload["contactName"], "Dr. Jane Example")
+        self.assertEqual(prospect_payload["contactName"], "Dr. Jane Example LCSW")
         self.assertEqual(prospect_payload["contactEmail"], "Doctor@Example.com")
         self.assertEqual(prospect_payload["contactPhone"], "555-0100")
         self.assertEqual(prospect_payload["contactEmails"], ["Doctor@Example.com"])
@@ -153,14 +164,74 @@ class SecureStorageWriteTests(unittest.TestCase):
             prospect_payload["sourcePayloadJson"]["message"],
             "I would like to join the network.",
         )
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["websiteUrl"], "https://exampleclinic.com")
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["npiNumber"], "1234567890")
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["npiProviderName"], "Jane Example")
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["npiVerificationStatus"], "verified")
         mark_origin.assert_called_once_with(
             "Doctor@Example.com",
             source="contact_form:321",
         )
         send_received_email.assert_called_once_with(
             "Doctor@Example.com",
-            name="Dr. Jane Example",
+            name="Dr. Jane Example LCSW",
         )
+
+    def test_partner_contact_form_stores_optional_website_without_npi(self) -> None:
+        cursor = _FakeCursor(lastrowid=432)
+
+        def fake_encrypt(value: Any, *, aad: Dict[str, Any]) -> str | None:
+            if value is None:
+                return None
+            return f"cipher:{aad['field']}:{value}"
+
+        with patch.object(self.contact.mysql_client, "is_enabled", return_value=True), \
+            patch.object(self.contact.mysql_client, "cursor", return_value=_CursorContext(cursor)), \
+            patch.object(self.contact, "encrypt_text", side_effect=fake_encrypt), \
+            patch.object(self.contact, "compute_blind_index", return_value="blind:partner@example.com"), \
+            patch.object(self.contact.sales_rep_repository, "find_by_sales_code") as find_sales_code, \
+            patch.object(self.contact.user_repository, "find_by_email", return_value=None), \
+            patch.object(self.contact.sales_prospect_repository, "find_by_contact_email", return_value=None), \
+            patch.object(self.contact.npi_service, "verify_npi") as verify_npi, \
+            patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
+            patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email"), \
+            patch.object(self.contact.email_service, "send_contact_form_received_email"):
+            with self.app.test_request_context(
+                "/api/contact",
+                method="POST",
+                json={
+                    "name": "Partner Clinic",
+                    "email": "partner@example.com",
+                    "phone": "555-0200",
+                    "websiteUrl": "partner.example.com",
+                    "message": "We would like to partner.",
+                    "source": "partner_application",
+                },
+            ):
+                response = self._make_response(self.contact.submit_contact())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"status": "ok"})
+        self.assertEqual(len(cursor.calls), 1)
+
+        _query, params = cursor.calls[0]
+        self.assertEqual(params["website_url"], "https://partner.example.com")
+        self.assertEqual(params["message_field_key"], "partnership_fit")
+        self.assertEqual(params["message_label"], "How can we help each other?")
+        self.assertEqual(params["source"], "partner_application")
+        self.assertIsNone(params["npi_number"])
+        self.assertIsNone(params["npi_provider_name"])
+        self.assertIsNone(params["npi_verification_status"])
+        find_sales_code.assert_not_called()
+        verify_npi.assert_not_called()
+
+        upsert.assert_called_once()
+        prospect_payload = upsert.call_args.args[0]
+        self.assertEqual(prospect_payload["id"], "contact_form:432")
+        self.assertEqual(prospect_payload["contactFormId"], "432")
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["source"], "partner_application")
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["websiteUrl"], "https://partner.example.com")
+        self.assertEqual(prospect_payload["sourcePayloadJson"]["messageFieldKey"], "partnership_fit")
 
     def test_contact_form_existing_doctor_lead_keeps_rep_owner(self) -> None:
         cursor = _FakeCursor(lastrowid=654)
@@ -275,6 +346,10 @@ class SecureStorageWriteTests(unittest.TestCase):
                 "id": "admin-rep",
                 "role": "admin",
             }) as find_sales_code, \
+            patch.object(self.contact.npi_service, "verify_npi", return_value={
+                "npiNumber": "1234567890",
+                "name": "House Example",
+            }) as verify_npi, \
             patch.object(self.contact.sales_prospect_repository, "upsert") as upsert, \
             patch.object(self.contact.user_repository, "mark_contact_form_origin_for_email"), \
             patch.object(self.contact.email_service, "send_contact_form_received_email"):
@@ -287,12 +362,14 @@ class SecureStorageWriteTests(unittest.TestCase):
                     "message": "Joining.",
                     "source": "join_network",
                     "salesCode": "ADMIN1",
+                    "npiNumber": "1234567890",
                 },
             ):
                 response = self._make_response(self.contact.submit_contact())
 
         self.assertEqual(response.status_code, 200)
         find_sales_code.assert_called_once_with("ADMIN1")
+        verify_npi.assert_called_once_with("1234567890")
         upsert.assert_called_once()
         prospect_payload = upsert.call_args.args[0]
         self.assertEqual(prospect_payload["id"], "contact_form:888")

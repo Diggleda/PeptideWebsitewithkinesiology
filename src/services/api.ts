@@ -1530,6 +1530,7 @@ export type UpdateProfilePayload = {
   resellerPermitApprovedByRep?: boolean;
   greaterArea?: string | null;
   studyFocus?: string | null;
+  websiteUrl?: string | null;
   bio?: string | null;
   networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;

@@ -90,6 +90,7 @@ CREATE_TABLE_STATEMENTS = [
         reseller_permit_onboarding_presented TINYINT(1) NOT NULL DEFAULT 0,
         greater_area VARCHAR(190) NULL,
         study_focus VARCHAR(190) NULL,
+        website_url VARCHAR(500) NULL,
         bio TEXT NULL,
         network_presence_agreement TINYINT(1) NOT NULL DEFAULT 1,
         delegate_logo_url LONGTEXT NULL,
@@ -328,11 +329,15 @@ CREATE_TABLE_STATEMENTS = [
         name LONGTEXT NOT NULL,
         email LONGTEXT NOT NULL,
         phone LONGTEXT NULL,
+        website_url VARCHAR(500) NULL,
         message LONGTEXT NULL,
         message_field_key VARCHAR(64) NULL,
         message_label VARCHAR(255) NULL,
         email_blind_index CHAR(64) NULL,
         source VARCHAR(255) NULL,
+        npi_number VARCHAR(20) NULL,
+        npi_provider_name VARCHAR(255) NULL,
+        npi_verification_status VARCHAR(32) NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY idx_contact_forms_email_blind (email_blind_index),
         KEY idx_contact_forms_created_at (created_at)
@@ -1072,6 +1077,7 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS reseller_permit_onboarding_presented TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS greater_area VARCHAR(190) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS study_focus VARCHAR(190) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS website_url VARCHAR(500) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS network_presence_agreement TINYINT(1) NOT NULL DEFAULT 1",
         "ALTER TABLE users MODIFY COLUMN network_presence_agreement TINYINT(1) NOT NULL DEFAULT 1",
@@ -1114,10 +1120,14 @@ def ensure_schema() -> None:
         "ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL",
         "ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL",
+        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS website_url VARCHAR(500) NULL",
         "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS message LONGTEXT NULL",
         "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS message_field_key VARCHAR(64) NULL",
         "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS message_label VARCHAR(255) NULL",
         "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS email_blind_index CHAR(64) NULL",
+        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS npi_number VARCHAR(20) NULL",
+        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS npi_provider_name VARCHAR(255) NULL",
+        "ALTER TABLE contact_forms ADD COLUMN IF NOT EXISTS npi_verification_status VARCHAR(32) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
         "ALTER TABLE peptide_forum_posts ADD COLUMN IF NOT EXISTS time_raw VARCHAR(64) NULL",
@@ -1680,17 +1690,29 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN email_blind_index CHAR(64) NULL")
         if not _column_exists("contact_forms", "message"):
             mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN message LONGTEXT NULL")
+        if not _column_exists("contact_forms", "website_url"):
+            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN website_url VARCHAR(500) NULL")
         if not _column_exists("contact_forms", "message_field_key"):
             mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN message_field_key VARCHAR(64) NULL")
         if not _column_exists("contact_forms", "message_label"):
             mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN message_label VARCHAR(255) NULL")
+        if not _column_exists("contact_forms", "npi_number"):
+            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN npi_number VARCHAR(20) NULL")
+        if not _column_exists("contact_forms", "npi_provider_name"):
+            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN npi_provider_name VARCHAR(255) NULL")
+        if not _column_exists("contact_forms", "npi_verification_status"):
+            mysql_client.execute("ALTER TABLE contact_forms ADD COLUMN npi_verification_status VARCHAR(32) NULL")
         _drop_index_if_exists("contact_forms", "idx_contact_forms_email")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN name LONGTEXT NOT NULL")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN email LONGTEXT NOT NULL")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN phone LONGTEXT NULL")
+        mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN website_url VARCHAR(500) NULL")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN message LONGTEXT NULL")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN message_field_key VARCHAR(64) NULL")
         mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN message_label VARCHAR(255) NULL")
+        mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN npi_number VARCHAR(20) NULL")
+        mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN npi_provider_name VARCHAR(255) NULL")
+        mysql_client.execute("ALTER TABLE contact_forms MODIFY COLUMN npi_verification_status VARCHAR(32) NULL")
         mysql_client.execute(
             """
             UPDATE contact_forms

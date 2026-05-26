@@ -1025,7 +1025,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
         "text-decoration:none;"
         "box-shadow:0 16px 38px -28px rgba(15,23,42,0.55);"
     )
-    step_number_style = f"padding:0 16px 16px 0;font-family:{delegate_links_font_family};font-size:24px;font-weight:700;line-height:1.05;color:#0B274B;vertical-align:top;white-space:nowrap;"
+    step_number_style = f"width:1%;padding:0 4px 16px 0;font-family:{delegate_links_font_family};font-size:24px;font-weight:700;line-height:1.05;color:{_EMAIL_BRAND_BLUE};-webkit-text-fill-color:{_EMAIL_BRAND_BLUE};vertical-align:top;text-align:right;white-space:nowrap;"
     step_text_style = f"padding:1px 0 16px;font-family:{delegate_links_font_family};font-size:15px;font-weight:400;color:#334155;line-height:1.6;vertical-align:top;"
     cta_style = (
         "display:inline-block;"
@@ -1075,7 +1075,7 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
                 <img src="{session_screenshot_url}" width="{_EMAIL_DELEGATE_LINKS_SCREENSHOT_WIDTH}" alt="Delegate proposal session with branded catalog and product cards" style="{screenshot_image_style}" />
 
                 <h2 style="{section_title_style}">How to use Delegate Links</h2>
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;border-collapse:collapse;">
+                <table role="presentation" align="center" width="560" cellpadding="0" cellspacing="0" style="width:560px;max-width:100%;margin:0 auto;border-collapse:collapse;">
                   <tr>
                     <td style="{step_number_style}">1.</td>
                     <td style="{step_text_style}">Go to your physician dashboard and see the "Delegate Links" tab.</td>

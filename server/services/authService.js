@@ -45,6 +45,8 @@ const DOCTOR_PROFILE_FIELD_LIMITS = {
   studyFocus: 190,
   bio: 1000,
 };
+const WEBSITE_URL_MAX_LENGTH = 500;
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 const RESELLER_PERMIT_ALLOWED_EXTENSIONS = new Set([
   '.pdf',
@@ -316,6 +318,7 @@ const sanitizeUser = (user) => {
     ),
     greaterArea: normalizeOptionalString(user.greaterArea),
     studyFocus: normalizeOptionalString(user.studyFocus),
+    websiteUrl: normalizeOptionalString(user.websiteUrl ?? user.website_url),
     bio: normalizeOptionalString(user.bio),
     networkPresenceAgreement: normalizeBooleanFlag(
       user.networkPresenceAgreement ?? user.network_presence_agreement,
@@ -452,6 +455,29 @@ const normalizeDoctorProfileTextField = (field, value) => {
     throw createError(`${String(field).toUpperCase()}_TOO_LONG`, 400);
   }
   return normalized;
+};
+
+const normalizeWebsiteUrl = (value) => {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) return null;
+  const candidate = URL_SCHEME_PATTERN.test(normalized) ? normalized : `https://${normalized}`;
+  if (/\s/.test(candidate)) {
+    throw createError('INVALID_WEBSITE_URL', 400);
+  }
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch (_error) {
+    throw createError('INVALID_WEBSITE_URL', 400);
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+    throw createError('INVALID_WEBSITE_URL', 400);
+  }
+  const output = parsed.toString();
+  if (output.length > WEBSITE_URL_MAX_LENGTH) {
+    throw createError('WEBSITE_URL_TOO_LONG', 400);
+  }
+  return output;
 };
 
 const isPhysicianTaxonomy = (value) => {
@@ -657,6 +683,7 @@ const register = async ({
     resellerPermitApprovedByRep: false,
     greaterArea: null,
     studyFocus: null,
+    websiteUrl: null,
     bio: null,
     npiVerification: npiVerification
       ? {
@@ -884,6 +911,11 @@ const updateProfile = async (userId, data, legalAcceptanceContext = {}) => {
       next[field] = normalizeDoctorProfileTextField(field, data[field]);
     }
   });
+  if (Object.prototype.hasOwnProperty.call(data, 'websiteUrl')) {
+    next.websiteUrl = normalizeWebsiteUrl(data.websiteUrl);
+  } else if (Object.prototype.hasOwnProperty.call(data, 'website_url')) {
+    next.websiteUrl = normalizeWebsiteUrl(data.website_url);
+  }
   if (normalizeRole(next.role) === 'doctor' || normalizeRole(next.role) === 'test_doctor') {
     next.profileOnboarding = hasRequiredDoctorProfileFields(next);
   }

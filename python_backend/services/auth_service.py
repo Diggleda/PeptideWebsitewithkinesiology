@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import bcrypt
 import html as _html
@@ -122,6 +123,8 @@ _DOCTOR_PROFILE_FIELD_LIMITS = {
     "studyFocus": 190,
     "bio": 1000,
 }
+_WEBSITE_URL_MAX_LENGTH = 500
+_URL_SCHEME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 
 _RESELLER_PERMIT_ALLOWED_EXTENSIONS = {
     ".pdf",
@@ -192,6 +195,25 @@ def _normalize_profile_text(value: Any, field: str) -> Optional[str]:
     if field == "greaterArea":
         return _normalize_greater_area_text(text)
     return text
+
+
+def _normalize_website_url(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    candidate = text if _URL_SCHEME_PATTERN.match(text) else f"https://{text}"
+    if any(char.isspace() for char in candidate):
+        raise _bad_request("INVALID_WEBSITE_URL")
+    parsed = urlparse(candidate)
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https") or not parsed.netloc:
+        raise _bad_request("INVALID_WEBSITE_URL")
+    normalized = parsed._replace(path=parsed.path or "/").geturl()
+    if len(normalized) > _WEBSITE_URL_MAX_LENGTH:
+        raise _bad_request("WEBSITE_URL_TOO_LONG")
+    return normalized
 
 
 def _normalize_role(value: Any) -> str:
@@ -839,6 +861,7 @@ def register(data: Dict) -> Dict:
             "resellerPermitOnboardingPresented": False,
             "greaterArea": None,
             "studyFocus": None,
+            "websiteUrl": None,
             "bio": None,
             "sessionId": None,
         }
@@ -1218,14 +1241,7 @@ def verify_npi(npi_number: Optional[str]) -> Dict:
         raise _bad_request("NPI_INVALID")
     try:
         verification = npi_service.verify_npi(normalized)
-        return {
-            "status": "verified",
-            "npiNumber": verification.get("npiNumber"),
-            "name": verification.get("name"),
-            "credential": verification.get("credential"),
-            "primaryTaxonomy": verification.get("primaryTaxonomy"),
-            "organizationName": verification.get("organizationName"),
-        }
+        return {"status": "verified", **verification}
     except npi_service.NpiInvalidError:
         raise _bad_request("NPI_INVALID")
     except npi_service.NpiNotFoundError:
@@ -1455,6 +1471,12 @@ def update_profile(
         if "studyFocus" in data
         else _normalize_profile_text(user.get("studyFocus"), "studyFocus")
     )
+    if "websiteUrl" in data:
+        website_url = _normalize_website_url(data.get("websiteUrl"))
+    elif "website_url" in data:
+        website_url = _normalize_website_url(data.get("website_url"))
+    else:
+        website_url = user.get("websiteUrl") or user.get("website_url") or None
     bio = (
         _normalize_profile_text(data.get("bio"), "bio")
         if "bio" in data
@@ -1491,6 +1513,7 @@ def update_profile(
         "resellerPermitOnboardingPresented": reseller_permit_onboarding_presented,
         "greaterArea": greater_area,
         "studyFocus": study_focus,
+        "websiteUrl": website_url,
         "bio": bio,
         **shipping_fields,
     }
@@ -1724,6 +1747,11 @@ def _sanitize_user(user: Dict) -> Dict:
         sanitized["greaterArea"] = normalized_greater_area
         if "greater_area" in sanitized:
             sanitized["greater_area"] = normalized_greater_area
+    sanitized["websiteUrl"] = _normalize_optional_string(
+        sanitized.get("websiteUrl") if "websiteUrl" in sanitized else sanitized.get("website_url")
+    )
+    if "website_url" in sanitized:
+        sanitized["website_url"] = sanitized["websiteUrl"]
     sanitized["delegateOptIn"] = _normalize_bool(
         sanitized.get("delegateOptIn")
         if "delegateOptIn" in sanitized

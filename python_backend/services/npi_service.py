@@ -69,6 +69,48 @@ def _format_name(basic: Dict) -> Optional[str]:
     return " ".join(parts) if parts else None
 
 
+def _format_name_from_parts(record: Dict) -> Optional[str]:
+    if not isinstance(record, dict):
+        return None
+
+    for key in ("name", "provider_name", "providerName", "full_name", "fullName"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    for key in ("organization_name", "organizationName"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    parts = [
+        record.get("first_name") or record.get("firstName"),
+        record.get("middle_name") or record.get("middleName"),
+        record.get("last_name") or record.get("lastName"),
+    ]
+    parts = [part.strip() for part in parts if isinstance(part, str) and part.strip()]
+    return " ".join(parts) if parts else None
+
+
+def _extract_name_candidates(record: Dict, basic: Dict) -> list[str]:
+    candidates: list[str] = []
+
+    def add(value: Optional[str]) -> None:
+        text = value.strip() if isinstance(value, str) else ""
+        if text and text.lower() not in {candidate.lower() for candidate in candidates}:
+            candidates.append(text)
+
+    add(_format_name(basic))
+    add(basic.get("organization_name") if isinstance(basic, dict) else None)
+    add(record.get("organization_name") if isinstance(record, dict) else None)
+    add(record.get("organizationName") if isinstance(record, dict) else None)
+    other_names = record.get("other_names") if isinstance(record, dict) else None
+    if isinstance(other_names, list):
+        for other_name in other_names:
+            add(_format_name_from_parts(other_name))
+    return candidates
+
+
 def verify_npi(npi_number: str) -> Dict:
     normalized = normalize_npi(npi_number)
     if len(normalized) != 10:
@@ -102,10 +144,15 @@ def verify_npi(npi_number: str) -> Dict:
 
     record = results[0]
     basic = record.get("basic") or {}
+    name_candidates = _extract_name_candidates(record, basic)
+    registry_name = name_candidates[0] if name_candidates else None
 
     return {
         "npiNumber": normalized,
-        "name": _format_name(basic),
+        "name": registry_name,
+        "providerName": registry_name,
+        "registryName": registry_name,
+        "nameCandidates": name_candidates,
         "credential": basic.get("credential"),
         "enumerationType": basic.get("enumeration_type") or record.get("enumeration_type"),
         "organizationName": basic.get("organization_name"),

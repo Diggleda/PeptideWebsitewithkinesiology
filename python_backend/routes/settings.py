@@ -629,6 +629,7 @@ def _public_user_profile(
         "profileImageUrl": profile_image_url,
         "greaterArea": user.get("greaterArea") or None,
         "studyFocus": user.get("studyFocus") or None,
+        "websiteUrl": user.get("websiteUrl") or user.get("website_url") or None,
         "bio": user.get("bio") or None,
         "networkPresenceAgreement": _normalize_bool(
             user.get("networkPresenceAgreement")
@@ -874,6 +875,7 @@ def _build_physician_network_entries() -> list[dict]:
                 "profileImageUrl": profile.get("profileImageUrl") or None,
                 "greaterArea": profile.get("greaterArea") or None,
                 "studyFocus": profile.get("studyFocus") or None,
+                "websiteUrl": profile.get("websiteUrl") or None,
                 "bio": profile.get("bio") or None,
                 "lastLoginAt": profile.get("lastLoginAt") or None,
             }
@@ -2280,6 +2282,7 @@ def get_user_profiles():
                     "profileImageUrl": profile.get("profileImageUrl"),
                     "greaterArea": profile.get("greaterArea"),
                     "studyFocus": profile.get("studyFocus"),
+                    "websiteUrl": profile.get("websiteUrl"),
                     "bio": profile.get("bio"),
                     "salesRepId": profile.get("salesRepId"),
                     "isPartner": profile.get("isPartner"),

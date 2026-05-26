@@ -10653,18 +10653,59 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
   }
 }
 
+@keyframes npi-success-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(11, 6, 121, 0.28);
+  }
+  65% {
+    box-shadow: 0 0 0 0.45rem rgba(11, 6, 121, 0.12);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(11, 6, 121, 0);
+  }
+}
+
+@keyframes npi-check-sheen {
+  0% {
+    transform: translateX(-120%) rotate(18deg);
+  }
+  100% {
+    transform: translateX(120%) rotate(18deg);
+  }
+}
+
 .npi-checkmark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
   width: 1.5rem;
   height: 1.5rem;
   border-radius: var(--squircle-xxs);
-  background-color: rgba(16, 185, 129, 0.18);
-  color: #059669;
+  background-color: rgba(11, 6, 121, 0.12);
+  color: rgb(11, 6, 121);
   font-weight: 600;
   font-size: 0.85rem;
-  animation: npi-pop 320ms ease-out both;
+  will-change: transform, opacity, box-shadow;
+  animation:
+    npi-pop 320ms ease-out both,
+    npi-success-pulse 700ms ease-out 80ms both;
+}
+
+.npi-checkmark::after {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.72) 48%,
+    transparent 100%
+  );
+  transform: translateX(-120%) rotate(18deg);
+  animation: npi-check-sheen 620ms ease-out 120ms both;
+  pointer-events: none;
 }
 
 @keyframes verification-success-pop {

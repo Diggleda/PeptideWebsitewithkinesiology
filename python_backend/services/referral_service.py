@@ -465,7 +465,20 @@ def _load_contact_form_row_by_id(contact_form_id: Optional[str]) -> Optional[Dic
     try:
         return mysql_client.fetch_one(
             """
-            SELECT id, name, email, phone, message, message_field_key, message_label, source, created_at
+            SELECT
+                id,
+                name,
+                email,
+                phone,
+                website_url,
+                message,
+                message_field_key,
+                message_label,
+                source,
+                npi_number,
+                npi_provider_name,
+                npi_verification_status,
+                created_at
             FROM contact_forms
             WHERE id = %(id)s
             LIMIT 1
@@ -1901,10 +1914,14 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     cf.name,
                     cf.email,
                     cf.phone,
+                    cf.website_url,
                     cf.message,
                     cf.message_field_key,
                     cf.message_label,
                     cf.source,
+                    cf.npi_number,
+                    cf.npi_provider_name,
+                    cf.npi_verification_status,
                     cf.created_at,
                     sp.sales_rep_id AS prospect_sales_rep_id,
                     sp.doctor_id AS prospect_doctor_id,
@@ -1974,8 +1991,12 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
         contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
         contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
+        contact_website_url = _sanitize_text(row.get("website_url"), 500)
         contact_message = _sanitize_text(_read_contact_form_field(row, "message"), 1000)
         contact_message_field_key, contact_message_label = _contact_form_message_metadata(row)
+        contact_npi_number = _sanitize_text(row.get("npi_number"), 20)
+        contact_npi_provider_name = _sanitize_text(row.get("npi_provider_name"), 255)
+        contact_npi_verification_status = _sanitize_text(row.get("npi_verification_status"), 32)
         existing_contact_lead = _find_existing_non_contact_form_lead_for_contact(
             sales_rep_id=sales_rep_id,
             contact_email=contact_email,
@@ -2040,9 +2061,13 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                         "sourcePayloadJson": {
                             "contactFormId": str(row.get("id")),
                             "source": row.get("source") or None,
+                            "websiteUrl": contact_website_url,
                             "message": contact_message,
                             "messageFieldKey": contact_message_field_key,
                             "messageLabel": contact_message_label,
+                            "npiNumber": contact_npi_number,
+                            "npiProviderName": contact_npi_provider_name,
+                            "npiVerificationStatus": contact_npi_verification_status,
                         },
                     }
                 )
@@ -2063,9 +2088,17 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
             "salesRepNotes": row.get("prospect_notes") or None,
             "notes": row.get("source") or "Contact form submission",
             "contactFormSource": row.get("source") or None,
+            "websiteUrl": contact_website_url,
+            "contactFormWebsiteUrl": contact_website_url,
             "contactFormMessage": contact_message,
             "contactFormMessageFieldKey": contact_message_field_key,
             "contactFormMessageLabel": contact_message_label,
+            "npiNumber": contact_npi_number,
+            "npiProviderName": contact_npi_provider_name,
+            "npiVerificationStatus": contact_npi_verification_status,
+            "contactFormNpiNumber": contact_npi_number,
+            "contactFormNpiProviderName": contact_npi_provider_name,
+            "contactFormNpiVerificationStatus": contact_npi_verification_status,
             "resellerPermitExempt": bool(row.get("reseller_permit_exempt") or 0),
             "resellerPermitFilePath": row.get("reseller_permit_file_path") or None,
             "resellerPermitFileName": row.get("reseller_permit_file_name") or None,
@@ -2271,8 +2304,12 @@ def list_referrals_for_sales_rep(
         row_contact_name = None
         row_contact_email = None
         row_contact_phone = None
+        row_website_url = None
         row_contact_message = None
         row_source = None
+        row_npi_number = None
+        row_npi_provider_name = None
+        row_npi_verification_status = None
         contact_message_field_key = None
         contact_message_label = None
 
@@ -2282,16 +2319,29 @@ def list_referrals_for_sales_rep(
             row_contact_name = _sanitize_text(_read_contact_form_field(contact_form_row, "name"))
             row_contact_email = _sanitize_email(_read_contact_form_field(contact_form_row, "email"))
             row_contact_phone = _sanitize_phone(_read_contact_form_field(contact_form_row, "phone"))
+            row_website_url = _sanitize_text(contact_form_row.get("website_url"), 500)
             row_contact_message = _sanitize_text(_read_contact_form_field(contact_form_row, "message"), 1000)
             row_source = (
                 _normalize_contact_form_source(contact_form_row.get("source"))
                 or _sanitize_text(contact_form_row.get("source"), 255)
             )
+            row_npi_number = _sanitize_text(contact_form_row.get("npi_number"), 20)
+            row_npi_provider_name = _sanitize_text(contact_form_row.get("npi_provider_name"), 255)
+            row_npi_verification_status = _sanitize_text(contact_form_row.get("npi_verification_status"), 32)
             contact_message_field_key, contact_message_label = _contact_form_message_metadata(contact_form_row)
 
         payload_contact_name = _payload_text(payload, "contactName", "contact_name")
         payload_contact_email = _sanitize_email(_payload_text(payload, "contactEmail", "contact_email"))
         payload_contact_phone = _sanitize_phone(_payload_text(payload, "contactPhone", "contact_phone"))
+        payload_website_url = _payload_text(payload, "websiteUrl", "website_url", "website", max_length=500)
+        payload_npi_number = _payload_text(payload, "npiNumber", "npi_number", max_length=20)
+        payload_npi_provider_name = _payload_text(payload, "npiProviderName", "npi_provider_name", max_length=255)
+        payload_npi_verification_status = _payload_text(
+            payload,
+            "npiVerificationStatus",
+            "npi_verification_status",
+            max_length=32,
+        )
         payload_source = (
             _normalize_contact_form_source(payload.get("source"))
             or _sanitize_text(payload.get("source"), 255)
@@ -2335,6 +2385,10 @@ def list_referrals_for_sales_rep(
             contact_emails = _sanitize_email_list(row_contact_email or payload_contact_email)
         if not contact_phones:
             contact_phones = _sanitize_phone_list(row_contact_phone or payload_contact_phone)
+        npi_number = row_npi_number or payload_npi_number
+        npi_provider_name = row_npi_provider_name or payload_npi_provider_name
+        npi_verification_status = row_npi_verification_status or payload_npi_verification_status
+        website_url = row_website_url or payload_website_url
 
         lead_id = str(p.get("id") or "")
         if not lead_id.startswith("contact_form:"):
@@ -2353,9 +2407,17 @@ def list_referrals_for_sales_rep(
             "salesRepNotes": p.get("notes") or None,
             "notes": contact_form_source or p.get("notes") or "Contact form submission",
             "contactFormSource": contact_form_source,
+            "websiteUrl": website_url,
+            "contactFormWebsiteUrl": website_url,
             "contactFormMessage": contact_form_message,
             "contactFormMessageFieldKey": contact_message_field_key,
             "contactFormMessageLabel": contact_message_label,
+            "npiNumber": npi_number,
+            "npiProviderName": npi_provider_name,
+            "npiVerificationStatus": npi_verification_status,
+            "contactFormNpiNumber": npi_number,
+            "contactFormNpiProviderName": npi_provider_name,
+            "contactFormNpiVerificationStatus": npi_verification_status,
             "source": "contact_form",
             "sourceSystem": p.get("sourceSystem") or "contact_form",
             "resellerPermitExempt": bool(p.get("resellerPermitExempt")),
@@ -2761,8 +2823,12 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
     contact_name = _sanitize_text(_read_contact_form_field(row, "name"))
     contact_email = _sanitize_email(_read_contact_form_field(row, "email"))
     contact_phone = _sanitize_phone(_read_contact_form_field(row, "phone"))
+    contact_website_url = _sanitize_text(row.get("website_url"), 500)
     contact_message = _sanitize_text(_read_contact_form_field(row, "message"), 1000)
     contact_message_field_key, contact_message_label = _contact_form_message_metadata(row)
+    contact_npi_number = _sanitize_text(row.get("npi_number"), 20)
+    contact_npi_provider_name = _sanitize_text(row.get("npi_provider_name"), 255)
+    contact_npi_verification_status = _sanitize_text(row.get("npi_verification_status"), 32)
     existing_lead = _find_existing_non_contact_form_lead_for_contact(
         sales_rep_id=resolved_sales_rep_id,
         contact_email=contact_email,
@@ -2818,6 +2884,14 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
             "status": saved.get("status") or current_status,
             "salesRepNotes": saved.get("notes") or None,
             "notes": saved.get("notes") or None,
+            "websiteUrl": contact_website_url,
+            "contactFormWebsiteUrl": contact_website_url,
+            "npiNumber": contact_npi_number,
+            "npiProviderName": contact_npi_provider_name,
+            "npiVerificationStatus": contact_npi_verification_status,
+            "contactFormNpiNumber": contact_npi_number,
+            "contactFormNpiProviderName": contact_npi_provider_name,
+            "contactFormNpiVerificationStatus": contact_npi_verification_status,
             "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
             "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
             "resellerPermitFileName": saved.get("resellerPermitFileName") or None,
@@ -2858,6 +2932,17 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         "isManual": False,
         "status": current_status,
         "notes": existing.get("notes") if existing else None,
+        "sourcePayloadJson": {
+            "contactFormId": str(contact_form_pk),
+            "source": row.get("source") or None,
+            "websiteUrl": contact_website_url,
+            "message": contact_message,
+            "messageFieldKey": contact_message_field_key,
+            "messageLabel": contact_message_label,
+            "npiNumber": contact_npi_number,
+            "npiProviderName": contact_npi_provider_name,
+            "npiVerificationStatus": contact_npi_verification_status,
+        },
     }
 
     if "status" in updates:
@@ -2884,9 +2969,17 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         "salesRepNotes": saved.get("notes") or None,
         "notes": row.get("source") or "Contact form submission",
         "contactFormSource": row.get("source") or None,
+        "websiteUrl": contact_website_url,
+        "contactFormWebsiteUrl": contact_website_url,
         "contactFormMessage": contact_message,
         "contactFormMessageFieldKey": contact_message_field_key,
         "contactFormMessageLabel": contact_message_label,
+        "npiNumber": contact_npi_number,
+        "npiProviderName": contact_npi_provider_name,
+        "npiVerificationStatus": contact_npi_verification_status,
+        "contactFormNpiNumber": contact_npi_number,
+        "contactFormNpiProviderName": contact_npi_provider_name,
+        "contactFormNpiVerificationStatus": contact_npi_verification_status,
         "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
         "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
         "resellerPermitFileName": saved.get("resellerPermitFileName") or None,
@@ -3085,6 +3178,7 @@ def _sanitize_user_for_sales_prospect(user: Optional[Dict]) -> Optional[Dict]:
             user.get("id"),
             user.get("profileImageUrl") or user.get("profile_image_url"),
         ),
+        "websiteUrl": user.get("websiteUrl") or user.get("website_url"),
         "officeAddressLine1": user.get("officeAddressLine1") or user.get("office_address_line1"),
         "officeAddressLine2": user.get("officeAddressLine2") or user.get("office_address_line2"),
         "officeCity": user.get("officeCity") or user.get("office_city"),

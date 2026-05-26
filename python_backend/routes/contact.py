@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 from flask import Blueprint, request
 
 from ..utils.http import handle_action
 from ..database import mysql_client
 from ..repositories import sales_rep_repository, sales_prospect_repository, user_repository
-from ..services import email_service
+from ..services import email_service, npi_service
 from ..utils.crypto_envelope import compute_blind_index, encrypt_text
 
 blueprint = Blueprint("contact", __name__, url_prefix="/api/contact")
@@ -82,6 +84,111 @@ def _extract_sales_code(payload: Dict[str, Any], raw_source: Any) -> str:
 
 def _normalize_identifier(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _normalize_npi_number(value: Any) -> str:
+    return re.sub(r"[^0-9]", "", str(value or ""))[:10]
+
+
+def _normalize_optional_text(value: Any, max_length: int = 255) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text[:max_length]
+
+
+_URL_SCHEME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
+
+
+def _normalize_website_url(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    candidate = text if _URL_SCHEME_PATTERN.match(text) else f"https://{text}"
+    if any(char.isspace() for char in candidate):
+        error = ValueError("INVALID_WEBSITE_URL")
+        error.status = 400  # type: ignore[attr-defined]
+        raise error
+    parsed = urlparse(candidate)
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        error = ValueError("INVALID_WEBSITE_URL")
+        error.status = 400  # type: ignore[attr-defined]
+        raise error
+    normalized = parsed._replace(scheme=parsed.scheme.lower()).geturl()
+    if len(normalized) > 500:
+        error = ValueError("WEBSITE_URL_TOO_LONG")
+        error.status = 400  # type: ignore[attr-defined]
+        raise error
+    return normalized
+
+
+def _normalize_human_name(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+
+
+HONORIFIC_TOKENS = {"mr", "mrs", "ms", "mx", "dr", "prof", "sir", "madam"}
+SUFFIX_TOKENS = {
+    "jr", "sr", "ii", "iii", "iv", "v",
+    "md", "do", "pa", "pac", "np", "fnp", "aprn", "crnp", "dnp",
+    "phd", "psyd", "dds", "dmd", "rn", "msn", "lpn",
+    "lcsw", "lmsw", "msw", "lpc", "lcpc", "lmft", "mft",
+    "pharmd", "rph", "od", "dc", "dpt", "pt", "ot", "cns", "cnm", "crna",
+}
+
+
+def _tokenize_name(value: Any) -> list[str]:
+    tokens = []
+    for token in _normalize_human_name(value).split(" "):
+        cleaned = re.sub(r"[^a-z0-9]", "", token)
+        if cleaned and cleaned not in HONORIFIC_TOKENS and cleaned not in SUFFIX_TOKENS:
+            tokens.append(cleaned)
+    return tokens
+
+
+def _middle_name_tokens_match(a: list[str], b: list[str]) -> bool:
+    if not a or not b:
+        return True
+    if len(a) != len(b):
+        return False
+    for token, other in zip(a, b):
+        if token != other and token[0] != other and other[0] != token:
+            return False
+    return True
+
+
+def _names_roughly_match(a: Any, b: Any) -> bool:
+    tokens_a = _tokenize_name(a)
+    tokens_b = _tokenize_name(b)
+    if not tokens_a or not tokens_b:
+        return False
+    if " ".join(tokens_a) == " ".join(tokens_b):
+        return True
+    first_a, last_a = tokens_a[0], tokens_a[-1]
+    first_b, last_b = tokens_b[0], tokens_b[-1]
+    if not first_a or not last_a or not first_b or not last_b:
+        return False
+    if first_a != first_b or last_a != last_b:
+        return False
+    return _middle_name_tokens_match(tokens_a[1:-1], tokens_b[1:-1])
+
+
+def _npi_registry_name_candidates(verification: Dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+
+    def add(value: Any) -> None:
+        text = _normalize_optional_text(value)
+        if text and text.lower() not in {candidate.lower() for candidate in candidates}:
+            candidates.append(text)
+
+    raw_candidates = verification.get("nameCandidates") or verification.get("name_candidates")
+    if isinstance(raw_candidates, list):
+        for candidate in raw_candidates:
+            add(candidate)
+    add(verification.get("registryName"))
+    add(verification.get("providerName"))
+    add(verification.get("name"))
+    add(verification.get("organizationName"))
+    return candidates
 
 
 def _non_house_sales_rep_id(value: Any) -> Optional[str]:
@@ -189,6 +296,11 @@ def submit_contact():
         name = str(payload.get("name") or "").strip()
         email = str(payload.get("email") or "").strip()
         phone = str(payload.get("phone") or "").strip()
+        website_url = _normalize_website_url(
+            payload.get("websiteUrl")
+            or payload.get("website_url")
+            or payload.get("website")
+        )
         message = str(
             payload.get("message")
             or payload.get("details")
@@ -199,27 +311,76 @@ def submit_contact():
         source = _normalize_contact_form_source(raw_source)
         message_field = CONTACT_FORM_MESSAGE_FIELDS[source]
         sales_code = _extract_sales_code(payload, raw_source)
+        npi_number = _normalize_npi_number(
+            payload.get("npiNumber") or payload.get("npi_number")
+        )
+        npi_provider_name = _normalize_optional_text(
+            payload.get("npiProviderName")
+            or payload.get("npi_provider_name")
+            or payload.get("npiName")
+            or payload.get("npi_name")
+        )
+        npi_verification_status = _normalize_optional_text(
+            payload.get("npiVerificationStatus")
+            or payload.get("npi_verification_status"),
+            max_length=32,
+        )
 
         if not name or not email:
             error = ValueError("Name and email are required.")
             error.status = 400  # type: ignore[attr-defined]
             raise error
-
-        record = {
-            "name": name,
-            "email": email,
-            "phone": phone or None,
-            "message": message or None,
-            "message_field_key": message_field["key"],
-            "message_label": message_field["label"],
-            "source": source or None,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-        }
+        if source == "join_network" and len(npi_number) != 10:
+            error = ValueError("NPI number is required for physician network requests.")
+            error.status = 400  # type: ignore[attr-defined]
+            raise error
 
         if not mysql_client.is_enabled():
             error = RuntimeError("Contact form storage requires MySQL to be enabled.")
             error.status = 503  # type: ignore[attr-defined]
             raise error
+
+        if source == "join_network":
+            try:
+                npi_verification = npi_service.verify_npi(npi_number)
+            except npi_service.NpiInvalidError:
+                error = ValueError("NPI_INVALID")
+                error.status = 400  # type: ignore[attr-defined]
+                raise error
+            except npi_service.NpiNotFoundError:
+                error = ValueError("NPI_NOT_FOUND")
+                error.status = 404  # type: ignore[attr-defined]
+                raise error
+            except npi_service.NpiLookupError:
+                error = ValueError("NPI_LOOKUP_FAILED")
+                error.status = 502  # type: ignore[attr-defined]
+                raise error
+            registry_names = _npi_registry_name_candidates(npi_verification)
+            if not registry_names:
+                error = ValueError("NPI_NAME_UNAVAILABLE")
+                error.status = 422  # type: ignore[attr-defined]
+                raise error
+            if not any(_names_roughly_match(name, registry_name) for registry_name in registry_names):
+                error = ValueError("NPI_NAME_MISMATCH")
+                error.status = 422  # type: ignore[attr-defined]
+                raise error
+            npi_provider_name = registry_names[0]
+            npi_verification_status = "verified"
+
+        record = {
+            "name": name,
+            "email": email,
+            "phone": phone or None,
+            "website_url": website_url,
+            "message": message or None,
+            "message_field_key": message_field["key"],
+            "message_label": message_field["label"],
+            "source": source or None,
+            "npi_number": npi_number or None,
+            "npi_provider_name": npi_provider_name,
+            "npi_verification_status": npi_verification_status,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
 
         try:
             inserted_id = None
@@ -227,10 +388,12 @@ def submit_contact():
                 cur.execute(
                     """
                     INSERT INTO contact_forms (
-                        name, email, phone, message, message_field_key, message_label, email_blind_index, source
+                        name, email, phone, website_url, message, message_field_key, message_label, email_blind_index, source,
+                        npi_number, npi_provider_name, npi_verification_status
                     )
                     VALUES (
-                        %(name)s, %(email)s, %(phone)s, %(message)s, %(message_field_key)s, %(message_label)s, %(email_blind_index)s, %(source)s
+                        %(name)s, %(email)s, %(phone)s, %(website_url)s, %(message)s, %(message_field_key)s, %(message_label)s, %(email_blind_index)s, %(source)s,
+                        %(npi_number)s, %(npi_provider_name)s, %(npi_verification_status)s
                     )
                     """,
                     {
@@ -246,6 +409,7 @@ def submit_contact():
                             record["phone"],
                             aad={"table": "contact_forms", "field": "phone"},
                         ) if record["phone"] else None,
+                        "website_url": record["website_url"],
                         "message": encrypt_text(
                             record["message"],
                             aad={"table": "contact_forms", "field": "message"},
@@ -258,6 +422,9 @@ def submit_contact():
                             normalizer=lambda value: value.strip().lower(),
                         ),
                         "source": record["source"],
+                        "npi_number": record["npi_number"],
+                        "npi_provider_name": record["npi_provider_name"],
+                        "npi_verification_status": record["npi_verification_status"],
                     },
                 )
                 inserted_id = cur.lastrowid
@@ -293,9 +460,13 @@ def submit_contact():
                                 "contactName": record["name"],
                                 "contactEmail": record["email"],
                                 "contactPhone": record["phone"],
+                                "websiteUrl": record["website_url"],
                                 "message": record["message"],
                                 "messageFieldKey": record["message_field_key"],
                                 "messageLabel": record["message_label"],
+                                "npiNumber": record["npi_number"],
+                                "npiProviderName": record["npi_provider_name"],
+                                "npiVerificationStatus": record["npi_verification_status"],
                             },
                             "status": "contact_form",
                             "isManual": False,

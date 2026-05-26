@@ -48,6 +48,47 @@ const formatNameFromBasic = (basic) => {
   return parts.length > 0 ? parts.join(' ') : null;
 };
 
+const formatNameFromParts = (record) => {
+  if (!record || typeof record !== 'object') {
+    return null;
+  }
+  const direct = record.name || record.provider_name || record.providerName || record.full_name || record.fullName;
+  if (typeof direct === 'string' && direct.trim()) {
+    return direct.trim();
+  }
+  const organization = record.organization_name || record.organizationName;
+  if (typeof organization === 'string' && organization.trim()) {
+    return organization.trim();
+  }
+  const parts = [
+    record.first_name || record.firstName,
+    record.middle_name || record.middleName,
+    record.last_name || record.lastName,
+  ]
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : null;
+};
+
+const extractNameCandidates = (record, basic) => {
+  const candidates = [];
+  const add = (value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text && !candidates.some((candidate) => candidate.toLowerCase() === text.toLowerCase())) {
+      candidates.push(text);
+    }
+  };
+
+  add(formatNameFromBasic(basic));
+  add(basic?.organization_name);
+  add(record?.organization_name);
+  add(record?.organizationName);
+  (Array.isArray(record?.other_names) ? record.other_names : []).forEach((otherName) => {
+    add(formatNameFromParts(otherName));
+  });
+  return candidates;
+};
+
 const verifyDoctorNpi = async (npiNumber) => {
   const normalized = normalizeNpiNumber(npiNumber);
   if (!/^\d{10}$/.test(normalized)) {
@@ -70,11 +111,16 @@ const verifyDoctorNpi = async (npiNumber) => {
 
     const record = results[0];
     const basic = record?.basic || null;
+    const nameCandidates = extractNameCandidates(record, basic);
+    const registryName = nameCandidates[0] || null;
 
     return {
       npiNumber: normalized,
       enumerationType: basic?.enumeration_type || record?.enumeration_type || null,
-      name: formatNameFromBasic(basic),
+      name: registryName,
+      providerName: registryName,
+      registryName,
+      nameCandidates,
       credential: basic?.credential || null,
       organizationName: basic?.organization_name || null,
       primaryTaxonomy: extractPrimaryTaxonomy(record?.taxonomies),

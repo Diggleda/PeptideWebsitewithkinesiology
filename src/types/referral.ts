@@ -22,9 +22,17 @@ export interface ReferralRecord {
   convertedAt?: string | null;
   notes?: string | null;
   contactFormSource?: string | null;
+  websiteUrl?: string | null;
+  contactFormWebsiteUrl?: string | null;
   contactFormMessage?: string | null;
   contactFormMessageFieldKey?: string | null;
   contactFormMessageLabel?: string | null;
+  npiNumber?: string | null;
+  npiProviderName?: string | null;
+  npiVerificationStatus?: string | null;
+  contactFormNpiNumber?: string | null;
+  contactFormNpiProviderName?: string | null;
+  contactFormNpiVerificationStatus?: string | null;
   referrerDoctorName?: string | null;
   referrerDoctorEmail?: string | null;
   referrerDoctorPhone?: string | null;

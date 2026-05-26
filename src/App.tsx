@@ -447,6 +447,7 @@ interface User {
   resellerPermitApprovedByRep?: boolean;
   greaterArea?: string | null;
   studyFocus?: string | null;
+  websiteUrl?: string | null;
   bio?: string | null;
   networkPresenceAgreement?: boolean;
   delegateLogoUrl?: string | null;
@@ -8727,6 +8728,7 @@ function MainApp() {
       profileImageUrl: string | null;
       greaterArea: string | null;
       studyFocus: string | null;
+      websiteUrl: string | null;
       bio: string | null;
       networkPresenceAgreement: boolean;
     }) => {
@@ -31475,6 +31477,12 @@ function MainApp() {
                   typeof lead.contactFormMessageLabel === "string" && lead.contactFormMessageLabel.trim()
                     ? lead.contactFormMessageLabel.trim()
                     : null;
+                const contactFormWebsiteUrl =
+                  typeof lead.contactFormWebsiteUrl === "string" && lead.contactFormWebsiteUrl.trim()
+                    ? lead.contactFormWebsiteUrl.trim()
+                    : typeof lead.websiteUrl === "string" && lead.websiteUrl.trim()
+                      ? lead.websiteUrl.trim()
+                      : null;
                 const isUpdating = adminActionState.updatingReferral === lead.id;
                 const canUpdateContactFormTodo = Boolean(
                   user && (isRep(user.role) || isAdmin(user.role)),
@@ -31502,6 +31510,19 @@ function MainApp() {
                             </span>
                           ) : null}
                           <span>{contactFormMessage}</span>
+                        </div>
+                      ) : null}
+                      {contactFormWebsiteUrl ? (
+                        <div className="mt-1 text-xs text-slate-600">
+                          <span className="font-semibold text-slate-700">Website </span>
+                          <a
+                            href={contactFormWebsiteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[rgb(11,6,121)] hover:underline"
+                          >
+                            {contactFormWebsiteUrl}
+                          </a>
                         </div>
                       ) : null}
                     </div>
@@ -39518,6 +39539,12 @@ function MainApp() {
                                 typeof lead.contactFormMessageLabel === "string" && lead.contactFormMessageLabel.trim()
                                   ? lead.contactFormMessageLabel.trim()
                                   : null;
+                              const contactFormWebsiteUrl =
+                                typeof lead.contactFormWebsiteUrl === "string" && lead.contactFormWebsiteUrl.trim()
+                                  ? lead.contactFormWebsiteUrl.trim()
+                                  : typeof lead.websiteUrl === "string" && lead.websiteUrl.trim()
+                                    ? lead.websiteUrl.trim()
+                                    : null;
                               return (
                                 <tr key={lead.id} className="align-top">
                                   <td className="px-4 py-4 font-mono text-xs text-slate-500">
@@ -39564,6 +39591,21 @@ function MainApp() {
                                         </div>
                                       ) : null}
                                       {contactFormMessage || "—"}
+                                      {contactFormWebsiteUrl ? (
+                                        <div className="mt-2">
+                                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                            Website
+                                          </span>
+                                          <a
+                                            href={contactFormWebsiteUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="block text-[rgb(11,6,121)] hover:underline"
+                                          >
+                                            {contactFormWebsiteUrl}
+                                          </a>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   </td>
                                   <td className="px-4 py-4 text-sm text-slate-600">

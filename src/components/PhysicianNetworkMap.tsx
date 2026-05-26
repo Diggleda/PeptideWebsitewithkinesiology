@@ -27,6 +27,7 @@ type NetworkDoctorRecord = {
   profileImageUrl?: string | null;
   greaterArea?: string | null;
   studyFocus?: string | null;
+  websiteUrl?: string | null;
   bio?: string | null;
   lastLoginAt?: string | null;
 };
@@ -37,6 +38,7 @@ export type PhysicianNetworkMapDoctor = {
   email?: string | null;
   profileImageUrl?: string | null;
   studyFocus?: string | null;
+  websiteUrl?: string | null;
   bio?: string | null;
   locationLabel: string | null;
   stateCode: string | null;
@@ -661,6 +663,21 @@ export function PhysicianNetworkStateBreakdown({
                       </p>
                     </div>
                   ) : null}
+                  {selectedDoctor.websiteUrl ? (
+                    <div className="physician-network-state-breakdown__profile-detail">
+                      <span className="physician-network-state-breakdown__profile-label">
+                        Website
+                      </span>
+                      <a
+                        href={selectedDoctor.websiteUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="physician-network-state-breakdown__profile-email physician-network-state-breakdown__profile-value"
+                      >
+                        {selectedDoctor.websiteUrl}
+                      </a>
+                    </div>
+                  ) : null}
                   {selectedDoctor.bio ? (
                     <div className="physician-network-state-breakdown__profile-detail">
                       <span className="physician-network-state-breakdown__profile-label">
@@ -806,6 +823,7 @@ export function PhysicianNetworkMap({
         const email = normalizeText(doctor.email) || deriveDummyPhysicianEmail(doctor, greaterAreaStateCode);
         const profileImageUrl = normalizeText(doctor.profileImageUrl) || buildPhysicianAvatarDataUrl(displayName);
         const bio = normalizeText(doctor.bio);
+        const websiteUrl = normalizeText(doctor.websiteUrl);
         const lastLoginAt = normalizeText(doctor.lastLoginAt);
         const resolvedLocation = resolveApproximateUsPlaceCoordinates({
           greaterArea,
@@ -818,6 +836,7 @@ export function PhysicianNetworkMap({
           ...doctor,
           greaterArea,
           bio,
+          websiteUrl,
           displayName,
           email,
           profileImageUrl,
@@ -912,6 +931,7 @@ export function PhysicianNetworkMap({
         email: doctor.email,
         profileImageUrl: normalizeText(doctor.profileImageUrl),
         studyFocus: normalizeText(doctor.studyFocus),
+        websiteUrl: normalizeText(doctor.websiteUrl),
         bio: doctor.bio,
         locationLabel: doctor.locationLabel,
         stateCode: doctor.stateCode,
@@ -1225,6 +1245,16 @@ export function PhysicianNetworkMap({
                       <p className="physician-network-map-location mt-1 text-sm font-medium">
                         {activeDoctor.locationLabel}
                       </p>
+                    ) : null}
+                    {activeDoctor.websiteUrl ? (
+                      <a
+                        href={activeDoctor.websiteUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="physician-network-map-email mt-1 block w-fit break-all text-sm font-medium transition-colors"
+                      >
+                        {activeDoctor.websiteUrl}
+                      </a>
                     ) : null}
                   </div>
                   {activeDoctor.studyFocus ? (
