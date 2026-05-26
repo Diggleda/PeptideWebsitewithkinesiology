@@ -118,10 +118,16 @@ type CreateLinkLegalDocumentKey = 'terms' | 'shipping' | 'privacy';
 type PatientLinkType = 'delegate' | 'brochure';
 type PatientLinkTypeFilter = 'all' | PatientLinkType;
 type PatientLinkConfirmAction = {
-  action: 'revoke' | 'delete';
+  action: 'revoke' | 'delete' | 'modify';
   token: string;
   label: string;
   linkType: PatientLinkType;
+};
+type PatientLinkEditingState = {
+  token: string;
+  linkType: PatientLinkType;
+  label: string;
+  originalProductTokens: string[];
 };
 
 const CREATE_LINK_LEGAL_DOCUMENTS: Record<CreateLinkLegalDocumentKey, { title: string; html: string }> = {
@@ -211,6 +217,46 @@ const getPatientLinkTypeLabel = (type: PatientLinkType) =>
 
 const getPatientLinkTrackingPrefix = (type: PatientLinkType) =>
   type === 'brochure' ? 'brochure_link' : 'delegate_link';
+
+const readPatientLinkText = (link: unknown, keys: string[]): string => {
+  const record = link && typeof link === 'object' ? (link as Record<string, unknown>) : {};
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+};
+
+const readPatientLinkStringList = (link: unknown, keys: string[]): string[] => {
+  const record = link && typeof link === 'object' ? (link as Record<string, unknown>) : {};
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const key of keys) {
+    const raw = record[key];
+    const candidates = Array.isArray(raw)
+      ? raw
+      : typeof raw === 'string'
+        ? raw.split(',')
+        : [];
+    for (const candidate of candidates) {
+      const normalized = String(candidate || '').trim();
+      if (!normalized) continue;
+      const dedupeKey = normalized.toUpperCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      values.push(normalized);
+    }
+  }
+  return values;
+};
+
+const isPatientLinkRevoked = (link: unknown): boolean => {
+  const revokedAt = readPatientLinkText(link, ['revokedAt', 'revoked_at']);
+  const status = readPatientLinkText(link, ['status']).toLowerCase();
+  return Boolean(revokedAt || status === 'revoked');
+};
 
 const createNodeDummyPatientLinks = (_zelleContact?: string | null, _doctorName?: string | null) => {
   void _zelleContact;
@@ -2053,6 +2099,7 @@ export function Header({
   const patientLinksPrefetchedRef = useRef(false);
   const patientLinksLoadInFlightRef = useRef(false);
   const patientLinksQueuedReloadRef = useRef(false);
+  const patientLinksActivatedTokenOverridesRef = useRef<Map<string, number>>(new Map());
   const loadPatientLinksRef = useRef<(() => Promise<void>) | null>(null);
   const patientLinkRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const patientLinkHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2094,6 +2141,7 @@ export function Header({
   const [patientLinksSavingReviewNotesToken, setPatientLinksSavingReviewNotesToken] = useState<string | null>(null);
   const [patientLinkUpdateEmailSaving, setPatientLinkUpdateEmailSaving] = useState(false);
   const [patientLinkConfirmAction, setPatientLinkConfirmAction] = useState<PatientLinkConfirmAction | null>(null);
+  const [patientLinkEditing, setPatientLinkEditing] = useState<PatientLinkEditingState | null>(null);
   const [createLinkDialogOpen, setCreateLinkDialogOpen] = useState(false);
   const [createLinkDialogMode, setCreateLinkDialogMode] = useState<CreateLinkDialogMode>('select');
   const [delegateProductPickerBrokenImages, setDelegateProductPickerBrokenImages] = useState<Set<string>>(() => new Set());
@@ -5213,13 +5261,36 @@ export function Header({
         const token = typeof (link as any)?.token === 'string' ? (link as any).token.trim() : '';
         return !token.startsWith('node-ui-dummy-link');
       });
+      const now = Date.now();
+      const activationOverrides = patientLinksActivatedTokenOverridesRef.current;
+      const hydratedLinks = sanitizedLinks.map((link: any) => {
+        const token = readPatientLinkText(link, ['token']);
+        const overrideUntil = token ? activationOverrides.get(token) : null;
+        if (!token || !overrideUntil) {
+          return link;
+        }
+        if (overrideUntil <= now) {
+          activationOverrides.delete(token);
+          return link;
+        }
+        if (!isPatientLinkRevoked(link)) {
+          activationOverrides.delete(token);
+          return link;
+        }
+        return {
+          ...link,
+          revokedAt: null,
+          revoked_at: null,
+          status: 'active',
+        };
+      });
       if (isNodePatientLinkDummyMode) {
         setPatientLinks([
           ...createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null),
-          ...sanitizedLinks,
+          ...hydratedLinks,
         ]);
       } else {
-        setPatientLinks(sanitizedLinks);
+        setPatientLinks(hydratedLinks);
       }
       setPatientLinkMarkupDraft(String(markupPercent));
     } catch (error: any) {
@@ -5591,6 +5662,131 @@ export function Header({
     Math.floor(Number(cartProductCount) || 0),
   );
 
+  const getPatientLinkProductIdsForTokens = useCallback((tokens: string[]) => {
+    const normalizedTokens = new Set(
+      (Array.isArray(tokens) ? tokens : [])
+        .map((token) => String(token || '').trim().toUpperCase())
+        .filter(Boolean),
+    );
+    if (normalizedTokens.size === 0) {
+      return [];
+    }
+    return delegateProductPickerItems
+      .filter((item) => item.tokens.some((token) => normalizedTokens.has(String(token || '').trim().toUpperCase())))
+      .map((item) => item.key);
+  }, [delegateProductPickerItems]);
+
+  const openPatientLinkModifyModal = useCallback((link: any) => {
+    const token = readPatientLinkText(link, ['token']);
+    if (!token) {
+      toast.error('Unable to modify this link because the token is missing.');
+      return;
+    }
+    const linkType = normalizePatientLinkType(link);
+    const subjectLabel = readPatientLinkText(link, ['subjectLabel', 'subject_label', 'patientId', 'patient_id']);
+    const brochureName = readPatientLinkText(link, ['brochureName', 'brochure_name']);
+    const linkName =
+      readPatientLinkText(link, ['linkName', 'link_name'])
+      || (linkType === 'brochure' ? brochureName : subjectLabel)
+      || readPatientLinkText(link, ['referenceLabel', 'reference_label', 'label']);
+    const studyLabel = readPatientLinkText(link, ['studyLabel', 'study_label']);
+    const patientReference = readPatientLinkText(link, ['patientReference', 'patient_reference']);
+    const delegateName = readPatientLinkText(link, ['delegateName', 'delegate_name']);
+    const delegateContact = readPatientLinkText(link, ['delegateContact', 'delegate_contact']);
+    const recipientName = readPatientLinkText(link, ['recipientName', 'recipient_name']) || delegateName;
+    const recipientContact = readPatientLinkText(link, ['recipientContact', 'recipient_contact']) || delegateContact;
+    const productScopeRaw = readPatientLinkText(link, ['productScope', 'product_scope']) as DelegateProductScope;
+    const productScope: DelegateProductScope =
+      productScopeRaw === 'specific_products' || productScopeRaw === 'specific_cart_only'
+        ? productScopeRaw
+        : 'all_physician_approved';
+    const productTokens = readPatientLinkStringList(link, [
+      'allowedProducts',
+      'allowed_products',
+      'productScopeItems',
+      'product_scope_items',
+    ]);
+    const delegateRoleRaw = readPatientLinkText(link, ['delegateRole', 'delegate_role']) as DelegateRole;
+    const delegateRole = delegateRoleOptions.some((option) => option.value === delegateRoleRaw)
+      ? delegateRoleRaw
+      : 'patient';
+    const delegatePermissionRaw = readPatientLinkText(link, ['delegatePermission', 'delegate_permission']) as DelegatePermission;
+    const delegatePermission = delegatePermissionRaw === 'view_products_only'
+      ? 'view_products_only'
+      : 'submit_for_physician_review';
+    const paymentMethod = normalizePatientLinkPaymentMethod(
+      readPatientLinkText(link, ['paymentMethod', 'payment_method', 'payment_method_id']),
+    );
+    const createdAt = readPatientLinkText(link, ['createdAt', 'created_at']);
+    const expiresAt = readPatientLinkText(link, ['expiresAt', 'expires_at']);
+    const createdMs = createdAt ? Date.parse(createdAt) : NaN;
+    const expiresMs = expiresAt ? Date.parse(expiresAt) : NaN;
+    const durationHours =
+      Number.isFinite(createdMs) && Number.isFinite(expiresMs) && expiresMs > createdMs
+        ? Math.ceil((expiresMs - createdMs) / 3_600_000)
+        : Number.isFinite(expiresMs) && expiresMs > Date.now()
+          ? Math.ceil((expiresMs - Date.now()) / 3_600_000)
+          : Number(DEFAULT_DELEGATE_LINK_EXPIRY_HOURS);
+    const paymentInstructions =
+      readPatientLinkText(link, ['paymentInstructions', 'payment_instructions'])
+      || buildPatientLinkDefaultInstructions(paymentMethod, zelleContactDraft.trim() || localUser?.zelleContact || null, localUser?.name ?? user?.name ?? null);
+
+    setPatientLinkEditing({
+      token,
+      linkType,
+      label: linkName || `${getPatientLinkTypeLabel(linkType)} link`,
+      originalProductTokens: productTokens,
+    });
+    setCreateLinkLegalDocumentKey(null);
+    setPatientLinkProductPickerOpen(false);
+    setPatientLinkSubjectLabelDraft(linkType === 'brochure' ? '' : linkName);
+    setPatientLinkBrochureNameDraft(linkType === 'brochure' ? linkName : '');
+    setPatientLinkStudyLabelDraft(studyLabel);
+    setPatientLinkReferenceDraft(patientReference);
+    setPatientLinkDelegateNameDraft(delegateName);
+    setPatientLinkDelegateContactDraft(delegateContact);
+    setPatientLinkRecipientNameDraft(recipientName);
+    setPatientLinkRecipientContactDraft(recipientContact);
+    setPatientLinkDelegateRoleDraft(delegateRole);
+    setPatientLinkProductScopeDraft(productScope);
+    setPatientLinkApprovedProductIds(getPatientLinkProductIdsForTokens(productTokens));
+    setPatientLinkProductPickerQuery('');
+    setPatientLinkProductPickerDomain('all');
+    setPatientLinkDelegatePermissionDraft(linkType === 'brochure' ? 'view_products_only' : delegatePermission);
+    setPatientLinkExpiryHoursDraft(String(Math.max(1, durationHours || Number(DEFAULT_DELEGATE_LINK_EXPIRY_HOURS))));
+    setPatientLinkMarkupDraft(String(normalizeMarkupPercent((link as any)?.markupPercent ?? (link as any)?.markup_percent ?? 0)));
+    setPatientLinkPricingDisclosureDraft(
+      readPatientLinkText(link, ['pricingDisclosure', 'pricing_disclosure']) || DEFAULT_DELEGATE_PRICING_DISCLOSURE,
+    );
+    setPatientLinkZelleRecipientNameDraft(readPatientLinkText(link, ['zelleRecipientName', 'zelle_recipient_name']));
+    setPatientLinkPaymentConfirmationRequired(
+      coerceOptionalBoolean((link as any)?.paymentConfirmationRequired ?? (link as any)?.payment_confirmation_required) ?? true,
+    );
+    setPatientLinkResearchNoteDraft(readPatientLinkText(link, ['instructions']));
+    setPatientLinkDelegateInstructionsDraft(readPatientLinkText(link, ['delegateInstructions', 'delegate_instructions']));
+    setPatientLinkInternalPhysicianNoteDraft(readPatientLinkText(link, ['internalPhysicianNote', 'internal_physician_note']));
+    setPatientLinkPaymentMethodDraft(paymentMethod);
+    setPatientLinkInstructionsDraft(paymentInstructions);
+    setPatientLinkTermsAccepted(true);
+    setCreateLinkDialogMode(linkType === 'brochure' ? 'brochure' : 'delegate');
+    setCreateLinkDialogOpen(true);
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        const dialogContent = createLinkDialogContentRef.current;
+        if (!dialogContent) return;
+        dialogContent.scrollTop = 0;
+        dialogContent.scrollLeft = 0;
+      });
+    }
+  }, [
+    getPatientLinkProductIdsForTokens,
+    localUser?.name,
+    localUser?.zelleContact,
+    normalizeMarkupPercent,
+    user?.name,
+    zelleContactDraft,
+  ]);
+
   const delegateProductPickerDomainOptions = useMemo(() => {
     const domains = new Map<string, { label: string; count: number }>();
     for (const item of delegateProductPickerItems) {
@@ -5952,6 +6148,243 @@ export function Header({
     showPatientLinksTab,
   ]);
 
+  const handleActivateModifiedPatientLink = useCallback(async () => {
+    if (!showPatientLinksTab || patientLinksCreating || !patientLinkEditing) {
+      return;
+    }
+    const token = patientLinkEditing.token.trim();
+    if (!token) {
+      toast.error('Unable to activate this link because the token is missing.');
+      return;
+    }
+    const expiresInHours = Number(patientLinkExpiryHoursDraft);
+    if (!Number.isFinite(expiresInHours) || expiresInHours <= 0) {
+      toast.error('Expiration hours must be greater than zero.');
+      return;
+    }
+
+    setPatientLinksCreating(true);
+    try {
+      const api = await import('../services/api');
+      let activatedLink: any = null;
+      if (patientLinkEditing.linkType === 'brochure') {
+        const brochureName = patientLinkBrochureNameDraft.trim();
+        if (!brochureName) {
+          toast.error('Link name is required.');
+          setPatientLinksCreating(false);
+          return;
+        }
+        const studyLabel = patientLinkStudyLabelDraft.trim();
+        const patientReference = patientLinkReferenceDraft.trim();
+        const recipientName = patientLinkRecipientNameDraft.trim();
+        const recipientContact = patientLinkRecipientContactDraft.trim();
+        const approvedProductTokensForPayload =
+          patientLinkProductScopeDraft === 'specific_products'
+            ? (patientLinkApprovedProductTokens.length > 0
+              ? patientLinkApprovedProductTokens
+              : patientLinkEditing.originalProductTokens)
+            : [];
+        if (patientLinkProductScopeDraft === 'specific_products' && approvedProductTokensForPayload.length === 0) {
+          toast.error('Choose at least one product for this brochure.');
+          setPatientLinksCreating(false);
+          return;
+        }
+        const response = await api.delegationAPI.updateLink(token, {
+          revoke: false,
+          linkName: brochureName,
+          referenceLabel: brochureName,
+          brochureName,
+          studyLabel: studyLabel ? studyLabel : null,
+          patientReference: patientReference ? patientReference : null,
+          delegateName: recipientName ? recipientName : null,
+          delegateContact: recipientContact ? recipientContact : null,
+          productScope: patientLinkProductScopeDraft,
+          productScopeItems: approvedProductTokensForPayload,
+          allowedProducts: approvedProductTokensForPayload,
+          delegatePermission: 'view_products_only',
+          expiresInHours,
+        });
+        activatedLink = (response as any)?.link && typeof (response as any).link === 'object'
+          ? (response as any).link
+          : null;
+      } else {
+        if (!patientLinkTermsAccepted) {
+          toast.error('Accept the terms to continue.');
+          setPatientLinksCreating(false);
+          return;
+        }
+        const zelleContact = zelleContactDraft.trim();
+        const savedZelleContact =
+          typeof localUser?.zelleContact === 'string' ? localUser.zelleContact.trim() : '';
+        if (patientLinkPaymentMethodDraft === 'zelle' && zelleContact !== savedZelleContact) {
+          const updatedUser = await api.authAPI.updateMe({
+            zelleContact: zelleContact ? zelleContact : null,
+          });
+          const nextUserState: HeaderUser = {
+            ...(localUser || {}),
+            ...(updatedUser || {}),
+            zelleContact: zelleContact ? zelleContact : null,
+          };
+          setLocalUser(nextUserState);
+          onUserUpdated?.(nextUserState);
+        }
+        const linkName = patientLinkSubjectLabelDraft.trim();
+        const studyLabel = patientLinkStudyLabelDraft.trim();
+        const patientReference = patientLinkReferenceDraft.trim();
+        const delegateName = patientLinkDelegateNameDraft.trim();
+        const delegateContact = patientLinkDelegateContactDraft.trim();
+        const pricingDisclosure = patientLinkPricingDisclosureDraft.trim();
+        const zelleRecipientName = patientLinkZelleRecipientNameDraft.trim();
+        const delegateInstructions = patientLinkDelegateInstructionsDraft.trim();
+        const internalPhysicianNote = patientLinkInternalPhysicianNoteDraft.trim();
+        const approvedProductTokensForPayload =
+          patientLinkProductScopeDraft === 'specific_cart_only'
+            ? patientLinkCartProductTokens
+            : patientLinkProductScopeDraft === 'all_physician_approved'
+              ? []
+              : patientLinkProductScopeDraft === 'specific_products'
+                ? (patientLinkApprovedProductTokens.length > 0
+                  ? patientLinkApprovedProductTokens
+                  : patientLinkEditing.originalProductTokens)
+                : [];
+        if (patientLinkProductScopeDraft === 'specific_products' && approvedProductTokensForPayload.length === 0) {
+          toast.error('Choose at least one product for this proposal.');
+          setPatientLinksCreating(false);
+          return;
+        }
+        if (patientLinkProductScopeDraft === 'specific_cart_only' && approvedProductTokensForPayload.length === 0) {
+          toast.error('Add at least one cart product for this proposal.');
+          setPatientLinksCreating(false);
+          return;
+        }
+        const markupPercent = normalizeMarkupPercent(patientLinkMarkupDraft);
+        const paymentMethod = patientLinkPaymentMethodDraft === 'zelle' ? 'zelle' : '';
+        const paymentInstructionsDraft = patientLinkInstructionsDraft.trim();
+        const paymentInstructions = paymentMethod === 'zelle'
+          ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', zelleContact || null, localUser?.name ?? user?.name ?? null))
+          : '';
+        const response = await api.delegationAPI.updateLink(token, {
+          revoke: false,
+          linkName: linkName ? linkName : null,
+          referenceLabel: linkName ? linkName : null,
+          patientId: null,
+          subjectLabel: null,
+          studyLabel: studyLabel ? studyLabel : null,
+          patientReference: patientReference ? patientReference : null,
+          delegateName: delegateName ? delegateName : null,
+          delegateContact: delegateContact ? delegateContact : null,
+          delegateRole: patientLinkDelegateRoleDraft,
+          productScope: patientLinkProductScopeDraft,
+          productScopeItems: approvedProductTokensForPayload,
+          delegatePermission: patientLinkDelegatePermissionDraft,
+          markupPercent,
+          pricingDisclosure: pricingDisclosure || DEFAULT_DELEGATE_PRICING_DISCLOSURE,
+          zelleRecipientName: paymentMethod === 'zelle' && zelleRecipientName ? zelleRecipientName : null,
+          paymentConfirmationRequired: paymentMethod === 'zelle' ? patientLinkPaymentConfirmationRequired : false,
+          delegateInstructions: delegateInstructions ? delegateInstructions : null,
+          internalPhysicianNote: internalPhysicianNote ? internalPhysicianNote : null,
+          termsVersion: CURRENT_TERMS_VERSION,
+          shippingPolicyVersion: CURRENT_SHIPPING_POLICY_VERSION,
+          privacyPolicyVersion: CURRENT_PRIVACY_POLICY_VERSION,
+          instructions: patientLinkResearchNoteDraft.trim() ? patientLinkResearchNoteDraft.trim() : null,
+          allowedProducts: approvedProductTokensForPayload,
+          expiresInHours,
+          paymentMethod,
+          paymentInstructions,
+        });
+        activatedLink = (response as any)?.link && typeof (response as any).link === 'object'
+          ? (response as any).link
+          : null;
+      }
+
+      patientLinksActivatedTokenOverridesRef.current.set(token, Date.now() + 30_000);
+      setPatientLinks((prev) => prev.map((link) => {
+        const linkToken = readPatientLinkText(link, ['token']);
+        if (linkToken !== token) {
+          return link;
+        }
+        return {
+          ...link,
+          ...(activatedLink || {}),
+          token,
+          revokedAt: null,
+          revoked_at: null,
+          status: 'active',
+        };
+      }));
+      setPatientLinkEditing(null);
+      setPatientLinkSubjectLabelDraft('');
+      setPatientLinkStudyLabelDraft('');
+      setPatientLinkReferenceDraft('');
+      setPatientLinkDelegateNameDraft('');
+      setPatientLinkDelegateContactDraft('');
+      setPatientLinkBrochureNameDraft('');
+      setPatientLinkRecipientNameDraft('');
+      setPatientLinkRecipientContactDraft('');
+      setPatientLinkDelegateRoleDraft('patient');
+      setPatientLinkProductScopeDraft('all_physician_approved');
+      setPatientLinkApprovedProductIds([]);
+      setPatientLinkProductPickerQuery('');
+      setPatientLinkProductPickerOpen(false);
+      setPatientLinkDelegatePermissionDraft('submit_for_physician_review');
+      setPatientLinkExpiryHoursDraft(DEFAULT_DELEGATE_LINK_EXPIRY_HOURS);
+      setPatientLinkPricingDisclosureDraft(DEFAULT_DELEGATE_PRICING_DISCLOSURE);
+      setPatientLinkZelleRecipientNameDraft('');
+      setPatientLinkPaymentConfirmationRequired(true);
+      setPatientLinkResearchNoteDraft('');
+      setPatientLinkDelegateInstructionsDraft('');
+      setPatientLinkInternalPhysicianNoteDraft('');
+      setPatientLinkTermsAccepted(false);
+      setCreateLinkDialogOpen(false);
+      setCreateLinkDialogMode('select');
+      toast.success('Link activated.');
+      requestPatientLinksRefresh({ force: true });
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to activate this link right now.',
+      );
+    } finally {
+      setPatientLinksCreating(false);
+    }
+  }, [
+    localUser,
+    normalizeMarkupPercent,
+    onUserUpdated,
+    patientLinkApprovedProductTokens,
+    patientLinkBrochureNameDraft,
+    patientLinkCartProductTokens,
+    patientLinkDelegateContactDraft,
+    patientLinkDelegateInstructionsDraft,
+    patientLinkDelegateNameDraft,
+    patientLinkDelegatePermissionDraft,
+    patientLinkDelegateRoleDraft,
+    patientLinkEditing,
+    patientLinkExpiryHoursDraft,
+    patientLinkInstructionsDraft,
+    patientLinkInternalPhysicianNoteDraft,
+    patientLinkMarkupDraft,
+    patientLinkPaymentConfirmationRequired,
+    patientLinkPaymentMethodDraft,
+    patientLinkPricingDisclosureDraft,
+    patientLinkProductScopeDraft,
+    patientLinkRecipientContactDraft,
+    patientLinkRecipientNameDraft,
+    patientLinkReferenceDraft,
+    patientLinkResearchNoteDraft,
+    patientLinkStudyLabelDraft,
+    patientLinkSubjectLabelDraft,
+    patientLinkTermsAccepted,
+    patientLinkZelleRecipientNameDraft,
+    patientLinksCreating,
+    requestPatientLinksRefresh,
+    setLocalUser,
+    showPatientLinksTab,
+    user?.name,
+    zelleContactDraft,
+  ]);
+
   const getPatientLinkUrl = useCallback((token: string, linkType: PatientLinkType = 'delegate'): string => {
     if (typeof window === 'undefined') return '';
     const normalized = typeof token === 'string' ? token.trim() : '';
@@ -6104,6 +6537,7 @@ export function Header({
     try {
       const api = await import('../services/api');
       await api.delegationAPI.updateLink(normalized, { revoke: true });
+      patientLinksActivatedTokenOverridesRef.current.delete(normalized);
       toast.success('Link revoked.');
       requestPatientLinksRefresh({ force: true, preserveScroll: true });
     } catch (error: any) {
@@ -6126,6 +6560,7 @@ export function Header({
     try {
       const api = await import('../services/api');
       await api.delegationAPI.updateLink(normalized, { delete: true });
+      patientLinksActivatedTokenOverridesRef.current.delete(normalized);
       toast.success('Link deleted.');
       requestPatientLinksRefresh({ force: true, preserveScroll: true });
     } catch (error: any) {
@@ -6138,6 +6573,62 @@ export function Header({
       setPatientLinksDeletingToken(null);
     }
   }, [patientLinksDeletingToken, requestPatientLinksRefresh]);
+
+  const handleModifyPatientLink = useCallback(async (token: string, revokeBeforeModify: boolean) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized || patientLinksUpdatingToken) {
+      return;
+    }
+    const targetLink = patientLinks.find((link) => {
+      const linkToken = readPatientLinkText(link, ['token']);
+      return linkToken === normalized;
+    });
+    if (!targetLink) {
+      toast.error('Unable to find this link to modify.');
+      return;
+    }
+    if (!revokeBeforeModify) {
+      openPatientLinkModifyModal(targetLink);
+      return;
+    }
+    setPatientLinksUpdatingToken(normalized);
+    try {
+      const api = await import('../services/api');
+      await api.delegationAPI.updateLink(normalized, { revoke: true });
+      patientLinksActivatedTokenOverridesRef.current.delete(normalized);
+      setPatientLinks((prev) => prev.map((link) => {
+        const linkToken = readPatientLinkText(link, ['token']);
+        if (linkToken !== normalized) {
+          return link;
+        }
+        return {
+          ...link,
+          revokedAt: new Date().toISOString(),
+          status: 'revoked',
+        };
+      }));
+      openPatientLinkModifyModal({
+        ...(targetLink || {}),
+        revokedAt: new Date().toISOString(),
+        status: 'revoked',
+      });
+      toast.success('Link revoked for modification.');
+      requestPatientLinksRefresh({ force: true, preserveScroll: true });
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to revoke this link for modification right now.',
+      );
+    } finally {
+      setPatientLinksUpdatingToken(null);
+    }
+  }, [
+    openPatientLinkModifyModal,
+    patientLinks,
+    patientLinksUpdatingToken,
+    requestPatientLinksRefresh,
+  ]);
 
   const handleRequestPatientLinkConfirmAction = useCallback((
     action: PatientLinkConfirmAction['action'],
@@ -6175,12 +6666,15 @@ export function Header({
     const pending = patientLinkConfirmAction;
     if (pending.action === 'delete') {
       await handleDeletePatientLink(pending.token);
+    } else if (pending.action === 'modify') {
+      await handleModifyPatientLink(pending.token, true);
     } else {
       await handleRevokePatientLink(pending.token);
     }
     setPatientLinkConfirmAction(null);
   }, [
     handleDeletePatientLink,
+    handleModifyPatientLink,
     handleRevokePatientLink,
     patientLinkConfirmAction,
     patientLinkConfirmBusy,
@@ -9095,6 +9589,7 @@ export function Header({
           setCreateLinkDialogOpen(open);
           if (!open) {
             setCreateLinkDialogMode('select');
+            setPatientLinkEditing(null);
           }
         }}
       >
@@ -9146,7 +9641,7 @@ export function Header({
                 : 'min(920px, calc(100vw - 2rem))',
           }}
         >
-          {createLinkDialogMode !== 'select' && (
+          {createLinkDialogMode !== 'select' && !patientLinkEditing && (
             <Button
               type="button"
               variant="outline"
@@ -9178,6 +9673,7 @@ export function Header({
                   <button
                     type="button"
                     onClick={() => {
+                      setPatientLinkEditing(null);
                       trackPatientLinkUsageEvent('brochure', 'button_clicked', { source: 'create_link_dialog' });
                       setPatientLinkBrochureNameDraft('');
                       setPatientLinkProductScopeDraft('all_physician_approved');
@@ -9198,6 +9694,7 @@ export function Header({
                   <button
                     type="button"
                     onClick={() => {
+                      setPatientLinkEditing(null);
                       trackPatientLinkUsageEvent('delegate', 'create_started', { source: 'create_link_dialog' });
                       setCreateLinkDialogMode('delegate');
                     }}
@@ -9349,11 +9846,19 @@ export function Header({
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button
                   type="button"
-                  onClick={() => void handleCreateBrochureLink()}
+                  onClick={() => {
+                    if (patientLinkEditing) {
+                      void handleActivateModifiedPatientLink();
+                      return;
+                    }
+                    void handleCreateBrochureLink();
+                  }}
                   disabled={!showPatientLinksTab || patientLinksCreating}
                   className="header-home-button squircle-sm bg-white text-slate-900"
                 >
-                  {patientLinksCreating ? 'Creating…' : 'Create brochure link'}
+                  {patientLinksCreating
+                    ? patientLinkEditing ? 'Activating…' : 'Creating…'
+                    : patientLinkEditing ? 'Activate link' : 'Create brochure link'}
                 </Button>
               </div>
             </div>
@@ -9362,9 +9867,13 @@ export function Header({
           ) : (
       <div key="create-link-delegate" className="create-link-dialog-panel">
         <div className="pr-36">
-          <h3 className="text-lg font-semibold leading-tight text-slate-900">Create a proposal link</h3>
+          <h3 className="text-lg font-semibold leading-tight text-slate-900">
+            {patientLinkEditing ? 'Modify proposal link' : 'Create a proposal link'}
+          </h3>
           <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
-            This tool is intended to support physician-directed research material proposal workflows. You can preview links before sharing them with an authorized delegate.
+            {patientLinkEditing
+              ? 'This link is revoked while you modify it. Activate it when the updated proposal session is ready.'
+              : 'This tool is intended to support physician-directed research material proposal workflows. You can preview links before sharing them with an authorized delegate.'}
           </p>
         </div>
 	        <div className="delegate-link-create-form mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
@@ -9830,11 +10339,19 @@ export function Header({
 	            <div className="patient-link-submit-action delegate-link-submit-action flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 	              <Button
 	                type="button"
-	                onClick={() => void handleCreatePatientLink()}
+	                onClick={() => {
+                    if (patientLinkEditing) {
+                      void handleActivateModifiedPatientLink();
+                      return;
+                    }
+                    void handleCreatePatientLink();
+                  }}
 	                disabled={!showPatientLinksTab || patientLinksCreating}
 	                className="header-home-button patient-link-form__button delegate-link-submit-button delegate-link-submit-button--primary !h-11 min-h-[44px] w-full mb-0 squircle-sm bg-white text-slate-900 px-7 sm:w-auto"
 	              >
-	                {patientLinksCreating ? 'Creating…' : 'Create proposal link'}
+	                {patientLinksCreating
+                    ? patientLinkEditing ? 'Activating…' : 'Creating…'
+                    : patientLinkEditing ? 'Activate link' : 'Create proposal link'}
 	              </Button>
 	            </div>
 	          </div>
@@ -10318,6 +10835,7 @@ export function Header({
 		            <Button
 		              type="button"
 		              onClick={() => {
+                    setPatientLinkEditing(null);
 		                setCreateLinkDialogMode('select');
 		                setCreateLinkDialogOpen(true);
 		              }}
@@ -10562,7 +11080,7 @@ export function Header({
 	              const proposalStatus =
 	                reviewStatus || (delegateSharedAt || delegateOrderId ? 'pending' : '');
 	              const hasProposal = isDelegateLinkType && Boolean(reviewStatus || delegateSharedAt || delegateOrderId);
-		              const isRevoked = Boolean(revokedAt);
+		              const isRevoked = isPatientLinkRevoked(link);
 		              const isUpdating = patientLinksUpdatingToken === token;
 		              const isDeleting = patientLinksDeletingToken === token;
 		              const isSavingPayment = patientLinksSavingPaymentToken === token;
@@ -10685,6 +11203,27 @@ export function Header({
 		                        {isProposalBusy ? 'Loading…' : proposalActionLabel}
 		                      </Button>
 		                      )}
+		                      <Button
+		                        type="button"
+		                      variant="outline"
+		                      size="sm"
+		                      onClick={() => {
+                            if (isRevoked) {
+                              void handleModifyPatientLink(token, false);
+                              return;
+                            }
+                            handleRequestPatientLinkConfirmAction('modify', token, label, linkType);
+                          }}
+		                      disabled={!token || isUpdating || isDeleting || patientLinksCreating}
+		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
+	                    >
+	                      {isUpdating ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Pencil className="h-4 w-4" aria-hidden="true" />
+                        )}
+	                      Modify
+	                    </Button>
 		                      <Button
 		                        type="button"
 		                      variant="outline"
@@ -11284,12 +11823,18 @@ export function Header({
               </span>
               <div className="min-w-0">
                 <DialogTitle className="text-lg font-semibold text-slate-900">
-                  {patientLinkConfirmAction?.action === 'delete' ? 'Delete this link?' : 'Revoke this link?'}
+                  {patientLinkConfirmAction?.action === 'delete'
+                    ? 'Delete this link?'
+                    : patientLinkConfirmAction?.action === 'modify'
+                      ? 'Modify this link?'
+                      : 'Revoke this link?'}
                 </DialogTitle>
                 <DialogDescription className="mt-1 text-sm leading-6 text-slate-600">
                   {patientLinkConfirmAction?.action === 'delete'
                     ? 'This permanently removes the revoked link from your dashboard. This cannot be undone.'
-                    : 'This immediately disables the public URL. Anyone with the link will no longer be able to open it.'}
+                    : patientLinkConfirmAction?.action === 'modify'
+                      ? 'Are you sure? Modifying this link will temporarily revoke it.'
+                      : 'This immediately disables the public URL. Anyone with the link will no longer be able to open it.'}
                 </DialogDescription>
               </div>
             </div>
@@ -11332,10 +11877,14 @@ export function Header({
                 {patientLinkConfirmBusy
                   ? patientLinkConfirmAction?.action === 'delete'
                     ? 'Deleting...'
+                    : patientLinkConfirmAction?.action === 'modify'
+                      ? 'Revoking...'
                     : 'Revoking...'
                   : patientLinkConfirmAction?.action === 'delete'
                     ? 'Delete link'
-                    : 'Revoke link'}
+                    : patientLinkConfirmAction?.action === 'modify'
+                      ? 'Okay'
+                      : 'Revoke link'}
               </Button>
             </div>
           </div>

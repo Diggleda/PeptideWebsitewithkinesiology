@@ -49,7 +49,7 @@ const templates = [
   },
   {
     id: 'delegate-links-info',
-    label: 'Patient Links welcome',
+    label: 'Delegate Links welcome',
     source: 'python_backend/services/email_service.py::_build_delegate_links_beta_info_email',
   },
 ];
@@ -154,15 +154,15 @@ elif template == "delegate-links-info":
     html, plain = email_service._build_delegate_links_beta_info_email(
         base_url=base_url,
     )
-    subject = "Welcome to Patient Links"
+    subject = "Welcome to Delegate Links"
 else:
     raise SystemExit(f"unknown python template: {template}")
 
 html = html.replace("cid:trufusion-logo", "/assets/FullLogo_Transparent_NoBuffer%20(18).png")
 html = html.replace("cid:trufusion-leaf", "/assets/leafTexture.jpg")
 html = html.replace("cid:delegate-white-label-sessions", "/assets/delegate-links-white-label-email.png")
-html = html.replace("cid:patient-links-delegate-session", "/assets/PatientLinks4.png")
-html = html.replace("cid:patient-links-create-dialog", "/assets/PatientLinks3.png")
+html = html.replace("cid:delegate-links-proposal-session", "/assets/PatientLinks4.png")
+html = html.replace("cid:delegate-links-create-dialog", "/assets/PatientLinks3.png")
 
 print(json.dumps({"subject": subject, "html": html, "plain": plain}))
 `;

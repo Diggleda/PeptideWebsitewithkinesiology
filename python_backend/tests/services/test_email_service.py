@@ -323,13 +323,14 @@ class EmailServiceTests(unittest.TestCase):
         html, plain = email_service._build_delegate_links_beta_info_email(base_url="https://trufusionlabs.com")
 
         self.assertIn("Welcome to Delegate Links", html)
-        self.assertIn("Create brochure and proposal links from one workspace", html)
+        self.assertIn("SERVICE AVAILABLE", html)
+        self.assertIn("Delegate Links: Extending Physician Reach", html)
         self.assertIn("Distribute and manage white-labeled research material sessions.", html)
         self.assertIn("trusted delegate needs to submit selections for physician review", html)
         self.assertIn("Brochure", html)
         self.assertIn("Proposal", html)
-        self.assertIn('src="cid:patient-links-delegate-session"', html)
-        self.assertIn('src="cid:patient-links-create-dialog"', html)
+        self.assertIn('src="cid:delegate-links-proposal-session"', html)
+        self.assertIn('src="cid:delegate-links-create-dialog"', html)
         self.assertIn("Delegate proposal session with branded catalog and product cards", html)
         self.assertIn("Create link dialog showing Brochure and Proposal link options", html)
         self.assertIn("Create and track your brochures and proposal sessions", html)
@@ -337,29 +338,39 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("text-align:left", html)
         self.assertLess(
             html.index("Create and track your brochures and proposal sessions"),
-            html.index('src="cid:patient-links-create-dialog"'),
+            html.index('src="cid:delegate-links-create-dialog"'),
         )
         self.assertLess(
             html.index("Setup white-labeled sessions for your clients."),
-            html.index('src="cid:patient-links-delegate-session"'),
+            html.index('src="cid:delegate-links-proposal-session"'),
         )
         self.assertLess(
-            html.index('src="cid:patient-links-create-dialog"'),
-            html.index('src="cid:patient-links-delegate-session"'),
+            html.index('src="cid:delegate-links-create-dialog"'),
+            html.index('src="cid:delegate-links-proposal-session"'),
         )
         self.assertIn("font-size:30px", html)
         self.assertIn("font-weight:700", html)
         self.assertIn(">1.</td>", html)
         self.assertIn(">2.</td>", html)
         self.assertIn(">3.</td>", html)
+        self.assertIn(">4.</td>", html)
+        self.assertIn("Open Delegate Links</strong> in your physician dashboard, then choose", html)
+        self.assertIn("Brochure</strong> creates a view-only product information page with no pricing, cart, or checkout.", html)
+        self.assertIn("Proposal</strong> creates a delegate session that can submit selections for physician review.", html)
+        self.assertIn("Manage your links</strong> to preview, copy, track, revoke, and review proposal activity.", html)
         self.assertNotIn("Set up your brand: add your logo and primary color in Account > Delegate Links Beta.", html)
         self.assertNotIn("Welcome to the Delegate Links Beta", html)
+        self.assertNotIn(">Delegate Links</p>", html)
         self.assertNotIn("M12 6.042", html)
         self.assertNotIn("What kind of link would you like to create?</td>", html)
         self.assertIn("Open Delegate Links", html)
-        self.assertIn("Brochure: create a shareable", plain)
-        self.assertIn("Proposal: create a delegate session", plain)
+        self.assertIn("How to use Delegate Links", plain)
+        self.assertIn("1. Open Delegate Links in your physician dashboard, then choose Create a link.", plain)
+        self.assertIn("2. Brochure creates a view-only product information page with no pricing, cart, or checkout.", plain)
+        self.assertIn("3. Proposal creates a delegate session that can submit selections for physician review.", plain)
+        self.assertIn("4. Use Manage your links to preview, copy, track, revoke, and review proposal activity.", plain)
         self.assertNotIn("Patient Links", html)
+        self.assertNotIn("patient-links", html)
         self.assertNotIn("Product Brochure", html)
         self.assertNotIn("Delegate: create a patient session", plain)
 

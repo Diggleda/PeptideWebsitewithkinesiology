@@ -25,16 +25,16 @@ _EMAIL_DEFAULT_DOMAIN = "trufusionlabs.com"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
-_EMAIL_PATIENT_LINKS_SESSION_CID = "patient-links-delegate-session"
-_EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID = "patient-links-create-dialog"
+_EMAIL_DELEGATE_LINKS_SESSION_CID = "delegate-links-proposal-session"
+_EMAIL_DELEGATE_LINKS_CREATE_DIALOG_CID = "delegate-links-create-dialog"
 _EMAIL_LOGO_SRC = f"cid:{_EMAIL_LOGO_CID}"
 _EMAIL_LEAF_SRC = f"cid:{_EMAIL_LEAF_CID}"
 _EMAIL_WHITE_LABEL_SESSIONS_SRC = f"cid:{_EMAIL_WHITE_LABEL_SESSIONS_CID}"
-_EMAIL_PATIENT_LINKS_SESSION_SRC = f"cid:{_EMAIL_PATIENT_LINKS_SESSION_CID}"
-_EMAIL_PATIENT_LINKS_CREATE_DIALOG_SRC = f"cid:{_EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID}"
+_EMAIL_DELEGATE_LINKS_SESSION_SRC = f"cid:{_EMAIL_DELEGATE_LINKS_SESSION_CID}"
+_EMAIL_DELEGATE_LINKS_CREATE_DIALOG_SRC = f"cid:{_EMAIL_DELEGATE_LINKS_CREATE_DIALOG_CID}"
 _EMAIL_LOGO_WIDTH = 360
 _EMAIL_WHITE_LABEL_SESSIONS_WIDTH = 560
-_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH = 616
+_EMAIL_DELEGATE_LINKS_SCREENSHOT_WIDTH = 616
 _EMAIL_BACKGROUND_COLOR = "#ffffff"
 _EMAIL_BACKGROUND_HEX = "#ffffff"
 _EMAIL_CONTACT_CARD_COLOR = "#ffffff"
@@ -280,7 +280,7 @@ _EMAIL_INLINE_IMAGE_SPECS = (
         ),
     },
     {
-        "content_id": _EMAIL_PATIENT_LINKS_SESSION_CID,
+        "content_id": _EMAIL_DELEGATE_LINKS_SESSION_CID,
         "filename": "PatientLinks4.png",
         "mime_type": "image/png",
         "maintype": "image",
@@ -290,7 +290,7 @@ _EMAIL_INLINE_IMAGE_SPECS = (
         ),
     },
     {
-        "content_id": _EMAIL_PATIENT_LINKS_CREATE_DIALOG_CID,
+        "content_id": _EMAIL_DELEGATE_LINKS_CREATE_DIALOG_CID,
         "filename": "PatientLinks3.png",
         "mime_type": "image/png",
         "maintype": "image",
@@ -1002,19 +1002,19 @@ def _build_delegate_proposal_ready_email(
 def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://trufusionlabs.com"
     logo_url = _EMAIL_LOGO_SRC
-    session_screenshot_url = _EMAIL_PATIENT_LINKS_SESSION_SRC
-    create_dialog_screenshot_url = _EMAIL_PATIENT_LINKS_CREATE_DIALOG_SRC
-    patient_links_font_family = "Arial, Helvetica, sans-serif"
-    body_style = f"{_email_body_style()}font-family:{patient_links_font_family};font-weight:400;"
+    session_screenshot_url = _EMAIL_DELEGATE_LINKS_SESSION_SRC
+    create_dialog_screenshot_url = _EMAIL_DELEGATE_LINKS_CREATE_DIALOG_SRC
+    delegate_links_font_family = "Arial, Helvetica, sans-serif"
+    body_style = f"{_email_body_style()}font-family:{delegate_links_font_family};font-weight:400;"
     outer_table_style = _email_outer_table_style()
     container_style = _email_container_style(680)
-    title_style = f"margin:0 0 10px;font-family:{patient_links_font_family};font-size:30px;font-weight:700;line-height:1.18;color:#0B274B;"
-    lead_style = f"margin:0 0 18px;font-family:{patient_links_font_family};font-size:18px;font-weight:400;line-height:1.5;color:#334155;"
-    eyebrow_style = f"margin:0 0 8px;font-family:{patient_links_font_family};font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:{_EMAIL_BRAND_BLUE};"
-    section_title_style = f"margin:0 0 10px;font-family:{patient_links_font_family};font-size:20px;font-weight:700;line-height:1.25;color:#0B274B;"
-    screenshot_title_style = f"margin:0 0 10px;font-family:{patient_links_font_family};font-size:16px;font-weight:700;line-height:1.35;color:#0B274B;text-align:left;"
+    title_style = f"margin:0 0 10px;font-family:{delegate_links_font_family};font-size:30px;font-weight:700;line-height:1.18;color:#0B274B;"
+    lead_style = f"margin:0 0 18px;font-family:{delegate_links_font_family};font-size:18px;font-weight:400;line-height:1.5;color:#334155;"
+    eyebrow_style = f"margin:0 0 8px;font-family:{delegate_links_font_family};font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:{_EMAIL_BRAND_BLUE};"
+    section_title_style = f"margin:0 0 10px;font-family:{delegate_links_font_family};font-size:20px;font-weight:700;line-height:1.25;color:#0B274B;"
+    screenshot_title_style = f"margin:0 0 10px;font-family:{delegate_links_font_family};font-size:16px;font-weight:700;line-height:1.35;color:#0B274B;text-align:left;"
     screenshot_image_style = (
-        f"width:{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}px;"
+        f"width:{_EMAIL_DELEGATE_LINKS_SCREENSHOT_WIDTH}px;"
         "max-width:100%;"
         "height:auto;"
         "display:block;"
@@ -1025,8 +1025,8 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
         "text-decoration:none;"
         "box-shadow:0 16px 38px -28px rgba(15,23,42,0.55);"
     )
-    step_number_style = f"padding:0 16px 16px 0;font-family:{patient_links_font_family};font-size:24px;font-weight:700;line-height:1.05;color:#0B274B;vertical-align:top;white-space:nowrap;"
-    step_text_style = f"padding:1px 0 16px;font-family:{patient_links_font_family};font-size:15px;font-weight:400;color:#334155;line-height:1.6;vertical-align:top;"
+    step_number_style = f"padding:0 16px 16px 0;font-family:{delegate_links_font_family};font-size:24px;font-weight:700;line-height:1.05;color:#0B274B;vertical-align:top;white-space:nowrap;"
+    step_text_style = f"padding:1px 0 16px;font-family:{delegate_links_font_family};font-size:15px;font-weight:400;color:#334155;line-height:1.6;vertical-align:top;"
     cta_style = (
         "display:inline-block;"
         "padding:14px 28px;"
@@ -1034,13 +1034,13 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
         f"background-image:linear-gradient({_EMAIL_BRAND_BLUE},{_EMAIL_BRAND_BLUE});"
         "color:#ffffff;"
         "-webkit-text-fill-color:#ffffff;"
-        f"font-family:{patient_links_font_family};"
+        f"font-family:{delegate_links_font_family};"
         "font-size:15px;"
         "font-weight:700;"
         f"border-radius:{_EMAIL_BUTTON_BORDER_RADIUS};"
         "text-decoration:none;"
     )
-    footer_style = f"padding:24px 32px 32px;font-family:{patient_links_font_family};font-size:12px;font-weight:400;color:#6b7280;line-height:1.5;text-align:center;"
+    footer_style = f"padding:24px 32px 32px;font-family:{delegate_links_font_family};font-size:12px;font-weight:400;color:#6b7280;line-height:1.5;text-align:center;"
     html = f"""<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -1061,18 +1061,18 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
               </td>
             </tr>
             <tr>
-              <td style="padding:40px 32px 8px;font-family:{patient_links_font_family};font-weight:400;">
-                <p style="{eyebrow_style}">Delegate Links</p>
-                <h1 style="{title_style}">Create brochure and proposal links from one workspace</h1>
+              <td style="padding:40px 32px 8px;font-family:{delegate_links_font_family};font-weight:400;">
+                <p style="{eyebrow_style}">SERVICE AVAILABLE</p>
+                <h1 style="{title_style}">Delegate Links: Extending Physician Reach</h1>
                 <p style="{lead_style}">
                   Distribute and manage white-labeled research material sessions. Use brochure links for view-only product education, and proposal links when a trusted delegate needs to submit selections for physician review.
                 </p>
 
                 <p style="{screenshot_title_style}">Create and track your brochures and proposal sessions</p>
-                <img src="{create_dialog_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Create link dialog showing Brochure and Proposal link options" style="{screenshot_image_style}" />
+                <img src="{create_dialog_screenshot_url}" width="{_EMAIL_DELEGATE_LINKS_SCREENSHOT_WIDTH}" alt="Create link dialog showing Brochure and Proposal link options" style="{screenshot_image_style}" />
 
                 <p style="{screenshot_title_style}">Setup white-labeled sessions for your clients.</p>
-                <img src="{session_screenshot_url}" width="{_EMAIL_PATIENT_LINKS_SCREENSHOT_WIDTH}" alt="Delegate proposal session with branded catalog and product cards" style="{screenshot_image_style}" />
+                <img src="{session_screenshot_url}" width="{_EMAIL_DELEGATE_LINKS_SCREENSHOT_WIDTH}" alt="Delegate proposal session with branded catalog and product cards" style="{screenshot_image_style}" />
 
                 <h2 style="{section_title_style}">How to use Delegate Links</h2>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;border-collapse:collapse;">
@@ -1115,9 +1115,11 @@ def _build_delegate_links_beta_info_email(*, base_url: str) -> Tuple[str, str]:
         "Distribute and manage white-labeled research material sessions. Use brochure links for view-only product education, and proposal links when a trusted delegate needs to submit selections for physician review.\n\n"
         "Brochure: create a shareable, view-only product brochure page with descriptions. No pricing, cart, or checkout.\n"
         "Proposal: create a delegate session capable of submitting selections for physician review.\n\n"
-        "1. Open Delegate Links in your physician dashboard and choose Create a link.\n"
-        "2. Pick Brochure for view-only product education, or Proposal for delegate proposal workflows.\n"
-        "3. Use Manage your links to preview, copy, track, revoke, and review proposal activity.\n\n"
+        "How to use Delegate Links\n\n"
+        "1. Open Delegate Links in your physician dashboard, then choose Create a link.\n"
+        "2. Brochure creates a view-only product information page with no pricing, cart, or checkout.\n"
+        "3. Proposal creates a delegate session that can submit selections for physician review.\n"
+        "4. Use Manage your links to preview, copy, track, revoke, and review proposal activity.\n\n"
         f"Open Delegate Links: {safe_base_url}\n"
         "Need help? Contact support@trufusionlabs.com."
     )
