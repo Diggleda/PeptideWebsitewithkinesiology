@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.20
+ * Version: 1.1.21
  */
 
 if (!defined('ABSPATH')) exit;
@@ -152,8 +152,13 @@ function trufusion_email_overrides_get_frontend_url() {
 
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
-  if ($value === '' || stripos($value, 'peppro') !== false) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/TrufusionLabs_PhysiciansPortal.png?v=1.1.20';
+  if (
+    $value === ''
+    || stripos($value, 'peppro') !== false
+    || stripos($value, 'TrufusionLabs_PhysiciansPortal') !== false
+    || stripos($value, 'turfusionlabsphysiciansportal') !== false
+  ) {
+    $value = trufusion_email_overrides_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.21';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -170,7 +175,7 @@ function trufusion_email_overrides_get_email_base_color($current = '') {
 }
 
 function trufusion_email_overrides_get_email_background_color($current = '') {
-  return trufusion_email_overrides_get_brand_color('BACKGROUND_COLOR', '#f6f8fb');
+  return trufusion_email_overrides_get_brand_color('BACKGROUND_COLOR', '#ffffff');
 }
 
 function trufusion_email_overrides_get_email_body_background_color($current = '') {

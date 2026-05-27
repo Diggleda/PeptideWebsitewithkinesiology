@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from flask import Response, request
 
 from ..brand import LEGACY_BRAND
@@ -53,6 +55,9 @@ def _request_is_secure() -> bool:
     if request.is_secure:
         return True
     forwarded_proto = str(request.headers.get("X-Forwarded-Proto") or "").strip().lower()
-    if not forwarded_proto:
-        return False
-    return any(part.strip() == "https" for part in forwarded_proto.split(","))
+    if forwarded_proto and any(part.strip() == "https" for part in forwarded_proto.split(",")):
+        return True
+    if str(os.environ.get("NODE_ENV") or "").strip().lower() == "production":
+        return True
+    frontend_base_url = str(os.environ.get("FRONTEND_BASE_URL") or "").strip().lower()
+    return frontend_base_url.startswith("https://")

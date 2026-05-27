@@ -98,6 +98,32 @@ const sanitizePublicMessage = (message) => {
   return output;
 };
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://js.stripe.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https://www.trufusionlabs.com https://trufusionlabs.com https://api.trufusionlabs.com https://shop.trufusionlabs.com https://api.stripe.com https://m.stripe.com https://m.stripe.network wss://www.trufusionlabs.com wss://trufusionlabs.com",
+  "frame-src 'self' blob: data: https://js.stripe.com https://hooks.stripe.com",
+  "worker-src 'self' blob:",
+  "media-src 'self' blob: data: https:",
+  "manifest-src 'self'",
+  'upgrade-insecure-requests',
+].join('; ');
+
+const requestUsesHttps = (req) => {
+  if (req.secure) {
+    return true;
+  }
+  const forwardedProto = String(req.headers?.['x-forwarded-proto'] || '').toLowerCase();
+  return forwardedProto.split(',').some((part) => part.trim() === 'https');
+};
+
 const generateRequestId = () => {
   if (typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -326,6 +352,17 @@ const buildCorsOptions = () => {
 
 const createApp = () => {
   const app = express();
+
+  app.use((req, res, next) => {
+    if (env.nodeEnv === 'production' && requestUsesHttps(req)) {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+    res.setHeader('Referrer-Policy', 'strict-origin');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
 
   app.use((req, res, next) => {
     const requestId = normalizeRequestId(req.headers['x-request-id']) || generateRequestId();

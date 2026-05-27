@@ -7,7 +7,7 @@ from datetime import datetime
 from email.message import EmailMessage
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 import logging
 from email.utils import formatdate, make_msgid, parseaddr
 from urllib.parse import quote
@@ -22,6 +22,7 @@ _EMAIL_DEFAULT_FROM = "TrufusionLabs <support@trufusionlabs.com>"
 _EMAIL_DEFAULT_REPLY_TO = "support@trufusionlabs.com"
 _CONTACT_FORM_RECEIVED_CC = (_EMAIL_DEFAULT_REPLY_TO,)
 _EMAIL_DEFAULT_DOMAIN = "trufusionlabs.com"
+_EMAIL_SHIPPING_STATUS_TEMPLATE_VERSION = "shipping-status-v2"
 _EMAIL_LOGO_CID = "trufusion-logo"
 _EMAIL_LEAF_CID = "trufusion-leaf"
 _EMAIL_WHITE_LABEL_SESSIONS_CID = "delegate-white-label-sessions"
@@ -578,6 +579,7 @@ def _send_via_smtp(
     cc: Optional[Iterable[str] | str] = None,
     bcc: Optional[Iterable[str]] = None,
     reply_to: Optional[str] = None,
+    headers: Optional[Mapping[str, str]] = None,
 ) -> None:
     smtp = settings.get("smtp") or {}
     host = (smtp.get("host") or "").strip()
@@ -608,6 +610,11 @@ def _send_via_smtp(
     msg["Auto-Submitted"] = "auto-generated"
     if reply_to:
         msg["Reply-To"] = reply_to
+    for header_name, header_value in (headers or {}).items():
+        safe_name = str(header_name or "").strip()
+        safe_value = str(header_value or "").replace("\r", " ").replace("\n", " ").strip()
+        if safe_name and safe_value:
+            msg[safe_name] = safe_value
 
     cc_recipients = _normalize_extra_recipients(cc)
     if cc_recipients:
@@ -861,6 +868,7 @@ def _dispatch_email(
     bcc: Optional[Iterable[str]] = None,
     from_address: Optional[str] = None,
     reply_to: Optional[str] = None,
+    headers: Optional[Mapping[str, str]] = None,
     raise_on_failure: bool = False,
     enforce_trufusion_sender: bool = False,
 ) -> None:
@@ -873,6 +881,7 @@ def _dispatch_email(
             "subject": subject,
             "cc": ",".join(cc_recipients) if cc_recipients else None,
             "bcc": ",".join(bcc_recipients) if bcc_recipients else None,
+            "headers": ",".join(sorted(str(key) for key in (headers or {}).keys())) if headers else None,
         },
     )
     config = get_config()
@@ -899,6 +908,7 @@ def _dispatch_email(
                     cc=cc_recipients,
                     bcc=bcc_recipients,
                     reply_to=reply_to,
+                    headers=headers,
                 )
                 return
             except Exception as exc:
@@ -917,6 +927,9 @@ def _dispatch_email(
         dev_body = f"Cc: {', '.join(cc_recipients)}\n{dev_body}"
     if bcc_recipients:
         dev_body = f"Bcc: {', '.join(bcc_recipients)}\n{dev_body}"
+    if headers:
+        header_lines = [f"{key}: {value}" for key, value in headers.items()]
+        dev_body = f"Headers: {'; '.join(header_lines)}\n{dev_body}"
     _write_dev_mail(subject, recipient, dev_body)
     logger.info("Email logged locally", extra={"recipient": recipient, "subject": subject})
 
@@ -1224,6 +1237,7 @@ def _build_shipping_status_email(
     {_EMAIL_TRACK_BUTTON_HOVER_CSS}
   </head>
   <body class="trufusion-email-bg trufusion-text" bgcolor="{_EMAIL_BACKGROUND_HEX}" style="{body_style}">
+    <!-- trufusion-email-template:{_EMAIL_SHIPPING_STATUS_TEMPLATE_VERSION} -->
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="{_EMAIL_BACKGROUND_HEX}" class="trufusion-email-bg" style="{outer_table_style}">
       <tr>
         <td align="center" style="{_EMAIL_ORDER_OUTER_CELL_STYLE}">
@@ -1395,6 +1409,10 @@ def send_order_shipping_status_email(
         html,
         plain_text,
         bcc=_ORDER_UPDATE_BCC,
+        headers={
+            "X-Trufusion-Email-Template": _EMAIL_SHIPPING_STATUS_TEMPLATE_VERSION,
+            "X-Trufusion-Email-Renderer": "python_backend.services.email_service",
+        },
         raise_on_failure=True,
     )
 

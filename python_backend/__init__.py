@@ -10,6 +10,26 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _LOGGER = logging.getLogger(__name__)
 
+_CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://js.stripe.com",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: https:",
+        "font-src 'self' data:",
+        "connect-src 'self' https://www.trufusionlabs.com https://trufusionlabs.com https://api.trufusionlabs.com https://shop.trufusionlabs.com https://api.stripe.com https://m.stripe.com https://m.stripe.network wss://www.trufusionlabs.com wss://trufusionlabs.com",
+        "frame-src 'self' blob: data: https://js.stripe.com https://hooks.stripe.com",
+        "worker-src 'self' blob:",
+        "media-src 'self' blob: data: https:",
+        "manifest-src 'self'",
+        "upgrade-insecure-requests",
+    ]
+)
+
 
 def _resolve_web_background_jobs_mode(*, default_mode: str = "thread") -> str:
     default = "external" if str(default_mode or "").strip().lower() == "external" else "thread"
@@ -21,6 +41,27 @@ def _resolve_web_background_jobs_mode(*, default_mode: str = "thread") -> str:
     if raw in {"external", "off", "false", "no", "disabled"}:
         return "external"
     return default
+
+
+def _request_uses_https() -> bool:
+    from flask import request
+
+    if request.is_secure:
+        return True
+    forwarded_proto = str(request.headers.get("X-Forwarded-Proto") or "").strip().lower()
+    return any(part.strip() == "https" for part in forwarded_proto.split(","))
+
+
+def _init_security_headers(app: "Flask", config) -> None:
+    @app.after_request
+    def _security_headers(response):  # type: ignore[return-value]
+        if config.is_production and _request_uses_https():
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault("Content-Security-Policy", _CONTENT_SECURITY_POLICY)
+        response.headers.setdefault("Referrer-Policy", "strict-origin")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        return response
 
 
 def _build_app(*, route_set: str) -> "Flask":
@@ -88,6 +129,7 @@ def _build_app(*, route_set: str) -> "Flask":
     init_request_logging(app)
     init_rate_limit(app)
     init_shadow_mode(app)
+    _init_security_headers(app, config)
     if route_set == "presence":
         register_presence_blueprints(app, config)
     else:

@@ -25,6 +25,7 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_args.args[0], "holly@example.com")
         html = dispatch_email.call_args.args[2]
         self.assertIn('src="cid:trufusion-logo"', html)
+        self.assertIn("trufusion-email-template:shipping-status-v2", html)
         self.assertIn('width="360"', html)
         self.assertIn("width:360px", html)
         self.assertIn("max-width:70%", html)
@@ -62,6 +63,13 @@ class EmailServiceTests(unittest.TestCase):
         self.assertNotIn("https://trufusionlabs.com/leafTexture.jpg", html)
         self.assertNotIn("/turfusionlabsphysiciansportal.png", html)
         self.assertEqual(dispatch_email.call_args.kwargs["bcc"], ("pgibbons@trufusionlabs.com",))
+        self.assertEqual(
+            dispatch_email.call_args.kwargs["headers"],
+            {
+                "X-Trufusion-Email-Template": "shipping-status-v2",
+                "X-Trufusion-Email-Renderer": "python_backend.services.email_service",
+            },
+        )
         self.assertTrue(dispatch_email.call_args.kwargs["raise_on_failure"])
         self.assertNotIn("cc", dispatch_email.call_args.kwargs)
 
@@ -87,6 +95,7 @@ class EmailServiceTests(unittest.TestCase):
         self.assertEqual(dispatch_email.call_count, len(statuses))
         for call in dispatch_email.call_args_list:
             self.assertEqual(call.kwargs["bcc"], ("pgibbons@trufusionlabs.com",))
+            self.assertEqual(call.kwargs["headers"]["X-Trufusion-Email-Template"], "shipping-status-v2")
             self.assertTrue(call.kwargs["raise_on_failure"])
 
     def test_shipping_status_email_uses_in_transit_copy(self):
@@ -448,6 +457,7 @@ class EmailServiceTests(unittest.TestCase):
                 cc=("petergibbons7@icloud.com",),
                 bcc=("finance@example.com",),
                 reply_to="support@trufusionlabs.com",
+                headers={"X-Trufusion-Email-Template": "shipping-status-v2"},
             )
 
         self.assertIn(("connect", "smtp-relay.gmail.com", 587, 15), events)
@@ -464,6 +474,7 @@ class EmailServiceTests(unittest.TestCase):
             events,
         )
         self.assertEqual(messages[0]["Reply-To"], "support@trufusionlabs.com")
+        self.assertEqual(messages[0]["X-Trufusion-Email-Template"], "shipping-status-v2")
         self.assertEqual(messages[0]["Auto-Submitted"], "auto-generated")
         self.assertTrue(messages[0]["Message-ID"].endswith("@trufusionlabs.com>"))
         self.assertNotIn("finance@example.com", messages[0].as_string())

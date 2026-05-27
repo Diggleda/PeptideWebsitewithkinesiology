@@ -2,6 +2,10 @@
 
 Customizes WooCommerce BACS/Zelle messaging and can optionally force WordPress/WooCommerce emails to send via SMTP.
 
+The default WooCommerce email header logo is the current TrufusionLabs full logo. If `TRUFUSION_EMAIL_LOGO_URL`
+is empty, points at a PepPro asset, or points at the legacy physicians-portal logo, the plugin falls back to
+`/FullLogo_Transparent_NoBuffer%20(18).png`.
+
 ## Optional: consistent From identity
 
 Add to `wp-config.php`:
