@@ -99,21 +99,7 @@ const sanitizePublicMessage = (message) => {
 };
 
 const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
   "frame-ancestors 'none'",
-  "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://js.stripe.com",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
-  "connect-src 'self' https://www.trufusionlabs.com https://trufusionlabs.com https://api.trufusionlabs.com https://shop.trufusionlabs.com https://api.stripe.com https://m.stripe.com https://m.stripe.network wss://www.trufusionlabs.com wss://trufusionlabs.com",
-  "frame-src 'self' blob: data: https://js.stripe.com https://hooks.stripe.com",
-  "worker-src 'self' blob:",
-  "media-src 'self' blob: data: https:",
-  "manifest-src 'self'",
-  'upgrade-insecure-requests',
 ].join('; ');
 
 const requestUsesHttps = (req) => {
