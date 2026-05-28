@@ -214,11 +214,11 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 }
             )
 
-        self.assertEqual(physicians["recipientCount"], 3)
+        self.assertEqual(physicians["recipientCount"], 2)
         self.assertEqual(sales_reps["recipientCount"], 1)
         self.assertEqual(
             [recipient["email"] for recipient in physicians["recipients"]],
-            ["verified@example.com", "testdoctor@example.com", "doctor-account@example.com"],
+            ["verified@example.com", "doctor-account@example.com"],
         )
         self.assertEqual(sales_reps["recipients"][0]["email"], "active.rep@example.com")
 

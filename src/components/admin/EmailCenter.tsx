@@ -1167,30 +1167,9 @@ export function EmailCenter() {
                     <span className="ml-2 text-xs font-medium text-amber-700">{bulkRecipientEstimate.error}</span>
                   ) : null}
                   {isBulkRecipientMode && bulkRecipientEstimate.recipients.length > 0 && (
-                    <div className="mt-3 rounded-md border border-slate-200 bg-white shadow-inner">
-                      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Email list
-                        </span>
-                        <span className="text-xs font-semibold text-slate-500">
-                          {formatCount(bulkRecipientEstimate.recipients.length)}
-                        </span>
-                      </div>
-                      <div className="max-h-56 divide-y divide-slate-100 overflow-y-auto">
-                        {bulkRecipientEstimate.recipients.map((recipient) => (
-                          <div
-                            key={`${recipient.email}-${recipient.type || "recipient"}`}
-                            className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] sm:items-center"
-                          >
-                            <span className="truncate text-sm font-semibold text-slate-900">
-                              {recipient.name || "Unnamed recipient"}
-                            </span>
-                            <span className="truncate text-sm text-slate-600 sm:text-right">
-                              {recipient.email}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-700 shadow-inner">
+                      <span className="font-semibold text-slate-900">Email list: </span>
+                      {bulkRecipientEstimate.recipients.map((recipient) => recipient.email).join(", ")}
                     </div>
                   )}
                 </div>

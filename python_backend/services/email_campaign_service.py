@@ -472,7 +472,7 @@ def _recipient_name(user: Dict[str, Any]) -> str:
 
 def _is_verified_physician(user: Dict[str, Any]) -> bool:
     role = str(user.get("role") or "").strip().lower()
-    if role not in ("doctor", "test_doctor"):
+    if role != "doctor":
         return False
     if str(user.get("status") or "active").strip().lower() in ("disabled", "inactive", "deleted"):
         return False
