@@ -150,7 +150,9 @@ def bump(resource_name: object, *, metadata: Optional[Dict[str, Any]] = None) ->
             {"resource_name": name},
         )
         return _serialize_row(row or {"resource_name": name, "version": 1})
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, RuntimeError) and "not been initialised" in str(exc):
+            return _memory_bump(name, metadata=metadata)
         logger.warning("Failed to bump resource version", exc_info=True, extra={"resource": name})
         return _memory_bump(name, metadata=metadata)
 
@@ -208,7 +210,8 @@ def get_versions(resources: Iterable[object] | None = None) -> Dict[str, Dict[st
             for row in (_serialize_row(row or {}) for row in rows or [])
             if row.get("resource")
         }
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, RuntimeError) and "not been initialised" in str(exc):
+            return _memory_get(names)
         logger.warning("Failed to read resource versions", exc_info=True)
         return _memory_get(names)
-

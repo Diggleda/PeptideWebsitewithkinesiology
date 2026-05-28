@@ -18,10 +18,7 @@ def _now_iso() -> str:
 
 
 def _using_mysql() -> bool:
-    try:
-        return bool(get_config().mysql.get("enabled"))
-    except Exception:
-        return False
+    return mysql_client.is_enabled()
 
 
 def _json_path() -> Path:
@@ -455,10 +452,25 @@ def list_due_pending_recipients(*, limit: int = 25) -> List[Dict[str, Any]]:
             """,
             {"now": now_sql, "limit": limit},
         )
+        claimed: List[Dict[str, Any]] = []
         for row in rows:
+            updated = mysql_client.execute(
+                """
+                UPDATE email_campaign_recipients
+                SET status = 'processing',
+                    sent_at = %(claimed_at)s,
+                    error_message = NULL
+                WHERE id = %(id)s
+                  AND status = 'pending'
+                """,
+                {"id": row.get("recipient_id"), "claimed_at": now_sql},
+            )
+            if not updated:
+                continue
             row["recipient_variables_json"] = _json_loads(row.get("recipient_variables_json"), {})
             row["campaign_variables_json"] = _json_loads(row.get("campaign_variables_json"), {})
-        return rows
+            claimed.append(row)
+        return claimed
 
     now_text = _now_iso()
     with _JSON_LOCK:
@@ -474,6 +486,9 @@ def list_due_pending_recipients(*, limit: int = 25) -> List[Dict[str, Any]]:
             scheduled_at = str(campaign.get("scheduled_at") or "")
             if scheduled_at and scheduled_at > now_text:
                 continue
+            recipient["status"] = "processing"
+            recipient["sent_at"] = now_text
+            recipient["error_message"] = None
             jobs.append(
                 {
                     "recipient_id": recipient.get("id"),
@@ -489,7 +504,10 @@ def list_due_pending_recipients(*, limit: int = 25) -> List[Dict[str, Any]]:
                     "campaign_variables_json": campaign.get("variables_json") or {},
                 }
             )
-        return jobs[:limit]
+            if len(jobs) >= limit:
+                break
+        _save_json(store)
+        return jobs
 
 
 def log_event(

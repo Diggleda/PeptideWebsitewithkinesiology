@@ -12,6 +12,7 @@ export const appQueryKeys = {
   catalog: ["catalog"] as const,
   forum: ["forum"] as const,
   peptideProducts: ["peptide-products"] as const,
+  emailCampaigns: ["email-campaigns"] as const,
 };
 
 export const appDataResources = [
@@ -23,6 +24,7 @@ export const appDataResources = [
   "catalog",
   "forum",
   "peptide-products",
+  "email-campaigns",
 ] as const;
 
 export type AppDataResource = (typeof appDataResources)[number];
@@ -53,8 +55,8 @@ export const queryPrefixesForResource: Record<AppDataResource, readonly unknown[
   catalog: [appQueryKeys.catalog],
   forum: [appQueryKeys.forum],
   "peptide-products": [appQueryKeys.peptideProducts],
+  "email-campaigns": [appQueryKeys.emailCampaigns],
 };
 
 export const isAppDataResource = (value: unknown): value is AppDataResource =>
   typeof value === "string" && (appDataResources as readonly string[]).includes(value);
-

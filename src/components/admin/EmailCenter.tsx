@@ -3,6 +3,7 @@ import clsx from "clsx";
 import {
   BookmarkIcon,
   CalendarDaysIcon,
+  ChevronDownIcon,
   CircleStackIcon,
   ClockIcon,
   EnvelopeIcon,
@@ -178,6 +179,7 @@ export function EmailCenter() {
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<EmailCenterCampaign[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
+  const [campaignsAutoUpdating, setCampaignsAutoUpdating] = useState(false);
   const [campaignError, setCampaignError] = useState<string | null>(null);
   const [bulkRecipientEstimate, setBulkRecipientEstimate] = useState<{
     count: number | null;
@@ -279,8 +281,13 @@ export function EmailCenter() {
     }
   }, []);
 
-  const loadCampaigns = useCallback(async (status?: string) => {
-    setCampaignsLoading(true);
+  const loadCampaigns = useCallback(async (status?: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setCampaignsLoading(true);
+    } else {
+      setCampaignsAutoUpdating(true);
+    }
     setCampaignError(null);
     try {
       const response = (await emailCenterAPI.listCampaigns(status && status !== "logs" ? status : undefined)) as any;
@@ -288,7 +295,11 @@ export function EmailCenter() {
     } catch (error) {
       setCampaignError(getErrorMessage(error));
     } finally {
-      setCampaignsLoading(false);
+      if (!silent) {
+        setCampaignsLoading(false);
+      } else {
+        setCampaignsAutoUpdating(false);
+      }
     }
   }, []);
 
@@ -330,11 +341,39 @@ export function EmailCenter() {
   }, [updateEmailCenterTabIndicator]);
 
   useEffect(() => {
-    if (activeTab === "new" || activeTab === "templates") return;
-    const timer = window.setInterval(() => {
-      void loadCampaigns(activeTab === "logs" ? undefined : activeTab);
-    }, 10000);
-    return () => window.clearInterval(timer);
+    if (activeTab === "new" || activeTab === "templates") {
+      return;
+    }
+    const status = activeTab === "logs" ? undefined : activeTab;
+    void loadCampaigns(status, { silent: campaigns.length > 0 });
+  }, [activeTab, campaigns.length, loadCampaigns]);
+
+  useEffect(() => {
+    if (activeTab === "new" || activeTab === "templates") {
+      return;
+    }
+    const refreshCurrentView = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      void loadCampaigns(activeTab === "logs" ? undefined : activeTab, { silent: true });
+    };
+    const handleResourceChanged = (event: Event) => {
+      const resource = String(
+        ((event as CustomEvent<{ resource?: string }>).detail?.resource || ""),
+      );
+      if (resource === "email-campaigns") {
+        refreshCurrentView();
+      }
+    };
+    window.addEventListener("trufusion:resource-changed", handleResourceChanged);
+    document.addEventListener("visibilitychange", refreshCurrentView);
+    window.addEventListener("focus", refreshCurrentView);
+    return () => {
+      window.removeEventListener("trufusion:resource-changed", handleResourceChanged);
+      document.removeEventListener("visibilitychange", refreshCurrentView);
+      window.removeEventListener("focus", refreshCurrentView);
+    };
   }, [activeTab, loadCampaigns]);
 
   useEffect(() => {
@@ -572,18 +611,13 @@ export function EmailCenter() {
               {status === "logs" ? "Recent campaign audit trail summary." : "Queued campaign records from the backend."}
             </p>
           </div>
-          <div className="ml-auto flex w-full justify-end sm:w-auto">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => loadCampaigns(status)}
-              className="email-center-home-button squircle-sm gap-2"
-            >
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              <span>Refresh</span>
-            </Button>
-          </div>
+          {campaignsAutoUpdating && (
+            <div className="ml-auto flex w-full justify-end sm:w-auto">
+              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+                Auto-updating
+              </span>
+            </div>
+          )}
         </div>
         {campaignError && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -660,17 +694,32 @@ export function EmailCenter() {
                       <td className="px-3 py-2 text-slate-600">{formatDateTime(campaign.scheduledAt)}</td>
                       <td className="px-3 py-2 text-right">
                         {isDraft ? (
+                          <details className="group relative inline-block text-left">
+                            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-400 bg-white px-3 text-xs font-semibold text-black shadow-sm transition hover:border-black hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 [&::-webkit-details-marker]:hidden">
+                              <span>Action</span>
+                              <ChevronDownIcon className="h-4 w-4 text-black transition group-open:rotate-180" aria-hidden="true" />
+                            </summary>
+                            <div className="absolute right-0 z-20 mt-2 min-w-[11rem] overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-lg">
+                              <button
+                                type="button"
+                                onClick={() => deleteDraftCampaign(campaign)}
+                                disabled={deletingCampaignId === campaign.id}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-black transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <Trash2 className="h-4 w-4 text-black" aria-hidden="true" />
+                                <span>{deletingCampaignId === campaign.id ? "Deleting..." : "Delete draft"}</span>
+                              </button>
+                            </div>
+                          </details>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => deleteDraftCampaign(campaign)}
-                            disabled={deletingCampaignId === campaign.id}
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-black opacity-50"
                           >
-                            <Trash2 className="h-4 w-4" aria-hidden="true" />
-                            {deletingCampaignId === campaign.id ? "Deleting..." : "Delete"}
+                            <span>Action</span>
+                            <ChevronDownIcon className="h-4 w-4 text-black" aria-hidden="true" />
                           </button>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
                         )}
                       </td>
                     </tr>
@@ -794,9 +843,6 @@ export function EmailCenter() {
                     aria-pressed={isActive}
                     onClick={() => {
                       setActiveTab(tab.id);
-                      if (tab.id !== "new" && tab.id !== "templates") {
-                        void loadCampaigns(tab.id);
-                      }
                     }}
                   >
                     <span className="inline-flex items-center gap-2 !text-black" data-email-center-tab-content>

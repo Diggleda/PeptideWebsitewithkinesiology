@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote, urlencode, urlparse
 
 from ..repositories import email_campaign_repository
-from . import background_job_supervisor, email_service, get_config
+from . import background_job_supervisor, email_service, get_config, resource_version_service
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,10 @@ _TEST_SENDS_LOCK = threading.Lock()
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
+_KICK_RUNNING = False
+_KICK_LOCK = threading.Lock()
 _JOB_NAME = "emailCampaignWorker"
+_RESOURCE_NAME = "email-campaigns"
 
 EMAIL_TYPE_OPTIONS = [
     {"id": "survey", "label": "Survey"},
@@ -75,6 +78,11 @@ def _now_iso() -> str:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(12)}"
+
+
+def _notify_email_campaigns_changed(**metadata: Any) -> None:
+    clean_metadata = {key: value for key, value in metadata.items() if value is not None}
+    resource_version_service.bump_safe(_RESOURCE_NAME, metadata=clean_metadata or None)
 
 
 def _normalize_email(value: Any) -> str:
@@ -776,6 +784,15 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
             "status": status,
         },
     )
+    _notify_email_campaigns_changed(
+        event="campaign_created" if not save_as_draft else "draft_saved",
+        campaignId=campaign_id,
+        status=status,
+    )
+    if not save_as_draft:
+        if status == "sending":
+            kick_due_campaign_processing()
+        ensure_email_campaign_worker_started()
     return {"campaign": _campaign_to_api(campaign)}
 
 
@@ -797,6 +814,7 @@ def delete_draft_campaign(campaign_id: str, *, admin: Optional[Dict[str, Any]] =
             "adminId": (admin or {}).get("id"),
         },
     )
+    _notify_email_campaigns_changed(event="draft_deleted", campaignId=str(campaign.get("id") or campaign_id))
     return {"ok": True, "deleted": True, "campaignId": campaign.get("id") or campaign_id}
 
 
@@ -903,9 +921,12 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
 
     for campaign_id in campaign_ids:
         counts = email_campaign_repository.count_recipients_by_status(campaign_id)
-        if int(counts.get("pending") or 0) == 0:
+        if int(counts.get("pending") or 0) == 0 and int(counts.get("processing") or 0) == 0:
             final_status = "failed" if int(counts.get("sent") or 0) == 0 and int(counts.get("failed") or 0) > 0 else "sent"
             email_campaign_repository.update_campaign_status(campaign_id, final_status, sent_at=_now_iso())
+
+    if processed > 0:
+        _notify_email_campaigns_changed(event="campaign_recipients_processed", processed=processed, sent=sent, failed=failed, skipped=skipped)
 
     return {
         "ok": True,
@@ -961,7 +982,62 @@ def get_worker_status() -> Dict[str, Any]:
         "batchSize": _batch_size(),
         "throttleSeconds": _throttle_seconds(),
         "started": _THREAD_STARTED,
+        "kickRunning": _KICK_RUNNING,
     }
+
+
+def _run_kick_loop() -> None:
+    global _KICK_RUNNING
+    try:
+        deadline = time.monotonic() + 300.0
+        while time.monotonic() < deadline:
+            result = process_pending_campaign_emails(limit=_batch_size(), throttle_seconds=_throttle_seconds())
+            background_job_supervisor.record_heartbeat(
+                _JOB_NAME,
+                last_result={**result, "source": "kick"},
+                clear_error=True,
+                enabled=_enabled(),
+                mode=_mode(),
+                intervalSeconds=_interval_seconds(),
+            )
+            if int(result.get("processed") or 0) <= 0:
+                break
+            time.sleep(1.0)
+    except Exception as exc:
+        logger.exception("Email campaign kick worker failed")
+        background_job_supervisor.record_heartbeat(
+            _JOB_NAME,
+            last_error=exc,
+            enabled=_enabled(),
+            mode=_mode(),
+            intervalSeconds=_interval_seconds(),
+        )
+    finally:
+        with _KICK_LOCK:
+            _KICK_RUNNING = False
+
+
+def kick_due_campaign_processing() -> None:
+    global _KICK_RUNNING
+    if not _enabled():
+        return
+    if _THREAD_STARTED:
+        return
+    with _KICK_LOCK:
+        if _KICK_RUNNING:
+            return
+        _KICK_RUNNING = True
+    worker = threading.Thread(target=_run_kick_loop, name="email-campaign-kick", daemon=True)
+    worker.start()
+
+
+def ensure_email_campaign_worker_started() -> None:
+    if not _enabled() or _THREAD_STARTED:
+        return
+    try:
+        start_email_campaign_worker(force=True)
+    except Exception:
+        logger.exception("Failed to start email campaign worker")
 
 
 def _run_loop() -> None:
