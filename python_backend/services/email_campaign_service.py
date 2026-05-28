@@ -710,17 +710,21 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     variables = normalize_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
     recipient_selection = payload.get("recipientSelection") or payload.get("recipient_selection")
     recipients = _estimate_draft_recipients(recipient_selection) if save_as_draft else resolve_recipients(recipient_selection)
+    selection_for_mode = recipient_selection if isinstance(recipient_selection, dict) else {}
+    recipient_mode = str(selection_for_mode.get("mode") or "test").strip()
+    requires_test_token = recipient_mode != "test"
     if not save_as_draft:
         _assert_allowed_recipients(template, recipients, recipient_selection)
         if str(payload.get("confirmationText") or "").strip() != "SEND":
             raise service_error("Type SEND to confirm this campaign", 400)
-        _verify_test_token(
-            token=payload.get("testToken") or payload.get("test_token"),
-            admin_id=str(admin.get("id") or ""),
-            template_id=str(template["id"]),
-            subject=subject,
-            variables={key: value for key, value in variables.items() if key != "unsubscribe_url"},
-        )
+        if requires_test_token:
+            _verify_test_token(
+                token=payload.get("testToken") or payload.get("test_token"),
+                admin_id=str(admin.get("id") or ""),
+                template_id=str(template["id"]),
+                subject=subject,
+                variables={key: value for key, value in variables.items() if key != "unsubscribe_url"},
+            )
 
     now_iso = _now_iso()
     campaign_id = _new_id("emc")

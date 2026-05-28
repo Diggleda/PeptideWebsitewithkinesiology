@@ -2,22 +2,22 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import clsx from "clsx";
 import {
   BookmarkIcon,
+  CalendarDaysIcon,
   CircleStackIcon,
   ClockIcon,
   EnvelopeIcon,
   ExclamationCircleIcon,
+  PaperAirplaneIcon,
   RocketLaunchIcon,
   StrikethroughIcon,
 } from "@heroicons/react/24/outline";
 import {
-  CalendarDays,
   CheckCircle2,
   Eye,
   FileText,
   Mail,
   RefreshCw,
   Save,
-  Send,
   Trash2,
   Users,
 } from "lucide-react";
@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
+import { Button } from "../ui/button";
 
 type EmailTypeOption = {
   id: string;
@@ -233,6 +234,7 @@ export function EmailCenter() {
   );
 
   const isBulkRecipientMode = recipientMode === "all_verified_physicians" || recipientMode === "sales_reps";
+  const requiresPreflightTest = recipientMode !== "test";
 
   const recipientEstimate = useMemo(() => {
     if (recipientMode === "test") return effectiveTestRecipientEmail ? "1" : "0";
@@ -451,7 +453,15 @@ export function EmailCenter() {
   };
 
   const handleSendTest = async () => {
-    if (!selectedTemplate) return;
+    if (!selectedTemplate) {
+      toast.error("Select an email template first.");
+      return;
+    }
+    if (!testRecipientEmail.trim()) {
+      toast.error("Enter a test email address first.");
+      return;
+    }
+    if (sendingTest) return;
     setSendingTest(true);
     try {
       const response = (await emailCenterAPI.sendTest({
@@ -471,7 +481,15 @@ export function EmailCenter() {
   };
 
   const openSendConfirmation = (mode: "send" | "schedule") => {
+    if (!selectedTemplate) {
+      toast.error("Select an email template first.");
+      return;
+    }
     if (mode === "schedule") {
+      if (!scheduledAt) {
+        toast.error("Choose a scheduled send time first.");
+        return;
+      }
       try {
         scheduleInputToIso(scheduledAt);
       } catch (error) {
@@ -484,7 +502,19 @@ export function EmailCenter() {
   };
 
   const createCampaign = async (mode: "draft" | "send" | "schedule") => {
-    if (!selectedTemplate) return;
+    if (!selectedTemplate) {
+      toast.error("Select an email template first.");
+      return;
+    }
+    if (mode !== "draft" && confirmationText !== "SEND") {
+      toast.error("Type SEND to confirm this campaign.");
+      return;
+    }
+    if (mode !== "draft" && requiresPreflightTest && !testToken) {
+      toast.error("Send a test email before continuing.");
+      return;
+    }
+    if (savingCampaign) return;
     setSavingCampaign(true);
     try {
       const scheduleIso = scheduleInputToIso(scheduledAt);
@@ -533,7 +563,7 @@ export function EmailCenter() {
       : campaigns;
     return (
       <div className={clsx(DASHBOARD_PANEL_CLASS, "space-y-4")}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div>
             <h4 className="text-base font-semibold text-slate-900">
               {status === "logs" ? "Recent Email Activity" : "Campaigns"}
@@ -542,14 +572,18 @@ export function EmailCenter() {
               {status === "logs" ? "Recent campaign audit trail summary." : "Queued campaign records from the backend."}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => loadCampaigns(status)}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-          >
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
-            Refresh
-          </button>
+          <div className="ml-auto flex w-full justify-end sm:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => loadCampaigns(status)}
+              className="email-center-home-button squircle-sm gap-2"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              <span>Refresh</span>
+            </Button>
+          </div>
         </div>
         {campaignError && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -661,7 +695,11 @@ export function EmailCenter() {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent
+          className="email-center-confirm-dialog max-w-md"
+          containerClassName="email-center-confirm-dialog-layer fixed inset-0 flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
+          containerStyle={{ overscrollBehavior: "contain" }}
+        >
           <DialogHeader>
             <DialogTitle>
               {pendingCampaignMode === "schedule" ? "Confirm Scheduled Campaign" : "Confirm Campaign Send"}
@@ -681,33 +719,42 @@ export function EmailCenter() {
               autoFocus
             />
           </label>
-          <DialogFooter>
-            <button
+          {requiresPreflightTest && !testToken && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+              Send a test email before this campaign can be queued.
+            </div>
+          )}
+          <DialogFooter className="items-end justify-end sm:justify-end">
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => {
                 setPendingCampaignMode(null);
                 setConfirmationText("");
               }}
-              className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              className="email-center-home-button squircle-sm gap-2"
             >
-              Cancel
-            </button>
-            <button
+              <span>Cancel</span>
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => {
                 if (!pendingCampaignMode) return;
                 void createCampaign(pendingCampaignMode);
               }}
-              disabled={savingCampaign || confirmationText !== "SEND"}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              disabled={savingCampaign}
+              className="email-center-home-button squircle-sm gap-2"
             >
               {pendingCampaignMode === "schedule" ? (
-                <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                <CalendarDaysIcon className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <Send className="h-4 w-4" aria-hidden="true" />
+                <PaperAirplaneIcon className="h-4 w-4" aria-hidden="true" />
               )}
-              {pendingCampaignMode === "schedule" ? "Schedule send" : "Send now"}
-            </button>
+              <span>{pendingCampaignMode === "schedule" ? "Schedule send" : "Send now"}</span>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1021,37 +1068,43 @@ export function EmailCenter() {
                 </div>
               </section>
 
-              <section className={DASHBOARD_PANEL_CLASS}>
-                <div className="mb-4 flex items-center gap-2">
-                  <Mail className="h-5 w-5 text-slate-700" aria-hidden="true" />
-                  <h4 className="text-base font-semibold text-slate-950">Test Send</h4>
-                </div>
-                <div className={FIELD_STACK_CLASS}>
-                  <label className={FIELD_SHELL_CLASS}>
-                    <span className={FIELD_LABEL_CLASS}>Send test to</span>
-                    <input
-                      value={testRecipientEmail}
-                      onChange={(event) => setTestRecipientEmail(event.target.value)}
-                      placeholder="admin@example.com"
-                      className={INPUT_CLASS}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleSendTest}
-                    disabled={sendingTest || !selectedTemplateId || !testRecipientEmail.trim()}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    <Mail className="h-4 w-4" aria-hidden="true" />
-                    {sendingTest ? "Sending..." : "Send test email"}
-                  </button>
-                  {testToken && (
-                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                      Test send completed. Token expires {formatDateTime(testTokenExpiresAt)}.
+              {requiresPreflightTest && (
+                <section className={DASHBOARD_PANEL_CLASS}>
+                  <div className="mb-4 flex items-center gap-2">
+                    <Mail className="h-5 w-5 text-slate-700" aria-hidden="true" />
+                    <h4 className="text-base font-semibold text-slate-950">Test Send</h4>
+                  </div>
+                  <div className={FIELD_STACK_CLASS}>
+                    <label className={FIELD_SHELL_CLASS}>
+                      <span className={FIELD_LABEL_CLASS}>Send test to</span>
+                      <input
+                        value={testRecipientEmail}
+                        onChange={(event) => setTestRecipientEmail(event.target.value)}
+                        placeholder="admin@example.com"
+                        className={INPUT_CLASS}
+                      />
+                    </label>
+                    <div className="flex w-full justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSendTest}
+                        disabled={sendingTest}
+                        className="email-center-home-button squircle-sm gap-2"
+                      >
+                        <Mail className="h-4 w-4" aria-hidden="true" />
+                        <span>{sendingTest ? "Sending..." : "Send test email"}</span>
+                      </Button>
                     </div>
-                  )}
-                </div>
-              </section>
+                    {testToken && (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        Test send completed. Token expires {formatDateTime(testTokenExpiresAt)}.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
 
               <section className={clsx(DASHBOARD_PANEL_CLASS, "min-w-0")}>
                 <div className="mb-3 flex items-center justify-between gap-2">
@@ -1071,7 +1124,7 @@ export function EmailCenter() {
 
               <section className={DASHBOARD_PANEL_CLASS}>
                 <div className="mb-4 flex items-center gap-2">
-                  <Send className="h-5 w-5 text-slate-700" aria-hidden="true" />
+                  <PaperAirplaneIcon className="h-5 w-5 text-slate-700" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Send Controls</h4>
                 </div>
                 <div className={FIELD_STACK_CLASS}>
@@ -1088,39 +1141,45 @@ export function EmailCenter() {
                       className={INPUT_CLASS}
                     />
                   </label>
-                  {!testToken && (
+                  {requiresPreflightTest && !testToken && (
                     <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
                       Send a test email before continuing to a real send or scheduled send.
                     </div>
                   )}
-                  <div className="flex flex-wrap gap-4">
-                    <button
+                  <div className="flex w-full flex-wrap items-center justify-end gap-4">
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => createCampaign("draft")}
-                      disabled={savingCampaign || !selectedTemplateId}
-                      className="email-center-action-button header-home-button squircle-sm inline-flex min-h-12 min-w-[12rem] items-center justify-center gap-2 bg-white px-5 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed"
+                      disabled={savingCampaign}
+                      className="email-center-home-button squircle-sm gap-2"
                     >
                       <Save className="h-4 w-4" aria-hidden="true" />
                       <span>Save draft</span>
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => openSendConfirmation("send")}
-                      disabled={savingCampaign || !testToken}
-                      className="email-center-action-button header-home-button squircle-sm inline-flex min-h-12 min-w-[14rem] items-center justify-center gap-2 bg-white px-5 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed"
+                      disabled={savingCampaign}
+                      className="email-center-home-button squircle-sm gap-2"
                     >
-                      <Send className="h-4 w-4" aria-hidden="true" />
+                      <PaperAirplaneIcon className="h-4 w-4" aria-hidden="true" />
                       <span>Continue to send now</span>
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => openSendConfirmation("schedule")}
-                      disabled={savingCampaign || !testToken || !scheduledAt}
-                      className="email-center-action-button header-home-button squircle-sm inline-flex min-h-12 min-w-[14rem] items-center justify-center gap-2 bg-white px-5 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed"
+                      disabled={savingCampaign}
+                      className="email-center-home-button squircle-sm gap-2"
                     >
-                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                      <CalendarDaysIcon className="h-4 w-4" aria-hidden="true" />
                       <span>Continue to schedule</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </section>

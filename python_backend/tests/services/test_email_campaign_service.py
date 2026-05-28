@@ -242,7 +242,7 @@ class EmailCampaignServiceTests(unittest.TestCase):
             campaign_response = email_campaign_service.create_campaign(
                 {
                     **base_payload,
-                    "recipientSelection": {"mode": "test", "testEmail": "admin@example.com"},
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
                     "confirmationText": "SEND",
                     "testToken": test_response["testToken"],
                 },
@@ -257,13 +257,48 @@ class EmailCampaignServiceTests(unittest.TestCase):
             email_campaign_service.create_campaign(
                 {
                     **base_payload,
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
+                    "confirmationText": "SEND",
+                },
+                admin=admin,
+            )
+
+        with self.assertRaises(Exception):
+            email_campaign_service.create_campaign(
+                {
+                    **base_payload,
                     "subject": "Changed subject",
-                    "recipientSelection": {"mode": "test", "testEmail": "admin@example.com"},
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
                     "confirmationText": "SEND",
                     "testToken": test_response["testToken"],
                 },
                 admin=admin,
             )
+
+    def test_test_only_campaign_does_not_require_preflight_test_token(self) -> None:
+        admin = {"id": "admin_1", "role": "admin"}
+
+        with patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=lambda campaign, _recipients: campaign), \
+            patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={"pending": 1}), \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"):
+            campaign_response = email_campaign_service.create_campaign(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "subject": "Delegate Links are now available",
+                    "variables": {
+                        "doctor_name": "Dr. Ada Lovelace",
+                        "clinic_name": "Analytical Clinic",
+                        "delegate_links_url": "https://trufusionlabs.com/account?tab=delegate-links",
+                        "support_email": "support@trufusionlabs.com",
+                    },
+                    "recipientSelection": {"mode": "test", "testEmail": "admin@example.com"},
+                    "confirmationText": "SEND",
+                },
+                admin=admin,
+            )
+
+        self.assertEqual(campaign_response["campaign"]["status"], "sending")
+        self.assertEqual(campaign_response["campaign"]["recipientCount"], 1)
 
     def test_worker_marks_sent_recipients(self) -> None:
         updates: list[tuple[str, str]] = []

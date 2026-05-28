@@ -5337,23 +5337,6 @@ button[data-admin-dashboard-tab="email_center"] svg {
   stroke: currentColor;
 }
 
-button.email-center-action-button,
-button.email-center-action-button:disabled {
-  background-color: rgba(255, 255, 255, 0.95) !important;
-  border-color: rgb(11, 6, 121) !important;
-  color: rgb(11, 6, 121) !important;
-  opacity: 1 !important;
-}
-
-button.email-center-action-button:disabled {
-  cursor: not-allowed;
-}
-
-button.email-center-action-button:disabled > :is(svg, span) {
-  color: rgb(11, 6, 121) !important;
-  opacity: 0.62 !important;
-}
-
 .documentation-header-tabs {
   align-self: flex-end;
   margin-top: auto;
@@ -17137,4 +17120,81 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
 .reseller-permit-file-name {
   overflow-wrap: anywhere;
   word-break: break-all;
+}
+
+.email-center-confirm-dialog-layer {
+  z-index: 30000 !important;
+}
+
+.email-center-confirm-dialog-layer [data-slot="dialog-overlay"] {
+  z-index: 30000 !important;
+}
+
+.email-center-confirm-dialog[data-slot="dialog-content"] {
+  z-index: 30001 !important;
+}
+
+button.email-center-home-button,
+button.email-center-home-button[data-slot="button"] {
+  border: 2px solid rgb(11, 6, 121) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  color: rgb(11, 6, 121) !important;
+  box-shadow: none !important;
+}
+
+button.email-center-home-button > :is(svg, span),
+button.email-center-home-button[data-slot="button"] > :is(svg, span) {
+  color: rgb(11, 6, 121) !important;
+  stroke: currentColor !important;
+}
+
+button.email-center-home-button:hover,
+button.email-center-home-button:focus-visible,
+button.email-center-home-button[data-state="open"],
+button.email-center-home-button[aria-expanded="true"],
+button.email-center-home-button[data-slot="button"]:hover,
+button.email-center-home-button[data-slot="button"]:focus-visible {
+  border-color: rgb(11, 6, 121) !important;
+  background-color: rgb(11, 6, 121) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+button.email-center-home-button:hover > :is(svg, span),
+button.email-center-home-button:focus-visible > :is(svg, span),
+button.email-center-home-button[data-state="open"] > :is(svg, span),
+button.email-center-home-button[aria-expanded="true"] > :is(svg, span),
+button.email-center-home-button[data-slot="button"]:hover > :is(svg, span),
+button.email-center-home-button[data-slot="button"]:focus-visible > :is(svg, span) {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+button.email-center-home-button:hover *,
+button.email-center-home-button:focus-visible *,
+button.email-center-home-button[data-state="open"] *,
+button.email-center-home-button[aria-expanded="true"] *,
+button.email-center-home-button[data-slot="button"]:hover *,
+button.email-center-home-button[data-slot="button"]:focus-visible * {
+  color: #ffffff !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+button.email-center-home-button:disabled,
+button.email-center-home-button[data-slot="button"]:disabled {
+  border-color: rgb(11, 6, 121) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  color: rgb(11, 6, 121) !important;
+  cursor: not-allowed;
+  opacity: 1 !important;
+}
+
+button.email-center-home-button:disabled > :is(svg, span),
+button.email-center-home-button[data-slot="button"]:disabled > :is(svg, span) {
+  color: rgb(11, 6, 121) !important;
+  opacity: 0.62 !important;
+  stroke: currentColor !important;
 }
