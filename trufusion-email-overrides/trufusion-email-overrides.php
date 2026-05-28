@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.21
+ * Version: 1.1.27
  */
 
 if (!defined('ABSPATH')) exit;
@@ -144,6 +144,38 @@ function trufusion_email_overrides_get_smtp_setting($name, $fallback = '') {
   return trufusion_email_overrides_get_constant('TRUFUSION_SMTP_' . $suffix, 'PEPPR_SMTP_' . $suffix, $fallback);
 }
 
+function trufusion_email_overrides_bool_value($value, $fallback) {
+  if (is_bool($value)) return $value;
+  if (is_int($value) || is_float($value)) return (bool) $value;
+
+  $normalized = strtolower(trim((string) $value));
+  if ($normalized === '') return (bool) $fallback;
+  if (in_array($normalized, array('1', 'true', 'yes', 'on'), true)) return true;
+  if (in_array($normalized, array('0', 'false', 'no', 'off'), true)) return false;
+
+  return (bool) $fallback;
+}
+
+function trufusion_email_overrides_smtp_auth_enabled() {
+  if (defined('TRUFUSION_SMTP_AUTH')) {
+    return trufusion_email_overrides_bool_value(constant('TRUFUSION_SMTP_AUTH'), true);
+  }
+  if (defined('PEPPR_SMTP_AUTH')) {
+    return trufusion_email_overrides_bool_value(constant('PEPPR_SMTP_AUTH'), true);
+  }
+  return true;
+}
+
+function trufusion_email_overrides_smtp_force_enabled() {
+  if (defined('TRUFUSION_SMTP_FORCE')) {
+    return trufusion_email_overrides_bool_value(constant('TRUFUSION_SMTP_FORCE'), false);
+  }
+  if (defined('PEPPR_SMTP_FORCE')) {
+    return trufusion_email_overrides_bool_value(constant('PEPPR_SMTP_FORCE'), false);
+  }
+  return false;
+}
+
 function trufusion_email_overrides_get_frontend_url() {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_APP_URL', 'PEPPR_APP_URL', 'https://www.trufusionlabs.com');
   $value = rtrim(trim($value), '/');
@@ -158,7 +190,7 @@ function trufusion_email_overrides_get_brand_logo_url($current = '') {
     || stripos($value, 'TrufusionLabs_PhysiciansPortal') !== false
     || stripos($value, 'turfusionlabsphysiciansportal') !== false
   ) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.21';
+    $value = trufusion_email_overrides_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.27';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -222,21 +254,27 @@ function trufusion_email_overrides_apply_mail_identity($phpmailer) {
 }
 
 function trufusion_email_overrides_configure_smtp($phpmailer) {
+  if (function_exists('wp_mail_smtp') && !trufusion_email_overrides_smtp_force_enabled()) return;
+
   $host = trufusion_email_overrides_get_smtp_setting('HOST', '');
   $pass = trufusion_email_overrides_get_smtp_setting('PASS', '');
-  if ($host === '' || $pass === '') return;
+  $auth_enabled = trufusion_email_overrides_smtp_auth_enabled();
+  if ($host === '' || ($auth_enabled && $pass === '')) return;
 
   if (!is_object($phpmailer) || !method_exists($phpmailer, 'isSMTP')) return;
 
   $port = (int) trufusion_email_overrides_get_smtp_setting('PORT', '587');
   $user = trufusion_email_overrides_get_smtp_setting('USER', '');
   $secure = strtolower(trufusion_email_overrides_get_smtp_setting('SECURE', 'tls'));
+  $timeout = (int) trufusion_email_overrides_get_smtp_setting('TIMEOUT', '15');
   if (trufusion_email_overrides_is_peppro_address($user)) return;
 
   $phpmailer->isSMTP();
   $phpmailer->Host = $host;
   $phpmailer->Port = $port > 0 ? $port : 587;
-  $phpmailer->SMTPAuth = true;
+  $phpmailer->Timeout = $timeout > 0 ? $timeout : 15;
+  $phpmailer->Timelimit = $timeout > 0 ? $timeout : 15;
+  $phpmailer->SMTPAuth = $auth_enabled;
   $phpmailer->Username = $user;
   $phpmailer->Password = $pass;
   $phpmailer->SMTPAutoTLS = $secure !== 'none';
@@ -263,7 +301,7 @@ add_filter('wp_mail_from_name', function ($name) {
 }, PHP_INT_MAX);
 
 add_filter('wp_mail', 'trufusion_email_overrides_sanitize_mail_headers', PHP_INT_MAX);
-add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', 20);
+add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', PHP_INT_MAX - 1);
 add_action('phpmailer_init', 'trufusion_email_overrides_apply_mail_identity', PHP_INT_MAX);
 
 add_filter('woocommerce_email_recipient_new_order', 'trufusion_email_overrides_route_new_order_recipient', PHP_INT_MAX, 3);
@@ -362,10 +400,11 @@ function trufusion_email_overrides_translate_zelle_on_hold_intro($translation, $
   $hide_lines = array(
     "We've received your order and it's currently on hold until we can confirm your payment has been processed.",
     "Here's a reminder of what you've ordered:",
-    "Thanks for your order. It's on-hold until we confirm that payment has been received.",
+    "Thank you for your order. It's on-hold until we confirm that payment has been received.",
   );
 
-  return in_array($normalized, $hide_lines, true) ? '' : $translation;
+  $normalized_for_match = preg_replace('/^Than' . 'ks\b/', 'Thank you', $normalized);
+  return in_array($normalized_for_match, $hide_lines, true) ? '' : $translation;
 }
 
 function trufusion_email_overrides_shared_users_table() {
@@ -787,6 +826,27 @@ function trufusion_email_overrides_append_mail_header($headers, $header_name, $r
   return $header_str . $header_name . ': ' . $recipient . "\r\n";
 }
 
+function trufusion_email_overrides_add_order_observer_bcc($headers, $email_id, $order, $email) {
+  if (!$order instanceof WC_Order) return $headers;
+
+  $resolved_email_id = trufusion_email_overrides_resolve_email_id($email_id, $email);
+  $is_order_email = $resolved_email_id === 'new_order' || strpos($resolved_email_id, 'customer_') === 0;
+  if (!$is_order_email) return $headers;
+
+  foreach (trufusion_email_overrides_order_admin_emails() as $admin_email) {
+    $headers = trufusion_email_overrides_append_mail_header($headers, 'Bcc', $admin_email);
+  }
+
+  $headers = trufusion_email_overrides_append_mail_header($headers, 'Bcc', 'pgibbons@trufusionlabs.com');
+
+  trufusion_email_overrides_log('observer_bcc.added', array(
+    'order_id' => (int) $order->get_id(),
+    'email_id' => $resolved_email_id,
+  ));
+
+  return $headers;
+}
+
 function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order, $email) {
   if (!$order instanceof WC_Order) return $headers;
 
@@ -847,6 +907,7 @@ function trufusion_email_overrides_add_sales_rep_cc($headers, $email_id, $order,
   return $headers;
 }
 
+add_filter('woocommerce_email_headers', 'trufusion_email_overrides_add_order_observer_bcc', 10, 4);
 add_filter('woocommerce_email_headers', 'trufusion_email_overrides_add_sales_rep_cc', 20, 4);
 
 function trufusion_email_overrides_normalize_money($value) {

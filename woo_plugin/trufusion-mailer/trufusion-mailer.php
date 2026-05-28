@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Mailer Bridge
  * Description: Allows TrufusionLabs to send password reset emails via WooCommerce's email system.
- * Version: 1.1.2
+ * Version: 1.1.7
  * Author: TrufusionLabs
  */
 
@@ -226,6 +226,48 @@ function trufusion_mailer_bridge_get_smtp_setting($name, $fallback = '') {
     return trufusion_mailer_bridge_get_constant('TRUFUSION_SMTP_' . $suffix, 'PEPPR_SMTP_' . $suffix, $fallback);
 }
 
+function trufusion_mailer_bridge_bool_value($value, $fallback) {
+    if (is_bool($value)) {
+        return $value;
+    }
+    if (is_int($value) || is_float($value)) {
+        return (bool) $value;
+    }
+
+    $normalized = strtolower(trim((string) $value));
+    if ($normalized === '') {
+        return (bool) $fallback;
+    }
+    if (in_array($normalized, array('1', 'true', 'yes', 'on'), true)) {
+        return true;
+    }
+    if (in_array($normalized, array('0', 'false', 'no', 'off'), true)) {
+        return false;
+    }
+
+    return (bool) $fallback;
+}
+
+function trufusion_mailer_bridge_smtp_auth_enabled() {
+    if (defined('TRUFUSION_SMTP_AUTH')) {
+        return trufusion_mailer_bridge_bool_value(constant('TRUFUSION_SMTP_AUTH'), true);
+    }
+    if (defined('PEPPR_SMTP_AUTH')) {
+        return trufusion_mailer_bridge_bool_value(constant('PEPPR_SMTP_AUTH'), true);
+    }
+    return true;
+}
+
+function trufusion_mailer_bridge_smtp_force_enabled() {
+    if (defined('TRUFUSION_SMTP_FORCE')) {
+        return trufusion_mailer_bridge_bool_value(constant('TRUFUSION_SMTP_FORCE'), false);
+    }
+    if (defined('PEPPR_SMTP_FORCE')) {
+        return trufusion_mailer_bridge_bool_value(constant('PEPPR_SMTP_FORCE'), false);
+    }
+    return false;
+}
+
 function trufusion_mailer_bridge_apply_mail_identity($phpmailer) {
     if (!is_object($phpmailer)) {
         return;
@@ -244,9 +286,14 @@ function trufusion_mailer_bridge_apply_mail_identity($phpmailer) {
 }
 
 function trufusion_mailer_bridge_configure_smtp($phpmailer) {
+    if (function_exists('wp_mail_smtp') && !trufusion_mailer_bridge_smtp_force_enabled()) {
+        return;
+    }
+
     $host = trufusion_mailer_bridge_get_smtp_setting('HOST', '');
     $pass = trufusion_mailer_bridge_get_smtp_setting('PASS', '');
-    if ($host === '' || $pass === '') {
+    $auth_enabled = trufusion_mailer_bridge_smtp_auth_enabled();
+    if ($host === '' || ($auth_enabled && $pass === '')) {
         return;
     }
 
@@ -257,6 +304,7 @@ function trufusion_mailer_bridge_configure_smtp($phpmailer) {
     $port = (int) trufusion_mailer_bridge_get_smtp_setting('PORT', '587');
     $user = trufusion_mailer_bridge_get_smtp_setting('USER', '');
     $secure = strtolower(trufusion_mailer_bridge_get_smtp_setting('SECURE', 'tls'));
+    $timeout = (int) trufusion_mailer_bridge_get_smtp_setting('TIMEOUT', '15');
     if (preg_match('/@peppro\.(net|com)$/i', trim((string) $user))) {
         return;
     }
@@ -264,7 +312,9 @@ function trufusion_mailer_bridge_configure_smtp($phpmailer) {
     $phpmailer->isSMTP();
     $phpmailer->Host = $host;
     $phpmailer->Port = $port > 0 ? $port : 587;
-    $phpmailer->SMTPAuth = true;
+    $phpmailer->Timeout = $timeout > 0 ? $timeout : 15;
+    $phpmailer->Timelimit = $timeout > 0 ? $timeout : 15;
+    $phpmailer->SMTPAuth = $auth_enabled;
     $phpmailer->Username = $user;
     $phpmailer->Password = $pass;
     $phpmailer->SMTPAutoTLS = $secure !== 'none';
@@ -317,7 +367,7 @@ add_filter('wp_mail_from_name', function ($name) {
 
 // Ensure wp_mail uses SMTP when configured.
 add_filter('wp_mail', 'trufusion_mailer_bridge_sanitize_mail_headers', PHP_INT_MAX);
-add_action('phpmailer_init', 'trufusion_mailer_bridge_configure_smtp', 20);
+add_action('phpmailer_init', 'trufusion_mailer_bridge_configure_smtp', PHP_INT_MAX - 1);
 add_action('phpmailer_init', 'trufusion_mailer_bridge_apply_mail_identity', PHP_INT_MAX);
 
 add_action('rest_api_init', function () {

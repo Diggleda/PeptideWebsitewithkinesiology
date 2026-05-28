@@ -747,7 +747,7 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
               <td style="padding:32px 28px 8px;">
                 <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Verify your TrufusionLabs account</h1>
                 <p style="margin:0 0 12px;line-height:1.6;">
-                  Thanks for creating your TrufusionLabs account. Confirm this email address to finish setting up your account.
+                  Thank you for creating your TrufusionLabs account. Confirm this email address to finish setting up your account.
                 </p>
                 <p style="margin:0 0 24px;line-height:1.6;">
                   If you did not create this account, you can safely ignore this email.
@@ -773,7 +773,7 @@ def _build_email_verification_email(verification_code: str, base_url: str) -> Tu
   </body>
 </html>"""
     plain = (
-        "Thanks for creating your TrufusionLabs account.\n"
+        "Thank you for creating your TrufusionLabs account.\n"
         f"Your verification code is: {verification_code}\n"
         "This code will expire in 10 minutes to keep your account secure.\n"
         "If you did not create this account, you can ignore this email.\n"
@@ -827,7 +827,7 @@ def _build_contact_form_received_email(*, name: Optional[str], base_url: str) ->
                 <h1 class="trufusion-heading" style="margin:0 0 16px;font-size:22px;font-weight:700;color:{_EMAIL_HEADING_COLOR};-webkit-text-fill-color:{_EMAIL_HEADING_COLOR};">We received your request</h1>
                 <p class="trufusion-text" style="margin:0 0 12px;line-height:1.6;color:{_EMAIL_TEXT_COLOR};-webkit-text-fill-color:{_EMAIL_TEXT_COLOR};">Hi {safe_name_label},</p>
                 <p class="trufusion-text" style="margin:0 0 12px;line-height:1.6;color:{_EMAIL_TEXT_COLOR};-webkit-text-fill-color:{_EMAIL_TEXT_COLOR};">
-                  Thanks for reaching out to TrufusionLabs. We received your contact form submission and a representative will review it shortly.
+                  Thank you for reaching out to TrufusionLabs. We received your contact form submission and a representative will review it shortly.
                 </p>
                 <p class="trufusion-text" style="margin:0 0 32px;line-height:1.6;color:{_EMAIL_TEXT_COLOR};-webkit-text-fill-color:{_EMAIL_TEXT_COLOR};">
                   If you need to add anything before we follow up, reply to this email or contact support at
@@ -851,7 +851,7 @@ def _build_contact_form_received_email(*, name: Optional[str], base_url: str) ->
 </html>"""
     plain = (
         f"Hi {name_label},\n"
-        "Thanks for reaching out to TrufusionLabs. We received your contact form submission and a representative will review it shortly.\n"
+        "Thank you for reaching out to TrufusionLabs. We received your contact form submission and a representative will review it shortly.\n"
         "If you need to add anything before we follow up, reply to this email or contact support@trufusionlabs.com.\n"
         f"Visit TrufusionLabs: {safe_base_url}"
     )

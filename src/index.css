@@ -320,7 +320,7 @@ body[data-delegate-theme="true"] .dev-theme-root {
   grid-template-columns: minmax(0, 0.86fr) 1px minmax(0, 1.14fr);
   gap: 0.9rem;
   align-items: stretch;
-  min-height: 8.5rem;
+  min-height: 10rem;
 }
 
 .physician-network-state-breakdown__content--empty {
@@ -333,7 +333,7 @@ body[data-delegate-theme="true"] .dev-theme-root {
   align-self: stretch;
   height: 100%;
   min-width: 0;
-  min-height: 12rem;
+  min-height: 13.5rem;
   max-height: none;
   padding-right: 0;
 }
@@ -770,8 +770,8 @@ body[data-delegate-theme="true"] .dev-theme-root {
   }
 
   .physician-network-state-breakdown__doctor-list-shell {
-    height: min(18rem, 46vh);
-    min-height: 12rem;
+    height: min(20rem, 50vh);
+    min-height: 13.5rem;
     max-height: none;
   }
 
@@ -4477,6 +4477,10 @@ html[data-brand-color="blue"] .brand-logo--landing::before {
   padding-bottom: max(6rem, calc(var(--safe-area-bottom) + 5.5rem));
 }
 
+.landing-create-account-heading {
+  padding-top: 1.25rem;
+}
+
 @media (min-width: 640px) {
   .landing-auth-shell {
     padding-top: max(4.25rem, calc(var(--safe-area-top) + 3rem));
@@ -4645,6 +4649,16 @@ html[data-brand-color="blue"] .brand-logo--landing::before {
 .landing-login-form-stack button:not(.glass-brand) svg,
 .landing-create-account-container button:not(.glass-brand) svg {
   stroke: currentColor;
+}
+
+.landing-login-container .landing-auth-dialog-close svg,
+.landing-login-container .landing-auth-dialog-close svg *,
+.landing-login-container .landing-auth-dialog-close.dialog-close-btn svg,
+.landing-create-account-container .landing-auth-dialog-close svg,
+.landing-create-account-container .landing-auth-dialog-close svg *,
+.landing-create-account-container .landing-auth-dialog-close.dialog-close-btn svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
 }
 
 .landing-login-form-stack p button[style*="color: rgb(11, 6, 121)"],
@@ -5173,23 +5187,25 @@ html {
   word-break: break-word;
 }
 
-.sales-doctor-detail-header {
-  padding-right: 6.25rem;
-}
-
-.sales-doctor-detail-dialog .sales-doctor-detail-header {
-  position: static;
-}
-
 .sales-doctor-detail-header-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.sales-doctor-detail-dialog .sales-doctor-detail-header {
+  position: static !important;
+  padding-right: 0 !important;
 }
 
 .sales-doctor-detail-header-content {
-  flex: 1 1 auto;
+  grid-column: 1;
+  width: auto;
   min-width: 0;
   max-width: 100%;
 }
@@ -5201,14 +5217,47 @@ html {
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
+  hyphens: auto;
+  white-space: normal;
+}
+
+.sales-doctor-detail-actions {
+  grid-column: 2;
+  position: static !important;
+  z-index: 10050;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin: 0;
+  justify-self: end;
+  align-self: start;
 }
 
 .sales-doctor-detail-maintenance-button {
-  position: absolute;
-  top: 1rem;
-  right: calc(1rem + 38px + 0.5rem);
-  z-index: 10040;
+  position: static !important;
   flex: 0 0 auto;
+  margin-left: 0;
+}
+
+.sales-doctor-detail-actions .dialog-close-btn,
+.sales-doctor-detail-actions .sales-doctor-detail-close-button {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  z-index: auto !important;
+  margin: 0 !important;
+  align-self: center !important;
+}
+
+.sales-doctor-detail-dialog[data-slot="dialog-content"] .sales-doctor-detail-actions .dialog-close-btn,
+.sales-doctor-detail-dialog[data-slot="dialog-content"] .sales-doctor-detail-actions .sales-doctor-detail-close-button {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  z-index: auto !important;
+  margin: 0 !important;
+  align-self: center !important;
 }
 
 .sales-doctor-detail-panel {
@@ -5223,10 +5272,13 @@ html {
   max-height: none;
 }
 
-@media (min-width: 640px) {
-  .sales-doctor-detail-header {
-    padding-right: 11rem;
-  }
+.sales-doctor-detail-panel--scroll {
+  max-width: 100%;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  contain: paint;
 }
 
 /* Shared moving underline for account tabs */
@@ -5384,7 +5436,40 @@ html {
 }
 
 .order-line-item {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
+  min-height: 48px;
+}
+
+.order-line-thumbnail {
+  width: 3rem;
+  height: 3rem;
+  min-width: 3rem;
+  max-width: 3rem;
+  min-height: 3rem;
+  max-height: 3rem;
+  aspect-ratio: 1 / 1;
+}
+
+.order-line-thumbnail__img,
+.order-detail-line-thumbnail__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.order-detail-line-thumbnail {
+  width: 5rem;
+  height: 5rem;
+  min-width: 5rem;
+  max-width: 5rem;
+  min-height: 3.75rem;
+  max-height: 5rem;
+  aspect-ratio: 1 / 1;
 }
 
 @media (max-width: 640px) {
@@ -9874,7 +9959,7 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
 /* Account order list cards */
 .account-order-card {
   box-shadow: 0 6px 14px -10px rgba(15, 23, 42, 0.18);
-  border: 1px solid rgb(11, 6, 121);
+  border: 2px solid rgb(11, 6, 121);
 }
 
 .order-card-body {
@@ -11225,6 +11310,12 @@ a[href^="mailto:"]:hover {
 
 [data-sonner-toast] {
   z-index: 2147483647 !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-sonner-toast][data-dismissible='true'] {
+    cursor: pointer;
+  }
 }
 
 [data-sonner-toast][data-styled='true']:not([data-type='error']) {

@@ -3,7 +3,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "sonner@2.0.3";
+import { Toaster, toast as sonnerToast, useSonner } from "sonner@2.0.3";
 import App from "./App.tsx";
 import "./index.css";
 import "react-day-picker/dist/style.css";
@@ -49,13 +49,49 @@ const forceFavicon = () => {
 forceFavicon();
 
 function ToastPortal() {
+  const { toasts } = useSonner();
+
+  const handleToastClick = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (typeof window === "undefined" || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+        return;
+      }
+
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!target) return;
+      if (target.closest("a,button,input,textarea,select,[role='button'],[data-button],[data-close-button]")) {
+        return;
+      }
+
+      const toastElement = target.closest<HTMLElement>("[data-sonner-toast]");
+      if (!toastElement || toastElement.dataset.dismissible === "false") {
+        return;
+      }
+
+      const toastIndex = Number(toastElement.dataset.index);
+      const positionedToasts = toasts.filter((toastItem) => !toastItem.position || toastItem.position === "top-center");
+      const toastToDismiss = Number.isInteger(toastIndex) ? positionedToasts[toastIndex] : null;
+      if (toastToDismiss?.id !== undefined) {
+        sonnerToast.dismiss(toastToDismiss.id);
+      }
+    },
+    [toasts],
+  );
+
   if (typeof document === "undefined") {
     return null;
   }
 
   return createPortal(
-    <div className="toast-portal-layer">
-      <Toaster richColors position="top-center" expand visibleToasts={10} />
+    <div className="toast-portal-layer" onClick={handleToastClick}>
+      <Toaster
+        richColors
+        position="top-center"
+        expand
+        visibleToasts={10}
+        swipeDirections={["top"]}
+        toastOptions={{ dismissible: true }}
+      />
     </div>,
     document.body,
   );

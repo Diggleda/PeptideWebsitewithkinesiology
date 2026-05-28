@@ -8621,22 +8621,22 @@ export function Header({
 	                              ? cachedImage
 	                              : resolveOrderLineImage(line, wooLineItems);
 		                          return (
-		                            <div
-		                              key={line.id || `${line.sku}-${idx}`}
-		                              className="order-line-item flex items-center gap-3 min-h-[48px]"
-		                            >
-                              <div
-                                className="h-12 w-12 rounded-lg border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
-                              >
-                                {lineImage ? (
-                                  <img
-                                    src={lineImage}
-                                    alt={line.name || 'Item thumbnail'}
-                                    className="h-full w-full object-contain"
-                                    onError={(event) => {
-                                      event.currentTarget.style.display = 'none';
-                                    }}
-                                  />
+			                            <div
+			                              key={line.id || `${line.sku}-${idx}`}
+			                              className="order-line-item flex items-center gap-3 min-h-[48px]"
+			                            >
+	                              <div
+	                                className="order-line-thumbnail rounded-lg border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
+	                              >
+	                                {lineImage ? (
+	                                  <img
+	                                    src={lineImage}
+	                                    alt={line.name || 'Item thumbnail'}
+	                                    className="order-line-thumbnail__img"
+	                                    onError={(event) => {
+	                                      event.currentTarget.style.display = 'none';
+	                                    }}
+	                                  />
                                 ) : (
                                   <Package className="h-5 w-5 text-black" />
                                 )}
@@ -9209,19 +9209,17 @@ export function Header({
 	                        key={line.id || `${line.sku}-${idx}`}
 	                        className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-3"
 	                      >
-                        <div
-                          className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
-                          style={{ maxHeight: '120px' }}
-                        >
-                          {lineImage ? (
-                            <img
-                              src={lineImage}
-                              alt={line.name || 'Item thumbnail'}
-                              className="object-contain"
-                              style={{ width: '100%', height: '100%', maxHeight: '120px' }}
-                              onError={(event) => {
-                                event.currentTarget.style.display = 'none';
-                              }}
+	                        <div
+	                          className="order-detail-line-thumbnail rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
+	                        >
+	                          {lineImage ? (
+	                            <img
+	                              src={lineImage}
+	                              alt={line.name || 'Item thumbnail'}
+	                              className="order-detail-line-thumbnail__img"
+	                              onError={(event) => {
+	                                event.currentTarget.style.display = 'none';
+	                              }}
                             />
                           ) : (
                             <Package className="h-6 w-6 text-black" />
@@ -9327,62 +9325,63 @@ export function Header({
       {/* Header Section */}
       <div className="flex flex-col gap-4">
 	        
-	        <div className="flex flex-wrap items-center justify-between gap-3">
-		          {accountOrdersLoading && (
+		        <div className="flex flex-wrap items-center justify-between gap-3">
+		          <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto">
 		            <div
-		              className="orders-updated-status-button inline-flex items-center gap-1 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none"
+		              className="orders-updated-status-button inline-flex shrink-0 items-center gap-1 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none"
 		              aria-live="polite"
 		            >
-		              <span>Updating…</span>
+		              <RefreshActionIcon spinning={accountOrdersLoading} />
+		              <span>Auto-Updating</span>
 		            </div>
-		          )}
 
-          <div
-            className="header-search-field relative isolate w-full sm:w-[16rem] md:w-[18rem]"
-            style={{
-              '--header-search-border-color': delegateMode ? secondaryColor : HEADER_BRAND_BLUE,
-              '--header-search-text-color': delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
-              color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
-            } as CSSProperties}
-          >
-            <Input
-              type="text"
-              inputMode="search"
-              enterKeyHint="search"
-              value={ordersSearchQuery}
-              onChange={(event) => setOrdersSearchQuery(event.target.value)}
-              placeholder="Search orders..."
-              className="header-search-input orders-search-input relative z-0 squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
-              style={{
-                '--header-search-border-color': delegateMode ? secondaryColor : undefined,
-                '--header-search-text-color': delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
-                color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
-                caretColor: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
-              } as CSSProperties}
-            />
-            <Search
-              aria-hidden="true"
-              focusable="false"
-              className="header-search-icon pointer-events-none absolute left-3 top-1/2 z-20 block h-4 w-4 -translate-y-1/2 transform"
-              style={{
-                color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
-                stroke: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
-                zIndex: 20,
-              }}
-            />
-            {ordersSearchQuery.trim().length > 0 && (
-              <button
-                type="button"
-                aria-label="Clear order search"
-                onClick={() => setOrdersSearchQuery('')}
-                className="absolute right-3 left-auto top-1/2 z-20 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+		            <div
+		              className="header-search-field relative isolate min-w-0 flex-1 sm:w-[16rem] sm:flex-none md:w-[18rem]"
+		              style={{
+		                '--header-search-border-color': delegateMode ? secondaryColor : HEADER_BRAND_BLUE,
+		                '--header-search-text-color': delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+		                color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+		              } as CSSProperties}
+		            >
+		              <Input
+		                type="text"
+		                inputMode="search"
+		                enterKeyHint="search"
+		                value={ordersSearchQuery}
+		                onChange={(event) => setOrdersSearchQuery(event.target.value)}
+		                placeholder="Search orders..."
+		                className="header-search-input orders-search-input relative z-0 squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] w-full box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0"
+		                style={{
+		                  '--header-search-border-color': delegateMode ? secondaryColor : undefined,
+		                  '--header-search-text-color': delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+		                  color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+		                  caretColor: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+		                } as CSSProperties}
+		              />
+		              <Search
+		                aria-hidden="true"
+		                focusable="false"
+		                className="header-search-icon pointer-events-none absolute left-3 top-1/2 z-20 block h-4 w-4 -translate-y-1/2 transform"
+		                style={{
+		                  color: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+		                  stroke: delegateMode ? secondaryColor : HEADER_SEARCH_TEXT_GREY,
+		                  zIndex: 20,
+		                }}
+		              />
+		              {ordersSearchQuery.trim().length > 0 && (
+		                <button
+		                  type="button"
+		                  aria-label="Clear order search"
+		                  onClick={() => setOrdersSearchQuery('')}
+		                  className="absolute right-3 left-auto top-1/2 z-20 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.4)]"
+		                >
+		                  <X className="h-4 w-4" />
+		                </button>
+		              )}
+		            </div>
+		          </div>
 
-          <div className="flex items-center gap-2 ml-auto">
+	          <div className="flex items-center gap-2 ml-auto">
             <Button
               type="button"
               variant="outline"

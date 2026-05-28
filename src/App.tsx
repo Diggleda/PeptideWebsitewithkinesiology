@@ -48,6 +48,7 @@ import { Badge } from "./components/ui/badge";
 import {
   Dialog,
   DialogContent,
+  DialogClose,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -33176,20 +33177,20 @@ function MainApp() {
 	                    return haystack.includes(normalizedQuery);
 	                  });
 
-	                  const getLastSeenMs = (entry: any) => {
-	                    if (!entry) return 0;
-	                    const isOnlineNow = Boolean(entry?.isOnline);
-	                    const idleReported = Boolean(entry?.isIdle);
-	                    if (isOnlineNow && !idleReported) {
-	                      return Date.now();
-	                    }
-	                    const raw =
-	                      entry?.lastInteractionAt ||
-	                      entry?.lastSeenAt ||
-	                      entry?.lastActivityAt ||
-	                      entry?.lastActiveAt ||
-	                      entry?.lastLoginAt ||
-	                      null;
+		                  const getLastSeenMs = (entry: any) => {
+		                    if (!entry) return 0;
+		                    const isOnlineNow = Boolean(entry?.isOnline);
+		                    const idleReported = Boolean(entry?.isIdle);
+		                    if (isOnlineNow && !idleReported) {
+		                      return Date.now();
+		                    }
+		                    const raw =
+		                      entry?.lastSeenAt ||
+		                      entry?.lastInteractionAt ||
+		                      entry?.lastActivityAt ||
+		                      entry?.lastActiveAt ||
+		                      entry?.lastLoginAt ||
+		                      null;
 	                    if (!raw) return 0;
 	                    const parsed = new Date(raw).getTime();
 	                    return Number.isFinite(parsed) ? parsed : 0;
@@ -33292,14 +33293,14 @@ function MainApp() {
 		                          {liveUsers.map((entry: any) => {
 		                        const avatarUrl = resolveLivePresenceAvatarUrl(entry);
 		                        const displayName = entry.name || entry.email || "Physician";
-		                        const resolveLastSeenMs = () => {
-		                          const raw =
-		                            entry?.lastInteractionAt ||
-		                            entry?.lastSeenAt ||
-		                            entry?.lastActivityAt ||
-		                            entry?.lastActiveAt ||
-		                            entry?.lastLoginAt ||
-		                            null;
+			                        const resolveLastSeenMs = () => {
+			                          const raw =
+			                            entry?.lastInteractionAt ||
+			                            entry?.lastSeenAt ||
+			                            entry?.lastActivityAt ||
+			                            entry?.lastActiveAt ||
+			                            entry?.lastLoginAt ||
+			                            null;
 		                          if (!raw) return null;
 		                          const parsed = new Date(raw).getTime();
 		                          return Number.isFinite(parsed) ? parsed : null;
@@ -33388,8 +33389,13 @@ function MainApp() {
 		                          if (raw === "a few moments ago") return "a few moments";
 		                          return raw.replace(/\s+ago$/, "");
 		                        };
-		                        const offlineAnchor =
-		                          entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
+			                        const offlineAnchor =
+			                          entry?.lastSeenAt ||
+			                          entry?.lastInteractionAt ||
+			                          entry?.lastActivityAt ||
+			                          entry?.lastActiveAt ||
+			                          entry?.lastLoginAt ||
+			                          null;
 		                        const statusLine = isOnlineNow
 		                          ? formatOnlineDuration(entry?.onlineSinceAt || entry?.lastLoginAt || null)
 		                          : offlineAnchor
@@ -35407,16 +35413,16 @@ function MainApp() {
                           entry?.email &&
                           String(user.email).toLowerCase() ===
                             String(entry.email).toLowerCase());
-                      const idleSinceMs = isCurrent
-                        ? lastActivityAtRef.current
-                        : (() => {
-                            const raw =
-                              entry?.lastInteractionAt ||
-                              entry?.lastSeenAt ||
-                              entry?.lastActivityAt ||
-                              entry?.lastActiveAt ||
-                              entry?.lastLoginAt ||
-                              null;
+	                      const idleSinceMs = isCurrent
+	                        ? lastActivityAtRef.current
+	                        : (() => {
+			                      const raw =
+			                        entry?.lastInteractionAt ||
+			                        entry?.lastSeenAt ||
+			                        entry?.lastActivityAt ||
+		                        entry?.lastActiveAt ||
+		                        entry?.lastLoginAt ||
+		                        null;
                             if (!raw) return null;
                             const parsed = new Date(raw).getTime();
                             return Number.isFinite(parsed) ? parsed : null;
@@ -35501,13 +35507,13 @@ function MainApp() {
 	                      if (isOnlineNow && !isIdleNow) {
 	                        return Date.now();
 	                      }
-	                      const raw =
-	                        entry?.lastInteractionAt ||
-	                        entry?.lastSeenAt ||
-	                        entry?.lastActivityAt ||
-	                        entry?.lastActiveAt ||
-	                        entry?.lastLoginAt ||
-	                        null;
+		                      const raw =
+		                        entry?.lastSeenAt ||
+		                        entry?.lastInteractionAt ||
+		                        entry?.lastActivityAt ||
+		                        entry?.lastActiveAt ||
+		                        entry?.lastLoginAt ||
+		                        null;
 	                      if (!raw) return 0;
 	                      const parsed = new Date(raw).getTime();
 	                      return Number.isFinite(parsed) ? parsed : 0;
@@ -35699,8 +35705,13 @@ function MainApp() {
 				                                if (raw === "a few moments ago") return "a few moments";
 				                                return raw.replace(/\s+ago$/, "");
 				                              };
-				                              const offlineAnchor =
-				                                entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
+					                              const offlineAnchor =
+					                                entry?.lastSeenAt ||
+					                                entry?.lastInteractionAt ||
+					                                entry?.lastActivityAt ||
+					                                entry?.lastActiveAt ||
+					                                entry?.lastLoginAt ||
+					                                null;
 				                              const statusLine = isOnline
 				                                ? formatOnlineDuration(entry?.onlineSinceAt || entry?.lastLoginAt || null)
 				                                : offlineAnchor
@@ -41142,6 +41153,7 @@ function MainApp() {
                   }}
                 >
                   <DialogContent
+                    hideCloseButton
                     className={clsx(
                       "landing-auth-dialog-content",
                       landingAuthMode === "signup" &&
@@ -41174,13 +41186,25 @@ function MainApp() {
 	                    <div
 	                      className={`glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] shadow-xl ${
 	                        landingAuthMode === "login"
-	                          ? "landing-login-container p-6 sm:p-8"
+	                          ? "landing-login-container relative p-6 sm:p-8"
 	                          : landingAuthMode === "signup"
-	                            ? "landing-create-account-container p-8"
-	                          : "p-8"
+	                            ? "landing-create-account-container relative p-8"
+	                          : "relative p-8"
 	                      }`}
 	                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
 	                    >
+                        <DialogClose
+                          className="landing-auth-dialog-close dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                          style={{
+                            backgroundColor: "rgb(11, 6, 121)",
+                            borderRadius: "50%",
+                          }}
+                          aria-label="Close create account modal"
+                          title="Close"
+                        >
+                          <X className="h-4 w-4 text-white" />
+                          <span className="sr-only">Close</span>
+                        </DialogClose>
 	                      <div
 	                        className={
 	                          landingAuthMode === "login"
@@ -41997,7 +42021,7 @@ function MainApp() {
                       )}
 	                      {landingAuthMode === "signup" && (
 	                        <>
-	                          <div className="text-center space-y-2">
+	                          <div className="landing-create-account-heading text-center space-y-2">
 	                            <h1 className="text-2xl font-semibold">
 	                              Join the TrufusionLabs Network
 	                            </h1>
@@ -43061,6 +43085,7 @@ function MainApp() {
         }}
 			      >
 			        <DialogContent
+                hideCloseButton
 	              ref={(node) => {
 	                if (node) {
 	                  salesDoctorDialogContentRefs.current[salesDoctorDetailWindowKey] = node;
@@ -43382,20 +43407,30 @@ function MainApp() {
                                 Account details
                               </DialogDescription>
 		                          </div>
-		                          {canOpenMaintenanceViewForSalesDoctorDetail && (
-		                            <Button
-		                              type="button"
-		                              variant="outline"
-		                              className="sales-doctor-detail-maintenance-button header-home-button squircle-sm bg-white px-3 text-slate-900 sm:px-4 sm:gap-2 shrink-0 self-start"
-		                              onClick={() => void handleOpenMaintenanceView()}
-		                              disabled={maintenanceLaunchPending}
-	                              aria-label="Maintenance"
-	                              title="Maintenance"
-	                            >
-	                              <UserKeyIcon className="h-4 w-4 shrink-0" />
-	                              <span className="hidden sm:inline">Maintenance</span>
-	                            </Button>
-		                        )}
+                              <div className="sales-doctor-detail-actions">
+                                {canOpenMaintenanceViewForSalesDoctorDetail && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="sales-doctor-detail-maintenance-button header-home-button squircle-sm bg-white px-3 text-slate-900 sm:px-4 sm:gap-2 shrink-0"
+                                    onClick={() => void handleOpenMaintenanceView()}
+                                    disabled={maintenanceLaunchPending}
+                                    aria-label="Maintenance"
+                                    title="Maintenance"
+                                  >
+                                    <UserKeyIcon className="h-4 w-4 shrink-0" />
+                                    <span className="hidden sm:inline">Maintenance</span>
+                                  </Button>
+                                )}
+                                <DialogClose
+                                  className="sales-doctor-detail-close-button dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 disabled:pointer-events-none"
+                                  aria-label="Close"
+                                  title="Close"
+                                >
+                                  <X className="h-4 w-4 text-white sm:h-5 sm:w-5" />
+                                  <span className="sr-only">Close</span>
+                                </DialogClose>
+                              </div>
 	                        </div>
 					              </DialogHeader>
 		              {salesDoctorDetail &&
@@ -43979,7 +44014,7 @@ function MainApp() {
                         phoneRows.push({ value: "", isNew: true });
                       }
                       return (
-                        <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-visible no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
+                        <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact sales-doctor-detail-panel--scroll min-w-0 no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700 space-y-2">
                           <div className="space-y-0.5">
                             <div className="min-w-max pl-4 pr-1 space-y-0.5">
                               {emailRows.length > 0 ? emailRows.map((row, index) => (
@@ -44227,7 +44262,7 @@ function MainApp() {
                           },
                         ];
 	                    return (
-	                      <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact min-w-0 overflow-x-auto overflow-y-visible no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
+	                      <div className="sales-doctor-detail-panel sales-doctor-detail-panel--contact sales-doctor-detail-panel--scroll min-w-0 no-scrollbar rounded-lg border bg-slate-50/60 px-3 py-3 text-sm text-slate-700">
 	                        <div className="min-w-max pl-4 pr-1 space-y-0.5">
                             {addressRows.map(({ key, label, autoComplete }) => (
                               <InlineEditableValueRow
@@ -44264,7 +44299,7 @@ function MainApp() {
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
                     </p>
-                    <div className="sales-doctor-detail-panel min-w-0 min-h-[220px] overflow-x-auto overflow-y-visible no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
+	                    <div className="sales-doctor-detail-panel sales-doctor-detail-panel--scroll min-w-0 min-h-[220px] no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
                       <div className="min-w-max whitespace-nowrap">
                         <span className="font-semibold text-slate-800">Greater Area: </span>
                         <span>{salesDoctorDetail.greaterArea || "Unavailable"}</span>

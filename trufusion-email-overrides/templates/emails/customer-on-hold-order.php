@@ -44,7 +44,7 @@ do_action( 'woocommerce_email_header', $email_heading, $email );
 		<p><?php esc_html_e( 'We’ve received your order and it’s currently on hold until we can confirm your payment has been processed.', 'woocommerce' ); ?></p>
 		<p><?php esc_html_e( 'Here’s a reminder of what you’ve ordered:', 'woocommerce' ); ?></p>
 	<?php else : ?>
-		<p><?php esc_html_e( 'Thanks for your order. It’s on-hold until we confirm that payment has been received.', 'woocommerce' ); ?></p>
+		<p><?php esc_html_e( 'Thank you for your order. It’s on-hold until we confirm that payment has been received.', 'woocommerce' ); ?></p>
 	<?php endif; ?>
 <?php endif; ?>
 
