@@ -26,7 +26,9 @@ do_action( 'woocommerce_email_header', $email_heading, $email );
 
 <?php if ( function_exists( 'trufusion_is_zelle_order' ) && trufusion_is_zelle_order( $order ) ) : ?>
 	<?php
-		$msg = "We received your order! Please Zelle support@peppro.net with the memo 'Order #{$order->get_order_number()}'.";
+		$msg = function_exists( 'trufusion_email_overrides_zelle_payment_message' )
+			? trufusion_email_overrides_zelle_payment_message( $order )
+			: "We received your order! Please Zelle support@trufusionlabs.com with the memo 'Order #{$order->get_order_number()}'.";
 	?>
 	<p><?php echo esc_html( $msg ); ?></p>
 <?php else : ?>

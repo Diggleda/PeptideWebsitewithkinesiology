@@ -51,6 +51,22 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("user_id VARCHAR(64) NOT NULL", schema_sql)
         self.assertIn("KEY idx_email_verification_tokens_expires (expires_at)", schema_sql)
 
+    def test_email_campaign_schema_exists(self) -> None:
+        schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS email_campaigns", schema_sql)
+        self.assertIn("campaign_type VARCHAR(64) NOT NULL", schema_sql)
+        self.assertIn("template_id VARCHAR(128) NOT NULL", schema_sql)
+        self.assertIn("status VARCHAR(32) NOT NULL DEFAULT 'draft'", schema_sql)
+        self.assertIn("variables_json JSON NULL", schema_sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS email_campaign_recipients", schema_sql)
+        self.assertIn("recipient_email VARCHAR(190) NOT NULL", schema_sql)
+        self.assertIn("error_message LONGTEXT NULL", schema_sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS email_events", schema_sql)
+        self.assertIn("event_type VARCHAR(64) NOT NULL", schema_sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS email_unsubscribes", schema_sql)
+        self.assertIn("recipient_email VARCHAR(190) PRIMARY KEY", schema_sql)
+
     def test_product_brochure_info_schema_exists(self) -> None:
         schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)
 

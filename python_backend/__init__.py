@@ -66,6 +66,7 @@ def _build_app(*, route_set: str) -> "Flask":
     from .services.patient_links_sweep_service import start_patient_links_sweep
     from .services.presence_sweep_service import start_presence_sweep
     from .services.product_document_sync_service import start_product_document_sync
+    from .services.email_campaign_service import start_email_campaign_worker
     from .services.shipstation_status_sync_service import start_shipstation_status_sync
     from .services.ups_status_sync_service import start_ups_status_sync
     from .storage import init_storage
@@ -105,6 +106,7 @@ def _build_app(*, route_set: str) -> "Flask":
             start_ups_status_sync()
             start_presence_sweep()
             start_patient_links_sweep()
+            start_email_campaign_worker()
             _LOGGER.info("Web process background jobs enabled")
         else:
             _LOGGER.info("Web process background jobs disabled; use python -m python_backend.background_jobs")

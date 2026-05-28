@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Mailer Bridge
  * Description: Allows TrufusionLabs to send password reset emails via WooCommerce's email system.
- * Version: 1.1.7
+ * Version: 1.1.8
  * Author: TrufusionLabs
  */
 
@@ -39,8 +39,12 @@ function trufusion_mailer_bridge_get_frontend_url() {
 
 function trufusion_mailer_bridge_get_brand_logo_url($current = '') {
     $value = trufusion_mailer_bridge_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
+    if ($value === '' && is_string($current)) {
+        $value = $current;
+    }
+    $value = trim($value);
     if ($value === '' || stripos($value, 'peppro') !== false || stripos($value, 'TrufusionLabs_PhysiciansPortal') !== false) {
-        $value = trufusion_mailer_bridge_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.17';
+        $value = trufusion_mailer_bridge_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.8';
     }
     return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -174,17 +178,42 @@ function trufusion_mailer_bridge_send_password_reset_email(WP_REST_Request $requ
     return rest_ensure_response(array('ok' => true, 'status' => 'ok'));
 }
 
-function trufusion_mailer_bridge_get_from_email() {
+function trufusion_mailer_bridge_get_from_email($current = '') {
     $value = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_FROM_EMAIL', 'PEPPR_MAIL_FROM_EMAIL', '');
     $value = trim($value);
-    if (preg_match('/support@peppro\.(net|com)/i', $value)) {
+    if (preg_match('/<([^>]+)>/', $value, $matches)) {
+        $value = trim((string) $matches[1]);
+    }
+    if (preg_match('/@peppro\.(net|com)$/i', $value)) {
+        $value = preg_replace('/@peppro\.(net|com)$/i', '@trufusionlabs.com', $value);
+    }
+    $value = function_exists('sanitize_email') ? sanitize_email($value) : $value;
+    if ($value === '' || preg_match('/@peppro\.(net|com)$/i', $value) || (function_exists('is_email') && !is_email($value))) {
         return 'support@trufusionlabs.com';
     }
-    return $value !== '' ? $value : 'support@trufusionlabs.com';
+    return $value;
 }
 
-function trufusion_mailer_bridge_get_from_name() {
-    return 'TrufusionLabs';
+function trufusion_mailer_bridge_get_from_name($current = '') {
+    $value = trufusion_mailer_bridge_get_constant('TRUFUSION_MAIL_FROM_NAME', 'PEPPR_MAIL_FROM_NAME', '');
+    $value = function_exists('wp_strip_all_tags') ? wp_strip_all_tags($value) : strip_tags($value);
+    $value = trim($value);
+    if ($value === '' || stripos($value, 'peppro') !== false) {
+        return 'TrufusionLabs';
+    }
+    return $value;
+}
+
+function trufusion_mailer_bridge_pre_option_from_email($pre_option) {
+    return $pre_option === false ? false : trufusion_mailer_bridge_get_from_email($pre_option);
+}
+
+function trufusion_mailer_bridge_pre_option_from_name($pre_option) {
+    return $pre_option === false ? false : trufusion_mailer_bridge_get_from_name($pre_option);
+}
+
+function trufusion_mailer_bridge_pre_option_brand_logo_url($pre_option) {
+    return $pre_option === false ? false : trufusion_mailer_bridge_get_brand_logo_url($pre_option);
 }
 
 function trufusion_mailer_bridge_is_peppro_reply_to($header) {
@@ -353,6 +382,14 @@ add_filter('woocommerce_email_styles', function ($css) {
 }, PHP_INT_MAX);
 
 add_filter('woocommerce_email_header_image', 'trufusion_mailer_bridge_get_brand_logo_url', PHP_INT_MAX);
+add_filter('woocommerce_email_from_address', 'trufusion_mailer_bridge_get_from_email', PHP_INT_MAX);
+add_filter('woocommerce_email_from_name', 'trufusion_mailer_bridge_get_from_name', PHP_INT_MAX);
+add_filter('pre_option_woocommerce_email_from_address', 'trufusion_mailer_bridge_pre_option_from_email', PHP_INT_MAX);
+add_filter('pre_option_woocommerce_email_from_name', 'trufusion_mailer_bridge_pre_option_from_name', PHP_INT_MAX);
+add_filter('pre_option_woocommerce_email_header_image', 'trufusion_mailer_bridge_pre_option_brand_logo_url', PHP_INT_MAX);
+add_filter('option_woocommerce_email_from_address', 'trufusion_mailer_bridge_get_from_email', PHP_INT_MAX);
+add_filter('option_woocommerce_email_from_name', 'trufusion_mailer_bridge_get_from_name', PHP_INT_MAX);
+add_filter('option_woocommerce_email_header_image', 'trufusion_mailer_bridge_get_brand_logo_url', PHP_INT_MAX);
 
 // Force a consistent From identity across WooCommerce/WordPress email sending.
 add_filter('wp_mail_from', function ($from) {

@@ -1427,3 +1427,56 @@ def send_template(template_name: str, context: Optional[Dict[str, Any]] = None) 
         if isinstance(context, dict):
             recipient = str(context.get("to") or context.get("recipient") or "")
         _write_dev_mail(f"Template: {template_name}", recipient, f"Context: {context}")
+
+
+def send_campaign_email(
+    recipient: str,
+    subject: str,
+    html: str,
+    plain_text: Optional[str] = None,
+    *,
+    headers: Optional[Mapping[str, str]] = None,
+    raise_on_failure: bool = True,
+) -> None:
+    """
+    Send an approved admin campaign email without changing transactional email paths.
+    """
+    recipient_email = str(recipient or "").strip()
+    if not recipient_email:
+        raise ValueError("recipient is required")
+    _dispatch_email(
+        recipient_email,
+        str(subject or "").strip() or "Message from TrufusionLabs",
+        html,
+        plain_text,
+        from_address=_EMAIL_DEFAULT_FROM,
+        reply_to=_EMAIL_DEFAULT_REPLY_TO,
+        headers=headers,
+        raise_on_failure=raise_on_failure,
+        enforce_trufusion_sender=True,
+    )
+
+
+def send_campaign_test_email(
+    recipient: str,
+    subject: str,
+    html: str,
+    plain_text: Optional[str] = None,
+    *,
+    headers: Optional[Mapping[str, str]] = None,
+) -> None:
+    """
+    Send a single admin campaign test email through the campaign path only.
+    """
+    merged_headers = {
+        "X-Trufusion-Campaign-Test": "1",
+        **dict(headers or {}),
+    }
+    send_campaign_email(
+        recipient,
+        subject,
+        html,
+        plain_text,
+        headers=merged_headers,
+        raise_on_failure=True,
+    )

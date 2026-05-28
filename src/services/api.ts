@@ -1988,6 +1988,90 @@ export const authAPI = {
   },
 };
 
+export type EmailCenterTemplate = {
+  id: string;
+  name: string;
+  file: string;
+  description?: string;
+  campaign_type?: string;
+  campaignType?: string;
+  category?: string;
+  allowed_recipient_groups?: string[];
+  default_subject?: string;
+  variables?: string[];
+};
+
+export type EmailCenterCampaign = {
+  id: string;
+  campaignType?: string;
+  templateId?: string;
+  subject?: string;
+  status?: string;
+  recipientCount?: number;
+  counts?: Record<string, number>;
+  createdAt?: string | null;
+  scheduledAt?: string | null;
+  sentAt?: string | null;
+};
+
+export const emailCenterAPI = {
+  getTemplates: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/templates`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
+  previewTemplate: async (templateId: string, variables?: Record<string, string>) => {
+    const params = new URLSearchParams();
+    Object.entries(variables || {}).forEach(([key, value]) => {
+      params.set(key, value);
+    });
+    const query = params.toString();
+    return fetchWithAuth(
+      `${API_BASE_URL}/admin/email/templates/${encodeURIComponent(templateId)}/preview${query ? `?${query}` : ''}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+      },
+    );
+  },
+  sendTest: async (payload: Record<string, unknown>) => {
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/test`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+  },
+  createCampaign: async (payload: Record<string, unknown>) => {
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/campaigns`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+  },
+  listCampaigns: async (status?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    const query = params.toString();
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/campaigns${query ? `?${query}` : ''}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
+  getCampaign: async (campaignId: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/campaigns/${encodeURIComponent(campaignId)}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
+};
+
 export const settingsAPI = {
   getShopStatus: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {

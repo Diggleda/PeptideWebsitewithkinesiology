@@ -55,6 +55,7 @@ import {
 } from "./components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import {
+  AtSymbolIcon,
   ArrowDownTrayIcon,
   ArrowPathIcon,
   CheckIcon,
@@ -133,6 +134,7 @@ import { LegalFooter } from "./components/LegalFooter";
 import { MarketingLandingPage } from "./components/MarketingLandingPage";
 import { ManufacturingStandardsModal } from "./components/ManufacturingStandardsModal";
 import { PublicSite, isPublicSitePath } from "./components/PublicPages";
+import { EmailCenter } from "./components/admin/EmailCenter";
 import {
   YourQuotesPanel,
   type SelectableProspectQuoteTarget,
@@ -13271,12 +13273,17 @@ function MainApp() {
         Icon: BuildingStorefrontIcon,
       },
       {
+        id: "email_center" as const,
+        label: "Email Center",
+        Icon: AtSymbolIcon,
+      },
+      {
         id: "structure" as const,
         label: "Structure",
         Icon: UserGroupIcon,
       },
     ] satisfies Array<{
-      id: "here_now" | "admin_report" | "structure" | "betas" | "maintenance";
+      id: "here_now" | "admin_report" | "email_center" | "structure" | "betas" | "maintenance";
       label: string;
       Icon: ({ className }: { className?: string }) => ReactNode;
     }>;
@@ -17091,7 +17098,7 @@ function MainApp() {
     void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
-  type AdminDashboardTabId = "here_now" | "admin_report" | "structure" | "betas" | "maintenance";
+  type AdminDashboardTabId = "here_now" | "admin_report" | "email_center" | "structure" | "betas" | "maintenance";
   const [adminDashboardTab, setAdminDashboardTab] =
     useState<AdminDashboardTabId>("here_now");
   type SalesDashboardTabId =
@@ -28010,10 +28017,172 @@ function MainApp() {
     } catch {
       // ignore
     }
+    const getMaintenanceLaunchNowMs = () =>
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    const maintenanceLaunchStartedAt = getMaintenanceLaunchNowMs();
+    let maintenanceLoadingStatus = "Creating maintenance session";
+    let maintenanceLoadingTimer: number | null = null;
+
+    const describeMaintenanceConnection = () => {
+      if (typeof navigator === "undefined") {
+        return "Connection data unavailable";
+      }
+      if (navigator.onLine === false) {
+        return "Offline";
+      }
+
+      const connection =
+        (navigator as any).connection ||
+        (navigator as any).mozConnection ||
+        (navigator as any).webkitConnection;
+      const parts = ["Online"];
+      const effectiveType = String(connection?.effectiveType || "").trim();
+      const rtt =
+        typeof connection?.rtt === "number" && Number.isFinite(connection.rtt)
+          ? Math.round(connection.rtt)
+          : null;
+      const downlink =
+        typeof connection?.downlink === "number" && Number.isFinite(connection.downlink)
+          ? Math.round(connection.downlink * 10) / 10
+          : null;
+
+      if (effectiveType) {
+        parts.push(effectiveType.toUpperCase());
+      }
+      if (rtt && rtt > 0) {
+        parts.push(`${rtt} ms RTT`);
+      }
+      if (downlink && downlink > 0) {
+        parts.push(`${downlink} Mbps down`);
+      }
+
+      return parts.join(" · ");
+    };
+
+    const updateMaintenanceLoadingDetails = () => {
+      try {
+        if (maintenanceWindow.closed) {
+          return;
+        }
+        const doc = maintenanceWindow.document;
+        const statusEl = doc.querySelector<HTMLElement>("[data-maintenance-status]");
+        const elapsedEl = doc.querySelector<HTMLElement>("[data-maintenance-elapsed]");
+        const connectionEl = doc.querySelector<HTMLElement>("[data-maintenance-connection]");
+        if (statusEl) {
+          statusEl.textContent = maintenanceLoadingStatus;
+        }
+        if (elapsedEl) {
+          const elapsedSeconds = Math.max(
+            0,
+            (getMaintenanceLaunchNowMs() - maintenanceLaunchStartedAt) / 1000,
+          );
+          elapsedEl.textContent = `${elapsedSeconds.toFixed(1)}s`;
+        }
+        if (connectionEl) {
+          connectionEl.textContent = describeMaintenanceConnection();
+          connectionEl.dataset.connectionState = navigator.onLine === false ? "offline" : "online";
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const setMaintenanceLoadingStatus = (status: string) => {
+      maintenanceLoadingStatus = status;
+      updateMaintenanceLoadingDetails();
+    };
+
     try {
       maintenanceWindow.document.title = MAINTENANCE_TAB_TITLE;
       maintenanceWindow.document.body.innerHTML =
-        '<div style="font-family: system-ui, sans-serif; padding: 24px; color: #0f172a;">Opening maintenance view...</div>';
+        `<style>
+          html,
+          body {
+            margin: 0;
+            min-height: 100vh;
+            min-height: 100dvh;
+            background: #f8fafc;
+          }
+
+          body {
+            align-items: center;
+            display: flex;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            justify-content: center;
+          }
+
+          .maintenance-loading-shell {
+            display: grid;
+            gap: 12px;
+            width: min(360px, 64vw);
+          }
+
+          .maintenance-loading-bar {
+            background: #e2e8f0;
+            border-radius: 999px;
+            box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.12);
+            height: 10px;
+            overflow: hidden;
+            position: relative;
+            width: 100%;
+          }
+
+          .maintenance-loading-bar::before {
+            animation: maintenance-loading 1.2s ease-in-out infinite;
+            background: linear-gradient(90deg, #1a55ad, #5fb3f9);
+            border-radius: inherit;
+            content: "";
+            height: 100%;
+            left: 0;
+            position: absolute;
+            top: 0;
+            width: 42%;
+          }
+
+          @keyframes maintenance-loading {
+            0% {
+              transform: translateX(-120%);
+            }
+
+            100% {
+              transform: translateX(240%);
+            }
+          }
+
+          .maintenance-loading-meta {
+            align-items: center;
+            color: #475569;
+            display: flex;
+            font-size: 12px;
+            font-weight: 600;
+            gap: 10px;
+            justify-content: space-between;
+          }
+
+          .maintenance-loading-connection {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.4;
+            min-height: 16px;
+          }
+
+          .maintenance-loading-connection[data-connection-state="offline"] {
+            color: #b91c1c;
+          }
+        </style>
+        <div class="maintenance-loading-shell">
+          <div class="maintenance-loading-bar" role="progressbar" aria-label="Opening maintenance view"></div>
+          <div class="maintenance-loading-meta">
+            <span data-maintenance-status>Creating maintenance session</span>
+            <span data-maintenance-elapsed>0.0s</span>
+          </div>
+          <div class="maintenance-loading-connection" data-maintenance-connection></div>
+        </div>`;
+      updateMaintenanceLoadingDetails();
+      maintenanceLoadingTimer = window.setInterval(updateMaintenanceLoadingDetails, 250);
     } catch {
       // ignore
     }
@@ -28037,6 +28206,7 @@ function MainApp() {
         maintenanceWindowRef.current = null;
         throw new Error("Maintenance window closed before launch completed");
       }
+      setMaintenanceLoadingStatus("Session ready. Opening view...");
       maintenanceWindow.location.replace(launchUrl);
     } catch (error) {
       maintenanceWindowRef.current = null;
@@ -28056,6 +28226,9 @@ function MainApp() {
           : "Unable to open maintenance view right now.",
       );
     } finally {
+      if (maintenanceLoadingTimer !== null) {
+        window.clearInterval(maintenanceLoadingTimer);
+      }
       setMaintenanceLaunchPending(false);
     }
   }, [canOpenMaintenanceViewForSalesDoctorDetail, salesDoctorDetail?.doctorId]);
@@ -35201,6 +35374,10 @@ function MainApp() {
 		                </div>
 	                    </>
 	                  )}
+
+                  {isAdmin(user?.role) && adminDashboardTab === "email_center" && (
+                    <EmailCenter />
+                  )}
 
 	                {adminDashboardTab === "structure" && (
 	                  <section className="w-full min-w-0">

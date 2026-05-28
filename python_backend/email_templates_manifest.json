@@ -1,0 +1,120 @@
+{
+  "announcements": [
+    {
+      "id": "delegate_links_announcement",
+      "name": "Delegate Links Announcement",
+      "file": "announcements/delegate_links_announcement.html",
+      "description": "Announces Delegate Links availability to physicians",
+      "campaign_type": "announcement",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "Delegate Links are now available",
+      "variables": [
+        "doctor_name",
+        "clinic_name",
+        "delegate_links_url",
+        "unsubscribe_url",
+        "support_email"
+      ]
+    },
+    {
+      "id": "platform_update",
+      "name": "Platform Update",
+      "file": "announcements/platform_update.html",
+      "description": "Approved shell for operational platform announcements",
+      "campaign_type": "announcement",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "TrufusionLabs platform update",
+      "variables": ["doctor_name", "clinic_name", "support_email", "unsubscribe_url"]
+    },
+    {
+      "id": "new_product_release",
+      "name": "New Product Release",
+      "file": "announcements/new_product_release.html",
+      "description": "Approved shell for new product release announcements",
+      "campaign_type": "announcement",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "New TrufusionLabs product release",
+      "variables": ["doctor_name", "clinic_name", "support_email", "unsubscribe_url"]
+    }
+  ],
+  "surveys": [
+    {
+      "id": "peptide_demand_survey",
+      "name": "Peptide Demand Survey",
+      "file": "surveys/peptide_demand_survey.html",
+      "description": "Approved shell for peptide demand survey campaigns",
+      "campaign_type": "survey",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "TrufusionLabs peptide demand survey",
+      "variables": ["doctor_name", "clinic_name", "survey_link", "support_email", "unsubscribe_url"]
+    },
+    {
+      "id": "physician_protocol_survey",
+      "name": "Physician Protocol Survey",
+      "file": "surveys/physician_protocol_survey.html",
+      "description": "Survey physicians about protocol collaboration tools",
+      "campaign_type": "survey",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "Physician protocol collaboration survey",
+      "variables": ["doctor_name", "clinic_name", "survey_link", "support_email", "unsubscribe_url"]
+    }
+  ],
+  "invitations": [
+    {
+      "id": "physician_beta_invite",
+      "name": "Physician Beta Invite",
+      "file": "invitations/physician_beta_invite.html",
+      "description": "Approved shell for physician beta invitations",
+      "campaign_type": "invitation",
+      "allowed_recipient_groups": ["physicians", "test", "custom"],
+      "default_subject": "Invitation to join a TrufusionLabs beta",
+      "variables": ["doctor_name", "clinic_name", "invite_link", "support_email", "unsubscribe_url"]
+    },
+    {
+      "id": "research_network_invite",
+      "name": "Research Network Invite",
+      "file": "invitations/research_network_invite.html",
+      "description": "Approved shell for research network invitation campaigns",
+      "campaign_type": "research_network_invite",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "Invitation to the TrufusionLabs research network",
+      "variables": ["doctor_name", "clinic_name", "invite_link", "support_email", "unsubscribe_url"]
+    }
+  ],
+  "product_updates": [
+    {
+      "id": "product_update",
+      "name": "Product Update",
+      "file": "product_updates/product_update.html",
+      "description": "Approved shell for product updates",
+      "campaign_type": "product_update",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "TrufusionLabs product update",
+      "variables": ["doctor_name", "clinic_name", "support_email", "unsubscribe_url"]
+    }
+  ],
+  "legal_updates": [
+    {
+      "id": "legal_update",
+      "name": "Legal Update",
+      "file": "legal_updates/legal_update.html",
+      "description": "Approved shell for legal or policy update notices",
+      "campaign_type": "legal_update",
+      "allowed_recipient_groups": ["physicians", "sales_reps", "test", "custom"],
+      "default_subject": "TrufusionLabs legal update",
+      "variables": ["doctor_name", "clinic_name", "support_email", "unsubscribe_url"]
+    }
+  ],
+  "manual": [
+    {
+      "id": "custom_message",
+      "name": "Manual / Custom Message",
+      "file": "manual/custom_message.html",
+      "description": "Approved shell for safe text-only manual campaigns",
+      "campaign_type": "manual",
+      "allowed_recipient_groups": ["test", "custom"],
+      "default_subject": "Message from TrufusionLabs",
+      "variables": ["doctor_name", "clinic_name", "message_body", "support_email", "unsubscribe_url"]
+    }
+  ]
+}

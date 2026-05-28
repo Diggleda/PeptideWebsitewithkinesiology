@@ -654,6 +654,67 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS email_campaigns (
+        id VARCHAR(32) PRIMARY KEY,
+        campaign_type VARCHAR(64) NOT NULL,
+        template_id VARCHAR(128) NOT NULL,
+        subject VARCHAR(255) NOT NULL,
+        created_by_admin_id VARCHAR(64) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'draft',
+        recipient_count INT NOT NULL DEFAULT 0,
+        variables_json JSON NULL,
+        created_at DATETIME NOT NULL,
+        scheduled_at DATETIME NULL,
+        sent_at DATETIME NULL,
+        KEY idx_email_campaigns_status (status),
+        KEY idx_email_campaigns_template (template_id),
+        KEY idx_email_campaigns_created (created_at),
+        KEY idx_email_campaigns_scheduled (scheduled_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS email_campaign_recipients (
+        id VARCHAR(32) PRIMARY KEY,
+        campaign_id VARCHAR(32) NOT NULL,
+        recipient_email VARCHAR(190) NOT NULL,
+        recipient_name VARCHAR(190) NULL,
+        recipient_type VARCHAR(32) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        variables_json JSON NULL,
+        created_at DATETIME NOT NULL,
+        sent_at DATETIME NULL,
+        error_message LONGTEXT NULL,
+        KEY idx_email_campaign_recipients_campaign (campaign_id),
+        KEY idx_email_campaign_recipients_status (status),
+        KEY idx_email_campaign_recipients_email (recipient_email),
+        KEY idx_email_campaign_recipients_pending (status, created_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS email_events (
+        id VARCHAR(32) PRIMARY KEY,
+        campaign_id VARCHAR(32) NULL,
+        recipient_email VARCHAR(190) NULL,
+        event_type VARCHAR(64) NOT NULL,
+        metadata_json JSON NULL,
+        created_at DATETIME NOT NULL,
+        KEY idx_email_events_campaign (campaign_id),
+        KEY idx_email_events_recipient (recipient_email),
+        KEY idx_email_events_type (event_type),
+        KEY idx_email_events_created (created_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS email_unsubscribes (
+        recipient_email VARCHAR(190) PRIMARY KEY,
+        source VARCHAR(64) NOT NULL,
+        campaign_id VARCHAR(32) NULL,
+        created_at DATETIME NOT NULL,
+        KEY idx_email_unsubscribes_campaign (campaign_id),
+        KEY idx_email_unsubscribes_created (created_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS admin_shadow_sessions (
         id VARCHAR(64) PRIMARY KEY,
         launch_token_sha256 CHAR(64) NOT NULL UNIQUE,

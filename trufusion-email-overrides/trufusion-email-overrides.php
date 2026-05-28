@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.27
+ * Version: 1.1.28
  */
 
 if (!defined('ABSPATH')) exit;
@@ -126,17 +126,25 @@ function trufusion_email_overrides_sanitize_mail_headers($args) {
   return $args;
 }
 
-function trufusion_email_overrides_get_from_email() {
+function trufusion_email_overrides_get_from_email($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_MAIL_FROM_EMAIL', 'PEPPR_MAIL_FROM_EMAIL', '');
   $value = trim($value);
-  if (trufusion_email_overrides_is_peppro_address($value)) {
+  $value = trufusion_email_overrides_trufusion_address($value);
+  $value = function_exists('sanitize_email') ? sanitize_email($value) : $value;
+  if ($value === '' || trufusion_email_overrides_is_peppro_address($value) || (function_exists('is_email') && !is_email($value))) {
     return 'support@trufusionlabs.com';
   }
-  return $value !== '' ? $value : 'support@trufusionlabs.com';
+  return $value;
 }
 
-function trufusion_email_overrides_get_from_name() {
-  return 'TrufusionLabs';
+function trufusion_email_overrides_get_from_name($current = '') {
+  $value = trufusion_email_overrides_get_constant('TRUFUSION_MAIL_FROM_NAME', 'PEPPR_MAIL_FROM_NAME', '');
+  $value = function_exists('wp_strip_all_tags') ? wp_strip_all_tags($value) : strip_tags($value);
+  $value = trim($value);
+  if ($value === '' || stripos($value, 'peppro') !== false) {
+    return 'TrufusionLabs';
+  }
+  return $value;
 }
 
 function trufusion_email_overrides_get_smtp_setting($name, $fallback = '') {
@@ -184,15 +192,45 @@ function trufusion_email_overrides_get_frontend_url() {
 
 function trufusion_email_overrides_get_brand_logo_url($current = '') {
   $value = trufusion_email_overrides_get_constant('TRUFUSION_EMAIL_LOGO_URL', '', '');
+  if ($value === '' && is_string($current)) {
+    $value = $current;
+  }
+  $value = trim($value);
   if (
     $value === ''
     || stripos($value, 'peppro') !== false
     || stripos($value, 'TrufusionLabs_PhysiciansPortal') !== false
     || stripos($value, 'turfusionlabsphysiciansportal') !== false
   ) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.27';
+    $value = trufusion_email_overrides_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.28';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
+}
+
+function trufusion_email_overrides_pre_option_from_email($pre_option) {
+  return $pre_option === false ? false : trufusion_email_overrides_get_from_email($pre_option);
+}
+
+function trufusion_email_overrides_pre_option_from_name($pre_option) {
+  return $pre_option === false ? false : trufusion_email_overrides_get_from_name($pre_option);
+}
+
+function trufusion_email_overrides_pre_option_brand_logo_url($pre_option) {
+  return $pre_option === false ? false : trufusion_email_overrides_get_brand_logo_url($pre_option);
+}
+
+function trufusion_email_overrides_get_zelle_email($current = '') {
+  $value = trufusion_email_overrides_get_constant('TRUFUSION_ZELLE_EMAIL', 'PEPPR_ZELLE_EMAIL', '');
+  if ($value === '' && is_string($current)) {
+    $value = $current;
+  }
+  $value = trim($value);
+  $value = trufusion_email_overrides_trufusion_address($value);
+  $value = function_exists('sanitize_email') ? sanitize_email($value) : $value;
+  if ($value === '' || trufusion_email_overrides_is_peppro_address($value) || (function_exists('is_email') && !is_email($value))) {
+    return 'support@trufusionlabs.com';
+  }
+  return $value;
 }
 
 function trufusion_email_overrides_get_brand_color($name, $fallback) {
@@ -305,6 +343,14 @@ add_action('phpmailer_init', 'trufusion_email_overrides_configure_smtp', PHP_INT
 add_action('phpmailer_init', 'trufusion_email_overrides_apply_mail_identity', PHP_INT_MAX);
 
 add_filter('woocommerce_email_recipient_new_order', 'trufusion_email_overrides_route_new_order_recipient', PHP_INT_MAX, 3);
+add_filter('woocommerce_email_from_address', 'trufusion_email_overrides_get_from_email', PHP_INT_MAX);
+add_filter('woocommerce_email_from_name', 'trufusion_email_overrides_get_from_name', PHP_INT_MAX);
+add_filter('pre_option_woocommerce_email_from_address', 'trufusion_email_overrides_pre_option_from_email', PHP_INT_MAX);
+add_filter('pre_option_woocommerce_email_from_name', 'trufusion_email_overrides_pre_option_from_name', PHP_INT_MAX);
+add_filter('pre_option_woocommerce_email_header_image', 'trufusion_email_overrides_pre_option_brand_logo_url', PHP_INT_MAX);
+add_filter('option_woocommerce_email_from_address', 'trufusion_email_overrides_get_from_email', PHP_INT_MAX);
+add_filter('option_woocommerce_email_from_name', 'trufusion_email_overrides_get_from_name', PHP_INT_MAX);
+add_filter('option_woocommerce_email_header_image', 'trufusion_email_overrides_get_brand_logo_url', PHP_INT_MAX);
 add_filter('woocommerce_email_header_image', 'trufusion_email_overrides_get_brand_logo_url', PHP_INT_MAX);
 add_filter('woocommerce_email_base_color', 'trufusion_email_overrides_get_email_base_color', PHP_INT_MAX);
 add_filter('woocommerce_email_background_color', 'trufusion_email_overrides_get_email_background_color', PHP_INT_MAX);
@@ -367,7 +413,8 @@ function trufusion_email_overrides_is_customer_on_hold_email($email) {
 
 function trufusion_email_overrides_zelle_payment_message($order) {
   if (!$order instanceof WC_Order) return '';
-  return "We received your order! Please Zelle support@peppro.net with the memo 'Order #{$order->get_order_number()}'.";
+  $zelle_email = trufusion_email_overrides_get_zelle_email();
+  return "We received your order! Please Zelle {$zelle_email} with the memo 'Order #{$order->get_order_number()}'.";
 }
 
 function trufusion_email_overrides_track_zelle_on_hold_email($email_heading, $email = null) {
@@ -1054,7 +1101,8 @@ function trufusion_bacs_thankyou_instructions($order_id) {
   if (empty($gateways['bacs'])) return;
 
   if (trufusion_is_zelle_order($order)) {
-    echo '<p>' . esc_html("We received your order! Please Zelle support@peppro.net with the memo 'Order #{$order->get_order_number()}'. Instructions to follow in an email.") . '</p>';
+    $zelle_email = trufusion_email_overrides_get_zelle_email();
+    echo '<p>' . esc_html("We received your order! Please Zelle {$zelle_email} with the memo 'Order #{$order->get_order_number()}'. Instructions to follow in an email.") . '</p>';
     return;
   }
 
