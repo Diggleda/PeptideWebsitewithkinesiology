@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 from ..repositories import email_campaign_repository
 from . import background_job_supervisor, email_service, get_config
@@ -367,6 +367,9 @@ def _public_api_base_url() -> str:
     except Exception:
         frontend = ""
     if frontend:
+        host = (urlparse(frontend).hostname or "").strip().lower()
+        if host in {"trufusionlabs.com", "www.trufusionlabs.com"}:
+            return "https://api.trufusionlabs.com/api"
         return f"{frontend}/api"
     return "https://trufusionlabs.com/api"
 
@@ -416,6 +419,20 @@ def unsubscribe(email: Any, token: Any, campaign_id: Any = None) -> Dict[str, An
         metadata={"source": "unsubscribe_link"},
     )
     return {"ok": True, "email": record["recipient_email"]}
+
+
+def unsubscribe_landing_url(email: Optional[str] = None, *, status: str = "success") -> str:
+    try:
+        frontend = str(get_config().frontend_base_url or "").strip().rstrip("/")
+    except Exception:
+        frontend = ""
+    if not frontend:
+        frontend = "https://www.trufusionlabs.com"
+    params = {"email_unsubscribed": "1", "status": status}
+    normalized = _normalize_email(email)
+    if normalized:
+        params["email"] = normalized
+    return f"{frontend}/?{urlencode(params)}"
 
 
 def _base_variables_for_recipient(recipient: Dict[str, Any], campaign_id: Optional[str] = None) -> Dict[str, str]:
@@ -536,6 +553,43 @@ def _assert_allowed_recipients(template: Dict[str, Any], recipients: List[Dict[s
         raise service_error("Recipient selection produced zero valid recipients", 400)
 
 
+def _estimate_draft_recipients(selection: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    try:
+        return resolve_recipients(selection)
+    except Exception as exc:
+        status = int(getattr(exc, "status", 500) or 500)
+        if status in {400, 404}:
+            return []
+        raise
+
+
+def estimate_recipients(payload: Dict[str, Any]) -> Dict[str, Any]:
+    selected = payload if isinstance(payload, dict) else {}
+    selection = selected.get("recipientSelection") or selected.get("recipient_selection")
+    if not isinstance(selection, dict):
+        selection = {"mode": selected.get("mode") or "test"}
+    mode = str(selection.get("mode") or "test").strip()
+    template_id = str(selected.get("templateId") or selected.get("template_id") or "").strip()
+    recipients = _estimate_draft_recipients(selection)
+    if template_id:
+        template = get_template(template_id)
+        allowed = set(template.get("allowed_recipient_groups") or [])
+        mode_to_group = {
+            "test": "test",
+            "selected_physician": "physicians",
+            "all_verified_physicians": "physicians",
+            "sales_reps": "sales_reps",
+            "custom": "custom",
+        }
+        group = mode_to_group.get(mode)
+        if group and allowed and group not in allowed:
+            raise service_error("This template is not approved for the selected recipient group", 400)
+    return {
+        "mode": mode,
+        "recipientCount": len(recipients),
+    }
+
+
 def preview_template(
     template_id: str,
     variables: Optional[Dict[str, Any]] = None,
@@ -610,6 +664,7 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         "testToken": test_token,
         "expiresAt": expires_at,
         "recipientEmail": recipient_email,
+        "recipientCount": 1,
     }
 
 
@@ -653,9 +708,10 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     save_as_draft = requested_status == "draft" or bool(payload.get("saveDraft"))
     scheduled_at = _parse_iso(payload.get("scheduledAt") or payload.get("scheduled_at"))
     variables = normalize_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
-    recipients = [] if save_as_draft else resolve_recipients(payload.get("recipientSelection") or payload.get("recipient_selection"))
+    recipient_selection = payload.get("recipientSelection") or payload.get("recipient_selection")
+    recipients = _estimate_draft_recipients(recipient_selection) if save_as_draft else resolve_recipients(recipient_selection)
     if not save_as_draft:
-        _assert_allowed_recipients(template, recipients, payload.get("recipientSelection") or payload.get("recipient_selection"))
+        _assert_allowed_recipients(template, recipients, recipient_selection)
         if str(payload.get("confirmationText") or "").strip() != "SEND":
             raise service_error("Type SEND to confirm this campaign", 400)
         _verify_test_token(
@@ -683,7 +739,7 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         "sent_at": None,
     }
     recipient_records: List[Dict[str, Any]] = []
-    for recipient in recipients:
+    for recipient in ([] if save_as_draft else recipients):
         recipient_variables = {
             **variables,
             **_base_variables_for_recipient(recipient, campaign_id),
@@ -711,11 +767,33 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         metadata={
             "templateId": template.get("id"),
             "adminId": admin.get("id"),
-            "recipientCount": len(recipient_records),
+            "recipientCount": len(recipients),
+            "scheduledAt": campaign_record.get("scheduled_at"),
             "status": status,
         },
     )
     return {"campaign": _campaign_to_api(campaign)}
+
+
+def delete_draft_campaign(campaign_id: str, *, admin: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    campaign = email_campaign_repository.get_campaign(str(campaign_id or ""))
+    if not campaign:
+        raise service_error("Campaign not found", 404)
+    if str(campaign.get("status") or "") != "draft":
+        raise service_error("Only draft campaigns can be deleted", 400)
+    deleted = email_campaign_repository.delete_draft_campaign(str(campaign.get("id") or campaign_id))
+    if not deleted:
+        raise service_error("Draft campaign could not be deleted", 409)
+    email_campaign_repository.log_event(
+        event_id=_new_id("evt"),
+        campaign_id=str(campaign.get("id") or campaign_id),
+        event_type="draft_deleted",
+        metadata={
+            "templateId": campaign.get("template_id"),
+            "adminId": (admin or {}).get("id"),
+        },
+    )
+    return {"ok": True, "deleted": True, "campaignId": campaign.get("id") or campaign_id}
 
 
 def list_campaigns(*, status: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:

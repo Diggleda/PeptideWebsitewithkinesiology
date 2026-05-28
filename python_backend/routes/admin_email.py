@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, Response, g, request
+from flask import Blueprint, Response, g, redirect, request
 
 from ..middleware.auth import require_auth
 from ..services import email_campaign_service
@@ -64,6 +64,17 @@ def send_test():
     return handle_action(action)
 
 
+@blueprint.post("/recipients/estimate")
+@require_auth
+def estimate_recipients():
+    def action():
+        _current_admin()
+        payload = request.get_json(silent=True) or {}
+        return email_campaign_service.estimate_recipients(payload)
+
+    return handle_action(action)
+
+
 @blueprint.post("/campaigns")
 @require_auth
 def create_campaign():
@@ -100,6 +111,16 @@ def get_campaign(campaign_id: str):
     return handle_action(action)
 
 
+@blueprint.delete("/campaigns/<campaign_id>")
+@require_auth
+def delete_campaign(campaign_id: str):
+    def action():
+        admin = _current_admin()
+        return email_campaign_service.delete_draft_campaign(campaign_id, admin=admin)
+
+    return handle_action(action)
+
+
 @blueprint.get("/worker")
 @require_auth
 def get_worker_status():
@@ -118,17 +139,10 @@ def unsubscribe():
             request.args.get("token"),
             request.args.get("campaign_id"),
         )
+        wants_json = request.args.get("format") == "json" or "application/json" in str(request.headers.get("Accept") or "")
+        if wants_json:
+            return result
         email = result.get("email") or "this address"
-        html = f"""<!DOCTYPE html>
-<html lang="en">
-  <head><meta charset="utf-8" /><title>Unsubscribed</title></head>
-  <body style="font-family:Arial,Helvetica,sans-serif;margin:0;background:#ffffff;color:#111827;">
-    <main style="max-width:560px;margin:48px auto;padding:0 24px;">
-      <h1 style="font-size:28px;line-height:1.2;color:#0B274B;">You are unsubscribed</h1>
-      <p style="font-size:16px;line-height:1.6;">{email} will no longer receive TrufusionLabs admin campaign emails.</p>
-    </main>
-  </body>
-</html>"""
-        return Response(html, mimetype="text/html")
+        return redirect(email_campaign_service.unsubscribe_landing_url(email), code=302)
 
     return handle_action(action)

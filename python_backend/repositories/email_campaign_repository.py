@@ -228,6 +228,36 @@ def get_campaign(campaign_id: str) -> Optional[Dict[str, Any]]:
         return _normalize_campaign(next((row for row in _load_json()["campaigns"] if row.get("id") == campaign_id), None))
 
 
+def delete_draft_campaign(campaign_id: str) -> bool:
+    if _using_mysql():
+        deleted = mysql_client.execute(
+            "DELETE FROM email_campaigns WHERE id = %(id)s AND status = 'draft'",
+            {"id": campaign_id},
+        )
+        if not deleted:
+            return False
+        mysql_client.execute(
+            "DELETE FROM email_campaign_recipients WHERE campaign_id = %(campaign_id)s",
+            {"campaign_id": campaign_id},
+        )
+        return True
+
+    with _JSON_LOCK:
+        store = _load_json()
+        campaigns = store["campaigns"]
+        campaign = next((row for row in campaigns if row.get("id") == campaign_id), None)
+        if not campaign or str(campaign.get("status") or "") != "draft":
+            return False
+        store["campaigns"] = [row for row in campaigns if row.get("id") != campaign_id]
+        store["recipients"] = [
+            row
+            for row in store["recipients"]
+            if str(row.get("campaign_id") or "") != campaign_id
+        ]
+        _save_json(store)
+        return True
+
+
 def list_campaigns(*, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     limit = max(1, min(int(limit or 50), 250))
     if _using_mysql():

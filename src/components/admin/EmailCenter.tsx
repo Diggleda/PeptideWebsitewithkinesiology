@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  Trash2,
   Users,
 } from "lucide-react";
 import {
@@ -26,6 +27,14 @@ import {
   type EmailCenterTemplate,
 } from "../../services/api";
 import { toast } from "../../lib/toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 
 type EmailTypeOption = {
   id: string;
@@ -89,15 +98,30 @@ const formatDateTime = (value?: string | null) => {
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error || "Request failed");
 
+const formatCount = (value: number) => new Intl.NumberFormat().format(Math.max(0, Math.round(value)));
+
 const countCustomEmails = (value: string) =>
   value
     .split(/[\s,;]+/)
     .map((entry) => entry.trim())
     .filter((entry) => entry.includes("@")).length;
 
+const scheduleInputToIso = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Choose a valid scheduled send time.");
+  }
+  return date.toISOString();
+};
+
 const DASHBOARD_PANEL_CLASS = "sales-rep-leads-card text-slate-900";
 const FIELD_SHELL_CLASS = "rounded-md border border-slate-200/80 bg-white/85 p-3 shadow-sm";
 const FIELD_LABEL_CLASS = "mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500";
+const FIELD_GRID_CLASS = "grid gap-x-7 gap-y-6 sm:grid-cols-2";
+const FIELD_STACK_CLASS = "grid gap-6";
+const FIELD_TOP_CLASS = "mt-6 block";
 const INPUT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const TEXTAREA_CLASS = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const SELECT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
@@ -149,9 +173,16 @@ export function EmailCenter() {
   const [confirmationText, setConfirmationText] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [savingCampaign, setSavingCampaign] = useState(false);
+  const [pendingCampaignMode, setPendingCampaignMode] = useState<"send" | "schedule" | null>(null);
+  const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<EmailCenterCampaign[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
   const [campaignError, setCampaignError] = useState<string | null>(null);
+  const [bulkRecipientEstimate, setBulkRecipientEstimate] = useState<{
+    count: number | null;
+    loading: boolean;
+    error: string | null;
+  }>({ count: null, loading: false, error: null });
   const emailCenterTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const [emailCenterTabIndicator, setEmailCenterTabIndicator] = useState<{
     left: number;
@@ -196,13 +227,33 @@ export function EmailCenter() {
     [selectedType, templates],
   );
 
+  const effectiveTestRecipientEmail = useMemo(
+    () => testEmail.trim() || testRecipientEmail.trim(),
+    [testEmail, testRecipientEmail],
+  );
+
+  const isBulkRecipientMode = recipientMode === "all_verified_physicians" || recipientMode === "sales_reps";
+
   const recipientEstimate = useMemo(() => {
-    if (recipientMode === "test") return testEmail.trim() ? "1" : "0";
+    if (recipientMode === "test") return effectiveTestRecipientEmail ? "1" : "0";
     if (recipientMode === "selected_physician") return selectedPhysicianEmail.trim() ? "1" : "0";
-    if (recipientMode === "custom") return String(countCustomEmails(customEmails));
-    if (recipientMode === "all_verified_physicians") return "all verified physicians";
-    return "active sales reps";
-  }, [customEmails, recipientMode, selectedPhysicianEmail, testEmail]);
+    if (recipientMode === "custom") return formatCount(countCustomEmails(customEmails));
+    if (isBulkRecipientMode) {
+      if (bulkRecipientEstimate.loading) return "Loading...";
+      if (bulkRecipientEstimate.error) return "Unavailable";
+      return formatCount(bulkRecipientEstimate.count ?? 0);
+    }
+    return "0";
+  }, [
+    bulkRecipientEstimate.count,
+    bulkRecipientEstimate.error,
+    bulkRecipientEstimate.loading,
+    customEmails,
+    effectiveTestRecipientEmail,
+    isBulkRecipientMode,
+    recipientMode,
+    selectedPhysicianEmail,
+  ]);
 
   const loadTemplates = useCallback(async () => {
     setTemplatesLoading(true);
@@ -285,6 +336,45 @@ export function EmailCenter() {
   }, [activeTab, loadCampaigns]);
 
   useEffect(() => {
+    if (!isBulkRecipientMode || !selectedTemplateId) {
+      setBulkRecipientEstimate({ count: null, loading: false, error: null });
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setBulkRecipientEstimate({ count: null, loading: true, error: null });
+      void emailCenterAPI
+        .estimateRecipients({
+          templateId: selectedTemplateId,
+          recipientSelection: { mode: recipientMode },
+        })
+        .then((response: any) => {
+          if (!active) return;
+          const count = Number(response?.recipientCount ?? response?.count ?? 0);
+          setBulkRecipientEstimate({
+            count: Number.isFinite(count) ? count : 0,
+            loading: false,
+            error: null,
+          });
+        })
+        .catch((error) => {
+          if (!active) return;
+          setBulkRecipientEstimate({
+            count: null,
+            loading: false,
+            error: getErrorMessage(error),
+          });
+        });
+    }, 150);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [isBulkRecipientMode, recipientMode, selectedTemplateId]);
+
+  useEffect(() => {
     if (!selectedTemplate) return;
     const nextVariables: Record<string, string> = {};
     getTemplateVariables(selectedTemplate).forEach((variable) => {
@@ -339,9 +429,17 @@ export function EmailCenter() {
     setVariables((current) => ({ ...current, [key]: value }));
   };
 
+  const selectTemplate = (templateId: string) => {
+    const template = templates.find((entry) => entry.id === templateId);
+    if (template) {
+      setSelectedType(templateCampaignType(template) || selectedType);
+    }
+    setSelectedTemplateId(templateId);
+  };
+
   const buildRecipientSelection = () => {
     if (recipientMode === "test") {
-      return { mode: recipientMode, testEmail };
+      return { mode: recipientMode, testEmail: effectiveTestRecipientEmail };
     }
     if (recipientMode === "selected_physician") {
       return { mode: recipientMode, selectedPhysicianEmail };
@@ -372,11 +470,24 @@ export function EmailCenter() {
     }
   };
 
+  const openSendConfirmation = (mode: "send" | "schedule") => {
+    if (mode === "schedule") {
+      try {
+        scheduleInputToIso(scheduledAt);
+      } catch (error) {
+        toast.error(getErrorMessage(error));
+        return;
+      }
+    }
+    setConfirmationText("");
+    setPendingCampaignMode(mode);
+  };
+
   const createCampaign = async (mode: "draft" | "send" | "schedule") => {
     if (!selectedTemplate) return;
     setSavingCampaign(true);
     try {
-      const scheduleIso = mode === "schedule" && scheduledAt ? new Date(scheduledAt).toISOString() : null;
+      const scheduleIso = scheduleInputToIso(scheduledAt);
       await emailCenterAPI.createCampaign({
         templateId: selectedTemplate.id,
         subject,
@@ -389,12 +500,30 @@ export function EmailCenter() {
       });
       toast.success(mode === "draft" ? "Draft saved" : mode === "schedule" ? "Campaign scheduled" : "Campaign queued");
       setConfirmationText("");
+      setPendingCampaignMode(null);
       setActiveTab(mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : "logs");
       await loadCampaigns(mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : undefined);
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
       setSavingCampaign(false);
+    }
+  };
+
+  const deleteDraftCampaign = async (campaign: EmailCenterCampaign) => {
+    if (!campaign?.id || campaign.status !== "draft") return;
+    const label = campaign.subject || campaign.templateId || "this draft";
+    if (!window.confirm(`Delete draft "${label}"? This cannot be undone.`)) return;
+    setDeletingCampaignId(campaign.id);
+    try {
+      await emailCenterAPI.deleteCampaign(campaign.id);
+      toast.success("Draft deleted");
+      setCampaigns((current) => current.filter((item) => item.id !== campaign.id));
+      await loadCampaigns(activeTab === "logs" ? undefined : activeTab);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setDeletingCampaignId(null);
     }
   };
 
@@ -447,11 +576,13 @@ export function EmailCenter() {
                   <th className="px-3 py-2">Progress</th>
                   <th className="px-3 py-2">Created</th>
                   <th className="px-3 py-2">Scheduled</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visible.map((campaign) => {
                   const progress = getCampaignProgress(campaign);
+                  const isDraft = campaign.status === "draft";
                   return (
                     <tr key={campaign.id}>
                       <td className="px-3 py-2 font-medium text-slate-900">{campaign.subject || "Untitled"}</td>
@@ -465,26 +596,49 @@ export function EmailCenter() {
                         {campaign.recipientCount ?? 0}
                       </td>
                       <td className="min-w-[220px] px-3 py-2">
-                        <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-600">
-                          <span className="font-semibold text-slate-800">{progress.percent}% complete</span>
-                          <span className="tabular-nums">
-                            {progress.completed}/{progress.total}
+                        {isDraft ? (
+                          <span className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600">
+                            Draft not queued
                           </span>
-                        </div>
-                        <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
-                          <span className="h-full bg-emerald-500" style={{ width: progress.sentWidth }} />
-                          <span className="h-full bg-red-500" style={{ width: progress.failedWidth }} />
-                          <span className="h-full bg-amber-400" style={{ width: progress.skippedWidth }} />
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                          <span>Sent {progress.sent}</span>
-                          <span>Pending {progress.pending}</span>
-                          {progress.failed > 0 && <span>Failed {progress.failed}</span>}
-                          {progress.skipped > 0 && <span>Skipped {progress.skipped}</span>}
-                        </div>
+                        ) : (
+                          <>
+                            <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-600">
+                              <span className="font-semibold text-slate-800">{progress.percent}% complete</span>
+                              <span className="tabular-nums">
+                                {progress.completed}/{progress.total}
+                              </span>
+                            </div>
+                            <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
+                              <span className="h-full bg-emerald-500" style={{ width: progress.sentWidth }} />
+                              <span className="h-full bg-red-500" style={{ width: progress.failedWidth }} />
+                              <span className="h-full bg-amber-400" style={{ width: progress.skippedWidth }} />
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                              <span>Sent {progress.sent}</span>
+                              <span>Pending {progress.pending}</span>
+                              {progress.failed > 0 && <span>Failed {progress.failed}</span>}
+                              {progress.skipped > 0 && <span>Skipped {progress.skipped}</span>}
+                            </div>
+                          </>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-slate-600">{formatDateTime(campaign.createdAt)}</td>
                       <td className="px-3 py-2 text-slate-600">{formatDateTime(campaign.scheduledAt)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {isDraft ? (
+                          <button
+                            type="button"
+                            onClick={() => deleteDraftCampaign(campaign)}
+                            disabled={deletingCampaignId === campaign.id}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            {deletingCampaignId === campaign.id ? "Deleting..." : "Delete"}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -498,6 +652,65 @@ export function EmailCenter() {
 
   return (
     <section className="admin-tab-panel-enter w-full min-w-0">
+      <Dialog
+        open={pendingCampaignMode !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingCampaignMode(null);
+            setConfirmationText("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {pendingCampaignMode === "schedule" ? "Confirm Scheduled Campaign" : "Confirm Campaign Send"}
+            </DialogTitle>
+            <DialogDescription>
+              You are about to {pendingCampaignMode === "schedule" ? "schedule" : "send"} "
+              {selectedTemplate?.name || "this campaign"}" to {recipientEstimate} recipients. Type SEND to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <label className={FIELD_SHELL_CLASS}>
+            <span className={FIELD_LABEL_CLASS}>Confirmation</span>
+            <input
+              value={confirmationText}
+              onChange={(event) => setConfirmationText(event.target.value)}
+              placeholder="SEND"
+              className={clsx(INPUT_CLASS, "font-semibold tracking-wide")}
+              autoFocus
+            />
+          </label>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingCampaignMode(null);
+                setConfirmationText("");
+              }}
+              className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!pendingCampaignMode) return;
+                void createCampaign(pendingCampaignMode);
+              }}
+              disabled={savingCampaign || confirmationText !== "SEND"}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {pendingCampaignMode === "schedule" ? (
+                <CalendarDays className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Send className="h-4 w-4" aria-hidden="true" />
+              )}
+              {pendingCampaignMode === "schedule" ? "Schedule send" : "Send now"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3 px-1">
           <div>
@@ -566,33 +779,97 @@ export function EmailCenter() {
         </div>
 
         {activeTab === "templates" && (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {templates.map((template) => (
-              <article key={template.id} className={clsx(DASHBOARD_PANEL_CLASS, "p-4")}>
-                <div className="flex items-start justify-between gap-3">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+            <section className={clsx(DASHBOARD_PANEL_CLASS, "space-y-5")}>
+              <div>
+                <h4 className="text-base font-semibold text-slate-950">Approved Template</h4>
+                <p className="text-sm text-slate-600">
+                  Select an approved backend template to inspect its rendered HTML.
+                </p>
+              </div>
+              {templateError && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {templateError}
+                </div>
+              )}
+              <label className={FIELD_SHELL_CLASS}>
+                <span className={FIELD_LABEL_CLASS}>Template</span>
+                <select
+                  value={selectedTemplateId}
+                  onChange={(event) => selectTemplate(event.target.value)}
+                  className={SELECT_CLASS}
+                  disabled={templatesLoading || templates.length === 0}
+                >
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedTemplate && (
+                <div className="space-y-4 rounded-md border border-slate-200/80 bg-white/85 p-4 text-sm text-slate-700 shadow-sm">
                   <div>
-                    <h4 className="font-semibold text-slate-950">{template.name}</h4>
-                    <p className="mt-1 text-sm text-slate-600">{template.description}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h5 className="text-base font-semibold text-slate-950">{selectedTemplate.name}</h5>
+                      {selectedTemplate.id === "delegate_links_announcement" && (
+                        <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
+                          First
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-slate-600">{selectedTemplate.description}</p>
                   </div>
-                  {template.id === "delegate_links_announcement" && (
-                    <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
-                      First
-                    </span>
-                  )}
+                  <div className="grid gap-3">
+                    <div>
+                      <span className={FIELD_LABEL_CLASS}>File</span>
+                      <div className="break-all text-xs text-slate-600">{selectedTemplate.file}</div>
+                    </div>
+                    <div>
+                      <span className={FIELD_LABEL_CLASS}>Type</span>
+                      <div className="text-slate-800">{templateCampaignType(selectedTemplate) || "template"}</div>
+                    </div>
+                    <div>
+                      <span className={FIELD_LABEL_CLASS}>Variables</span>
+                      <div className="flex flex-wrap gap-2">
+                        {getTemplateVariables(selectedTemplate).map((variable) => (
+                          <span
+                            key={variable}
+                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600"
+                          >
+                            {variable}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-3 text-xs text-slate-500">
-                  {template.file}
+              )}
+            </section>
+
+            <section className={clsx(DASHBOARD_PANEL_CLASS, "min-w-0")}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-base font-semibold text-slate-950">HTML Preview</h4>
+                  <p className="text-sm text-slate-600">{selectedTemplate?.description || "Select a template."}</p>
                 </div>
-              </article>
-            ))}
+                {previewLoading && <RefreshCw className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
+              </div>
+              <iframe
+                title="Email template HTML preview"
+                sandbox=""
+                srcDoc={previewHtml || "<!doctype html><html><body></body></html>"}
+                className="h-[760px] w-full rounded-md border border-slate-300 bg-white shadow-inner"
+              />
+            </section>
           </div>
         )}
 
         {activeTab !== "new" && activeTab !== "templates" && renderCampaignList(activeTab)}
 
         {activeTab === "new" && (
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]">
-            <div className="space-y-6">
+          <div className="space-y-8">
+            <div className="space-y-8">
               <section className={DASHBOARD_PANEL_CLASS}>
                 <div className="mb-4 flex items-center gap-2">
                   <FileText className="h-5 w-5 text-slate-700" aria-hidden="true" />
@@ -603,7 +880,7 @@ export function EmailCenter() {
                     {templateError}
                   </div>
                 )}
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className={FIELD_GRID_CLASS}>
                   <label className={FIELD_SHELL_CLASS}>
                     <span className={FIELD_LABEL_CLASS}>Email type</span>
                     <select
@@ -621,7 +898,7 @@ export function EmailCenter() {
                     <span className={FIELD_LABEL_CLASS}>Template</span>
                     <select
                       value={selectedTemplateId}
-                      onChange={(event) => setSelectedTemplateId(event.target.value)}
+                      onChange={(event) => selectTemplate(event.target.value)}
                       className={SELECT_CLASS}
                       disabled={templatesLoading || templatesForType.length === 0}
                     >
@@ -631,7 +908,7 @@ export function EmailCenter() {
                     </select>
                   </label>
                 </div>
-                <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
+                <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
                   <span className={FIELD_LABEL_CLASS}>Subject</span>
                   <input
                     value={subject}
@@ -646,7 +923,7 @@ export function EmailCenter() {
                   <Users className="h-5 w-5 text-slate-700" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Recipients</h4>
                 </div>
-                <div className="grid gap-4">
+                <div className="grid gap-5">
                   {RECIPIENT_OPTIONS.map((option) => (
                     <label
                       key={option.id}
@@ -673,7 +950,7 @@ export function EmailCenter() {
                   ))}
                 </div>
                 {recipientMode === "test" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
+                  <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
                     <span className={FIELD_LABEL_CLASS}>Test recipient</span>
                     <input
                       value={testEmail}
@@ -684,7 +961,7 @@ export function EmailCenter() {
                   </label>
                 )}
                 {recipientMode === "selected_physician" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
+                  <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
                     <span className={FIELD_LABEL_CLASS}>Physician email</span>
                     <input
                       value={selectedPhysicianEmail}
@@ -695,7 +972,7 @@ export function EmailCenter() {
                   </label>
                 )}
                 {recipientMode === "custom" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
+                  <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
                     <span className={FIELD_LABEL_CLASS}>Custom email list</span>
                     <textarea
                       value={customEmails}
@@ -706,8 +983,11 @@ export function EmailCenter() {
                     />
                   </label>
                 )}
-                <div className="mt-5 rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
+                <div className="mt-6 rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
                   Estimated recipients: <span className="font-semibold">{recipientEstimate}</span>
+                  {isBulkRecipientMode && bulkRecipientEstimate.error ? (
+                    <span className="ml-2 text-xs font-medium text-amber-700">{bulkRecipientEstimate.error}</span>
+                  ) : null}
                 </div>
               </section>
 
@@ -716,7 +996,7 @@ export function EmailCenter() {
                   <Eye className="h-5 w-5 text-slate-700" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Personalization</h4>
                 </div>
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className={FIELD_GRID_CLASS}>
                   {getTemplateVariables(selectedTemplate).map((variable) => (
                     <label key={variable} className={FIELD_SHELL_CLASS}>
                       <span className={FIELD_LABEL_CLASS}>
@@ -743,12 +1023,12 @@ export function EmailCenter() {
 
               <section className={DASHBOARD_PANEL_CLASS}>
                 <div className="mb-4 flex items-center gap-2">
-                  <Send className="h-5 w-5 text-slate-700" aria-hidden="true" />
-                  <h4 className="text-base font-semibold text-slate-950">Send Controls</h4>
+                  <Mail className="h-5 w-5 text-slate-700" aria-hidden="true" />
+                  <h4 className="text-base font-semibold text-slate-950">Test Send</h4>
                 </div>
-                <div className="grid gap-5">
+                <div className={FIELD_STACK_CLASS}>
                   <label className={FIELD_SHELL_CLASS}>
-                    <span className={FIELD_LABEL_CLASS}>Test email address</span>
+                    <span className={FIELD_LABEL_CLASS}>Send test to</span>
                     <input
                       value={testRecipientEmail}
                       onChange={(event) => setTestRecipientEmail(event.target.value)}
@@ -770,8 +1050,37 @@ export function EmailCenter() {
                       Test send completed. Token expires {formatDateTime(testTokenExpiresAt)}.
                     </div>
                   )}
+                </div>
+              </section>
+
+              <section className={clsx(DASHBOARD_PANEL_CLASS, "min-w-0")}>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-base font-semibold text-slate-950">Preview</h4>
+                    <p className="text-sm text-slate-600">{selectedTemplate?.description || "Select a template."}</p>
+                  </div>
+                  {previewLoading && <RefreshCw className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
+                </div>
+                <iframe
+                  title="Email template preview"
+                  sandbox=""
+                  srcDoc={previewHtml || "<!doctype html><html><body></body></html>"}
+                  className="h-[720px] w-full rounded-md border border-slate-300 bg-white shadow-inner"
+                />
+              </section>
+
+              <section className={DASHBOARD_PANEL_CLASS}>
+                <div className="mb-4 flex items-center gap-2">
+                  <Send className="h-5 w-5 text-slate-700" aria-hidden="true" />
+                  <h4 className="text-base font-semibold text-slate-950">Send Controls</h4>
+                </div>
+                <div className={FIELD_STACK_CLASS}>
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    You are about to send "{selectedTemplate?.name || "this campaign"}" to {recipientEstimate} recipients.
+                    Continue opens the final SEND confirmation.
+                  </div>
                   <label className={FIELD_SHELL_CLASS}>
-                    <span className={FIELD_LABEL_CLASS}>Schedule send</span>
+                    <span className={FIELD_LABEL_CLASS}>Scheduled send time</span>
                     <input
                       type="datetime-local"
                       value={scheduledAt}
@@ -779,67 +1088,43 @@ export function EmailCenter() {
                       className={INPUT_CLASS}
                     />
                   </label>
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    You are about to send "{selectedTemplate?.name || "this campaign"}" to {recipientEstimate} recipients.
-                    Type <span className="font-bold">SEND</span> to confirm.
-                  </div>
-                  <label className={FIELD_SHELL_CLASS}>
-                    <span className={FIELD_LABEL_CLASS}>Confirmation</span>
-                    <input
-                      value={confirmationText}
-                      onChange={(event) => setConfirmationText(event.target.value)}
-                      placeholder="SEND"
-                      className={clsx(INPUT_CLASS, "font-semibold tracking-wide")}
-                    />
-                  </label>
+                  {!testToken && (
+                    <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
+                      Send a test email before continuing to a real send or scheduled send.
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-4">
                     <button
                       type="button"
                       onClick={() => createCampaign("draft")}
                       disabled={savingCampaign || !selectedTemplateId}
-                      className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="email-center-action-button header-home-button squircle-sm inline-flex min-h-12 min-w-[12rem] items-center justify-center gap-2 bg-white px-5 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed"
                     >
                       <Save className="h-4 w-4" aria-hidden="true" />
-                      Save draft
+                      <span>Save draft</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => createCampaign("send")}
-                      disabled={savingCampaign || !testToken || confirmationText !== "SEND"}
-                      className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      onClick={() => openSendConfirmation("send")}
+                      disabled={savingCampaign || !testToken}
+                      className="email-center-action-button header-home-button squircle-sm inline-flex min-h-12 min-w-[14rem] items-center justify-center gap-2 bg-white px-5 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed"
                     >
                       <Send className="h-4 w-4" aria-hidden="true" />
-                      Send now
+                      <span>Continue to send now</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => createCampaign("schedule")}
-                      disabled={savingCampaign || !testToken || confirmationText !== "SEND" || !scheduledAt}
-                      className="inline-flex h-10 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      onClick={() => openSendConfirmation("schedule")}
+                      disabled={savingCampaign || !testToken || !scheduledAt}
+                      className="email-center-action-button header-home-button squircle-sm inline-flex min-h-12 min-w-[14rem] items-center justify-center gap-2 bg-white px-5 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed"
                     >
                       <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                      Schedule send
+                      <span>Continue to schedule</span>
                     </button>
                   </div>
                 </div>
               </section>
             </div>
-
-            <section className={clsx(DASHBOARD_PANEL_CLASS, "min-w-0")}>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <h4 className="text-base font-semibold text-slate-950">Preview</h4>
-                  <p className="text-sm text-slate-600">{selectedTemplate?.description || "Select a template."}</p>
-                </div>
-                {previewLoading && <RefreshCw className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
-              </div>
-              <iframe
-                title="Email template preview"
-                sandbox=""
-                srcDoc={previewHtml || "<!doctype html><html><body></body></html>"}
-                className="h-[720px] w-full rounded-md border border-slate-300 bg-white shadow-inner"
-              />
-            </section>
           </div>
         )}
       </div>

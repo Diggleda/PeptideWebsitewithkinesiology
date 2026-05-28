@@ -2247,6 +2247,57 @@ const isLoginAuthRoute = () =>
   normalizePathname(window.location.pathname) === "/" &&
   new URLSearchParams(window.location.search).get("auth") === "login";
 
+const EMAIL_UNSUBSCRIBE_ROUTE = "/api/admin/email/unsubscribe";
+const EMAIL_UNSUBSCRIBE_NOTICE =
+  "You have been unsubscribed. Modify your email preferences within your portal or by contacting support@trufusionlabs.com if you wish to resubscribe.";
+
+type EmailUnsubscribeRequest = {
+  shouldSubmit: boolean;
+  email: string;
+  token: string;
+  campaignId: string;
+  status: "pending" | "success" | "error";
+};
+
+const readEmailUnsubscribeRequestFromLocation = (): EmailUnsubscribeRequest | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const pathname = normalizePathname(window.location.pathname);
+  const params = new URLSearchParams(window.location.search);
+  const isDirectUnsubscribePath = pathname === EMAIL_UNSUBSCRIBE_ROUTE;
+  const isLandingNotice = params.get("email_unsubscribed") === "1";
+  if (!isDirectUnsubscribePath && !isLandingNotice) {
+    return null;
+  }
+  const email = params.get("email") || "";
+  const token = params.get("token") || "";
+  const campaignId = params.get("campaign_id") || "";
+  const status = params.get("status") === "error" ? "error" : "success";
+  return {
+    shouldSubmit: isDirectUnsubscribePath && Boolean(email && token),
+    email,
+    token,
+    campaignId,
+    status: isDirectUnsubscribePath ? (email && token ? "pending" : "error") : status,
+  };
+};
+
+const clearEmailUnsubscribeNoticeFromLocation = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("email_unsubscribed")) {
+    return;
+  }
+  params.delete("email_unsubscribed");
+  params.delete("status");
+  params.delete("email");
+  const nextSearch = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`);
+};
+
 const readResetTokenFromLocation = () => {
   if (typeof window === "undefined") {
     return null;
@@ -6073,6 +6124,20 @@ function MainApp() {
   const [delegateValidatedToken, setDelegateValidatedToken] = useState<
     string | null
   >(null);
+  const initialEmailUnsubscribeRequest = useMemo(
+    () => readEmailUnsubscribeRequestFromLocation(),
+    [],
+  );
+  const [emailUnsubscribeDialog, setEmailUnsubscribeDialog] = useState<{
+    open: boolean;
+    status: "pending" | "success" | "error";
+    email: string;
+  }>(() => ({
+    open: Boolean(initialEmailUnsubscribeRequest),
+    status: initialEmailUnsubscribeRequest?.status || "success",
+    email: initialEmailUnsubscribeRequest?.email || "",
+  }));
+  const emailUnsubscribeHandledRef = useRef(false);
   const DELEGATE_EXPIRY_CACHE_PREFIX = "trufusion_delegate_expiry_v1:";
   const [delegateExpiryMs, setDelegateExpiryMs] = useState<number | null>(null);
   const [delegateNowMs, setDelegateNowMs] = useState(() => Date.now());
@@ -6481,6 +6546,31 @@ function MainApp() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (emailUnsubscribeHandledRef.current) {
+      return;
+    }
+    const request = readEmailUnsubscribeRequestFromLocation();
+    if (!request) {
+      return;
+    }
+    emailUnsubscribeHandledRef.current = true;
+    setEmailUnsubscribeDialog({
+      open: true,
+      status: request.status,
+      email: request.email,
+    });
+    if (!request.shouldSubmit) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("email", request.email);
+    params.set("token", request.token);
+    params.set("campaign_id", request.campaignId);
+    window.location.replace(`${API_BASE_URL}/admin/email/unsubscribe?${params.toString()}`);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -40349,6 +40439,52 @@ function MainApp() {
       }}
     >
       <AppDataEventsBridge enabled={Boolean(user)} />
+      <Dialog
+        open={emailUnsubscribeDialog.open}
+        modal
+        onOpenChange={(open) => {
+          setEmailUnsubscribeDialog((current) => ({ ...current, open }));
+          if (!open) {
+            clearEmailUnsubscribeNoticeFromLocation();
+          }
+        }}
+      >
+        <DialogContent className="doctor-gating-modal-content max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {emailUnsubscribeDialog.status === "pending"
+                ? "Unsubscribing"
+                : emailUnsubscribeDialog.status === "error"
+                  ? "Unsubscribe Status"
+                  : "You Have Been Unsubscribed"}
+            </DialogTitle>
+            <DialogDescription>
+              {emailUnsubscribeDialog.status === "pending"
+                ? "Confirming your email preference..."
+                : emailUnsubscribeDialog.status === "error"
+                  ? "We could not confirm this unsubscribe link. Please contact support@trufusionlabs.com."
+                  : EMAIL_UNSUBSCRIBE_NOTICE}
+            </DialogDescription>
+          </DialogHeader>
+          {emailUnsubscribeDialog.email && emailUnsubscribeDialog.status !== "pending" ? (
+            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {emailUnsubscribeDialog.email}
+            </p>
+          ) : null}
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              disabled={emailUnsubscribeDialog.status === "pending"}
+              onClick={() => {
+                setEmailUnsubscribeDialog((current) => ({ ...current, open: false }));
+                clearEmailUnsubscribeNoticeFromLocation();
+              }}
+            >
+              OK
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       {isDelegateThemeActive && (
         <div
           className="delegate-session-background-layer"

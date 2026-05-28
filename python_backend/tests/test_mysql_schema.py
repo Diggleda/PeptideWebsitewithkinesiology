@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import sys
 import types
 import unittest
@@ -59,6 +60,7 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("template_id VARCHAR(128) NOT NULL", schema_sql)
         self.assertIn("status VARCHAR(32) NOT NULL DEFAULT 'draft'", schema_sql)
         self.assertIn("variables_json JSON NULL", schema_sql)
+        self.assertIn("scheduled_at DATETIME NULL", schema_sql)
         self.assertIn("CREATE TABLE IF NOT EXISTS email_campaign_recipients", schema_sql)
         self.assertIn("recipient_email VARCHAR(190) NOT NULL", schema_sql)
         self.assertIn("error_message LONGTEXT NULL", schema_sql)
@@ -66,6 +68,9 @@ class MysqlSchemaTests(unittest.TestCase):
         self.assertIn("event_type VARCHAR(64) NOT NULL", schema_sql)
         self.assertIn("CREATE TABLE IF NOT EXISTS email_unsubscribes", schema_sql)
         self.assertIn("recipient_email VARCHAR(190) PRIMARY KEY", schema_sql)
+
+        schema_migrations = inspect.getsource(mysql_schema.ensure_schema)
+        self.assertIn("ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS scheduled_at DATETIME NULL", schema_migrations)
 
     def test_product_brochure_info_schema_exists(self) -> None:
         schema_sql = "\n".join(mysql_schema.CREATE_TABLE_STATEMENTS)

@@ -1053,6 +1053,14 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_delivered TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_sent_at DATETIME NULL",
+        "ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS recipient_count INT NOT NULL DEFAULT 0",
+        "ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS variables_json JSON NULL",
+        "ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS scheduled_at DATETIME NULL",
+        "ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS sent_at DATETIME NULL",
+        "ALTER TABLE email_campaign_recipients ADD COLUMN IF NOT EXISTS variables_json JSON NULL",
+        "ALTER TABLE email_campaign_recipients ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL",
+        "ALTER TABLE email_campaign_recipients ADD COLUMN IF NOT EXISTS sent_at DATETIME NULL",
+        "ALTER TABLE email_campaign_recipients ADD COLUMN IF NOT EXISTS error_message LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
         "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS downloads LONGTEXT NULL",
@@ -1297,6 +1305,27 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE users ADD COLUMN email_verified_at DATETIME NULL")
         if not _column_exists("users", "email_verification_sent_at"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN email_verification_sent_at DATETIME NULL")
+    except Exception:
+        pass
+
+    # Ensure existing Email Center installs keep draft schedule metadata.
+    try:
+        if not _column_exists("email_campaigns", "recipient_count"):
+            mysql_client.execute("ALTER TABLE email_campaigns ADD COLUMN recipient_count INT NOT NULL DEFAULT 0")
+        if not _column_exists("email_campaigns", "variables_json"):
+            mysql_client.execute("ALTER TABLE email_campaigns ADD COLUMN variables_json JSON NULL")
+        if not _column_exists("email_campaigns", "scheduled_at"):
+            mysql_client.execute("ALTER TABLE email_campaigns ADD COLUMN scheduled_at DATETIME NULL")
+        if not _column_exists("email_campaigns", "sent_at"):
+            mysql_client.execute("ALTER TABLE email_campaigns ADD COLUMN sent_at DATETIME NULL")
+        if not _column_exists("email_campaign_recipients", "variables_json"):
+            mysql_client.execute("ALTER TABLE email_campaign_recipients ADD COLUMN variables_json JSON NULL")
+        if not _column_exists("email_campaign_recipients", "created_at"):
+            mysql_client.execute("ALTER TABLE email_campaign_recipients ADD COLUMN created_at DATETIME NOT NULL")
+        if not _column_exists("email_campaign_recipients", "sent_at"):
+            mysql_client.execute("ALTER TABLE email_campaign_recipients ADD COLUMN sent_at DATETIME NULL")
+        if not _column_exists("email_campaign_recipients", "error_message"):
+            mysql_client.execute("ALTER TABLE email_campaign_recipients ADD COLUMN error_message LONGTEXT NULL")
     except Exception:
         pass
 

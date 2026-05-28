@@ -5324,6 +5324,36 @@ html {
   padding-bottom: 0;
 }
 
+button[data-email-center-tab],
+button[data-email-center-tab] *,
+button[data-admin-dashboard-tab="email_center"],
+button[data-admin-dashboard-tab="email_center"] * {
+  color: #000 !important;
+}
+
+button[data-email-center-tab] svg,
+button[data-admin-dashboard-tab="email_center"] svg {
+  color: #000 !important;
+  stroke: currentColor;
+}
+
+button.email-center-action-button,
+button.email-center-action-button:disabled {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: rgb(11, 6, 121) !important;
+  color: rgb(11, 6, 121) !important;
+  opacity: 1 !important;
+}
+
+button.email-center-action-button:disabled {
+  cursor: not-allowed;
+}
+
+button.email-center-action-button:disabled > :is(svg, span) {
+  color: rgb(11, 6, 121) !important;
+  opacity: 0.62 !important;
+}
+
 .documentation-header-tabs {
   align-self: flex-end;
   margin-top: auto;

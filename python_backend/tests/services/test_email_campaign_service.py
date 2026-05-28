@@ -110,6 +110,113 @@ class EmailCampaignServiceTests(unittest.TestCase):
             },
         )
 
+    def test_draft_counts_test_recipient_and_preserves_schedule(self) -> None:
+        admin = {"id": "admin_1", "role": "admin"}
+        captured: list[tuple[dict, list]] = []
+
+        def create_campaign(campaign, recipients):
+            captured.append((campaign, list(recipients)))
+            return campaign
+
+        with patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=create_campaign), \
+            patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={}), \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"):
+            response = email_campaign_service.create_campaign(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "subject": "Delegate Links are now available",
+                    "variables": {
+                        "doctor_name": "Dr. Ada Lovelace",
+                        "clinic_name": "Analytical Clinic",
+                        "delegate_links_url": "https://trufusionlabs.com/account?tab=delegate-links",
+                        "support_email": "support@trufusionlabs.com",
+                    },
+                    "recipientSelection": {"mode": "test", "testEmail": "admin@example.com"},
+                    "status": "draft",
+                    "scheduledAt": "2030-01-02T03:04:00Z",
+                },
+                admin=admin,
+            )
+
+        self.assertEqual(response["campaign"]["status"], "draft")
+        self.assertEqual(response["campaign"]["recipientCount"], 1)
+        self.assertEqual(response["campaign"]["scheduledAt"], "2030-01-02T03:04:00Z")
+        self.assertEqual(captured[0][0]["recipient_count"], 1)
+        self.assertEqual(captured[0][1], [])
+
+    def test_delete_draft_campaign_rejects_non_drafts(self) -> None:
+        with patch.object(
+            email_campaign_service.email_campaign_repository,
+            "get_campaign",
+            return_value={"id": "emc_1", "status": "sending"},
+        ), patch.object(email_campaign_service.email_campaign_repository, "delete_draft_campaign") as delete_draft:
+            with self.assertRaises(Exception):
+                email_campaign_service.delete_draft_campaign("emc_1", admin={"id": "admin_1"})
+
+        delete_draft.assert_not_called()
+
+    def test_unsubscribe_records_address_and_event_without_campaign_id(self) -> None:
+        token = email_campaign_service._build_unsubscribe_token("diggleda@icloud.com")
+
+        with patch.object(
+            email_campaign_service.email_campaign_repository,
+            "add_unsubscribe",
+            return_value={"recipient_email": "diggleda@icloud.com"},
+        ) as add_unsubscribe, patch.object(
+            email_campaign_service.email_campaign_repository,
+            "log_event",
+        ) as log_event:
+            result = email_campaign_service.unsubscribe("diggleda@icloud.com", token, "")
+
+        self.assertTrue(result["ok"])
+        add_unsubscribe.assert_called_once()
+        self.assertEqual(add_unsubscribe.call_args.kwargs["email"], "diggleda@icloud.com")
+        self.assertIsNone(add_unsubscribe.call_args.kwargs["campaign_id"])
+        log_event.assert_called_once()
+        self.assertEqual(log_event.call_args.kwargs["event_type"], "unsubscribed")
+        self.assertEqual(log_event.call_args.kwargs["recipient_email"], "diggleda@icloud.com")
+
+    def test_estimate_recipients_counts_bulk_groups(self) -> None:
+        users = [
+            {"email": "verified@example.com", "role": "doctor", "emailVerifiedAt": "2026-01-01T00:00:00Z"},
+            {"email": "testdoctor@example.com", "role": "test_doctor", "email_verified_at": "2026-01-01T00:00:00Z"},
+            {"email": "unverified@example.com", "role": "doctor"},
+            {"email": "inactive@example.com", "role": "doctor", "emailVerifiedAt": "2026-01-01T00:00:00Z", "status": "inactive"},
+            {"email": "rep-user@example.com", "role": "sales_rep", "emailVerifiedAt": "2026-01-01T00:00:00Z"},
+        ]
+        reps = [
+            {"email": "active.rep@example.com", "name": "Active Rep", "status": "active"},
+            {"email": "disabled.rep@example.com", "name": "Disabled Rep", "status": "disabled"},
+            {"email": None, "name": "Missing Email", "status": "active"},
+        ]
+        fake_user_repository = types.ModuleType("python_backend.repositories.user_repository")
+        fake_user_repository.get_all = lambda: users
+        fake_sales_rep_repository = types.ModuleType("python_backend.repositories.sales_rep_repository")
+        fake_sales_rep_repository.get_all = lambda: reps
+
+        with patch.dict(
+            sys.modules,
+            {
+                "python_backend.repositories.user_repository": fake_user_repository,
+                "python_backend.repositories.sales_rep_repository": fake_sales_rep_repository,
+            },
+        ):
+            physicians = email_campaign_service.estimate_recipients(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "recipientSelection": {"mode": "all_verified_physicians"},
+                }
+            )
+            sales_reps = email_campaign_service.estimate_recipients(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "recipientSelection": {"mode": "sales_reps"},
+                }
+            )
+
+        self.assertEqual(physicians["recipientCount"], 2)
+        self.assertEqual(sales_reps["recipientCount"], 1)
+
     def test_test_send_token_is_required_for_real_campaign(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}
         base_payload = {
@@ -131,6 +238,7 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 {**base_payload, "recipientEmail": "admin@example.com"},
                 admin=admin,
             )
+            self.assertEqual(test_response["recipientCount"], 1)
             campaign_response = email_campaign_service.create_campaign(
                 {
                     **base_payload,

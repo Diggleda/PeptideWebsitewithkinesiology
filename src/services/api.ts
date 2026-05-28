@@ -2045,6 +2045,14 @@ export const emailCenterAPI = {
       body: JSON.stringify(payload),
     });
   },
+  estimateRecipients: async (payload: Record<string, unknown>) => {
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/recipients/estimate`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+  },
   createCampaign: async (payload: Record<string, unknown>) => {
     return fetchWithAuth(`${API_BASE_URL}/admin/email/campaigns`, {
       method: 'POST',
@@ -2066,6 +2074,13 @@ export const emailCenterAPI = {
   getCampaign: async (campaignId: string) => {
     return fetchWithAuth(`${API_BASE_URL}/admin/email/campaigns/${encodeURIComponent(campaignId)}`, {
       method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
+  deleteCampaign: async (campaignId: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/campaigns/${encodeURIComponent(campaignId)}`, {
+      method: 'DELETE',
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });

@@ -106,6 +106,30 @@ class AdminEmailRouteTests(unittest.TestCase):
         self.assertEqual(asset_response.mimetype, "image/png")
         self.assertGreater(len(asset_response.get_data()), 0)
 
+    def test_unsubscribe_route_supports_json_and_redirect(self) -> None:
+        with self.app.test_client() as client, patch.object(
+            admin_email.email_campaign_service,
+            "unsubscribe",
+            return_value={"ok": True, "email": "doctor@example.com"},
+        ) as unsubscribe, patch.object(
+            admin_email.email_campaign_service,
+            "unsubscribe_landing_url",
+            return_value="https://www.trufusionlabs.com/?email_unsubscribed=1",
+        ):
+            json_response = client.get(
+                "/api/admin/email/unsubscribe?email=doctor%40example.com&token=tok&format=json",
+                headers={"Accept": "application/json"},
+            )
+            redirect_response = client.get(
+                "/api/admin/email/unsubscribe?email=doctor%40example.com&token=tok",
+            )
+
+        self.assertEqual(json_response.status_code, 200)
+        self.assertTrue(json_response.get_json()["ok"])
+        self.assertEqual(redirect_response.status_code, 302)
+        self.assertEqual(redirect_response.headers["Location"], "https://www.trufusionlabs.com/?email_unsubscribed=1")
+        self.assertEqual(unsubscribe.call_count, 2)
+
     def test_campaign_create_route_passes_admin_context(self) -> None:
         with self.app.test_client() as client, patch.object(
             auth_middleware,
@@ -128,6 +152,56 @@ class AdminEmailRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json()["campaign"]["id"], "emc_1")
         self.assertEqual(create_campaign.call_args.kwargs["admin"]["id"], "admin_1")
+
+    def test_recipient_estimate_route_requires_admin_context(self) -> None:
+        with self.app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            return_value=None,
+        ), patch.object(
+            admin_email,
+            "_current_admin",
+            return_value={"id": "admin_1", "role": "admin"},
+        ), patch.object(
+            admin_email.email_campaign_service,
+            "estimate_recipients",
+            return_value={"recipientCount": 42},
+        ) as estimate_recipients:
+            response = client.post(
+                "/api/admin/email/recipients/estimate",
+                json={
+                    "templateId": "delegate_links_announcement",
+                    "recipientSelection": {"mode": "all_verified_physicians"},
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["recipientCount"], 42)
+        self.assertEqual(
+            estimate_recipients.call_args.args[0]["recipientSelection"]["mode"],
+            "all_verified_physicians",
+        )
+
+    def test_campaign_delete_route_passes_admin_context(self) -> None:
+        with self.app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            return_value=None,
+        ), patch.object(
+            admin_email,
+            "_current_admin",
+            return_value={"id": "admin_1", "role": "admin"},
+        ), patch.object(
+            admin_email.email_campaign_service,
+            "delete_draft_campaign",
+            return_value={"deleted": True},
+        ) as delete_campaign:
+            response = client.delete("/api/admin/email/campaigns/emc_1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["deleted"])
+        self.assertEqual(delete_campaign.call_args.args[0], "emc_1")
+        self.assertEqual(delete_campaign.call_args.kwargs["admin"]["id"], "admin_1")
 
 
 if __name__ == "__main__":
