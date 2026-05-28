@@ -462,7 +462,6 @@ def _base_variables_for_recipient(recipient: Dict[str, Any], campaign_id: Option
         "clinic_name": clinic_name or "your practice",
         "delegate_links_url": f"{base_url}/account?tab=delegate-links",
         "unsubscribe_url": build_unsubscribe_url(email, campaign_id),
-        "support_email": "support@trufusionlabs.com",
     }
 
 

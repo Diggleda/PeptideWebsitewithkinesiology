@@ -119,6 +119,60 @@ def _is_basic_sales_rep_viewer_role(value: Any) -> bool:
     return _normalize_role(value) in ("sales_rep", "sales_partner", "rep", "test_rep")
 
 
+_REVENUE_RECOGNIZED_STATUS_TOKENS = {
+    "processing",
+    "completed",
+    "complete",
+    "paid",
+    "shipped",
+    "delivered",
+    "in_transit",
+    "out_for_delivery",
+    "pick_up",
+    "pickup",
+    "label_created",
+    "awaiting_shipment",
+}
+_REVENUE_EXCLUDED_STATUS_TOKENS = {
+    "",
+    "pending",
+    "on_hold",
+    "onhold",
+    "awaiting_payment",
+    "failed",
+    "cancelled",
+    "canceled",
+    "trash",
+    "refunded",
+    "draft",
+    "delegation_draft",
+}
+
+
+def _normalize_order_status_token(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _is_revenue_recognized_order_status(value: Any) -> bool:
+    normalized = _normalize_order_status_token(value)
+    if normalized in _REVENUE_EXCLUDED_STATUS_TOKENS:
+        return False
+    if "refunded" in normalized or "cancel" in normalized:
+        return False
+    if normalized in _REVENUE_RECOGNIZED_STATUS_TOKENS:
+        return True
+    return any(
+        marker in normalized
+        for marker in (
+            "delivered",
+            "in_transit",
+            "out_for_delivery",
+            "shipment_ready",
+            "label_created",
+        )
+    )
+
+
 def _is_sales_lead_role(value: Any) -> bool:
     return _normalize_role(value) in ("sales_lead", "saleslead")
 
@@ -5864,7 +5918,7 @@ def get_sales_by_rep(
             if not isinstance(local_order, dict):
                 continue
             status = str(local_order.get("status") or "").strip().lower()
-            if status not in ("processing", "completed"):
+            if not _is_revenue_recognized_order_status(status):
                 skipped_status += 1
                 if status == "refunded":
                     skipped_refunded += 1

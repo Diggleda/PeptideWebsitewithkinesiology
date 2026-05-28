@@ -73,6 +73,16 @@ const RECIPIENT_OPTIONS: Array<{ id: RecipientMode; label: string; description: 
   { id: "custom", label: "Custom email list", description: "Paste approved recipient emails." },
 ];
 
+const RECIPIENT_MODE_TO_GROUP: Record<RecipientMode, string> = {
+  test: "test",
+  selected_physician: "physicians",
+  all_verified_physicians: "physicians",
+  sales_reps: "sales_reps",
+  custom: "custom",
+};
+
+const SALES_REP_HIDDEN_VARIABLES = new Set(["doctor_name", "clinic_name", "unsubscribe_url"]);
+
 const CAMPAIGN_TABS = [
   { id: "new", label: "New Campaign", Icon: EnvelopeIcon },
   { id: "templates", label: "Templates", Icon: StrikethroughIcon },
@@ -93,6 +103,15 @@ const templateDefaultSubject = (template?: EmailCenterTemplate | null) =>
 
 const getTemplateVariables = (template?: EmailCenterTemplate | null): string[] =>
   Array.isArray(template?.variables) ? template.variables.filter(Boolean) : [];
+
+const getPersonalizationVariables = (
+  template: EmailCenterTemplate | null,
+  mode: RecipientMode,
+): string[] => {
+  const templateVariables = getTemplateVariables(template);
+  if (mode !== "sales_reps") return templateVariables;
+  return templateVariables.filter((variable) => !SALES_REP_HIDDEN_VARIABLES.has(variable));
+};
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
@@ -249,9 +268,24 @@ export function EmailCenter() {
     [selectedTemplateId, templates],
   );
 
+  const allowedRecipientOptions = useMemo(() => {
+    const allowedGroups = new Set(
+      Array.isArray(selectedTemplate?.allowed_recipient_groups)
+        ? selectedTemplate.allowed_recipient_groups.map((group) => String(group || "").trim()).filter(Boolean)
+        : [],
+    );
+    if (allowedGroups.size === 0) return RECIPIENT_OPTIONS;
+    return RECIPIENT_OPTIONS.filter((option) => allowedGroups.has(RECIPIENT_MODE_TO_GROUP[option.id]));
+  }, [selectedTemplate]);
+
   const templatesForType = useMemo(
     () => templates.filter((template) => templateCampaignType(template) === selectedType),
     [selectedType, templates],
+  );
+
+  const personalizationVariables = useMemo(
+    () => getPersonalizationVariables(selectedTemplate, recipientMode),
+    [recipientMode, selectedTemplate],
   );
 
   const effectiveTestRecipientEmail = useMemo(
@@ -462,6 +496,13 @@ export function EmailCenter() {
     setTestTokenExpiresAt(null);
     setConfirmationText("");
   }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (allowedRecipientOptions.some((option) => option.id === recipientMode)) {
+      return;
+    }
+    setRecipientMode(allowedRecipientOptions[0]?.id || "test");
+  }, [allowedRecipientOptions, recipientMode]);
 
   useEffect(() => {
     if (!pendingPreparedDraft || !selectedTemplate) return;
@@ -1102,7 +1143,7 @@ export function EmailCenter() {
                   <h4 className="text-base font-semibold text-slate-950">Recipients</h4>
                 </div>
                 <div className="grid gap-5">
-                  {RECIPIENT_OPTIONS.map((option) => (
+                  {allowedRecipientOptions.map((option) => (
                     <label
                       key={option.id}
                       className={clsx(
@@ -1164,7 +1205,9 @@ export function EmailCenter() {
                 <div className="mt-6 rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
                   Estimated recipients: <span className="font-semibold">{recipientEstimate}</span>
                   {isBulkRecipientMode && bulkRecipientEstimate.error ? (
-                    <span className="ml-2 text-xs font-medium text-amber-700">{bulkRecipientEstimate.error}</span>
+                    <span className="ml-2 text-xs font-medium text-amber-700">
+                      {bulkRecipientEstimate.error}
+                    </span>
                   ) : null}
                   {isBulkRecipientMode && bulkRecipientEstimate.recipients.length > 0 && (
                     <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-700 shadow-inner">
@@ -1180,29 +1223,35 @@ export function EmailCenter() {
                   <Eye className="h-5 w-5 text-slate-700" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Personalization</h4>
                 </div>
-                <div className={FIELD_GRID_CLASS}>
-                  {getTemplateVariables(selectedTemplate).map((variable) => (
-                    <label key={variable} className={FIELD_SHELL_CLASS}>
-                      <span className={FIELD_LABEL_CLASS}>
-                        {variable.replace(/_/g, " ")}
-                      </span>
-                      {variable === "message_body" ? (
-                        <textarea
-                          value={variables[variable] || ""}
-                          onChange={(event) => updateVariable(variable, event.target.value)}
-                          rows={4}
-                          className={TEXTAREA_CLASS}
-                        />
-                      ) : (
-                        <input
-                          value={variables[variable] || ""}
-                          onChange={(event) => updateVariable(variable, event.target.value)}
-                          className={INPUT_CLASS}
-                        />
-                      )}
-                    </label>
-                  ))}
-                </div>
+                {personalizationVariables.length === 0 ? (
+                  <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-600 shadow-sm">
+                    This template uses recipient details automatically for the selected audience.
+                  </div>
+                ) : (
+                  <div className={FIELD_GRID_CLASS}>
+                    {personalizationVariables.map((variable) => (
+                      <label key={variable} className={FIELD_SHELL_CLASS}>
+                        <span className={FIELD_LABEL_CLASS}>
+                          {variable.replace(/_/g, " ")}
+                        </span>
+                        {variable === "message_body" ? (
+                          <textarea
+                            value={variables[variable] || ""}
+                            onChange={(event) => updateVariable(variable, event.target.value)}
+                            rows={4}
+                            className={TEXTAREA_CLASS}
+                          />
+                        ) : (
+                          <input
+                            value={variables[variable] || ""}
+                            onChange={(event) => updateVariable(variable, event.target.value)}
+                            className={INPUT_CLASS}
+                          />
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </section>
 
               {requiresPreflightTest && (

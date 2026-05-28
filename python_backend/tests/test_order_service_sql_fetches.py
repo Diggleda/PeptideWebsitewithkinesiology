@@ -478,6 +478,99 @@ class OrderServiceSqlFetchTests(unittest.TestCase):
         self.assertEqual(rep_row["wholesaleRevenue"], 100.0)
         self.assertEqual(rep_row["retailRevenue"], 50.0)
 
+    def test_get_sales_by_rep_projection_keeps_paid_and_fulfilled_orders(self):
+        service = self.order_service
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                current = cls(2026, 4, 16, 12, 0, 0, tzinfo=timezone.utc)
+                return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+        doctor = {
+            "id": "doctor-1",
+            "name": "Doctor One",
+            "email": "doctor@example.com",
+            "role": "doctor",
+            "salesRepId": "rep-1",
+        }
+        rep_user = {
+            "id": "rep-user-1",
+            "name": "Rep One",
+            "email": "rep@example.com",
+            "role": "sales_rep",
+            "salesRepId": "rep-1",
+        }
+        rep_record = {"id": "rep-1", "name": "Rep One", "email": "rep@example.com", "salesCode": "R1"}
+        local_orders = []
+        for index, (status, subtotal) in enumerate(
+            [
+                ("paid", 100.0),
+                ("shipped", 75.0),
+                ("delivered", 50.0),
+                ("Pick up", 25.0),
+                ("out-for-delivery", 10.0),
+                ("pending", 999.0),
+                ("on-hold", 999.0),
+                ("refunded", 999.0),
+                ("failed", 999.0),
+            ],
+            start=1,
+        ):
+            local_orders.append(
+                {
+                    "id": f"order-{index}",
+                    "userId": "doctor-1",
+                    "status": status,
+                    "pricingMode": "wholesale",
+                    "itemsSubtotal": subtotal,
+                    "total": subtotal,
+                    "createdAt": f"2026-04-{index:02d}T12:00:00+00:00",
+                    "doctorSalesRepId": "rep-1",
+                }
+            )
+
+        with patch.object(service, "datetime", FixedDateTime), patch.object(
+            service.user_repository,
+            "get_all",
+            return_value=[doctor, rep_user],
+        ), patch.object(
+            service.sales_rep_repository,
+            "get_all",
+            return_value=[rep_record],
+        ), patch.object(
+            service.referral_service,
+            "backfill_lead_types_for_doctors",
+            return_value=[doctor],
+        ), patch.object(
+            service.sales_prospect_repository,
+            "get_all",
+            return_value=[],
+        ), patch.object(
+            service.order_repository,
+            "list_for_commission",
+            return_value=local_orders,
+        ), patch.object(
+            service,
+            "_load_contact_form_emails_from_mysql",
+            return_value=set(),
+        ), patch.object(
+            service.woo_commerce,
+            "fetch_catalog_proxy",
+            side_effect=AssertionError("sales summary should read local orders"),
+        ), patch.object(
+            service.sales_rep_repository,
+            "update_revenue_summary",
+            return_value=None,
+        ):
+            result = service.get_sales_by_rep(period_start="2026-04-01", period_end="2026-04-15", force=True)
+
+        self.assertEqual(result["totals"]["totalOrders"], 5)
+        self.assertEqual(result["totals"]["totalRevenue"], 260.0)
+        self.assertEqual(result["yearProjection"]["orderCount"], 5)
+        self.assertEqual(result["yearProjection"]["revenueToDate"], 260.0)
+        self.assertEqual(result["yearPerformanceSeries"][-1]["cumulativeRevenue"], 260.0)
+
     def test_get_sales_by_rep_collapses_sales_rep_user_id_and_alias(self):
         service = self.order_service
 

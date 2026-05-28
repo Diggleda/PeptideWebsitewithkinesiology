@@ -112,7 +112,7 @@
       "file": "manual/custom_message.html",
       "description": "Approved shell for safe text-only manual campaigns",
       "campaign_type": "manual",
-      "allowed_recipient_groups": ["test", "custom"],
+      "allowed_recipient_groups": ["sales_reps", "test", "custom"],
       "default_subject": "Message from TrufusionLabs",
       "variables": ["doctor_name", "clinic_name", "message_body", "support_email", "unsubscribe_url"]
     }
