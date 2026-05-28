@@ -1757,6 +1757,11 @@ def _sanitize_user(user: Dict) -> Dict:
         if "delegateOptIn" in sanitized
         else sanitized.get("delegate_opt_in")
     )
+    sanitized["delegateLinksEnabled"] = _normalize_bool(
+        sanitized.get("delegateLinksEnabled")
+        if "delegateLinksEnabled" in sanitized
+        else sanitized.get("delegate_links_enabled")
+    )
     sanitized["researchTermsAgreement"] = _normalize_bool(
         sanitized.get("researchTermsAgreement")
         if "researchTermsAgreement" in sanitized

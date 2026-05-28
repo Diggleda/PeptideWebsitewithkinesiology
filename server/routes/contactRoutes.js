@@ -246,6 +246,13 @@ router.post('/', async (req, res) => {
     req.body?.npiVerificationStatus || req.body?.npi_verification_status,
     32,
   );
+  const submittedNpiVerification =
+    req.body?.npiVerification && typeof req.body.npiVerification === 'object'
+      ? req.body.npiVerification
+      : req.body?.npi_verification && typeof req.body.npi_verification === 'object'
+        ? req.body.npi_verification
+        : null;
+  let npiVerification = submittedNpiVerification;
   const trimmed = {
     name: String(name).trim(),
     email: String(email).trim(),
@@ -269,7 +276,6 @@ router.post('/', async (req, res) => {
   }
 
   if (formSource === 'join_network') {
-    let npiVerification;
     try {
       npiVerification = await verifyDoctorNpi(npiNumber);
     } catch (error) {
@@ -329,10 +335,10 @@ router.post('/', async (req, res) => {
         : null;
 
       const insertId = result && typeof result.insertId !== 'undefined' ? result.insertId : null;
-      if (rep && insertId) {
+      if (insertId) {
         await salesProspectRepository.upsert({
           id: `contact_form:${insertId}`,
-          salesRepId: String(rep.id || rep.salesRepId),
+          salesRepId: rep ? String(rep.id || rep.salesRepId) : null,
           contactFormId: String(insertId),
           sourceSystem: 'contact_form',
           sourceExternalId: String(insertId),
@@ -350,12 +356,13 @@ router.post('/', async (req, res) => {
             npiNumber: trimmed.npiNumber,
             npiProviderName: trimmed.npiProviderName,
             npiVerificationStatus: trimmed.npiVerificationStatus,
+            npiVerification,
           },
           status: 'contact_form',
           isManual: false,
-          contactName: null,
-          contactEmail: null,
-          contactPhone: null,
+          contactName: trimmed.name || null,
+          contactEmail: trimmed.email || null,
+          contactPhone: trimmed.phone || null,
           notes: null,
         });
       }

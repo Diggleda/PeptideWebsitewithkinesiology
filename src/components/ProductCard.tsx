@@ -1250,7 +1250,7 @@ export function ProductCard({
     }
     if (!wooProductId) {
       coaLoadAttemptedRef.current = true;
-      setCoaError('Certificate unavailable for this product.');
+        setCoaError('We are working to upload this certificate - Check back soon.');
       return;
     }
 
@@ -1264,7 +1264,7 @@ export function ProductCard({
     } catch (error: any) {
       const status = typeof error?.status === 'number' ? error.status : null;
       if (status === 404) {
-        setCoaError('We are working to attach a certificate for this product.');
+        setCoaError('We are working to upload this certificate - Check back soon.');
       } else {
         setCoaError(typeof error?.message === 'string' ? error.message : 'Failed to load certificate.');
       }
@@ -1567,6 +1567,7 @@ export function ProductCard({
     <>
       <Card
         ref={cardRef}
+        data-dashboard-squircle-surface="catalog-product-card"
         className={`catalog-product-card group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(11,6,121,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.61)]${personalizedRecommendation ? ' catalog-personalized-product-card' : ''}`}
         style={{
           background:
@@ -1836,9 +1837,9 @@ export function ProductCard({
                       </div>
                     )
 		            ) : (
-		              <div className="flex flex-1 items-center justify-center text-sm text-slate-600 text-center">
-		                {coaError || 'Unable to load certificate.'}
-		              </div>
+			              <div className="flex flex-1 items-center justify-center text-sm text-slate-600 text-center">
+			                {coaError || 'We are working to upload this certificate - Check back soon.'}
+			              </div>
 		            )}
                   </div>
                 </div>

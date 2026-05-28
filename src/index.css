@@ -3915,6 +3915,16 @@ body {
 	    corner-shape: squircle;
 	  }
 
+.calendar-popover--window[role="dialog"] {
+  border-radius: 24px !important;
+  corner-shape: squircle;
+  background-clip: padding-box;
+}
+
+.contact-form-container {
+  border: 0 !important;
+}
+
   .glass {
     -webkit-backdrop-filter: blur(24px) saturate(1.6);
     backdrop-filter: blur(24px) saturate(1.6);
@@ -4246,12 +4256,14 @@ body {
   --chart-3: oklch(.398 .07 227.392);
   --chart-4: oklch(.828 .189 84.429);
   --chart-5: oklch(.769 .188 70.08);
-  /* Container radius matches the mission container on the info page. */
+  /* Shared non-modal container radius. Modal shells use ModalSquircle's SVG radius. */
   --squircle-xxs: 5px;
   --squircle-xs: 10px;
   --squircle-sm: 12px;
   --squircle-md: 16px;
-  --container-radius: var(--squircle-md);
+  --container-squircle-radius: 28px;
+  --dashboard-squircle-radius: var(--container-squircle-radius);
+  --container-radius: var(--container-squircle-radius);
   --squircle-lg: var(--container-radius);
   --squircle-xl: var(--container-radius);
   --radius: var(--squircle-sm);
@@ -4326,18 +4338,49 @@ html[data-brand-color="blue"] .brand-logo--landing::before {
 .landing-create-account-container {
   --landing-login-muted: rgb(75, 85, 99);
   color: rgb(11, 6, 121);
-  background: rgba(255, 255, 255, 0.69);
-  border-color: rgba(255, 255, 255, 0.74);
-  box-shadow:
-    0 28px 72px -54px rgba(15, 23, 42, 0.62),
-    inset 0 1px rgba(255, 255, 255, 0.77);
-  -webkit-backdrop-filter: blur(38px) saturate(1.6);
-  backdrop-filter: blur(38px) saturate(1.6);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .landing-login-container {
   display: flex;
   min-height: min(36rem, calc(var(--viewport-height) - 10rem));
+}
+
+.landing-create-account-container {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(var(--viewport-height, 100dvh) - max(2rem, calc(var(--safe-area-top) + var(--safe-area-bottom) + 1.5rem)));
+  overflow: hidden;
+}
+
+.landing-create-account-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.landing-create-account-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.landing-create-account-form::after {
+  content: "";
+  display: block;
+  height: 1rem;
+}
+
+.landing-create-account-title {
+  font-size: 1.125rem !important;
+  line-height: 1.75rem !important;
+  font-weight: 600 !important;
 }
 
 .landing-auth-dialog-layer {
@@ -4656,7 +4699,9 @@ html[data-brand-color="blue"] .brand-logo--landing::before {
 .landing-login-container .landing-auth-dialog-close.dialog-close-btn svg,
 .landing-create-account-container .landing-auth-dialog-close svg,
 .landing-create-account-container .landing-auth-dialog-close svg *,
-.landing-create-account-container .landing-auth-dialog-close.dialog-close-btn svg {
+.landing-create-account-container .landing-auth-dialog-close.dialog-close-btn svg,
+.landing-create-account-container .dialog-close-btn svg,
+.landing-create-account-container .dialog-close-btn svg * {
   color: #ffffff !important;
   stroke: #ffffff !important;
 }
@@ -5261,8 +5306,28 @@ html {
 }
 
 .sales-doctor-detail-panel {
+  --sales-doctor-detail-panel-radius: 12px;
+  --container-squircle-radius: var(--sales-doctor-detail-panel-radius);
+  --dashboard-squircle-radius: var(--sales-doctor-detail-panel-radius);
+  --dashboard-squircle-smoothing: 0.62;
+  border-radius: var(--sales-doctor-detail-panel-radius) !important;
   border-color: rgba(148, 163, 184, 0.44) !important;
   box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.18);
+}
+
+.sales-doctor-detail-panel > .dashboard-squircle-shape {
+  z-index: 0 !important;
+}
+
+.sales-doctor-detail-panel > :not(.dashboard-squircle-shape) {
+  position: relative;
+  z-index: 1;
+}
+
+.sales-doctor-detail-section-divider {
+  clear: both;
+  position: relative;
+  z-index: 1;
 }
 
 .sales-doctor-detail-panel--contact {
@@ -6048,9 +6113,9 @@ button[data-admin-dashboard-tab="email_center"] svg {
 
 .admin-revenue-outlook-summary-card__stat {
   border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 0;
   background: #ffffff;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.95);
+  box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   padding: 0.625rem 0.875rem;
@@ -7560,12 +7625,12 @@ button[data-admin-dashboard-tab="email_center"] svg {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 0;
   border-radius: var(--squircle-sm, 12px);
   padding: 0.4rem 1rem;
   min-width: 120px;
   background: #ffffff;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.95);
+  box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -8043,6 +8108,23 @@ button[data-admin-dashboard-tab="email_center"] svg {
   background: rgba(255, 255, 255, 1);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.81);
   padding: 0.75rem;
+}
+
+.admin-dashboard-squircle-card {
+  overflow: clip;
+}
+
+.admin-dashboard-squircle-card .sales-rep-table-wrapper.admin-dashboard-list {
+  margin-left: 0;
+  margin-right: 0;
+  max-width: 100%;
+  padding: 0;
+}
+
+@supports not (overflow: clip) {
+  .admin-dashboard-squircle-card {
+    overflow: hidden;
+  }
 }
 
 .live-users-scroll {
@@ -10397,10 +10479,29 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
   align-self: auto !important;
 }
 
+[data-slot="dialog-content"] > .dialog-close-btn {
+  top: 1.5rem !important;
+}
+
+[data-slot="dialog-header"] .dialog-close-btn,
+.legal-modal-header .dialog-close-btn {
+  top: 1rem !important;
+}
+
 [data-slot="dialog-header"],
 .legal-modal-header {
   position: relative;
   padding-right: 4.75rem !important;
+  --modal-title-row-height: calc(var(--spacing) * 9);
+}
+
+[data-slot="dialog-header"] [data-slot="dialog-title"]:not(.line-clamp-2),
+.legal-modal-header > :is(h1, h2, h3, [data-slot="dialog-title"]) {
+  min-height: var(--modal-title-row-height);
+  display: flex;
+  align-items: center;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
 }
 
 .dialog-close-btn,
@@ -12477,8 +12578,7 @@ body.non-login-bg.physician-portal-bg:not([data-delegate-theme="true"]) {
   --email-background-image: var(--post-login-background-image);
 }
 
-.dev-theme-root.theme-biotech .physician-network-card__intro p,
-.dev-theme-root.theme-biotech .post-login-news > .glass-card:first-child p {
+.dev-theme-root.theme-biotech .physician-network-card__intro p {
   color: rgb(11, 6, 121) !important;
 }
 
@@ -15042,6 +15142,11 @@ body.theme-clinical:not([data-delegate-theme="true"]) [data-app-header].glass-li
   background: rgba(12, 27, 110, 0.05);
 }
 
+.marketing-landing__referral-button:hover {
+  background: transparent;
+  color: #0c1b6e;
+}
+
 .marketing-landing__text-button--large {
   height: 2.75rem;
   padding: 0 1.5rem;
@@ -15225,6 +15330,10 @@ textarea#bug-report.bug-report-textarea:focus-visible {
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.marketing-landing__hero-actions {
+  gap: 0.25rem;
 }
 
 .marketing-landing__section-title {
@@ -16141,10 +16250,18 @@ body:not([data-delegate-theme="true"]) :is(
   button.glass-brand-subtle,
   button.glass,
   button.glass-card
-):not([role="switch"]):not(.admin-dashboard-link-button):not(.header-home-button--clear):not(.checkout-quantity-button):not(.product-quantity-button):not(.product-detail-quantity-button):not(.delegate-header-preview-search-button):not(.delegate-product-picker-trigger):not(.landing-login-container button):not(.landing-create-account-container button):not(.legal-footer-link-button) {
+):not([role="switch"]):not(.admin-dashboard-link-button):not(.header-home-button--clear):not(.checkout-quantity-button):not(.product-quantity-button):not(.product-detail-quantity-button):not(.delegate-header-preview-search-button):not(.delegate-product-picker-trigger):not(.reset-password-return-button):not(.landing-login-container button):not(.landing-create-account-container button):not(.legal-footer-link-button) {
   border-style: solid !important;
   border-width: 2px !important;
   border-color: rgb(11, 6, 121) !important;
+}
+
+.reset-password-return-button,
+body:not([data-delegate-theme="true"]) button.reset-password-return-button,
+body:not([data-delegate-theme="true"]) button.reset-password-return-button[data-slot="button"] {
+  border: 0 !important;
+  border-color: transparent !important;
+  border-width: 0 !important;
 }
 
 button.legal-footer-link-button,
@@ -16755,10 +16872,6 @@ body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.deleg
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(11, 6, 121, 0.28);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 24px 70px -32px rgba(2, 6, 23, 0.55);
   overscroll-behavior: none;
   pointer-events: auto !important;
 }
@@ -16775,10 +16888,6 @@ body:not([data-delegate-theme="true"]) [data-slot="dialog-content"] button.deleg
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(11, 6, 121, 0.28);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 24px 70px -32px rgba(2, 6, 23, 0.55);
   overscroll-behavior: contain;
   pointer-events: auto !important;
 }
@@ -17134,17 +17243,112 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
   z-index: 30001 !important;
 }
 
+.email-center-preview-send-layout {
+  display: grid;
+  gap: 2rem;
+  align-items: start;
+}
+
+.email-center-preview-panel,
+.email-center-send-panel {
+  min-width: 0;
+  align-self: start;
+}
+
+.email-center-preview-frame {
+  display: block;
+  width: 100%;
+  height: auto !important;
+  min-height: min(38rem, 150vw);
+  aspect-ratio: 9 / 14;
+}
+
+@media (min-width: 1024px) {
+  .email-center-preview-send-layout {
+    grid-template-columns: minmax(20rem, 34rem) minmax(0, 1fr);
+  }
+
+  .email-center-preview-panel {
+    width: 100%;
+    max-width: 34rem;
+    justify-self: start;
+  }
+
+  .email-center-send-panel {
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .email-center-preview-send-layout {
+    gap: 1.25rem;
+  }
+}
+
+.email-center-template-stack,
+.email-center-template-grid,
+.email-center-recipient-stack,
+.email-center-recipient-option-list,
+.email-center-recipient-details {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.email-center-recipient-details {
+  border-top: 1px solid rgba(148, 163, 184, 0.32);
+  margin-top: 0.25rem;
+  padding-top: 1rem;
+}
+
+.email-center-recipient-option-list input[type="radio"] {
+  accent-color: rgb(11, 6, 121);
+}
+
+@media (min-width: 640px) {
+  .email-center-template-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.email-center-action-row {
+  display: flex !important;
+  width: 100% !important;
+  justify-self: stretch;
+  align-self: stretch;
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end !important;
+  gap: 1rem;
+  text-align: right;
+}
+
+.email-center-action-row > button.email-center-home-button {
+  flex: 0 0 auto;
+}
+
 button.email-center-home-button,
 button.email-center-home-button[data-slot="button"] {
   border: 2px solid rgb(11, 6, 121) !important;
   background-color: rgba(255, 255, 255, 0.95) !important;
   color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
   box-shadow: none !important;
 }
 
 button.email-center-home-button > :is(svg, span),
 button.email-center-home-button[data-slot="button"] > :is(svg, span) {
   color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
+  stroke: currentColor !important;
+}
+
+button.email-center-home-button svg,
+button.email-center-home-button svg *,
+button.email-center-home-button[data-slot="button"] svg,
+button.email-center-home-button[data-slot="button"] svg * {
+  background: transparent !important;
+  fill: none !important;
   stroke: currentColor !important;
 }
 
@@ -17157,6 +17361,7 @@ button.email-center-home-button[data-slot="button"]:focus-visible {
   border-color: rgb(11, 6, 121) !important;
   background-color: rgb(11, 6, 121) !important;
   color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
   box-shadow: none !important;
   filter: none !important;
   transform: none !important;
@@ -17169,6 +17374,7 @@ button.email-center-home-button[aria-expanded="true"] > :is(svg, span),
 button.email-center-home-button[data-slot="button"]:hover > :is(svg, span),
 button.email-center-home-button[data-slot="button"]:focus-visible > :is(svg, span) {
   color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
   stroke: currentColor !important;
 }
 
@@ -17179,7 +17385,24 @@ button.email-center-home-button[aria-expanded="true"] *,
 button.email-center-home-button[data-slot="button"]:hover *,
 button.email-center-home-button[data-slot="button"]:focus-visible * {
   color: #ffffff !important;
-  fill: currentColor !important;
+  -webkit-text-fill-color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+button.email-center-home-button:hover svg,
+button.email-center-home-button:hover svg *,
+button.email-center-home-button:focus-visible svg,
+button.email-center-home-button:focus-visible svg *,
+button.email-center-home-button[data-state="open"] svg,
+button.email-center-home-button[data-state="open"] svg *,
+button.email-center-home-button[aria-expanded="true"] svg,
+button.email-center-home-button[aria-expanded="true"] svg *,
+button.email-center-home-button[data-slot="button"]:hover svg,
+button.email-center-home-button[data-slot="button"]:hover svg *,
+button.email-center-home-button[data-slot="button"]:focus-visible svg,
+button.email-center-home-button[data-slot="button"]:focus-visible svg * {
+  background: transparent !important;
+  fill: none !important;
   stroke: currentColor !important;
 }
 
@@ -17188,6 +17411,7 @@ button.email-center-home-button[data-slot="button"]:disabled {
   border-color: rgb(11, 6, 121) !important;
   background-color: rgba(255, 255, 255, 0.95) !important;
   color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
   cursor: not-allowed;
   opacity: 1 !important;
 }
@@ -17195,6 +17419,466 @@ button.email-center-home-button[data-slot="button"]:disabled {
 button.email-center-home-button:disabled > :is(svg, span),
 button.email-center-home-button[data-slot="button"]:disabled > :is(svg, span) {
   color: rgb(11, 6, 121) !important;
+  -webkit-text-fill-color: rgb(11, 6, 121) !important;
   opacity: 0.62 !important;
   stroke: currentColor !important;
+}
+
+/* Modal borders are generated by one SVG squircle path, not CSS border-radius. */
+.modal-squircle,
+.modal-squircle[data-slot="dialog-content"],
+.modal-squircle.landing-auth-dialog-content {
+  --modal-squircle-border: rgba(11, 6, 121, 0.65);
+  --modal-squircle-shadow: 0 24px 38px rgba(7, 27, 27, 0.24);
+  --modal-squircle-surface: rgba(245, 251, 255, 0.94);
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+  corner-shape: initial !important;
+  filter: none !important;
+  outline: 0;
+  overflow: visible !important;
+  position: relative;
+}
+
+.modal-squircle-shape {
+  display: block;
+  filter: drop-shadow(var(--modal-squircle-shadow));
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.modal-squircle-content {
+  -webkit-clip-path: var(--modal-squircle-content-clip-path, none);
+  clip-path: var(--modal-squircle-content-clip-path, none);
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  margin: var(--modal-squircle-border-width, 2px);
+  max-height: inherit;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.modal-squircle[data-slot="dialog-content"] > .modal-squircle-content,
+.modal-squircle.contact-form-container > .modal-squircle-content,
+.modal-squircle.delegate-product-picker-modal > .modal-squircle-content,
+.modal-squircle.create-link-legal-modal > .modal-squircle-content {
+  overflow-y: auto;
+  overscroll-behavior: inherit;
+}
+
+.modal-squircle :is(
+  [data-slot="dialog-header"],
+  .legal-modal-header,
+  .create-link-legal-header,
+  .delegate-product-picker-header
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+  position: relative;
+}
+
+.modal-squircle :is(
+  [data-slot="dialog-header"],
+  .legal-modal-header,
+  .create-link-legal-header,
+  .delegate-product-picker-header
+)::after {
+  background: rgba(11, 6, 121, 0.16);
+  bottom: 0;
+  content: "";
+  height: 1px;
+  left: clamp(1rem, 4vw, 1.75rem);
+  pointer-events: none;
+  position: absolute;
+  right: clamp(1rem, 4vw, 1.75rem);
+}
+
+.modal-squircle .account-modal-header {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  corner-shape: initial !important;
+}
+
+.modal-squircle .account-modal-header::after {
+  content: none !important;
+}
+
+.account-modal > .modal-squircle-content {
+  --account-modal-inner-squircle-radius: 1px;
+  --container-squircle-radius: var(--account-modal-inner-squircle-radius);
+  --container-radius: var(--account-modal-inner-squircle-radius);
+  --dashboard-squircle-radius: var(--account-modal-inner-squircle-radius);
+  --squircle-lg: var(--account-modal-inner-squircle-radius);
+  --squircle-xl: var(--account-modal-inner-squircle-radius);
+}
+
+.account-modal > .modal-squircle-content :is(
+  .glass-card,
+  .glass-liquid,
+  .account-order-card,
+  .patient-link-group,
+  .patient-link-item,
+  .delegate-white-label-details,
+  .delegate-white-label-preview-card,
+  .reseller-permit-settings-card,
+  .physician-dashboard-panel,
+  .physician-dashboard-settings-panel > .glass-card
+) {
+  border-radius: var(--account-modal-inner-squircle-radius) !important;
+  corner-shape: squircle;
+}
+
+.modal-squircle .delegate-product-picker-footer {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-bottom: 0 !important;
+  border-top: 0 !important;
+  box-shadow: none !important;
+  position: relative;
+}
+
+.modal-squircle .delegate-product-picker-footer::before {
+  background: rgba(11, 6, 121, 0.16);
+  content: "";
+  height: 1px;
+  left: clamp(1rem, 4vw, 1.75rem);
+  pointer-events: none;
+  position: absolute;
+  right: clamp(1rem, 4vw, 1.75rem);
+  top: 0;
+}
+
+/* Shared squircle treatment for non-modal containers, cards, and dashboard surfaces. */
+:is(
+  [data-dashboard-squircle-surface],
+  [data-slot="card"],
+  .glass-card,
+  .glass-liquid,
+  .landing-glass,
+  .marketing-landing__capability,
+  .marketing-landing__standard,
+  .marketing-landing__mechanism,
+  .catalog-filter-card,
+  .catalog-product-card,
+  .catalog-personalized-product-card,
+  .catalog-skeleton-card,
+  .news-loading-card,
+  .manufacturing-standards-card,
+  .info-highlight-card,
+  .physician-network-card,
+  .physician-network-map-profile-card,
+  .physician-network-state-breakdown__profile-card,
+  .post-login-info,
+  .dashboard-feedback-note,
+  .physician-dashboard-container,
+  .physician-dashboard-panel,
+  .sales-rep-dashboard,
+  .admin-dashboard-list,
+  .admin-dashboard-list-card,
+  .admin-revenue-outlook-card,
+  .database-visualizer-card,
+  .database-visualizer-controls-panel,
+  .database-visualizer-layout,
+  .database-visualizer-layout > aside,
+  .database-visualizer-layout > div,
+  .referrals-table-container,
+  .sales-rep-leads-card,
+  .sales-rep-combined-card,
+  .sales-rep-table-wrapper,
+  .sales-tracking-card,
+  .lead-panel,
+  .quote-panel-card,
+  .sales-order-card,
+  .account-order-card,
+  .sales-doctor-detail-panel,
+  .patient-link-group,
+  .delegate-white-label-details,
+  .reseller-permit-settings-card
+):not([data-app-header]):not(.app-header-blur) {
+  border-radius: var(--container-squircle-radius, 28px) !important;
+  corner-shape: squircle;
+}
+
+[data-dashboard-squircle="on"] {
+  -webkit-background-clip: padding-box !important;
+  background-clip: padding-box !important;
+  isolation: isolate;
+  outline: 0 !important;
+}
+
+[data-dashboard-squircle-border="on"] {
+  box-shadow: none !important;
+}
+
+[data-dashboard-squircle-border="on"] > .dashboard-squircle-shape {
+  display: block;
+  height: 100%;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+  z-index: 2;
+}
+
+[data-dashboard-squircle-border="on"] > :not(.dashboard-squircle-shape) {
+  position: relative;
+  z-index: 1;
+}
+
+[data-app-header],
+[data-app-header].glass-liquid,
+[data-app-header].app-header-blur {
+  border-radius: 0 !important;
+  corner-shape: initial !important;
+}
+
+:is(
+  .admin-revenue-outlook-summary-card__stat,
+  .referrals-table__row,
+  .lead-list-item,
+  .sales-metric-pill,
+  .sales-tracking-row,
+  .sales-tracking-summary-item,
+  .admin-todo-list__item,
+  .sales-doctor-row,
+  .quote-history-row
+) {
+  --dashboard-squircle-radius: max(var(--squircle-md, 16px), calc(var(--container-squircle-radius, 28px) * 0.62));
+  border-radius: max(var(--squircle-md, 16px), calc(var(--container-squircle-radius, 28px) * 0.62)) !important;
+  corner-shape: squircle;
+}
+
+.sales-rep-dashboard .sales-metric-pill {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.sales-rep-dashboard .sales-metric-pill > .dashboard-squircle-shape {
+  display: none !important;
+}
+
+.sales-rep-dashboard .admin-revenue-outlook-summary-card .admin-revenue-outlook-summary-card__stat {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.sales-rep-dashboard .admin-revenue-outlook-summary-card .admin-revenue-outlook-summary-card__stat > .dashboard-squircle-shape {
+  display: none !important;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid > .lead-panel {
+  --dashboard-squircle-radius: 22px;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-radius: 22px !important;
+  background: transparent;
+  box-shadow: none !important;
+  -webkit-clip-path: none !important;
+  clip-path: none !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  overflow: visible !important;
+  padding: 0 !important;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid {
+  gap: 0.5rem;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid > .lead-panel > .dashboard-squircle-shape {
+  display: none !important;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row {
+  --dashboard-squircle-radius: 18px;
+  border: 1px solid rgba(11, 6, 121, 0.18);
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.96);
+  padding: 0.72rem 0.85rem 0.72rem 0.5rem;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .lead-list {
+  margin-top: 0.85rem;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .lead-list-item.sales-order-card {
+  --dashboard-squircle-radius: 18px;
+  border-color: rgba(11, 6, 121, 0.2);
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    0 14px 30px -24px rgba(15, 23, 42, 0.46),
+    0 8px 18px -16px rgba(11, 6, 121, 0.22),
+    inset 0 1px rgba(255, 255, 255, 0.98) !important;
+  filter:
+    drop-shadow(0 12px 18px rgba(15, 23, 42, 0.18))
+    drop-shadow(0 6px 12px rgba(11, 6, 121, 0.12));
+  transition: border-color 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .lead-list-item.sales-order-card:hover {
+  box-shadow:
+    0 20px 38px -26px rgba(15, 23, 42, 0.52),
+    0 12px 24px -18px rgba(11, 6, 121, 0.32),
+    inset 0 1px rgba(255, 255, 255, 1) !important;
+  filter:
+    drop-shadow(0 16px 24px rgba(15, 23, 42, 0.22))
+    drop-shadow(0 8px 16px rgba(11, 6, 121, 0.16));
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll {
+  overflow: visible;
+  padding-right: 0.5rem;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-profile-trigger {
+  appearance: none;
+  aspect-ratio: 1 / 1;
+  border-radius: 9999px !important;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 0;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-profile-trigger > :is(img, span) {
+  border-radius: 9999px !important;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-name-trigger {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-name-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-name-trigger:hover > span {
+  text-decoration: underline;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner > .sales-doctor-row-main {
+  flex: 1 1 auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner > .sales-doctor-row-main > .sales-doctor-row-copy {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner > .text-right {
+  flex: 0 0 auto;
+  max-width: min(13rem, 42%);
+  min-width: 9.5rem;
+  padding-right: 0.25rem;
+}
+
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner .lead-list-detail,
+.sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner .lead-list-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll {
+    overflow-x: auto;
+    padding-right: 0;
+  }
+
+  .sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner {
+    max-width: none;
+    min-width: 100%;
+    width: max-content;
+  }
+
+  .sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner > .sales-doctor-row-main {
+    flex: 0 0 auto;
+  }
+
+  .sales-rep-dashboard .sales-rep-lead-grid .sales-doctor-row .sales-doctor-scroll-inner > .text-right {
+    max-width: none;
+    padding-right: 0.75rem;
+  }
+}
+
+.admin-todo-list__button,
+.admin-todo-details__button {
+  background: #ffffff !important;
+  border-color: var(--brand-color, rgb(11, 6, 121)) !important;
+  color: var(--brand-color, rgb(11, 6, 121)) !important;
+  -webkit-text-fill-color: var(--brand-color, rgb(11, 6, 121)) !important;
+}
+
+.admin-todo-list__button svg,
+.admin-todo-details__button svg {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.admin-todo-file-download {
+  color: var(--brand-color, rgb(11, 6, 121)) !important;
+  -webkit-text-fill-color: var(--brand-color, rgb(11, 6, 121)) !important;
+}
+
+.admin-todo-file-download svg {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.admin-todo-file-download:hover,
+.admin-todo-file-download:focus-visible {
+  text-decoration: underline;
+}
+
+.admin-todo-file-download:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.admin-todo-list__button:hover,
+.admin-todo-list__button:focus-visible,
+.admin-todo-details__button:hover,
+.admin-todo-details__button:focus-visible {
+  background: rgba(var(--brand-color-rgb, 11, 6, 121), 0.08) !important;
+  border-color: var(--brand-color, rgb(11, 6, 121)) !important;
+  color: var(--brand-color, rgb(11, 6, 121)) !important;
+  -webkit-text-fill-color: var(--brand-color, rgb(11, 6, 121)) !important;
 }

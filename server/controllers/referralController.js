@@ -1059,6 +1059,17 @@ const getDoctorLedger = (req, res, next) => {
             contactFormNpiNumber: npiNumber,
             contactFormNpiProviderName: npiProviderName,
             contactFormNpiVerificationStatus: npiVerificationStatus,
+            sourcePayloadJson: {
+              contactFormId: row.id ? String(row.id) : null,
+              source: row.source || null,
+              websiteUrl,
+              message: contactMessage,
+              messageFieldKey: messageMetadata.fieldKey,
+              messageLabel: messageMetadata.label,
+              npiNumber,
+              npiProviderName,
+              npiVerificationStatus,
+            },
             createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
             updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString(),
             source: 'contact_form',
@@ -1168,6 +1179,10 @@ const getDoctorLedger = (req, res, next) => {
             contactFormNpiNumber: npiNumber,
             contactFormNpiProviderName: npiProviderName,
             contactFormNpiVerificationStatus: npiVerificationStatus,
+            sourcePayloadJson:
+              sourcePayload && Object.keys(sourcePayload).length > 0
+                ? sourcePayload
+                : referral?.sourcePayloadJson || referral?.source_payload_json || null,
           };
         }),
       );

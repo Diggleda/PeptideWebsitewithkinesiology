@@ -307,10 +307,10 @@ export function DoctorProfileForm({
     if (trimmedWebsiteUrl) {
       const normalizedWebsiteUrl = normalizeWebsiteUrl(trimmedWebsiteUrl);
       if (!normalizedWebsiteUrl) {
-        return 'Enter a valid website URL.';
+        return 'Enter a valid practice website or LinkedIn URL.';
       }
       if (normalizedWebsiteUrl.length > WEBSITE_URL_MAX_LENGTH) {
-        return 'Website URL must be 500 characters or fewer.';
+        return 'Practice website or LinkedIn must be 500 characters or fewer.';
       }
     }
     if (trimmedBio.length > 1000) {
@@ -640,7 +640,7 @@ export function DoctorProfileForm({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="physician-profile-website">Website URL</Label>
+            <Label htmlFor="physician-profile-website">Practice Website or LinkedIn</Label>
             <Input
               id="physician-profile-website"
               type="url"

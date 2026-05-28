@@ -288,6 +288,7 @@ export function CategoryFilter({
   return (
     <Card
       ref={cardRef}
+      data-dashboard-squircle-surface="catalog-filter-card"
       // Stick within the products layout column on large screens
       className="glass-card squircle-lg w-full lg:max-w-none border-l-4 border-l-[rgba(11,6,121,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.61)] catalog-filter-card"
       style={{

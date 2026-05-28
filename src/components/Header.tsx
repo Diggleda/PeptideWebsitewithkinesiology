@@ -12,6 +12,7 @@ import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, CheckCi
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
+import { ModalSquircle } from './ui/modal-squircle';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { resolveStaticAssetUrl, withStaticAssetStamp } from '../lib/assetUrl';
 import { withLegacyMetaKeys } from '../lib/legacyBrandCompatibility';
@@ -502,6 +503,7 @@ interface HeaderUser {
   delegateSecondaryColor?: string | null;
   delegateBackgroundImageUrl?: string | null;
   delegateBackgroundColor?: string | null;
+  delegateLinksEnabled?: boolean;
   zelleContact?: string | null;
   role?: string | null;
   referralCode?: string | null;
@@ -1991,6 +1993,8 @@ export function Header({
   delegateDoctorName = null,
   researchDashboardEnabled = false,
   physicianThreePlEnabled = false,
+  patientLinksEnabled = false,
+  patientLinksDoctorUserIds = [],
   betaServices = [],
   onLogin,
   onResendVerificationEmail,
@@ -5186,14 +5190,52 @@ export function Header({
       || normalizedRole === 'doctor'
     ),
   );
+  const normalizedPatientLinksDoctorIds = useMemo(
+    () => (Array.isArray(patientLinksDoctorUserIds) ? patientLinksDoctorUserIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter((entry) => entry.length > 0),
+    [patientLinksDoctorUserIds],
+  );
+  const currentUserId = String(localUser?.id || user?.id || '').trim();
+  const physicianDelegateLinksEnabled =
+    showPatientLinksTab
+    && (
+      coerceOptionalBoolean(
+        localUser?.delegateLinksEnabled ?? (localUser as any)?.delegate_links_enabled,
+      ) === true
+      || (currentUserId.length > 0 && normalizedPatientLinksDoctorIds.includes(currentUserId))
+    );
   const showPatientLinksBetaLabel = Array.isArray(betaServices)
-    && betaServices.includes('patientLinks');
+    && betaServices.includes('patientLinks')
+    && physicianDelegateLinksEnabled;
   const delegateOptInEnabled = coerceOptionalBoolean(
     localUser?.delegateOptIn ?? (localUser as any)?.delegate_opt_in,
   ) === true;
-  const delegateLinkCreationEnabled = showPatientLinksTab;
+  const delegateLinkCreationEnabled = physicianDelegateLinksEnabled;
   const brochureLinkCreationEnabled = showPatientLinksTab;
   const hasCreateLinkTypeOptions = delegateLinkCreationEnabled || brochureLinkCreationEnabled;
+  const showCreateLinkTypeChooser = delegateLinkCreationEnabled && brochureLinkCreationEnabled;
+  useEffect(() => {
+    if (!brochureLinkCreationEnabled) {
+      return;
+    }
+    if (
+      (!delegateLinkCreationEnabled && createLinkDialogMode === 'delegate')
+      || (!showCreateLinkTypeChooser && createLinkDialogMode === 'select')
+    ) {
+      setCreateLinkDialogMode('brochure');
+    }
+  }, [
+    brochureLinkCreationEnabled,
+    createLinkDialogMode,
+    delegateLinkCreationEnabled,
+    showCreateLinkTypeChooser,
+  ]);
+  useEffect(() => {
+    if (!delegateLinkCreationEnabled && patientLinksTypeFilter !== 'all') {
+      setPatientLinksTypeFilter('all');
+    }
+  }, [delegateLinkCreationEnabled, patientLinksTypeFilter]);
   const accountHeaderTabs = useMemo(() => {
     const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
       { id: 'details', label: 'Details', Icon: Info },
@@ -5682,9 +5724,13 @@ export function Header({
     if (!token) {
       toast.error('Unable to modify this link because the token is missing.');
       return;
-    }
-    const linkType = normalizePatientLinkType(link);
-    const subjectLabel = readPatientLinkText(link, ['subjectLabel', 'subject_label', 'patientId', 'patient_id']);
+	    }
+	    const linkType = normalizePatientLinkType(link);
+	    if (linkType === 'delegate' && !delegateLinkCreationEnabled) {
+	      toast.error('Proposal links are not enabled for this physician.');
+	      return;
+	    }
+	    const subjectLabel = readPatientLinkText(link, ['subjectLabel', 'subject_label', 'patientId', 'patient_id']);
     const brochureName = readPatientLinkText(link, ['brochureName', 'brochure_name']);
     const linkName =
       readPatientLinkText(link, ['linkName', 'link_name'])
@@ -5779,8 +5825,9 @@ export function Header({
         dialogContent.scrollLeft = 0;
       });
     }
-  }, [
-    getPatientLinkProductIdsForTokens,
+	  }, [
+	    delegateLinkCreationEnabled,
+	    getPatientLinkProductIdsForTokens,
     localUser?.name,
     localUser?.zelleContact,
     normalizeMarkupPercent,
@@ -5894,7 +5941,7 @@ export function Header({
     event?.stopPropagation?.();
     setPatientLinkProductPickerOpen(false);
     setCreateLinkDialogOpen(true);
-    setCreateLinkDialogMode('select');
+    setCreateLinkDialogMode(showCreateLinkTypeChooser ? 'select' : 'brochure');
     if (typeof window !== 'undefined') {
       window.requestAnimationFrame(() => {
         const dialogContent = createLinkDialogContentRef.current;
@@ -5905,10 +5952,10 @@ export function Header({
         dialogContent.scrollLeft = 0;
       });
     }
-  }, []);
+  }, [showCreateLinkTypeChooser]);
 
-  const handleCreatePatientLink = useCallback(async () => {
-    if (!showPatientLinksTab || patientLinksCreating) {
+	  const handleCreatePatientLink = useCallback(async () => {
+    if (!showPatientLinksTab || !delegateLinkCreationEnabled || patientLinksCreating) {
       return;
     }
     if (!patientLinkTermsAccepted) {
@@ -6031,8 +6078,9 @@ export function Header({
       setPatientLinksCreating(false);
     }
   }, [
-    loadPatientLinks,
-    normalizeMarkupPercent,
+	    loadPatientLinks,
+    delegateLinkCreationEnabled,
+	    normalizeMarkupPercent,
     patientLinkDelegateContactDraft,
     patientLinkDelegateInstructionsDraft,
     patientLinkDelegateNameDraft,
@@ -6386,14 +6434,22 @@ export function Header({
     zelleContactDraft,
   ]);
 
-  const getPatientLinkUrl = useCallback((token: string, linkType: PatientLinkType = 'delegate'): string => {
+  const getPatientLinkUrl = useCallback((
+    token: string,
+    linkType: PatientLinkType = 'delegate',
+    linkLabel?: string | null,
+  ): string => {
     if (typeof window === 'undefined') return '';
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) return '';
+    const slugLabel =
+      typeof linkLabel === 'string' && linkLabel.trim()
+        ? linkLabel.trim()
+        : localUser?.name ?? user?.name ?? null;
     if (linkType === 'brochure') {
-      return buildBrochureLinkUrl(window.location.origin, normalized, localUser?.name ?? user?.name ?? null);
+      return buildBrochureLinkUrl(window.location.origin, normalized, slugLabel);
     }
-    return buildResearchSupplyLinkUrl(window.location.origin, normalized, localUser?.name ?? user?.name ?? null);
+    return buildResearchSupplyLinkUrl(window.location.origin, normalized, slugLabel);
   }, [localUser?.name, user?.name]);
 
   const openLegalDocument = useCallback((key: CreateLinkLegalDocumentKey) => {
@@ -6502,26 +6558,59 @@ export function Header({
     trackPatientLinkUsageEvent(normalizedLinkType, 'text_field_entry', { field: normalizedField });
   }, [trackPatientLinkUsageEvent]);
 
-  const handleCopyPatientLink = useCallback(async (token: string, linkType: PatientLinkType = 'delegate') => {
-    const url = getPatientLinkUrl(token, linkType);
-    if (!url) return;
-    try {
-      if (!navigator?.clipboard) {
-        throw new Error('Clipboard API unavailable');
+  const handleCopyPatientLink = useCallback(async (
+    token: string,
+    linkType: PatientLinkType = 'delegate',
+    linkLabel?: string | null,
+  ) => {
+	    const url = getPatientLinkUrl(token, linkType, linkLabel);
+	    if (!url) return;
+	    try {
+	      if (!navigator?.clipboard) {
+	        throw new Error('Clipboard API unavailable');
+	      }
+      const displayLabel =
+        typeof linkLabel === 'string' && linkLabel.trim()
+          ? linkLabel.trim()
+          : linkType === 'brochure'
+            ? 'Brochure link'
+            : 'Proposal link';
+      const escapeClipboardHtml = (value: string) =>
+        value
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      const ClipboardItemCtor = typeof window !== 'undefined' ? (window as any).ClipboardItem : null;
+      if (typeof navigator.clipboard.write === 'function' && typeof ClipboardItemCtor === 'function') {
+        await navigator.clipboard.write([
+          new ClipboardItemCtor({
+            'text/plain': new Blob([url], { type: 'text/plain' }),
+            'text/html': new Blob(
+              [`<a href="${escapeClipboardHtml(url)}">${escapeClipboardHtml(displayLabel)}</a>`],
+              { type: 'text/html' },
+            ),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(url);
       }
-      await navigator.clipboard.writeText(url);
-      if (linkType !== 'brochure') {
-        trackPatientLinkUsageEvent(linkType, 'copied', { source: 'manage_links' });
-      }
-      toast.success('Link copied.');
+	      if (linkType !== 'brochure') {
+	      trackPatientLinkUsageEvent(linkType, 'copied', { source: 'manage_links' });
+	      }
+	      toast.success('Link copied.');
     } catch {
       toast.error('Unable to copy link.');
     }
   }, [getPatientLinkUrl, trackPatientLinkUsageEvent]);
 
-  const handleViewPatientLink = useCallback((token: string, linkType: PatientLinkType = 'delegate') => {
+  const handleViewPatientLink = useCallback((
+    token: string,
+    linkType: PatientLinkType = 'delegate',
+    linkLabel?: string | null,
+  ) => {
     if (typeof window === 'undefined') return;
-    const url = getPatientLinkUrl(token, linkType);
+    const url = getPatientLinkUrl(token, linkType, linkLabel);
     if (!url) return;
     if (linkType !== 'brochure') {
       trackPatientLinkUsageEvent(linkType, 'preview_opened', { source: 'manage_links' });
@@ -7320,7 +7409,7 @@ export function Header({
     { key: 'name', label: 'Full Name', autoComplete: 'name' },
     { key: 'email', label: 'Email', type: 'email', autoComplete: 'email' },
     { key: 'phone', label: 'Phone', autoComplete: 'tel' },
-    { key: 'websiteUrl', label: 'Website URL', type: 'url', autoComplete: 'url' },
+    { key: 'websiteUrl', label: 'Practice Website or LinkedIn', type: 'url', autoComplete: 'url' },
   ];
 
   const directShippingFields: Array<{ key: DirectShippingField; label: string; type?: string; autoComplete?: string }> = [
@@ -9553,11 +9642,26 @@ export function Header({
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
         <div className="flex flex-col gap-6">
-      <div className="space-y-3" style={{ order: 1 }}>
-        <p className="text-sm text-slate-600">
-          Some of these tools are in Beta. Please{' '}
-          <button
-            type="button"
+	      <div className="space-y-3" style={{ order: 1 }}>
+	        <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-5 sm:p-6">
+	          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[rgb(11,6,121)]">
+	            Delegate link status
+	          </p>
+	          <p className="mt-1 text-2xl font-semibold leading-tight text-slate-900 sm:text-3xl">
+	            {delegateLinkCreationEnabled ? 'Proposal beta enabled' : 'Brochure links only'}
+	          </p>
+	          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+	            {delegateLinkCreationEnabled
+	              ? 'You can create brochure links and delegate proposal sessions for physician review.'
+	              : patientLinksEnabled
+	                ? 'Proposal sessions are not enabled for this physician yet. Create a brochure link without choosing a link type.'
+	                : 'Proposal sessions are not enabled right now. Create a brochure link without choosing a link type.'}
+	          </p>
+	        </div>
+	        <p className="text-sm text-slate-600">
+	          Please{' '}
+	          <button
+	            type="button"
             className="font-bold hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2"
             style={{
               color: 'rgb(11,6,121)',
@@ -9568,12 +9672,12 @@ export function Header({
             onClick={() => window.dispatchEvent(new CustomEvent('trufusion:open-bug-report', {
               detail: { source: 'delegate_link' },
             }))}
-          >
-            report
-          </button>
-          {' '}any issues you encounter, and we will prioritize fixing them.
-        </p>
-      </div>
+	          >
+	            report
+	          </button>
+	          {' '}any issues you encounter with these tools, and we will prioritize fixing them.
+	        </p>
+	      </div>
       <Dialog
         modal={!patientLinkProductPickerOpen && !createLinkLegalDocument}
         open={createLinkDialogOpen}
@@ -9587,11 +9691,11 @@ export function Header({
             setCreateLinkDialogMode(createLinkDialogMode === 'brochure' ? 'brochure' : 'delegate');
             return;
           }
-          setCreateLinkDialogOpen(open);
-          if (!open) {
-            setCreateLinkDialogMode('select');
-            setPatientLinkEditing(null);
-          }
+	          setCreateLinkDialogOpen(open);
+	          if (!open) {
+	            setCreateLinkDialogMode(showCreateLinkTypeChooser ? 'select' : 'brochure');
+	            setPatientLinkEditing(null);
+	          }
         }}
       >
         <DialogContent
@@ -9656,7 +9760,7 @@ export function Header({
               </DialogDescription>
             </VisuallyHidden>
           )}
-          {createLinkDialogMode !== 'select' && !patientLinkEditing && (
+	          {createLinkDialogMode !== 'select' && showCreateLinkTypeChooser && !patientLinkEditing && (
             <Button
               type="button"
               variant="outline"
@@ -10386,7 +10490,7 @@ export function Header({
 	            }
 	          }}
 	        >
-	          <div
+	          <ModalSquircle
 	            className="create-link-legal-modal"
 	            role="dialog"
 	            aria-modal="true"
@@ -10412,7 +10516,7 @@ export function Header({
 	                dangerouslySetInnerHTML={{ __html: createLinkLegalDocument.html }}
 	              />
 	            </div>
-	          </div>
+	          </ModalSquircle>
 	        </div>,
 	        document.body,
 	      )}
@@ -10427,7 +10531,7 @@ export function Header({
 	            }
 	          }}
 	        >
-	          <div
+	          <ModalSquircle
 	            className="delegate-product-picker-modal"
 	            role="dialog"
 	            aria-modal="true"
@@ -10566,7 +10670,7 @@ export function Header({
 	                Done
 	              </Button>
 	            </div>
-	          </div>
+	          </ModalSquircle>
 	        </div>,
 	        document.body,
 	      )}
@@ -10825,19 +10929,23 @@ export function Header({
 	        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		          <h3 className="shrink-0 whitespace-nowrap pr-3 text-lg font-semibold leading-tight text-slate-900">Manage your links</h3>
             <div className="patient-links-toolbar-controls flex w-full flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center sm:justify-end">
-              <label htmlFor="patient-links-type-filter" className="sr-only">
-                Filter links by type
-              </label>
-              <select
-                id="patient-links-type-filter"
-                value={patientLinksTypeFilter}
-                onChange={(event) => setPatientLinksTypeFilter(event.target.value as PatientLinkTypeFilter)}
-                className="patient-links-toolbar-control patient-link-payment-method-select patient-links-type-filter-shadow h-9 min-w-[10.5rem] squircle-sm bg-white text-sm font-semibold"
-              >
-                <option value="all">All links ({patientLinksTypeCounts.all})</option>
-                <option value="delegate">Proposal ({patientLinksTypeCounts.delegate})</option>
-                <option value="brochure">Brochure ({patientLinksTypeCounts.brochure})</option>
-              </select>
+	              {delegateLinkCreationEnabled && (
+	                <>
+	                  <label htmlFor="patient-links-type-filter" className="sr-only">
+	                    Filter links by type
+	                  </label>
+	                  <select
+	                    id="patient-links-type-filter"
+	                    value={patientLinksTypeFilter}
+	                    onChange={(event) => setPatientLinksTypeFilter(event.target.value as PatientLinkTypeFilter)}
+	                    className="patient-links-toolbar-control patient-link-payment-method-select patient-links-type-filter-shadow h-9 min-w-[10.5rem] squircle-sm bg-white text-sm font-semibold"
+	                  >
+	                    <option value="all">All links ({patientLinksTypeCounts.all})</option>
+	                    <option value="delegate">Proposal ({patientLinksTypeCounts.delegate})</option>
+	                    <option value="brochure">Brochure ({patientLinksTypeCounts.brochure})</option>
+	                  </select>
+	                </>
+	              )}
               <div className="patient-links-toolbar-button-row flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
 		              {patientLinksLoading && (
 		                <div
@@ -10849,11 +10957,15 @@ export function Header({
 		              )}
 		            <Button
 		              type="button"
-		              onClick={() => {
-                    setPatientLinkEditing(null);
-		                setCreateLinkDialogMode('select');
-		                setCreateLinkDialogOpen(true);
-		              }}
+			              onClick={() => {
+	                    setPatientLinkEditing(null);
+			                setCreateLinkDialogMode(showCreateLinkTypeChooser ? 'select' : 'brochure');
+	                    if (!showCreateLinkTypeChooser) {
+	                      setPatientLinkBrochureNameDraft('');
+	                      setPatientLinkProductScopeDraft('all_physician_approved');
+	                    }
+			                setCreateLinkDialogOpen(true);
+			              }}
 		              disabled={!hasCreateLinkTypeOptions}
 		              className="patient-links-toolbar-control header-home-button inline-flex h-9 min-h-9 min-w-0 max-w-full flex-none items-center justify-center gap-2 whitespace-nowrap squircle-sm bg-white px-4 text-sm text-slate-900"
 		            >
@@ -10884,9 +10996,13 @@ export function Header({
 	        ) : filteredPatientLinks.length === 0 ? (
 	          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
 	            <div className="flex items-center justify-between gap-3">
-		              <p className="text-sm font-semibold text-slate-900">
-                    {patientLinksTypeFilter === 'brochure' ? 'No brochure links.' : 'No proposal links.'}
-                  </p>
+			              <p className="text-sm font-semibold text-slate-900">
+	                    {patientLinksTypeFilter === 'brochure'
+	                      ? 'No brochure links.'
+	                      : patientLinksTypeFilter === 'delegate'
+	                        ? 'No proposal links.'
+	                        : 'No links match this filter.'}
+	                  </p>
 		              <p className="text-sm text-slate-600">Change the filter to view other link types.</p>
 	            </div>
 	          </div>
@@ -11122,11 +11238,26 @@ export function Header({
 	                      : proposalStatus === 'pending'
 		                        ? 'Pending review'
 		                        : '';
-		              const proposalActionLabel =
-		                proposalStatus === 'approved' || proposalStatus === 'accepted' || proposalStatus === 'modified' || proposalStatus === 'rejected'
-		                  ? 'Proposal'
-		                  : 'Review Proposal';
-		              const paymentMethodDraft =
+			              const proposalActionLabel =
+			                proposalStatus === 'approved' || proposalStatus === 'accepted' || proposalStatus === 'modified' || proposalStatus === 'rejected'
+			                  ? 'Proposal'
+			                  : 'Review Proposal';
+	                  const linkStatusLabel = isRevoked
+	                    ? 'Revoked'
+	                    : hasProposal
+	                      ? (proposalLabel || 'Pending review')
+	                      : statusRaw
+	                        ? statusRaw.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+	                        : 'Active';
+	                  const linkStatusClassName =
+	                    isRevoked || proposalStatus === 'rejected'
+	                      ? 'border-red-200 bg-red-50 text-red-700'
+	                      : proposalStatus === 'approved' || proposalStatus === 'accepted' || proposalStatus === 'modified'
+	                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+	                        : proposalStatus === 'pending'
+	                          ? 'border-amber-200 bg-amber-50 text-amber-800'
+	                          : 'border-slate-200 bg-white/80 text-slate-700';
+			              const paymentMethodDraft =
 		                patientLinkPaymentMethodDraftByToken[token]
 		                  ?? normalizePatientLinkPaymentMethod((link as any)?.paymentMethod ?? (link as any)?.payment_method ?? null);
 		              const paymentInstructionsDraft =
@@ -11165,11 +11296,19 @@ export function Header({
 				                    <div className="flex items-center gap-2">
 					                      <LinkTypeIcon className="h-5 w-5 text-[rgb(11,6,121)] shrink-0" aria-hidden="true" />
 					                      <span className="font-semibold text-slate-900 truncate">{label}</span>
-                                  <Badge variant="outline" className="patient-link-type-badge border-[rgba(11,6,121,0.25)] bg-white/70 text-[rgb(11,6,121)]">
-                                    {linkTypeLabel}
-                                  </Badge>
-			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
-			                    </div>
+	                                  <Badge variant="outline" className="patient-link-type-badge border-[rgba(11,6,121,0.25)] bg-white/70 text-[rgb(11,6,121)]">
+	                                    {linkTypeLabel}
+	                                  </Badge>
+	                                  <Badge
+	                                    variant="outline"
+	                                    className={clsx(
+	                                      'border text-sm font-semibold leading-none sm:text-base',
+	                                      linkStatusClassName,
+	                                    )}
+	                                  >
+	                                    {linkStatusLabel}
+	                                  </Badge>
+				                    </div>
 		                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
 			                      {subjectLabel && <div>Subject: {subjectLabel}</div>}
 			                      {linkType === 'brochure' && recipientName && <div>Recipient: {recipientName}</div>}
@@ -11186,8 +11325,7 @@ export function Header({
 			                      {linkType === 'brochure' && <div>View-only product information. No pricing, cart, or checkout.</div>}
 			                      {isDelegateLinkType && <div>Payment: {paymentMethodLabel}</div>}
 			                      {isDelegateLinkType && <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>}
-			                      {statusRaw && <div>Status: {statusRaw.replace(/_/g, ' ')}</div>}
-			                      {hasProposal && (
+				                      {hasProposal && (
 			                        <div className="font-semibold text-slate-700">
 			                          Proposal: {proposalLabel || 'Pending review'}
 		                        </div>
@@ -11243,7 +11381,7 @@ export function Header({
 		                        type="button"
 		                      variant="outline"
 		                      size="sm"
-		                      onClick={() => handleViewPatientLink(token, linkType)}
+			                      onClick={() => handleViewPatientLink(token, linkType, label)}
 		                      disabled={!token}
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
@@ -11254,7 +11392,7 @@ export function Header({
 		                        type="button"
 		                      variant="outline"
 		                      size="sm"
-		                      onClick={() => void handleCopyPatientLink(token, linkType)}
+			                      onClick={() => void handleCopyPatientLink(token, linkType, label)}
 		                      disabled={!token}
 		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
@@ -11651,10 +11789,9 @@ export function Header({
 				          >
 	            <DialogHeader
 	              className={clsx(
-	                "sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4 transition-opacity duration-300 ease-in-out",
+	                "account-modal-header sticky top-0 z-10 border-b border-[var(--brand-glass-border-1)] bg-transparent px-6 py-4 flex items-start justify-between gap-4 transition-opacity duration-300 ease-in-out",
 	                isResearchFullscreen && "opacity-0 invisible pointer-events-none select-none",
 	              )}
-              style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.3)' }}
             >
             <div className="flex-1 min-w-0 max-w-full space-y-3 account-header-content">
 	            <div className="flex items-center gap-3 flex-wrap min-w-0">

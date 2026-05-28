@@ -12,12 +12,10 @@ import {
   StrikethroughIcon,
 } from "@heroicons/react/24/outline";
 import {
-  CheckCircle2,
   Eye,
   FileText,
   Mail,
   RefreshCw,
-  Save,
   Users,
 } from "lucide-react";
 import {
@@ -81,7 +79,12 @@ const RECIPIENT_MODE_TO_GROUP: Record<RecipientMode, string> = {
   custom: "custom",
 };
 
-const SALES_REP_HIDDEN_VARIABLES = new Set(["doctor_name", "clinic_name", "unsubscribe_url"]);
+const RECIPIENT_DYNAMIC_VARIABLES = new Set([
+  "doctor_name",
+  "clinic_name",
+  "delegate_links_url",
+  "unsubscribe_url",
+]);
 
 const CAMPAIGN_TABS = [
   { id: "new", label: "New Campaign", Icon: EnvelopeIcon },
@@ -104,14 +107,13 @@ const templateDefaultSubject = (template?: EmailCenterTemplate | null) =>
 const getTemplateVariables = (template?: EmailCenterTemplate | null): string[] =>
   Array.isArray(template?.variables) ? template.variables.filter(Boolean) : [];
 
-const getPersonalizationVariables = (
-  template: EmailCenterTemplate | null,
-  mode: RecipientMode,
-): string[] => {
+const getPersonalizationVariables = (template: EmailCenterTemplate | null): string[] => {
   const templateVariables = getTemplateVariables(template);
-  if (mode !== "sales_reps") return templateVariables;
-  return templateVariables.filter((variable) => !SALES_REP_HIDDEN_VARIABLES.has(variable));
+  return templateVariables.filter((variable) => !RECIPIENT_DYNAMIC_VARIABLES.has(variable));
 };
+
+const getDynamicTemplateVariables = (template?: EmailCenterTemplate | null): string[] =>
+  getTemplateVariables(template).filter((variable) => RECIPIENT_DYNAMIC_VARIABLES.has(variable));
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
@@ -154,7 +156,6 @@ const FIELD_SHELL_CLASS = "rounded-md border border-slate-200/80 bg-white/85 p-3
 const FIELD_LABEL_CLASS = "mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500";
 const FIELD_GRID_CLASS = "grid gap-x-7 gap-y-6 sm:grid-cols-2";
 const FIELD_STACK_CLASS = "grid gap-6";
-const FIELD_TOP_CLASS = "mt-6 block";
 const INPUT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const TEXTAREA_CLASS = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const SELECT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
@@ -284,8 +285,13 @@ export function EmailCenter() {
   );
 
   const personalizationVariables = useMemo(
-    () => getPersonalizationVariables(selectedTemplate, recipientMode),
-    [recipientMode, selectedTemplate],
+    () => getPersonalizationVariables(selectedTemplate),
+    [selectedTemplate],
+  );
+
+  const dynamicTemplateVariables = useMemo(
+    () => getDynamicTemplateVariables(selectedTemplate),
+    [selectedTemplate],
   );
 
   const effectiveTestRecipientEmail = useMemo(
@@ -495,6 +501,7 @@ export function EmailCenter() {
     setTestToken("");
     setTestTokenExpiresAt(null);
     setConfirmationText("");
+    setScheduledAt("");
   }, [selectedTemplate]);
 
   useEffect(() => {
@@ -617,18 +624,6 @@ export function EmailCenter() {
       toast.error("Select an email template first.");
       return;
     }
-    if (mode === "schedule") {
-      if (!scheduledAt) {
-        toast.error("Choose a scheduled send time first.");
-        return;
-      }
-      try {
-        scheduleInputToIso(scheduledAt);
-      } catch (error) {
-        toast.error(getErrorMessage(error));
-        return;
-      }
-    }
     setConfirmationText("");
     setPendingCampaignMode(mode);
   };
@@ -646,6 +641,23 @@ export function EmailCenter() {
       toast.error("Send a test email before continuing.");
       return;
     }
+    let scheduleIso: string | null = null;
+    if (mode === "schedule") {
+      if (!scheduledAt) {
+        toast.error("Choose a scheduled send time first.");
+        return;
+      }
+      try {
+        scheduleIso = scheduleInputToIso(scheduledAt);
+      } catch (error) {
+        toast.error(getErrorMessage(error));
+        return;
+      }
+      if (!scheduleIso) {
+        toast.error("Choose a scheduled send time first.");
+        return;
+      }
+    }
     if (savingCampaign) return;
     const scrollSnapshot = {
       x: window.scrollX,
@@ -653,7 +665,6 @@ export function EmailCenter() {
     };
     setSavingCampaign(true);
     try {
-      const scheduleIso = scheduleInputToIso(scheduledAt);
       await emailCenterAPI.createCampaign({
         templateId: selectedTemplate.id,
         subject,
@@ -667,6 +678,9 @@ export function EmailCenter() {
       toast.success(mode === "draft" ? "Draft saved" : mode === "schedule" ? "Campaign scheduled" : "Campaign queued");
       setConfirmationText("");
       setPendingCampaignMode(null);
+      if (mode === "schedule") {
+        setScheduledAt("");
+      }
       const nextTab: CampaignTab = mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : "sent";
       setActiveTab(nextTab);
       await loadCampaigns(nextTab === "logs" ? undefined : nextTab);
@@ -881,9 +895,22 @@ export function EmailCenter() {
             </DialogTitle>
             <DialogDescription>
               You are about to {pendingCampaignMode === "schedule" ? "schedule" : "send"} "
-              {selectedTemplate?.name || "this campaign"}" to {recipientEstimate} recipients. Type SEND to confirm.
+              {selectedTemplate?.name || "this campaign"}" to {recipientEstimate} recipients.
+              {pendingCampaignMode === "schedule" ? " Choose a send time and type SEND to confirm." : " Type SEND to confirm."}
             </DialogDescription>
           </DialogHeader>
+          {pendingCampaignMode === "schedule" && (
+            <label className={FIELD_SHELL_CLASS}>
+              <span className={FIELD_LABEL_CLASS}>Scheduled send time</span>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(event) => setScheduledAt(event.target.value)}
+                className={INPUT_CLASS}
+                autoFocus
+              />
+            </label>
+          )}
           <label className={FIELD_SHELL_CLASS}>
             <span className={FIELD_LABEL_CLASS}>Confirmation</span>
             <input
@@ -891,7 +918,7 @@ export function EmailCenter() {
               onChange={(event) => setConfirmationText(event.target.value)}
               placeholder="SEND"
               className={clsx(INPUT_CLASS, "font-semibold tracking-wide")}
-              autoFocus
+              autoFocus={pendingCampaignMode !== "schedule"}
             />
           </label>
           {requiresPreflightTest && !testToken && (
@@ -899,7 +926,7 @@ export function EmailCenter() {
               Send a test email before this campaign can be queued.
             </div>
           )}
-          <DialogFooter className="items-end justify-end sm:justify-end">
+          <DialogFooter className="email-center-action-row">
             <Button
               type="button"
               variant="outline"
@@ -941,10 +968,6 @@ export function EmailCenter() {
               Approved templates live in the backend; send history lives in the campaign queue.
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
-            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            Approved templates only
-          </div>
         </div>
 
         <div className="relative mb-3 w-full account-tab-shell">
@@ -974,9 +997,9 @@ export function EmailCenter() {
                     <span className="inline-flex items-center gap-2 !text-black" data-email-center-tab-content>
                       <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-visible">
                         <TabIcon
-                          className="shrink-0"
+                          className="shrink-0 text-current"
                           aria-hidden="true"
-                          style={{ width: "1.6rem", height: "1.6rem", color: "#000000" }}
+                          style={{ width: "1.6rem", height: "1.6rem" }}
                         />
                       </span>
                       <span className="inline-flex items-center !text-black">{tab.label}</span>
@@ -1091,136 +1114,142 @@ export function EmailCenter() {
             <div className="space-y-8">
               <section className={DASHBOARD_PANEL_CLASS}>
                 <div className="mb-4 flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-slate-700" aria-hidden="true" />
+                  <FileText className="h-5 w-5 text-slate-950" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Template</h4>
                 </div>
-                {templateError && (
-                  <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    {templateError}
-                  </div>
-                )}
-                <div className={FIELD_GRID_CLASS}>
-                  <label className={FIELD_SHELL_CLASS}>
-                    <span className={FIELD_LABEL_CLASS}>Email type</span>
-                    <select
-                      value={selectedType}
-                      onChange={(event) => setSelectedType(event.target.value)}
-                      className={SELECT_CLASS}
-                      disabled={templatesLoading}
-                    >
-                      {emailTypes.map((type) => (
-                        <option key={type.id} value={type.id}>{type.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className={FIELD_SHELL_CLASS}>
-                    <span className={FIELD_LABEL_CLASS}>Template</span>
-                    <select
-                      value={selectedTemplateId}
-                      onChange={(event) => selectTemplate(event.target.value)}
-                      className={SELECT_CLASS}
-                      disabled={templatesLoading || templatesForType.length === 0}
-                    >
-                      {templatesForType.map((template) => (
-                        <option key={template.id} value={template.id}>{template.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
-                  <span className={FIELD_LABEL_CLASS}>Subject</span>
-                  <input
-                    value={subject}
-                    onChange={(event) => setSubject(event.target.value)}
-                    className={INPUT_CLASS}
-                  />
-                </label>
-              </section>
-
-              <section className={DASHBOARD_PANEL_CLASS}>
-                <div className="mb-4 flex items-center gap-2">
-                  <Users className="h-5 w-5 text-slate-700" aria-hidden="true" />
-                  <h4 className="text-base font-semibold text-slate-950">Recipients</h4>
-                </div>
-                <div className="grid gap-5">
-                  {allowedRecipientOptions.map((option) => (
-                    <label
-                      key={option.id}
-                      className={clsx(
-                        "flex cursor-pointer gap-3 rounded-md border p-3 shadow-sm transition",
-                        recipientMode === option.id
-                          ? "border-slate-900 bg-white ring-2 ring-slate-900/10"
-                          : "border-slate-200/80 bg-white/85 hover:border-slate-300",
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="recipientMode"
-                        value={option.id}
-                        checked={recipientMode === option.id}
-                        onChange={() => setRecipientMode(option.id)}
-                        className="mt-1"
-                      />
-                      <span>
-                        <span className="block text-sm font-semibold text-slate-900">{option.label}</span>
-                        <span className="block text-xs text-slate-600">{option.description}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {recipientMode === "test" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
-                    <span className={FIELD_LABEL_CLASS}>Test recipient</span>
-                    <input
-                      value={testEmail}
-                      onChange={(event) => setTestEmail(event.target.value)}
-                      placeholder="admin@example.com"
-                      className={INPUT_CLASS}
-                    />
-                  </label>
-                )}
-                {recipientMode === "selected_physician" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
-                    <span className={FIELD_LABEL_CLASS}>Physician email</span>
-                    <input
-                      value={selectedPhysicianEmail}
-                      onChange={(event) => setSelectedPhysicianEmail(event.target.value)}
-                      placeholder="doctor@example.com"
-                      className={INPUT_CLASS}
-                    />
-                  </label>
-                )}
-                {recipientMode === "custom" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, FIELD_TOP_CLASS)}>
-                    <span className={FIELD_LABEL_CLASS}>Custom email list</span>
-                    <textarea
-                      value={customEmails}
-                      onChange={(event) => setCustomEmails(event.target.value)}
-                      rows={4}
-                      placeholder="one@example.com, two@example.com"
-                      className={TEXTAREA_CLASS}
-                    />
-                  </label>
-                )}
-                <div className="mt-6 rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
-                  Estimated recipients: <span className="font-semibold">{recipientEstimate}</span>
-                  {isBulkRecipientMode && bulkRecipientEstimate.error ? (
-                    <span className="ml-2 text-xs font-medium text-amber-700">
-                      {bulkRecipientEstimate.error}
-                    </span>
-                  ) : null}
-                  {isBulkRecipientMode && bulkRecipientEstimate.recipients.length > 0 && (
-                    <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-700 shadow-inner">
-                      <span className="font-semibold text-slate-900">Email list: </span>
-                      {bulkRecipientEstimate.recipients.map((recipient) => recipient.email).join(", ")}
+                <div className="email-center-template-stack">
+                  {templateError && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {templateError}
                     </div>
                   )}
+                  <div className="email-center-template-grid">
+                    <label className={FIELD_SHELL_CLASS}>
+                      <span className={FIELD_LABEL_CLASS}>Email type</span>
+                      <select
+                        value={selectedType}
+                        onChange={(event) => setSelectedType(event.target.value)}
+                        className={SELECT_CLASS}
+                        disabled={templatesLoading}
+                      >
+                        {emailTypes.map((type) => (
+                          <option key={type.id} value={type.id}>{type.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={FIELD_SHELL_CLASS}>
+                      <span className={FIELD_LABEL_CLASS}>Template</span>
+                      <select
+                        value={selectedTemplateId}
+                        onChange={(event) => selectTemplate(event.target.value)}
+                        className={SELECT_CLASS}
+                        disabled={templatesLoading || templatesForType.length === 0}
+                      >
+                        {templatesForType.map((template) => (
+                          <option key={template.id} value={template.id}>{template.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className={FIELD_SHELL_CLASS}>
+                    <span className={FIELD_LABEL_CLASS}>Subject</span>
+                    <input
+                      value={subject}
+                      onChange={(event) => setSubject(event.target.value)}
+                      className={INPUT_CLASS}
+                    />
+                  </label>
                 </div>
               </section>
 
               <section className={DASHBOARD_PANEL_CLASS}>
                 <div className="mb-4 flex items-center gap-2">
-                  <Eye className="h-5 w-5 text-slate-700" aria-hidden="true" />
+                  <Users className="h-5 w-5 text-slate-950" aria-hidden="true" />
+                  <h4 className="text-base font-semibold text-slate-950">Recipients</h4>
+                </div>
+                <div className="email-center-recipient-stack">
+                  <div className="email-center-recipient-option-list">
+                    {allowedRecipientOptions.map((option) => (
+                      <label
+                        key={option.id}
+                        className={clsx(
+                          "flex cursor-pointer gap-3 rounded-md border p-3 shadow-sm transition",
+                          recipientMode === option.id
+                            ? "border-[rgb(11,6,121)] bg-white ring-2 ring-[rgba(11,6,121,0.14)]"
+                            : "border-slate-200/80 bg-white/85 hover:border-slate-300",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="recipientMode"
+                          value={option.id}
+                          checked={recipientMode === option.id}
+                          onChange={() => setRecipientMode(option.id)}
+                          className="mt-1"
+                        />
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-900">{option.label}</span>
+                          <span className="block text-xs text-slate-600">{option.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="email-center-recipient-details">
+                    {recipientMode === "test" && (
+                      <label className={FIELD_SHELL_CLASS}>
+                        <span className={FIELD_LABEL_CLASS}>Test recipient</span>
+                        <input
+                          value={testEmail}
+                          onChange={(event) => setTestEmail(event.target.value)}
+                          placeholder="admin@example.com"
+                          className={INPUT_CLASS}
+                        />
+                      </label>
+                    )}
+                    {recipientMode === "selected_physician" && (
+                      <label className={FIELD_SHELL_CLASS}>
+                        <span className={FIELD_LABEL_CLASS}>Physician email</span>
+                        <input
+                          value={selectedPhysicianEmail}
+                          onChange={(event) => setSelectedPhysicianEmail(event.target.value)}
+                          placeholder="doctor@example.com"
+                          className={INPUT_CLASS}
+                        />
+                      </label>
+                    )}
+                    {recipientMode === "custom" && (
+                      <label className={FIELD_SHELL_CLASS}>
+                        <span className={FIELD_LABEL_CLASS}>Custom email list</span>
+                        <textarea
+                          value={customEmails}
+                          onChange={(event) => setCustomEmails(event.target.value)}
+                          rows={4}
+                          placeholder="one@example.com, two@example.com"
+                          className={TEXTAREA_CLASS}
+                        />
+                      </label>
+                    )}
+                    <div className="rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
+                      Estimated recipients: <span className="font-semibold">{recipientEstimate}</span>
+                      {isBulkRecipientMode && bulkRecipientEstimate.error ? (
+                        <span className="ml-2 text-xs font-medium text-amber-700">
+                          {bulkRecipientEstimate.error}
+                        </span>
+                      ) : null}
+                      {isBulkRecipientMode && bulkRecipientEstimate.recipients.length > 0 && (
+                        <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-700 shadow-inner">
+                          <span className="font-semibold text-slate-900">Email list: </span>
+                          {bulkRecipientEstimate.recipients.map((recipient) => recipient.email).join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className={DASHBOARD_PANEL_CLASS}>
+                <div className="mb-4 flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-slate-950" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Personalization</h4>
                 </div>
                 {personalizationVariables.length === 0 ? (
@@ -1228,28 +1257,36 @@ export function EmailCenter() {
                     This template uses recipient details automatically for the selected audience.
                   </div>
                 ) : (
-                  <div className={FIELD_GRID_CLASS}>
-                    {personalizationVariables.map((variable) => (
-                      <label key={variable} className={FIELD_SHELL_CLASS}>
-                        <span className={FIELD_LABEL_CLASS}>
-                          {variable.replace(/_/g, " ")}
-                        </span>
-                        {variable === "message_body" ? (
-                          <textarea
-                            value={variables[variable] || ""}
-                            onChange={(event) => updateVariable(variable, event.target.value)}
-                            rows={4}
-                            className={TEXTAREA_CLASS}
-                          />
-                        ) : (
-                          <input
-                            value={variables[variable] || ""}
-                            onChange={(event) => updateVariable(variable, event.target.value)}
-                            className={INPUT_CLASS}
-                          />
-                        )}
-                      </label>
-                    ))}
+                  <div className="space-y-4">
+                    {dynamicTemplateVariables.length > 0 && (
+                      <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
+                        <span className="font-semibold text-slate-900">Recipient data:</span>{" "}
+                        {dynamicTemplateVariables.map((variable) => variable.replace(/_/g, " ")).join(", ")}
+                      </div>
+                    )}
+                    <div className={FIELD_GRID_CLASS}>
+                      {personalizationVariables.map((variable) => (
+                        <label key={variable} className={FIELD_SHELL_CLASS}>
+                          <span className={FIELD_LABEL_CLASS}>
+                            {variable.replace(/_/g, " ")}
+                          </span>
+                          {variable === "message_body" ? (
+                            <textarea
+                              value={variables[variable] || ""}
+                              onChange={(event) => updateVariable(variable, event.target.value)}
+                              rows={4}
+                              className={TEXTAREA_CLASS}
+                            />
+                          ) : (
+                            <input
+                              value={variables[variable] || ""}
+                              onChange={(event) => updateVariable(variable, event.target.value)}
+                              className={INPUT_CLASS}
+                            />
+                          )}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 )}
               </section>
@@ -1257,7 +1294,7 @@ export function EmailCenter() {
               {requiresPreflightTest && (
                 <section className={DASHBOARD_PANEL_CLASS}>
                   <div className="mb-4 flex items-center gap-2">
-                    <Mail className="h-5 w-5 text-slate-700" aria-hidden="true" />
+                    <Mail className="h-5 w-5 text-slate-950" aria-hidden="true" />
                     <h4 className="text-base font-semibold text-slate-950">Test Send</h4>
                   </div>
                   <div className={FIELD_STACK_CLASS}>
@@ -1270,7 +1307,7 @@ export function EmailCenter() {
                         className={INPUT_CLASS}
                       />
                     </label>
-                    <div className="flex w-full justify-end">
+                    <div className="email-center-action-row">
                       <Button
                         type="button"
                         variant="outline"
@@ -1292,83 +1329,76 @@ export function EmailCenter() {
                 </section>
               )}
 
-              <section className={clsx(DASHBOARD_PANEL_CLASS, "min-w-0")}>
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div>
-                    <h4 className="text-base font-semibold text-slate-950">Preview</h4>
-                    <p className="text-sm text-slate-600">{selectedTemplate?.description || "Select a template."}</p>
-                  </div>
-                  {previewLoading && <RefreshCw className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
-                </div>
-                <iframe
-                  title="Email template preview"
-                  sandbox=""
-                  srcDoc={previewHtml || "<!doctype html><html><body></body></html>"}
-                  className="h-[720px] w-full rounded-md border border-slate-300 bg-white shadow-inner"
-                />
-              </section>
-
-              <section className={DASHBOARD_PANEL_CLASS}>
-                <div className="mb-4 flex items-center gap-2">
-                  <PaperAirplaneIcon className="h-5 w-5 text-slate-700" aria-hidden="true" />
-                  <h4 className="text-base font-semibold text-slate-950">Send Controls</h4>
-                </div>
-                <div className={FIELD_STACK_CLASS}>
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    You are about to send "{selectedTemplate?.name || "this campaign"}" to {recipientEstimate} recipients.
-                    Continue opens the final SEND confirmation.
-                  </div>
-                  <label className={FIELD_SHELL_CLASS}>
-                    <span className={FIELD_LABEL_CLASS}>Scheduled send time</span>
-                    <input
-                      type="datetime-local"
-                      value={scheduledAt}
-                      onChange={(event) => setScheduledAt(event.target.value)}
-                      className={INPUT_CLASS}
-                    />
-                  </label>
-                  {requiresPreflightTest && !testToken && (
-                    <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
-                      Send a test email before continuing to a real send or scheduled send.
+              <div className="email-center-preview-send-layout">
+                <section className={clsx(DASHBOARD_PANEL_CLASS, "email-center-preview-panel min-w-0")}>
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-950">Preview</h4>
+                      <p className="text-sm text-slate-600">{selectedTemplate?.description || "Select a template."}</p>
                     </div>
-                  )}
-                  <div className="flex w-full flex-wrap items-center justify-end gap-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => createCampaign("draft")}
-                      disabled={savingCampaign}
-                      className="email-center-home-button squircle-sm gap-2"
-                    >
-                      <Save className="h-4 w-4" aria-hidden="true" />
-                      <span>Save draft</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openSendConfirmation("send")}
-                      disabled={savingCampaign}
-                      className="email-center-home-button squircle-sm gap-2"
-                    >
-                      <PaperAirplaneIcon className="h-4 w-4" aria-hidden="true" />
-                      <span>Continue to send now</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openSendConfirmation("schedule")}
-                      disabled={savingCampaign}
-                      className="email-center-home-button squircle-sm gap-2"
-                    >
-                      <CalendarDaysIcon className="h-4 w-4" aria-hidden="true" />
-                      <span>Continue to schedule</span>
-                    </Button>
+                    {previewLoading && <RefreshCw className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
                   </div>
-                </div>
-              </section>
+                  <iframe
+                    title="Email template preview"
+                    sandbox=""
+                    srcDoc={previewHtml || "<!doctype html><html><body></body></html>"}
+                    className="email-center-preview-frame rounded-md border border-slate-300 bg-white shadow-inner"
+                  />
+                </section>
+
+                <section className={clsx(DASHBOARD_PANEL_CLASS, "email-center-send-panel")}>
+                  <div className="mb-4 flex items-center gap-2">
+                    <PaperAirplaneIcon className="h-5 w-5 text-slate-950" aria-hidden="true" />
+                    <h4 className="text-base font-semibold text-slate-950">Send Controls</h4>
+                  </div>
+                  <div className={FIELD_STACK_CLASS}>
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      You are about to send "{selectedTemplate?.name || "this campaign"}" to {recipientEstimate} recipients.
+                      Continue opens the final SEND confirmation.
+                    </div>
+                    {requiresPreflightTest && !testToken && (
+                      <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
+                        Send a test email before continuing to a real send or scheduled send.
+                      </div>
+                    )}
+                    <div className="email-center-action-row">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => createCampaign("draft")}
+                        disabled={savingCampaign}
+                        className="email-center-home-button squircle-sm gap-2"
+                      >
+                        <BookmarkIcon className="h-4 w-4" aria-hidden="true" />
+                        <span>Save draft</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openSendConfirmation("send")}
+                        disabled={savingCampaign}
+                        className="email-center-home-button squircle-sm gap-2"
+                      >
+                        <PaperAirplaneIcon className="h-4 w-4" aria-hidden="true" />
+                        <span>Continue to send now</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openSendConfirmation("schedule")}
+                        disabled={savingCampaign}
+                        className="email-center-home-button squircle-sm gap-2"
+                      >
+                        <CalendarDaysIcon className="h-4 w-4" aria-hidden="true" />
+                        <span>Continue to schedule</span>
+                      </Button>
+                    </div>
+                  </div>
+                </section>
+              </div>
             </div>
           </div>
         )}

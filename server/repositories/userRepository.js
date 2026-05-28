@@ -191,6 +191,11 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
     npiProviderName: user.npiVerification?.name || null,
     npiClinicName: user.npiVerification?.organizationName || null,
     npiVerificationStatus: user.npiVerificationStatus || (user.npiVerification ? 'VALID' : null),
+    npiVerificationJson: user.npiVerification
+      ? (typeof user.npiVerification === 'string'
+        ? user.npiVerification
+        : JSON.stringify(user.npiVerification))
+      : null,
     npiVerifiedAt: user.npiLastVerifiedAt || null,
     isTaxExempt: user.isTaxExempt ? 1 : 0,
     taxExemptSource: user.taxExemptSource || null,
@@ -256,6 +261,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           npi_provider_name,
           npi_clinic_name,
           npi_verification_status,
+          npi_verification,
           npi_verified_at,
           is_tax_exempt,
           tax_exempt_source,
@@ -303,6 +309,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           :npiProviderName,
           :npiClinicName,
           :npiVerificationStatus,
+          :npiVerificationJson,
           :npiVerifiedAt,
           :isTaxExempt,
           :taxExemptSource,
@@ -350,6 +357,7 @@ const syncDirectShippingToSql = async (user, { throwOnError = false } = {}) => {
           npi_provider_name = VALUES(npi_provider_name),
           npi_clinic_name = VALUES(npi_clinic_name),
           npi_verification_status = VALUES(npi_verification_status),
+          npi_verification = VALUES(npi_verification),
           npi_verified_at = VALUES(npi_verified_at),
           is_tax_exempt = VALUES(is_tax_exempt),
           tax_exempt_source = VALUES(tax_exempt_source),

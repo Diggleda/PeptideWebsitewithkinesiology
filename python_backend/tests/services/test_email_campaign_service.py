@@ -280,6 +280,59 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 admin=admin,
             )
 
+    def test_campaign_recipient_variables_are_built_from_recipient_profile(self) -> None:
+        admin = {"id": "admin_1", "role": "admin"}
+        captured: list[tuple[dict, list]] = []
+        users = [
+            {
+                "email": "physician@example.com",
+                "name": "Dr. Dynamic Profile",
+                "role": "doctor",
+                "npiVerification": {
+                    "organizationName": "Dynamic Research Clinic",
+                },
+            }
+        ]
+        fake_user_repository = types.ModuleType("python_backend.repositories.user_repository")
+        fake_user_repository.get_all = lambda: users
+
+        def create_campaign(campaign, recipients):
+            captured.append((campaign, list(recipients)))
+            return campaign
+
+        with patch.dict(sys.modules, {"python_backend.repositories.user_repository": fake_user_repository}), \
+            patch.object(email_campaign_service, "_verify_test_token"), \
+            patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=create_campaign), \
+            patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={"pending": 1}), \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"):
+            email_campaign_service.create_campaign(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "subject": "Delegate Links are now available",
+                    "variables": {
+                        "doctor_name": "Dr. Static",
+                        "clinic_name": "Static Clinic",
+                        "delegate_links_url": "https://static.example.test",
+                        "support_email": "support@trufusionlabs.com",
+                    },
+                    "recipientSelection": {"mode": "all_verified_physicians"},
+                    "confirmationText": "SEND",
+                    "testToken": "token",
+                },
+                admin=admin,
+            )
+
+        campaign_record, recipient_records = captured[0]
+        self.assertNotIn("doctor_name", campaign_record["variables_json"])
+        self.assertNotIn("clinic_name", campaign_record["variables_json"])
+        self.assertNotIn("delegate_links_url", campaign_record["variables_json"])
+        self.assertEqual(campaign_record["variables_json"]["support_email"], "support@trufusionlabs.com")
+        self.assertEqual(len(recipient_records), 1)
+        recipient_variables = recipient_records[0]["variables_json"]
+        self.assertEqual(recipient_variables["doctor_name"], "Dr. Dynamic Profile")
+        self.assertEqual(recipient_variables["clinic_name"], "Dynamic Research Clinic")
+        self.assertIn("physician%40example.com", recipient_variables["unsubscribe_url"])
+
     def test_test_only_campaign_does_not_require_preflight_test_token(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}
 

@@ -824,6 +824,13 @@ const ensureUserColumns = async () => {
       `,
     },
     {
+      name: 'npi_verification',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN npi_verification LONGTEXT NULL
+      `,
+    },
+    {
       name: 'npi_verified_at',
       ddl: `
         ALTER TABLE users

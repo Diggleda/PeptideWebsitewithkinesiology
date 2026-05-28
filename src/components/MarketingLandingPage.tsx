@@ -450,12 +450,12 @@ export function MarketingLandingPage({
               across the US.
             </p>
 
-            <div className="marketing-landing__actions">
-              <PrimaryAction onClick={onJoinNetwork}>Join the physician network</PrimaryAction>
+            <div className="marketing-landing__actions marketing-landing__hero-actions">
+              <PrimaryAction onClick={onJoinNetwork}>Verify and Join the physician network</PrimaryAction>
               <button
                 type="button"
                 onClick={onReferralCode}
-                className="marketing-landing__text-button marketing-landing__text-button--large"
+                className="marketing-landing__text-button marketing-landing__text-button--large marketing-landing__referral-button"
               >
                 I already have a referral code
               </button>

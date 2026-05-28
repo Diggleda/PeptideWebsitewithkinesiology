@@ -7,6 +7,7 @@ import { Toaster, toast as sonnerToast, useSonner } from "sonner@2.0.3";
 import App from "./App.tsx";
 import "./index.css";
 import "react-day-picker/dist/style.css";
+import { installDashboardSquircleSurfaces } from "./lib/dashboardSquircleSurfaces";
 import { queryClient } from "./lib/queryClient";
 
 // Defensive runtime bridge for any emitted bundle code that still references
@@ -47,6 +48,7 @@ const forceFavicon = () => {
 };
 
 forceFavicon();
+installDashboardSquircleSurfaces();
 
 function ToastPortal() {
   const { toasts } = useSonner();

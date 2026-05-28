@@ -183,13 +183,13 @@ const resolveResellerPermitFileDownload = (user) => {
   };
 };
 
-const buildPendingResellerPermitApprovalItems = ({ currentUser, requestedSalesRepId = null }) => {
+const buildPendingResellerPermitApprovalItems = async ({ currentUser, requestedSalesRepId = null }) => {
   const role = normalizeRole(currentUser?.role);
   const allowedOwnerIds = isAdmin(role)
     ? (requestedSalesRepId ? normalizeOwnershipIds([requestedSalesRepId]) : null)
     : resolveScopedSalesRepOwnerIds(currentUser);
 
-  return userRepository
+  const doctors = userRepository
     .getAll()
     .filter((candidate) => {
       if (!isDoctorUser(candidate)) {
@@ -206,22 +206,63 @@ const buildPendingResellerPermitApprovalItems = ({ currentUser, requestedSalesRe
       }
       const targetSalesRepId = String(candidate?.salesRepId || '').trim();
       return targetSalesRepId.length > 0 && allowedOwnerIds.includes(targetSalesRepId);
+    });
+  const sqlNpiVerificationByUserId = await loadSqlNpiVerificationByUserId(
+    doctors.map((doctor) => doctor?.id),
+  );
+
+  return doctors
+    .map((doctor) => {
+      const userId = String(doctor.id || '').trim();
+      const npiVerification =
+        sqlNpiVerificationByUserId.get(userId)
+        || doctor?.npiVerification
+        || doctor?.npi_verification
+        || null;
+      return {
+        userId,
+        physicianName: String(doctor?.name || doctor?.email || `Doctor ${doctor?.id || ''}`).trim(),
+        physicianEmail: doctor?.email ? String(doctor.email).trim().toLowerCase() : null,
+        physicianPhone: doctor?.phone ? String(doctor.phone).trim() : null,
+        physicianProfile: {
+          id: doctor?.id || null,
+          name: doctor?.name || null,
+          email: doctor?.email || null,
+          phone: doctor?.phone || null,
+          role: doctor?.role || null,
+          greaterArea: doctor?.greaterArea || doctor?.greater_area || null,
+          studyFocus: doctor?.studyFocus || doctor?.study_focus || null,
+          websiteUrl: doctor?.websiteUrl || doctor?.website_url || null,
+          bio: doctor?.bio || null,
+          networkPresenceAgreement:
+            doctor?.networkPresenceAgreement ?? doctor?.network_presence_agreement ?? null,
+          npiNumber: doctor?.npiNumber || doctor?.npi_number || null,
+          npiStatus: doctor?.npiStatus || doctor?.npi_status || doctor?.npiVerificationStatus || null,
+          npiLastVerifiedAt: doctor?.npiLastVerifiedAt || doctor?.npi_last_verified_at || null,
+          npiVerification,
+          salesRepId: doctor?.salesRepId || doctor?.sales_rep_id || null,
+        },
+        resellerPermitFileName:
+          normalizeOptionalText(
+            doctor?.resellerPermitFileName ?? doctor?.reseller_permit_file_name,
+          ) || null,
+        resellerPermitUploadedAt:
+          normalizeOptionalText(
+            doctor?.resellerPermitUploadedAt ?? doctor?.reseller_permit_uploaded_at,
+          ) || null,
+        resellerPermitApprovedByRep: false,
+        salesRepId: doctor?.salesRepId ? String(doctor.salesRepId).trim() : null,
+        npiNumber:
+          normalizeOptionalText(doctor?.npiNumber ?? doctor?.npi_number) || null,
+        npiStatus:
+          normalizeOptionalText(
+            doctor?.npiStatus ?? doctor?.npi_status ?? doctor?.npiVerificationStatus,
+          ) || null,
+        npiLastVerifiedAt:
+          normalizeOptionalText(doctor?.npiLastVerifiedAt ?? doctor?.npi_last_verified_at) || null,
+        npiVerification,
+      };
     })
-    .map((doctor) => ({
-      userId: String(doctor.id || '').trim(),
-      physicianName: String(doctor?.name || doctor?.email || `Doctor ${doctor?.id || ''}`).trim(),
-      physicianEmail: doctor?.email ? String(doctor.email).trim().toLowerCase() : null,
-      resellerPermitFileName:
-        normalizeOptionalText(
-          doctor?.resellerPermitFileName ?? doctor?.reseller_permit_file_name,
-        ) || null,
-      resellerPermitUploadedAt:
-        normalizeOptionalText(
-          doctor?.resellerPermitUploadedAt ?? doctor?.reseller_permit_uploaded_at,
-        ) || null,
-      resellerPermitApprovedByRep: false,
-      salesRepId: doctor?.salesRepId ? String(doctor.salesRepId).trim() : null,
-    }))
     .filter((item) => item.userId.length > 0)
     .sort((a, b) => {
       const aTime = a.resellerPermitUploadedAt ? Date.parse(a.resellerPermitUploadedAt) : NaN;
@@ -332,6 +373,65 @@ const normalizeOptionalText = (value) => {
   if (value == null) return null;
   const text = String(value).trim();
   return text.length > 0 ? text : null;
+};
+
+const parseJsonObject = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const loadSqlNpiVerificationByUserId = async (userIds = []) => {
+  if (!mysqlClient.isEnabled()) {
+    return new Map();
+  }
+  const ids = normalizeOwnershipIds(userIds);
+  if (!ids.length) {
+    return new Map();
+  }
+  const params = {};
+  const placeholders = ids.map((id, index) => {
+    const key = `id${index}`;
+    params[key] = id;
+    return `:${key}`;
+  });
+  try {
+    const rows = await mysqlClient.fetchAll(
+      `
+        SELECT id, npi_verification
+        FROM users
+        WHERE id IN (${placeholders.join(', ')})
+      `,
+      params,
+    );
+    const byUserId = new Map();
+    (rows || []).forEach((row) => {
+      const userId = String(row?.id || '').trim();
+      const verification = parseJsonObject(row?.npi_verification);
+      if (userId && verification) {
+        byUserId.set(userId, verification);
+      }
+    });
+    return byUserId;
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      'Unable to load NPI verification details from users.npi_verification',
+    );
+    return new Map();
+  }
 };
 
 const buildDelegateLinksDoctorEntries = () => userRepository
@@ -939,7 +1039,7 @@ router.get('/users/reseller-permits/pending', authenticate, requireSalesRepOrAdm
     : null;
 
   return res.json({
-    items: buildPendingResellerPermitApprovalItems({
+    items: await buildPendingResellerPermitApprovalItems({
       currentUser: current,
       requestedSalesRepId,
     }),

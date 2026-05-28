@@ -49,6 +49,7 @@
     "embla-carousel-react": "^8.6.0",
     "express": "^5.1.0",
     "fast-xml-parser": "^4.5.0",
+    "figma-squircle": "^0.3.1",
     "input-otp": "^1.4.2",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.487.0",

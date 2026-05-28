@@ -3,6 +3,7 @@ import type { CSSProperties, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import clsx from 'clsx';
+import { ModalSquircle } from './ui/modal-squircle';
 import { api, usageTrackingAPI } from '../services/api';
 
 type ToolRequestSource = 'research_tab';
@@ -208,9 +209,9 @@ export function ToolRequestModal({ open, source = 'research_tab', onClose }: Too
           WebkitBackdropFilter: 'blur(20px) saturate(1.55)',
         }}
       />
-      <div
+      <ModalSquircle
         className={clsx(
-          'relative w-full flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[55ms] ease-out',
+          'relative w-full flex flex-col overflow-hidden transition-[opacity,transform] duration-[55ms] ease-out',
           visible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
         )}
         style={panelStyle}
@@ -258,7 +259,7 @@ export function ToolRequestModal({ open, source = 'research_tab', onClose }: Too
             </button>
           </div>
         </form>
-      </div>
+      </ModalSquircle>
     </div>,
     portalRoot,
   );

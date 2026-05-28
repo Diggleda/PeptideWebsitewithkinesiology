@@ -4,6 +4,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog@1.1.6";
 import { XIcon } from "lucide-react@0.487.0";
 
+import { ModalSquircle } from "./modal-squircle";
 import { cn } from "./utils";
 
 function Dialog({
@@ -90,18 +91,15 @@ const DialogContent = React.forwardRef<
         }
       >
         <DialogOverlay className={overlayClassName} style={overlayStyle} />
-        <DialogPrimitive.Content
+        <ModalSquircle
+          as={DialogPrimitive.Content}
           ref={ref}
           data-slot="dialog-content"
           className={cn(
-            "relative z-[10001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] focus:outline-none data-[state=closed]:pointer-events-none duration-[55ms] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
+            "relative z-[10001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto p-6 text-slate-900 focus:outline-none data-[state=closed]:pointer-events-none duration-[55ms] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
             className,
           )}
           style={{
-            backgroundColor: "rgba(245, 251, 255, 0.94)",
-            borderColor: "rgba(11, 6, 121, 0.65)",
-            backdropFilter: "blur(16px) saturate(1.45)",
-            WebkitBackdropFilter: "blur(16px) saturate(1.45)",
             // Leave room for the sticky header when positioning + sizing the modal
             maxHeight:
               "calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))",
@@ -127,7 +125,7 @@ const DialogContent = React.forwardRef<
               <span className="sr-only">Close</span>
             </DialogPrimitive.Close>
           )}
-        </DialogPrimitive.Content>
+        </ModalSquircle>
       </div>
     </DialogPortal>
   );

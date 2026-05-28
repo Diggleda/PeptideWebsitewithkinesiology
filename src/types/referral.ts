@@ -33,6 +33,7 @@ export interface ReferralRecord {
   contactFormNpiNumber?: string | null;
   contactFormNpiProviderName?: string | null;
   contactFormNpiVerificationStatus?: string | null;
+  sourcePayloadJson?: unknown;
   referrerDoctorName?: string | null;
   referrerDoctorEmail?: string | null;
   referrerDoctorPhone?: string | null;

@@ -61,6 +61,13 @@ _SAMPLE_VARIABLES = {
     "support_email": "support@trufusionlabs.com",
 }
 
+_RECIPIENT_DYNAMIC_VARIABLES = {
+    "doctor_name",
+    "clinic_name",
+    "delegate_links_url",
+    "unsubscribe_url",
+}
+
 
 def service_error(message: str, status: int) -> Exception:
     err = ValueError(message)
@@ -316,6 +323,15 @@ def normalize_variables(template: Dict[str, Any], variables: Optional[Dict[str, 
     return normalized
 
 
+def _campaign_variables(template: Dict[str, Any], variables: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    normalized = normalize_variables(template, variables)
+    return {
+        key: value
+        for key, value in normalized.items()
+        if key not in _RECIPIENT_DYNAMIC_VARIABLES
+    }
+
+
 def render_email_template(template_id: str, variables: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     template = get_template(template_id)
     normalized_variables = normalize_variables(template, variables)
@@ -403,6 +419,25 @@ def build_unsubscribe_url(email: str, campaign_id: Optional[str] = None) -> str:
     return f"{_public_api_base_url()}/admin/email/unsubscribe?{query}"
 
 
+def _first_text(*values: Any) -> str:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _nested_text(value: Any, *keys: str) -> str:
+    current = value
+    for key in keys:
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(key)
+    return _first_text(current)
+
+
 def unsubscribe(email: Any, token: Any, campaign_id: Any = None) -> Dict[str, Any]:
     normalized = _require_email(email)
     payload = _verify_signed_payload(token, require_expiry=False)
@@ -445,20 +480,41 @@ def unsubscribe_landing_url(email: Optional[str] = None, *, status: str = "succe
 
 def _base_variables_for_recipient(recipient: Dict[str, Any], campaign_id: Optional[str] = None) -> Dict[str, str]:
     email = _normalize_email(recipient.get("email") or recipient.get("recipient_email"))
-    name = str(recipient.get("name") or recipient.get("recipient_name") or "").strip()
-    clinic_name = str(
-        recipient.get("clinicName")
-        or recipient.get("clinic_name")
-        or recipient.get("officeName")
-        or recipient.get("office_name")
-        or "your practice"
-    ).strip()
+    recipient_type = str(recipient.get("type") or recipient.get("recipient_type") or "").strip().lower()
+    name = _first_text(
+        recipient.get("name"),
+        recipient.get("recipient_name"),
+        recipient.get("fullName"),
+        recipient.get("full_name"),
+        recipient.get("npiProviderName"),
+        recipient.get("npi_provider_name"),
+        _nested_text(recipient.get("npiVerification"), "name"),
+        _nested_text(recipient.get("npi_verification"), "name"),
+    )
+    clinic_name = _first_text(
+        recipient.get("clinicName"),
+        recipient.get("clinic_name"),
+        recipient.get("officeName"),
+        recipient.get("office_name"),
+        recipient.get("practiceName"),
+        recipient.get("practice_name"),
+        recipient.get("companyName"),
+        recipient.get("company_name"),
+        recipient.get("company"),
+        recipient.get("npiClinicName"),
+        recipient.get("npi_clinic_name"),
+        _nested_text(recipient.get("npiVerification"), "organizationName"),
+        _nested_text(recipient.get("npi_verification"), "organizationName"),
+        _nested_text(recipient.get("npiVerification"), "basic", "organization_name"),
+        _nested_text(recipient.get("npi_verification"), "basic", "organization_name"),
+    )
     try:
         base_url = (get_config().frontend_base_url or "https://trufusionlabs.com").rstrip("/")
     except Exception:
         base_url = "https://trufusionlabs.com"
+    default_name = "Doctor" if recipient_type in {"physician", "doctor"} else "there"
     return {
-        "doctor_name": name or "Doctor",
+        "doctor_name": name or default_name,
         "clinic_name": clinic_name or "your practice",
         "delegate_links_url": f"{base_url}/account?tab=delegate-links",
         "unsubscribe_url": build_unsubscribe_url(email, campaign_id),
@@ -466,7 +522,19 @@ def _base_variables_for_recipient(recipient: Dict[str, Any], campaign_id: Option
 
 
 def _recipient_name(user: Dict[str, Any]) -> str:
-    return str(user.get("name") or " ".join(filter(None, [user.get("firstName"), user.get("lastName")])) or "").strip()
+    return str(
+        user.get("name")
+        or " ".join(
+            filter(
+                None,
+                [
+                    user.get("firstName") or user.get("first_name"),
+                    user.get("lastName") or user.get("last_name"),
+                ],
+            )
+        )
+        or ""
+    ).strip()
 
 
 def _is_verified_physician(user: Dict[str, Any]) -> bool:
@@ -486,15 +554,31 @@ def _dedupe_recipients(recipients: Iterable[Dict[str, Any]]) -> List[Dict[str, A
         if not email or email in seen:
             continue
         seen.add(email)
-        result.append(
-            {
-                "email": email,
-                "name": str(recipient.get("name") or recipient.get("recipient_name") or "").strip(),
-                "type": str(recipient.get("type") or recipient.get("recipient_type") or "custom").strip() or "custom",
-                "variables": dict(recipient.get("variables") or {}),
-            }
-        )
+        normalized = dict(recipient)
+        normalized["email"] = email
+        normalized["name"] = str(recipient.get("name") or recipient.get("recipient_name") or "").strip()
+        normalized["type"] = str(recipient.get("type") or recipient.get("recipient_type") or "custom").strip() or "custom"
+        normalized["variables"] = dict(recipient.get("variables") or {})
+        result.append(normalized)
     return result
+
+
+def _recipient_from_user(user: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        **dict(user or {}),
+        "email": (user or {}).get("email"),
+        "name": _recipient_name(user or {}),
+        "type": "physician",
+    }
+
+
+def _recipient_from_sales_rep(rep: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        **dict(rep or {}),
+        "email": (rep or {}).get("email"),
+        "name": _recipient_name(rep or {}),
+        "type": "sales_rep",
+    }
 
 
 def _custom_emails_from_text(value: Any) -> List[str]:
@@ -517,20 +601,20 @@ def resolve_recipients(selection: Optional[Dict[str, Any]]) -> List[Dict[str, An
         user = user_repository.find_by_email(email)
         if not user:
             raise service_error("Selected physician was not found", 404)
-        recipients.append({"email": email, "name": _recipient_name(user), "type": "physician"})
+        recipients.append(_recipient_from_user({**user, "email": email}))
     elif mode == "all_verified_physicians":
         from ..repositories import user_repository
 
         for user in user_repository.get_all():
             if _is_verified_physician(user):
-                recipients.append({"email": user.get("email"), "name": _recipient_name(user), "type": "physician"})
+                recipients.append(_recipient_from_user(user))
     elif mode == "sales_reps":
         from ..repositories import sales_rep_repository
 
         for rep in sales_rep_repository.get_all():
             if str(rep.get("status") or "active").strip().lower() in ("disabled", "inactive", "deleted"):
                 continue
-            recipients.append({"email": rep.get("email"), "name": _recipient_name(rep), "type": "sales_rep"})
+            recipients.append(_recipient_from_sales_rep(rep))
     elif mode == "custom":
         emails = selected.get("emails")
         if isinstance(emails, list):
@@ -645,7 +729,7 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     recipient_email = _require_email(payload.get("recipientEmail") or payload.get("recipient_email"))
     subject = str(payload.get("subject") or template.get("default_subject") or "Message from TrufusionLabs").strip()
     variables = normalize_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
-    token_variables = {key: value for key, value in variables.items() if key != "unsubscribe_url"}
+    token_variables = _campaign_variables(template, variables)
     variables.update(
         {
             "unsubscribe_url": build_unsubscribe_url(recipient_email),
@@ -722,7 +806,7 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     requested_status = str(payload.get("status") or "").strip().lower()
     save_as_draft = requested_status == "draft" or bool(payload.get("saveDraft"))
     scheduled_at = _parse_iso(payload.get("scheduledAt") or payload.get("scheduled_at"))
-    variables = normalize_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
+    variables = _campaign_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
     recipient_selection = payload.get("recipientSelection") or payload.get("recipient_selection")
     recipients = _estimate_draft_recipients(recipient_selection) if save_as_draft else resolve_recipients(recipient_selection)
     selection_for_mode = recipient_selection if isinstance(recipient_selection, dict) else {}
@@ -738,7 +822,7 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
                 admin_id=str(admin.get("id") or ""),
                 template_id=str(template["id"]),
                 subject=subject,
-                variables={key: value for key, value in variables.items() if key != "unsubscribe_url"},
+                variables=variables,
             )
 
     now_iso = _now_iso()
@@ -760,7 +844,6 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     recipient_records: List[Dict[str, Any]] = []
     for recipient in ([] if save_as_draft else recipients):
         recipient_variables = {
-            **variables,
             **_base_variables_for_recipient(recipient, campaign_id),
             **dict(recipient.get("variables") or {}),
         }

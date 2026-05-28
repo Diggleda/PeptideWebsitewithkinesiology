@@ -13,6 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
+import { ModalSquircle } from "./components/ui/modal-squircle";
 import { useQuery } from "@tanstack/react-query";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { appQueryKeys } from "./lib/queryKeys";
@@ -457,6 +458,8 @@ interface User {
   delegateSecondaryColor?: string | null;
   delegateBackgroundImageUrl?: string | null;
   delegateBackgroundColor?: string | null;
+  delegateLinksEnabled?: boolean;
+  delegateOptIn?: boolean;
   hasPasskeys?: boolean;
   referralCode?: string | null;
   npiNumber?: string | null;
@@ -1269,10 +1272,28 @@ interface PendingResellerPermitApprovalItem {
   userId: string;
   physicianName?: string | null;
   physicianEmail?: string | null;
+  physicianPhone?: string | null;
+  physicianProfile?: unknown;
   resellerPermitFileName?: string | null;
   resellerPermitUploadedAt?: string | null;
   resellerPermitApprovedByRep?: boolean | null;
+  salesRepId?: string | null;
+  npiNumber?: string | null;
+  npiStatus?: string | null;
+  npiLastVerifiedAt?: string | null;
+  npiVerification?: unknown;
 }
+
+type AdminTodoDetailsItem =
+  | {
+      kind: "contact_form";
+      lead: ReferralRecord;
+      typeLabel: string;
+    }
+  | {
+      kind: "reseller_permit";
+      item: PendingResellerPermitApprovalItem;
+    };
 
 const humanizeAccountOrderStatus = (status?: string | null): string => {
   if (!status) return "Pending";
@@ -6211,15 +6232,28 @@ function MainApp() {
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
     return stripped || "Physician";
   }, [delegateContext?.doctorName]);
-  const brochureTitleForShare = useMemo(() => {
-    const raw =
-      typeof delegateContext?.brochureTitle === "string"
-        ? delegateContext.brochureTitle.trim()
-        : typeof delegateContext?.linkName === "string"
-          ? delegateContext.linkName.trim()
-        : "";
-    return raw || "Brochure";
-  }, [delegateContext?.brochureTitle, delegateContext?.linkName]);
+  const delegateLinkTitleForShare = useMemo(() => {
+    const candidates = [
+      delegateContext?.linkName,
+      delegateContext?.brochureTitle,
+      delegateContext?.studyLabel,
+      delegateContext?.subjectLabel,
+      delegateContext?.patientReference,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+    return isBrochureMode ? "Brochure" : "Proposal link";
+  }, [
+    delegateContext?.brochureTitle,
+    delegateContext?.linkName,
+    delegateContext?.patientReference,
+    delegateContext?.studyLabel,
+    delegateContext?.subjectLabel,
+    isBrochureMode,
+  ]);
   const delegateSecondaryColorHex =
     normalizeDelegateSecondaryColor(delegateContext?.doctorSecondaryColor) || DEFAULT_DELEGATE_SECONDARY_COLOR;
   const delegateSecondaryColor = hexToRgbCss(delegateSecondaryColorHex);
@@ -6722,18 +6756,26 @@ function MainApp() {
     if (typeof document === "undefined" || isMaintenanceMode) {
       return;
     }
-    if (!isDelegateMode || !delegateIsValidated || delegateLoading || delegateError) {
-      return;
-    }
-    if (isBrochureMode) {
-      document.title = `${brochureTitleForShare} - ${delegateDoctorNameForShare || "Physician"}${DELEGATE_TAB_TITLE_SUFFIX}`;
-      return;
-    }
-    document.title = `${delegateDoctorNameForShare || "Physician"}${DELEGATE_TAB_TITLE_SUFFIX}`;
-  }, [
-    brochureTitleForShare,
-    delegateDoctorNameForShare,
-    delegateError,
+	    if (!isDelegateMode || !delegateIsValidated || delegateLoading || delegateError) {
+	      return;
+	    }
+    const setMetaContent = (selector: string, content: string) => {
+      const element = document.querySelector(selector);
+      if (element instanceof HTMLMetaElement) {
+        element.content = content;
+      }
+    };
+    setMetaContent('meta[property="og:title"]', delegateLinkTitleForShare);
+    setMetaContent('meta[name="twitter:title"]', delegateLinkTitleForShare);
+	    if (isBrochureMode) {
+	      document.title = `${delegateLinkTitleForShare} - ${delegateDoctorNameForShare || "Physician"}${DELEGATE_TAB_TITLE_SUFFIX}`;
+	      return;
+	    }
+	    document.title = `${delegateLinkTitleForShare}${DELEGATE_TAB_TITLE_SUFFIX}`;
+	  }, [
+	    delegateLinkTitleForShare,
+	    delegateDoctorNameForShare,
+	    delegateError,
     delegateIsValidated,
     delegateLoading,
     isDelegateMode,
@@ -10658,9 +10700,6 @@ function MainApp() {
   useEffect(() => {
     trackingStatusByNumberRef.current = trackingStatusByNumber;
   }, [trackingStatusByNumber]);
-  const [salesOrderHydratingIds, setSalesOrderHydratingIds] = useState<
-    Set<string>
-  >(new Set());
   const [collapsedSalesDoctorIds, setCollapsedSalesDoctorIds] = useState<
     Set<string>
   >(new Set());
@@ -12903,6 +12942,8 @@ function MainApp() {
   const pendingResellerPermitApprovalsInFlightRef = useRef(false);
   const [pendingResellerPermitApprovalDownloadingIds, setPendingResellerPermitApprovalDownloadingIds] = useState<Set<string>>(new Set());
   const [pendingResellerPermitApprovalApprovingIds, setPendingResellerPermitApprovalApprovingIds] = useState<Set<string>>(new Set());
+  const [adminTodoDetailsItem, setAdminTodoDetailsItem] =
+    useState<AdminTodoDetailsItem | null>(null);
   const [salesTrackingLastUpdated, setSalesTrackingLastUpdated] = useState<
     number | null
   >(null);
@@ -12912,7 +12953,6 @@ function MainApp() {
   const salesTrackingNextAllowedAtRef = useRef<number>(0);
   const salesTrackingFailureCountRef = useRef<number>(0);
   const salesTrackingOrderSignatureRef = useRef<Map<string, string>>(new Map());
-  const salesOrderDetailFetchedAtRef = useRef<Map<string, number>>(new Map());
   const liveClientsRef = useRef<any[]>([]);
   const adminLiveUsersRef = useRef<any[]>([]);
   const [salesOrderRefreshingIds, setSalesOrderRefreshingIds] = useState<
@@ -15254,166 +15294,6 @@ function MainApp() {
     </div>
   );
 
-  const enrichMissingOrderDetails = useCallback(
-    async (
-      ordersToEnrich: AccountOrderSummary[],
-      options?: { onlyIds?: Set<string>; force?: boolean; refreshStatus?: boolean },
-    ) => {
-      const DETAIL_TTL_MS = 10 * 60 * 1000;
-      const now = Date.now();
-      const onlyIds = options?.onlyIds;
-      const force = options?.force === true;
-      const refreshStatus = options?.refreshStatus === true;
-
-      const needsDetail = ordersToEnrich.filter((order) => {
-        const key = String(order.id || order.number || "");
-        if (!key) return false;
-        if (onlyIds && !onlyIds.has(key)) return false;
-
-        const hasPlaced =
-          Boolean(resolveOrderPlacedAt(order as any)) || false;
-        const hasEta = Boolean(
-          order?.shippingEstimate?.estimatedArrivalDate ||
-            (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
-            (order as any)?.shippingEstimate?.estimated_delivery_date ||
-            (order as any)?.shipping?.estimatedArrivalDate ||
-            (order as any)?.shipping?.estimated_delivery_date,
-        );
-        if (!refreshStatus && hasPlaced && hasEta) return false;
-
-        if (!force) {
-          const lastFetchedAt = salesOrderDetailFetchedAtRef.current.get(key) || 0;
-          if (lastFetchedAt > 0 && now - lastFetchedAt < DETAIL_TTL_MS) {
-            return false;
-          }
-        }
-        return true;
-      });
-
-      if (needsDetail.length === 0) return;
-
-      const shimmerStart =
-        typeof performance !== "undefined" && typeof performance.now === "function"
-          ? performance.now()
-          : Date.now();
-      const MIN_SHIMMER_MS = 420;
-
-      const ids = new Set(
-        needsDetail.map((order) => String(order.id || order.number || "")),
-      );
-      setSalesOrderHydratingIds(ids);
-
-      const MAX_DETAIL_CONCURRENCY = 3;
-      const runWithConcurrency = async <T,>(
-        items: T[],
-        limit: number,
-        worker: (item: T) => Promise<void>,
-      ) => {
-        const queue = [...items];
-        const runners = Array.from({ length: Math.max(1, limit) }, async () => {
-          while (queue.length > 0) {
-            const next = queue.shift();
-            if (!next) break;
-            await worker(next);
-          }
-        });
-        await Promise.all(runners);
-      };
-
-      await runWithConcurrency(needsDetail, MAX_DETAIL_CONCURRENCY, async (order) => {
-          try {
-            const key = String(order.id || order.number || "");
-            if (key) {
-              salesOrderDetailFetchedAtRef.current.set(key, now);
-            }
-            const detail = await ordersAPI.getSalesRepOrderDetail(
-              order.wooOrderId || order.id || order.number || "",
-              (order as any)?.doctorEmail ||
-                (order as any)?.doctor_email ||
-                (order as any)?.doctorId ||
-                resolveOrderDoctorId(order as any) ||
-                null,
-            );
-            const normalized = normalizeAccountOrdersResponse(
-              { woo: Array.isArray(detail) ? detail : [detail] },
-              { includeCanceled: true },
-            );
-            if (normalized && normalized.length > 0) {
-              mergeSalesOrderDetail(
-                mergeAccountOrderSummaryPreservingSeed(order, normalized[0]),
-              );
-            } else if (detail && typeof detail === "object") {
-              mergeSalesOrderDetail(
-                mergeAccountOrderSummaryPreservingSeed(order, detail as AccountOrderSummary),
-              );
-            }
-          } catch (error) {
-            console.debug("[Sales Tracking] detail enrichment skipped", {
-              orderId: order.id,
-              message:
-                typeof (error as any)?.message === "string"
-                  ? (error as any).message
-                  : String(error),
-            });
-          }
-        });
-
-      const elapsed =
-        (typeof performance !== "undefined" && typeof performance.now === "function"
-          ? performance.now()
-          : Date.now()) - shimmerStart;
-      if (elapsed < MIN_SHIMMER_MS) {
-        await new Promise((resolve) => setTimeout(resolve, MIN_SHIMMER_MS - elapsed));
-      }
-      setSalesOrderHydratingIds(new Set());
-    },
-    [mergeSalesOrderDetail],
-  );
-  const salesDoctorOrderStatusHydrationKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!salesDoctorDetail) {
-      salesDoctorOrderStatusHydrationKeyRef.current = null;
-      return;
-    }
-
-    const orderMap = new Map<string, AccountOrderSummary>();
-    const addOrders = (orders?: AccountOrderSummary[] | null) => {
-      if (!Array.isArray(orders)) return;
-      orders.forEach((order) => {
-        const key = String(order?.id || order?.number || "");
-        if (!key) return;
-        orderMap.set(key, order);
-      });
-    };
-
-    addOrders(salesDoctorDetail.orders);
-    addOrders(salesDoctorDetail.personalOrders);
-    addOrders(salesDoctorDetail.salesOrders);
-
-    const orders = [...orderMap.values()];
-    if (orders.length === 0) return;
-
-    const hydrationKey = [
-      String(salesDoctorDetail.doctorId || "").trim(),
-      ...orders.map((order) => String(order.id || order.number || "")).sort(),
-    ].join("|");
-
-    if (salesDoctorOrderStatusHydrationKeyRef.current === hydrationKey) {
-      return;
-    }
-    salesDoctorOrderStatusHydrationKeyRef.current = hydrationKey;
-
-    void enrichMissingOrderDetails(orders, {
-      force: true,
-      refreshStatus: true,
-    });
-  }, [
-    enrichMissingOrderDetails,
-    salesDoctorDetail?.doctorId,
-    salesDoctorDetail?.orders,
-    salesDoctorDetail?.personalOrders,
-    salesDoctorDetail?.salesOrders,
-  ]);
 	  const [salesRepSalesSummary, setSalesRepSalesSummary] = useState<
 	    {
 	      salesRepId: string;
@@ -17930,19 +17810,33 @@ function MainApp() {
     }
     setAdminDelegateFunnelActorFilter("all");
   }, [adminDelegateFunnelActorFilter, adminDelegateFunnelActors, adminDelegateFunnelLoading]);
-  function applyPatientLinksStatus(info: any) {
-    if (!info || typeof info.patientLinksEnabled !== "boolean") {
-      return;
-    }
-    setPatientLinksEnabled(info.patientLinksEnabled);
-    setPatientLinksDoctorUserIds(
-      Array.isArray(info.patientLinksDoctorUserIds)
-        ? info.patientLinksDoctorUserIds
-            .map((value: any) => String(value || "").trim())
-            .filter((value: string) => value.length > 0)
-        : [],
-    );
-    try {
+	  function applyPatientLinksStatus(info: any) {
+	    if (!info || typeof info.patientLinksEnabled !== "boolean") {
+	      return;
+	    }
+	    const normalizedDoctorUserIds = Array.isArray(info.patientLinksDoctorUserIds)
+	      ? info.patientLinksDoctorUserIds
+	          .map((value: any) => String(value || "").trim())
+	          .filter((value: string) => value.length > 0)
+	      : [];
+	    setPatientLinksEnabled(info.patientLinksEnabled);
+	    setPatientLinksDoctorUserIds(normalizedDoctorUserIds);
+	    setUser((previous) => {
+	      if (!previous || !isDoctorRole(previous.role)) {
+	        return previous;
+	      }
+	      const currentUserId = String(previous.id || "").trim();
+	      const delegateLinksEnabled =
+	        currentUserId.length > 0 && normalizedDoctorUserIds.includes(currentUserId);
+	      if (previous.delegateLinksEnabled === delegateLinksEnabled) {
+	        return previous;
+	      }
+	      return {
+	        ...previous,
+	        delegateLinksEnabled,
+	      };
+	    });
+	    try {
       localStorage.setItem(
         "trufusion:patient-links-enabled",
         info.patientLinksEnabled ? "true" : "false",
@@ -24424,7 +24318,6 @@ function MainApp() {
 	    postLoginHold,
 	    resolveOrderDoctorIdForBucket,
         resolveTrackingNumber,
-	    enrichMissingOrderDetails,
         mergeSalesOrderDetails,
 	    refreshSalesBySalesRepSummary,
 	  ]);
@@ -31438,7 +31331,7 @@ function MainApp() {
 		    }) => {
 		      const busy = loading || refreshing;
 		      return (
-		        <div className="sales-rep-leads-card sales-rep-combined-card">
+		        <div className="sales-rep-leads-card sales-rep-combined-card admin-dashboard-squircle-card">
 		          <div className="mb-0 flex w-full items-start justify-between gap-3">
 		            <div className="min-w-0">
 		              <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
@@ -31662,9 +31555,11 @@ function MainApp() {
       );
     };
     const renderPendingResellerPermitApprovalsCard = () => {
-      const hasPendingPermitTodos = pendingResellerPermitApprovals.length > 0;
-      const hasContactFormTodos = contactFormTodoItems.length > 0;
-      const hasTodoItems = hasPendingPermitTodos || hasContactFormTodos;
+	      const hasPendingPermitTodos = pendingResellerPermitApprovals.length > 0;
+	      const hasContactFormTodos = contactFormTodoItems.length > 0;
+	      const hasTodoItems = hasPendingPermitTodos || hasContactFormTodos;
+	      const todoItemCount =
+	        contactFormTodoItems.length + pendingResellerPermitApprovals.length;
       const todoItemsLoading =
         (!pendingResellerPermitApprovalsHasSettled && !hasTodoItems) ||
         (!referralDataHasSettled && !hasTodoItems) ||
@@ -31678,32 +31573,38 @@ function MainApp() {
           ? pendingResellerPermitApprovalsError
           : null;
       return (
-      <div className="sales-rep-leads-card sales-rep-combined-card">
-        <div className="mb-0 flex w-full items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold text-slate-900">To-Do</h3>
-            <p className="text-sm text-slate-600">
-              Handle contact form follow-ups and account actions from one place.
-            </p>
-          </div>
-          {todoError ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
-              onClick={() => void handleRefreshTodoItems()}
-              disabled={todoItemsRefreshing}
-              aria-busy={todoItemsRefreshing}
-            >
-              Retry
-            </Button>
-	          ) : todoItemsRefreshing ? (
-	            <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-	              Updating…
+      <>
+      <div className="sales-rep-leads-card sales-rep-combined-card admin-dashboard-squircle-card">
+	        <div className="mb-0 flex w-full items-start justify-between gap-3">
+	          <div className="min-w-0">
+	            <h3 className="text-lg font-semibold text-slate-900">To-Do</h3>
+	            <p className="text-sm text-slate-600">
+	              Handle contact form follow-ups and account actions from one place.
+	            </p>
+	          </div>
+	          <div className="flex shrink-0 items-center gap-2">
+	            <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+	              {todoItemsLoading ? "Loading" : `${todoItemCount} open`}
 	            </span>
-	          ) : null}
-        </div>
+	            {todoError ? (
+	              <Button
+	                type="button"
+	                variant="outline"
+	                size="sm"
+	                className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+	                onClick={() => void handleRefreshTodoItems()}
+	                disabled={todoItemsRefreshing}
+	                aria-busy={todoItemsRefreshing}
+	              >
+	                Retry
+	              </Button>
+		            ) : todoItemsRefreshing ? (
+		              <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
+		                Updating…
+		              </span>
+		            ) : null}
+	          </div>
+	        </div>
         <div
           className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
           role="region"
@@ -31724,29 +31625,10 @@ function MainApp() {
           ) : (
             <ul className="w-full border-t border-slate-200/70">
               {contactFormTodoItems.map(({ lead, typeLabel }, index) => {
-                const contactName =
-                  lead.referredContactName ||
-                  lead.referredContactEmail ||
-                  "Contact form lead";
-                const taskTitle =
-                  typeLabel === "Contact form" ? "Contact Form" : `${typeLabel} Contact Form`;
-                const receivedDateLabel = lead.createdAt
-                  ? formatDateTime(lead.createdAt)
-                  : null;
-                const contactFormMessage =
-                  typeof lead.contactFormMessage === "string" && lead.contactFormMessage.trim()
-                    ? lead.contactFormMessage.trim()
-                    : null;
-                const contactFormMessageLabel =
-                  typeof lead.contactFormMessageLabel === "string" && lead.contactFormMessageLabel.trim()
-                    ? lead.contactFormMessageLabel.trim()
-                    : null;
-                const contactFormWebsiteUrl =
-                  typeof lead.contactFormWebsiteUrl === "string" && lead.contactFormWebsiteUrl.trim()
-                    ? lead.contactFormWebsiteUrl.trim()
-                    : typeof lead.websiteUrl === "string" && lead.websiteUrl.trim()
-                      ? lead.websiteUrl.trim()
-                      : null;
+                const taskSentence =
+                  typeLabel === "Contact form"
+                    ? "Contact form follow-up needed"
+                    : `${typeLabel} follow-up needed`;
                 const isUpdating = adminActionState.updatingReferral === lead.id;
                 const canUpdateContactFormTodo = Boolean(
                   user && (isRep(user.role) || isAdmin(user.role)),
@@ -31757,40 +31639,25 @@ function MainApp() {
                     className="admin-todo-list__item border-b border-slate-200/70 px-4 py-4 last:border-b-0"
                   >
                     <div className="admin-todo-list__details min-w-0 text-sm text-slate-800">
-                      <div>
-                        <span className="font-semibold text-slate-900">
-                          {taskTitle}
-                        </span>
-                        <span>{` - ${contactName}`}</span>
-                        {receivedDateLabel ? (
-                          <span className="text-slate-500">{` - Received ${receivedDateLabel}`}</span>
-                        ) : null}
-                      </div>
-                      {contactFormMessage ? (
-                        <div className="mt-1 text-xs text-slate-600">
-                          {contactFormMessageLabel ? (
-                            <span className="font-semibold text-slate-700">
-                              {`${contactFormMessageLabel} `}
-                            </span>
-                          ) : null}
-                          <span>{contactFormMessage}</span>
-                        </div>
-                      ) : null}
-                      {contactFormWebsiteUrl ? (
-                        <div className="mt-1 text-xs text-slate-600">
-                          <span className="font-semibold text-slate-700">Website </span>
-                          <a
-                            href={contactFormWebsiteUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[rgb(11,6,121)] hover:underline"
-                          >
-                            {contactFormWebsiteUrl}
-                          </a>
-                        </div>
-                      ) : null}
+                      <p className="font-semibold text-slate-900">{taskSentence}</p>
                     </div>
                     <div className="admin-todo-list__actions">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="admin-todo-list__button header-home-button squircle-sm gap-2"
+                        onClick={() =>
+                          setAdminTodoDetailsItem({
+                            kind: "contact_form",
+                            lead,
+                            typeLabel,
+                          })
+                        }
+                      >
+                        <Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        Details
+                      </Button>
                       <Button
                         type="button"
                         size="sm"
@@ -31810,33 +31677,39 @@ function MainApp() {
               })}
               {pendingResellerPermitApprovals.map((item, index) => {
                 const userId = String(item.userId || "").trim();
-                const physicianLabel =
-                  item.physicianName || item.physicianEmail || "Unknown physician";
                 const isDownloading = pendingResellerPermitApprovalDownloadingIds.has(userId);
                 const isApproving = pendingResellerPermitApprovalApprovingIds.has(userId);
-                const uploadedDateLabel = item.resellerPermitUploadedAt
-                  ? formatDate(item.resellerPermitUploadedAt)
-                  : null;
                 return (
                   <li
                     key={userId || `pending-reseller-permit-${index}`}
                     className="admin-todo-list__item border-b border-slate-200/70 px-4 py-4 last:border-b-0"
                   >
                     <div className="admin-todo-list__details min-w-0 text-sm text-slate-800">
-                      <span className="font-semibold text-slate-900">
-                        Reseller Permit Verification Needed
-                      </span>
-                      <span>{` - ${physicianLabel}`}</span>
-                      {uploadedDateLabel ? (
-                        <span className="text-slate-500">{` - Uploaded ${uploadedDateLabel}`}</span>
-                      ) : null}
+                      <p className="font-semibold text-slate-900">
+                        Reseller permit verification needed
+                      </p>
                     </div>
                     <div className="admin-todo-list__actions">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="admin-todo-list__button header-home-button squircle-sm bg-white text-slate-900 gap-2"
+                        className="admin-todo-list__button header-home-button squircle-sm bg-white gap-2"
+                        onClick={() =>
+                          setAdminTodoDetailsItem({
+                            kind: "reseller_permit",
+                            item,
+                          })
+                        }
+                      >
+                        <Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        Details
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="admin-todo-list__button header-home-button squircle-sm bg-white gap-2"
                         onClick={() => void handleDownloadPendingResellerPermitApproval(item)}
                         disabled={isDownloading || isApproving}
                       >
@@ -31867,6 +31740,455 @@ function MainApp() {
           )}
         </div>
       </div>
+      {renderAdminTodoDetailsModal()}
+      </>
+      );
+    };
+    const renderAdminTodoDetailsModal = () => {
+      const detailsItem = adminTodoDetailsItem;
+      if (!detailsItem) {
+        return null;
+      }
+
+      const normalizeText = (value?: unknown) => {
+        if (value === null || value === undefined) return null;
+        const text = String(value).trim();
+        return text.length > 0 ? text : null;
+      };
+      const formatBoolean = (value?: boolean | null) =>
+        value === null || value === undefined ? null : value ? "Yes" : "No";
+      const formatWebsiteHref = (value: string) =>
+        /^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}`;
+      const renderDetailRow = (label: string, value?: ReactNode | null) => {
+        const hasValue =
+          typeof value === "string" ? value.trim().length > 0 : value !== null && value !== undefined;
+        if (!hasValue) return null;
+        return (
+          <div
+            key={label}
+            className="rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+          >
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {label}
+            </dt>
+            <dd className="mt-1 break-words text-sm font-medium text-slate-900">
+              {value}
+            </dd>
+          </div>
+        );
+      };
+      const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
+        if (!value) return null;
+        if (typeof value === "object" && !Array.isArray(value)) {
+          return value as Record<string, unknown>;
+        }
+        if (typeof value !== "string") return null;
+        const text = value.trim();
+        if (!text) return null;
+        try {
+          const parsed = JSON.parse(text);
+          return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : null;
+        } catch {
+          return null;
+        }
+      };
+      const firstJsonObject = (...values: unknown[]) => {
+        for (const value of values) {
+          const parsed = parseJsonObject(value);
+          if (parsed) return parsed;
+        }
+        return null;
+      };
+      const formatJson = (value: unknown) => {
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch {
+          return String(value ?? "");
+        }
+      };
+      const downloadJsonFile = (value: unknown, filename: string) => {
+        const safeName =
+          sanitizeDownloadFilenamePart(filename, "todo-details") || "todo-details";
+        const downloadName = safeName.toLowerCase().endsWith(".json")
+          ? safeName
+          : `${safeName}.json`;
+        triggerBrowserDownload(
+          new Blob([formatJson(value)], { type: "application/json;charset=utf-8" }),
+          downloadName,
+        );
+      };
+      const renderJsonPanel = (
+        label: string,
+        value: unknown,
+        downloadFileName?: string,
+      ) => {
+        if (value === null || value === undefined) return null;
+        return (
+          <section className="rounded-lg border border-slate-200/70 bg-white/70 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {label}
+              </h4>
+              {downloadFileName ? (
+                <button
+                  type="button"
+                  className="admin-todo-file-download inline-flex max-w-full items-center gap-1.5 text-left text-xs font-semibold"
+                  onClick={() => downloadJsonFile(value, downloadFileName)}
+                  aria-label={`Download ${downloadFileName}`}
+                  title={`Download ${downloadFileName}`}
+                >
+                  <ArrowDownTrayIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="max-w-[14rem] truncate">{downloadFileName}</span>
+                </button>
+              ) : null}
+            </div>
+            <pre className="mt-2 max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-950 p-3 text-xs leading-relaxed text-slate-50">
+              {formatJson(value)}
+            </pre>
+          </section>
+        );
+      };
+
+      let title = "To-do details";
+      let description = "Known information for this task.";
+      let rows: Array<ReactNode | null> = [];
+      let supplementalDetails: ReactNode = null;
+      let footer: ReactNode = null;
+
+      if (detailsItem.kind === "contact_form") {
+        const { lead, typeLabel } = detailsItem;
+        const email = normalizeText(lead.referredContactEmail);
+        const phone = normalizeText(lead.referredContactPhone);
+        const website =
+          normalizeText(lead.contactFormWebsiteUrl) || normalizeText(lead.websiteUrl);
+        const message = normalizeText(lead.contactFormMessage);
+        const messageLabel =
+          normalizeText(lead.contactFormMessageLabel) ||
+          normalizeText(lead.contactFormMessageFieldKey);
+        const npiNumber =
+          normalizeText(lead.contactFormNpiNumber) || normalizeText(lead.npiNumber);
+        const npiProvider =
+          normalizeText(lead.contactFormNpiProviderName) ||
+          normalizeText(lead.npiProviderName);
+        const npiStatus =
+          normalizeText(lead.contactFormNpiVerificationStatus) ||
+          normalizeText(lead.npiVerificationStatus);
+        const sourcePayload =
+          firstJsonObject(
+            lead.sourcePayloadJson,
+            (lead as any).source_payload_json,
+          );
+        const npiRegistryJson =
+          firstJsonObject(
+            (lead as any).npiVerification,
+            (lead as any).npi_verification,
+            sourcePayload?.npiVerification,
+            sourcePayload?.npi_verification,
+            sourcePayload?.npiVerificationJson,
+            sourcePayload?.npi_verification_json,
+            sourcePayload?.npiRegistryJson,
+            sourcePayload?.npi_registry_json,
+            sourcePayload?.npiRegistry,
+            sourcePayload?.npi_registry,
+            sourcePayload?.rawNpi,
+            sourcePayload?.raw_npi,
+            sourcePayload?.raw,
+          );
+        const isUpdating = adminActionState.updatingReferral === lead.id;
+        const canUpdateContactFormTodo = Boolean(
+          user && (isRep(user.role) || isAdmin(user.role)),
+        );
+        title =
+          typeLabel === "Contact form"
+            ? "Contact form follow-up needed"
+            : `${typeLabel} follow-up needed`;
+        description = "Known contact form information for this to-do item.";
+        rows = [
+          renderDetailRow("Task", title),
+          renderDetailRow("Contact name", normalizeText(lead.referredContactName)),
+          renderDetailRow(
+            "Email",
+            email ? (
+              <a className="text-[rgb(11,6,121)] hover:underline" href={`mailto:${email}`}>
+                {email}
+              </a>
+            ) : null,
+          ),
+          renderDetailRow(
+            "Phone",
+            phone ? (
+              <a className="text-[rgb(11,6,121)] hover:underline" href={`tel:${phone}`}>
+                {phone}
+              </a>
+            ) : null,
+          ),
+          renderDetailRow("Type", typeLabel),
+          renderDetailRow("Status", normalizeText(lead.status)),
+          renderDetailRow("Received", lead.createdAt ? formatDateTime(lead.createdAt) : null),
+          renderDetailRow("Updated", lead.updatedAt ? formatDateTime(lead.updatedAt) : null),
+          renderDetailRow("Message label", messageLabel),
+          renderDetailRow("Message", message),
+          renderDetailRow(
+            "Practice website or LinkedIn",
+            website ? (
+              <a
+                className="break-all text-[rgb(11,6,121)] hover:underline"
+                href={formatWebsiteHref(website)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {website}
+              </a>
+            ) : null,
+          ),
+          renderDetailRow("NPI number", npiNumber),
+          renderDetailRow("NPI provider", npiProvider),
+          renderDetailRow("NPI verification", npiStatus),
+          renderDetailRow("Referrer name", normalizeText(lead.referrerDoctorName)),
+          renderDetailRow("Referrer email", normalizeText(lead.referrerDoctorEmail)),
+          renderDetailRow("Referrer phone", normalizeText(lead.referrerDoctorPhone)),
+          renderDetailRow("Has account", formatBoolean(lead.referredContactHasAccount)),
+          renderDetailRow("Account ID", normalizeText(lead.referredContactAccountId)),
+          renderDetailRow("Account name", normalizeText(lead.referredContactAccountName)),
+          renderDetailRow("Account email", normalizeText(lead.referredContactAccountEmail)),
+          renderDetailRow("Account created", lead.referredContactAccountCreatedAt ? formatDateTime(lead.referredContactAccountCreatedAt) : null),
+          renderDetailRow(
+            "Total orders",
+            typeof lead.referredContactTotalOrders === "number"
+              ? lead.referredContactTotalOrders.toLocaleString()
+              : null,
+          ),
+          renderDetailRow("Referral ID", normalizeText(lead.id)),
+        ];
+        const doctorBreakdown = {
+          task: title,
+          contact: {
+            name: normalizeText(lead.referredContactName),
+            email,
+            phone,
+            website,
+            message,
+            messageLabel,
+          },
+          npi: {
+            number: npiNumber,
+            providerName: npiProvider,
+            verificationStatus: npiStatus,
+            registryJson: npiRegistryJson,
+          },
+          account: {
+            hasAccount: lead.referredContactHasAccount ?? null,
+            accountId: lead.referredContactAccountId ?? null,
+            accountName: lead.referredContactAccountName ?? null,
+            accountEmail: lead.referredContactAccountEmail ?? null,
+            accountCreatedAt: lead.referredContactAccountCreatedAt ?? null,
+            totalOrders: lead.referredContactTotalOrders ?? null,
+          },
+          sourcePayloadJson: sourcePayload,
+          referralRecord: lead,
+        };
+        supplementalDetails = (
+          <div className="space-y-3">
+            {renderJsonPanel(
+              "NPI JSON",
+              npiRegistryJson || sourcePayload || {
+                npiNumber,
+                npiProviderName: npiProvider,
+                npiVerificationStatus: npiStatus,
+              },
+              `npi-${npiNumber || lead.id || "contact"}.json`,
+            )}
+            {renderJsonPanel(
+              "Full doctor breakdown",
+              doctorBreakdown,
+              `doctor-breakdown-${lead.id || npiNumber || "contact"}.json`,
+            )}
+          </div>
+        );
+        footer = (
+          <Button
+            type="button"
+            size="sm"
+            className="admin-todo-details__button header-home-button squircle-sm gap-2"
+            onClick={async () => {
+              await handleUpdateReferralStatus(lead.id, "contacted");
+              setAdminTodoDetailsItem(null);
+            }}
+            disabled={isUpdating || !canUpdateContactFormTodo}
+          >
+            <CheckIcon
+              className={clsx("h-4 w-4 shrink-0", isUpdating && "animate-pulse")}
+              aria-hidden="true"
+            />
+            {isUpdating ? "Updating..." : "Mark contacted"}
+          </Button>
+        );
+      } else {
+        const item = detailsItem.item;
+        const userId = String(item.userId || "").trim();
+        const email = normalizeText(item.physicianEmail);
+        const physicianProfile = parseJsonObject(item.physicianProfile) || null;
+        const npiVerification = firstJsonObject(
+          item.npiVerification,
+          (item as any).npi_verification,
+          physicianProfile?.npiVerification,
+          physicianProfile?.npi_verification,
+        );
+        const isDownloading = pendingResellerPermitApprovalDownloadingIds.has(userId);
+        const isApproving = pendingResellerPermitApprovalApprovingIds.has(userId);
+        const permitFileName =
+          normalizeText(item.resellerPermitFileName) || "Download reseller permit";
+        title = "Reseller permit verification needed";
+        description = "Known reseller permit information for this to-do item.";
+        rows = [
+          renderDetailRow("Task", title),
+          renderDetailRow("Physician name", normalizeText(item.physicianName)),
+          renderDetailRow(
+            "Physician email",
+            email ? (
+              <a className="text-[rgb(11,6,121)] hover:underline" href={`mailto:${email}`}>
+                {email}
+              </a>
+            ) : null,
+          ),
+          renderDetailRow(
+            "Permit file",
+            <button
+              type="button"
+              className="admin-todo-file-download inline-flex max-w-full items-center gap-2 text-left font-semibold"
+              onClick={() => void handleDownloadPendingResellerPermitApproval(item)}
+              disabled={isDownloading || isApproving}
+              aria-label={`Download ${permitFileName}`}
+              title={`Download ${permitFileName}`}
+            >
+              <ArrowDownTrayIcon
+                className={clsx("h-4 w-4 shrink-0", isDownloading && "animate-bounce")}
+                aria-hidden="true"
+              />
+              <span className="min-w-0 break-all">
+                {isDownloading ? "Downloading..." : permitFileName}
+              </span>
+            </button>,
+          ),
+          renderDetailRow(
+            "Uploaded",
+            item.resellerPermitUploadedAt ? formatDateTime(item.resellerPermitUploadedAt) : null,
+          ),
+          renderDetailRow("Approved by rep", formatBoolean(item.resellerPermitApprovedByRep)),
+          renderDetailRow("NPI number", normalizeText(item.npiNumber)),
+          renderDetailRow("NPI status", normalizeText(item.npiStatus)),
+          renderDetailRow(
+            "NPI verified",
+            item.npiLastVerifiedAt ? formatDateTime(item.npiLastVerifiedAt) : null,
+          ),
+          renderDetailRow("Sales rep ID", normalizeText(item.salesRepId)),
+          renderDetailRow("User ID", normalizeText(userId)),
+        ];
+        const doctorBreakdown = {
+          task: title,
+          physician: {
+            userId,
+            name: normalizeText(item.physicianName),
+            email,
+            phone: normalizeText(item.physicianPhone),
+            salesRepId: normalizeText(item.salesRepId),
+          },
+          resellerPermit: {
+            fileName: normalizeText(item.resellerPermitFileName),
+            uploadedAt: item.resellerPermitUploadedAt ?? null,
+            approvedByRep: item.resellerPermitApprovedByRep ?? null,
+          },
+          npi: {
+            number: normalizeText(item.npiNumber),
+            status: normalizeText(item.npiStatus),
+            lastVerifiedAt: item.npiLastVerifiedAt ?? null,
+            verification: npiVerification,
+          },
+          physicianProfile: physicianProfile || item.physicianProfile || null,
+          rawTaskItem: item,
+        };
+        supplementalDetails = (
+          <div className="space-y-3">
+            {renderJsonPanel(
+              "NPI JSON",
+              npiVerification || {
+                npiNumber: item.npiNumber ?? null,
+                npiStatus: item.npiStatus ?? null,
+                npiLastVerifiedAt: item.npiLastVerifiedAt ?? null,
+              },
+              `npi-${normalizeText(item.npiNumber) || userId || "reseller-permit"}.json`,
+            )}
+            {renderJsonPanel(
+              "Full doctor breakdown",
+              doctorBreakdown,
+              `doctor-breakdown-${userId || normalizeText(item.npiNumber) || "reseller-permit"}.json`,
+            )}
+          </div>
+        );
+        footer = (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="admin-todo-details__button header-home-button squircle-sm bg-white gap-2"
+              onClick={() => void handleDownloadPendingResellerPermitApproval(item)}
+              disabled={isDownloading || isApproving}
+            >
+              <ArrowDownTrayIcon
+                className={clsx("h-4 w-4 shrink-0", isDownloading && "animate-bounce")}
+                aria-hidden="true"
+              />
+              {isDownloading ? "Downloading..." : "Download permit"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="admin-todo-details__button header-home-button squircle-sm gap-2"
+              onClick={async () => {
+                await handleApprovePendingResellerPermitApproval(item);
+                setAdminTodoDetailsItem(null);
+              }}
+              disabled={isApproving || isDownloading}
+            >
+              <CheckIcon
+                className={clsx("h-4 w-4 shrink-0", isApproving && "animate-pulse")}
+                aria-hidden="true"
+              />
+              {isApproving ? "Approving..." : "Approve"}
+            </Button>
+          </>
+        );
+      }
+
+      return (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setAdminTodoDetailsItem(null);
+            }
+          }}
+        >
+          <DialogContent
+            className="glass-card squircle-lg max-h-[min(760px,calc(100vh-3rem))] w-full max-w-[min(720px,calc(100vw-3rem))] overflow-y-auto border border-[var(--brand-glass-border-2)] shadow-2xl"
+            containerClassName={salesDashboardDetailModalContainerClassName}
+          >
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+              <DialogDescription>{description}</DialogDescription>
+            </DialogHeader>
+            <dl className="grid gap-3 sm:grid-cols-2">
+              {rows.filter(Boolean)}
+            </dl>
+            {supplementalDetails}
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-200/70 pt-4 sm:flex-row sm:justify-end">
+              {footer}
+            </div>
+          </DialogContent>
+        </Dialog>
       );
     };
 	    const renderEmailControlsCard = () => (
@@ -38335,8 +38657,24 @@ function MainApp() {
                       const isHouseRow = isHouseLeadTypeValue(bucket.leadType);
                       const wholesaleForRow = Number((bucket as any).salesWholesaleRevenue || 0);
                       const retailForRow = Number((bucket as any).salesRetailRevenue || 0);
+                      const openBucketDoctorDetail = () => {
+                        openSalesDoctorDetail(
+                          {
+                            ...bucket,
+                            hasAccount: true,
+                            referralId: resolveReferralIdForDoctorNotes(
+                              bucket.doctorId,
+                              bucket.doctorEmail,
+                            ),
+                          },
+                          "doctor",
+                        );
+                      };
 	                    return (
-	                      <section key={bucket.doctorId} className="lead-panel">
+	                      <section
+	                        key={bucket.doctorId}
+	                        className="lead-panel"
+	                      >
 	                        <div
 	                          className="lead-panel-header sales-doctor-row cursor-pointer items-center"
                           role="button"
@@ -38368,49 +38706,16 @@ function MainApp() {
                             </div>
                             <div className="sales-doctor-scroll">
                               <div className="sales-doctor-scroll-inner">
-                                <button
-                                  type="button"
-                                  className="flex items-center gap-3 min-w-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openSalesDoctorDetail(
-                                      {
-                                        ...bucket,
-                                        hasAccount: true,
-                                        referralId: resolveReferralIdForDoctorNotes(
-                                          bucket.doctorId,
-                                          bucket.doctorEmail,
-                                        ),
-                                      },
-                                      "doctor",
-                                    );
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
+                                <div className="sales-doctor-row-main flex items-center gap-3 min-w-0">
+                                  <button
+                                    type="button"
+                                    className="sales-doctor-profile-trigger rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
+                                    onClick={(e) => {
                                       e.stopPropagation();
-                                      openSalesDoctorDetail(
-                                        {
-                                          ...bucket,
-                                          hasAccount: true,
-                                          referralId: resolveReferralIdForDoctorNotes(
-                                            bucket.doctorId,
-                                            bucket.doctorEmail,
-                                          ),
-                                        },
-                                        "doctor",
-                                      );
-                                    }
-                                  }}
-                                  aria-label={`View ${bucket.doctorName} details`}
-                                  style={{
-                                    background: "transparent",
-                                    border: "none",
-                                    padding: 0,
-                                  }}
-                                >
-                                  <div
-                                    className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
+                                      openBucketDoctorDetail();
+                                    }}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                    aria-label={`View ${bucket.doctorName} details`}
                                     style={{ width: 44, height: 44, minWidth: 44 }}
                                   >
                                     {bucket.doctorAvatar ? (
@@ -38425,14 +38730,25 @@ function MainApp() {
                                         {getInitials(bucket.doctorName)}
                                       </span>
                                     )}
-                                  </div>
-                                  <div className="text-left">
+                                  </button>
+                                  <div className="sales-doctor-row-copy text-left min-w-0">
 		                                    <p className="lead-list-name whitespace-nowrap flex items-center gap-2">
-		                                      <NotebookPen
-		                                        className="h-4 w-4 text-slate-400"
-		                                        aria-hidden="true"
-		                                      />
-		                                      <span>{bucket.doctorName}</span>
+		                                      <button
+                                        type="button"
+                                        className="sales-doctor-name-trigger inline-flex items-center gap-2 min-w-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openBucketDoctorDetail();
+                                        }}
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                        aria-label={`View ${bucket.doctorName} details`}
+                                      >
+		                                        <NotebookPen
+		                                          className="h-4 w-4 text-slate-400"
+		                                          aria-hidden="true"
+		                                        />
+		                                        <span>{bucket.doctorName}</span>
+                                      </button>
                                       {isHouseRow && (
                                         <span className="lead-source-pill lead-source-pill--contact">
                                           House
@@ -38445,7 +38761,7 @@ function MainApp() {
                                       </p>
                                     )}
                                   </div>
-                                </button>
+                                </div>
                                 <div className="text-right">
                                   {canSeeRetailRevenueInSalesDashboard ? (
                                     <>
@@ -38518,9 +38834,7 @@ function MainApp() {
                                 )
                               : null;
                             const orderKey = String(order.id || order.number || "");
-                            const isHydrating =
-                              salesOrderHydratingIds.has(orderKey) ||
-                              salesOrderRefreshingIds.has(orderKey);
+                            const isHydrating = salesOrderRefreshingIds.has(orderKey);
                             const showShimmer = isHydrating;
                             const dateSummary = getSalesOrderDateSummary(order as any);
                             const primaryDateLabel = dateSummary.value
@@ -40421,7 +40735,7 @@ function MainApp() {
   const showLandingMarketingSurface = showMarketingLanding || showLandingAuthDialog;
   const landingAuthDialogTitle =
     landingAuthMode === "signup"
-      ? "Create account"
+      ? "Create an account"
       : landingAuthMode === "forgot" || landingAuthMode === "reset"
         ? "Reset password"
         : landingAuthMode === "verify" || landingAuthMode === "verificationSent"
@@ -40971,22 +41285,6 @@ function MainApp() {
                       className="post-login-news space-y-4"
                     >
                       <div
-                        className="glass-card squircle-md px-6 py-4 sm:px-4 sm:py-2 shadow-lg transition-all duration-500"
-                        style={{
-                          backdropFilter: "blur(20px) saturate(1.4)",
-                        }}
-                      >
-                        <p
-                          className="px-1 sm:px-1 italic text-left leading-snug break-words"
-                          style={{
-                            color: "rgb(11,6,121)",
-                            fontSize: "clamp(1.3rem, 2vw, 1.1rem)",
-                          }}
-                        >
-                          It is our mission to promote endogenous healing through a community of practitioners who work one-on-one, day in and day out, improving individual health across all aspects of healing.
-                        </p>
-                      </div>
-                      <div
                         className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-6 sm:p-8 shadow-xl"
                         style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
                       >
@@ -41494,36 +41792,38 @@ function MainApp() {
                         {landingAuthDialogTitle} form
                       </DialogDescription>
                     </VisuallyHidden>
-                <div className="landing-auth-dialog-panel w-full max-w-md">
-                  <div className="space-y-5">
-	                    <div
-	                      className={`glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] shadow-xl ${
-	                        landingAuthMode === "login"
-	                          ? "landing-login-container relative p-6 sm:p-8"
-	                          : landingAuthMode === "signup"
-	                            ? "landing-create-account-container relative p-8"
-	                          : "relative p-8"
-	                      }`}
-	                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
-	                    >
-                        <DialogClose
-                          className="landing-auth-dialog-close dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-                          style={{
-                            backgroundColor: "rgb(11, 6, 121)",
-                            borderRadius: "50%",
-                          }}
-                          aria-label="Close create account modal"
-                          title="Close"
-                        >
-                          <X className="h-4 w-4 text-white" />
-                          <span className="sr-only">Close</span>
-                        </DialogClose>
+		                <div className="landing-auth-dialog-panel w-full max-w-md">
+	                  <div className="space-y-5">
+		                    <div
+		                      className={clsx(
+		                        "landing-auth-dialog-body relative",
+		                        landingAuthMode === "login"
+		                          ? "landing-login-container p-6 sm:p-8"
+		                          : landingAuthMode === "signup"
+		                            ? "landing-create-account-container overflow-hidden p-0"
+		                            : "p-8",
+		                      )}
+		                    >
+                        {landingAuthMode !== "signup" && (
+                          <DialogClose
+                            className="landing-auth-dialog-close dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                            style={{
+                              backgroundColor: "rgb(11, 6, 121)",
+                              borderRadius: "50%",
+                            }}
+                            aria-label="Close create account modal"
+                            title="Close"
+                          >
+                            <X className="h-4 w-4 text-white" />
+                            <span className="sr-only">Close</span>
+                          </DialogClose>
+                        )}
 	                      <div
 	                        className={
 	                          landingAuthMode === "login"
 	                            ? "landing-login-panel-content gap-10 sm:gap-12"
 	                            : landingAuthMode === "signup"
-	                              ? "space-y-6"
+	                              ? "landing-create-account-content"
 	                              : "space-y-4"
 	                        }
 	                      >
@@ -41866,7 +42166,7 @@ function MainApp() {
                         {landingAuthMode === "forgot" && (
                           <>
                           <div className="text-center space-y-2">
-                            <h1 className="text-2xl font-semibold">
+                            <h1 className="text-3xl font-semibold sm:text-4xl">
                               Reset your password
                             </h1>
                             <p className="text-sm text-gray-600">
@@ -41933,7 +42233,7 @@ function MainApp() {
 	                            <button
 	                              type="button"
 	                              onClick={handleReturnToSignIn}
-	                              className="font-semibold hover:underline btn-hover-lighter"
+	                              className="reset-password-return-button border-0 bg-transparent p-0 font-semibold hover:underline btn-hover-lighter"
 	                              style={{ color: "rgb(11, 6, 121)" }}
 	                            >
                               Return to sign in
@@ -42081,7 +42381,7 @@ function MainApp() {
                               <Button
                                 type="button"
 	                                size="lg"
-	                                className="w-full squircle-sm glass-brand btn-hover-lighter"
+	                                className="reset-password-return-button w-full squircle-sm glass-brand btn-hover-lighter"
 	                                onClick={handleReturnToSignIn}
 	                              >
                                 Return to sign in
@@ -42331,13 +42631,26 @@ function MainApp() {
                             {verifyEmailPending ? "Verifying..." : "Return to sign in"}
                           </Button>
                         </>
-                      )}
+	                      )}
 	                      {landingAuthMode === "signup" && (
 	                        <>
-	                          <div className="landing-create-account-heading text-center space-y-2">
-	                            <h1 className="text-2xl font-semibold">
-	                              Join the TrufusionLabs Network
-	                            </h1>
+	                          <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(11, 6, 121, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+	                            <h2
+	                              className="landing-create-account-title flex-1 font-semibold text-[rgb(11,6,121)]"
+	                              style={{ fontSize: '1.125rem', lineHeight: '1.75rem', fontWeight: 600 }}
+	                            >
+	                              Create an account
+	                            </h2>
+	                            <DialogClose
+	                              type="button"
+	                              className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+	                              style={{ backgroundColor: 'rgb(11, 6, 121)', borderRadius: '50%' }}
+	                              aria-label="Close create account modal"
+	                              title="Close"
+	                            >
+	                              <X className="h-4 w-4 text-white" />
+	                              <span className="sr-only">Close</span>
+	                            </DialogClose>
 	                          </div>
                           <form
                             onSubmit={async (e) => {
@@ -42452,7 +42765,7 @@ function MainApp() {
                                 }
                               }
                             }}
-                            className="space-y-4"
+                            className="landing-create-account-form space-y-4 px-6 sm:px-7 pt-4 pb-10"
                             autoComplete="on"
                           >
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
@@ -42841,11 +43154,16 @@ function MainApp() {
 		                      className="glass-card squircle-xl mt-2 border-2 bg-white/80 p-8 sm:p-10"
 		                      style={{ borderColor: delegateSecondaryColor }}
 		                    >
-		                      <div className="flex items-start justify-between gap-4">
-		                        <div className="min-w-0">
-		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
-		                          <p className="mt-1 text-sm text-slate-700">
-		                            Your proposal has been sent to{' '}
+			                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+			                        <div className="min-w-0">
+			                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+			                            Delegate link status
+			                          </p>
+			                          <h2 className="mt-1 text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">
+			                            Proposal Status
+			                          </h2>
+			                          <p className="mt-1 text-sm text-slate-700">
+			                            Your proposal has been sent to{' '}
 		                            {delegateDoctorNameForShare === 'Physician'
 		                              ? 'your physician'
 		                              : `Dr. ${delegateDoctorNameForShare}`}
@@ -42862,10 +43180,10 @@ function MainApp() {
 		                                  : { Icon: Clock, label: 'Pending review', className: '', style: { color: delegateSecondaryColor } };
 		                          const Icon = meta.Icon as any;
 		                          return (
-		                            <div className={`flex items-center gap-2 font-semibold ${meta.className}`} style={meta.style}>
-		                              <Icon className="h-5 w-5" aria-hidden="true" />
-		                              <span>{meta.label}</span>
-		                            </div>
+			                            <div className={`inline-flex items-center gap-2 rounded-full border border-current/20 bg-white/70 px-4 py-2 text-xl font-semibold sm:text-2xl ${meta.className}`} style={meta.style}>
+			                              <Icon className="h-6 w-6" aria-hidden="true" />
+			                              <span>{meta.label}</span>
+			                            </div>
 		                          );
 		                        })()}
 		                      </div>
@@ -43023,7 +43341,6 @@ function MainApp() {
             effectiveCanUseRetailPricing && !isDelegateMode,
           )}
 	      />
-
 	      <Dialog
 	        open={prospectDetailModalOpen}
 	        onOpenChange={(open) => {
@@ -43749,7 +44066,7 @@ function MainApp() {
 		              {salesDoctorDetail &&
                     isDoctorRole(salesDoctorDetail.role) &&
                     (isAdmin(user?.role) || isRep(user?.role)) && (
-		                <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
+		                <div className="rounded-xl bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
 		                  <p className="text-sm font-semibold justify-center text-slate-800">
                         Your Notes
 		                  </p>
@@ -44255,7 +44572,7 @@ function MainApp() {
                 );
 
                 return (
-                  <div className="border-t border-slate-200 pt-4">
+                  <div className="sales-doctor-detail-section-divider border-t border-slate-200 pt-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-800">Timeframe</p>
@@ -44612,18 +44929,18 @@ function MainApp() {
                     <p className="text-sm font-semibold text-slate-700">
                       Physician Profile
                     </p>
-	                    <div className="sales-doctor-detail-panel sales-doctor-detail-panel--scroll min-w-0 min-h-[220px] no-scrollbar rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
-                      <div className="min-w-max whitespace-nowrap">
+	                    <div className="sales-doctor-detail-panel min-w-0 min-h-[220px] rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-3">
+                      <div className="min-w-0">
                         <span className="font-semibold text-slate-800">Greater Area: </span>
                         <span>{salesDoctorDetail.greaterArea || "Unavailable"}</span>
                       </div>
-                      <div className="min-w-max whitespace-nowrap">
+                      <div className="min-w-0">
                         <span className="font-semibold text-slate-800">Study Focus: </span>
                         <span>{salesDoctorDetail.studyFocus || "Unavailable"}</span>
                       </div>
-                      <div className="min-w-max space-y-1">
+                      <div className="min-w-0 space-y-1">
                         <div className="font-semibold text-slate-800">Bio</div>
-                        <div className="min-w-max overflow-x-auto overflow-y-visible whitespace-pre">
+                        <div className="max-w-full whitespace-pre-wrap break-words">
                           {salesDoctorDetail.bio || "Unavailable"}
                         </div>
                       </div>
@@ -44721,7 +45038,7 @@ function MainApp() {
                         );
 
                         return (
-                          <div className="border-t border-slate-200 pt-4">
+                          <div className="sales-doctor-detail-section-divider border-t border-slate-200 pt-4">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-slate-800">Timeframe</p>
@@ -46100,7 +46417,7 @@ function MainApp() {
                 }}
                 onClick={() => resolveExternalDetailEditConfirm(false)}
               />
-              <div
+              <ModalSquircle
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="external-detail-edit-confirm-title"
@@ -46109,10 +46426,6 @@ function MainApp() {
                 style={{
                   width: "min(520px, calc(100vw - 2rem))",
                   maxWidth: "calc(100vw - 2rem)",
-                  backgroundColor: "rgb(245, 251, 255)",
-                  border: "3px solid rgba(11, 6, 121, 0.72)",
-                  borderRadius: "22px",
-                  boxShadow: "0 28px 80px -24px rgba(7, 27, 27, 0.72)",
                 }}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
@@ -46148,7 +46461,7 @@ function MainApp() {
                     Proceed
                   </Button>
                 </div>
-              </div>
+              </ModalSquircle>
             </div>,
             document.body,
           )

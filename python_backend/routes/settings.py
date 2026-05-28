@@ -664,7 +664,62 @@ def _public_user_profile(
         "npiNumber": user.get("npiNumber") or None,
         "npiStatus": user.get("npiStatus") or None,
         "npiLastVerifiedAt": user.get("npiLastVerifiedAt") or None,
+        "npiVerification": user.get("npiVerification") or user.get("npi_verification") or None,
     }
+
+
+def _parse_sql_json_object(value: object) -> dict | None:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _load_sql_npi_verification_by_user_id(user_ids: list[str]) -> dict[str, dict]:
+    if not _mysql_enabled():
+        return {}
+    ids = []
+    seen = set()
+    for value in user_ids:
+        user_id = str(value or "").strip()
+        if user_id and user_id not in seen:
+            ids.append(user_id)
+            seen.add(user_id)
+    if not ids:
+        return {}
+    params = {f"id_{index}": user_id for index, user_id in enumerate(ids)}
+    placeholders = ", ".join(f"%(id_{index})s" for index in range(len(ids)))
+    try:
+        rows = mysql_client.fetch_all(
+            f"""
+            SELECT id, npi_verification
+            FROM users
+            WHERE id IN ({placeholders})
+            """,
+            params,
+        )
+    except Exception:
+        logging.getLogger("trufusion.settings").warning(
+            "Unable to load NPI verification details from users.npi_verification",
+            exc_info=True,
+        )
+        return {}
+    by_user_id: dict[str, dict] = {}
+    for row in rows or []:
+        user_id = str(row.get("id") or "").strip()
+        verification = _parse_sql_json_object(row.get("npi_verification"))
+        if user_id and verification:
+            by_user_id[user_id] = verification
+    return by_user_id
+
 
 def _normalize_role(value: object) -> str:
     return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
@@ -715,7 +770,11 @@ def _build_pending_reseller_permit_approval_entries(current_user: dict, current_
     reps = sales_rep_repository.get_all() or []
     by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
     entries: list[dict] = []
-    for user in user_repository.get_all() or []:
+    users = [user for user in (user_repository.get_all() or []) if isinstance(user, dict)]
+    sql_npi_verification_by_user_id = _load_sql_npi_verification_by_user_id(
+        [str(user.get("id") or "").strip() for user in users]
+    )
+    for user in users:
         if not isinstance(user, dict) or not _is_doctor_role(user.get("role")):
             continue
         user_id = str(user.get("id") or "").strip()
@@ -740,14 +799,25 @@ def _build_pending_reseller_permit_approval_entries(current_user: dict, current_
             by_legacy_user_id=by_legacy_user_id,
             by_email=by_email,
         )
+        sql_npi_verification = sql_npi_verification_by_user_id.get(user_id)
+        npi_verification = sql_npi_verification or profile.get("npiVerification")
+        if sql_npi_verification:
+            profile = {**profile, "npiVerification": sql_npi_verification}
         entries.append(
             {
                 "userId": profile.get("id"),
                 "physicianName": profile.get("name") or profile.get("email") or "Unknown physician",
                 "physicianEmail": profile.get("email"),
+                "physicianPhone": profile.get("phone"),
+                "physicianProfile": profile,
                 "resellerPermitFileName": profile.get("resellerPermitFileName"),
                 "resellerPermitUploadedAt": profile.get("resellerPermitUploadedAt"),
                 "resellerPermitApprovedByRep": bool(profile.get("resellerPermitApprovedByRep")),
+                "salesRepId": profile.get("salesRepId"),
+                "npiNumber": profile.get("npiNumber"),
+                "npiStatus": profile.get("npiStatus"),
+                "npiLastVerifiedAt": profile.get("npiLastVerifiedAt"),
+                "npiVerification": npi_verification,
             }
         )
     entries.sort(

@@ -325,6 +325,8 @@ def submit_contact():
             or payload.get("npi_verification_status"),
             max_length=32,
         )
+        submitted_npi_verification = payload.get("npiVerification") or payload.get("npi_verification")
+        npi_verification = submitted_npi_verification if isinstance(submitted_npi_verification, dict) else None
 
         if not name or not email:
             error = ValueError("Name and email are required.")
@@ -467,6 +469,7 @@ def submit_contact():
                                 "npiNumber": record["npi_number"],
                                 "npiProviderName": record["npi_provider_name"],
                                 "npiVerificationStatus": record["npi_verification_status"],
+                                "npiVerification": npi_verification,
                             },
                             "status": "contact_form",
                             "isManual": False,

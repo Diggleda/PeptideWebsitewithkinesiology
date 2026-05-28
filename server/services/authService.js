@@ -353,6 +353,9 @@ const sanitizeUser = (user) => {
     delegateOptIn: normalizeBooleanFlag(
       user.delegateOptIn ?? user.delegate_opt_in,
     ),
+    delegateLinksEnabled: normalizeBooleanFlag(
+      user.delegateLinksEnabled ?? user.delegate_links_enabled,
+    ),
     receiveClientOrderUpdateEmails: normalizeBooleanFlag(user.receiveClientOrderUpdateEmails),
     hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
     salesRep: resolveSalesRepSummary(user),

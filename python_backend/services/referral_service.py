@@ -1927,6 +1927,7 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                     sp.doctor_id AS prospect_doctor_id,
                     sp.status AS prospect_status,
                     sp.notes AS prospect_notes,
+                    sp.source_payload_json AS source_payload_json,
                     sp.updated_at AS prospect_updated_at,
                     sp.reseller_permit_exempt AS reseller_permit_exempt,
                     sp.reseller_permit_file_path AS reseller_permit_file_path,
@@ -1997,6 +1998,31 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
         contact_npi_number = _sanitize_text(row.get("npi_number"), 20)
         contact_npi_provider_name = _sanitize_text(row.get("npi_provider_name"), 255)
         contact_npi_verification_status = _sanitize_text(row.get("npi_verification_status"), 32)
+        contact_form_id_for_payload = str(row.get("id")) if row.get("id") is not None else ""
+        matching_contact_form_prospect = next(
+            (
+                prospect
+                for prospect in _matching_prospects()
+                if str(prospect.get("id") or "") == f"contact_form:{contact_form_id_for_payload}"
+                or str(prospect.get("contactFormId") or prospect.get("contact_form_id") or "") == contact_form_id_for_payload
+            ),
+            None,
+        )
+        source_payload_json = (
+            _prospect_source_payload(matching_contact_form_prospect or {})
+            or _parse_json_object(row.get("source_payload_json"))
+            or {
+                "contactFormId": str(row.get("id")) if row.get("id") is not None else None,
+                "source": row.get("source") or None,
+                "websiteUrl": contact_website_url,
+                "message": contact_message,
+                "messageFieldKey": contact_message_field_key,
+                "messageLabel": contact_message_label,
+                "npiNumber": contact_npi_number,
+                "npiProviderName": contact_npi_provider_name,
+                "npiVerificationStatus": contact_npi_verification_status,
+            }
+        )
         existing_contact_lead = _find_existing_non_contact_form_lead_for_contact(
             sales_rep_id=sales_rep_id,
             contact_email=contact_email,
@@ -2099,6 +2125,7 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
             "contactFormNpiNumber": contact_npi_number,
             "contactFormNpiProviderName": contact_npi_provider_name,
             "contactFormNpiVerificationStatus": contact_npi_verification_status,
+            "sourcePayloadJson": source_payload_json,
             "resellerPermitExempt": bool(row.get("reseller_permit_exempt") or 0),
             "resellerPermitFilePath": row.get("reseller_permit_file_path") or None,
             "resellerPermitFileName": row.get("reseller_permit_file_name") or None,
@@ -2418,6 +2445,7 @@ def list_referrals_for_sales_rep(
             "contactFormNpiNumber": npi_number,
             "contactFormNpiProviderName": npi_provider_name,
             "contactFormNpiVerificationStatus": npi_verification_status,
+            "sourcePayloadJson": payload or None,
             "source": "contact_form",
             "sourceSystem": p.get("sourceSystem") or "contact_form",
             "resellerPermitExempt": bool(p.get("resellerPermitExempt")),
@@ -2829,6 +2857,17 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
     contact_npi_number = _sanitize_text(row.get("npi_number"), 20)
     contact_npi_provider_name = _sanitize_text(row.get("npi_provider_name"), 255)
     contact_npi_verification_status = _sanitize_text(row.get("npi_verification_status"), 32)
+    contact_source_payload = {
+        "contactFormId": str(contact_form_pk),
+        "source": row.get("source") or None,
+        "websiteUrl": contact_website_url,
+        "message": contact_message,
+        "messageFieldKey": contact_message_field_key,
+        "messageLabel": contact_message_label,
+        "npiNumber": contact_npi_number,
+        "npiProviderName": contact_npi_provider_name,
+        "npiVerificationStatus": contact_npi_verification_status,
+    }
     existing_lead = _find_existing_non_contact_form_lead_for_contact(
         sales_rep_id=resolved_sales_rep_id,
         contact_email=contact_email,
@@ -2892,6 +2931,7 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
             "contactFormNpiNumber": contact_npi_number,
             "contactFormNpiProviderName": contact_npi_provider_name,
             "contactFormNpiVerificationStatus": contact_npi_verification_status,
+            "sourcePayloadJson": contact_source_payload,
             "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
             "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
             "resellerPermitFileName": saved.get("resellerPermitFileName") or None,
@@ -2932,17 +2972,7 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         "isManual": False,
         "status": current_status,
         "notes": existing.get("notes") if existing else None,
-        "sourcePayloadJson": {
-            "contactFormId": str(contact_form_pk),
-            "source": row.get("source") or None,
-            "websiteUrl": contact_website_url,
-            "message": contact_message,
-            "messageFieldKey": contact_message_field_key,
-            "messageLabel": contact_message_label,
-            "npiNumber": contact_npi_number,
-            "npiProviderName": contact_npi_provider_name,
-            "npiVerificationStatus": contact_npi_verification_status,
-        },
+        "sourcePayloadJson": contact_source_payload,
     }
 
     if "status" in updates:
@@ -2980,6 +3010,7 @@ def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: 
         "contactFormNpiNumber": contact_npi_number,
         "contactFormNpiProviderName": contact_npi_provider_name,
         "contactFormNpiVerificationStatus": contact_npi_verification_status,
+        "sourcePayloadJson": contact_source_payload,
         "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
         "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
         "resellerPermitFileName": saved.get("resellerPermitFileName") or None,

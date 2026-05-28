@@ -9,6 +9,7 @@ import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react@0.487.0';
 import clsx from 'clsx';
+import { ModalSquircle } from './ui/modal-squircle';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
 import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '../lib/legalDocuments';
 import { api, authAPI, usageTrackingAPI } from '../services/api';
@@ -364,6 +365,7 @@ export function LegalFooter({
     npiNumber: string;
     name?: string | null;
     names?: string[];
+    record?: unknown;
   } | null>(null);
   const [bugOpen, setBugOpen] = useState(false);
   const [bugVisible, setBugVisible] = useState(false);
@@ -435,7 +437,7 @@ export function LegalFooter({
   const MODAL_FADE_MS = 65;
   const legalModalState = isClosing ? 'closing' : isVisible ? 'open' : 'closed';
   const supportModalPanelClass =
-    'relative w-full flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[55ms] ease-out';
+    'contact-form-container relative w-full flex flex-col overflow-hidden transition-[opacity,transform] duration-[55ms] ease-out';
   const supportModalPanelStyle = {
     width: 'min(100%, 32rem)',
     maxWidth: '32rem',
@@ -478,6 +480,7 @@ export function LegalFooter({
           npiNumber: digits,
           name: verifiedNames[0] || null,
           names: verifiedNames,
+          record,
         };
         setContactNpiStatus('verified');
         setContactNpiMessage('NPI verified with the CMS registry.');
@@ -717,6 +720,7 @@ export function LegalFooter({
         npiNumber: contactRequiresNpiVerification ? verifiedNpi?.npiNumber : undefined,
         npiProviderName: contactRequiresNpiVerification ? verifiedNpi?.name ?? undefined : undefined,
         npiVerificationStatus: contactRequiresNpiVerification ? 'verified' : undefined,
+        npiVerification: contactRequiresNpiVerification ? verifiedNpi?.record ?? undefined : undefined,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -738,9 +742,9 @@ export function LegalFooter({
       } else if (message === 'NPI_LOOKUP_FAILED') {
         setContactError('We could not reach the CMS registry. Please try again in a moment.');
       } else if (message === 'INVALID_WEBSITE_URL') {
-        setContactError('Enter a valid website URL or leave the field blank.');
+        setContactError('Enter a valid practice website or LinkedIn URL, or leave the field blank.');
       } else if (message === 'WEBSITE_URL_TOO_LONG') {
-        setContactError('Website URL must be 500 characters or fewer.');
+        setContactError('Practice website or LinkedIn must be 500 characters or fewer.');
       } else {
         setContactError(message || 'Unable to send your message. Please try again.');
       }
@@ -1111,12 +1115,11 @@ export function LegalFooter({
               maxHeight: 'calc(var(--viewport-height, 100dvh) - 4rem)',
             }}
           >
-            <div
+            <ModalSquircle
+              surfaceFilter={shouldBlurBackground ? 'blur(16px) saturate(1.45)' : 'none'}
               data-legal-state={legalModalState}
-              className="legal-modal-card squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] h-full flex flex-col overflow-hidden border-[3px]"
+              className="legal-modal-card h-full flex flex-col overflow-hidden"
               style={{
-                backgroundColor: 'rgba(245, 251, 255, 0.94)',
-                borderColor: 'rgba(11, 6, 121, 0.65)',
                 willChange: 'backdrop-filter',
                 ['--legal-card-blur' as any]: shouldBlurBackground ? '16px' : '0px',
                 ['--legal-card-saturate' as any]: shouldBlurBackground ? '1.45' : '1',
@@ -1143,10 +1146,10 @@ export function LegalFooter({
                 <div
                   className="legal-richtext text-sm leading-relaxed text-slate-700"
                   style={{ fontFamily: '"Lexend", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
-                  dangerouslySetInnerHTML={{ __html: selectedDocument.html }}
-                />
+                dangerouslySetInnerHTML={{ __html: selectedDocument.html }}
+              />
               </div>
-            </div>
+            </ModalSquircle>
           </div>
         </div>,
         document.body
@@ -1179,15 +1182,14 @@ export function LegalFooter({
               WebkitBackdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
             }}
           />
-          <div
+          <ModalSquircle
+            surfaceFilter={shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none'}
             className={clsx(
               supportModalPanelClass,
               contactVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{
               ...supportModalPanelStyle,
-              backgroundColor: 'rgba(245, 251, 255, 0.94)',
-              borderColor: 'rgba(11, 6, 121, 0.65)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1238,13 +1240,13 @@ export function LegalFooter({
               </div>
               {contactAllowsWebsiteUrl && (
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700" htmlFor="contact-website">Website URL <span className="font-normal text-slate-500">(optional)</span></label>
+                  <label className="text-sm font-medium text-slate-700" htmlFor="contact-website">Practice Website or LinkedIn <span className="font-normal text-slate-500">(optional)</span></label>
                   <input
                     id="contact-website"
                     type="text"
                     inputMode="url"
                     autoComplete="url"
-                    placeholder="https://example.com"
+                    placeholder="https://yourpractice.com or LinkedIn profile"
                     value={contactForm.websiteUrl}
                     onChange={(e) => setContactForm((prev) => ({ ...prev, websiteUrl: e.target.value }))}
                     className="w-full h-10 px-3 rounded-md border border-slate-400 bg-white text-sm focus:border-[rgb(11,6,121)] focus:outline-none focus:ring-2 focus:ring-[rgba(11,6,121,0.25)]"
@@ -1348,7 +1350,7 @@ export function LegalFooter({
                 </button>
               </div>
             </form>
-          </div>
+          </ModalSquircle>
         </div>,
         document.body
       )}
@@ -1380,15 +1382,14 @@ export function LegalFooter({
               WebkitBackdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
             }}
           />
-          <div
+          <ModalSquircle
+            surfaceFilter={shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none'}
             className={clsx(
               supportModalPanelClass,
               bugVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{
               ...supportModalPanelStyle,
-              backgroundColor: 'rgba(245, 251, 255, 0.94)',
-              borderColor: 'rgba(11, 6, 121, 0.65)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1435,7 +1436,7 @@ export function LegalFooter({
                 </button>
               </div>
             </form>
-          </div>
+          </ModalSquircle>
         </div>,
         document.body
       )}
@@ -1467,15 +1468,14 @@ export function LegalFooter({
               WebkitBackdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
             }}
           />
-          <div
+          <ModalSquircle
+            surfaceFilter={shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none'}
             className={clsx(
               supportModalPanelClass,
               toolRequestVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{
               ...supportModalPanelStyle,
-              backgroundColor: 'rgba(245, 251, 255, 0.94)',
-              borderColor: 'rgba(11, 6, 121, 0.65)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1521,7 +1521,7 @@ export function LegalFooter({
                 </button>
               </div>
             </form>
-          </div>
+          </ModalSquircle>
         </div>,
         document.body
       )}
