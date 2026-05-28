@@ -11,6 +11,15 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
   `
+    CREATE TABLE IF NOT EXISTS resource_versions (
+      resource_name VARCHAR(64) NOT NULL PRIMARY KEY,
+      version BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      metadata_json JSON NULL,
+      KEY idx_resource_versions_updated (updated_at)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
     CREATE TABLE IF NOT EXISTS patient_links (
       token VARCHAR(128) PRIMARY KEY,
       token_version SMALLINT NOT NULL DEFAULT 1,

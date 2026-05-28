@@ -31356,6 +31356,7 @@ function MainApp() {
 		            ) : null}
 		          </div>
 		          <div
+		            data-dashboard-squircle="off"
 		            className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
 		            role="region"
 		            aria-label={ariaLabel}
@@ -31606,6 +31607,7 @@ function MainApp() {
 	          </div>
 	        </div>
         <div
+          data-dashboard-squircle="off"
           className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
           role="region"
           aria-label="To-do items"
@@ -44572,7 +44574,7 @@ function MainApp() {
                 );
 
                 return (
-                  <div className="sales-doctor-detail-section-divider border-t border-slate-200 pt-4">
+                  <div className="sales-doctor-detail-section-divider pt-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-800">Timeframe</p>
@@ -44737,7 +44739,7 @@ function MainApp() {
                               ) : null}
                             </div>
                           </div>
-                          <div className="border-t border-slate-200/80 pt-2.5 space-y-0.5">
+                          <div className="pt-2.5 space-y-0.5">
                             <div className="min-w-max pl-4 pr-1 space-y-0.5">
                               {phoneRows.length > 0 ? phoneRows.map((row, index) => {
                                 const canEditRow =
@@ -45038,7 +45040,7 @@ function MainApp() {
                         );
 
                         return (
-                          <div className="sales-doctor-detail-section-divider border-t border-slate-200 pt-4">
+                          <div className="sales-doctor-detail-section-divider pt-4">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-slate-800">Timeframe</p>
@@ -46357,7 +46359,7 @@ function MainApp() {
 	                            </span>
 	                          </div>
 	                        )}
-	                        <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-2">
+	                        <div className="flex justify-between text-base font-semibold text-slate-900 pt-2">
 	                          <span>Total</span>
 	                          <span>
 	                            {formatCurrency(

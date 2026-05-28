@@ -5328,6 +5328,34 @@ html {
   align-self: center !important;
 }
 
+.sales-doctor-detail-dialog[data-slot="dialog-content"] > .modal-squircle-content,
+.sales-order-detail-dialog[data-slot="dialog-content"] > .modal-squircle-content {
+  background: rgb(245, 251, 255);
+  background-image: linear-gradient(
+    145deg,
+    rgb(248, 252, 255) 0%,
+    rgb(241, 249, 255) 100%
+  );
+}
+
+.sales-doctor-detail-dialog[data-slot="dialog-content"] [data-slot="dialog-header"]::after,
+.sales-order-detail-dialog[data-slot="dialog-content"] [data-slot="dialog-header"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+.sales-doctor-detail-dialog[data-slot="dialog-content"] .border-t,
+.sales-order-detail-dialog[data-slot="dialog-content"] .border-t {
+  border-top: 0 !important;
+  border-top-color: transparent !important;
+  border-top-width: 0 !important;
+}
+
+.sales-doctor-detail-dialog[data-slot="dialog-content"] .dashboard-squircle-shape,
+.sales-order-detail-dialog[data-slot="dialog-content"] .dashboard-squircle-shape {
+  display: none !important;
+}
+
 .sales-doctor-detail-panel {
   --sales-doctor-detail-panel-radius: 12px;
   --container-squircle-radius: var(--sales-doctor-detail-panel-radius);
@@ -5338,8 +5366,12 @@ html {
   box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.18);
 }
 
+.sales-doctor-detail-panel[data-dashboard-squircle-border="on"] {
+  box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.18) !important;
+}
+
 .sales-doctor-detail-panel > .dashboard-squircle-shape {
-  z-index: 0 !important;
+  display: none !important;
 }
 
 .sales-doctor-detail-panel > :not(.dashboard-squircle-shape) {
@@ -5349,6 +5381,7 @@ html {
 
 .sales-doctor-detail-section-divider {
   clear: both;
+  border-top: 0 !important;
   position: relative;
   z-index: 1;
 }
@@ -6089,6 +6122,14 @@ button[data-admin-dashboard-tab="email_center"] svg {
   padding-bottom: 0.75rem;
 }
 
+.admin-revenue-outlook-summary-card.sales-rep-combined-card {
+  gap: 0.25rem;
+}
+
+.admin-revenue-outlook-summary-card .admin-revenue-outlook-card__header {
+  padding-bottom: 0.25rem;
+}
+
 .admin-revenue-outlook-card__title,
 .sales-rep-chart-header h3.admin-revenue-outlook-card__title {
   font-size: 1.125rem;
@@ -6101,8 +6142,8 @@ button[data-admin-dashboard-tab="email_center"] svg {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 0.75rem;
-  padding-top: 0.75rem;
+  gap: 0.5rem;
+  padding-top: 0.125rem;
 }
 
 .admin-revenue-outlook-summary-card__eyebrow {
@@ -6137,7 +6178,9 @@ button[data-admin-dashboard-tab="email_center"] svg {
 .admin-revenue-outlook-summary-card__stat {
   border-radius: 0.75rem;
   border: 0;
-  background: #ffffff;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
   box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -17704,6 +17747,9 @@ button.email-center-home-button[data-slot="button"]:disabled > :is(svg, span) {
 }
 
 .sales-rep-dashboard .admin-revenue-outlook-summary-card .admin-revenue-outlook-summary-card__stat {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
   border: 0 !important;
   box-shadow: none !important;
 }

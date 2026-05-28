@@ -9199,7 +9199,7 @@ export function Header({
             </div>
           </div>
 
-	          <div className="border-t border-[#d5d9d9] p-6 space-y-6">
+	          <div className="p-6 space-y-6">
 	            <div className="grid gap-4 md:grid-cols-2">
 	              <div className="space-y-3">
 	                <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
@@ -9384,7 +9384,7 @@ export function Header({
 	                    <span className="font-medium text-slate-900">{paymentDisplay}</span>
 	                  </div>
 	                )}
-		                <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-3">
+		                <div className="flex justify-between text-base font-semibold text-slate-900 pt-3">
 		                  <span>Total</span>
 		                  <span>{formatCurrency(Math.max(grandTotal, 0), selectedOrder.currency || 'USD')}</span>
 		                </div>
