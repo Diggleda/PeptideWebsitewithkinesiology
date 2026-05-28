@@ -180,7 +180,7 @@ class EmailCampaignServiceTests(unittest.TestCase):
         users = [
             {"email": "verified@example.com", "role": "doctor", "emailVerifiedAt": "2026-01-01T00:00:00Z"},
             {"email": "testdoctor@example.com", "role": "test_doctor", "email_verified_at": "2026-01-01T00:00:00Z"},
-            {"email": "unverified@example.com", "role": "doctor"},
+            {"email": "doctor-account@example.com", "role": "doctor"},
             {"email": "inactive@example.com", "role": "doctor", "emailVerifiedAt": "2026-01-01T00:00:00Z", "status": "inactive"},
             {"email": "rep-user@example.com", "role": "sales_rep", "emailVerifiedAt": "2026-01-01T00:00:00Z"},
         ]
@@ -214,8 +214,13 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 }
             )
 
-        self.assertEqual(physicians["recipientCount"], 2)
+        self.assertEqual(physicians["recipientCount"], 3)
         self.assertEqual(sales_reps["recipientCount"], 1)
+        self.assertEqual(
+            [recipient["email"] for recipient in physicians["recipients"]],
+            ["verified@example.com", "testdoctor@example.com", "doctor-account@example.com"],
+        )
+        self.assertEqual(sales_reps["recipients"][0]["email"], "active.rep@example.com")
 
     def test_test_send_token_is_required_for_real_campaign(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}
@@ -347,6 +352,48 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertIn(("emr_1", "sent"), updates)
         self.assertIn(("emc_1", "sent"), campaign_updates)
         send_email.assert_called_once()
+
+    def test_sent_campaign_list_promotes_due_scheduled_campaigns(self) -> None:
+        campaign = {
+            "id": "emc_1",
+            "campaign_type": "announcement",
+            "template_id": "delegate_links_announcement",
+            "subject": "Delegate Links are now available",
+            "created_by_admin_id": "admin_1",
+            "status": "sending",
+            "recipient_count": 1,
+            "variables_json": {},
+            "created_at": "2026-05-28T00:00:00Z",
+            "scheduled_at": "2026-05-28T00:00:00Z",
+            "sent_at": None,
+        }
+
+        with patch.object(
+            email_campaign_service.email_campaign_repository,
+            "promote_due_scheduled_campaigns",
+            return_value=1,
+        ) as promote_due, patch.object(
+            email_campaign_service.email_campaign_repository,
+            "list_campaigns",
+            return_value=[campaign],
+        ) as list_campaigns, patch.object(
+            email_campaign_service.email_campaign_repository,
+            "count_recipients_by_status",
+            return_value={"pending": 1},
+        ), patch.object(
+            email_campaign_service,
+            "_notify_email_campaigns_changed",
+        ) as notify_changed, patch.object(
+            email_campaign_service,
+            "kick_due_campaign_processing",
+        ) as kick_due:
+            response = email_campaign_service.list_campaigns(status="sent")
+
+        promote_due.assert_called_once()
+        list_campaigns.assert_called_once_with(status="sent", limit=50)
+        notify_changed.assert_called_once()
+        kick_due.assert_called_once()
+        self.assertEqual(response["campaigns"][0]["status"], "sending")
 
 
 if __name__ == "__main__":

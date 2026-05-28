@@ -476,7 +476,7 @@ def _is_verified_physician(user: Dict[str, Any]) -> bool:
         return False
     if str(user.get("status") or "active").strip().lower() in ("disabled", "inactive", "deleted"):
         return False
-    return bool(user.get("emailVerifiedAt") or user.get("email_verified_at"))
+    return True
 
 
 def _dedupe_recipients(recipients: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -595,6 +595,14 @@ def estimate_recipients(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "mode": mode,
         "recipientCount": len(recipients),
+        "recipients": [
+            {
+                "email": recipient.get("email"),
+                "name": recipient.get("name") or "",
+                "type": recipient.get("type") or "",
+            }
+            for recipient in recipients
+        ],
     }
 
 
@@ -819,6 +827,10 @@ def delete_draft_campaign(campaign_id: str, *, admin: Optional[Dict[str, Any]] =
 
 
 def list_campaigns(*, status: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
+    promoted = email_campaign_repository.promote_due_scheduled_campaigns()
+    if promoted > 0:
+        _notify_email_campaigns_changed(event="scheduled_campaigns_due", promoted=promoted)
+        kick_due_campaign_processing()
     campaigns = email_campaign_repository.list_campaigns(status=status or None, limit=limit)
     return {"campaigns": [_campaign_to_api(campaign) for campaign in campaigns]}
 

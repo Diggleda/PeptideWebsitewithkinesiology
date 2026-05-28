@@ -3,7 +3,6 @@ import clsx from "clsx";
 import {
   BookmarkIcon,
   CalendarDaysIcon,
-  ChevronDownIcon,
   CircleStackIcon,
   ClockIcon,
   EnvelopeIcon,
@@ -19,7 +18,6 @@ import {
   Mail,
   RefreshCw,
   Save,
-  Trash2,
   Users,
 } from "lucide-react";
 import {
@@ -49,6 +47,12 @@ type RecipientMode =
   | "all_verified_physicians"
   | "sales_reps"
   | "custom";
+
+type RecipientPreview = {
+  email: string;
+  name?: string;
+  type?: string;
+};
 
 const SAMPLE_VALUES: Record<string, string> = {
   doctor_name: "Dr. Jane Example",
@@ -118,6 +122,14 @@ const scheduleInputToIso = (value: string) => {
   return date.toISOString();
 };
 
+const isoToScheduleInput = (value?: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+};
+
 const DASHBOARD_PANEL_CLASS = "sales-rep-leads-card text-slate-900";
 const FIELD_SHELL_CLASS = "rounded-md border border-slate-200/80 bg-white/85 p-3 shadow-sm";
 const FIELD_LABEL_CLASS = "mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500";
@@ -127,29 +139,38 @@ const FIELD_TOP_CLASS = "mt-6 block";
 const INPUT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const TEXTAREA_CLASS = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const SELECT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
+const ACTION_SELECT_CLASS = "h-9 min-w-[9.5rem] rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-black shadow-inner outline-none transition hover:border-slate-500 focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-50";
 
 const getCampaignProgress = (campaign: EmailCenterCampaign) => {
   const counts = campaign.counts || {};
   const sent = Number(counts.sent || 0);
   const failed = Number(counts.failed || 0) + Number(counts.bounced || 0);
-  const skipped = Number(counts.unsubscribed || 0);
+  const unsubscribed = Number(counts.unsubscribed || 0);
   const pending = Number(counts.pending || 0);
-  const total = Math.max(Number(campaign.recipientCount || 0), sent + failed + skipped + pending, 0);
-  const completed = Math.min(total, sent + failed + skipped);
+  const total = Math.max(Number(campaign.recipientCount || 0), sent + failed + unsubscribed + pending, 0);
+  const completed = Math.min(total, sent + failed + unsubscribed);
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
   const segment = (value: number) => (total > 0 ? `${Math.max(0, Math.min(100, (value / total) * 100))}%` : "0%");
   return {
     sent,
     failed,
-    skipped,
+    unsubscribed,
     pending: Math.max(0, total - completed),
     total,
     completed,
     percent,
     sentWidth: segment(sent),
     failedWidth: segment(failed),
-    skippedWidth: segment(skipped),
+    unsubscribedWidth: segment(unsubscribed),
   };
+};
+
+const campaignMatchesView = (campaign: EmailCenterCampaign, status?: string) => {
+  if (!status || status === "logs") return true;
+  if (status === "sent") {
+    return campaign.status === "sending" || campaign.status === "sent";
+  }
+  return campaign.status === status;
 };
 
 export function EmailCenter() {
@@ -176,6 +197,7 @@ export function EmailCenter() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [savingCampaign, setSavingCampaign] = useState(false);
   const [pendingCampaignMode, setPendingCampaignMode] = useState<"send" | "schedule" | null>(null);
+  const [pendingPreparedDraft, setPendingPreparedDraft] = useState<EmailCenterCampaign | null>(null);
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<EmailCenterCampaign[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
@@ -183,9 +205,11 @@ export function EmailCenter() {
   const [campaignError, setCampaignError] = useState<string | null>(null);
   const [bulkRecipientEstimate, setBulkRecipientEstimate] = useState<{
     count: number | null;
+    recipients: RecipientPreview[];
     loading: boolean;
     error: string | null;
-  }>({ count: null, loading: false, error: null });
+  }>({ count: null, recipients: [], loading: false, error: null });
+  const emailCenterRootRef = useRef<HTMLElement | null>(null);
   const emailCenterTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const [emailCenterTabIndicator, setEmailCenterTabIndicator] = useState<{
     left: number;
@@ -378,13 +402,13 @@ export function EmailCenter() {
 
   useEffect(() => {
     if (!isBulkRecipientMode || !selectedTemplateId) {
-      setBulkRecipientEstimate({ count: null, loading: false, error: null });
+      setBulkRecipientEstimate({ count: null, recipients: [], loading: false, error: null });
       return;
     }
 
     let active = true;
     const timer = window.setTimeout(() => {
-      setBulkRecipientEstimate({ count: null, loading: true, error: null });
+      setBulkRecipientEstimate({ count: null, recipients: [], loading: true, error: null });
       void emailCenterAPI
         .estimateRecipients({
           templateId: selectedTemplateId,
@@ -393,8 +417,18 @@ export function EmailCenter() {
         .then((response: any) => {
           if (!active) return;
           const count = Number(response?.recipientCount ?? response?.count ?? 0);
+          const recipients = Array.isArray(response?.recipients)
+            ? response.recipients
+                .map((recipient: any) => ({
+                  email: String(recipient?.email || "").trim(),
+                  name: String(recipient?.name || "").trim(),
+                  type: String(recipient?.type || "").trim(),
+                }))
+                .filter((recipient: RecipientPreview) => recipient.email)
+            : [];
           setBulkRecipientEstimate({
             count: Number.isFinite(count) ? count : 0,
+            recipients,
             loading: false,
             error: null,
           });
@@ -403,6 +437,7 @@ export function EmailCenter() {
           if (!active) return;
           setBulkRecipientEstimate({
             count: null,
+            recipients: [],
             loading: false,
             error: getErrorMessage(error),
           });
@@ -427,6 +462,23 @@ export function EmailCenter() {
     setTestTokenExpiresAt(null);
     setConfirmationText("");
   }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (!pendingPreparedDraft || !selectedTemplate) return;
+    if (pendingPreparedDraft.templateId !== selectedTemplate.id) return;
+    setSubject(pendingPreparedDraft.subject || templateDefaultSubject(selectedTemplate));
+    setVariables(
+      typeof pendingPreparedDraft.variables === "object" && pendingPreparedDraft.variables
+        ? pendingPreparedDraft.variables
+        : {},
+    );
+    setScheduledAt(isoToScheduleInput(pendingPreparedDraft.scheduledAt));
+    setTestToken("");
+    setTestTokenExpiresAt(null);
+    setConfirmationText("");
+    setPendingPreparedDraft(null);
+    toast.success("Draft loaded. Review recipients before sending.");
+  }, [pendingPreparedDraft, selectedTemplate]);
 
   useEffect(() => {
     if (templatesForType.length === 0) return;
@@ -554,6 +606,10 @@ export function EmailCenter() {
       return;
     }
     if (savingCampaign) return;
+    const scrollSnapshot = {
+      x: window.scrollX,
+      y: window.scrollY,
+    };
     setSavingCampaign(true);
     try {
       const scheduleIso = scheduleInputToIso(scheduledAt);
@@ -570,8 +626,14 @@ export function EmailCenter() {
       toast.success(mode === "draft" ? "Draft saved" : mode === "schedule" ? "Campaign scheduled" : "Campaign queued");
       setConfirmationText("");
       setPendingCampaignMode(null);
-      setActiveTab(mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : "logs");
-      await loadCampaigns(mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : undefined);
+      const nextTab: CampaignTab = mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : "sent";
+      setActiveTab(nextTab);
+      await loadCampaigns(nextTab === "logs" ? undefined : nextTab);
+      if (mode !== "draft") {
+        window.requestAnimationFrame(() => {
+          window.scrollTo(scrollSnapshot.x, scrollSnapshot.y);
+        });
+      }
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -596,9 +658,33 @@ export function EmailCenter() {
     }
   };
 
+  const prepareDraftCampaign = (campaign: EmailCenterCampaign) => {
+    if (!campaign?.id || campaign.status !== "draft") return;
+    const templateId = String(campaign.templateId || "");
+    const template = templates.find((entry) => entry.id === templateId);
+    if (!template) {
+      toast.error("Draft template is not available in the approved manifest.");
+      return;
+    }
+    setPendingPreparedDraft(campaign);
+    setSelectedType(templateCampaignType(template) || selectedType);
+    setSelectedTemplateId(template.id);
+    setActiveTab("new");
+  };
+
+  const handleCampaignAction = (campaign: EmailCenterCampaign, action: string) => {
+    if (action === "prepare") {
+      prepareDraftCampaign(campaign);
+      return;
+    }
+    if (action === "delete") {
+      void deleteDraftCampaign(campaign);
+    }
+  };
+
   const renderCampaignList = (status?: string) => {
     const visible = status && status !== "logs"
-      ? campaigns.filter((campaign) => campaign.status === status)
+      ? campaigns.filter((campaign) => campaignMatchesView(campaign, status))
       : campaigns;
     return (
       <div className={clsx(DASHBOARD_PANEL_CLASS, "space-y-4")}>
@@ -679,13 +765,13 @@ export function EmailCenter() {
                             <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
                               <span className="h-full bg-emerald-500" style={{ width: progress.sentWidth }} />
                               <span className="h-full bg-red-500" style={{ width: progress.failedWidth }} />
-                              <span className="h-full bg-amber-400" style={{ width: progress.skippedWidth }} />
+                              <span className="h-full bg-amber-400" style={{ width: progress.unsubscribedWidth }} />
                             </div>
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
                               <span>Sent {progress.sent}</span>
                               <span>Pending {progress.pending}</span>
                               {progress.failed > 0 && <span>Failed {progress.failed}</span>}
-                              {progress.skipped > 0 && <span>Skipped {progress.skipped}</span>}
+                              {progress.unsubscribed > 0 && <span>Unsubscribed {progress.unsubscribed}</span>}
                             </div>
                           </>
                         )}
@@ -694,32 +780,28 @@ export function EmailCenter() {
                       <td className="px-3 py-2 text-slate-600">{formatDateTime(campaign.scheduledAt)}</td>
                       <td className="px-3 py-2 text-right">
                         {isDraft ? (
-                          <details className="group relative inline-block text-left">
-                            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-400 bg-white px-3 text-xs font-semibold text-black shadow-sm transition hover:border-black hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 [&::-webkit-details-marker]:hidden">
-                              <span>Action</span>
-                              <ChevronDownIcon className="h-4 w-4 text-black transition group-open:rotate-180" aria-hidden="true" />
-                            </summary>
-                            <div className="absolute right-0 z-20 mt-2 min-w-[11rem] overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-lg">
-                              <button
-                                type="button"
-                                onClick={() => deleteDraftCampaign(campaign)}
-                                disabled={deletingCampaignId === campaign.id}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-black transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <Trash2 className="h-4 w-4 text-black" aria-hidden="true" />
-                                <span>{deletingCampaignId === campaign.id ? "Deleting..." : "Delete draft"}</span>
-                              </button>
-                            </div>
-                          </details>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-black opacity-50"
+                          <select
+                            value=""
+                            onChange={(event) => {
+                              handleCampaignAction(campaign, event.target.value);
+                              event.currentTarget.value = "";
+                            }}
+                            disabled={deletingCampaignId === campaign.id}
+                            className={ACTION_SELECT_CLASS}
+                            aria-label={`Actions for ${campaign.subject || campaign.templateId || "draft campaign"}`}
                           >
-                            <span>Action</span>
-                            <ChevronDownIcon className="h-4 w-4 text-black" aria-hidden="true" />
-                          </button>
+                            <option value="" disabled>
+                              Action
+                            </option>
+                            <option value="prepare">Prepare</option>
+                            <option value="delete">
+                              {deletingCampaignId === campaign.id ? "Deleting..." : "Delete draft"}
+                            </option>
+                          </select>
+                        ) : (
+                          <select value="" disabled className={ACTION_SELECT_CLASS} aria-label="No campaign actions available">
+                            <option value="">Action</option>
+                          </select>
                         )}
                       </td>
                     </tr>
@@ -734,7 +816,7 @@ export function EmailCenter() {
   };
 
   return (
-    <section className="admin-tab-panel-enter w-full min-w-0">
+    <section ref={emailCenterRootRef} className="admin-tab-panel-enter w-full min-w-0">
       <Dialog
         open={pendingCampaignMode !== null}
         onOpenChange={(open) => {
@@ -748,6 +830,9 @@ export function EmailCenter() {
           className="email-center-confirm-dialog max-w-md"
           containerClassName="email-center-confirm-dialog-layer fixed inset-0 flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
           containerStyle={{ overscrollBehavior: "contain" }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+          }}
         >
           <DialogHeader>
             <DialogTitle>
@@ -1081,6 +1166,33 @@ export function EmailCenter() {
                   {isBulkRecipientMode && bulkRecipientEstimate.error ? (
                     <span className="ml-2 text-xs font-medium text-amber-700">{bulkRecipientEstimate.error}</span>
                   ) : null}
+                  {isBulkRecipientMode && bulkRecipientEstimate.recipients.length > 0 && (
+                    <div className="mt-3 rounded-md border border-slate-200 bg-white shadow-inner">
+                      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Email list
+                        </span>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {formatCount(bulkRecipientEstimate.recipients.length)}
+                        </span>
+                      </div>
+                      <div className="max-h-56 divide-y divide-slate-100 overflow-y-auto">
+                        {bulkRecipientEstimate.recipients.map((recipient) => (
+                          <div
+                            key={`${recipient.email}-${recipient.type || "recipient"}`}
+                            className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] sm:items-center"
+                          >
+                            <span className="truncate text-sm font-semibold text-slate-900">
+                              {recipient.name || "Unnamed recipient"}
+                            </span>
+                            <span className="truncate text-sm text-slate-600 sm:text-right">
+                              {recipient.email}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
 

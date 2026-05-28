@@ -257,8 +257,20 @@ def delete_draft_campaign(campaign_id: str) -> bool:
 
 def list_campaigns(*, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     limit = max(1, min(int(limit or 50), 250))
+    statuses = ["sending", "sent"] if status == "sent" else ([status] if status else [])
     if _using_mysql():
-        if status:
+        if status == "sent":
+            rows = mysql_client.fetch_all(
+                """
+                SELECT *
+                FROM email_campaigns
+                WHERE status IN ('sending', 'sent')
+                ORDER BY created_at DESC
+                LIMIT %(limit)s
+                """,
+                {"limit": limit},
+            )
+        elif status:
             rows = mysql_client.fetch_all(
                 """
                 SELECT *
@@ -283,9 +295,45 @@ def list_campaigns(*, status: Optional[str] = None, limit: int = 50) -> List[Dic
 
     with _JSON_LOCK:
         campaigns = [_normalize_campaign(row) for row in _load_json()["campaigns"]]
-    filtered = [row for row in campaigns if row and (not status or row.get("status") == status)]
+    filtered = [
+        row
+        for row in campaigns
+        if row and (not statuses or row.get("status") in statuses)
+    ]
     filtered.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
     return filtered[:limit]
+
+
+def promote_due_scheduled_campaigns(*, now: Optional[str] = None) -> int:
+    now_iso = now or _now_iso()
+    if _using_mysql():
+        return int(
+            mysql_client.execute(
+                """
+                UPDATE email_campaigns
+                SET status = 'sending'
+                WHERE status = 'scheduled'
+                  AND scheduled_at IS NOT NULL
+                  AND scheduled_at <= %(now)s
+                """,
+                {"now": to_mysql_datetime(now_iso)},
+            )
+            or 0
+        )
+
+    promoted = 0
+    with _JSON_LOCK:
+        store = _load_json()
+        for campaign in store["campaigns"]:
+            if str(campaign.get("status") or "") != "scheduled":
+                continue
+            scheduled_at = str(campaign.get("scheduled_at") or "")
+            if scheduled_at and scheduled_at <= now_iso:
+                campaign["status"] = "sending"
+                promoted += 1
+        if promoted:
+            _save_json(store)
+    return promoted
 
 
 def list_campaign_recipients(campaign_id: str, *, limit: int = 500) -> List[Dict[str, Any]]:

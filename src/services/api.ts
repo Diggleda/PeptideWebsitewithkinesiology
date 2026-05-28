@@ -2009,6 +2009,7 @@ export type EmailCenterCampaign = {
   status?: string;
   recipientCount?: number;
   counts?: Record<string, number>;
+  variables?: Record<string, string>;
   createdAt?: string | null;
   scheduledAt?: string | null;
   sentAt?: string | null;
