@@ -78,6 +78,38 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertNotIn("data:image", rendered["html"])
         self.assertIn("Dr. Ada Lovelace", rendered["plainText"])
 
+    def test_preview_template_rewrites_cids_to_signed_preview_assets(self) -> None:
+        with patch.object(email_campaign_service.email_campaign_repository, "log_event"):
+            rendered = email_campaign_service.preview_template(
+                "delegate_links_announcement",
+                {"doctor_name": "Dr. Ada Lovelace"},
+                admin_id="admin_1",
+                asset_base_url="https://api.example.test/api/admin/email/assets",
+            )
+
+        self.assertIn(
+            'src="https://api.example.test/api/admin/email/assets/trufusion-logo?token=',
+            rendered["html"],
+        )
+        self.assertIn(
+            'src="https://api.example.test/api/admin/email/assets/delegate-links-create-dialog?token=',
+            rendered["html"],
+        )
+        self.assertIn(
+            'src="https://api.example.test/api/admin/email/assets/delegate-links-proposal-session?token=',
+            rendered["html"],
+        )
+        self.assertNotIn('src="cid:trufusion-logo"', rendered["html"])
+        self.assertNotIn("data:image", rendered["html"])
+        self.assertEqual(
+            set(rendered["previewAssetUrls"]),
+            {
+                "trufusion-logo",
+                "delegate-links-create-dialog",
+                "delegate-links-proposal-session",
+            },
+        )
+
     def test_test_send_token_is_required_for_real_campaign(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}
         base_payload = {

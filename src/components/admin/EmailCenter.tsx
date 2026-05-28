@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
-  AlertTriangle,
+  BookmarkIcon,
+  CircleStackIcon,
+  ClockIcon,
+  EnvelopeIcon,
+  ExclamationCircleIcon,
+  RocketLaunchIcon,
+  StrikethroughIcon,
+} from "@heroicons/react/24/outline";
+import {
   CalendarDays,
   CheckCircle2,
-  Clock,
   Eye,
   FileText,
   Mail,
@@ -52,13 +59,13 @@ const RECIPIENT_OPTIONS: Array<{ id: RecipientMode; label: string; description: 
 ];
 
 const CAMPAIGN_TABS = [
-  { id: "new", label: "New Campaign" },
-  { id: "templates", label: "Templates" },
-  { id: "draft", label: "Drafts" },
-  { id: "scheduled", label: "Scheduled" },
-  { id: "sent", label: "Sent" },
-  { id: "failed", label: "Failed Sends" },
-  { id: "logs", label: "Email Logs" },
+  { id: "new", label: "New Campaign", Icon: EnvelopeIcon },
+  { id: "templates", label: "Templates", Icon: StrikethroughIcon },
+  { id: "draft", label: "Drafts", Icon: BookmarkIcon },
+  { id: "scheduled", label: "Scheduled", Icon: ClockIcon },
+  { id: "sent", label: "Sent", Icon: RocketLaunchIcon },
+  { id: "failed", label: "Failed Sends", Icon: ExclamationCircleIcon },
+  { id: "logs", label: "Email Logs", Icon: CircleStackIcon },
 ] as const;
 
 type CampaignTab = (typeof CAMPAIGN_TABS)[number]["id"];
@@ -145,6 +152,39 @@ export function EmailCenter() {
   const [campaigns, setCampaigns] = useState<EmailCenterCampaign[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
   const [campaignError, setCampaignError] = useState<string | null>(null);
+  const emailCenterTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [emailCenterTabIndicator, setEmailCenterTabIndicator] = useState<{
+    left: number;
+    width: number;
+    opacity: number;
+  }>({ left: 0, width: 0, opacity: 0 });
+
+  const updateEmailCenterTabIndicator = useCallback(() => {
+    const container = emailCenterTabsContainerRef.current;
+    if (!container) return;
+    const activeBtn =
+      container.querySelector<HTMLButtonElement>(`button[data-email-center-tab="${activeTab}"]`)
+      || container.querySelector<HTMLButtonElement>("button[data-email-center-tab]");
+    if (!activeBtn) return;
+    const inset = 8;
+    const scrollLeft = container.scrollLeft || 0;
+    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
+    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
+    setEmailCenterTabIndicator({ left, width, opacity: 1 });
+  }, [activeTab]);
+
+  const setEmailCenterTabsContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      emailCenterTabsContainerRef.current = node;
+      if (!node) return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          updateEmailCenterTabIndicator();
+        });
+      });
+    },
+    [updateEmailCenterTabIndicator],
+  );
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) || null,
@@ -203,6 +243,38 @@ export function EmailCenter() {
     void loadTemplates();
     void loadCampaigns();
   }, [loadCampaigns, loadTemplates]);
+
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        updateEmailCenterTabIndicator();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [updateEmailCenterTabIndicator]);
+
+  useEffect(() => {
+    updateEmailCenterTabIndicator();
+    const onResize = () => updateEmailCenterTabIndicator();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [updateEmailCenterTabIndicator]);
+
+  useEffect(() => {
+    const container = emailCenterTabsContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      updateEmailCenterTabIndicator();
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, [updateEmailCenterTabIndicator]);
 
   useEffect(() => {
     if (activeTab === "new" || activeTab === "templates") return;
@@ -331,7 +403,7 @@ export function EmailCenter() {
       ? campaigns.filter((campaign) => campaign.status === status)
       : campaigns;
     return (
-      <div className={clsx(DASHBOARD_PANEL_CLASS, "space-y-3")}>
+      <div className={clsx(DASHBOARD_PANEL_CLASS, "space-y-4")}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 className="text-base font-semibold text-slate-900">
@@ -426,8 +498,8 @@ export function EmailCenter() {
 
   return (
     <section className="admin-tab-panel-enter w-full min-w-0">
-      <div className="space-y-5">
-        <div className={clsx(DASHBOARD_PANEL_CLASS, "flex flex-wrap items-center justify-between gap-3")}>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
           <div>
             <h3 className="text-xl font-semibold text-slate-950">Admin Email Center</h3>
             <p className="text-sm text-slate-600">
@@ -440,38 +512,61 @@ export function EmailCenter() {
           </div>
         </div>
 
-        <div className="rounded-md border border-slate-200/80 bg-white/75 px-3 pt-2 shadow-sm">
-          <div className="flex flex-wrap gap-2 border-b border-slate-200">
-          {CAMPAIGN_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                setActiveTab(tab.id);
-                if (tab.id !== "new" && tab.id !== "templates") {
-                  void loadCampaigns(tab.id);
-                }
-              }}
-              className={clsx(
-                "inline-flex min-h-10 items-center gap-2 border-b-2 px-3 pb-2 pt-1 text-sm font-semibold",
-                activeTab === tab.id
-                  ? "border-slate-950 text-slate-950"
-                  : "border-transparent text-slate-500 hover:text-slate-900",
-              )}
-            >
-              {tab.id === "new" && <Mail className="h-4 w-4" aria-hidden="true" />}
-              {tab.id === "templates" && <FileText className="h-4 w-4" aria-hidden="true" />}
-              {tab.id === "scheduled" && <Clock className="h-4 w-4" aria-hidden="true" />}
-              {tab.id === "sent" && <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-              {tab.id === "failed" && <AlertTriangle className="h-4 w-4" aria-hidden="true" />}
-              {tab.label}
-            </button>
-          ))}
+        <div className="relative mb-3 w-full account-tab-shell">
+          <div
+            className="w-full account-tab-scroll-container"
+            ref={setEmailCenterTabsContainerRef}
+            onScroll={updateEmailCenterTabIndicator}
+          >
+            <div className="flex items-center gap-4 pb-0 account-tab-row">
+              {CAMPAIGN_TABS.map((tab) => {
+                const isActive = activeTab === tab.id;
+                const TabIcon = tab.Icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={clsx(
+                      "relative inline-flex min-h-[2.5rem] items-center gap-2 px-3 pb-1 pt-2 text-sm font-semibold whitespace-nowrap !text-black transition-colors hover:!text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0",
+                      isActive && "!text-black",
+                    )}
+                    data-email-center-tab={tab.id}
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      if (tab.id !== "new" && tab.id !== "templates") {
+                        void loadCampaigns(tab.id);
+                      }
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-2 !text-black" data-email-center-tab-content>
+                      <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-visible">
+                        <TabIcon
+                          className="shrink-0"
+                          aria-hidden="true"
+                          style={{ width: "1.6rem", height: "1.6rem", color: "#000000" }}
+                        />
+                      </span>
+                      <span className="inline-flex items-center !text-black">{tab.label}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+          <span
+            aria-hidden="true"
+            className="account-tab-underline-indicator"
+            style={{
+              left: emailCenterTabIndicator.left,
+              width: emailCenterTabIndicator.width,
+              opacity: emailCenterTabIndicator.opacity,
+            }}
+          />
         </div>
 
         {activeTab === "templates" && (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {templates.map((template) => (
               <article key={template.id} className={clsx(DASHBOARD_PANEL_CLASS, "p-4")}>
                 <div className="flex items-start justify-between gap-3">
@@ -496,8 +591,8 @@ export function EmailCenter() {
         {activeTab !== "new" && activeTab !== "templates" && renderCampaignList(activeTab)}
 
         {activeTab === "new" && (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]">
-            <div className="space-y-5">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]">
+            <div className="space-y-6">
               <section className={DASHBOARD_PANEL_CLASS}>
                 <div className="mb-4 flex items-center gap-2">
                   <FileText className="h-5 w-5 text-slate-700" aria-hidden="true" />
@@ -508,7 +603,7 @@ export function EmailCenter() {
                     {templateError}
                   </div>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <label className={FIELD_SHELL_CLASS}>
                     <span className={FIELD_LABEL_CLASS}>Email type</span>
                     <select
@@ -536,7 +631,7 @@ export function EmailCenter() {
                     </select>
                   </label>
                 </div>
-                <label className={clsx(FIELD_SHELL_CLASS, "mt-3 block")}>
+                <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
                   <span className={FIELD_LABEL_CLASS}>Subject</span>
                   <input
                     value={subject}
@@ -551,7 +646,7 @@ export function EmailCenter() {
                   <Users className="h-5 w-5 text-slate-700" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Recipients</h4>
                 </div>
-                <div className="grid gap-2">
+                <div className="grid gap-4">
                   {RECIPIENT_OPTIONS.map((option) => (
                     <label
                       key={option.id}
@@ -578,7 +673,7 @@ export function EmailCenter() {
                   ))}
                 </div>
                 {recipientMode === "test" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, "mt-3 block")}>
+                  <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
                     <span className={FIELD_LABEL_CLASS}>Test recipient</span>
                     <input
                       value={testEmail}
@@ -589,7 +684,7 @@ export function EmailCenter() {
                   </label>
                 )}
                 {recipientMode === "selected_physician" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, "mt-3 block")}>
+                  <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
                     <span className={FIELD_LABEL_CLASS}>Physician email</span>
                     <input
                       value={selectedPhysicianEmail}
@@ -600,7 +695,7 @@ export function EmailCenter() {
                   </label>
                 )}
                 {recipientMode === "custom" && (
-                  <label className={clsx(FIELD_SHELL_CLASS, "mt-3 block")}>
+                  <label className={clsx(FIELD_SHELL_CLASS, "mt-5 block")}>
                     <span className={FIELD_LABEL_CLASS}>Custom email list</span>
                     <textarea
                       value={customEmails}
@@ -611,7 +706,7 @@ export function EmailCenter() {
                     />
                   </label>
                 )}
-                <div className="mt-3 rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
+                <div className="mt-5 rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
                   Estimated recipients: <span className="font-semibold">{recipientEstimate}</span>
                 </div>
               </section>
@@ -621,7 +716,7 @@ export function EmailCenter() {
                   <Eye className="h-5 w-5 text-slate-700" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Personalization</h4>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-5 sm:grid-cols-2">
                   {getTemplateVariables(selectedTemplate).map((variable) => (
                     <label key={variable} className={FIELD_SHELL_CLASS}>
                       <span className={FIELD_LABEL_CLASS}>
@@ -651,7 +746,7 @@ export function EmailCenter() {
                   <Send className="h-5 w-5 text-slate-700" aria-hidden="true" />
                   <h4 className="text-base font-semibold text-slate-950">Send Controls</h4>
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-5">
                   <label className={FIELD_SHELL_CLASS}>
                     <span className={FIELD_LABEL_CLASS}>Test email address</span>
                     <input
@@ -697,7 +792,7 @@ export function EmailCenter() {
                       className={clsx(INPUT_CLASS, "font-semibold tracking-wide")}
                     />
                   </label>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-4">
                     <button
                       type="button"
                       onClick={() => createCampaign("draft")}

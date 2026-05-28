@@ -30,11 +30,25 @@ def preview_template(template_id: str):
     def action():
         admin = _current_admin()
         variables = {key: value for key, value in request.args.items()}
+        asset_base_url = f"{request.host_url.rstrip('/')}/api/admin/email/assets"
         return email_campaign_service.preview_template(
             template_id,
             variables,
             admin_id=str(admin.get("id") or ""),
+            asset_base_url=asset_base_url,
         )
+
+    return handle_action(action)
+
+
+@blueprint.get("/assets/<content_id>")
+def get_preview_asset(content_id: str):
+    def action():
+        image = email_campaign_service.get_preview_asset(content_id, request.args.get("token"))
+        response = Response(image["data"], mimetype=image["mime_type"])
+        response.headers["Cache-Control"] = "private, max-age=3600"
+        response.headers["Content-Disposition"] = f'inline; filename="{image["filename"]}"'
+        return response
 
     return handle_action(action)
 

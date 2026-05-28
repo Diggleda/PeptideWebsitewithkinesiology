@@ -496,6 +496,20 @@ def _inline_images_for_html(html: str) -> Tuple[Dict[str, Any], ...]:
     )
 
 
+def get_inline_email_image_content_ids() -> Tuple[str, ...]:
+    return tuple(str(spec["content_id"]) for spec in _EMAIL_INLINE_IMAGE_SPECS)
+
+
+def get_inline_email_image(content_id: str) -> Optional[Dict[str, Any]]:
+    normalized = str(content_id or "").strip()
+    if not normalized:
+        return None
+    for image in _load_inline_email_images():
+        if str(image.get("content_id") or "") == normalized:
+            return dict(image)
+    return None
+
+
 def _attach_inline_images_to_message(msg: EmailMessage, html: str) -> None:
     payload = msg.get_payload()
     if not isinstance(payload, list) or not payload:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+import re
 import sys
 import types
+from urllib.parse import urlparse
 from unittest.mock import patch
 
 fake_pymysql = types.ModuleType("pymysql")
@@ -93,6 +95,16 @@ class AdminEmailRouteTests(unittest.TestCase):
         payload = response.get_json()
         self.assertIn("Delegate Links: Extending Physician Reach", payload["html"])
         self.assertIn("Dr. Ada", payload["html"])
+        self.assertIn("/api/admin/email/assets/trufusion-logo?token=", payload["html"])
+        self.assertNotIn('src="cid:trufusion-logo"', payload["html"])
+
+        match = re.search(r'https?://[^"]+/api/admin/email/assets/trufusion-logo\?token=[^"]+', payload["html"])
+        self.assertIsNotNone(match)
+        parsed = urlparse(match.group(0))
+        asset_response = client.get(f"{parsed.path}?{parsed.query}")
+        self.assertEqual(asset_response.status_code, 200)
+        self.assertEqual(asset_response.mimetype, "image/png")
+        self.assertGreater(len(asset_response.get_data()), 0)
 
     def test_campaign_create_route_passes_admin_context(self) -> None:
         with self.app.test_client() as client, patch.object(

@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from ..repositories import email_campaign_repository
 from . import background_job_supervisor, email_service, get_config
@@ -27,6 +27,7 @@ _TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "email_templates"
 _VARIABLE_RE = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _TOKEN_TTL_SECONDS = 60 * 60
+_PREVIEW_ASSET_TOKEN_TTL_SECONDS = 60 * 60
 _TEST_RATE_WINDOW_SECONDS = 15 * 60
 _TEST_RATE_LIMIT = 10
 _TEST_SENDS: Dict[str, List[float]] = {}
@@ -199,6 +200,25 @@ def _verify_test_token(
         raise service_error("Send a new test email after changing variables", 400)
 
 
+def _build_preview_asset_token(content_id: str) -> str:
+    expires_at = int(time.time()) + _PREVIEW_ASSET_TOKEN_TTL_SECONDS
+    return _sign_payload(
+        {
+            "scope": "email_preview_asset",
+            "contentId": str(content_id or "").strip(),
+            "expiresAt": expires_at,
+        }
+    )
+
+
+def _verify_preview_asset_token(content_id: str, token: Any) -> None:
+    payload = _verify_signed_payload(token)
+    if payload.get("scope") != "email_preview_asset":
+        raise service_error("Invalid email preview asset token", 403)
+    if str(payload.get("contentId") or "") != str(content_id or "").strip():
+        raise service_error("Invalid email preview asset token", 403)
+
+
 def _check_test_rate_limit(admin_id: str) -> None:
     now = time.time()
     key = str(admin_id or "unknown")
@@ -307,6 +327,23 @@ def render_email_template(template_id: str, variables: Optional[Dict[str, Any]] 
         "plainText": plain,
         "variables": normalized_variables,
     }
+
+
+def render_preview_html(html_value: str, *, asset_base_url: Optional[str] = None) -> Tuple[str, Dict[str, str]]:
+    base_url = str(asset_base_url or "").strip().rstrip("/")
+    if not base_url:
+        return str(html_value or ""), {}
+    rewritten = str(html_value or "")
+    asset_urls: Dict[str, str] = {}
+    for content_id in email_service.get_inline_email_image_content_ids():
+        cid_reference = f"cid:{content_id}"
+        if cid_reference not in rewritten:
+            continue
+        token = _build_preview_asset_token(content_id)
+        asset_url = f"{base_url}/{quote(content_id, safe='')}?token={quote(token, safe='')}"
+        asset_urls[content_id] = asset_url
+        rewritten = rewritten.replace(cid_reference, html.escape(asset_url, quote=True))
+    return rewritten, asset_urls
 
 
 def _plain_text_from_html(value: str) -> str:
@@ -499,14 +536,37 @@ def _assert_allowed_recipients(template: Dict[str, Any], recipients: List[Dict[s
         raise service_error("Recipient selection produced zero valid recipients", 400)
 
 
-def preview_template(template_id: str, variables: Optional[Dict[str, Any]] = None, *, admin_id: Optional[str] = None) -> Dict[str, Any]:
+def preview_template(
+    template_id: str,
+    variables: Optional[Dict[str, Any]] = None,
+    *,
+    admin_id: Optional[str] = None,
+    asset_base_url: Optional[str] = None,
+) -> Dict[str, Any]:
     rendered = render_email_template(template_id, variables)
+    preview_html, asset_urls = render_preview_html(rendered["html"], asset_base_url=asset_base_url)
+    rendered = {
+        **rendered,
+        "html": preview_html,
+        "previewAssetUrls": asset_urls,
+    }
     email_campaign_repository.log_event(
         event_id=_new_id("evt"),
         event_type="previewed",
         metadata={"templateId": template_id, "adminId": admin_id},
     )
     return rendered
+
+
+def get_preview_asset(content_id: str, token: Any) -> Dict[str, Any]:
+    normalized = str(content_id or "").strip()
+    if normalized not in set(email_service.get_inline_email_image_content_ids()):
+        raise service_error("Email preview asset not found", 404)
+    _verify_preview_asset_token(normalized, token)
+    image = email_service.get_inline_email_image(normalized)
+    if not image:
+        raise service_error("Email preview asset is missing", 404)
+    return image
 
 
 def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[str, Any]:
