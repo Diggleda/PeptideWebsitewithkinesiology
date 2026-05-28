@@ -5255,15 +5255,38 @@ html {
   max-width: 100%;
 }
 
+.sales-doctor-detail-header [data-slot="dialog-title"] {
+  display: block !important;
+  min-height: 0 !important;
+  max-width: 100%;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: none;
+}
+
 .sales-doctor-detail-header-name,
-.sales-doctor-detail-header-email,
+.sales-doctor-detail-header-email {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: none;
+  white-space: normal;
+}
+
 .sales-doctor-detail-header-email a,
 .sales-doctor-detail-header-email span {
   max-width: 100%;
   overflow-wrap: anywhere;
-  word-break: break-word;
-  hyphens: auto;
+  word-break: normal;
+  hyphens: none;
   white-space: normal;
+}
+
+.sales-doctor-detail-header-email {
+  margin-top: 0.25rem;
+  line-height: 1.35;
 }
 
 .sales-doctor-detail-actions {
@@ -11702,7 +11725,9 @@ a[href^="mailto:"]:hover {
   margin: 0 !important;
   max-height: calc(100dvh - 16px);
   max-width: calc(100vw - 16px);
-  overflow-y: auto;
+  border-radius: 24px !important;
+  corner-shape: squircle;
+  overflow: hidden auto;
   pointer-events: auto;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
@@ -13989,13 +14014,13 @@ input[type="checkbox"].checkbox-on-dark:not(.brand-checkbox):checked::after {
 
 .sales-dashboard-draggable-modal-grip {
   position: absolute;
-  top: 0.625rem;
+  top: 0.125rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10060;
   display: flex;
   flex: 0 0 auto;
-  height: 2rem;
+  height: 1.5rem;
   width: min(12rem, 36%);
   min-width: 5rem;
   margin: 0;
@@ -17521,7 +17546,7 @@ button.email-center-home-button[data-slot="button"]:disabled > :is(svg, span) {
 }
 
 .account-modal > .modal-squircle-content {
-  --account-modal-inner-squircle-radius: 1px;
+  --account-modal-inner-squircle-radius: 15px;
   --container-squircle-radius: var(--account-modal-inner-squircle-radius);
   --container-radius: var(--account-modal-inner-squircle-radius);
   --dashboard-squircle-radius: var(--account-modal-inner-squircle-radius);
