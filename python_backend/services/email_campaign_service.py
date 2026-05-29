@@ -412,6 +412,14 @@ def _restore_preview_asset_sources(html_value: str) -> str:
     return restored
 
 
+def _unwrap_preview_variable_markers(html_value: str) -> str:
+    return re.sub(
+        r'(?is)<span\b(?=[^>]*\bdata-email-center-variable=(["\']?)([a-zA-Z0-9_]+)\1)[^>]*>.*?</span>',
+        lambda match: "{{ " + match.group(2) + " }}",
+        str(html_value or ""),
+    )
+
+
 def _restore_variable_placeholders(
     html_value: str,
     template: Dict[str, Any],
@@ -470,6 +478,7 @@ def _normalize_custom_html(
         normalized,
         flags=re.I,
     )
+    normalized = _unwrap_preview_variable_markers(normalized)
     normalized = _restore_preview_asset_sources(normalized)
     if template:
         normalized = _restore_variable_placeholders(normalized, template, variables)

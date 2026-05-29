@@ -283,7 +283,11 @@ const normalizeCustomHtml = (value) => {
     .replace(/<style\b(?=[^>]*data-email-center-preview-(?:containment|editor-style))[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<meta\b(?=[^>]*data-email-center-preview-containment)[^>]*>/gi, '')
     .replace(/\sdata-email-center-(?:edit-target|editing)(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
-    .replace(/\scontenteditable(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '');
+    .replace(/\scontenteditable(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
+    .replace(
+      /<span\b(?=[^>]*\bdata-email-center-variable=(["']?)([a-zA-Z0-9_]+)\1)[^>]*>[\s\S]*?<\/span>/gi,
+      (_match, _quote, variableName) => `{{ ${variableName} }}`,
+    );
 };
 
 const renderEmailTemplate = (templateId, suppliedVariables, customHtml) => {

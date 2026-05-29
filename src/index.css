@@ -17558,6 +17558,28 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
   flex: 0 0 auto;
 }
 
+.email-center-test-send-action-row {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.email-center-test-token-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: rgb(15, 118, 110);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .email-center-test-send-action-row {
+    flex-wrap: wrap;
+  }
+}
+
 button.email-center-home-button,
 button.email-center-home-button[data-slot="button"] {
   border: 2px solid rgb(11, 6, 121) !important;
