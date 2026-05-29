@@ -12,7 +12,6 @@ import {
   StrikethroughIcon,
 } from "@heroicons/react/24/outline";
 import {
-  Eye,
   FileText,
   Mail,
   RefreshCw,
@@ -50,6 +49,15 @@ type RecipientPreview = {
   email: string;
   name?: string;
   type?: string;
+  clinicName?: string;
+  clinic_name?: string;
+  variables?: Record<string, string>;
+};
+
+type PreviewRecipientOption = RecipientPreview & {
+  id: string;
+  label: string;
+  variables: Record<string, string>;
 };
 
 const SAMPLE_VALUES: Record<string, string> = {
@@ -79,13 +87,6 @@ const RECIPIENT_MODE_TO_GROUP: Record<RecipientMode, string> = {
   custom: "custom",
 };
 
-const RECIPIENT_DYNAMIC_VARIABLES = new Set([
-  "doctor_name",
-  "clinic_name",
-  "delegate_links_url",
-  "unsubscribe_url",
-]);
-
 const CAMPAIGN_TABS = [
   { id: "new", label: "New Campaign", Icon: EnvelopeIcon },
   { id: "templates", label: "Templates", Icon: StrikethroughIcon },
@@ -106,14 +107,6 @@ const templateDefaultSubject = (template?: EmailCenterTemplate | null) =>
 
 const getTemplateVariables = (template?: EmailCenterTemplate | null): string[] =>
   Array.isArray(template?.variables) ? template.variables.filter(Boolean) : [];
-
-const getPersonalizationVariables = (template: EmailCenterTemplate | null): string[] => {
-  const templateVariables = getTemplateVariables(template);
-  return templateVariables.filter((variable) => !RECIPIENT_DYNAMIC_VARIABLES.has(variable));
-};
-
-const getDynamicTemplateVariables = (template?: EmailCenterTemplate | null): string[] =>
-  getTemplateVariables(template).filter((variable) => RECIPIENT_DYNAMIC_VARIABLES.has(variable));
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
@@ -154,12 +147,421 @@ const isoToScheduleInput = (value?: string | null) => {
 const DASHBOARD_PANEL_CLASS = "sales-rep-leads-card text-slate-900";
 const FIELD_SHELL_CLASS = "rounded-md border border-slate-200/80 bg-white/85 p-3 shadow-sm";
 const FIELD_LABEL_CLASS = "mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500";
-const FIELD_GRID_CLASS = "grid gap-x-7 gap-y-6 sm:grid-cols-2";
 const FIELD_STACK_CLASS = "grid gap-6";
 const INPUT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const TEXTAREA_CLASS = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const SELECT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-inner outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10";
 const ACTION_SELECT_CLASS = "h-9 min-w-[9.5rem] rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-black shadow-inner outline-none transition hover:border-slate-500 focus:border-slate-500 focus:ring-2 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-50";
+const EMPTY_EMAIL_PREVIEW_HTML = "<!doctype html><html><head></head><body></body></html>";
+const EMAIL_PREVIEW_VARIABLE_VALUES = Object.values(SAMPLE_VALUES).filter(Boolean);
+const RECIPIENT_DYNAMIC_VARIABLE_KEYS = new Set([
+  "doctor_name",
+  "clinic_name",
+  "delegate_links_url",
+  "unsubscribe_url",
+]);
+const EMAIL_PREVIEW_CONTAINMENT_HEAD = `
+<meta data-email-center-preview-containment name="viewport" content="width=device-width, initial-scale=1" />
+<style data-email-center-preview-containment>
+  html,
+  body {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    overflow-x: hidden !important;
+    background: #ffffff !important;
+  }
+  body {
+    display: block !important;
+  }
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box !important;
+  }
+  table,
+  div,
+  td,
+  th,
+  p,
+  a,
+  span,
+  img {
+    max-width: 100% !important;
+  }
+  table[role="presentation"] {
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  body > table {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+  }
+  body > table > tbody > tr > td,
+  body > table > tr > td {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding-left: min(14px, 3vw) !important;
+    padding-right: min(14px, 3vw) !important;
+  }
+  body > table > tbody > tr > td > table,
+  body > table > tr > td > table {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  img,
+  video {
+    height: auto !important;
+  }
+  td,
+  th {
+    overflow-wrap: anywhere !important;
+  }
+</style>`;
+
+const buildEmailPreviewEditorAssets = (variableValues: string[]) => {
+  const lockedVariableValues = Array.from(
+    new Set([...EMAIL_PREVIEW_VARIABLE_VALUES, ...variableValues].map((value) => String(value || "").trim()).filter(Boolean)),
+  );
+
+  return `
+<style data-email-center-preview-editor-style>
+  .email-center-preview-edit-button {
+    align-items: center;
+    background: #0b0679;
+    border: 0;
+    border-radius: 999px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.22);
+    color: #ffffff;
+    cursor: pointer;
+    display: none;
+    height: 34px;
+    justify-content: center;
+    padding: 0;
+    position: fixed;
+    width: 34px;
+    z-index: 2147483647;
+  }
+  .email-center-preview-edit-button svg {
+    height: 17px;
+    pointer-events: none;
+    width: 17px;
+  }
+  [data-email-center-edit-target="true"] {
+    outline: 2px solid rgba(11, 6, 121, 0.42) !important;
+    outline-offset: 3px !important;
+  }
+  [data-email-center-editing="true"] {
+    outline: 2px solid #0b0679 !important;
+    outline-offset: 3px !important;
+  }
+</style>
+<script data-email-center-preview-editor>
+(function () {
+  var MESSAGE_TYPE = "trufusion-email-center-preview-edited";
+  var EDITABLE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,a,span,td,th,img";
+  var VARIABLE_VALUES = ${JSON.stringify(lockedVariableValues)};
+  var VARIABLE_PLACEHOLDER_PATTERN = /{{\\s*[a-zA-Z0-9_]+\\s*}}/;
+  var button = document.createElement("button");
+  var activeTarget = null;
+  var editingTarget = null;
+
+  button.type = "button";
+  button.className = "email-center-preview-edit-button";
+  button.setAttribute("aria-label", "Edit section");
+  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  document.addEventListener("DOMContentLoaded", function () {
+    document.body.appendChild(button);
+  });
+
+  function isInjectedNode(element) {
+    return Boolean(
+      element &&
+      element.closest &&
+      element.closest(".email-center-preview-edit-button,script,style,head,meta")
+    );
+  }
+
+  function containsVariableValue(value) {
+    var text = String(value || "");
+    if (!text) return false;
+    if (VARIABLE_PLACEHOLDER_PATTERN.test(text)) return true;
+    return VARIABLE_VALUES.some(function (variableValue) {
+      return variableValue && text.indexOf(variableValue) !== -1;
+    });
+  }
+
+  function hasTemplateVariable(element) {
+    if (!element) return false;
+    if (element.closest && element.closest("[data-email-center-variable]")) return true;
+    if (containsVariableValue(element.textContent || "")) return true;
+    return ["href", "src", "alt", "title"].some(function (attributeName) {
+      return containsVariableValue(element.getAttribute && element.getAttribute(attributeName));
+    });
+  }
+
+  function hasEditableContent(element) {
+    if (!element || isInjectedNode(element)) return false;
+    if (hasTemplateVariable(element)) return false;
+    if (element.tagName === "IMG") return true;
+    var rect = element.getBoundingClientRect();
+    if (rect.width < 12 || rect.height < 12) return false;
+    return Boolean((element.innerText || element.textContent || "").trim());
+  }
+
+  function findEditableTarget(start) {
+    var element = start && start.nodeType === 1 ? start : start && start.parentElement;
+    while (element && element !== document.documentElement) {
+      if (element.matches && element.matches(EDITABLE_SELECTOR) && hasEditableContent(element)) {
+        return element;
+      }
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  function clearActiveTarget() {
+    if (activeTarget && activeTarget !== editingTarget) {
+      activeTarget.removeAttribute("data-email-center-edit-target");
+    }
+    activeTarget = null;
+    button.style.display = "none";
+  }
+
+  function positionButton(target) {
+    var rect = target.getBoundingClientRect();
+    var top = Math.max(8, Math.min(window.innerHeight - 42, rect.top + 8));
+    var left = Math.max(8, Math.min(window.innerWidth - 42, rect.right - 42));
+    button.style.top = top + "px";
+    button.style.left = left + "px";
+    button.style.display = "inline-flex";
+  }
+
+  function setActiveTarget(target) {
+    if (!target || target === activeTarget) {
+      if (target) positionButton(target);
+      return;
+    }
+    if (activeTarget && activeTarget !== editingTarget) {
+      activeTarget.removeAttribute("data-email-center-edit-target");
+    }
+    activeTarget = target;
+    if (activeTarget !== editingTarget) {
+      activeTarget.setAttribute("data-email-center-edit-target", "true");
+    }
+    positionButton(activeTarget);
+  }
+
+  function cleanHtml() {
+    var clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll(".email-center-preview-edit-button,[data-email-center-preview-editor],style[data-email-center-preview-editor-style],style[data-email-center-preview-containment],meta[data-email-center-preview-containment]").forEach(function (node) {
+      node.remove();
+    });
+    clone.querySelectorAll("[data-email-center-edit-target],[data-email-center-editing],[contenteditable]").forEach(function (node) {
+      node.removeAttribute("data-email-center-edit-target");
+      node.removeAttribute("data-email-center-editing");
+      node.removeAttribute("contenteditable");
+    });
+    return "<!DOCTYPE html>\\n" + clone.outerHTML;
+  }
+
+  function postHtmlUpdate() {
+    window.parent.postMessage({ type: MESSAGE_TYPE, html: cleanHtml() }, "*");
+  }
+
+  function selectTargetContents(target) {
+    var selection = window.getSelection();
+    if (!selection) return;
+    var range = document.createRange();
+    range.selectNodeContents(target);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function stopEditing() {
+    if (!editingTarget) return;
+    editingTarget.removeAttribute("contenteditable");
+    editingTarget.removeAttribute("data-email-center-editing");
+    if (editingTarget !== activeTarget) {
+      editingTarget.removeAttribute("data-email-center-edit-target");
+    }
+    editingTarget = null;
+    postHtmlUpdate();
+  }
+
+  function startEditing(target) {
+    if (!target) return;
+    if (target.tagName === "IMG") {
+      var nextSrc = window.prompt("Image URL", target.getAttribute("src") || "");
+      if (nextSrc !== null && nextSrc.trim()) {
+        target.setAttribute("src", nextSrc.trim());
+      }
+      var nextAlt = window.prompt("Image alt text", target.getAttribute("alt") || "");
+      if (nextAlt !== null) {
+        target.setAttribute("alt", nextAlt);
+      }
+      postHtmlUpdate();
+      return;
+    }
+    if (target.tagName === "A") {
+      var nextHref = window.prompt("Link URL", target.getAttribute("href") || "");
+      if (nextHref !== null) {
+        target.setAttribute("href", nextHref.trim());
+      }
+    }
+    stopEditing();
+    editingTarget = target;
+    editingTarget.setAttribute("contenteditable", "true");
+    editingTarget.setAttribute("data-email-center-editing", "true");
+    editingTarget.setAttribute("data-email-center-edit-target", "true");
+    editingTarget.focus({ preventScroll: true });
+    selectTargetContents(editingTarget);
+  }
+
+  document.addEventListener("mousemove", function (event) {
+    if (editingTarget || event.target === button || button.contains(event.target)) return;
+    var target = findEditableTarget(event.target);
+    if (target) {
+      setActiveTarget(target);
+    } else {
+      clearActiveTarget();
+    }
+  });
+
+  document.addEventListener("mouseleave", function () {
+    if (!editingTarget) clearActiveTarget();
+  });
+
+  document.addEventListener("input", function () {
+    if (editingTarget) postHtmlUpdate();
+  }, true);
+
+  document.addEventListener("keydown", function (event) {
+    if (!editingTarget) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      stopEditing();
+      clearActiveTarget();
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      stopEditing();
+    }
+  });
+
+  document.addEventListener("focusout", function (event) {
+    if (editingTarget && !editingTarget.contains(event.relatedTarget)) {
+      window.setTimeout(stopEditing, 0);
+    }
+  }, true);
+
+  button.addEventListener("click", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    startEditing(activeTarget);
+  });
+})();
+</script>`;
+};
+
+const buildEmailPreviewSrcDoc = (
+  html: string,
+  options: { editable?: boolean; variableValues?: string[] } = {},
+) => {
+  const source = html.trim() || EMPTY_EMAIL_PREVIEW_HTML;
+  const headAssets = options.editable
+    ? `${EMAIL_PREVIEW_CONTAINMENT_HEAD}${buildEmailPreviewEditorAssets(options.variableValues || [])}`
+    : EMAIL_PREVIEW_CONTAINMENT_HEAD;
+  let nextSource = source;
+  if (/<\/head\s*>/i.test(source)) {
+    nextSource = source.replace(/<\/head\s*>/i, `${headAssets}</head>`);
+  } else if (/<html[^>]*>/i.test(source)) {
+    nextSource = source.replace(/<html([^>]*)>/i, `<html$1><head>${headAssets}</head>`);
+  } else {
+    nextSource = `<!doctype html><html><head>${headAssets}</head><body>${source}</body></html>`;
+  }
+  return nextSource;
+};
+
+const parseRecipientEmails = (value: string) =>
+  Array.from(
+    new Set(
+      value
+        .split(/[\s,;]+/)
+        .map((entry) => entry.trim().toLowerCase())
+        .filter((entry) => entry.includes("@")),
+    ),
+  );
+
+const firstText = (...values: unknown[]) =>
+  values
+    .map((value) => String(value || "").trim())
+    .find(Boolean) || "";
+
+const getRecipientClinicName = (recipient: RecipientPreview) =>
+  firstText(
+    (recipient as any).clinicName,
+    (recipient as any).clinic_name,
+    (recipient as any).officeName,
+    (recipient as any).office_name,
+    (recipient as any).practiceName,
+    (recipient as any).practice_name,
+    (recipient as any).companyName,
+    (recipient as any).company_name,
+    (recipient as any).company,
+    (recipient as any).npiClinicName,
+    (recipient as any).npi_clinic_name,
+  );
+
+const previewVariablesForRecipient = (recipient: RecipientPreview): Record<string, string> => {
+  const type = String(recipient.type || "").trim().toLowerCase();
+  const name = String(recipient.name || "").trim();
+  const email = String(recipient.email || "").trim();
+  const suppliedVariables = recipient.variables && typeof recipient.variables === "object" ? recipient.variables : {};
+  const isSample = type === "sample";
+  const defaultName = isSample
+    ? SAMPLE_VALUES.doctor_name
+    : type === "physician" || type === "doctor"
+      ? "Doctor"
+      : "there";
+  return {
+    doctor_name: suppliedVariables.doctor_name || name || defaultName,
+    clinic_name: suppliedVariables.clinic_name || getRecipientClinicName(recipient) || (isSample ? SAMPLE_VALUES.clinic_name : "your practice"),
+    delegate_links_url: suppliedVariables.delegate_links_url || SAMPLE_VALUES.delegate_links_url,
+    unsubscribe_url: suppliedVariables.unsubscribe_url || (email
+      ? `${SAMPLE_VALUES.unsubscribe_url}&email=${encodeURIComponent(email)}`
+      : SAMPLE_VALUES.unsubscribe_url),
+  };
+};
+
+const previewRecipientLabel = (recipient: RecipientPreview) => {
+  const name = String(recipient.name || "").trim();
+  const email = String(recipient.email || "").trim();
+  if (name && email) return `${name} (${email})`;
+  return email || name || "Sample recipient";
+};
+
+const toPreviewRecipientOption = (
+  recipient: RecipientPreview,
+  idPrefix: string,
+  index: number,
+): PreviewRecipientOption => {
+  const email = String(recipient.email || "").trim();
+  const name = String(recipient.name || "").trim();
+  const type = String(recipient.type || "").trim() || "custom";
+  const normalized: RecipientPreview = { ...recipient, email, name, type };
+  return {
+    ...normalized,
+    id: `${idPrefix}:${email || name || index}`,
+    label: previewRecipientLabel(normalized),
+    variables: previewVariablesForRecipient(normalized),
+  };
+};
 
 const getCampaignProgress = (campaign: EmailCenterCampaign) => {
   const counts = campaign.counts || {};
@@ -206,6 +608,7 @@ export function EmailCenter() {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("test");
+  const [previewRecipientKey, setPreviewRecipientKey] = useState("test:sample");
   const [testEmail, setTestEmail] = useState("");
   const [selectedPhysicianEmail, setSelectedPhysicianEmail] = useState("");
   const [customEmails, setCustomEmails] = useState("");
@@ -231,11 +634,25 @@ export function EmailCenter() {
   }>({ count: null, recipients: [], loading: false, error: null });
   const emailCenterRootRef = useRef<HTMLElement | null>(null);
   const emailCenterTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const editablePreviewFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const editedPreviewHtmlRef = useRef("");
+  const pendingDraftCustomHtmlRef = useRef("");
+  const [previewEdited, setPreviewEdited] = useState(false);
   const [emailCenterTabIndicator, setEmailCenterTabIndicator] = useState<{
     left: number;
     width: number;
     opacity: number;
   }>({ left: 0, width: 0, opacity: 0 });
+
+  const resetPreviewEdits = useCallback(() => {
+    editedPreviewHtmlRef.current = "";
+    setPreviewEdited(false);
+  }, []);
+
+  const getCustomHtmlOverride = useCallback(
+    () => (previewEdited ? editedPreviewHtmlRef.current.trim() : ""),
+    [previewEdited],
+  );
 
   const updateEmailCenterTabIndicator = useCallback(() => {
     const container = emailCenterTabsContainerRef.current;
@@ -264,6 +681,20 @@ export function EmailCenter() {
     [updateEmailCenterTabIndicator],
   );
 
+  useEffect(() => {
+    const handlePreviewEditorMessage = (event: MessageEvent) => {
+      if (event.source !== editablePreviewFrameRef.current?.contentWindow) return;
+      const data = event.data as { type?: string; html?: unknown } | null;
+      if (!data || data.type !== "trufusion-email-center-preview-edited") return;
+      editedPreviewHtmlRef.current = String(data.html || "");
+      setPreviewEdited(true);
+      setTestToken("");
+      setTestTokenExpiresAt(null);
+    };
+    window.addEventListener("message", handlePreviewEditorMessage);
+    return () => window.removeEventListener("message", handlePreviewEditorMessage);
+  }, []);
+
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) || null,
     [selectedTemplateId, templates],
@@ -284,16 +715,6 @@ export function EmailCenter() {
     [selectedType, templates],
   );
 
-  const personalizationVariables = useMemo(
-    () => getPersonalizationVariables(selectedTemplate),
-    [selectedTemplate],
-  );
-
-  const dynamicTemplateVariables = useMemo(
-    () => getDynamicTemplateVariables(selectedTemplate),
-    [selectedTemplate],
-  );
-
   const effectiveTestRecipientEmail = useMemo(
     () => testEmail.trim() || testRecipientEmail.trim(),
     [testEmail, testRecipientEmail],
@@ -301,6 +722,73 @@ export function EmailCenter() {
 
   const isBulkRecipientMode = recipientMode === "all_verified_physicians" || recipientMode === "sales_reps";
   const requiresPreflightTest = recipientMode !== "test";
+
+  const previewRecipientOptions = useMemo(() => {
+    let recipients: RecipientPreview[] = [];
+    if (recipientMode === "test") {
+      const email = effectiveTestRecipientEmail.trim();
+      if (email) {
+        recipients = [{ email, name: "Test Recipient", type: "test" }];
+      }
+    } else if (recipientMode === "selected_physician") {
+      const email = selectedPhysicianEmail.trim();
+      if (email) {
+        recipients = [{ email, type: "physician" }];
+      }
+    } else if (recipientMode === "custom") {
+      recipients = parseRecipientEmails(customEmails).map((email) => ({ email, type: "custom" }));
+    } else if (isBulkRecipientMode) {
+      recipients = bulkRecipientEstimate.recipients;
+    }
+
+    if (recipients.length === 0) {
+      recipients = [{ email: "", name: SAMPLE_VALUES.doctor_name, type: "sample" }];
+    }
+
+    return recipients.map((recipient, index) => toPreviewRecipientOption(recipient, recipientMode, index));
+  }, [
+    bulkRecipientEstimate.recipients,
+    customEmails,
+    effectiveTestRecipientEmail,
+    isBulkRecipientMode,
+    recipientMode,
+    selectedPhysicianEmail,
+  ]);
+
+  useEffect(() => {
+    if (previewRecipientOptions.some((option) => option.id === previewRecipientKey)) {
+      return;
+    }
+    setPreviewRecipientKey(previewRecipientOptions[0]?.id || "test:sample");
+  }, [previewRecipientKey, previewRecipientOptions]);
+
+  const selectedPreviewRecipient = useMemo(
+    () => previewRecipientOptions.find((option) => option.id === previewRecipientKey) || previewRecipientOptions[0] || null,
+    [previewRecipientKey, previewRecipientOptions],
+  );
+
+  const previewVariables = useMemo(() => {
+    const nextVariables = { ...variables };
+    const templateVariables = new Set(getTemplateVariables(selectedTemplate));
+    const selectedVariables = selectedPreviewRecipient?.variables || {};
+    Array.from(RECIPIENT_DYNAMIC_VARIABLE_KEYS).forEach((key) => {
+      if (templateVariables.has(key) && selectedVariables[key]) {
+        nextVariables[key] = selectedVariables[key];
+      }
+    });
+    return nextVariables;
+  }, [selectedPreviewRecipient, selectedTemplate, variables]);
+
+  const previewVariableValues = useMemo(
+    () => Object.values(previewVariables).map((value) => String(value || "").trim()).filter(Boolean),
+    [previewVariables],
+  );
+
+  const templatePreviewSrcDoc = useMemo(() => buildEmailPreviewSrcDoc(previewHtml), [previewHtml]);
+  const editablePreviewSrcDoc = useMemo(
+    () => buildEmailPreviewSrcDoc(previewHtml, { editable: true, variableValues: previewVariableValues }),
+    [previewHtml, previewVariableValues],
+  );
 
   const recipientEstimate = useMemo(() => {
     if (recipientMode === "test") return effectiveTestRecipientEmail ? "1" : "0";
@@ -463,6 +951,12 @@ export function EmailCenter() {
                   email: String(recipient?.email || "").trim(),
                   name: String(recipient?.name || "").trim(),
                   type: String(recipient?.type || "").trim(),
+                  clinicName: String(recipient?.clinicName || recipient?.clinic_name || "").trim(),
+                  variables: recipient?.variables && typeof recipient.variables === "object"
+                    ? Object.fromEntries(
+                        Object.entries(recipient.variables).map(([key, value]) => [key, String(value || "")]),
+                      )
+                    : undefined,
                 }))
                 .filter((recipient: RecipientPreview) => recipient.email)
             : [];
@@ -492,6 +986,7 @@ export function EmailCenter() {
 
   useEffect(() => {
     if (!selectedTemplate) return;
+    resetPreviewEdits();
     const nextVariables: Record<string, string> = {};
     getTemplateVariables(selectedTemplate).forEach((variable) => {
       nextVariables[variable] = SAMPLE_VALUES[variable] || "";
@@ -502,7 +997,7 @@ export function EmailCenter() {
     setTestTokenExpiresAt(null);
     setConfirmationText("");
     setScheduledAt("");
-  }, [selectedTemplate]);
+  }, [resetPreviewEdits, selectedTemplate]);
 
   useEffect(() => {
     if (allowedRecipientOptions.some((option) => option.id === recipientMode)) {
@@ -546,9 +1041,18 @@ export function EmailCenter() {
     const timer = window.setTimeout(() => {
       setPreviewLoading(true);
       void emailCenterAPI
-        .previewTemplate(selectedTemplateId, variables)
+        .previewTemplate(selectedTemplateId, previewVariables)
         .then((response: any) => {
           if (!active) return;
+          const pendingDraftCustomHtml = pendingDraftCustomHtmlRef.current.trim();
+          if (pendingDraftCustomHtml) {
+            pendingDraftCustomHtmlRef.current = "";
+            editedPreviewHtmlRef.current = pendingDraftCustomHtml;
+            setPreviewEdited(true);
+            setPreviewHtml(pendingDraftCustomHtml);
+            return;
+          }
+          resetPreviewEdits();
           setPreviewHtml(String(response?.html || ""));
         })
         .catch((error) => {
@@ -564,11 +1068,7 @@ export function EmailCenter() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [selectedTemplateId, variables]);
-
-  const updateVariable = (key: string, value: string) => {
-    setVariables((current) => ({ ...current, [key]: value }));
-  };
+  }, [previewVariables, resetPreviewEdits, selectedTemplateId]);
 
   const selectTemplate = (templateId: string) => {
     const template = templates.find((entry) => entry.id === templateId);
@@ -603,10 +1103,12 @@ export function EmailCenter() {
     if (sendingTest) return;
     setSendingTest(true);
     try {
+      const customHtml = getCustomHtmlOverride();
       const response = (await emailCenterAPI.sendTest({
         templateId: selectedTemplate.id,
         subject,
-        variables,
+        variables: previewVariables,
+        customHtml: customHtml || undefined,
         recipientEmail: testRecipientEmail,
       })) as any;
       setTestToken(String(response?.testToken || ""));
@@ -665,10 +1167,12 @@ export function EmailCenter() {
     };
     setSavingCampaign(true);
     try {
+      const customHtml = getCustomHtmlOverride();
       await emailCenterAPI.createCampaign({
         templateId: selectedTemplate.id,
         subject,
-        variables,
+        variables: previewVariables,
+        customHtml: customHtml || undefined,
         recipientSelection: buildRecipientSelection(),
         status: mode === "draft" ? "draft" : undefined,
         scheduledAt: scheduleIso,
@@ -721,6 +1225,7 @@ export function EmailCenter() {
       toast.error("Draft template is not available in the approved manifest.");
       return;
     }
+    pendingDraftCustomHtmlRef.current = String(campaign.customHtml || "");
     setPendingPreparedDraft(campaign);
     setSelectedType(templateCampaignType(template) || selectedType);
     setSelectedTemplateId(template.id);
@@ -1100,8 +1605,8 @@ export function EmailCenter() {
               <iframe
                 title="Email template HTML preview"
                 sandbox=""
-                srcDoc={previewHtml || "<!doctype html><html><body></body></html>"}
-                className="h-[760px] w-full rounded-md border border-slate-300 bg-white shadow-inner"
+                srcDoc={templatePreviewSrcDoc}
+                className="email-center-preview-frame email-center-preview-frame--templates rounded-md border border-slate-300 bg-white shadow-inner"
               />
             </section>
           </div>
@@ -1247,50 +1752,6 @@ export function EmailCenter() {
                 </div>
               </section>
 
-              <section className={DASHBOARD_PANEL_CLASS}>
-                <div className="mb-4 flex items-center gap-2">
-                  <Eye className="h-5 w-5 text-slate-950" aria-hidden="true" />
-                  <h4 className="text-base font-semibold text-slate-950">Personalization</h4>
-                </div>
-                {personalizationVariables.length === 0 ? (
-                  <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-600 shadow-sm">
-                    This template uses recipient details automatically for the selected audience.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {dynamicTemplateVariables.length > 0 && (
-                      <div className="rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
-                        <span className="font-semibold text-slate-900">Recipient data:</span>{" "}
-                        {dynamicTemplateVariables.map((variable) => variable.replace(/_/g, " ")).join(", ")}
-                      </div>
-                    )}
-                    <div className={FIELD_GRID_CLASS}>
-                      {personalizationVariables.map((variable) => (
-                        <label key={variable} className={FIELD_SHELL_CLASS}>
-                          <span className={FIELD_LABEL_CLASS}>
-                            {variable.replace(/_/g, " ")}
-                          </span>
-                          {variable === "message_body" ? (
-                            <textarea
-                              value={variables[variable] || ""}
-                              onChange={(event) => updateVariable(variable, event.target.value)}
-                              rows={4}
-                              className={TEXTAREA_CLASS}
-                            />
-                          ) : (
-                            <input
-                              value={variables[variable] || ""}
-                              onChange={(event) => updateVariable(variable, event.target.value)}
-                              className={INPUT_CLASS}
-                            />
-                          )}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </section>
-
               {requiresPreflightTest && (
                 <section className={DASHBOARD_PANEL_CLASS}>
                   <div className="mb-4 flex items-center gap-2">
@@ -1338,11 +1799,31 @@ export function EmailCenter() {
                     </div>
                     {previewLoading && <RefreshCw className="h-4 w-4 animate-spin text-slate-400" aria-hidden="true" />}
                   </div>
+                  <label className="mb-3 block rounded-md border border-slate-200/80 bg-white/85 p-3 shadow-sm">
+                    <span className={FIELD_LABEL_CLASS}>Preview recipient</span>
+                    <select
+                      value={selectedPreviewRecipient?.id || ""}
+                      onChange={(event) => setPreviewRecipientKey(event.target.value)}
+                      className={SELECT_CLASS}
+                    >
+                      {previewRecipientOptions.map((recipient) => (
+                        <option key={recipient.id} value={recipient.id}>
+                          {recipient.label}
+                        </option>
+                      ))}
+                    </select>
+                    {isBulkRecipientMode && bulkRecipientEstimate.loading && (
+                      <span className="mt-2 block text-xs font-medium text-slate-500">
+                        Loading recipients...
+                      </span>
+                    )}
+                  </label>
                   <iframe
+                    ref={editablePreviewFrameRef}
                     title="Email template preview"
-                    sandbox=""
-                    srcDoc={previewHtml || "<!doctype html><html><body></body></html>"}
-                    className="email-center-preview-frame rounded-md border border-slate-300 bg-white shadow-inner"
+                    sandbox="allow-scripts allow-modals"
+                    srcDoc={editablePreviewSrcDoc}
+                    className="email-center-preview-frame email-center-preview-frame--send rounded-md border border-slate-300 bg-white shadow-inner"
                   />
                 </section>
 

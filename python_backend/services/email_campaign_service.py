@@ -32,6 +32,8 @@ _TEST_RATE_WINDOW_SECONDS = 15 * 60
 _TEST_RATE_LIMIT = 10
 _TEST_SENDS: Dict[str, List[float]] = {}
 _TEST_SENDS_LOCK = threading.Lock()
+_CUSTOM_HTML_VARIABLE_KEY = "__email_center_custom_html"
+_MAX_CUSTOM_HTML_LENGTH = 500_000
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
@@ -158,6 +160,10 @@ def _variables_digest(variables: Dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_json(variables).encode("utf-8")).hexdigest()
 
 
+def _custom_html_digest(custom_html: Optional[str]) -> str:
+    return hashlib.sha256(str(custom_html or "").encode("utf-8")).hexdigest()
+
+
 def _sign_payload(payload: Dict[str, Any]) -> str:
     raw = _canonical_json(payload).encode("utf-8")
     body = _base64_url_encode(raw)
@@ -183,13 +189,21 @@ def _verify_signed_payload(token: Any, *, require_expiry: bool = True) -> Dict[s
     return payload
 
 
-def _build_test_token(*, admin_id: str, template_id: str, subject: str, variables: Dict[str, Any]) -> Tuple[str, str]:
+def _build_test_token(
+    *,
+    admin_id: str,
+    template_id: str,
+    subject: str,
+    variables: Dict[str, Any],
+    custom_html: Optional[str] = None,
+) -> Tuple[str, str]:
     expires_at = int(time.time()) + _TOKEN_TTL_SECONDS
     payload = {
         "adminId": admin_id,
         "templateId": template_id,
         "subject": subject,
         "variablesDigest": _variables_digest(variables),
+        "customHtmlDigest": _custom_html_digest(custom_html),
         "expiresAt": expires_at,
     }
     expires_iso = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat().replace("+00:00", "Z")
@@ -203,6 +217,7 @@ def _verify_test_token(
     template_id: str,
     subject: str,
     variables: Dict[str, Any],
+    custom_html: Optional[str] = None,
 ) -> None:
     payload = _verify_signed_payload(token)
     if str(payload.get("adminId") or "") != str(admin_id or ""):
@@ -213,6 +228,8 @@ def _verify_test_token(
         raise service_error("Send a new test email after changing the subject", 400)
     if str(payload.get("variablesDigest") or "") != _variables_digest(variables):
         raise service_error("Send a new test email after changing variables", 400)
+    if str(payload.get("customHtmlDigest") or _custom_html_digest("")) != _custom_html_digest(custom_html):
+        raise service_error("Send a new test email after changing the HTML preview", 400)
 
 
 def _build_preview_asset_token(content_id: str) -> str:
@@ -368,6 +385,121 @@ def render_preview_html(html_value: str, *, asset_base_url: Optional[str] = None
         asset_urls[content_id] = asset_url
         rewritten = rewritten.replace(cid_reference, html.escape(asset_url, quote=True))
     return rewritten, asset_urls
+
+
+def _strip_campaign_reserved_variables(variables: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in dict(variables or {}).items()
+        if key != _CUSTOM_HTML_VARIABLE_KEY
+    }
+
+
+def _restore_preview_asset_sources(html_value: str) -> str:
+    restored = str(html_value or "")
+    for content_id in email_service.get_inline_email_image_content_ids():
+        escaped_id = re.escape(quote(content_id, safe=""))
+        restored = re.sub(
+            rf"(?i)https?://[^\"'<>\s]+/api/admin/email/assets/{escaped_id}(?:\?[^\"'<>\s]*)?",
+            f"cid:{content_id}",
+            restored,
+        )
+        restored = re.sub(
+            rf"(?i)/api/admin/email/assets/{escaped_id}(?:\?[^\"'<>\s]*)?",
+            f"cid:{content_id}",
+            restored,
+        )
+    return restored
+
+
+def _restore_variable_placeholders(
+    html_value: str,
+    template: Dict[str, Any],
+    variables: Optional[Dict[str, Any]],
+) -> str:
+    restored = str(html_value or "")
+    supplied = variables if isinstance(variables, dict) else {}
+    for variable_name in template.get("variables") or []:
+        value = str(supplied.get(variable_name) or _SAMPLE_VARIABLES.get(variable_name) or "")
+        if not value:
+            continue
+        placeholder = "{{ " + str(variable_name) + " }}"
+        candidates = {
+            value,
+            html.escape(value, quote=False),
+            html.escape(value, quote=True),
+        }
+        for candidate in sorted(candidates, key=len, reverse=True):
+            if candidate:
+                restored = restored.replace(candidate, placeholder)
+    return restored
+
+
+def _normalize_custom_html(
+    value: Any,
+    *,
+    template: Optional[Dict[str, Any]] = None,
+    variables: Optional[Dict[str, Any]] = None,
+) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    if len(normalized) > _MAX_CUSTOM_HTML_LENGTH:
+        raise service_error("Custom email HTML is too large", 400)
+    normalized = re.sub(r"(?is)<script\b[^>]*>.*?</script>", "", normalized)
+    normalized = re.sub(
+        r'(?is)<style\b(?=[^>]*data-email-center-preview-(?:containment|editor-style))[^>]*>.*?</style>',
+        "",
+        normalized,
+    )
+    normalized = re.sub(
+        r'(?is)<meta\b(?=[^>]*data-email-center-preview-containment)[^>]*>',
+        "",
+        normalized,
+    )
+    normalized = re.sub(
+        r'\sdata-email-center-(?:edit-target|editing)(?:=(?:"[^"]*"|\'[^\']*\'|[^\s>]+))?',
+        "",
+        normalized,
+    )
+    normalized = re.sub(
+        r'\scontenteditable(?:=(?:"[^"]*"|\'[^\']*\'|[^\s>]+))?',
+        "",
+        normalized,
+        flags=re.I,
+    )
+    normalized = _restore_preview_asset_sources(normalized)
+    if template:
+        normalized = _restore_variable_placeholders(normalized, template, variables)
+    return normalized
+
+
+def render_campaign_html(
+    template_id: str,
+    variables: Optional[Dict[str, Any]] = None,
+    *,
+    custom_html: Optional[str] = None,
+) -> Dict[str, Any]:
+    if not custom_html:
+        return render_email_template(template_id, variables)
+    template = get_template(template_id)
+    normalized_variables = normalize_variables(template, variables)
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name not in normalized_variables:
+            return ""
+        return _safe_text(normalized_variables.get(name))
+
+    rendered = _VARIABLE_RE.sub(replace, str(custom_html or ""))
+    return {
+        "template": template,
+        "html": rendered,
+        "plainText": _plain_text_from_html(rendered),
+        "variables": normalized_variables,
+    }
 
 
 def _plain_text_from_html(value: str) -> str:
@@ -675,17 +807,22 @@ def estimate_recipients(payload: Dict[str, Any]) -> Dict[str, Any]:
         group = mode_to_group.get(mode)
         if group and allowed and group not in allowed:
             raise service_error("This template is not approved for the selected recipient group", 400)
-    return {
-        "mode": mode,
-        "recipientCount": len(recipients),
-        "recipients": [
+    recipient_payloads = []
+    for recipient in recipients:
+        preview_variables = _base_variables_for_recipient(recipient)
+        recipient_payloads.append(
             {
                 "email": recipient.get("email"),
                 "name": recipient.get("name") or "",
                 "type": recipient.get("type") or "",
+                "clinicName": preview_variables.get("clinic_name") or "",
+                "variables": preview_variables,
             }
-            for recipient in recipients
-        ],
+        )
+    return {
+        "mode": mode,
+        "recipientCount": len(recipients),
+        "recipients": recipient_payloads,
     }
 
 
@@ -729,13 +866,14 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     recipient_email = _require_email(payload.get("recipientEmail") or payload.get("recipient_email"))
     subject = str(payload.get("subject") or template.get("default_subject") or "Message from TrufusionLabs").strip()
     variables = normalize_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
+    custom_html = _normalize_custom_html(payload.get("customHtml") or payload.get("custom_html"), template=template, variables=variables)
     token_variables = _campaign_variables(template, variables)
     variables.update(
         {
             "unsubscribe_url": build_unsubscribe_url(recipient_email),
         }
     )
-    rendered = render_email_template(str(template["id"]), variables)
+    rendered = render_campaign_html(str(template["id"]), variables, custom_html=custom_html)
     email_service.send_campaign_test_email(
         recipient_email,
         f"[TEST] {subject}",
@@ -757,6 +895,7 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         template_id=str(template["id"]),
         subject=subject,
         variables=token_variables,
+        custom_html=custom_html,
     )
     return {
         "ok": True,
@@ -769,6 +908,9 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
 
 def _campaign_to_api(campaign: Dict[str, Any]) -> Dict[str, Any]:
     counts = email_campaign_repository.count_recipients_by_status(str(campaign.get("id") or ""))
+    variables = dict(campaign.get("variables_json") or {})
+    custom_html = str(variables.pop(_CUSTOM_HTML_VARIABLE_KEY, "") or "")
+    variables = _strip_campaign_reserved_variables(variables)
     return {
         "id": campaign.get("id"),
         "campaignType": campaign.get("campaign_type"),
@@ -778,7 +920,8 @@ def _campaign_to_api(campaign: Dict[str, Any]) -> Dict[str, Any]:
         "status": campaign.get("status"),
         "recipientCount": int(campaign.get("recipient_count") or 0),
         "counts": counts,
-        "variables": campaign.get("variables_json") or {},
+        "variables": variables,
+        "customHtml": custom_html or None,
         "createdAt": campaign.get("created_at"),
         "scheduledAt": campaign.get("scheduled_at"),
         "sentAt": campaign.get("sent_at"),
@@ -806,7 +949,13 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     requested_status = str(payload.get("status") or "").strip().lower()
     save_as_draft = requested_status == "draft" or bool(payload.get("saveDraft"))
     scheduled_at = _parse_iso(payload.get("scheduledAt") or payload.get("scheduled_at"))
-    variables = _campaign_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
+    normalized_variables = normalize_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
+    custom_html = _normalize_custom_html(
+        payload.get("customHtml") or payload.get("custom_html"),
+        template=template,
+        variables=normalized_variables,
+    )
+    variables = _campaign_variables(template, normalized_variables)
     recipient_selection = payload.get("recipientSelection") or payload.get("recipient_selection")
     recipients = _estimate_draft_recipients(recipient_selection) if save_as_draft else resolve_recipients(recipient_selection)
     selection_for_mode = recipient_selection if isinstance(recipient_selection, dict) else {}
@@ -823,6 +972,7 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
                 template_id=str(template["id"]),
                 subject=subject,
                 variables=variables,
+                custom_html=custom_html,
             )
 
     now_iso = _now_iso()
@@ -836,7 +986,10 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         "created_by_admin_id": str(admin.get("id") or ""),
         "status": status,
         "recipient_count": len(recipients),
-        "variables_json": variables,
+        "variables_json": {
+            **variables,
+            **({_CUSTOM_HTML_VARIABLE_KEY: custom_html} if custom_html else {}),
+        },
         "created_at": now_iso,
         "scheduled_at": scheduled_at.isoformat().replace("+00:00", "Z") if scheduled_at else None,
         "sent_at": None,
@@ -969,11 +1122,13 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
             )
             continue
         try:
+            campaign_variables = dict(job.get("campaign_variables_json") or {})
+            custom_html = str(campaign_variables.pop(_CUSTOM_HTML_VARIABLE_KEY, "") or "")
             variables = {
-                **dict(job.get("campaign_variables_json") or {}),
+                **campaign_variables,
                 **dict(job.get("recipient_variables_json") or {}),
             }
-            rendered = render_email_template(str(job.get("template_id") or ""), variables)
+            rendered = render_campaign_html(str(job.get("template_id") or ""), variables, custom_html=custom_html)
             email_service.send_campaign_email(
                 recipient_email,
                 str(job.get("subject") or "Message from TrufusionLabs"),

@@ -39,6 +39,8 @@ class EmailServiceTests(unittest.TestCase):
         self.assertIn("min-height:100vh", html)
         self.assertIn("height:100vh", html)
         self.assertIn('class="trufusion-email-card"', html)
+        self.assertIn("border-radius:28px", html)
+        self.assertIn("corner-shape:squircle", html)
         self.assertNotIn("background:rgba(255,255,255,0.64)", html)
         self.assertNotIn("backdrop-filter", html)
         self.assertIn('td align="center" style="padding:0 14px;"', html)
@@ -245,6 +247,8 @@ class EmailServiceTests(unittest.TestCase):
             self.assertIn("background:#ffffff;", html)
             self.assertIn("background-image:linear-gradient(#ffffff,#ffffff)", html)
             self.assertTrue("trufusion-email-card" in html or "trufusion-contact-card" in html)
+            self.assertIn("border-radius:28px", html)
+            self.assertIn("corner-shape:squircle", html)
             if 'class="trufusion-contact-card"' in html:
                 self.assertIn("background-image:linear-gradient(#ffffff,#ffffff);", html)
                 self.assertIn("-webkit-text-fill-color:#111827", html)

@@ -78,6 +78,13 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertNotIn("data:image", rendered["html"])
         self.assertIn("Dr. Ada Lovelace", rendered["plainText"])
 
+    def test_approved_templates_use_site_container_squircle_css(self) -> None:
+        for template in email_campaign_service.list_templates()["templates"]:
+            with self.subTest(template=template["id"]):
+                rendered = email_campaign_service.render_email_template(template["id"], {})
+                self.assertIn("border-radius:28px", rendered["html"])
+                self.assertIn("corner-shape:squircle", rendered["html"])
+
     def test_preview_template_rewrites_cids_to_signed_preview_assets(self) -> None:
         with patch.object(email_campaign_service.email_campaign_repository, "log_event"):
             rendered = email_campaign_service.preview_template(
@@ -273,6 +280,79 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 {
                     **base_payload,
                     "subject": "Changed subject",
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
+                    "confirmationText": "SEND",
+                    "testToken": test_response["testToken"],
+                },
+                admin=admin,
+            )
+
+    def test_custom_preview_html_is_cleaned_stored_and_bound_to_test_token(self) -> None:
+        admin = {"id": "admin_1", "role": "admin"}
+        captured: list[tuple[dict, list]] = []
+
+        def create_campaign(campaign, recipients):
+            captured.append((campaign, recipients))
+            return campaign
+
+        base_payload = {
+            "templateId": "delegate_links_announcement",
+            "subject": "Delegate Links are now available",
+            "variables": {
+                "doctor_name": "Dr. Ada Lovelace",
+                "clinic_name": "Analytical Clinic",
+                "delegate_links_url": "https://trufusionlabs.com/account?tab=delegate-links",
+                "support_email": "support@trufusionlabs.com",
+            },
+            "customHtml": (
+                '<!DOCTYPE html><html><head><style data-email-center-preview-containment>body{}</style></head>'
+                '<body><p data-email-center-edit-target="true" contenteditable="true">'
+                "Edited copy for Dr. Ada Lovelace"
+                "</p>"
+                '<img src="http://localhost/api/admin/email/assets/trufusion-logo?token=abc" />'
+                '<script data-email-center-preview-editor>window.bad=true</script>'
+                "</body></html>"
+            ),
+        }
+
+        with patch.object(email_campaign_service.email_service, "send_campaign_test_email") as send_test, \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"), \
+            patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=create_campaign), \
+            patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={"pending": 1}):
+            test_response = email_campaign_service.send_test_email(
+                {**base_payload, "recipientEmail": "admin@example.com"},
+                admin=admin,
+            )
+            campaign_response = email_campaign_service.create_campaign(
+                {
+                    **base_payload,
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
+                    "confirmationText": "SEND",
+                    "testToken": test_response["testToken"],
+                },
+                admin=admin,
+            )
+
+        sent_html = send_test.call_args.args[2]
+        self.assertIn("Edited copy for Dr. Ada Lovelace", sent_html)
+        self.assertIn('src="cid:trufusion-logo"', sent_html)
+        self.assertNotIn("data-email-center-preview-editor", sent_html)
+        self.assertNotIn("contenteditable", sent_html)
+
+        campaign_record = captured[0][0]
+        stored_html = campaign_record["variables_json"][email_campaign_service._CUSTOM_HTML_VARIABLE_KEY]
+        self.assertIn("{{ doctor_name }}", stored_html)
+        self.assertIn('src="cid:trufusion-logo"', stored_html)
+        self.assertNotIn("data-email-center-edit-target", stored_html)
+        self.assertEqual(campaign_response["campaign"]["status"], "sending")
+        self.assertIn("Edited copy", campaign_response["campaign"]["customHtml"])
+        self.assertNotIn(email_campaign_service._CUSTOM_HTML_VARIABLE_KEY, campaign_response["campaign"]["variables"])
+
+        with self.assertRaises(Exception):
+            email_campaign_service.create_campaign(
+                {
+                    **base_payload,
+                    "customHtml": base_payload["customHtml"].replace("Edited copy", "Changed copy"),
                     "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
                     "confirmationText": "SEND",
                     "testToken": test_response["testToken"],

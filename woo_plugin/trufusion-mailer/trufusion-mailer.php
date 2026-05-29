@@ -363,7 +363,7 @@ function trufusion_mailer_bridge_configure_smtp($phpmailer) {
 add_filter('woocommerce_email_styles', function ($css) {
     $css .= "\n"
         . "#wrapper{background-color:#ffffff !important;}\n"
-        . "#template_container{border-color:#e2e8f0 !important;box-shadow:none !important;}\n"
+        . "#template_container{border-color:#e2e8f0 !important;border-radius:28px !important;corner-shape:squircle !important;overflow:hidden !important;box-shadow:none !important;}\n"
         . "#template_header{background-color:#ffffff !important;border-bottom:1px solid rgba(15,39,75,0.10) !important;}\n"
         . "#template_header h1,.wc-email-header__title{color:#0B274B !important;background:transparent !important;}\n"
         . "a.button,.button{background-color:#0b0679 !important;background-image:linear-gradient(#0b0679,#0b0679) !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;border-color:#0b0679 !important;border-radius:12px !important;text-decoration:none !important;}\n"

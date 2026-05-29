@@ -5335,6 +5335,12 @@ html {
   background-image: none !important;
 }
 
+.sales-doctor-detail-dialog[data-slot="dialog-content"] > .modal-squircle-content {
+  box-sizing: border-box;
+  padding: 1.5rem;
+  scrollbar-gutter: stable;
+}
+
 .sales-doctor-detail-dialog[data-slot="dialog-content"] [data-slot="dialog-header"]::after,
 .sales-order-detail-dialog[data-slot="dialog-content"] [data-slot="dialog-header"]::after {
   content: none !important;
@@ -9182,9 +9188,110 @@ body.ultra-wide-screen .ultra-wide-info-shell {
   animation: create-link-panel-fade-in 90ms ease-out both;
 }
 
+.create-link-dialog-intro {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: clamp(0.875rem, 2vw, 1.25rem);
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 38px;
+  padding-right: clamp(9.25rem, 18vw, 10.75rem);
+}
+
+.create-link-dialog-title-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.create-link-dialog-intro--close-only {
+  padding-right: 3.25rem;
+}
+
+.create-link-dialog-intro--select {
+  width: min(100%, 42rem);
+  margin-right: auto;
+  margin-left: auto;
+  padding-left: 0.625rem;
+}
+
+.create-link-dialog-intro--close-only .create-link-dialog-title-copy {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+}
+
+.create-link-dialog-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  margin-left: auto;
+  position: absolute;
+  right: 0;
+  top: 0;
+  white-space: nowrap;
+}
+
+.create-link-dialog-content[data-slot="dialog-content"] > .dialog-close-btn {
+  right: 1.5rem !important;
+  top: 1.5rem !important;
+  z-index: 10080 !important;
+}
+
 .create-link-dialog-back-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: static !important;
   pointer-events: auto !important;
+  right: auto !important;
+  top: auto !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  max-height: 38px !important;
+  line-height: 1 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
   z-index: 10070 !important;
+}
+
+.create-link-dialog-content[data-slot="dialog-content"] .create-link-dialog-actions .dialog-close-btn,
+.create-link-dialog-actions .dialog-close-btn {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  z-index: 10070 !important;
+}
+
+@media (max-width: 640px) {
+  .create-link-dialog-intro {
+    gap: 0.75rem;
+    padding-top: 0;
+    padding-right: 8.75rem;
+  }
+
+  .create-link-dialog-intro--close-only {
+    padding-right: 3rem;
+  }
+
+  .create-link-dialog-content[data-slot="dialog-content"] > .dialog-close-btn {
+    right: 1rem !important;
+    top: 1rem !important;
+  }
+
+  .create-link-dialog-back-button {
+    right: auto !important;
+    top: auto !important;
+    padding-left: 0.875rem !important;
+    padding-right: 0.875rem !important;
+  }
 }
 
 @keyframes create-link-panel-fade-in {
@@ -10588,6 +10695,37 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
 .legal-modal-close-btn svg {
   color: #ffffff !important;
   stroke: currentColor !important;
+}
+
+.create-link-dialog-content[data-slot="dialog-content"] .create-link-dialog-actions {
+  position: absolute !important;
+  right: 0 !important;
+  top: 0 !important;
+  z-index: 10080 !important;
+}
+
+.create-link-dialog-content[data-slot="dialog-content"] .create-link-dialog-intro--close-only .create-link-dialog-actions {
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+
+.create-link-dialog-content[data-slot="dialog-content"] .create-link-dialog-actions .create-link-dialog-back-button {
+  height: 38px !important;
+  min-height: 38px !important;
+  max-height: 38px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.create-link-dialog-content[data-slot="dialog-content"] .create-link-dialog-actions .create-link-dialog-close-button.dialog-close-btn {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  margin: 0 !important;
 }
 
 .legal-modal-header {
@@ -14048,6 +14186,7 @@ input[type="checkbox"].checkbox-on-dark:not(.brand-checkbox):checked::after {
 .sales-dashboard-detail-modal-layer.sales-dashboard-window-layer .sales-doctor-detail-dialog[data-slot="dialog-content"] {
   -webkit-overflow-scrolling: touch;
   contain: none !important;
+  padding: 0 !important;
 }
 
 .sales-dashboard-detail-modal-layer.sales-dashboard-window-layer .sales-dashboard-draggable-modal * {
@@ -16503,6 +16642,12 @@ body:not([data-delegate-theme="true"]) .orders-canceled-toggle-button[data-slot=
   max-height: 2.4rem !important;
 }
 
+.physician-dashboard-container .orders-canceled-toggle-button,
+body:not([data-delegate-theme="true"]) .physician-dashboard-container .orders-canceled-toggle-button[data-slot="button"],
+.dev-theme-root .physician-dashboard-container .orders-canceled-toggle-button[data-slot="button"] {
+  margin-right: clamp(0.875rem, 1.6vw, 1.35rem) !important;
+}
+
 .patient-links-toolbar-control,
 button.patient-links-toolbar-control,
 select.patient-links-toolbar-control,
@@ -17335,6 +17480,16 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
 .email-center-preview-frame {
   display: block;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.email-center-preview-frame--templates {
+  height: min(47.5rem, 78vh);
+  min-height: min(38rem, 150vw);
+}
+
+.email-center-preview-frame--send {
   height: auto !important;
   min-height: min(38rem, 150vw);
   aspect-ratio: 9 / 14;
@@ -17342,13 +17497,12 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
 
 @media (min-width: 1024px) {
   .email-center-preview-send-layout {
-    grid-template-columns: minmax(20rem, 34rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   }
 
   .email-center-preview-panel {
     width: 100%;
-    max-width: 34rem;
-    justify-self: start;
+    justify-self: stretch;
   }
 
   .email-center-send-panel {

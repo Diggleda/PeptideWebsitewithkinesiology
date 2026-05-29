@@ -368,7 +368,7 @@ const sendManualRefundReviewEmail = async ({
   </head>
   <body style="margin:0; padding:0; background:${EMAIL_BACKGROUND_COLOR}; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
     <div style="max-width: 680px; margin: 0 auto; padding: 24px 16px; background:${EMAIL_BACKGROUND_COLOR};">
-      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:14px; padding:22px; line-height: 1.45; color: #0f172a;">
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:28px; corner-shape:squircle; overflow:hidden; padding:22px; line-height: 1.45; color: #0f172a;">
         <div style="text-align:center; margin: 0 0 18px;">
           <img src="${escapeHtml(logoUrl)}" width="360" alt="TrufusionLabs" style="width:360px; max-width:70%; height:auto; display:block; margin:0 auto; border:0; outline:none; text-decoration:none;" />
         </div>

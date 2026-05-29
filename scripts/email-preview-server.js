@@ -8,6 +8,11 @@ const preferredPort = Number(process.env.EMAIL_PREVIEW_PORT || process.env.PORT 
 
 const templates = [
   {
+    id: 'delegate_links_announcement',
+    label: 'Email Center: Delegate Links Announcement',
+    source: 'python_backend/email_templates/announcements/delegate_links_announcement.html',
+  },
+  {
     id: 'shipping-shipped',
     label: 'Shipping: Shipped',
     source: 'python_backend/services/email_service.py::send_order_shipping_status_email',
@@ -53,6 +58,22 @@ const templates = [
     source: 'python_backend/services/email_service.py::_build_delegate_links_beta_info_email',
   },
 ];
+
+const sampleVariables = {
+  doctor_name: 'Dr. Jane Example',
+  clinic_name: 'Example Clinic',
+  delegate_links_url: 'https://trufusionlabs.com/account?tab=delegate-links',
+  unsubscribe_url: 'https://trufusionlabs.com/api/admin/email/unsubscribe?preview=1',
+  support_email: 'support@trufusionlabs.com',
+};
+
+const assetReplacements = {
+  'cid:trufusion-logo': '/assets/FullLogo_Transparent_NoBuffer%20(18).png',
+  'cid:trufusion-leaf': '/assets/leafTexture.jpg',
+  'cid:delegate-white-label-sessions': '/assets/delegate-links-white-label-email.png',
+  'cid:delegate-links-proposal-session': '/assets/PatientLinks4.png',
+  'cid:delegate-links-create-dialog': '/assets/PatientLinks3.png',
+};
 
 const pythonPreviewCode = String.raw`
 import json
@@ -174,6 +195,27 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+const rewriteCidAssets = (html) => Object.entries(assetReplacements).reduce(
+  (nextHtml, [cid, assetPath]) => nextHtml.split(cid).join(assetPath),
+  String(html || ''),
+);
+
+const renderFileTemplate = (templateId) => {
+  if (templateId !== 'delegate_links_announcement') {
+    throw new Error(`unknown file template: ${templateId}`);
+  }
+  const templatePath = path.join(repoRoot, 'python_backend', 'email_templates', 'announcements', 'delegate_links_announcement.html');
+  const source = fs.readFileSync(templatePath, 'utf8');
+  const html = rewriteCidAssets(source.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, variableName) => {
+    return sampleVariables[variableName] || '';
+  }));
+  return {
+    subject: 'Delegate Links are now available',
+    html,
+    plain: 'Delegate Links are now available.',
+  };
+};
+
 const renderPythonTemplate = (templateId) => {
   const result = spawnSync('python3', ['-c', pythonPreviewCode, templateId], {
     cwd: repoRoot,
@@ -190,6 +232,9 @@ const renderPythonTemplate = (templateId) => {
 const renderTemplate = (templateId) => {
   if (!templates.some((template) => template.id === templateId)) {
     throw new Error(`unknown preview template: ${templateId}`);
+  }
+  if (templateId === 'delegate_links_announcement') {
+    return renderFileTemplate(templateId);
   }
   return renderPythonTemplate(templateId);
 };

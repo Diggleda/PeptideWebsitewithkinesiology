@@ -56,6 +56,7 @@ const getTrackingRoutes = lazyModule(() => require('./routes/trackingRoutes'));
 const getDelegationRoutes = lazyModule(() => require('./routes/delegationRoutes'));
 const getUsageTrackingRoutes = lazyModule(() => require('./routes/usageTrackingRoutes'));
 const getEventRoutes = lazyModule(() => require('./routes/eventRoutes'));
+const getAdminEmailRoutes = lazyModule(() => require('./routes/adminEmailRoutes'));
 
 const prewarmApiModules = () => {
   const warmers = [
@@ -463,6 +464,7 @@ const createApp = () => {
   app.use('/api/tracking', lazyRoute(() => getTrackingRoutes()));
   app.use('/api/delegation', lazyRoute(() => getDelegationRoutes()));
   app.use('/api/usage-tracking', lazyRoute(() => getUsageTrackingRoutes()));
+  app.use('/api/admin/email', lazyRoute(() => getAdminEmailRoutes()));
   app.use('/api', lazyRoute(() => getEventRoutes()));
   app.use('/api', lazyRoute(() => getSystemRoutes()));
 

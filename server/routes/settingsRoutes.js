@@ -436,7 +436,7 @@ const loadSqlNpiVerificationByUserId = async (userIds = []) => {
 
 const buildDelegateLinksDoctorEntries = () => userRepository
   .getAll()
-  .filter((candidate) => normalizeRole(candidate?.role) === 'doctor')
+  .filter((candidate) => isDoctorUser(candidate))
   .map((doctor) => ({
     userId: String(doctor.id || '').trim(),
     name: String(doctor?.name || doctor?.email || `Doctor ${doctor?.id || ''}`).trim(),
@@ -761,14 +761,14 @@ router.put('/patient-links', authenticate, requireAdmin, async (req, res) => {
     if (!doctor) {
       return res.status(404).json({ error: 'Doctor not found' });
     }
-    if (normalizeRole(doctor.role) !== 'doctor') {
+    if (!isDoctorUser(doctor)) {
       return res.status(400).json({ error: 'Doctor access required' });
     }
   }
   const selectedDoctorIdSet = new Set(requestedDoctorUserIds);
   userRepository
     .getAll()
-    .filter((candidate) => normalizeRole(candidate?.role) === 'doctor')
+    .filter((candidate) => isDoctorUser(candidate))
     .forEach((doctor) => {
       const doctorId = String(doctor?.id || '').trim();
       if (!doctorId) return;

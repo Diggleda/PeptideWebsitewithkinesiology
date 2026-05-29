@@ -9420,7 +9420,7 @@ export function Header({
 		              className="orders-updated-status-button inline-flex shrink-0 items-center gap-1 text-xs text-slate-500 px-3 py-1.5 squircle-sm bg-transparent shadow-none"
 		              aria-live="polite"
 		            >
-		              <RefreshActionIcon spinning={accountOrdersLoading} />
+		              {accountOrdersLoading && <RefreshActionIcon spinning />}
 		              <span>Auto-Updating</span>
 		            </div>
 
@@ -9555,16 +9555,65 @@ export function Header({
     0,
   );
 
+  const showCreateLinkDialogBackButton =
+    createLinkDialogMode !== 'select' && showCreateLinkTypeChooser && !patientLinkEditing;
+  const createLinkDialogIntroClassName = clsx(
+    'create-link-dialog-intro',
+    createLinkDialogMode === 'select' && 'create-link-dialog-intro--select',
+    !showCreateLinkDialogBackButton && 'create-link-dialog-intro--close-only',
+  );
+  const createLinkDialogActionControls = (
+    <div
+      className={clsx(
+        'create-link-dialog-actions',
+        showCreateLinkDialogBackButton
+          ? 'create-link-dialog-actions--with-back'
+          : 'create-link-dialog-actions--close-only',
+      )}
+      aria-label="Create link dialog controls"
+    >
+      {showCreateLinkDialogBackButton && (
+        <Button
+          type="button"
+          variant="outline"
+          onPointerDown={(event) => {
+            if (event.pointerType === 'mouse' && event.button !== 0) {
+              return;
+            }
+            handleCreateLinkBackToSelect(event);
+          }}
+          onClick={handleCreateLinkBackToSelect}
+          className="create-link-dialog-back-button header-home-button squircle-sm !h-[38px] min-h-[38px] bg-white px-4 text-slate-900"
+        >
+          Back
+        </Button>
+      )}
+      <DialogClose asChild>
+        <button
+          type="button"
+          className="create-link-dialog-close-button dialog-close-btn"
+          aria-label="Close create link dialog"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+          <span className="sr-only">Close</span>
+        </button>
+      </DialogClose>
+    </div>
+  );
+
   const delegateOptInStep = (
     <div className="space-y-5">
-      <DialogHeader className="pr-36 text-left">
-        <DialogTitle className="text-xl font-semibold text-slate-900">
-          Welcome to Delegate Links!
-        </DialogTitle>
-        <DialogDescription className="sr-only">
-          Enable access to create delegate links.
-        </DialogDescription>
-      </DialogHeader>
+      <div className={createLinkDialogIntroClassName}>
+        <div className="create-link-dialog-title-copy">
+          <DialogTitle className="text-xl font-semibold text-slate-900">
+            Welcome to Delegate Links!
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Enable access to create delegate links.
+          </DialogDescription>
+        </div>
+        {createLinkDialogActionControls}
+      </div>
       <div className="rounded-xl bg-white/55 px-5 py-5 sm:px-6">
         <div className="space-y-4">
           <p className="text-sm leading-relaxed text-slate-700">
@@ -9689,8 +9738,8 @@ export function Header({
           }}
           className={
             createLinkDialogMode === 'select'
-              ? "max-w-[min(720px,calc(100vw-2rem))] overflow-x-hidden sm:max-w-[min(720px,calc(100vw-2rem))] lg:max-w-[min(720px,calc(100vw-2rem))]"
-              : "max-w-[min(920px,calc(100vw-2rem))] overflow-x-hidden sm:max-w-[min(920px,calc(100vw-2rem))] lg:max-w-[min(920px,calc(100vw-2rem))]"
+              ? "create-link-dialog-content max-w-[min(720px,calc(100vw-2rem))] overflow-x-hidden sm:max-w-[min(720px,calc(100vw-2rem))] lg:max-w-[min(720px,calc(100vw-2rem))]"
+              : "create-link-dialog-content max-w-[min(920px,calc(100vw-2rem))] overflow-x-hidden sm:max-w-[min(920px,calc(100vw-2rem))] lg:max-w-[min(920px,calc(100vw-2rem))]"
           }
           overlayClassName="bg-slate-950/45"
           overlayStyle={{ zIndex: 15000 }}
@@ -9698,6 +9747,7 @@ export function Header({
           containerStyle={{
             zIndex: 15000,
           }}
+          hideCloseButton
           style={{
             zIndex: 15001,
             width:
@@ -9724,33 +9774,19 @@ export function Header({
               </DialogDescription>
             </VisuallyHidden>
           )}
-	          {createLinkDialogMode !== 'select' && showCreateLinkTypeChooser && !patientLinkEditing && (
-            <Button
-              type="button"
-              variant="outline"
-              onPointerDown={(event) => {
-                if (event.pointerType === 'mouse' && event.button !== 0) {
-                  return;
-                }
-                handleCreateLinkBackToSelect(event);
-              }}
-              onClick={handleCreateLinkBackToSelect}
-              className="create-link-dialog-back-button header-home-button squircle-sm absolute top-4 z-[10070] !h-[38px] min-h-[38px] bg-white px-4 text-slate-900"
-              style={{ right: 'calc(1rem + 38px + 0.5rem)' }}
-            >
-              Back
-            </Button>
-          )}
           {createLinkDialogMode === 'select' ? (
             <div key="create-link-select" className="create-link-dialog-panel space-y-5">
-              <DialogHeader className="pr-10 text-left">
-                <DialogTitle className="text-xl font-semibold text-slate-900">
-                  What kind of link would you like to create?
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Choose a link type.
-                </DialogDescription>
-              </DialogHeader>
+              <div className={createLinkDialogIntroClassName}>
+                <div className="create-link-dialog-title-copy">
+                  <DialogTitle className="text-xl font-semibold text-slate-900">
+                    What kind of link would you like to create?
+                  </DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Choose a link type.
+                  </DialogDescription>
+                </div>
+                {createLinkDialogActionControls}
+              </div>
               <div className="create-link-type-options">
                 {brochureLinkCreationEnabled && (
                   <button
@@ -9799,6 +9835,17 @@ export function Header({
             </div>
           ) : createLinkDialogMode === 'brochure' ? (
             <div key="create-link-brochure" className="create-link-dialog-panel space-y-5">
+              <div className={createLinkDialogIntroClassName}>
+                <div className="create-link-dialog-title-copy">
+                  <h3 className="text-lg font-semibold leading-tight text-slate-900">
+                    {patientLinkEditing ? 'Modify brochure link' : 'Create a brochure link'}
+                  </h3>
+                  <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
+                    Configure a view-only brochure link for sharing approved product information.
+                  </p>
+                </div>
+                {createLinkDialogActionControls}
+              </div>
               <div className="delegate-link-create-form patient-link-form patient-link-form--generate patient-link-form--grouped">
                 <div className="patient-link-group rounded-xl bg-white/55 px-0 py-4 sm:px-5">
                   <div className="pt-1">
@@ -9949,15 +9996,18 @@ export function Header({
             delegateOptInStep
           ) : (
       <div key="create-link-delegate" className="create-link-dialog-panel">
-        <div className="pr-36">
-          <h3 className="text-lg font-semibold leading-tight text-slate-900">
-            {patientLinkEditing ? 'Modify proposal link' : 'Create a proposal link'}
-          </h3>
-          <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
-            {patientLinkEditing
-              ? 'This link is revoked while you modify it. Activate it when the updated proposal session is ready.'
-              : 'This tool is intended to support physician-directed research material proposal workflows. You can preview links before sharing them with an authorized delegate.'}
-          </p>
+        <div className={createLinkDialogIntroClassName}>
+          <div className="create-link-dialog-title-copy">
+            <h3 className="text-lg font-semibold leading-tight text-slate-900">
+              {patientLinkEditing ? 'Modify proposal link' : 'Create a proposal link'}
+            </h3>
+            <p className="mt-1 mb-0 text-sm leading-relaxed text-slate-700">
+              {patientLinkEditing
+                ? 'This link is revoked while you modify it. Activate it when the updated proposal session is ready.'
+                : 'This tool is intended to support physician-directed research material proposal workflows. You can preview links before sharing them with an authorized delegate.'}
+            </p>
+          </div>
+          {createLinkDialogActionControls}
         </div>
 	        <div className="delegate-link-create-form mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
             <div className="patient-link-group rounded-xl bg-white/55 px-0 py-4 sm:px-5">
@@ -12870,7 +12920,7 @@ export function Header({
                 }}
               />
             </div>
-            <div className="physician-dashboard-panel">
+            <div className="physician-dashboard-panel" data-dashboard-squircle="off">
               {physicianDashboardActivePanel}
             </div>
           </section>,

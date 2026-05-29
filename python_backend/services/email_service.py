@@ -44,6 +44,8 @@ _EMAIL_TEXT_COLOR = "#111827"
 _EMAIL_HEADING_COLOR = "#0B274B"
 _EMAIL_MUTED_COLOR = "#64748B"
 _EMAIL_BRAND_BLUE = "#0B0679"
+_EMAIL_CONTAINER_BORDER_RADIUS = "28px"
+_EMAIL_CONTAINER_SQUIRCLE_STYLE = f"border-radius:{_EMAIL_CONTAINER_BORDER_RADIUS};corner-shape:squircle;"
 _EMAIL_BUTTON_BORDER_RADIUS = "12px"
 _EMAIL_PRIMARY_BUTTON_STYLE = (
     "display:inline-block;"
@@ -70,7 +72,7 @@ _EMAIL_GLASS_CONTAINER_STYLE = (
     "background:#ffffff;"
     "background-image:linear-gradient(#ffffff,#ffffff);"
     "border:1px solid #E5E7EB;"
-    "border-radius:28px;"
+    f"{_EMAIL_CONTAINER_SQUIRCLE_STYLE}"
     "overflow:hidden;"
     "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
     "0 6px 14px -10px rgba(15,23,42,0.35);"
@@ -81,7 +83,7 @@ _EMAIL_ORDER_GLASS_CONTAINER_STYLE = (
     "background:#ffffff;"
     "background-image:linear-gradient(#ffffff,#ffffff);"
     "border:1px solid #E5E7EB;"
-    "border-radius:28px;"
+    f"{_EMAIL_CONTAINER_SQUIRCLE_STYLE}"
     "overflow:hidden;"
     "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
     "0 6px 14px -10px rgba(15,23,42,0.35);"
@@ -93,6 +95,7 @@ _EMAIL_DETAIL_CARD_STYLE = (
     "margin:0 0 24px;"
     "border:1px solid rgba(11,6,121,0.26);"
     "border-radius:16px;"
+    "corner-shape:squircle;"
     "background-color:#f8fbff;"
     "background:#f8fbff;"
     "box-shadow:inset 0 1px rgba(255,255,255,0.72);"
@@ -127,6 +130,8 @@ _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
         background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
         background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
         border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
+        border-radius: {_EMAIL_CONTAINER_BORDER_RADIUS} !important;
+        corner-shape: squircle;
       }}
       .trufusion-text {{
         color: {_EMAIL_TEXT_COLOR} !important;
@@ -168,6 +173,8 @@ _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
           background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
           background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
           border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
+          border-radius: {_EMAIL_CONTAINER_BORDER_RADIUS} !important;
+          corner-shape: squircle;
         }}
         .trufusion-text {{
           color: {_EMAIL_TEXT_COLOR} !important;
@@ -203,6 +210,8 @@ _EMAIL_LIGHT_MODE_LOCK_CSS = f"""
         background-color: {_EMAIL_CONTACT_CARD_COLOR} !important;
         background-image: linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR}) !important;
         border-color: {_EMAIL_CONTACT_CARD_BORDER} !important;
+        border-radius: {_EMAIL_CONTAINER_BORDER_RADIUS} !important;
+        corner-shape: squircle;
       }}
       [data-ogsc] .trufusion-text {{
         color: {_EMAIL_TEXT_COLOR} !important;
@@ -560,7 +569,7 @@ def _email_contact_container_style(max_width: int) -> str:
         f"background-color:{_EMAIL_CONTACT_CARD_COLOR};"
         f"background-image:linear-gradient({_EMAIL_CONTACT_CARD_COLOR},{_EMAIL_CONTACT_CARD_COLOR});"
         f"border:1px solid {_EMAIL_CONTACT_CARD_BORDER};"
-        "border-radius:28px;"
+        f"{_EMAIL_CONTAINER_SQUIRCLE_STYLE}"
         "overflow:hidden;"
         "box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),"
         "0 6px 14px -10px rgba(15,23,42,0.35);"

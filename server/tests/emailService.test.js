@@ -63,6 +63,8 @@ const assertSharedEmailStyling = (html) => {
   assert.match(html, /background:#ffffff|background-color:#ffffff/);
   assert.doesNotMatch(html, /TrufusionLabs_PhysiciansPortal/);
   assert.doesNotMatch(html, /rgb\(55,126,186\)/);
+  assert.match(html, /border-radius:28px/);
+  assert.match(html, /corner-shape:squircle/);
   assert.doesNotMatch(html, /border-radius:999px/);
 };
 

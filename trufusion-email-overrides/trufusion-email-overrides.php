@@ -254,7 +254,7 @@ function trufusion_email_overrides_email_styles($css) {
 
   $css .= "\n"
     . "#wrapper{background-color:" . $background_color . " !important;}\n"
-    . "#template_container{border-color:rgba(15,39,75,0.12) !important;box-shadow:none !important;}\n"
+    . "#template_container{border-color:rgba(15,39,75,0.12) !important;border-radius:28px !important;corner-shape:squircle !important;overflow:hidden !important;box-shadow:none !important;}\n"
     . "#template_header{background-color:" . $body_background_color . " !important;border-bottom:1px solid rgba(15,39,75,0.10) !important;}\n"
     . "#template_header h1,.wc-email-header__title{color:" . $base_color . " !important;background:transparent !important;}\n"
     . "#template_body,#body_content{background-color:" . $body_background_color . " !important;}\n"
@@ -1055,7 +1055,7 @@ function trufusion_email_overrides_render_discount_summary($order, $sent_to_admi
     return;
   }
 
-  echo '<table cellspacing="0" cellpadding="6" border="0" style="width:100%;margin:12px 0 0;border:1px solid #e2e8f0;border-radius:8px;">';
+  echo '<table cellspacing="0" cellpadding="6" border="0" style="width:100%;margin:12px 0 0;border:1px solid #e2e8f0;border-radius:12px;corner-shape:squircle;overflow:hidden;">';
   echo '<tr><th scope="row" style="text-align:left;color:#334155;">Discount code used</th><td style="text-align:right;color:#0f172a;font-weight:600;">' . esc_html($discount_code) . '</td></tr>';
   echo '</table>';
 }
