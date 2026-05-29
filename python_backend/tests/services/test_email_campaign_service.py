@@ -47,6 +47,7 @@ from python_backend.services import email_campaign_service
 class EmailCampaignServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         email_campaign_service.clear_manifest_cache()
+        email_campaign_service._BOUNCE_LAST_POLL_MONOTONIC = 0.0
 
     def test_manifest_loads_delegate_links_announcement_first(self) -> None:
         payload = email_campaign_service.list_templates()
@@ -532,22 +533,22 @@ class EmailCampaignServiceTests(unittest.TestCase):
     def test_process_bounce_notification_marks_recipient_failed(self) -> None:
         bounce = """
 Reporting-MTA: dns; googlemail.com
-Final-Recipient: rfc822; linden@peppro.net
+Final-Recipient: rfc822; bad@example.com
 Action: failed
 Status: 5.1.1
 Diagnostic-Code: smtp; 550 5.1.1 The email account that you tried to reach does not exist.
-X-Trufusion-Campaign-Id: emc_46778b9d14ca0fd7cecb82ec
+X-Trufusion-Campaign-Id: emc_test123
 X-Original-Message-ID: <message@example.com>
 """
         campaign = {
-            "id": "emc_46778b9d14ca0fd7cecb82ec",
+            "id": "emc_test123",
             "status": "sent",
             "recipient_count": 1,
         }
         recipient = {
             "id": "emr_1",
-            "campaign_id": "emc_46778b9d14ca0fd7cecb82ec",
-            "recipient_email": "linden@peppro.net",
+            "campaign_id": "emc_test123",
+            "recipient_email": "bad@example.com",
             "status": "sent",
         }
 
@@ -583,16 +584,65 @@ X-Original-Message-ID: <message@example.com>
             )
 
         self.assertTrue(response["ok"])
-        self.assertEqual(response["campaignId"], "emc_46778b9d14ca0fd7cecb82ec")
-        self.assertEqual(response["recipientEmail"], "linden@peppro.net")
+        self.assertEqual(response["campaignId"], "emc_test123")
+        self.assertEqual(response["recipientEmail"], "bad@example.com")
         update_recipient.assert_called_once()
-        self.assertEqual(update_recipient.call_args.args[:3], ("emc_46778b9d14ca0fd7cecb82ec", "linden@peppro.net", "failed"))
+        self.assertEqual(update_recipient.call_args.args[:3], ("emc_test123", "bad@example.com", "failed"))
         self.assertIn("does not exist", update_recipient.call_args.kwargs["error_message"])
         log_event.assert_called_once()
         self.assertEqual(log_event.call_args.kwargs["event_type"], "bounced")
         update_campaign.assert_called_once()
-        self.assertEqual(update_campaign.call_args.args[:2], ("emc_46778b9d14ca0fd7cecb82ec", "failed"))
+        self.assertEqual(update_campaign.call_args.args[:2], ("emc_test123", "failed"))
         notify_changed.assert_called_once()
+
+    def test_process_bounce_notification_extracts_campaign_id_fallback(self) -> None:
+        bounce = """
+From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>
+Subject: Delivery Status Notification (Failure)
+
+Reporting-MTA: dns; googlemail.com
+Final-Recipient: rfc822; bad@example.com
+Action: failed
+Status: 5.1.1
+Diagnostic-Code: smtp; 550 5.1.1 No such user
+
+Delivery failed for campaign emc_test123.
+"""
+
+        with patch.object(
+            email_campaign_service.email_campaign_repository,
+            "get_campaign",
+            return_value={"id": "emc_test123", "status": "sent", "recipient_count": 1},
+        ), patch.object(
+            email_campaign_service.email_campaign_repository,
+            "get_recipient_by_campaign_and_email",
+            return_value={"recipient_email": "bad@example.com", "status": "sent"},
+        ), patch.object(
+            email_campaign_service.email_campaign_repository,
+            "update_recipient_status_by_campaign_and_email",
+            return_value=True,
+        ) as update_recipient, patch.object(
+            email_campaign_service.email_campaign_repository,
+            "log_event",
+        ) as log_event, patch.object(
+            email_campaign_service.email_campaign_repository,
+            "count_recipients_by_status",
+            return_value={"failed": 1},
+        ), patch.object(
+            email_campaign_service.email_campaign_repository,
+            "update_campaign_status",
+        ), patch.object(
+            email_campaign_service,
+            "_notify_email_campaigns_changed",
+        ):
+            response = email_campaign_service.process_bounce_notification({"rawEmail": bounce})
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["campaignId"], "emc_test123")
+        self.assertEqual(response["recipientEmail"], "bad@example.com")
+        update_recipient.assert_called_once()
+        self.assertEqual(update_recipient.call_args.args[:3], ("emc_test123", "bad@example.com", "failed"))
+        log_event.assert_called_once()
 
     def test_process_bounce_notification_is_idempotent_for_failed_recipient(self) -> None:
         with patch.object(
@@ -690,6 +740,86 @@ X-Trufusion-Campaign-Id: emc_50551b84e9c97f157de1a3cc
         process_bounce.assert_called_once()
         self.assertIn("emc_50551b84e9c97f157de1a3cc", process_bounce.call_args.args[0]["rawEmail"])
         notify_changed.assert_called_once()
+
+    def test_poll_bounce_mailbox_reports_disabled_when_imap_env_missing(self) -> None:
+        with patch.dict(os.environ, {}, clear=True), patch.object(
+            email_campaign_service.imaplib,
+            "IMAP4_SSL",
+        ) as imap_ssl:
+            response = email_campaign_service.poll_bounce_mailbox(force=True)
+
+        self.assertTrue(response["ok"])
+        self.assertFalse(response["enabled"])
+        self.assertFalse(response["configured"])
+        self.assertEqual(response["scanned"], 0)
+        self.assertEqual(response["matched"], 0)
+        self.assertEqual(response["processed"], 0)
+        self.assertEqual(response["duplicates"], 0)
+        self.assertEqual(response["skipped"], 0)
+        self.assertEqual(response["failed"], 0)
+        imap_ssl.assert_not_called()
+
+    def test_poll_bounce_mailbox_counts_duplicate_bounces(self) -> None:
+        raw_message = b"""
+From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>
+Subject: Address not found
+
+Reporting-MTA: dns; googlemail.com
+Final-Recipient: rfc822; bad@example.com
+Action: failed
+Status: 5.1.1
+Diagnostic-Code: smtp; 550 5.1.1 No such user
+X-Trufusion-Campaign-Id: emc_test123
+"""
+
+        class FakeImap:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def login(self, _user, _password):
+                return "OK", [b""]
+
+            def select(self, _mailbox, readonly=True):
+                return "OK", [b"1"]
+
+            def search(self, *_args):
+                return "OK", [b"1"]
+
+            def fetch(self, _message_id, _query):
+                return "OK", [(b"1 (RFC822 {100}", raw_message)]
+
+            def logout(self):
+                return "OK", [b""]
+
+        with patch.dict(
+            os.environ,
+            {
+                "EMAIL_BOUNCE_POLL_ENABLED": "true",
+                "EMAIL_BOUNCE_IMAP_HOST": "imap.gmail.com",
+                "EMAIL_BOUNCE_IMAP_USER": "support@trufusionlabs.com",
+                "EMAIL_BOUNCE_IMAP_PASS": "secret",
+            },
+            clear=False,
+        ), patch.object(
+            email_campaign_service.imaplib,
+            "IMAP4_SSL",
+            FakeImap,
+        ), patch.object(
+            email_campaign_service,
+            "process_bounce_notification",
+            return_value={"ok": True, "duplicate": True, "campaignId": "emc_test123"},
+        ), patch.object(
+            email_campaign_service,
+            "_notify_email_campaigns_changed",
+        ) as notify_changed:
+            response = email_campaign_service.poll_bounce_mailbox(force=True)
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["scanned"], 1)
+        self.assertEqual(response["matched"], 1)
+        self.assertEqual(response["processed"], 0)
+        self.assertEqual(response["duplicates"], 1)
+        notify_changed.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -227,6 +227,38 @@ class AdminEmailRouteTests(unittest.TestCase):
         self.assertEqual(process_bounce.call_args.args[0]["rawEmail"], "X-Trufusion-Campaign-Id: emc_1")
         self.assertEqual(process_bounce.call_args.kwargs["admin"]["id"], "admin_1")
 
+    def test_bounce_poll_route_forces_admin_poll(self) -> None:
+        with self.app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            return_value=None,
+        ), patch.object(
+            admin_email,
+            "_current_admin",
+            return_value={"id": "admin_1", "role": "admin"},
+        ), patch.object(
+            admin_email.email_campaign_service,
+            "poll_bounce_mailbox",
+            return_value={
+                "ok": True,
+                "enabled": True,
+                "configured": True,
+                "scanned": 1,
+                "matched": 1,
+                "processed": 1,
+                "duplicates": 0,
+                "skipped": 0,
+                "failed": 0,
+            },
+        ) as poll_bounces:
+            response = client.post("/api/admin/email/bounces/poll")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["processed"], 1)
+        poll_bounces.assert_called_once_with(force=True)
+
     def test_bounce_webhook_uses_shared_secret(self) -> None:
         with self.app.test_client() as client, patch.object(
             admin_email.email_campaign_service,

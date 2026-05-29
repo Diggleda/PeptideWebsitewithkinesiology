@@ -1188,7 +1188,7 @@ export function EmailCenter() {
   const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<EmailCenterCampaign[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
-  const [campaignsAutoUpdating, setCampaignsAutoUpdating] = useState(false);
+  const [campaignsRefreshing, setCampaignsRefreshing] = useState(false);
   const [campaignError, setCampaignError] = useState<string | null>(null);
   const [bulkRecipientEstimate, setBulkRecipientEstimate] = useState<{
     count: number | null;
@@ -1201,6 +1201,8 @@ export function EmailCenter() {
   const editablePreviewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const editedPreviewHtmlRef = useRef("");
   const pendingDraftCustomHtmlRef = useRef("");
+  const pendingEmailCampaignRefreshRef = useRef(false);
+  const hasCampaignRowsRef = useRef(false);
   const [previewEdited, setPreviewEdited] = useState(false);
   const [emailCenterTabIndicator, setEmailCenterTabIndicator] = useState<{
     left: number;
@@ -1397,19 +1399,21 @@ export function EmailCenter() {
     if (!silent) {
       setCampaignsLoading(true);
     } else {
-      setCampaignsAutoUpdating(true);
+      setCampaignsRefreshing(true);
     }
     setCampaignError(null);
     try {
       const response = (await emailCenterAPI.listCampaigns(status && status !== "logs" ? status : undefined)) as any;
-      setCampaigns(Array.isArray(response?.campaigns) ? response.campaigns : []);
+      const nextCampaigns = Array.isArray(response?.campaigns) ? response.campaigns : [];
+      hasCampaignRowsRef.current = nextCampaigns.length > 0;
+      setCampaigns(nextCampaigns);
     } catch (error) {
       setCampaignError(getErrorMessage(error));
     } finally {
       if (!silent) {
         setCampaignsLoading(false);
       } else {
-        setCampaignsAutoUpdating(false);
+        setCampaignsRefreshing(false);
       }
     }
   }, []);
@@ -1456,17 +1460,21 @@ export function EmailCenter() {
       return;
     }
     const status = activeTab === "logs" ? undefined : activeTab;
-    void loadCampaigns(status, { silent: campaigns.length > 0 });
-  }, [activeTab, campaigns.length, loadCampaigns]);
+    pendingEmailCampaignRefreshRef.current = false;
+    void loadCampaigns(status, { silent: hasCampaignRowsRef.current });
+  }, [activeTab, loadCampaigns]);
 
   useEffect(() => {
     if (activeTab === "new" || activeTab === "templates") {
       return;
     }
+    const isDocumentHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
     const refreshCurrentView = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      if (isDocumentHidden()) {
+        pendingEmailCampaignRefreshRef.current = true;
         return;
       }
+      pendingEmailCampaignRefreshRef.current = false;
       void loadCampaigns(activeTab === "logs" ? undefined : activeTab, { silent: true });
     };
     const handleResourceChanged = (event: Event) => {
@@ -1477,28 +1485,19 @@ export function EmailCenter() {
         refreshCurrentView();
       }
     };
-    window.addEventListener("trufusion:resource-changed", handleResourceChanged);
-    document.addEventListener("visibilitychange", refreshCurrentView);
-    window.addEventListener("focus", refreshCurrentView);
-    return () => {
-      window.removeEventListener("trufusion:resource-changed", handleResourceChanged);
-      document.removeEventListener("visibilitychange", refreshCurrentView);
-      window.removeEventListener("focus", refreshCurrentView);
-    };
-  }, [activeTab, loadCampaigns]);
-
-  useEffect(() => {
-    if (activeTab === "new" || activeTab === "templates") {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    const flushPendingResourceChange = () => {
+      if (!pendingEmailCampaignRefreshRef.current || isDocumentHidden()) {
         return;
       }
-      void loadCampaigns(activeTab === "logs" ? undefined : activeTab, { silent: true });
-    }, 5000);
+      refreshCurrentView();
+    };
+    window.addEventListener("trufusion:resource-changed", handleResourceChanged);
+    document.addEventListener("visibilitychange", flushPendingResourceChange);
+    window.addEventListener("focus", flushPendingResourceChange);
     return () => {
-      window.clearInterval(interval);
+      window.removeEventListener("trufusion:resource-changed", handleResourceChanged);
+      document.removeEventListener("visibilitychange", flushPendingResourceChange);
+      window.removeEventListener("focus", flushPendingResourceChange);
     };
   }, [activeTab, loadCampaigns]);
 
@@ -1827,8 +1826,8 @@ export function EmailCenter() {
       : campaigns;
     return (
       <div className={clsx(DASHBOARD_PANEL_CLASS, "space-y-4")}>
-        <div className="flex flex-wrap items-center gap-2">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <h4 className="text-base font-semibold text-slate-900">
               {status === "logs" ? "Recent Email Activity" : "Campaigns"}
             </h4>
@@ -1836,10 +1835,10 @@ export function EmailCenter() {
               {status === "logs" ? "Recent campaign audit trail summary." : "Queued campaign records from the backend."}
             </p>
           </div>
-          {campaignsAutoUpdating && (
-            <div className="ml-auto flex w-full justify-end sm:w-auto">
+          {campaignsRefreshing && (
+            <div className="flex shrink-0 justify-end pt-0.5">
               <span className="inline-flex items-center rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
-                Auto-updating
+                Updating
               </span>
             </div>
           )}

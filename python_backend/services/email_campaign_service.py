@@ -1180,8 +1180,19 @@ def _extract_bounce_campaign_id(raw_message: str, explicit: Any = None) -> str:
     return match.group(0) if match else ""
 
 
+def _extract_first_email(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    email = _normalize_email(text)
+    if email:
+        return email
+    match = re.search(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", text)
+    return _normalize_email(match.group(0) if match else "")
+
+
 def _extract_bounce_recipient(raw_message: str, explicit: Any = None) -> str:
-    explicit_email = _normalize_email(explicit)
+    explicit_email = _extract_first_email(explicit)
     if explicit_email:
         return explicit_email
     for header_name in ("Final-Recipient", "Original-Recipient", "X-Failed-Recipients", "To"):
@@ -1190,11 +1201,10 @@ def _extract_bounce_recipient(raw_message: str, explicit: Any = None) -> str:
             continue
         if ";" in header_value:
             header_value = header_value.rsplit(";", 1)[-1]
-        email = _normalize_email(header_value)
+        email = _extract_first_email(header_value)
         if email:
             return email
-    match = re.search(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", raw_message or "")
-    return _normalize_email(match.group(0) if match else "")
+    return _extract_first_email(raw_message)
 
 
 def _parse_bounce_notification(payload: Dict[str, Any]) -> Dict[str, str]:
@@ -1339,7 +1349,7 @@ def _bounce_imap_settings() -> Dict[str, Any]:
         "mailbox": str(os.environ.get("EMAIL_BOUNCE_IMAP_MAILBOX") or "INBOX").strip() or "INBOX",
         "ssl": use_ssl,
         "timeout": _env_int("EMAIL_BOUNCE_IMAP_TIMEOUT_SECONDS", 15, minimum=3, maximum=120),
-        "searchDays": _env_int("EMAIL_BOUNCE_IMAP_SEARCH_DAYS", 3, minimum=1, maximum=30),
+        "searchDays": _env_int("EMAIL_BOUNCE_IMAP_SEARCH_DAYS", 14, minimum=1, maximum=30),
         "limit": _env_int("EMAIL_BOUNCE_IMAP_MAX_MESSAGES", 50, minimum=1, maximum=500),
         "markSeen": _env_bool("EMAIL_BOUNCE_IMAP_MARK_SEEN", False),
     }
@@ -1403,8 +1413,11 @@ def poll_bounce_mailbox(*, force: bool = False) -> Dict[str, Any]:
             "enabled": False,
             "configured": configured,
             "processed": 0,
+            "duplicates": 0,
             "matched": 0,
             "scanned": 0,
+            "failed": 0,
+            "skipped": 0,
         }
 
     interval_s = _bounce_poll_interval_seconds()
@@ -1651,8 +1664,10 @@ def _throttle_seconds() -> float:
 
 def get_worker_status() -> Dict[str, Any]:
     bounce_settings = _bounce_imap_settings()
+    worker_status = background_job_supervisor.get_job_status(_JOB_NAME)
+    last_result = worker_status.get("lastResult") if isinstance(worker_status.get("lastResult"), dict) else {}
     return {
-        **background_job_supervisor.get_job_status(_JOB_NAME),
+        **worker_status,
         "enabled": _enabled(),
         "mode": _mode(),
         "intervalSeconds": _interval_seconds(),
@@ -1661,6 +1676,7 @@ def get_worker_status() -> Dict[str, Any]:
         "bouncePollingEnabled": _bounce_poll_enabled(bounce_settings),
         "bounceMailboxConfigured": _bounce_imap_configured(bounce_settings),
         "bouncePollIntervalSeconds": _bounce_poll_interval_seconds(),
+        "bouncePollLastResult": last_result.get("bouncePoll") if isinstance(last_result, dict) else None,
         "started": _THREAD_STARTED,
         "kickRunning": _KICK_RUNNING,
     }

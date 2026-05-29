@@ -163,6 +163,16 @@ def process_bounce():
     return handle_action(action)
 
 
+@blueprint.post("/bounces/poll")
+@require_auth
+def poll_bounces():
+    def action():
+        _current_admin()
+        return email_campaign_service.poll_bounce_mailbox(force=True)
+
+    return handle_action(action)
+
+
 @blueprint.post("/bounces/webhook")
 def process_bounce_webhook():
     def action():
