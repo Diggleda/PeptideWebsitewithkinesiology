@@ -522,6 +522,36 @@ def update_recipient_status_by_campaign_and_email(
     return updated
 
 
+def get_recipient_by_campaign_and_email(campaign_id: str, recipient_email: str) -> Optional[Dict[str, Any]]:
+    normalized_email = str(recipient_email or "").strip().lower()
+    if not campaign_id or not normalized_email:
+        return None
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            """
+            SELECT *
+            FROM email_campaign_recipients
+            WHERE campaign_id = %(campaign_id)s
+              AND recipient_email = %(recipient_email)s
+            LIMIT 1
+            """,
+            {"campaign_id": campaign_id, "recipient_email": normalized_email},
+        )
+        return _normalize_recipient(row)
+
+    with _JSON_LOCK:
+        recipient = next(
+            (
+                row
+                for row in _load_json()["recipients"]
+                if str(row.get("campaign_id") or "") == campaign_id
+                and str(row.get("recipient_email") or "").strip().lower() == normalized_email
+            ),
+            None,
+        )
+    return _normalize_recipient(recipient)
+
+
 def requeue_stale_processing_recipients(cutoff: Any) -> int:
     cutoff_value = _format_datetime(cutoff)
     if not cutoff_value:

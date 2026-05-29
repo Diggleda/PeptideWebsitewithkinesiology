@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import html
+import imaplib
 import json
 import logging
 import os
@@ -36,6 +37,8 @@ _CUSTOM_HTML_VARIABLE_KEY = "__email_center_custom_html"
 _MAX_CUSTOM_HTML_LENGTH = 500_000
 _PROCESSING_STALE_SECONDS = 15 * 60
 _BOUNCE_DIAGNOSTIC_MAX_LENGTH = 1200
+_BOUNCE_POLL_LOCK = threading.Lock()
+_BOUNCE_LAST_POLL_MONOTONIC = 0.0
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
@@ -1237,10 +1240,32 @@ def process_bounce_notification(payload: Dict[str, Any], *, admin: Optional[Dict
     if not campaign:
         raise service_error("Campaign from bounce was not found", 404)
     diagnostic = parsed.get("diagnostic") or parsed.get("status") or "Delivery failure"
+    action = str(parsed.get("action") or "").strip().lower()
+    status_text = str(parsed.get("status") or "").strip()
+    if action and action not in {"failed", "failure"} and not status_text.startswith("5."):
+        raise service_error("Bounce message was not a permanent delivery failure", 400)
+    recipient = email_campaign_repository.get_recipient_by_campaign_and_email(campaign_id, recipient_email)
+    if not recipient:
+        raise service_error("Failed recipient from bounce was not found in this campaign", 404)
+    current_recipient_status = str(recipient.get("status") or "").strip().lower()
+    if current_recipient_status in {"failed", "bounced"}:
+        counts = email_campaign_repository.count_recipients_by_status(campaign_id)
+        _reconcile_campaign_status(campaign, counts)
+        return {
+            "ok": True,
+            "duplicate": True,
+            "campaignId": campaign_id,
+            "recipientEmail": recipient_email,
+            "recipientStatus": current_recipient_status,
+            "status": parsed.get("status"),
+            "action": parsed.get("action"),
+            "diagnostic": diagnostic,
+            "counts": counts,
+        }
     updated = email_campaign_repository.update_recipient_status_by_campaign_and_email(
         campaign_id,
         recipient_email,
-        "bounced",
+        "failed",
         sent_at=_now_iso(),
         error_message=diagnostic,
     )
@@ -1266,6 +1291,7 @@ def process_bounce_notification(payload: Dict[str, Any], *, admin: Optional[Dict
         "ok": True,
         "campaignId": campaign_id,
         "recipientEmail": recipient_email,
+        "recipientStatus": "failed",
         "status": parsed.get("status"),
         "action": parsed.get("action"),
         "diagnostic": diagnostic,
@@ -1282,7 +1308,207 @@ def verify_bounce_webhook_secret(token: Any) -> None:
         raise service_error("Invalid bounce webhook token", 403)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = str(os.environ.get(name) or "").strip()
+    try:
+        value = int(float(raw)) if raw else default
+    except Exception:
+        value = default
+    return max(minimum, min(value, maximum))
+
+
+def _bounce_imap_settings() -> Dict[str, Any]:
+    user = str(os.environ.get("EMAIL_BOUNCE_IMAP_USER") or os.environ.get("IMAP_USER") or "").strip()
+    password = str(os.environ.get("EMAIL_BOUNCE_IMAP_PASS") or os.environ.get("IMAP_PASS") or "").strip()
+    host = str(os.environ.get("EMAIL_BOUNCE_IMAP_HOST") or os.environ.get("IMAP_HOST") or "").strip()
+    use_ssl = _env_bool("EMAIL_BOUNCE_IMAP_SSL", True)
+    if not host and user:
+        host = "imap.gmail.com"
+    return {
+        "host": host,
+        "port": _env_int("EMAIL_BOUNCE_IMAP_PORT", 993 if use_ssl else 143, minimum=1, maximum=65535),
+        "user": user,
+        "password": password,
+        "mailbox": str(os.environ.get("EMAIL_BOUNCE_IMAP_MAILBOX") or "INBOX").strip() or "INBOX",
+        "ssl": use_ssl,
+        "timeout": _env_int("EMAIL_BOUNCE_IMAP_TIMEOUT_SECONDS", 15, minimum=3, maximum=120),
+        "searchDays": _env_int("EMAIL_BOUNCE_IMAP_SEARCH_DAYS", 3, minimum=1, maximum=30),
+        "limit": _env_int("EMAIL_BOUNCE_IMAP_MAX_MESSAGES", 50, minimum=1, maximum=500),
+        "markSeen": _env_bool("EMAIL_BOUNCE_IMAP_MARK_SEEN", False),
+    }
+
+
+def _bounce_imap_configured(settings: Optional[Dict[str, Any]] = None) -> bool:
+    selected = settings or _bounce_imap_settings()
+    return bool(selected.get("host") and selected.get("user") and selected.get("password"))
+
+
+def _bounce_poll_enabled(settings: Optional[Dict[str, Any]] = None) -> bool:
+    selected = settings or _bounce_imap_settings()
+    configured = _bounce_imap_configured(selected)
+    raw = os.environ.get("EMAIL_BOUNCE_POLL_ENABLED")
+    if raw is None or str(raw).strip() == "":
+        return configured
+    return _env_bool("EMAIL_BOUNCE_POLL_ENABLED", False) and configured
+
+
+def _bounce_poll_interval_seconds() -> int:
+    return _env_int("EMAIL_BOUNCE_POLL_INTERVAL_SECONDS", 60, minimum=30, maximum=3600)
+
+
+def _looks_like_bounce_notification(raw_message: str) -> bool:
+    text = str(raw_message or "")
+    lower = text.lower()
+    if "x-trufusion-campaign-id:" not in lower and not re.search(r"\bemc_[a-z0-9]+\b", lower):
+        return False
+    return any(
+        marker in lower
+        for marker in (
+            "final-recipient:",
+            "x-failed-recipients:",
+            "diagnostic-code:",
+            "delivery status notification",
+            "undelivered",
+            "address not found",
+            "mailer-daemon",
+        )
+    )
+
+
+def _raw_text_from_imap_fetch(fetch_data: Any) -> str:
+    for part in fetch_data or []:
+        if isinstance(part, tuple) and len(part) >= 2:
+            payload = part[1]
+            if isinstance(payload, bytes):
+                return payload.decode("utf-8", "replace")
+            if isinstance(payload, str):
+                return payload
+    return ""
+
+
+def poll_bounce_mailbox(*, force: bool = False) -> Dict[str, Any]:
+    settings = _bounce_imap_settings()
+    configured = _bounce_imap_configured(settings)
+    enabled = _bounce_poll_enabled(settings)
+    if not enabled:
+        return {
+            "ok": True,
+            "enabled": False,
+            "configured": configured,
+            "processed": 0,
+            "matched": 0,
+            "scanned": 0,
+        }
+
+    interval_s = _bounce_poll_interval_seconds()
+    now_monotonic = time.monotonic()
+    global _BOUNCE_LAST_POLL_MONOTONIC
+    with _BOUNCE_POLL_LOCK:
+        if not force and _BOUNCE_LAST_POLL_MONOTONIC and now_monotonic - _BOUNCE_LAST_POLL_MONOTONIC < interval_s:
+            return {
+                "ok": True,
+                "enabled": True,
+                "configured": True,
+                "skipped": True,
+                "processed": 0,
+                "matched": 0,
+                "scanned": 0,
+            }
+        _BOUNCE_LAST_POLL_MONOTONIC = now_monotonic
+
+    scanned = 0
+    matched = 0
+    processed = 0
+    duplicates = 0
+    skipped = 0
+    failed = 0
+    client = None
+    try:
+        if settings.get("ssl"):
+            client = imaplib.IMAP4_SSL(
+                str(settings["host"]),
+                int(settings["port"]),
+                timeout=int(settings["timeout"]),
+            )
+        else:
+            client = imaplib.IMAP4(str(settings["host"]), int(settings["port"]), timeout=int(settings["timeout"]))
+        client.login(str(settings["user"]), str(settings["password"]))
+        client.select(str(settings["mailbox"]), readonly=not bool(settings.get("markSeen")))
+        since = (_now() - timedelta(days=int(settings["searchDays"]))).strftime("%d-%b-%Y")
+        status, search_data = client.search(None, "SINCE", since)
+        if str(status).upper() != "OK":
+            raise RuntimeError(f"Bounce mailbox search failed: {status}")
+        message_ids = (search_data[0].split() if search_data and search_data[0] else [])[-int(settings["limit"]):]
+        for message_id in message_ids:
+            fetch_status, fetch_data = client.fetch(message_id, "(RFC822)")
+            if str(fetch_status).upper() != "OK":
+                failed += 1
+                continue
+            scanned += 1
+            raw_message = _raw_text_from_imap_fetch(fetch_data)
+            if not _looks_like_bounce_notification(raw_message):
+                continue
+            matched += 1
+            try:
+                result = process_bounce_notification({"rawEmail": raw_message, "source": "imap"})
+                if result.get("duplicate"):
+                    duplicates += 1
+                else:
+                    processed += 1
+                    if settings.get("markSeen"):
+                        client.store(message_id, "+FLAGS", "\\Seen")
+            except Exception as exc:
+                status_code = int(getattr(exc, "status", 500) or 500)
+                if status_code in {400, 404}:
+                    skipped += 1
+                    continue
+                failed += 1
+                logger.warning("Failed to process campaign bounce message", exc_info=True)
+    except Exception as exc:
+        logger.exception("Email campaign bounce mailbox poll failed")
+        return {
+            "ok": False,
+            "enabled": True,
+            "configured": True,
+            "error": str(exc)[:500],
+            "processed": processed,
+            "duplicates": duplicates,
+            "matched": matched,
+            "scanned": scanned,
+            "failed": failed,
+            "skipped": skipped,
+        }
+    finally:
+        if client is not None:
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+    if processed:
+        _notify_email_campaigns_changed(event="campaign_bounces_polled", processed=processed)
+    return {
+        "ok": True,
+        "enabled": True,
+        "configured": True,
+        "processed": processed,
+        "duplicates": duplicates,
+        "matched": matched,
+        "scanned": scanned,
+        "failed": failed,
+        "skipped": skipped,
+    }
+
+
 def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float = 0.25) -> Dict[str, Any]:
+    bounce_poll = poll_bounce_mailbox()
     _requeue_stale_processing_recipients()
     jobs = email_campaign_repository.list_due_pending_recipients(limit=limit)
     processed = 0
@@ -1382,6 +1608,8 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
         "sent": sent,
         "failed": failed,
         "skipped": skipped,
+        "bouncesProcessed": int((bounce_poll or {}).get("processed") or 0),
+        "bouncePoll": bounce_poll,
     }
 
 
@@ -1422,6 +1650,7 @@ def _throttle_seconds() -> float:
 
 
 def get_worker_status() -> Dict[str, Any]:
+    bounce_settings = _bounce_imap_settings()
     return {
         **background_job_supervisor.get_job_status(_JOB_NAME),
         "enabled": _enabled(),
@@ -1429,6 +1658,9 @@ def get_worker_status() -> Dict[str, Any]:
         "intervalSeconds": _interval_seconds(),
         "batchSize": _batch_size(),
         "throttleSeconds": _throttle_seconds(),
+        "bouncePollingEnabled": _bounce_poll_enabled(bounce_settings),
+        "bounceMailboxConfigured": _bounce_imap_configured(bounce_settings),
+        "bouncePollIntervalSeconds": _bounce_poll_interval_seconds(),
         "started": _THREAD_STARTED,
         "kickRunning": _KICK_RUNNING,
     }
