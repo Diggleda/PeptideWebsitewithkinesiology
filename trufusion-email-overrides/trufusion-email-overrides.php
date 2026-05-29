@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TrufusionLabs Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce TrufusionLabs mail identity (optional SMTP).
- * Version: 1.1.28
+ * Version: 1.1.29
  */
 
 if (!defined('ABSPATH')) exit;
@@ -202,7 +202,7 @@ function trufusion_email_overrides_get_brand_logo_url($current = '') {
     || stripos($value, 'TrufusionLabs_PhysiciansPortal') !== false
     || stripos($value, 'turfusionlabsphysiciansportal') !== false
   ) {
-    $value = trufusion_email_overrides_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.28';
+    $value = trufusion_email_overrides_get_frontend_url() . '/FullLogo_Transparent_NoBuffer%20(18).png?v=1.1.29';
   }
   return function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
 }
@@ -220,17 +220,7 @@ function trufusion_email_overrides_pre_option_brand_logo_url($pre_option) {
 }
 
 function trufusion_email_overrides_get_zelle_email($current = '') {
-  $value = trufusion_email_overrides_get_constant('TRUFUSION_ZELLE_EMAIL', 'PEPPR_ZELLE_EMAIL', '');
-  if ($value === '' && is_string($current)) {
-    $value = $current;
-  }
-  $value = trim($value);
-  $value = trufusion_email_overrides_trufusion_address($value);
-  $value = function_exists('sanitize_email') ? sanitize_email($value) : $value;
-  if ($value === '' || trufusion_email_overrides_is_peppro_address($value) || (function_exists('is_email') && !is_email($value))) {
-    return 'support@trufusionlabs.com';
-  }
-  return $value;
+  return 'support@peppro.net';
 }
 
 function trufusion_email_overrides_get_brand_color($name, $fallback) {

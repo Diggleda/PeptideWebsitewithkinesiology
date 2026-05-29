@@ -13,8 +13,9 @@ Add to `wp-config.php`:
 ```php
 define('TRUFUSION_MAIL_FROM_EMAIL', 'support@trufusionlabs.com');
 define('TRUFUSION_MAIL_FROM_NAME', 'TrufusionLabs');
-define('TRUFUSION_ZELLE_EMAIL', 'support@trufusionlabs.com');
 ```
+
+Customer on-hold Zelle instructions always tell customers to Zelle `support@peppro.net`.
 
 ## Optional: SMTP (recommended)
 

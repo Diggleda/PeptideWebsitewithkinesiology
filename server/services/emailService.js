@@ -69,6 +69,7 @@ const FROM_ADDRESS = normalizeFromAddress(process.env.MAIL_FROM);
 const EMAIL_BACKGROUND_COLOR = '#ffffff';
 const EMAIL_LOGO_FILENAME = 'FullLogo_Transparent_NoBuffer%20(18).png';
 const ORDER_UPDATE_BCC = 'pgibbons@trufusionlabs.com';
+const ZELLE_PAYMENT_EMAIL = 'support@peppro.net';
 
 const getFrontendBaseUrl = () => String(env.frontendBaseUrl || 'https://www.trufusionlabs.com').replace(/\/+$/, '');
 const buildEmailLogoUrl = () => `${getFrontendBaseUrl()}/${EMAIL_LOGO_FILENAME}`;
@@ -157,7 +158,7 @@ const sendPasswordResetEmail = async (to, token) => {
 const buildPaymentInstructionsSections = () => {
   const supportEmail = normalizeEmailAddress(process.env.SUPPORT_EMAIL) || 'support@trufusionlabs.com';
   const zelleRecipient = String(process.env.PAYMENT_ZELLE_RECIPIENT || '').trim();
-  const zelleEmail = normalizeEmailAddress(process.env.PAYMENT_ZELLE_EMAIL) || 'support@peppro.net';
+  const zelleEmail = ZELLE_PAYMENT_EMAIL;
   const zellePhone = String(process.env.PAYMENT_ZELLE_PHONE || '').trim();
 
   const bankName = String(process.env.PAYMENT_BANK_NAME || '').trim();

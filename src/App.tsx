@@ -13956,6 +13956,7 @@ function MainApp() {
       salesDoctorDetailRequestIdRef.current = requestId;
       const id = String(entry?.id || "").trim();
       if (!id) return;
+      const isNodeDemoEntry = entry?.isNodeDemo === true || id.startsWith("node-demo-live-");
       const cachedLiveProfile = livePresenceProfileImageByUserIdRef.current[id] || null;
       const aliasIds = Array.isArray(entry?.aliasIds)
         ? (entry.aliasIds as unknown[])
@@ -14068,6 +14069,11 @@ function MainApp() {
       );
       setSalesDoctorDetailLoading(false);
       setSalesDoctorDetailHydrating(true);
+
+      if (isNodeDemoEntry) {
+        setSalesDoctorDetailHydrating(false);
+        return;
+      }
 
       const shouldFetchSupplementalProfile =
         Boolean(id) &&
@@ -19102,6 +19108,9 @@ function MainApp() {
           .map((entry: any) => {
             const userId = String(entry?.id || "").trim();
             if (!userId) return null;
+            if (entry?.isNodeDemo === true || userId.startsWith("node-demo-live-")) {
+              return null;
+            }
             const cachedEntry = livePresenceProfileImageByUserIdRef.current[userId];
             const cachedHasAvatar =
               typeof cachedEntry?.value === "string" && cachedEntry.value.trim().length > 0;
@@ -31559,8 +31568,6 @@ function MainApp() {
 	      const hasPendingPermitTodos = pendingResellerPermitApprovals.length > 0;
 	      const hasContactFormTodos = contactFormTodoItems.length > 0;
 	      const hasTodoItems = hasPendingPermitTodos || hasContactFormTodos;
-	      const todoItemCount =
-	        contactFormTodoItems.length + pendingResellerPermitApprovals.length;
       const todoItemsLoading =
         (!pendingResellerPermitApprovalsHasSettled && !hasTodoItems) ||
         (!referralDataHasSettled && !hasTodoItems) ||
@@ -31583,10 +31590,8 @@ function MainApp() {
 	              Handle contact form follow-ups and account actions from one place.
 	            </p>
 	          </div>
-	          <div className="flex shrink-0 items-center gap-2">
-	            <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-	              {todoItemsLoading ? "Loading" : `${todoItemCount} open`}
-	            </span>
+	          {todoError || todoItemsRefreshing ? (
+	            <div className="flex shrink-0 items-center gap-2">
 	            {todoError ? (
 	              <Button
 	                type="button"
@@ -31604,7 +31609,8 @@ function MainApp() {
 		                Updating…
 		              </span>
 		            ) : null}
-	          </div>
+	            </div>
+	          ) : null}
 	        </div>
         <div
           data-dashboard-squircle="off"
@@ -33867,10 +33873,9 @@ function MainApp() {
 		                          )}
 	                      </div>
 
-	                      <div
-	                        className={`sales-rep-table-wrapper ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}
-	                      >
-	                        <div className="flex w-full min-w-0 flex-col gap-2">
+	                      <div className="sales-rep-table-wrapper live-users-list-frame">
+	                        <div className={`live-users-list-content ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}>
+	                          <div className="flex w-full min-w-0 flex-col gap-2">
 		                          {liveUsers.length === 0 ? (
 		                            <div className="px-3 py-3 text-sm text-slate-500">
 		                              {isSalesLead(user?.role) ? "No users found." : "No clients found."}
@@ -34061,8 +34066,9 @@ function MainApp() {
 		                          </div>
 		                        );
 		                      })}
-	                            </div>
+		                            </div>
 		                          )}
+		                          </div>
 		                    </div>
 	                  </div>
 	                </div>
@@ -36187,8 +36193,9 @@ function MainApp() {
                           </label>
                         </div>
 
-                        <div className={`sales-rep-table-wrapper admin-dashboard-list ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}>
-                          <div className="flex w-full min-w-0 flex-col gap-2">
+                        <div className="sales-rep-table-wrapper admin-dashboard-list live-users-list-frame">
+                          <div className={`live-users-list-content ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}>
+                            <div className="flex w-full min-w-0 flex-col gap-2">
 	                            {liveUsers.length === 0 ? (
 	                              <div className="px-3 py-3 text-sm text-slate-500">
 	                                No users found.
@@ -36384,6 +36391,7 @@ function MainApp() {
 		                            })}
 	                              </div>
                             )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -43462,6 +43470,7 @@ function MainApp() {
         }}
       >
         <DialogContent
+          className="manual-prospect-dialog"
           containerClassName={salesDashboardDetailModalContainerClassName}
           style={{ maxWidth: "min(960px, calc(100vw - 3rem))" }}
         >
@@ -43510,7 +43519,7 @@ function MainApp() {
                   className="border-slate-300/90 bg-transparent"
                 />
                 <p className="text-xs" style={{ color: "#64748b" }}>
-                  Comma seperated
+                  Comma separated
                 </p>
               </div>
               <div className="space-y-2">
@@ -43529,7 +43538,7 @@ function MainApp() {
                   className="border-slate-300/90 bg-transparent"
                 />
                 <p className="text-xs" style={{ color: "#64748b" }}>
-                  Comma seperated
+                  Comma separated
                 </p>
 	              </div>
 	            </div>
@@ -43587,11 +43596,12 @@ function MainApp() {
                 ))}
               </select>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="manual-prospect-actions flex gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={closeManualProspectModal}
+                className="manual-prospect-action-button manual-prospect-action-button--secondary"
               >
                 Cancel
               </Button>
@@ -43599,7 +43609,7 @@ function MainApp() {
                 type="submit"
                 variant="outline"
                 disabled={manualProspectSubmitting}
-                className="header-home-button squircle-sm bg-white text-slate-900"
+                className="manual-prospect-action-button manual-prospect-action-button--primary"
               >
                 {manualProspectSubmitting ? (
                   <span className="flex items-center gap-2">

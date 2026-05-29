@@ -1461,6 +1461,131 @@ const fallbackLiveUsers = [
   },
 ];
 
+const nodeDemoLiveUsers = [
+  {
+    id: 'node-demo-live-admin',
+    name: 'Maya Chen',
+    email: 'maya.chen.demo@trufusionlabs.com',
+    role: 'admin',
+  },
+  {
+    id: 'node-demo-live-sales-lead',
+    name: 'Elliot James',
+    email: 'elliot.james.demo@trufusionlabs.com',
+    role: 'sales_lead',
+  },
+  {
+    id: 'node-demo-live-doctor-1',
+    name: 'Dr. Naomi Patel',
+    email: 'naomi.patel.demo@trufusionlabs.com',
+    role: 'doctor',
+    greaterArea: 'Austin, TX',
+    studyFocus: 'Metabolic health and recovery protocols',
+    bio: 'Demo physician profile used by the local Node presence network.',
+  },
+  {
+    id: 'node-demo-live-doctor-2',
+    name: 'Dr. Victor Hayes',
+    email: 'victor.hayes.demo@trufusionlabs.com',
+    role: 'doctor',
+    greaterArea: 'Denver, CO',
+    studyFocus: 'Performance, longevity, and musculoskeletal recovery',
+    bio: 'Demo physician profile used by the local Node presence network.',
+  },
+  {
+    id: 'node-demo-live-sales-rep',
+    name: 'Sofia Ramirez',
+    email: 'sofia.ramirez.demo@trufusionlabs.com',
+    role: 'sales_rep',
+  },
+];
+
+const isNodeDemoLiveUsersEnabled = () => {
+  const raw =
+    process.env.USER_ACTIVITY_NODE_DEMO_LIVE_USERS ??
+    process.env.NODE_DEMO_LIVE_USERS;
+  if (typeof raw === 'string' && raw.trim()) {
+    return normalizeBooleanFlag(raw);
+  }
+  return !mysqlClient.isEnabled();
+};
+
+const buildNodeDemoLiveEntry = (entry, index, nowMs) => {
+  const idle = index % 4 === 2;
+  const loginMs = nowMs - (index + 1) * 7 * 60 * 1000;
+  const lastSeenMs = nowMs - (index + 1) * 25 * 1000;
+  const lastInteractionMs = idle
+    ? nowMs - (8 + index) * 60 * 1000
+    : nowMs - (index + 1) * 45 * 1000;
+
+  return {
+    id: entry.id,
+    name: entry.name || null,
+    email: entry.email || null,
+    role: normalizeUserRole(entry.role),
+    profileImageUrl: null,
+    greaterArea: entry.greaterArea || null,
+    studyFocus: entry.studyFocus || null,
+    websiteUrl: null,
+    bio: entry.bio || null,
+    isPartner: null,
+    allowedRetail: null,
+    isOnline: true,
+    isIdle: idle,
+    isNodeDemo: true,
+    lastLoginAt: new Date(loginMs).toISOString(),
+    lastSeenAt: new Date(lastSeenMs).toISOString(),
+    lastInteractionAt: new Date(lastInteractionMs).toISOString(),
+    idleMinutes: idle ? Math.max(1, Math.floor((nowMs - lastInteractionMs) / 60000)) : 0,
+    onlineMinutes: Math.max(0, Math.floor((nowMs - loginMs) / 60000)),
+  };
+};
+
+const appendNodeDemoLiveUsers = (liveUsers, options = {}) => {
+  if (!isNodeDemoLiveUsersEnabled()) {
+    return liveUsers;
+  }
+
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const targetCount = clampNumber(
+    parseNumber(
+      process.env.USER_ACTIVITY_NODE_DEMO_LIVE_USERS_COUNT ?? process.env.NODE_DEMO_LIVE_USERS_COUNT,
+      options.targetCount || 5,
+    ),
+    1,
+    nodeDemoLiveUsers.length,
+  );
+  const allowedRoles = Array.isArray(options.allowedRoles)
+    ? new Set(options.allowedRoles.map((role) => normalizeUserRole(role)))
+    : null;
+  const liveIds = new Set((liveUsers || []).map((user) => String(user?.id || '').trim()).filter(Boolean));
+  const liveEmails = new Set(
+    (liveUsers || [])
+      .map((user) => String(user?.email || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const needed = Math.max(0, targetCount - liveUsers.length);
+
+  if (needed <= 0) {
+    return liveUsers;
+  }
+
+  const extras = nodeDemoLiveUsers
+    .filter((entry) => {
+      const role = normalizeUserRole(entry.role);
+      if (allowedRoles && !allowedRoles.has(role)) {
+        return false;
+      }
+      const id = String(entry.id || '').trim();
+      const email = String(entry.email || '').trim().toLowerCase();
+      return Boolean(id && !liveIds.has(id) && (!email || !liveEmails.has(email)));
+    })
+    .slice(0, needed)
+    .map((entry, index) => buildNodeDemoLiveEntry(entry, liveUsers.length + index, nowMs));
+
+  return extras.length > 0 ? [...liveUsers, ...extras] : liveUsers;
+};
+
 const buildLiveUsersPayload = () => {
   const nowMs = Date.now();
   const onlineThresholdMinutes = clampNumber(
@@ -1509,6 +1634,7 @@ const buildLiveUsersPayload = () => {
   });
 
   let liveUsers = normalized.filter((user) => user.isOnline);
+  liveUsers = appendNodeDemoLiveUsers(liveUsers, { nowMs, targetCount: 5 });
   if (pseudoLiveEnabled && liveUsers.length < pseudoLiveCount) {
     const liveIds = new Set(liveUsers.map((user) => user.id));
     const liveEmails = new Set(
@@ -1670,7 +1796,7 @@ router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, re
     return idMatch || emailMatch;
   });
 
-  const clients = doctors
+  let clients = doctors
     .map((user) => {
       const snapshot = computePresenceSnapshot({
         user,
@@ -1696,6 +1822,12 @@ router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, re
       const bName = String(b?.name || b?.email || b?.id || '').toLowerCase();
       return aName.localeCompare(bName);
     });
+
+  clients = appendNodeDemoLiveUsers(clients, {
+    nowMs,
+    targetCount: 4,
+    allowedRoles: ['admin', 'sales_lead', 'doctor'],
+  });
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -1883,7 +2015,7 @@ router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, re
         .filter(Boolean),
     );
 
-    const doctorUsers = userRepository
+    let doctorUsers = userRepository
       .getAll()
       .filter((candidate) => {
         const candidateRole = normalizeRole(candidate?.role);
@@ -1920,6 +2052,12 @@ router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, re
         };
       })
       .filter((entry) => entry.isOnline);
+
+    doctorUsers = appendNodeDemoLiveUsers(doctorUsers, {
+      nowMs,
+      targetCount: 4,
+      allowedRoles: ['admin', 'sales_lead', 'doctor'],
+    });
 
     res.json({
       generatedAt: new Date().toISOString(),

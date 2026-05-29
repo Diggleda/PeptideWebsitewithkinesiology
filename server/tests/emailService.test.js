@@ -132,6 +132,34 @@ test('payment instructions email keeps pgibbons BCC when env bcc is also configu
   }
 });
 
+test('payment instructions email tells customers to Zelle support@peppro.net', async () => {
+  const previousZelleEmail = process.env.PAYMENT_ZELLE_EMAIL;
+  process.env.PAYMENT_ZELLE_EMAIL = 'support@trufusionlabs.com';
+  try {
+    await withFreshEmailService(async (emailService, sent) => {
+      await emailService.sendOrderPaymentInstructionsEmail({
+        to: 'doctor@example.com',
+        customerName: 'Dr. Test',
+        orderId: 'order-1',
+        wooOrderNumber: '1505',
+        total: 125.5,
+        discountCode: null,
+        discountCodeAmount: 0,
+      });
+
+      assert.equal(sent.length, 1);
+      assert.match(sent[0].html, /<strong>Zelle email<\/strong>: support@peppro\.net/);
+      assert.doesNotMatch(sent[0].html, /<strong>Zelle email<\/strong>: support@trufusionlabs\.com/);
+    });
+  } finally {
+    if (previousZelleEmail === undefined) {
+      delete process.env.PAYMENT_ZELLE_EMAIL;
+    } else {
+      process.env.PAYMENT_ZELLE_EMAIL = previousZelleEmail;
+    }
+  }
+});
+
 test('manual refund review email uses shared white TrufusionLabs styling', async () => {
   await withFreshEmailService(async (emailService, sent) => {
     await emailService.sendManualRefundReviewEmail({

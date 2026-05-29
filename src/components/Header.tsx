@@ -9640,44 +9640,8 @@ export function Header({
   );
 
 		  const patientLinksPanel = showPatientLinksTab ? (
-		    <div className="space-y-6">
+      <div className="space-y-6">
         <div className="flex flex-col gap-6">
-	      <div className="space-y-3" style={{ order: 1 }}>
-	        <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-5 sm:p-6">
-	          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[rgb(11,6,121)]">
-	            Delegate link status
-	          </p>
-	          <p className="mt-1 text-2xl font-semibold leading-tight text-slate-900 sm:text-3xl">
-	            {delegateLinkCreationEnabled ? 'Proposal beta enabled' : 'Brochure links only'}
-	          </p>
-	          <p className="mt-2 text-sm leading-relaxed text-slate-600">
-	            {delegateLinkCreationEnabled
-	              ? 'You can create brochure links and delegate proposal sessions for physician review.'
-	              : patientLinksEnabled
-	                ? 'Proposal sessions are not enabled for this physician yet. Create a brochure link without choosing a link type.'
-	                : 'Proposal sessions are not enabled right now. Create a brochure link without choosing a link type.'}
-	          </p>
-	        </div>
-	        <p className="text-sm text-slate-600">
-	          Please{' '}
-	          <button
-	            type="button"
-            className="font-bold hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(11,6,121,0.35)] focus-visible:ring-offset-2"
-            style={{
-              color: 'rgb(11,6,121)',
-              textDecorationLine: 'underline',
-              textDecorationColor: 'rgb(11,6,121)',
-              textUnderlineOffset: '2px',
-            }}
-            onClick={() => window.dispatchEvent(new CustomEvent('trufusion:open-bug-report', {
-              detail: { source: 'delegate_link' },
-            }))}
-	          >
-	            report
-	          </button>
-	          {' '}any issues you encounter with these tools, and we will prioritize fixing them.
-	        </p>
-	      </div>
       <Dialog
         modal={!patientLinkProductPickerOpen && !createLinkLegalDocument}
         open={createLinkDialogOpen}

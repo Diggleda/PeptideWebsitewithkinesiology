@@ -242,6 +242,45 @@ class WooCommerceProxyGuardrailTests(unittest.TestCase):
             )
         )
 
+    def test_python_zelle_order_payload_triggers_woo_on_hold_email_override(self):
+        order = {
+            "id": "1778107541903",
+            "createdAt": "2026-05-06T15:45:41.897501-07:00",
+            "paymentMethod": "zelle",
+            "paymentDetails": "zelle",
+            "taxTotal": 0,
+            "grandTotal": 50.0,
+            "total": 50.0,
+            "shippingTotal": 0,
+            "shippingEstimate": {},
+            "shippingAddress": {
+                "name": "Dr. Test",
+                "addressLine1": "640 S Grand Ave",
+                "city": "Santa Ana",
+                "state": "CA",
+                "postalCode": "92705",
+                "country": "US",
+            },
+            "items": [
+                {
+                    "productId": "1512",
+                    "name": "Test Product",
+                    "quantity": 1,
+                    "price": 50.0,
+                }
+            ],
+        }
+        customer = {"name": "Dr. Test", "email": "doctor@example.com"}
+
+        payload = woo_commerce.build_order_payload(order, customer)
+        meta = {entry.get("key"): entry.get("value") for entry in payload["meta_data"]}
+
+        self.assertEqual(payload["status"], "on-hold")
+        self.assertEqual(payload["payment_method"], "bacs")
+        self.assertEqual(payload["payment_method_title"], "Zelle")
+        self.assertEqual(meta.get("trufusion_payment_method"), "zelle")
+        self.assertEqual(meta.get("trufusion_payment_details"), "zelle")
+
 
 if __name__ == "__main__":
     unittest.main()
