@@ -573,6 +573,7 @@ class EmailCampaignServiceTests(unittest.TestCase):
             ), \
             patch.object(email_campaign_service.email_campaign_repository, "log_event"), \
             patch.object(email_campaign_service.email_service, "send_campaign_email"), \
+            patch.object(email_campaign_service, "_bounce_confirmation_delay_seconds", return_value=0), \
             patch.object(email_campaign_service, "_notify_email_campaigns_changed") as notify_changed:
             result = email_campaign_service.process_pending_campaign_emails(limit=1, throttle_seconds=0)
 
@@ -659,6 +660,67 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertTrue(result["finalBouncePollForced"])
         self.assertEqual(result["bouncesProcessed"], 1)
         self.assertEqual(result["sent"], 0)
+        update_by_email.assert_not_called()
+
+    def test_worker_keeps_recipient_checking_until_confirmation_delay_passes(self) -> None:
+        with patch.object(
+            email_campaign_service,
+            "poll_bounce_mailbox",
+            return_value={
+                "ok": True,
+                "enabled": True,
+                "configured": True,
+                "processed": 0,
+                "duplicates": 0,
+                "matched": 0,
+                "scanned": 3,
+                "failed": 0,
+                "skipped": 0,
+            },
+        ), patch.object(
+            email_campaign_service.email_campaign_repository,
+            "list_due_pending_recipients",
+            return_value=[
+                {
+                    "recipient_id": "emr_1",
+                    "campaign_id": "emc_1",
+                    "recipient_email": "doctor@example.com",
+                    "recipient_name": "Dr. Example",
+                    "recipient_type": "physician",
+                    "recipient_variables_json": {
+                        "doctor_name": "Dr. Example",
+                        "clinic_name": "Example Clinic",
+                        "delegate_links_url": "https://trufusionlabs.com/account?tab=delegate-links",
+                        "unsubscribe_url": "https://trufusionlabs.com/unsubscribe",
+                        "support_email": "support@trufusionlabs.com",
+                    },
+                    "template_id": "delegate_links_announcement",
+                    "campaign_type": "announcement",
+                    "subject": "Delegate Links are now available",
+                    "campaign_status": "sending",
+                    "campaign_variables_json": {},
+                }
+            ],
+        ), patch.object(email_campaign_service.email_campaign_repository, "is_unsubscribed", return_value=False), \
+            patch.object(email_campaign_service.email_campaign_repository, "update_recipient_status") as update_recipient, \
+            patch.object(email_campaign_service.email_campaign_repository, "update_recipient_status_by_campaign_and_email") as update_by_email, \
+            patch.object(email_campaign_service.email_campaign_repository, "update_campaign_status"), \
+            patch.object(
+                email_campaign_service.email_campaign_repository,
+                "get_recipient_by_campaign_and_email",
+                return_value={"recipient_email": "doctor@example.com", "status": "sent_pending_bounce_check", "sent_at": email_campaign_service._now_iso()},
+            ), \
+            patch.object(email_campaign_service.email_campaign_repository, "get_campaign", return_value={"id": "emc_1", "status": "sending", "recipient_count": 1}), \
+            patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={"sent_pending_bounce_check": 1}), \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"), \
+            patch.object(email_campaign_service.email_service, "send_campaign_email"), \
+            patch.object(email_campaign_service, "_bounce_confirmation_delay_seconds", return_value=90), \
+            patch.object(email_campaign_service, "_notify_email_campaigns_changed"):
+            result = email_campaign_service.process_pending_campaign_emails(limit=1, throttle_seconds=0)
+
+        self.assertEqual(result["sent"], 0)
+        update_recipient.assert_called()
+        self.assertEqual(update_recipient.call_args.args[:2], ("emr_1", "sent_pending_bounce_check"))
         update_by_email.assert_not_called()
 
     def test_sent_campaign_list_promotes_due_scheduled_campaigns(self) -> None:

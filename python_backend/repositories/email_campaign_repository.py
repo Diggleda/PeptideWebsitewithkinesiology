@@ -552,6 +552,34 @@ def get_recipient_by_campaign_and_email(campaign_id: str, recipient_email: str) 
     return _normalize_recipient(recipient)
 
 
+def list_recipients_by_status(status: str, *, limit: int = 250) -> List[Dict[str, Any]]:
+    normalized_status = str(status or "").strip()
+    if not normalized_status:
+        return []
+    limit = max(1, min(int(limit or 250), 1000))
+    if _using_mysql():
+        rows = mysql_client.fetch_all(
+            """
+            SELECT *
+            FROM email_campaign_recipients
+            WHERE status = %(status)s
+            ORDER BY sent_at ASC, created_at ASC, id ASC
+            LIMIT %(limit)s
+            """,
+            {"status": normalized_status, "limit": limit},
+        )
+        return [row for row in (_normalize_recipient(row) for row in rows) if row]
+
+    with _JSON_LOCK:
+        rows = [
+            row
+            for row in _load_json()["recipients"]
+            if str(row.get("status") or "") == normalized_status
+        ]
+    rows.sort(key=lambda row: (str(row.get("sent_at") or ""), str(row.get("created_at") or ""), str(row.get("id") or "")))
+    return [row for row in (_normalize_recipient(row) for row in rows[:limit]) if row]
+
+
 def requeue_stale_processing_recipients(cutoff: Any) -> int:
     cutoff_value = _format_datetime(cutoff)
     if not cutoff_value:

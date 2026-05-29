@@ -1390,6 +1390,14 @@ def _bounce_poll_interval_seconds() -> int:
     return _env_int("EMAIL_BOUNCE_POLL_INTERVAL_SECONDS", 60, minimum=30, maximum=3600)
 
 
+def _bounce_active_poll_interval_seconds() -> int:
+    return _env_int("EMAIL_BOUNCE_ACTIVE_POLL_INTERVAL_SECONDS", 10, minimum=5, maximum=300)
+
+
+def _bounce_confirmation_delay_seconds() -> int:
+    return _env_int("EMAIL_BOUNCE_CONFIRMATION_DELAY_SECONDS", 180, minimum=0, maximum=3600)
+
+
 def _looks_like_bounce_notification(raw_message: str) -> bool:
     text = str(raw_message or "")
     lower = text.lower()
@@ -1554,6 +1562,38 @@ def _summarize_bounce_polls(polls: Iterable[Dict[str, Any]]) -> Dict[str, int]:
     return summary
 
 
+def _bounce_check_delivery_from_recipient(recipient: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    campaign_id = str(recipient.get("campaign_id") or "").strip()
+    recipient_email = _normalize_email(recipient.get("recipient_email"))
+    if not campaign_id or not recipient_email:
+        return None
+    return {
+        "campaign_id": campaign_id,
+        "recipient_email": recipient_email,
+        "recipient_id": str(recipient.get("id") or ""),
+        "template_id": recipient.get("template_id"),
+        "accepted_at": recipient.get("sent_at"),
+        "finalized": False,
+    }
+
+
+def _bounce_check_ready_for_sent(delivery: Dict[str, Any]) -> bool:
+    delay_s = _bounce_confirmation_delay_seconds()
+    if delay_s <= 0:
+        return True
+    try:
+        accepted_at = _parse_iso(delivery.get("accepted_at"))
+    except Exception:
+        accepted_at = None
+    if not accepted_at:
+        return False
+    return (_now() - accepted_at).total_seconds() >= delay_s
+
+
+def _active_bounce_check_count(*, limit: int = 1000) -> int:
+    return len(email_campaign_repository.list_recipients_by_status(_SENT_PENDING_BOUNCE_CHECK_STATUS, limit=limit))
+
+
 def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float = 0.25) -> Dict[str, Any]:
     bounce_polls: List[Dict[str, Any]] = []
 
@@ -1563,7 +1603,11 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
             bounce_polls.append(result)
         return result
 
-    bounce_poll = run_bounce_poll()
+    existing_bounce_check_recipients = email_campaign_repository.list_recipients_by_status(
+        _SENT_PENDING_BOUNCE_CHECK_STATUS,
+        limit=max(1, min(int(limit or 25), 250)),
+    )
+    bounce_poll = run_bounce_poll(force=bool(existing_bounce_check_recipients))
     bounce_polling_active = bool((bounce_poll or {}).get("enabled"))
     _requeue_stale_processing_recipients()
     jobs = email_campaign_repository.list_due_pending_recipients(limit=limit)
@@ -1572,7 +1616,12 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
     failed = 0
     skipped = 0
     campaign_ids: set[str] = set()
-    accepted_deliveries: List[Dict[str, Any]] = []
+    accepted_deliveries: List[Dict[str, Any]] = [
+        delivery
+        for delivery in (_bounce_check_delivery_from_recipient(recipient) for recipient in existing_bounce_check_recipients)
+        if delivery
+    ]
+    campaign_ids.update(str(delivery.get("campaign_id") or "") for delivery in accepted_deliveries if delivery.get("campaign_id"))
 
     def finalize_bounce_checked_recipients(poll_result: Optional[Dict[str, Any]]) -> int:
         nonlocal sent
@@ -1595,6 +1644,8 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                 delivery["finalized"] = True
                 continue
             if current_status not in {_SENT_PENDING_BOUNCE_CHECK_STATUS, "processing"}:
+                continue
+            if not _bounce_check_ready_for_sent(delivery):
                 continue
             updated = email_campaign_repository.update_recipient_status_by_campaign_and_email(
                 campaign_id,
@@ -1620,6 +1671,8 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                 status="sent",
             )
         return finalized
+
+    finalize_bounce_checked_recipients(bounce_poll)
 
     for job in jobs:
         processed += 1
@@ -1778,6 +1831,7 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
             _reconcile_campaign_status(campaign, counts)
 
     bounce_summary = _summarize_bounce_polls(bounce_polls)
+    active_bounce_checks = _active_bounce_check_count()
     if processed > 0:
         _notify_email_campaigns_changed(event="campaign_recipients_processed", processed=processed, sent=sent, failed=failed, skipped=skipped)
 
@@ -1792,6 +1846,7 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
         "bouncePolls": bounce_polls,
         "bouncePollSummary": bounce_summary,
         "finalBouncePollForced": final_poll_forced,
+        "activeBounceChecks": active_bounce_checks,
     }
 
 
@@ -1845,6 +1900,8 @@ def get_worker_status() -> Dict[str, Any]:
         "bouncePollingEnabled": _bounce_poll_enabled(bounce_settings),
         "bounceMailboxConfigured": _bounce_imap_configured(bounce_settings),
         "bouncePollIntervalSeconds": _bounce_poll_interval_seconds(),
+        "bounceActivePollIntervalSeconds": _bounce_active_poll_interval_seconds(),
+        "bounceConfirmationDelaySeconds": _bounce_confirmation_delay_seconds(),
         "bouncePollLastResult": last_result.get("bouncePoll") if isinstance(last_result, dict) else None,
         "started": _THREAD_STARTED,
         "kickRunning": _KICK_RUNNING,
@@ -1864,10 +1921,12 @@ def _run_kick_loop() -> None:
                 enabled=_enabled(),
                 mode=_mode(),
                 intervalSeconds=_interval_seconds(),
+                activeBounceChecks=int(result.get("activeBounceChecks") or 0),
             )
-            if int(result.get("processed") or 0) <= 0:
+            active_bounce_checks = int(result.get("activeBounceChecks") or 0)
+            if int(result.get("processed") or 0) <= 0 and active_bounce_checks <= 0:
                 break
-            time.sleep(1.0)
+            time.sleep(float(_bounce_active_poll_interval_seconds() if active_bounce_checks else 1.0))
     except Exception as exc:
         logger.exception("Email campaign kick worker failed")
         background_job_supervisor.record_heartbeat(
@@ -1908,8 +1967,15 @@ def ensure_email_campaign_worker_started() -> None:
 def _run_loop() -> None:
     interval_s = _interval_seconds()
     while True:
+        sleep_s = float(interval_s)
         try:
             result = process_pending_campaign_emails(limit=_batch_size(), throttle_seconds=_throttle_seconds())
+            active_bounce_checks = int(result.get("activeBounceChecks") or 0)
+            processed_count = int(result.get("processed") or 0)
+            if processed_count > 0:
+                sleep_s = 1.0
+            elif active_bounce_checks > 0:
+                sleep_s = float(_bounce_active_poll_interval_seconds())
             background_job_supervisor.record_heartbeat(
                 _JOB_NAME,
                 last_result=result,
@@ -1917,6 +1983,8 @@ def _run_loop() -> None:
                 enabled=_enabled(),
                 mode="thread",
                 intervalSeconds=interval_s,
+                activeBounceChecks=active_bounce_checks,
+                nextSleepSeconds=sleep_s,
             )
         except Exception as exc:
             logger.exception("Email campaign worker failed")
@@ -1927,7 +1995,7 @@ def _run_loop() -> None:
                 mode="thread",
                 intervalSeconds=interval_s,
             )
-        time.sleep(interval_s)
+        time.sleep(sleep_s)
 
 
 def start_email_campaign_worker(*, force: bool = False) -> None:
