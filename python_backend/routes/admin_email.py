@@ -150,6 +150,32 @@ def get_worker_status():
     return handle_action(action)
 
 
+@blueprint.post("/bounces")
+@require_auth
+def process_bounce():
+    def action():
+        admin = _current_admin()
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            payload = {"rawEmail": request.get_data(as_text=True)}
+        return email_campaign_service.process_bounce_notification(payload, admin=admin)
+
+    return handle_action(action)
+
+
+@blueprint.post("/bounces/webhook")
+def process_bounce_webhook():
+    def action():
+        token = request.headers.get("X-Trufusion-Bounce-Token") or request.args.get("token")
+        email_campaign_service.verify_bounce_webhook_secret(token)
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            payload = {"rawEmail": request.get_data(as_text=True)}
+        return email_campaign_service.process_bounce_notification(payload)
+
+    return handle_action(action)
+
+
 @blueprint.get("/unsubscribe")
 def unsubscribe():
     def action():

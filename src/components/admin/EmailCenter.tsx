@@ -424,7 +424,10 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     outline: 2px solid #0b0679 !important;
     outline-offset: 3px !important;
   }
-  [data-email-center-variable] {
+  [data-email-center-variable-state="display"] {
+    display: inline !important;
+  }
+  [data-email-center-variable-state="editing"] {
     align-items: center !important;
     background: rgba(11, 6, 121, 0.1) !important;
     border: 1px solid rgba(11, 6, 121, 0.35) !important;
@@ -439,7 +442,7 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     vertical-align: baseline !important;
     white-space: nowrap !important;
   }
-  [data-email-center-variable-remove] {
+  [data-email-center-variable-state="editing"] [data-email-center-variable-remove] {
     align-items: center !important;
     background: #ffffff !important;
     border: 1px solid rgba(11, 6, 121, 0.35) !important;
@@ -454,8 +457,8 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     padding: 0 !important;
     width: 1.25em !important;
   }
-  [data-email-center-variable-remove]:hover,
-  [data-email-center-variable-remove]:focus-visible {
+  [data-email-center-variable-state="editing"] [data-email-center-variable-remove]:hover,
+  [data-email-center-variable-state="editing"] [data-email-center-variable-remove]:focus-visible {
     background: #0b0679 !important;
     color: #ffffff !important;
     outline: none !important;
@@ -512,6 +515,47 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     return "{{ " + String(variable.key || "").trim() + " }}";
   }
 
+  function markerVariable(marker) {
+    return {
+      key: marker.getAttribute("data-email-center-variable") || "",
+      value: marker.getAttribute("data-email-center-variable-value") || ""
+    };
+  }
+
+  function clearElementChildren(element) {
+    while (element.firstChild) {
+      element.removeChild(element.firstChild);
+    }
+  }
+
+  function renderEditingVariableMarker(marker) {
+    var variable = markerVariable(marker);
+    var label = document.createElement("span");
+    var removeButton = document.createElement("button");
+    clearElementChildren(marker);
+    marker.setAttribute("data-email-center-variable-state", "editing");
+    marker.setAttribute("contenteditable", "false");
+    marker.setAttribute("title", "Variable: " + variable.key);
+    label.setAttribute("data-email-center-variable-label", "true");
+    label.textContent = variableLabel(variable);
+    removeButton.type = "button";
+    removeButton.setAttribute("data-email-center-variable-remove", "true");
+    removeButton.setAttribute("contenteditable", "false");
+    removeButton.setAttribute("aria-label", "Remove " + variableLabel(variable));
+    removeButton.textContent = "X";
+    marker.appendChild(label);
+    marker.appendChild(removeButton);
+  }
+
+  function renderDisplayVariableMarker(marker) {
+    var variable = markerVariable(marker);
+    clearElementChildren(marker);
+    marker.setAttribute("data-email-center-variable-state", "display");
+    marker.setAttribute("contenteditable", "false");
+    marker.setAttribute("title", "Variable: " + variable.key);
+    marker.textContent = variable.value || variableLabel(variable);
+  }
+
   function findNextVariableToken(text, startIndex) {
     var best = null;
     VARIABLE_PLACEHOLDER_PATTERN.lastIndex = startIndex;
@@ -543,23 +587,11 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
 
   function makeVariableMarker(variable) {
     var marker = document.createElement("span");
-    var label = document.createElement("span");
-    var removeButton = document.createElement("button");
     var id = "email-variable-" + String(variableMarkerSequence += 1);
     marker.setAttribute("data-email-center-variable", variable.key);
     marker.setAttribute("data-email-center-variable-id", id);
     marker.setAttribute("data-email-center-variable-value", variable.value || "");
-    marker.setAttribute("contenteditable", "false");
-    marker.setAttribute("title", "Variable: " + variable.key);
-    label.setAttribute("data-email-center-variable-label", "true");
-    label.textContent = variableLabel(variable);
-    removeButton.type = "button";
-    removeButton.setAttribute("data-email-center-variable-remove", "true");
-    removeButton.setAttribute("contenteditable", "false");
-    removeButton.setAttribute("aria-label", "Remove " + variableLabel(variable));
-    removeButton.textContent = "X";
-    marker.appendChild(label);
-    marker.appendChild(removeButton);
+    renderEditingVariableMarker(marker);
     return marker;
   }
 
@@ -596,6 +628,7 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
   }
 
   function wrapVariables(target) {
+    Array.prototype.slice.call(target.querySelectorAll("[data-email-center-variable]")).forEach(renderEditingVariableMarker);
     var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
     var nodes = [];
     var node = null;
@@ -605,6 +638,10 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     return nodes.reduce(function (count, textNode) {
       return count + wrapVariablesInTextNode(textNode);
     }, 0);
+  }
+
+  function showVariableMarkersAsDisplay(root) {
+    Array.prototype.slice.call(root.querySelectorAll("[data-email-center-variable]")).forEach(renderDisplayVariableMarker);
   }
 
   function unwrapVariableMarkers(root, usePlaceholders) {
@@ -635,6 +672,10 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
   function findEditableTarget(start) {
     var element = start && start.nodeType === 1 ? start : start && start.parentElement;
     while (element && element !== document.documentElement) {
+      if (element.hasAttribute && element.hasAttribute("data-email-center-variable")) {
+        element = element.parentElement;
+        continue;
+      }
       if (element.matches && element.matches(EDITABLE_SELECTOR) && hasEditableContent(element)) {
         return element;
       }
@@ -737,7 +778,7 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
       editingTarget.removeAttribute("data-email-center-edit-target");
     }
     postHtmlUpdate();
-    unwrapVariableMarkers(editingTarget, false);
+    showVariableMarkersAsDisplay(editingTarget);
     editingTarget = null;
     editingRequiredVariableIds = [];
     editingLastSafeHtml = "";
@@ -793,6 +834,7 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
       return Boolean(
         marker &&
         marker.getAttribute("contenteditable") === "false" &&
+        marker.getAttribute("data-email-center-variable-state") === "editing" &&
         key &&
         label &&
         label.textContent === variableLabel({ key: key })
@@ -1089,7 +1131,8 @@ const getCampaignProgress = (campaign: EmailCenterCampaign) => {
   const failed = Number(counts.failed || 0) + Number(counts.bounced || 0);
   const unsubscribed = Number(counts.unsubscribed || 0);
   const pending = Number(counts.pending || 0);
-  const total = Math.max(Number(campaign.recipientCount || 0), sent + failed + unsubscribed + pending, 0);
+  const processing = Number(counts.processing || 0);
+  const total = Math.max(Number(campaign.recipientCount || 0), sent + failed + unsubscribed + pending + processing, 0);
   const completed = Math.min(total, sent + failed + unsubscribed);
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
   const segment = (value: number) => (total > 0 ? `${Math.max(0, Math.min(100, (value / total) * 100))}%` : "0%");
@@ -1097,7 +1140,8 @@ const getCampaignProgress = (campaign: EmailCenterCampaign) => {
     sent,
     failed,
     unsubscribed,
-    pending: Math.max(0, total - completed),
+    pending,
+    processing,
     total,
     completed,
     percent,
@@ -1440,6 +1484,21 @@ export function EmailCenter() {
       window.removeEventListener("trufusion:resource-changed", handleResourceChanged);
       document.removeEventListener("visibilitychange", refreshCurrentView);
       window.removeEventListener("focus", refreshCurrentView);
+    };
+  }, [activeTab, loadCampaigns]);
+
+  useEffect(() => {
+    if (activeTab === "new" || activeTab === "templates") {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      void loadCampaigns(activeTab === "logs" ? undefined : activeTab, { silent: true });
+    }, 5000);
+    return () => {
+      window.clearInterval(interval);
     };
   }, [activeTab, loadCampaigns]);
 
@@ -1849,6 +1908,7 @@ export function EmailCenter() {
                             </div>
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
                               <span>Sent {progress.sent}</span>
+                              {progress.processing > 0 && <span>Processing {progress.processing}</span>}
                               <span>Pending {progress.pending}</span>
                               {progress.failed > 0 && <span>Failed {progress.failed}</span>}
                               {progress.unsubscribed > 0 && <span>Unsubscribed {progress.unsubscribed}</span>}
@@ -1896,7 +1956,7 @@ export function EmailCenter() {
   };
 
   return (
-    <section ref={emailCenterRootRef} className="admin-tab-panel-enter w-full min-w-0">
+    <section ref={emailCenterRootRef} className="email-center-root admin-tab-panel-enter w-full min-w-0">
       <Dialog
         open={pendingCampaignMode !== null}
         onOpenChange={(open) => {

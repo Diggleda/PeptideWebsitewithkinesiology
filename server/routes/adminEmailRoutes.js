@@ -275,9 +275,26 @@ const normalizeVariables = (template, suppliedVariables) => {
   return variables;
 };
 
-const normalizeCustomHtml = (value) => {
+const restoreVariablePlaceholders = (htmlValue, template, variables) => {
+  let restored = String(htmlValue || '');
+  (template.variables || []).forEach((variableName) => {
+    const key = String(variableName);
+    const value = String(variables?.[key] || SAMPLE_VARIABLES[key] || '');
+    if (!value) return;
+    const placeholder = `{{ ${key} }}`;
+    const candidates = Array.from(new Set([value, escapeHtml(value)]))
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+    candidates.forEach((candidate) => {
+      restored = restored.split(candidate).join(placeholder);
+    });
+  });
+  return restored;
+};
+
+const normalizeCustomHtml = (value, template, variables) => {
   if (typeof value !== 'string') return '';
-  return value
+  const normalized = value
     .trim()
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b(?=[^>]*data-email-center-preview-(?:containment|editor-style))[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -288,12 +305,13 @@ const normalizeCustomHtml = (value) => {
       /<span\b(?=[^>]*\bdata-email-center-variable=(["']?)([a-zA-Z0-9_]+)\1)[^>]*>[\s\S]*?<\/span>/gi,
       (_match, _quote, variableName) => `{{ ${variableName} }}`,
     );
+  return template ? restoreVariablePlaceholders(normalized, template, variables) : normalized;
 };
 
 const renderEmailTemplate = (templateId, suppliedVariables, customHtml) => {
   const template = getTemplate(templateId);
   const variables = normalizeVariables(template, suppliedVariables);
-  const normalizedCustomHtml = normalizeCustomHtml(customHtml);
+  const normalizedCustomHtml = normalizeCustomHtml(customHtml, template, variables);
   const source = normalizedCustomHtml || loadTemplateHtml(template);
   const html = source.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, variableName) => {
     if (!Object.prototype.hasOwnProperty.call(variables, variableName)) return '';

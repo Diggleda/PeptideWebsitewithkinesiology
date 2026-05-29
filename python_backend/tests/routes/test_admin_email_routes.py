@@ -203,6 +203,51 @@ class AdminEmailRouteTests(unittest.TestCase):
         self.assertEqual(delete_campaign.call_args.args[0], "emc_1")
         self.assertEqual(delete_campaign.call_args.kwargs["admin"]["id"], "admin_1")
 
+    def test_bounce_route_passes_admin_context(self) -> None:
+        with self.app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            return_value=None,
+        ), patch.object(
+            admin_email,
+            "_current_admin",
+            return_value={"id": "admin_1", "role": "admin"},
+        ), patch.object(
+            admin_email.email_campaign_service,
+            "process_bounce_notification",
+            return_value={"ok": True, "campaignId": "emc_1"},
+        ) as process_bounce:
+            response = client.post(
+                "/api/admin/email/bounces",
+                json={"rawEmail": "X-Trufusion-Campaign-Id: emc_1"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        self.assertEqual(process_bounce.call_args.args[0]["rawEmail"], "X-Trufusion-Campaign-Id: emc_1")
+        self.assertEqual(process_bounce.call_args.kwargs["admin"]["id"], "admin_1")
+
+    def test_bounce_webhook_uses_shared_secret(self) -> None:
+        with self.app.test_client() as client, patch.object(
+            admin_email.email_campaign_service,
+            "verify_bounce_webhook_secret",
+        ) as verify_secret, patch.object(
+            admin_email.email_campaign_service,
+            "process_bounce_notification",
+            return_value={"ok": True, "campaignId": "emc_1"},
+        ) as process_bounce:
+            response = client.post(
+                "/api/admin/email/bounces/webhook",
+                data="X-Trufusion-Campaign-Id: emc_1",
+                content_type="message/rfc822",
+                headers={"X-Trufusion-Bounce-Token": "secret"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        verify_secret.assert_called_once_with("secret")
+        self.assertEqual(process_bounce.call_args.args[0]["rawEmail"], "X-Trufusion-Campaign-Id: emc_1")
+        self.assertNotIn("admin", process_bounce.call_args.kwargs)
+
 
 if __name__ == "__main__":
     unittest.main()

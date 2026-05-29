@@ -34,6 +34,8 @@ _TEST_SENDS: Dict[str, List[float]] = {}
 _TEST_SENDS_LOCK = threading.Lock()
 _CUSTOM_HTML_VARIABLE_KEY = "__email_center_custom_html"
 _MAX_CUSTOM_HTML_LENGTH = 500_000
+_PROCESSING_STALE_SECONDS = 15 * 60
+_BOUNCE_DIAGNOSTIC_MAX_LENGTH = 1200
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
@@ -924,8 +926,52 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     }
 
 
+def _campaign_status_from_counts(campaign: Dict[str, Any], counts: Dict[str, Any]) -> str:
+    current_status = str(campaign.get("status") or "")
+    if current_status in {"draft", "scheduled"}:
+        return current_status
+    sent = int(counts.get("sent") or 0)
+    failed = int(counts.get("failed") or 0) + int(counts.get("bounced") or 0)
+    unsubscribed = int(counts.get("unsubscribed") or 0)
+    pending = int(counts.get("pending") or 0)
+    processing = int(counts.get("processing") or 0)
+    known_total = sent + failed + unsubscribed + pending + processing
+    total = max(int(campaign.get("recipient_count") or 0), known_total)
+    if total <= 0:
+        return current_status or "draft"
+    if pending > 0 or processing > 0:
+        return "sending"
+    if failed > 0 and sent == 0 and unsubscribed == 0:
+        return "failed"
+    if sent > 0 or failed > 0 or unsubscribed > 0:
+        return "sent"
+    return current_status or "sending"
+
+
+def _reconcile_campaign_status(campaign: Dict[str, Any], counts: Dict[str, Any]) -> str:
+    campaign_id = str(campaign.get("id") or "")
+    current_status = str(campaign.get("status") or "")
+    next_status = _campaign_status_from_counts(campaign, counts)
+    if campaign_id and next_status and next_status != current_status:
+        sent_at = _now_iso() if next_status in {"sent", "failed"} else None
+        email_campaign_repository.update_campaign_status(campaign_id, next_status, sent_at=sent_at)
+        campaign["status"] = next_status
+        if sent_at and not campaign.get("sent_at"):
+            campaign["sent_at"] = sent_at
+    return str(campaign.get("status") or next_status)
+
+
+def _requeue_stale_processing_recipients() -> int:
+    cutoff = (_now() - timedelta(seconds=_PROCESSING_STALE_SECONDS)).isoformat().replace("+00:00", "Z")
+    requeued = email_campaign_repository.requeue_stale_processing_recipients(cutoff)
+    if requeued:
+        _notify_email_campaigns_changed(event="stale_campaign_recipients_requeued", requeued=requeued)
+    return int(requeued or 0)
+
+
 def _campaign_to_api(campaign: Dict[str, Any]) -> Dict[str, Any]:
     counts = email_campaign_repository.count_recipients_by_status(str(campaign.get("id") or ""))
+    status = _reconcile_campaign_status(campaign, counts)
     variables = dict(campaign.get("variables_json") or {})
     custom_html = str(variables.pop(_CUSTOM_HTML_VARIABLE_KEY, "") or "")
     variables = _strip_campaign_reserved_variables(variables)
@@ -935,7 +981,7 @@ def _campaign_to_api(campaign: Dict[str, Any]) -> Dict[str, Any]:
         "templateId": campaign.get("template_id"),
         "subject": campaign.get("subject"),
         "createdByAdminId": campaign.get("created_by_admin_id"),
-        "status": campaign.get("status"),
+        "status": status,
         "recipientCount": int(campaign.get("recipient_count") or 0),
         "counts": counts,
         "variables": variables,
@@ -1080,6 +1126,7 @@ def delete_draft_campaign(campaign_id: str, *, admin: Optional[Dict[str, Any]] =
 
 
 def list_campaigns(*, status: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
+    _requeue_stale_processing_recipients()
     promoted = email_campaign_repository.promote_due_scheduled_campaigns()
     if promoted > 0:
         _notify_email_campaigns_changed(event="scheduled_campaigns_due", promoted=promoted)
@@ -1101,7 +1148,142 @@ def get_campaign_detail(campaign_id: str) -> Dict[str, Any]:
     }
 
 
+def _extract_header_value(raw_message: str, header_name: str) -> str:
+    pattern = re.compile(rf"(?im)^{re.escape(header_name)}:\s*(.*(?:\n[ \t].*)*)")
+    match = pattern.search(raw_message or "")
+    if not match:
+        return ""
+    return re.sub(r"\s+", " ", match.group(1)).strip()
+
+
+def _extract_bounce_diagnostic(raw_message: str) -> str:
+    match = re.search(
+        r"(?ims)^Diagnostic-Code:\s*(.*?)(?=^[A-Za-z][A-Za-z0-9-]{0,80}:\s|\Z)",
+        raw_message or "",
+    )
+    if not match:
+        return ""
+    return re.sub(r"\s+", " ", match.group(1)).strip()[:_BOUNCE_DIAGNOSTIC_MAX_LENGTH]
+
+
+def _extract_bounce_campaign_id(raw_message: str, explicit: Any = None) -> str:
+    explicit_text = str(explicit or "").strip()
+    if explicit_text:
+        return explicit_text
+    header_value = _extract_header_value(raw_message, "X-Trufusion-Campaign-Id")
+    if header_value:
+        return header_value.split()[0].strip()
+    match = re.search(r"\bemc_[a-zA-Z0-9]+\b", raw_message or "")
+    return match.group(0) if match else ""
+
+
+def _extract_bounce_recipient(raw_message: str, explicit: Any = None) -> str:
+    explicit_email = _normalize_email(explicit)
+    if explicit_email:
+        return explicit_email
+    for header_name in ("Final-Recipient", "Original-Recipient", "X-Failed-Recipients", "To"):
+        header_value = _extract_header_value(raw_message, header_name)
+        if not header_value:
+            continue
+        if ";" in header_value:
+            header_value = header_value.rsplit(";", 1)[-1]
+        email = _normalize_email(header_value)
+        if email:
+            return email
+    match = re.search(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", raw_message or "")
+    return _normalize_email(match.group(0) if match else "")
+
+
+def _parse_bounce_notification(payload: Dict[str, Any]) -> Dict[str, str]:
+    raw_message = str(
+        payload.get("rawEmail")
+        or payload.get("raw_email")
+        or payload.get("rawMessage")
+        or payload.get("raw_message")
+        or payload.get("message")
+        or ""
+    )
+    campaign_id = _extract_bounce_campaign_id(raw_message, payload.get("campaignId") or payload.get("campaign_id"))
+    recipient_email = _extract_bounce_recipient(raw_message, payload.get("recipientEmail") or payload.get("recipient_email"))
+    status_code = str(payload.get("status") or _extract_header_value(raw_message, "Status") or "").strip()
+    action = str(payload.get("action") or _extract_header_value(raw_message, "Action") or "").strip().lower()
+    diagnostic = str(payload.get("diagnostic") or _extract_bounce_diagnostic(raw_message) or "").strip()
+    message_id = str(
+        payload.get("messageId")
+        or payload.get("message_id")
+        or _extract_header_value(raw_message, "X-Original-Message-ID")
+        or _extract_header_value(raw_message, "Message-ID")
+        or ""
+    ).strip()
+    if not campaign_id:
+        raise service_error("Bounce message did not include a campaign id", 400)
+    if not recipient_email:
+        raise service_error("Bounce message did not include a failed recipient", 400)
+    return {
+        "campaignId": campaign_id,
+        "recipientEmail": recipient_email,
+        "status": status_code,
+        "action": action,
+        "diagnostic": diagnostic,
+        "messageId": message_id,
+    }
+
+
+def process_bounce_notification(payload: Dict[str, Any], *, admin: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    parsed = _parse_bounce_notification(payload if isinstance(payload, dict) else {})
+    campaign_id = parsed["campaignId"]
+    recipient_email = parsed["recipientEmail"]
+    campaign = email_campaign_repository.get_campaign(campaign_id)
+    if not campaign:
+        raise service_error("Campaign from bounce was not found", 404)
+    diagnostic = parsed.get("diagnostic") or parsed.get("status") or "Delivery failure"
+    updated = email_campaign_repository.update_recipient_status_by_campaign_and_email(
+        campaign_id,
+        recipient_email,
+        "bounced",
+        sent_at=_now_iso(),
+        error_message=diagnostic,
+    )
+    if not updated:
+        raise service_error("Failed recipient from bounce was not found in this campaign", 404)
+    email_campaign_repository.log_event(
+        event_id=_new_id("evt"),
+        campaign_id=campaign_id,
+        recipient_email=recipient_email,
+        event_type="bounced",
+        metadata={
+            "status": parsed.get("status"),
+            "action": parsed.get("action"),
+            "diagnostic": diagnostic,
+            "messageId": parsed.get("messageId"),
+            "adminId": (admin or {}).get("id"),
+        },
+    )
+    counts = email_campaign_repository.count_recipients_by_status(campaign_id)
+    _reconcile_campaign_status(campaign, counts)
+    _notify_email_campaigns_changed(event="campaign_bounce_processed", campaignId=campaign_id, recipientEmail=recipient_email)
+    return {
+        "ok": True,
+        "campaignId": campaign_id,
+        "recipientEmail": recipient_email,
+        "status": parsed.get("status"),
+        "action": parsed.get("action"),
+        "diagnostic": diagnostic,
+        "counts": counts,
+    }
+
+
+def verify_bounce_webhook_secret(token: Any) -> None:
+    expected = str(os.environ.get("EMAIL_BOUNCE_WEBHOOK_SECRET") or "").strip()
+    if not expected:
+        raise service_error("Bounce webhook is not configured", 404)
+    supplied = str(token or "").strip()
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise service_error("Invalid bounce webhook token", 403)
+
+
 def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float = 0.25) -> Dict[str, Any]:
+    _requeue_stale_processing_recipients()
     jobs = email_campaign_repository.list_due_pending_recipients(limit=limit)
     processed = 0
     sent = 0
@@ -1187,10 +1369,9 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
             time.sleep(max(0.0, min(float(throttle_seconds), 10.0)))
 
     for campaign_id in campaign_ids:
+        campaign = email_campaign_repository.get_campaign(campaign_id) or {"id": campaign_id, "status": "sending"}
         counts = email_campaign_repository.count_recipients_by_status(campaign_id)
-        if int(counts.get("pending") or 0) == 0 and int(counts.get("processing") or 0) == 0:
-            final_status = "failed" if int(counts.get("sent") or 0) == 0 and int(counts.get("failed") or 0) > 0 else "sent"
-            email_campaign_repository.update_campaign_status(campaign_id, final_status, sent_at=_now_iso())
+        _reconcile_campaign_status(campaign, counts)
 
     if processed > 0:
         _notify_email_campaigns_changed(event="campaign_recipients_processed", processed=processed, sent=sent, failed=failed, skipped=skipped)

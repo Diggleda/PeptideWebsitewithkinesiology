@@ -17465,6 +17465,11 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
   z-index: 30001 !important;
 }
 
+.email-center-root {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .email-center-preview-send-layout {
   display: grid;
   gap: 2rem;
@@ -17513,6 +17518,44 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
 @media (max-width: 640px) {
   .email-center-preview-send-layout {
     gap: 1.25rem;
+  }
+
+  .email-center-root :is(
+    .sales-rep-leads-card,
+    .email-center-template-stack,
+    .email-center-template-grid,
+    .email-center-recipient-stack,
+    .email-center-recipient-option-list,
+    .email-center-recipient-details,
+    .email-center-preview-panel,
+    .email-center-send-panel,
+    .email-center-action-row,
+    label,
+    table
+  ) {
+    max-width: 100%;
+  }
+
+  .email-center-root :is(
+    .sales-rep-leads-card,
+    .email-center-recipient-option-list,
+    .email-center-recipient-details,
+    .email-center-action-row,
+    .email-center-preview-frame
+  ) {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .email-center-root .email-center-action-row {
+    justify-content: flex-start !important;
+    flex-wrap: nowrap;
+    padding-bottom: 0.125rem;
+  }
+
+  .email-center-root .email-center-action-row > * {
+    flex: 0 0 auto;
   }
 }
 
@@ -17576,7 +17619,7 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
 
 @media (max-width: 640px) {
   .email-center-test-send-action-row {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 }
 

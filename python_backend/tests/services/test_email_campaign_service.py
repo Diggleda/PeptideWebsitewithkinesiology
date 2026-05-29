@@ -528,6 +528,61 @@ class EmailCampaignServiceTests(unittest.TestCase):
         kick_due.assert_called_once()
         self.assertEqual(response["campaigns"][0]["status"], "sending")
 
+    def test_process_bounce_notification_marks_recipient_bounced(self) -> None:
+        bounce = """
+Reporting-MTA: dns; googlemail.com
+Final-Recipient: rfc822; linden@peppro.net
+Action: failed
+Status: 5.1.1
+Diagnostic-Code: smtp; 550 5.1.1 The email account that you tried to reach does not exist.
+X-Trufusion-Campaign-Id: emc_46778b9d14ca0fd7cecb82ec
+X-Original-Message-ID: <message@example.com>
+"""
+        campaign = {
+            "id": "emc_46778b9d14ca0fd7cecb82ec",
+            "status": "sent",
+            "recipient_count": 1,
+        }
+
+        with patch.object(
+            email_campaign_service.email_campaign_repository,
+            "get_campaign",
+            return_value=campaign,
+        ), patch.object(
+            email_campaign_service.email_campaign_repository,
+            "update_recipient_status_by_campaign_and_email",
+            return_value=True,
+        ) as update_recipient, patch.object(
+            email_campaign_service.email_campaign_repository,
+            "log_event",
+        ) as log_event, patch.object(
+            email_campaign_service.email_campaign_repository,
+            "count_recipients_by_status",
+            return_value={"bounced": 1},
+        ), patch.object(
+            email_campaign_service.email_campaign_repository,
+            "update_campaign_status",
+        ) as update_campaign, patch.object(
+            email_campaign_service,
+            "_notify_email_campaigns_changed",
+        ) as notify_changed:
+            response = email_campaign_service.process_bounce_notification(
+                {"rawEmail": bounce},
+                admin={"id": "admin_1"},
+            )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["campaignId"], "emc_46778b9d14ca0fd7cecb82ec")
+        self.assertEqual(response["recipientEmail"], "linden@peppro.net")
+        update_recipient.assert_called_once()
+        self.assertEqual(update_recipient.call_args.args[:3], ("emc_46778b9d14ca0fd7cecb82ec", "linden@peppro.net", "bounced"))
+        self.assertIn("does not exist", update_recipient.call_args.kwargs["error_message"])
+        log_event.assert_called_once()
+        self.assertEqual(log_event.call_args.kwargs["event_type"], "bounced")
+        update_campaign.assert_called_once()
+        self.assertEqual(update_campaign.call_args.args[:2], ("emc_46778b9d14ca0fd7cecb82ec", "failed"))
+        notify_changed.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

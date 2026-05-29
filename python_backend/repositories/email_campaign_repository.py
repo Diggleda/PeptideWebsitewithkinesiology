@@ -472,6 +472,94 @@ def update_recipient_status(
         _save_json(store)
 
 
+def update_recipient_status_by_campaign_and_email(
+    campaign_id: str,
+    recipient_email: str,
+    status: str,
+    *,
+    sent_at: Any = None,
+    error_message: Optional[str] = None,
+) -> bool:
+    normalized_email = str(recipient_email or "").strip().lower()
+    if not campaign_id or not normalized_email:
+        return False
+    if _using_mysql():
+        updated = mysql_client.execute(
+            """
+            UPDATE email_campaign_recipients
+            SET status = %(status)s,
+                sent_at = COALESCE(%(sent_at)s, sent_at),
+                error_message = %(error_message)s
+            WHERE campaign_id = %(campaign_id)s
+              AND recipient_email = %(recipient_email)s
+            """,
+            {
+                "campaign_id": campaign_id,
+                "recipient_email": normalized_email,
+                "status": status,
+                "sent_at": to_mysql_datetime(sent_at),
+                "error_message": error_message,
+            },
+        )
+        return bool(updated)
+
+    updated = False
+    with _JSON_LOCK:
+        store = _load_json()
+        for recipient in store["recipients"]:
+            if (
+                str(recipient.get("campaign_id") or "") == campaign_id
+                and str(recipient.get("recipient_email") or "").strip().lower() == normalized_email
+            ):
+                recipient["status"] = status
+                if sent_at:
+                    recipient["sent_at"] = _format_datetime(sent_at)
+                recipient["error_message"] = error_message
+                updated = True
+                break
+        if updated:
+            _save_json(store)
+    return updated
+
+
+def requeue_stale_processing_recipients(cutoff: Any) -> int:
+    cutoff_value = _format_datetime(cutoff)
+    if not cutoff_value:
+        return 0
+    if _using_mysql():
+        return int(
+            mysql_client.execute(
+                """
+                UPDATE email_campaign_recipients
+                SET status = 'pending',
+                    sent_at = NULL,
+                    error_message = NULL
+                WHERE status = 'processing'
+                  AND sent_at IS NOT NULL
+                  AND sent_at <= %(cutoff)s
+                """,
+                {"cutoff": to_mysql_datetime(cutoff_value)},
+            )
+            or 0
+        )
+
+    requeued = 0
+    with _JSON_LOCK:
+        store = _load_json()
+        for recipient in store["recipients"]:
+            if str(recipient.get("status") or "") != "processing":
+                continue
+            sent_at = _format_datetime(recipient.get("sent_at"))
+            if sent_at and sent_at <= cutoff_value:
+                recipient["status"] = "pending"
+                recipient["sent_at"] = None
+                recipient["error_message"] = None
+                requeued += 1
+        if requeued:
+            _save_json(store)
+    return requeued
+
+
 def list_due_pending_recipients(*, limit: int = 25) -> List[Dict[str, Any]]:
     limit = max(1, min(int(limit or 25), 250))
     now_sql = to_mysql_datetime(_now_iso())
